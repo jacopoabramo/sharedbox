@@ -105,10 +105,10 @@ cd vcpkg && bootstrap-vcpkg.bat
 
 Don't forget to add it to your `PATH`.
 
-Clone this repository, then install `boost::interprocess` via `vcpkg` (manifest mode will pick it up using `vcpkg.json`):
+Clone this repository, then install `boost::interprocess` via `vcpkg`:
 
 ```
-vcpkg install
+vcpkg install boost-interprocess
 ```
 
 Finally, through `uv`, install the package in a virtual environment:
