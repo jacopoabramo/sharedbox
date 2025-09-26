@@ -11,7 +11,7 @@ wheels/
 
 .vscode/
 
-vcpkg_installed/
 *.pyd
+*.so
 
 wheelhouse/
