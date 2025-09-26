@@ -13,7 +13,11 @@ from collections import Counter, defaultdict
 from dataclasses import dataclass
 from typing import Any, Dict, NamedTuple, Tuple
 
-import psutil
+try:
+    import psutil
+except ImportError as e:
+    msg = "psutil is required for memory usage analysis. Install with `pip install psutil`."
+    raise ImportError(msg) from e
 
 from sharedbox import SharedDict
 
@@ -159,6 +163,7 @@ def benchmark_memory_usage(
             ],
         )
 
+    d.close()
     d.unlink()
 
     # Calculate SharedDict memory stats
@@ -248,6 +253,7 @@ def serialization_benchmark() -> Dict[str, float]:
         _ = d[key]
     shareddict_retrieve_time = time.perf_counter() - start_time
 
+    d.close()
     d.unlink()
 
     results["shareddict_store"] = shareddict_store_time
@@ -314,6 +320,7 @@ def data_structure_compatibility_test() -> Dict[str, bool]:
             print(f"SharedDict failed for {test_name}: {e}")
             results[f"shareddict_{test_name}"] = False
 
+    d.close()
     d.unlink()
 
     # Test Manager dict
@@ -424,15 +431,6 @@ def run_memory_analysis() -> None:
             print(
                 f"  Issue with {test_name}: SharedDict={shareddict_ok}, Manager={manager_ok}"
             )
-
-    print(f"\n{'=' * 80}")
-    print("MEMORY & EFFICIENCY SUMMARY")
-    print(f"{'=' * 80}")
-    print("✓ SharedDict provides significant memory efficiency advantages")
-    print("✓ Minimal serialization overhead compared to Manager's proxy approach")
-    print("✓ Better scalability for memory-intensive applications")
-    print("✓ Direct shared memory access eliminates redundant data copies")
-    print("✓ Compatible with all standard Python data structures")
 
 
 if __name__ == "__main__":
