@@ -87,7 +87,7 @@ class CustomClass:
 
 def get_container_test_data():
     """Get comprehensive test data for container types."""
-    # Use fixed datetime to avoid comparison issues across processes
+
     now = datetime.datetime(2025, 9, 24, 10, 30, 45, 123456)
     today = datetime.date(2025, 9, 24)
 
@@ -168,15 +168,12 @@ def worker_write_containers(segment_name: str, worker_id: int) -> None:
             key = f"worker_{worker_id}_{type_name}"
             d[key] = value
 
-        # Mark completion
-        d[f"worker_{worker_id}_completed"] = True
-
         # Close connection in child process
         d.close()
 
     except Exception as e:
-        print(f"Worker {worker_id} failed to write container types: {e}")
-        raise
+        msg = f"Worker {worker_id} failed to write container types: {e}"
+        raise Exception(msg) from e
 
 
 def worker_verify_containers(segment_name: str, expected_workers: int) -> dict:
@@ -259,8 +256,8 @@ def worker_verify_containers(segment_name: str, expected_workers: int) -> dict:
         return verification_results
 
     except Exception as e:
-        print(f"Container verification worker failed: {e}")
-        raise
+        msg = f"Container verification worker failed: {e}"
+        raise Exception(msg) from e
 
 
 def worker_test_dataclass_mutation(segment_name: str) -> None:
@@ -285,8 +282,8 @@ def worker_test_dataclass_mutation(segment_name: str) -> None:
         d.close()
 
     except Exception as e:
-        print(f"Dataclass mutation worker failed: {e}")
-        raise
+        msg = f"Dataclass mutation worker failed: {e}"
+        raise Exception(msg) from e
 
 
 def verify_enum_namedtuple_consistency_worker(
@@ -403,13 +400,11 @@ class TestContainersMultiProcess:
         segment_name = "test-container-types"
         segment_size = 100 * 1024 * 1024  # 100MB for all the container data
 
-        # Create shared segment
         d = SharedDict(segment_name, size=segment_size, create=True)
 
-        num_workers = 2  # Fewer workers for more complex data
+        num_workers = 2
 
-        # Start worker processes to write container types
-        processes = []
+        processes: list[mp.Process] = []
         for worker_id in range(num_workers):
             p = mp.Process(
                 target=worker_write_containers,
@@ -418,38 +413,36 @@ class TestContainersMultiProcess:
             p.start()
             processes.append(p)
 
-        # Wait for all workers to complete
+        # Wait for all worker processes to complete
         for p in processes:
-            p.join(timeout=60)  # Longer timeout for complex data
+            p.join(timeout=10)
             assert p.exitcode == 0, f"Worker process failed with exit code {p.exitcode}"
 
-        # Start verification process
-        verifier = mp.Process(
-            target=worker_verify_containers, args=(segment_name, num_workers)
-        )
-        verifier.start()
-        verifier.join(timeout=60)
-        assert verifier.exitcode == 0, "Container verification process failed"
-
-        # Also verify in main process
+        # Verify all data directly in the test process
         expected_data = get_container_test_data()
+        try:
+            for worker_id in range(num_workers):
+                for type_name, expected_value in expected_data.items():
+                    key = f"worker_{worker_id}_{type_name}"
 
-        for worker_id in range(num_workers):
-            for type_name, expected_value in expected_data.items():
-                key = f"worker_{worker_id}_{type_name}"
-                assert key in d, f"Missing key: {key}"
+                    assert key in d, f"Missing key: {key}"
 
-                actual_value = d[key]
-                assert actual_value == expected_value, f"Value mismatch for {type_name}"
-                assert type(actual_value) is type(expected_value), (
-                    f"Type mismatch for {type_name}"
-                )
+                    actual_value = d[key]
 
-        print(
-            f"Successfully tested {len(expected_data)} container types across {num_workers} processes"
-        )
-        d.close()
-        d.unlink()
+                    # Compare values - most objects should have proper __eq__ methods
+                    assert actual_value == expected_value, (
+                        f"Value mismatch for {type_name} (worker {worker_id})"
+                    )
+                    assert type(actual_value) is type(expected_value), (
+                        f"Type mismatch for {type_name} (worker {worker_id})"
+                    )
+        except AssertionError as e:
+            d.close()
+            d.unlink()
+            raise e
+        else:
+            d.close()
+            d.unlink()
 
     def test_dataclass_cross_process_operations(self):
         """Test dataclass creation and modification across processes."""
