@@ -35,8 +35,7 @@ jobs:
             yum install -y boost-devel || apt-get update && apt-get install -y libboost-all-dev
           
           CIBW_BEFORE_ALL_WINDOWS: |
-            C:\vcpkg\vcpkg integrate install &&
-            C:\vcpkg\vcpkg install boost-interprocess
+            ${{ env.VCPKG_INSTALLATION_ROOT }}\vcpkg install boost-interprocess
           
           CIBW_TEST_REQUIRES: pytest numpy
           CIBW_TEST_COMMAND: python -m pytest -v
