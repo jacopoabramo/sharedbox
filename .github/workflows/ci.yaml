@@ -46,19 +46,15 @@ jobs:
         env:
           # Build configuration
           CIBW_BUILD: cp310-* cp311-* cp312-*
-          CIBW_SKIP: "*-win32 pp*"
+          CIBW_SKIP: "*-win32"
           
-          # Linux-specific settings
           CIBW_BEFORE_ALL_LINUX: |
             yum install -y boost-devel || apt-get update && apt-get install -y libboost-all-dev
           
-          # Windows-specific settings
           CIBW_BEFORE_ALL_WINDOWS: |
-            git clone https://github.com/microsoft/vcpkg.git C:\vcpkg &&
             C:\vcpkg\bootstrap-vcpkg.bat &&
             C:\vcpkg\vcpkg install boost-interprocess
           
-          # Test command to run after building each wheel
           CIBW_TEST_REQUIRES: pytest numpy
           CIBW_TEST_COMMAND: python -m pytest -v
 
