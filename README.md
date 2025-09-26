@@ -1,6 +1,6 @@
 # `sharedbox`
 
-> ![WARNING]
+> [!WARNING]
 > This project is a work in progress; be patient or feel free to contribute.
 
 Python inter-process shared containers leveraging `boost::interprocess`.
