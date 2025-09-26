@@ -323,5 +323,6 @@ def run_performance_comparison() -> None:
         f"Average read speedup:  {statistics.mean(read_speedups):.2f}x (range: {min(read_speedups):.2f}x - {max(read_speedups):.2f}x)"
     )
 
+
 if __name__ == "__main__":
     run_performance_comparison()
