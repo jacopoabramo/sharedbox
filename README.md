@@ -99,16 +99,25 @@ The `examples/` folder contains some code examples on how to use the package.
 First [install and boostrap vcpkg](https://learn.microsoft.com/en-us/vcpkg/get_started/get-started-vscode?pivots=shell-cmd) somewhere in your system.
 
 ```sh
+# for Windows it is reccomended to install it in C:\
+cd C:\
+
 git clone https://github.com/microsoft/vcpkg.git
 cd vcpkg && bootstrap-vcpkg.bat
 ```
 
 Don't forget to add it to your `PATH`.
 
-Clone this repository, then install `boost::interprocess` via `vcpkg` (manifest mode will pick it up using `vcpkg.json`):
+Also, add an environment variable pointing to the root of `vcpkg`:
+
+```sh
+set "VCPKG_ROOT=C:\path\to\vcpkg"
+```
+
+Clone this repository, then install `boost::interprocess`:
 
 ```
-vcpkg install
+vcpkg install boost-interprocess
 ```
 
 Finally, through `uv`, install the package in a virtual environment:

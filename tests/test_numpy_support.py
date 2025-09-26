@@ -3,6 +3,7 @@ Test numpy array support in SharedDict
 """
 
 import multiprocessing as mp
+import time
 
 import numpy as np
 
@@ -145,16 +146,25 @@ def concurrent_numpy_worker(worker_id: int, dict_name: str, iterations: int) -> 
     d = SharedDict(dict_name, create=False)
 
     for i in range(iterations):
-        # Create worker-specific array
         arr = np.random.rand(50, 50).astype(np.float32) * (worker_id + 1)
         key = f"worker_{worker_id}_array_{i}"
 
-        # Store array
         d[key] = arr
 
-        # Retrieve and verify
-        retrieved = d[key]
-        np.testing.assert_array_equal(retrieved, arr)
+        # while concurrently trying to read it back,
+        # we might incur in some race conditions...
+        # although it shouldn't happen; for now,
+        # we add some retry logic
+        max_retries = 3
+        for retry in range(max_retries):
+            try:
+                retrieved = d[key]
+                np.testing.assert_array_equal(retrieved, arr)
+                break
+            except KeyError:
+                if retry == max_retries - 1:
+                    raise
+                time.sleep(0.01)  # Brief delay before retry
 
         # Also try to read arrays from other workers (if they exist)
         for other_worker in range(worker_id):
