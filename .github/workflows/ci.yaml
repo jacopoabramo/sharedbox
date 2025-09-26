@@ -7,7 +7,7 @@ on:
     branches: [ main ]
 
 jobs:
-  build_wheels:
+  build_and_test:
     name: Build wheels on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
@@ -24,23 +24,6 @@ jobs:
         with:
           python-version: '3.11'
 
-      - name: Install system dependencies (Linux)
-        if: runner.os == 'Linux'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y libboost-all-dev
-
-      - name: Install system dependencies (Windows)
-        if: runner.os == 'Windows'
-        run: |
-          # Install vcpkg and boost for Windows
-          git clone https://github.com/Microsoft/vcpkg.git
-          cd vcpkg
-          ./bootstrap-vcpkg.bat
-          ./vcpkg integrate install
-          ./vcpkg install boost:x64-windows
-        shell: cmd
-
       - name: Build wheels
         uses: pypa/cibuildwheel@v3.2.0
         env:
@@ -52,7 +35,7 @@ jobs:
             yum install -y boost-devel || apt-get update && apt-get install -y libboost-all-dev
           
           CIBW_BEFORE_ALL_WINDOWS: |
-            C:\vcpkg\bootstrap-vcpkg.bat &&
+            C:\vcpkg\vcpkg integrate install &&
             C:\vcpkg\vcpkg install boost-interprocess
           
           CIBW_TEST_REQUIRES: pytest numpy
