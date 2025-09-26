@@ -145,6 +145,7 @@ def benchmark_write_operations(
     if failed_workers:
         print(f"SharedDict: Failed workers: {failed_workers}")
 
+    d.close()
     d.unlink()
     results["shareddict_write"] = shareddict_time
 
@@ -214,6 +215,7 @@ def benchmark_read_operations(
         )
 
     shareddict_time = time.perf_counter() - start_time
+    d.close()
     d.unlink()
     results["shareddict_read"] = shareddict_time
 
@@ -252,7 +254,7 @@ def run_performance_comparison() -> None:
     test_configurations = [
         (2, 500),  # 2 workers, 500 ops each
         (4, 1000),  # 4 workers, 1000 ops each
-        (8, 1500),  # 8 workers, 1500 ops each
+        (8, 1500),  # 4 workers, 1500 ops each
     ]
 
     all_results: list[dict[str, Any]] = []
@@ -321,15 +323,5 @@ def run_performance_comparison() -> None:
         f"Average read speedup:  {statistics.mean(read_speedups):.2f}x (range: {min(read_speedups):.2f}x - {max(read_speedups):.2f}x)"
     )
 
-    print("\nSharedDict advantages:")
-    print("  - True shared memory (no serialization/deserialization)")
-    print("  - Lock striping for better concurrent access")
-    print("  - No proxy process overhead")
-    print("  - Direct memory access from all processes")
-
-
 if __name__ == "__main__":
-    mp.set_start_method(
-        "spawn", force=True
-    )  # Ensure consistent behavior across platforms
     run_performance_comparison()

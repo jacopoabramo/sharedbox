@@ -15,36 +15,33 @@ libraries: list[str] = []
 
 if system == "windows":
     vcpkg_root = os.getenv("VCPKG_ROOT", "C:/vcpkg")
-    includes = [
-        os.path.join(vcpkg_root, 'installed', 'x64-windows', 'include')
-    ]
+    includes = [os.path.join(vcpkg_root, "installed", "x64-windows", "include")]
     libs = [
-        os.path.join(vcpkg_root, 'installed', 'x64-windows', 'lib'),
-        os.path.join(vcpkg_root, 'installed', 'x64-windows', 'bin'),
+        os.path.join(vcpkg_root, "installed", "x64-windows", "lib"),
+        os.path.join(vcpkg_root, "installed", "x64-windows", "bin"),
     ]
-    compile_args.extend([
-        "/std:c++17",
-        "/EHsc",  # Exception handling model
-        "/DBOOST_ALL_NO_LIB",  # Disable Boost auto-linking (we manage dependencies)
-        "/D_WIN32_WINNT=0x0601",  # Target Windows 7+ (required for Boost.Interprocess)
-        "/DWIN32_LEAN_AND_MEAN",  # Reduce Windows header overhead
-        "/DNOMINMAX",  # Prevent min/max macro conflicts
-        "/O2",  # Optimization
-    ])
-    libraries.extend([
-        "kernel32",  # Core Windows APIs
-        "user32",  # User interface APIs
-        "advapi32",  # Advanced Windows APIs (security, registry)
-    ])
+    compile_args.extend(
+        [
+            "/std:c++17",
+            "/EHsc",  # Exception handling model
+            "/DBOOST_ALL_NO_LIB",  # Disable Boost auto-linking (we manage dependencies)
+            "/D_WIN32_WINNT=0x0601",  # Target Windows 7+ (required for Boost.Interprocess)
+            "/DWIN32_LEAN_AND_MEAN",  # Reduce Windows header overhead
+            "/DNOMINMAX",  # Prevent min/max macro conflicts
+            "/O2",  # Optimization
+        ]
+    )
+    libraries.extend(
+        [
+            "kernel32",  # Core Windows APIs
+            "user32",  # User interface APIs
+            "advapi32",  # Advanced Windows APIs (security, registry)
+        ]
+    )
 
 elif system == "linux":
-    includes = [
-        "/usr/include", "/usr/local/include"
-    ]
-    libs = [
-        "/usr/lib", 
-        "/usr/local/lib"
-    ]
+    includes = ["/usr/include", "/usr/local/include"]
+    libs = ["/usr/lib", "/usr/local/lib"]
     # GCC/Clang compiler flags
     compile_args.extend(
         [
