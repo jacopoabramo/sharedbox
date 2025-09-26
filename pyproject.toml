@@ -1,0 +1,49 @@
+[build-system]
+requires = ["setuptools>=80", "wheel", "cython>=3.1.4", "numpy>=2.2.6"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "sharedbox"
+version = "0.0.1"
+description = "Python containers using shared memory."
+authors = [
+    {name = "Jacopo Abramo", email = "jacopo.abramo@gmail.com"}
+]
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.10"
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: C++",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+    "numpy>=2.2.6",
+]
+
+[project.optional-dependencies]
+dev = [
+    "cython>=3.1.4",
+    "pre-commit>=4.3.0",
+    "pytest>=8.4.2",
+    "ruff>=0.13.1",
+    "cibuildwheel>=2.20.0",
+]
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+sharedbox = ["py.typed", "*.pyi"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.cibuildwheel]
+skip = ["*-win32", "pp*"]
+build = ["cp310-*", "cp311-*", "cp312-*"]
