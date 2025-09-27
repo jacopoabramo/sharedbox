@@ -1,10 +1,10 @@
 [build-system]
-requires = ["setuptools>=80", "wheel", "cython>=3.1.4", "numpy>=2.2.6"]
+requires = ["setuptools>=80", "wheel", "cython>=3.1.4", "setuptools-scm>=8", "numpy>=2.2.6"]
 build-backend = "setuptools.build_meta"
 
 [project]
 name = "sharedbox"
-version = "0.0.1"
+dynamic = ["version"]
 description = "Python containers using shared memory."
 authors = [
     {name = "Jacopo Abramo", email = "jacopo.abramo@gmail.com"}
@@ -28,10 +28,12 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "pre-commit>=4.3.0",
     "pytest>=8.4.2",
     "ruff>=0.13.1",
 ]
+
+[tool.setuptools_scm]
+version_file = "src/sharedbox/_version.py"
 
 [tool.setuptools.packages.find]
 where = ["src"]
