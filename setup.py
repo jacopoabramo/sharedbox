@@ -40,9 +40,8 @@ if system == "windows":
     )
 
 elif system == "linux":
-    includes = ["/usr/include", "/usr/local/include"]
-    libs = ["/usr/lib", "/usr/local/lib"]
-    # GCC/Clang compiler flags
+    includes = ["/usr/include", "/usr/include/boost"]
+    libs = ["/usr/lib"]
     compile_args.extend(
         [
             "-std=c++17",  # C++17 standard
@@ -51,7 +50,6 @@ elif system == "linux":
             "-D_GNU_SOURCE",  # Enable GNU extensions
         ]
     )
-    # Linux system libraries required by Boost.Interprocess
     libraries.extend(
         [
             "rt",  # Real-time extensions (for shm_open, etc.)

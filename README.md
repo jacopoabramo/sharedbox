@@ -125,30 +125,6 @@ Finally, through `uv`, install the package in a virtual environment:
 ```sh
 uv venv --python 3.10
 uv pip install -e .[dev]
-### Build wheels locally with cibuildwheel
-
-You can build manylinux and Windows wheels locally with `cibuildwheel`.
-
-- Windows (from a VS Developer Command Prompt or with Build Tools installed):
-
-```bat
-python -m pip install -U cibuildwheel
-python -m cibuildwheel --output-dir wheelhouse
-```
-
-- Linux testing on Windows: use WSL or Docker. For Docker:
-
-```bat
-python -m pip install -U cibuildwheel
-python -m cibuildwheel --platform linux --output-dir wheelhouse
-```
-
-The build scripts bootstrap `vcpkg` inside the build environment and set `VCPKG_TRIPLET` per-platform. You can override detection by setting:
-
-- `BOOST_INCLUDE_DIR`, `BOOST_LIBRARY_DIR` to force Boost paths
-- `VCPKG_TRIPLET` to force a specific triplet (e.g. `x64-linux`, `x64-windows`)
-- `VCPKG_INSTALLED_DIR` if the `vcpkg_installed` folder is not in the project root
-
 ```
 
 ## License

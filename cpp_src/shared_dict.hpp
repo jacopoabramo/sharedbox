@@ -43,7 +43,6 @@ public:
     SharedMemoryDict(const std::string& name, std::size_t size, bool create, std::size_t max_keys = 128);
     ~SharedMemoryDict();
 
-    // Basic operations using raw bytes (std::string as byte container)
     void set(const std::string& key_bytes, const std::string& value_bytes);
     bool get(const std::string& key_bytes, std::string& out_value_bytes) const;
     bool erase(const std::string& key_bytes);
@@ -51,7 +50,6 @@ public:
     std::size_t size() const;
     std::vector<std::string> keys() const;
 
-    // Memory management methods (matching multiprocessing.SharedMemory API)
     void close();    // Close access to shared memory without removing it
     void unlink();   // Remove shared memory segment
     bool is_closed() const;  // Check if the connection has been closed
@@ -70,7 +68,7 @@ private:
 
     segment_t segment_;
     Map* map_;
-    Mutex* mutexes_;  // Array of mutexes, one per potential key slot
+    Mutex* mutexes_;
 };
 
 } // namespace shared_memory

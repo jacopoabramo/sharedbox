@@ -28,11 +28,9 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
-    "cython>=3.1.4",
     "pre-commit>=4.3.0",
     "pytest>=8.4.2",
     "ruff>=0.13.1",
-    "cibuildwheel>=2.20.0",
 ]
 
 [tool.setuptools.packages.find]
@@ -45,5 +43,10 @@ sharedbox = ["py.typed", "*.pyi"]
 testpaths = ["tests"]
 
 [tool.cibuildwheel]
-skip = ["*-win32", "pp*"]
-build = ["cp310-*", "cp311-*", "cp312-*"]
+skip = ["*-win32"]
+build = ["cp310-*", "cp311-*", "cp312-*", "cp313-*"]
+
+[tool.cibuildwheel.linux]
+before-all = [
+    "yum update -y && yum install -y boost-devel || (apk update && apk add --no-cache boost-dev)"
+]
