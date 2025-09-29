@@ -72,6 +72,7 @@ python_add_library(_shareddict MODULE
 
 target_include_directories(_shareddict PRIVATE 
     src/sharedbox/_core
+    Boost::boost
 )
 
 target_compile_definitions(_shareddict PRIVATE ${PLATFORM_COMPILE_DEFS})
