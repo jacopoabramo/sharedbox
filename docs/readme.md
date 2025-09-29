@@ -1,4 +1,4 @@
-# SharedBox API Reference
+# API Reference
 
 ## SharedDict
 
