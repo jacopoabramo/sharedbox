@@ -94,7 +94,7 @@ The `examples/` folder contains some code examples on how to use the package.
 - Python >= 3.10
 - [`vcpkg`](https://vcpkg.io/en/)
 - `cython>=3.1`
-- Visual Studio build tools supporting C++17
+- A C++17 compatible compiler
 
 First [install and boostrap vcpkg](https://learn.microsoft.com/en-us/vcpkg/get_started/get-started-vscode?pivots=shell-cmd) somewhere in your system.
 
