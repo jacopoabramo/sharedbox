@@ -1,7 +1,6 @@
 cmake_minimum_required(VERSION 3.15)
 project(${SKBUILD_PROJECT_NAME} LANGUAGES CXX C)
 
-# Set C++ standard
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
@@ -10,21 +9,21 @@ find_package(
   COMPONENTS Interpreter Development.Module
   REQUIRED)
 
-# Find Boost
-find_package(Boost COMPONENTS system filesystem)
-if(NOT Boost_FOUND)
-    # Fallback for systems where Boost is not easily found
-    if(WIN32)
-        set(VCPKG_ROOT $ENV{VCPKG_ROOT})
-        if(NOT VCPKG_ROOT)
-            set(VCPKG_ROOT "C:/vcpkg")
-        endif()
-        set(Boost_INCLUDE_DIRS "${VCPKG_ROOT}/installed/x64-windows/include")
-        set(Boost_LIBRARY_DIRS "${VCPKG_ROOT}/installed/x64-windows/lib" "${VCPKG_ROOT}/installed/x64-windows/bin")
-    else()
-        set(Boost_INCLUDE_DIRS "/usr/include" "/usr/local/include" "/usr/include/boost")
-        set(Boost_LIBRARY_DIRS "/usr/lib" "/usr/local/lib")
-    endif()
+set(BOOST_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/externals/boost")
+set(Boost_NO_SYSTEM_PATHS ON)
+
+if(EXISTS "${BOOST_ROOT}/boost/version.hpp")
+    message(STATUS "Using Boost from submodule at ${BOOST_ROOT}")
+    set(Boost_INCLUDE_DIRS "${BOOST_ROOT}")
+    
+    add_library(Boost::boost INTERFACE IMPORTED)
+    target_include_directories(Boost::boost INTERFACE ${Boost_INCLUDE_DIRS})
+    
+    # for compiled Boost libraries:
+    # add_subdirectory(${BOOST_ROOT} EXCLUDE_FROM_ALL)
+    
+else()
+    message(FATAL_ERROR "Boost submodule not found at ${BOOST_ROOT}. Please run: git submodule update --init --recursive")
 endif()
 
 add_custom_command(
@@ -66,7 +65,6 @@ else()
     set(PLATFORM_LIBRARIES rt pthread)
 endif()
 
-# Create the _shareddict extension
 python_add_library(_shareddict MODULE 
     src/sharedbox/_shareddict.cpp 
     src/sharedbox/_core/shared_dict.cpp
@@ -74,17 +72,16 @@ python_add_library(_shareddict MODULE
 
 target_include_directories(_shareddict PRIVATE 
     src/sharedbox/_core
-    ${Boost_INCLUDE_DIRS}
 )
 
 target_compile_definitions(_shareddict PRIVATE ${PLATFORM_COMPILE_DEFS})
 target_compile_options(_shareddict PRIVATE ${PLATFORM_COMPILE_ARGS})
 
-if(Boost_LIBRARY_DIRS)
-    target_link_directories(_shareddict PRIVATE ${Boost_LIBRARY_DIRS})
-endif()
-
-target_link_libraries(_shareddict PRIVATE ${PLATFORM_LIBRARIES})
+# Link Boost and platform libraries
+target_link_libraries(_shareddict PRIVATE 
+    Boost::boost
+    ${PLATFORM_LIBRARIES}
+)
 
 # Create the utils extension
 python_add_library(utils MODULE 

@@ -21,6 +21,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v5
+        with:
+          submodules: recursive
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
@@ -28,7 +30,7 @@ jobs:
       - name: Build wheels
         uses: pypa/cibuildwheel@v3.2.0
         env:
-          CIBW_BEFORE_ALL_WINDOWS: ${{ env.VCPKG_INSTALLATION_ROOT }}\vcpkg install boost-interprocess
+          # Using Boost from git submodule - no need for package manager installation
           CIBW_TEST_REQUIRES: pytest numpy
           CIBW_TEST_COMMAND: pytest {project}/tests
 
