@@ -80,7 +80,7 @@ shared_config.unlink()
 
 - Nested dictionaries are "currently" unsupported
 - Project is quite unstable, might not provide great performance boost at this time
-- Currently tested and built on Windows only, will provide better support for other platforms once I understand `cibuildwheel` better
+- macOS unsupported
 
 ## Examples
 
