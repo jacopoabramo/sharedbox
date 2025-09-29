@@ -32,6 +32,12 @@ jobs:
         env:
           CIBW_TEST_REQUIRES: pytest numpy
           CIBW_TEST_COMMAND: pytest {project}/tests
+          CIBW_BEFORE_BUILD_LINUX: |
+            git submodule update --init --recursive
+            cd externals/boost && ./bootstrap.sh && ./b2 headers
+          CIBW_BEFORE_BUILD_WINDOWS: |
+            git submodule update --init --recursive
+            cd externals/boost && .\bootstrap.bat && .\b2.exe headers
 
         with:
           package-dir: .
@@ -52,6 +58,13 @@ jobs:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
+          submodules: recursive
+
+      - name: Set up Boost headers
+        run: |
+          cd externals/boost
+          ./bootstrap.sh
+          ./b2 headers
 
       - name: Build SDist
         run: pipx run build --sdist

@@ -87,46 +87,55 @@ shared_config.unlink()
 The `examples/` folder contains some code examples on how to use the package.
 
 ## Building locally
+
 ### Requirements
 
 - [`git`](https://git-scm.com/downloads)
-- [`uv`](https://docs.astral.sh/uv/getting-started/installation/)
+- [`uv`](https://docs.astral.sh/uv/getting-started/installation/) or [`pip`](https://pip.pypa.io/)
 - Python >= 3.10
-- [`vcpkg`](https://vcpkg.io/en/)
-- `cython>=3.1`
-- A C++17 compatible compiler
+- [`CMake`](https://cmake.org/download/) >= 3.15
+- A C++17 compatible compiler (Visual Studio 2019+, GCC 8+, Clang 7+)
 
-First [install and boostrap vcpkg](https://learn.microsoft.com/en-us/vcpkg/get_started/get-started-vscode?pivots=shell-cmd) somewhere in your system.
+### Build Instructions
 
-```sh
-# for Windows it is reccomended to install it in C:\
-cd C:\
+1. **Clone the repository with submodules:**
+   ```sh
+   git clone --recurse-submodules https://github.com/jacopoabramo/sharedbox.git
+   cd sharedbox
+   ```
+   
+   If you already cloned without submodules:
+   ```sh
+   git submodule update --init --recursive
+   ```
 
-git clone https://github.com/microsoft/vcpkg.git
-cd vcpkg && bootstrap-vcpkg.bat
-```
+2. **Set up Boost headers (one-time setup):**
+   ```sh
+   # Navigate to Boost submodule and generate headers
+   cd externals/boost
+   ./bootstrap.bat    # On Windows
+   # ./bootstrap.sh   # On Linux/macOS
+   ./b2 headers
+   cd ../..
+   ```
 
-Don't forget to add it to your `PATH`.
-
-Also, add an environment variable pointing to the root of `vcpkg`:
-
-```sh
-set "VCPKG_ROOT=C:\path\to\vcpkg"
-```
-
-Clone this repository, then install `boost::interprocess`:
-
-```
-vcpkg install boost-interprocess
-```
-
-Finally, through `uv`, install the package in a virtual environment:
-
-```sh
-uv venv --python 3.10
-uv pip install -e .[dev]
-```
+3. **Install in a virtual environment:**
+   ```sh
+   # using uv (recommended)
+   uv venv --python 3.10
+   source .venv/bin/activate    # Linux/macOS
+   # .venv\Scripts\activate     # Windows
+   uv pip install -e .[dev]
+   
+   # ... or using pip
+   python -m venv .venv
+   source .venv/bin/activate    # Linux/macOS  
+   # .venv\Scripts\activate     # Windows
+   pip install -e .[dev]
+   ```
 
 ## License
 
 Licensed under [Apache 2.0](./LICENSE)
+
+This project uses [Boost C++ Libraries](https://www.boost.org/) under the [Boost Software License 1.0](https://boost.org.cpp.al/LICENSE_1_0.txt)
