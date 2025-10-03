@@ -3,7 +3,7 @@
 > [!WARNING]
 > This project is a work in progress; be patient or feel free to contribute.
 
-Python inter-process shared containers leveraging `boost::interprocess`.
+Python inter-process shared containers leveraging the [`boost::interprocess`](https://www.boost.org/doc/libs/latest/doc/html/interprocess.html) library.
 
 ## Installation
 
@@ -130,3 +130,5 @@ uv pip install -e .[dev]
 ## License
 
 Licensed under [Apache 2.0](./LICENSE)
+
+`sharedbox` is built using the Boost C++ library, which is licensed under the [Boost Software License](https://boost.org.cpp.al/LICENSE_1_0.txt).
