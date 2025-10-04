@@ -1,16 +1,12 @@
 cmake_minimum_required(VERSION 3.15)
 
-# Auto-detect vcpkg toolchain if not already set
-if(NOT DEFINED CMAKE_TOOLCHAIN_FILE)
-    if(DEFINED ENV{VCPKG_ROOT})
-        set(CMAKE_TOOLCHAIN_FILE "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
-            CACHE STRING "Vcpkg toolchain file")
-        message(STATUS "Using vcpkg toolchain from VCPKG_ROOT: ${CMAKE_TOOLCHAIN_FILE}")
-    elseif(DEFINED ENV{CMAKE_TOOLCHAIN_FILE})
-        set(CMAKE_TOOLCHAIN_FILE "$ENV{CMAKE_TOOLCHAIN_FILE}"
-            CACHE STRING "Vcpkg toolchain file")
-        message(STATUS "Using CMAKE_TOOLCHAIN_FILE from environment: ${CMAKE_TOOLCHAIN_FILE}")
-    endif()
+# Set vcpkg toolchain from VCPKG_ROOT environment variable
+if(DEFINED ENV{VCPKG_ROOT})
+    set(CMAKE_TOOLCHAIN_FILE "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
+        CACHE STRING "Vcpkg toolchain file")
+    message(STATUS "Using vcpkg toolchain from VCPKG_ROOT: ${CMAKE_TOOLCHAIN_FILE}")
+else()
+    message(FATAL_ERROR "VCPKG_ROOT environment variable is not set. Please install vcpkg and set VCPKG_ROOT to the vcpkg installation directory.")
 endif()
 
 project(${SKBUILD_PROJECT_NAME} LANGUAGES CXX C)

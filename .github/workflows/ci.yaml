@@ -28,7 +28,6 @@ jobs:
       - name: Build wheels
         uses: pypa/cibuildwheel@v3.2.0
         env:
-          CIBW_BEFORE_ALL_WINDOWS: ${{ env.VCPKG_INSTALLATION_ROOT }}\vcpkg install boost-interprocess
           CIBW_TEST_REQUIRES: pytest numpy
           CIBW_TEST_COMMAND: pytest {project}/tests
 

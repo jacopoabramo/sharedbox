@@ -45,8 +45,6 @@ build = ["cp310-*", "cp311-*", "cp312-*", "cp313-*"]
 before-all = [
     # prepare the system
     "yum update -y || apk update",
-    "yum install -y zip unzip || apk add --no-cache zip unzip",
-    
     # clone in /opt and bootstrap vcpkg
     "cd /opt && git clone https://github.com/microsoft/vcpkg.git",
     "cd /opt/vcpkg && ./bootstrap-vcpkg.sh",
@@ -55,6 +53,16 @@ before-all = [
     # install boost-interprocess via vcpkg
     "vcpkg install boost-interprocess",
 ]
+environment = { VCPKG_ROOT="/opt/vcpkg/vcpkg" }
+
+[tool.cibuildwheel.windows]
+before-all = [
+    # vcpkg already included in the runner
+    # install boost-interprocess via vcpkg
+    "vcpkg install boost-interprocess",
+]
+environment = { VCPKG_ROOT="C:/vcpkg/vcpkg" }
+    
 
 [dependency-groups]
 dev = [
