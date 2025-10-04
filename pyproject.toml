@@ -51,8 +51,12 @@ before-all = [
     "cd /opt/vcpkg && ./bootstrap-vcpkg.sh",
     # install boost-interprocess via vcpkg
     "/opt/vcpkg/vcpkg install boost-interprocess",
+    # check how much RAM is available
+    "df -h",
     # cleanup to save disk space
     "rm -rf /opt/vcpkg/buildtrees /opt/vcpkg/downloads",
+    # check how much RAM is available after cleanup
+    "df -h",
 ]
 environment = { VCPKG_ROOT="/opt/vcpkg" }
 
