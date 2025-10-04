@@ -50,7 +50,7 @@ before-all = [
     "cd /opt && git clone https://github.com/microsoft/vcpkg.git",
     "cd /opt/vcpkg && ./bootstrap-vcpkg.sh",
     # install boost-interprocess via vcpkg
-    "/opt/vcpkg install boost-interprocess",
+    "/opt/vcpkg/vcpkg install boost-interprocess",
 ]
 environment = { VCPKG_ROOT="/opt/vcpkg" }
 
