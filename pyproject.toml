@@ -49,10 +49,8 @@ before-all = [
     # clone in /opt and bootstrap vcpkg
     "cd /opt && git clone https://github.com/microsoft/vcpkg.git",
     "cd /opt/vcpkg && ./bootstrap-vcpkg.sh",
-    # create symbolic link for vcpkg in /usr/local/bin
-    "ln -s /opt/vcpkg /usr/local/bin/vcpkg",
     # install boost-interprocess via vcpkg
-    "vcpkg install boost-interprocess",
+    "/opt/vcpkg install boost-interprocess",
 ]
 environment = { VCPKG_ROOT="/opt/vcpkg" }
 
