@@ -50,7 +50,7 @@ before-all = [
     "cd /opt && git clone --depth 1 https://github.com/microsoft/vcpkg.git",
     "cd /opt/vcpkg && ./bootstrap-vcpkg.sh",
     # install boost-interprocess via vcpkg
-    "/opt/vcpkg/vcpkg install boost-interprocess@1.88.0",
+    "/opt/vcpkg/vcpkg install boost-interprocess",
     # cleanup to save disk space
     "rm -rf /opt/vcpkg/buildtrees /opt/vcpkg/downloads",
 ]
@@ -60,7 +60,7 @@ environment = { VCPKG_ROOT="/opt/vcpkg" }
 before-all = [
     # vcpkg already included in the runner
     # install boost-interprocess via vcpkg
-    "vcpkg install boost-interprocess@1.88.0",
+    "vcpkg install boost-interprocess",
 ]
 environment = { VCPKG_ROOT="C:/vcpkg" }
     
