@@ -50,11 +50,11 @@ before-all = [
     "cd /opt && git clone https://github.com/microsoft/vcpkg.git",
     "cd /opt/vcpkg && ./bootstrap-vcpkg.sh",
     # create symbolic link for vcpkg in /usr/local/bin
-    "ln -s /opt/vcpkg/vcpkg /usr/local/bin/vcpkg",
+    "ln -s /opt/vcpkg /usr/local/bin/vcpkg",
     # install boost-interprocess via vcpkg
     "vcpkg install boost-interprocess",
 ]
-environment = { VCPKG_ROOT="/opt/vcpkg/vcpkg" }
+environment = { VCPKG_ROOT="/opt/vcpkg" }
 
 [tool.cibuildwheel.windows]
 before-all = [
