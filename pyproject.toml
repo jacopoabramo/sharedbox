@@ -45,12 +45,14 @@ build = ["cp310-*", "cp311-*", "cp312-*", "cp313-*"]
 before-all = [
     # prepare the system
     "yum update -y || apk update",
-    "yum install -y curl zip unzip tar || apk add --no-cache curl unzip tar",
-    # clone in /opt and bootstrap vcpkg
-    "cd /opt && git clone https://github.com/microsoft/vcpkg.git",
+    "yum install -y curl zip unzip tar git || apk add --no-cache curl unzip tar git",
+    # clone vcpkg with shallow history to save space
+    "cd /opt && git clone --depth 1 https://github.com/microsoft/vcpkg.git",
     "cd /opt/vcpkg && ./bootstrap-vcpkg.sh",
     # install boost-interprocess via vcpkg
-    "/opt/vcpkg/vcpkg install boost-interprocess",
+    "/opt/vcpkg/vcpkg install boost-interprocess@1.88.0",
+    # cleanup to save disk space
+    "rm -rf /opt/vcpkg/buildtrees /opt/vcpkg/downloads",
 ]
 environment = { VCPKG_ROOT="/opt/vcpkg" }
 
@@ -58,9 +60,9 @@ environment = { VCPKG_ROOT="/opt/vcpkg" }
 before-all = [
     # vcpkg already included in the runner
     # install boost-interprocess via vcpkg
-    "vcpkg install boost-interprocess",
+    "vcpkg install boost-interprocess@1.88.0",
 ]
-environment = { VCPKG_ROOT="C:/vcpkg/vcpkg" }
+environment = { VCPKG_ROOT="C:/vcpkg" }
     
 
 [dependency-groups]
