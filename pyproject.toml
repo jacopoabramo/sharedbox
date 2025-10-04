@@ -47,7 +47,7 @@ before-all = [
     "yum update -y || apk update",
     "yum install -y curl zip unzip tar git || apk add --no-cache curl unzip tar git",
     # clone vcpkg with shallow history to save space
-    "cd /opt && git clonehttps://github.com/microsoft/vcpkg.git --single-branch --branch master",
+    "cd /opt && git clone https://github.com/microsoft/vcpkg.git --single-branch --branch master",
     "cd /opt/vcpkg && ./bootstrap-vcpkg.sh",
     # install boost-interprocess via vcpkg
     "/opt/vcpkg/vcpkg install boost-interprocess",
