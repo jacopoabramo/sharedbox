@@ -116,7 +116,7 @@ setx VCPKG_ROOT "C:\vcpkg"
 setx PATH "%PATH%;C:\vcpkg"
 ```
 
-#### Linux/macOS
+#### Linux
 ```bash
 # Install to a location of your choice (e.g., ~/vcpkg)
 cd ~
