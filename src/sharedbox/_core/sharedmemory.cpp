@@ -1,4 +1,4 @@
-#include "shared_dict.hpp"
+#include "sharedmemory.hpp"
 #include <boost/interprocess/shared_memory_object.hpp>
 #include <stdexcept>
 #include <thread>
