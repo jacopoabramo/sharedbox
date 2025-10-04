@@ -70,9 +70,6 @@ for key in shared_dict:
 # Get all keys
 keys = shared_dict.keys()
 
-# Get atomic snapshot of keys (locks all stripes)
-keys = shared_dict.keys_atomic()
-
 # Get all items
 items = shared_dict.items()
 
@@ -153,7 +150,6 @@ Returns sizing recommendations based on current usage patterns:
 SharedDict is thread-safe and uses striped locking for performance:
 - Multiple threads can read/write different keys concurrently
 - Keys are distributed across multiple lock stripes to minimize contention
-- `keys_atomic()` provides a consistent snapshot by locking all stripes
 
 ### Error Handling
 

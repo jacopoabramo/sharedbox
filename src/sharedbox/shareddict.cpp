@@ -319,12 +319,6 @@ nb::list SharedDict::keys() const {
     return result;
 }
 
-nb::list SharedDict::keys_atomic() const {
-    // Both keys() and keys_atomic() use the same backend method
-    // which does full locking for atomic snapshot
-    return keys();
-}
-
 nb::list SharedDict::values() const {
     nb::list result;
     for (const auto& key : shm_ptr_->keys()) {
@@ -459,8 +453,6 @@ NB_MODULE(_shareddict, m) {
              nb::arg("default") = nb::none())
         .def("keys", &SharedDict::keys,
              "Return list of all keys")
-        .def("keys_atomic", &SharedDict::keys_atomic,
-             "Get keys with full atomic snapshot (locks all stripes at once)")
         .def("values", &SharedDict::values,
              "Return list of all values")
         .def("items", &SharedDict::items,

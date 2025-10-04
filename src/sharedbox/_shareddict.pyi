@@ -28,9 +28,6 @@ class SharedDict:
     def keys(self) -> list:
         """Return list of all keys"""
 
-    def keys_atomic(self) -> list:
-        """Get keys with full atomic snapshot (locks all stripes at once)"""
-
     def values(self) -> list:
         """Return list of all values"""
 

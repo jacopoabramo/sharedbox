@@ -13,9 +13,9 @@ namespace nb = nanobind;
 using namespace shared_memory;
 
 constexpr size_t DEFAULT_SIZE = 128 * 1024 * 1024; // 128 MB
-constexpr size_t DEFAULT_MAX_KEYS = 128;
-constexpr uint8_t PICKLE_MARKER = 0x00;
-constexpr uint8_t NUMPY_MARKER = 0x01;
+constexpr size_t DEFAULT_MAX_KEYS = 128; // Default max keys if not specified
+constexpr uint8_t PICKLE_MARKER = 0x00; // Marker byte for pickle-serialized data
+constexpr uint8_t NUMPY_MARKER = 0x01; // Marker byte for numpy-serialized data
 
 // Native numpy array header for efficient serialization
 // Layout: [marker(1)] [dtype_len(4)] [ndim(4)] [shape[0]..shape[n](8*n)] [data_len(8)] [data]
@@ -53,7 +53,6 @@ public:
     
     // Python iteration support
     nb::list keys() const;
-    nb::list keys_atomic() const;
     nb::list values() const;
     nb::list items() const;
 
