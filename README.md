@@ -97,7 +97,11 @@ The `examples/` folder contains some code examples on how to use the package.
 - [`CMake`](https://cmake.org/download/) >= 3.15
 - A C++17 compatible compiler (MSVC on Windows, GCC/Clang on Linux/macOS)
 
-### Install and Configure vcpkg
+> [!NOTE]
+> The build system automatically detects `vcpkg` and installed libraries through the `VCPKG_ROOT` environment variable
+> Make sure it's set before building.
+
+### Install and configure vcpkg
 
 First, [install and bootstrap vcpkg](https://learn.microsoft.com/en-us/vcpkg/get_started/get-started?pivots=shell-cmd) somewhere in your system.
 
@@ -133,7 +137,7 @@ sudo bash install-vcpkg.sh
 vcpkg install boost-interprocess
 ```
 
-### Step 3: Build the Package
+### Build the package
 
 Clone this repository and install using `uv`:
 
@@ -146,8 +150,6 @@ cd sharedbox
 uv venv --python 3.10
 uv pip install -e .[dev]
 ```
-
-**Note:** The build system automatically detects vcpkg through the `VCPKG_ROOT` environment variable. Make sure it's set before building.
 
 ## License
 
