@@ -7,23 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Dates are marked as `DD-MM-YYYY`
 
-## [0.2.2] - 05-10-2025
-
-### Fixed
-
-- Fix CI (again)
-
-## [0.2.1] - 05-10-2025 (YANKED)
-
-### Fixed
-
-- Fix CI bug that was not uploading all wheels
-
-## [0.2.0] - 05-10-2025 (YANKED)
+## [0.2.4] - 05-10-2025
 
 ### Changed
 
 - Rewrite codebase in nanobind
+
+### Fixed
+
+- Parallelize CI so that each wheel is built with the correct version
+  - Also faster builds
 
 ## [0.1.0] - 29-09-2025
 
@@ -31,7 +24,5 @@ Dates are marked as `DD-MM-YYYY`
 
 - Initial release
 
-[0.2.2]: (https://github.com/jacopoabramo/sharedbox/compare/0.2.1...0.2.2)
-[0.2.1]: (https://github.com/jacopoabramo/sharedbox/compare/0.2.0...0.2.1)
-[0.2.0]: (https://github.com/jacopoabramo/sharedbox/compare/0.1.0...0.2.0)
+[0.2.4]: (https://github.com/jacopoabramo/sharedbox/compare/0.1.0...0.2.4)
 [0.1.0]: (https://github.com/jacopoabramo/sharedbox/commits/0.1.0)
