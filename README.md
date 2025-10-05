@@ -98,7 +98,7 @@ The `examples/` folder contains some code examples on how to use the package.
 - A C++17 compatible compiler (MSVC on Windows, GCC/Clang on Linux/macOS)
 
 > [!NOTE]
-> The build system automatically detects `vcpkg` and installed libraries through the `VCPKG_ROOT` environment variable
+> The build system automatically detects `vcpkg` and installed libraries through the `VCPKG_ROOT` environment variable.
 > Make sure it's set before building.
 
 ### Install and configure vcpkg
