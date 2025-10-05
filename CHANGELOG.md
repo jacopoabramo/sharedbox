@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Dates are marked as `DD-MM-YYYY`
 
-## [Unreleased]
+## [0.2.0] - 05-10-2025
 
 - Rewrite codebase in nanobind
 
@@ -17,4 +17,5 @@ Dates are marked as `DD-MM-YYYY`
 
 - Initial release
 
+[0.2.0]: (https://github.com/jacopoabramo/sharedbox/compare/0.1.0...0.2.0)
 [0.1.0]: (https://github.com/jacopoabramo/sharedbox/commits/0.1.0)
