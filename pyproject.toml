@@ -54,7 +54,7 @@ before-all = [
     # cleanup to save disk space
     "rm -rf /opt/vcpkg/buildtrees /opt/vcpkg/downloads"
 ]
-environment = { VCPKG_ROOT="/opt/vcpkg", VCPKG_FORCE_SYSTEM_BINARIES="1" }
+environment = { VCPKG_ROOT="/opt/vcpkg" }
 
 [tool.cibuildwheel.windows]
 before-all = [
