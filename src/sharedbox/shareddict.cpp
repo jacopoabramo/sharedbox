@@ -169,22 +169,23 @@ std::string SharedDict::serialize_numpy(const nb::ndarray<> &arr) const
     char endian = '<'; // little-endian (most common)
     char type_code;
 
-    uint8_t code_value = static_cast<uint8_t>(dtype.code);
+    nb::dlpack::dtype_code code_value = static_cast<nb::dlpack::dtype_code>(dtype.code);
+
     switch (code_value)
     {
-    case static_cast<uint8_t>(nb::dlpack::dtype_code::Int):
+    case nb::dlpack::dtype_code::Int:
         type_code = 'i';
         break;
-    case static_cast<uint8_t>(nb::dlpack::dtype_code::UInt):
+    case nb::dlpack::dtype_code::UInt:
         type_code = 'u';
         break;
-    case static_cast<uint8_t>(nb::dlpack::dtype_code::Float):
+    case nb::dlpack::dtype_code::Float:
         type_code = 'f';
         break;
-    case static_cast<uint8_t>(nb::dlpack::dtype_code::Complex):
+    case nb::dlpack::dtype_code::Complex:
         type_code = 'c';
         break;
-    case static_cast<uint8_t>(nb::dlpack::dtype_code::Bool):
+    case nb::dlpack::dtype_code::Bool:
         type_code = 'b';
         break;
     default:
