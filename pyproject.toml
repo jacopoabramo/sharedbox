@@ -1,5 +1,5 @@
 [build-system]
-requires = ["scikit-build-core>=0.10.7", "cython>=3.1.4", "setuptools-scm>=8", "numpy>=2.2.6"]
+requires = ["scikit-build-core>=0.10.7", "nanobind>=2.0.0", "setuptools-scm>=8"]
 build-backend = "scikit_build_core.build"
 
 [project]
@@ -22,13 +22,14 @@ classifiers = [
     "Programming Language :: C++",
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
-dependencies = [
-    "numpy>=2.2.6",
-]
 
 [tool.scikit-build]
 metadata.version.provider = "scikit_build_core.metadata.setuptools_scm"
 sdist.include = ["src/sharedbox/_version.py"]
+build-dir = "build"
+
+[tool.scikit-build.cmake]
+build-type = "Release"
 
 [tool.setuptools_scm]
 version_file = "src/sharedbox/_version.py"
@@ -42,11 +43,36 @@ build = ["cp310-*", "cp311-*", "cp312-*", "cp313-*"]
 
 [tool.cibuildwheel.linux]
 before-all = [
-    "yum update -y && yum install -y boost-devel || (apk update && apk add --no-cache boost-dev)"
+    # prepare the system
+    "yum update -y || apk update",
+    "yum install -y curl zip unzip tar git || apk add --no-cache curl zip unzip tar git build-base cmake ninja",
+    # clone vcpkg with shallow history to save space
+    "cd /opt && git clone https://github.com/microsoft/vcpkg.git --single-branch --branch master",
+    "cd /opt/vcpkg && ./bootstrap-vcpkg.sh",
+    # install boost-interprocess via vcpkg
+    "/opt/vcpkg/vcpkg install boost-interprocess",
+    # cleanup to save disk space
+    "rm -rf /opt/vcpkg/buildtrees /opt/vcpkg/downloads"
 ]
+environment = { VCPKG_ROOT="/opt/vcpkg" }
+
+# musllinux-specific configuration
+[[tool.cibuildwheel.overrides]]
+select = "*-musllinux*"
+environment = { VCPKG_ROOT="/opt/vcpkg",VCPKG_FORCE_SYSTEM_BINARIES = "1" }
+
+[tool.cibuildwheel.windows]
+before-all = [
+    # vcpkg already included in the runner
+    # install boost-interprocess via vcpkg
+    "vcpkg install boost-interprocess",
+]
+environment = { VCPKG_ROOT="C:/vcpkg" }
+    
 
 [dependency-groups]
 dev = [
+    "numpy>=2.2.6",
     "pytest>=8.4.2",
 ]
 lint = [

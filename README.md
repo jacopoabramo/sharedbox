@@ -3,7 +3,7 @@
 > [!WARNING]
 > This project is a work in progress; be patient or feel free to contribute.
 
-Python inter-process shared containers leveraging `boost::interprocess`.
+Python inter-process shared containers leveraging the [`boost::interprocess`](https://www.boost.org/doc/libs/latest/doc/html/interprocess.html) library.
 
 ## Installation
 
@@ -87,46 +87,76 @@ shared_config.unlink()
 The `examples/` folder contains some code examples on how to use the package.
 
 ## Building locally
+
 ### Requirements
 
 - [`git`](https://git-scm.com/downloads)
 - [`uv`](https://docs.astral.sh/uv/getting-started/installation/)
 - Python >= 3.10
 - [`vcpkg`](https://vcpkg.io/en/)
-- `cython>=3.1`
-- A C++17 compatible compiler
+- [`CMake`](https://cmake.org/download/) >= 3.15
+- A C++17 compatible compiler (MSVC on Windows, GCC/Clang on Linux/macOS)
 
-First [install and boostrap vcpkg](https://learn.microsoft.com/en-us/vcpkg/get_started/get-started-vscode?pivots=shell-cmd) somewhere in your system.
+### Install and Configure vcpkg
 
-```sh
-# for Windows it is reccomended to install it in C:\
+First, [install and bootstrap vcpkg](https://learn.microsoft.com/en-us/vcpkg/get_started/get-started?pivots=shell-cmd) somewhere in your system.
+
+#### Windows
+```cmd
+# It is recommended to install in C:\
 cd C:\
-
 git clone https://github.com/microsoft/vcpkg.git
-cd vcpkg && bootstrap-vcpkg.bat
+cd vcpkg
+bootstrap-vcpkg.bat
+
+# Set the VCPKG_ROOT environment variable (permanently)
+setx VCPKG_ROOT "C:\vcpkg"
+
+# Add vcpkg to your PATH (permanently)
+setx PATH "%PATH%;C:\vcpkg"
 ```
 
-Don't forget to add it to your `PATH`.
+#### Linux
+```bash
+# Install to a location of your choice (e.g., ~/vcpkg)
+cd ~
+git clone https://github.com/microsoft/vcpkg.git
+cd vcpkg
+./bootstrap-vcpkg.sh
 
-Also, add an environment variable pointing to the root of `vcpkg`:
+# Add to your shell profile (~/.bashrc, ~/.zshrc, etc.)
+export VCPKG_ROOT="$HOME/vcpkg"
+export PATH="$VCPKG_ROOT:$PATH"
 
-```sh
-set "VCPKG_ROOT=C:\path\to\vcpkg"
+# Reload your shell or source the profile
+source ~/.bashrc  # or source ~/.zshrc
 ```
 
-Clone this repository, then install `boost::interprocess`:
+### Install `boost-interprocess`
 
-```
+```bash
+# From anywhere (vcpkg should be in PATH)
 vcpkg install boost-interprocess
 ```
 
-Finally, through `uv`, install the package in a virtual environment:
+### Step 3: Build the Package
 
-```sh
+Clone this repository and install using `uv`:
+
+```bash
+# Clone the repository
+git clone https://github.com/jacopoabramo/sharedbox.git
+cd sharedbox
+
+# Create virtual environment and install in development mode
 uv venv --python 3.10
 uv pip install -e .[dev]
 ```
 
+**Note:** The build system automatically detects vcpkg through the `VCPKG_ROOT` environment variable. Make sure it's set before building.
+
 ## License
 
 Licensed under [Apache 2.0](./LICENSE)
+
+`sharedbox` is built using the Boost C++ library, which is licensed under the [Boost Software License](https://boost.org.cpp.al/LICENSE_1_0.txt).

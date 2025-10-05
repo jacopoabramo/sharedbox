@@ -1,32 +1,41 @@
-from typing import Any, Generic, TypeVar
 
-K = TypeVar("K")
-V = TypeVar("V")
 
-class SharedDict(Generic[K, V]):
-    def __init__(
-        self,
-        name: str,
-        data: dict[str, Any] | None = None,
-        /,
-        *,
-        size: int = 128 * 1024 * 1024,
-        create: bool = False,
-        max_keys: int = 128,
-    ) -> None: ...
-    def close(self) -> None: ...
-    def unlink(self) -> None: ...
-    def is_closed(self) -> bool: ...
+class SharedDict:
+    def __init__(self, name: str, data: object | None = None, size: int = 134217728, create: bool = True, max_keys: int = 128) -> None:
+        """Create or open a shared memory dictionary"""
+
+    def close(self) -> None:
+        """Close access to shared memory without removing it"""
+
+    def unlink(self) -> None:
+        """Remove the shared memory segment entirely"""
+
+    def is_closed(self) -> bool:
+        """Check if this SharedDict connection has been closed"""
+
     def __len__(self) -> int: ...
-    def __contains__(self, key: K) -> bool: ...
-    def __getitem__(self, key: K) -> V: ...
-    def __setitem__(self, key: K, value: V) -> None: ...
-    def __delitem__(self, key: K) -> None: ...
-    def __iter__(self) -> Any: ...
-    def get(self, key: K, default: V = None) -> V: ...
-    def keys(self) -> list[K]: ...
-    def keys_atomic(self) -> list[K]: ...
-    def items(self) -> list[tuple[K, V]]: ...
-    def recommend_sizing(
-        self, target_entries: int | None = None
-    ) -> dict[str, object]: ...
+
+    def __contains__(self, arg: str, /) -> bool: ...
+
+    def __getitem__(self, arg: str, /) -> object: ...
+
+    def __setitem__(self, arg0: str, arg1: object, /) -> None: ...
+
+    def __delitem__(self, arg: str, /) -> None: ...
+
+    def get(self, key: str, default: object | None = None) -> object: ...
+
+    def keys(self) -> list:
+        """Return list of all keys"""
+
+    def values(self) -> list:
+        """Return list of all values"""
+
+    def items(self) -> list:
+        """Return list of (key, value) tuples"""
+
+    def get_stats(self) -> dict:
+        """Get runtime statistics and diagnostic information"""
+
+    def recommend_sizing(self, target_entries: object | None = None) -> dict:
+        """Get sizing recommendations based on current usage"""
