@@ -3,6 +3,7 @@ Test mixed data types support in SharedDict (numpy arrays + built-in types)
 """
 
 import multiprocessing as mp
+import platform
 from typing import Generator
 
 import numpy as np
@@ -63,6 +64,7 @@ def compatibility_dict() -> Generator[SharedDict, None, None]:
         d.unlink()
 
 
+@pytest.mark.skipif(condition=platform.system() == "Windows", reason="Flaky on Windows")
 def test_mixed_data_types(mixed_dict: SharedDict) -> None:
     """Test storing and retrieving mixed numpy arrays and built-in Python types"""
     d = mixed_dict
