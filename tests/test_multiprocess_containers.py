@@ -396,7 +396,9 @@ def child_process_container_test_worker(segment_name: str) -> None:
 class TestContainersMultiProcess:
     """Test multi-process SharedDict functionality with container types."""
 
-    @pytest.mark.skipif(condition=platform.system() == "Windows", reason="Flaky on Windows")
+    @pytest.mark.skipif(
+        condition=platform.system() == "Windows", reason="Flaky on Windows"
+    )
     def test_all_container_types_cross_process(self):
         """Test that all container types work correctly across processes."""
         segment_name = "test-container-types"
