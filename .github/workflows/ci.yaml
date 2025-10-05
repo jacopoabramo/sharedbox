@@ -29,6 +29,7 @@ jobs:
       - name: Build wheels
         uses: pypa/cibuildwheel@v3.2.0
         env:
+          CIBW_CONTAINER_ENGINE: "docker; create_args: --shm-size=1g"
           CIBW_TEST_REQUIRES: pytest numpy
           CIBW_TEST_COMMAND: pytest {project}/tests
 
