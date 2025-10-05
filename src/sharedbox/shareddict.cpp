@@ -1,4 +1,7 @@
 #include "shareddict.hpp"
+#ifdef __linux__
+#include <sstream>
+#endif
 
 // Helper to write multi-byte values in little-endian format
 template <typename T>
