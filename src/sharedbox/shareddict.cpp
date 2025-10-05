@@ -1,8 +1,4 @@
 #include "shareddict.hpp"
-#include <Python.h>
-#include <stdexcept>
-#include <sstream>
-#include <algorithm>
 
 // Helper to write multi-byte values in little-endian format
 template<typename T>
