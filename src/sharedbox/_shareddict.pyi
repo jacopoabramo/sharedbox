@@ -1,7 +1,12 @@
-
-
 class SharedDict:
-    def __init__(self, name: str, data: object | None = None, size: int = 134217728, create: bool = True, max_keys: int = 128) -> None:
+    def __init__(
+        self,
+        name: str,
+        data: object | None = None,
+        size: int = 134217728,
+        create: bool = True,
+        max_keys: int = 128,
+    ) -> None:
         """Create or open a shared memory dictionary"""
 
     def close(self) -> None:
@@ -14,17 +19,11 @@ class SharedDict:
         """Check if this SharedDict connection has been closed"""
 
     def __len__(self) -> int: ...
-
     def __contains__(self, arg: str, /) -> bool: ...
-
     def __getitem__(self, arg: str, /) -> object: ...
-
     def __setitem__(self, arg0: str, arg1: object, /) -> None: ...
-
     def __delitem__(self, arg: str, /) -> None: ...
-
     def get(self, key: str, default: object | None = None) -> object: ...
-
     def keys(self) -> list:
         """Return list of all keys"""
 
