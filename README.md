@@ -148,7 +148,7 @@ cd sharedbox
 
 # Create virtual environment and install in development mode
 uv venv --python 3.10
-uv pip install -e .[dev]
+uv pip install -e . --group dev
 ```
 
 ### Running tests
