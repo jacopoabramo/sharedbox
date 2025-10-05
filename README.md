@@ -95,7 +95,7 @@ The `examples/` folder contains some code examples on how to use the package.
 - Python >= 3.10
 - [`vcpkg`](https://vcpkg.io/en/)
 - [`CMake`](https://cmake.org/download/) >= 3.15
-- A C++17 compatible compiler (MSVC on Windows, GCC/Clang on Linux/macOS)
+- A C++17 compatible compiler (MSVC on Windows, GCC on Linux)
 
 > [!NOTE]
 > The build system automatically detects `vcpkg` and installed libraries through the `VCPKG_ROOT` environment variable.
