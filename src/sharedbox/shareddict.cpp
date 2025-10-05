@@ -167,28 +167,24 @@ std::string SharedDict::serialize_numpy(const nb::ndarray<> &arr) const
     char type_code;
 
     uint8_t code_value = static_cast<uint8_t>(dtype.code);
-    if (code_value == static_cast<uint8_t>(nb::dlpack::dtype_code::Int))
+    switch (code_value)
     {
+    case static_cast<uint8_t>(nb::dlpack::dtype_code::Int):
         type_code = 'i';
-    }
-    else if (code_value == static_cast<uint8_t>(nb::dlpack::dtype_code::UInt))
-    {
+        break;
+    case static_cast<uint8_t>(nb::dlpack::dtype_code::UInt):
         type_code = 'u';
-    }
-    else if (code_value == static_cast<uint8_t>(nb::dlpack::dtype_code::Float))
-    {
+        break;
+    case static_cast<uint8_t>(nb::dlpack::dtype_code::Float):
         type_code = 'f';
-    }
-    else if (code_value == static_cast<uint8_t>(nb::dlpack::dtype_code::Complex))
-    {
+        break;
+    case static_cast<uint8_t>(nb::dlpack::dtype_code::Complex):
         type_code = 'c';
-    }
-    else if (code_value == static_cast<uint8_t>(nb::dlpack::dtype_code::Bool))
-    {
+        break;
+    case static_cast<uint8_t>(nb::dlpack::dtype_code::Bool):
         type_code = 'b';
-    }
-    else
-    {
+        break;
+    default:
         throw std::runtime_error("Unsupported numpy dtype");
     }
 
