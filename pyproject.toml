@@ -1,5 +1,5 @@
 [build-system]
-requires = ["scikit-build-core>=0.10.7", "nanobind>=2.0.0", "setuptools-scm>=8"]
+requires = ["scikit-build-core>=0.10.7", "nanobind>=2.9.2", "setuptools-scm>=8"]
 build-backend = "scikit_build_core.build"
 
 [project]
@@ -75,6 +75,7 @@ environment = { VCPKG_ROOT="C:/vcpkg" }
 
 [dependency-groups]
 dev = [
+    "nanobind>=2.9.2",
     "numpy>=2.2.6",
     "pytest>=8.4.2",
     "ruff>=0.13.3",
