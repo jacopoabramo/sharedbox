@@ -151,6 +151,16 @@ uv venv --python 3.10
 uv pip install -e .[dev]
 ```
 
+### Running tests
+
+You can run tests using [nox](https://nox.thea.codes/en/stable/index.html)
+
+```bash
+# install nox as a tool
+uv tool install nox
+nox -s tests
+```
+
 ## License
 
 Licensed under [Apache 2.0](./LICENSE)
