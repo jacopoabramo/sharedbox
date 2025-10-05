@@ -4,10 +4,11 @@
 #include <nanobind/ndarray.h>
 #include <nanobind/stl/string.h>
 #include <nanobind/stl/vector.h>
-#include "_core/sharedmemory.hpp"
 #include <cstdint>
 #include <cstring>
 #include <vector>
+
+#include "_core/sharedmemory.hpp"
 
 namespace nb = nanobind;
 using namespace shared_memory;
