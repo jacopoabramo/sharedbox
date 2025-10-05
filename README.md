@@ -117,19 +117,13 @@ setx PATH "%PATH%;C:\vcpkg"
 ```
 
 #### Linux
+You can use the `install-vcpkg.sh` script which will
+automatically install `vcpkg` in the `/opt` folder
+and set the `VCPKG_ROOT` environment variable.
+The script must be run with super user priviledges:
+
 ```bash
-# Install to a location of your choice (e.g., ~/vcpkg)
-cd ~
-git clone https://github.com/microsoft/vcpkg.git
-cd vcpkg
-./bootstrap-vcpkg.sh
-
-# Add to your shell profile (~/.bashrc, ~/.zshrc, etc.)
-export VCPKG_ROOT="$HOME/vcpkg"
-export PATH="$VCPKG_ROOT:$PATH"
-
-# Reload your shell or source the profile
-source ~/.bashrc  # or source ~/.zshrc
+sudo bash install-vcpkg.sh
 ```
 
 ### Install `boost-interprocess`
