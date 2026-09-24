@@ -1,5 +1,10 @@
 from collections.abc import Sequence
 
+from typing_extensions import (  # noqa: UP035 (kept together; disjoint_base has no typing equivalent yet)
+    Never,
+    disjoint_base,
+)
+
 class SegmentExistsError(FileExistsError):
     """A segment with that name already exists."""
 
@@ -15,8 +20,12 @@ class BoxClosedError(ValueError):
 class LockTimeoutError(TimeoutError):
     """The write lock stayed taken for longer than the lock timeout."""
 
+@disjoint_base
 class Segment:
     """A named shared-memory segment holding one fixed-layout record."""
+
+    def __init__(self, *args: Never, **kwargs: Never) -> None:
+        """No constructor: use :meth:`create` or :meth:`attach`."""
 
     @staticmethod
     def create(

@@ -94,15 +94,12 @@ commands = [["pytest", "-q", { replace = "posargs", extend = true }]]
 base_python = ["3.14t"]
 
 [tool.tox.env.mypy]
-# nanobind classes use their own metaclass and their own C-level static-method
-# and constructor wrappers, which stubtest cannot match against a plain stub;
-# --ignore-disjoint-bases and the allowlist suppress only those known,
-# unfixable mismatches for Segment.
+# The allowlist covers what stubtest cannot see in nanobind's compiled types
+# (its own metaclass, its own static-method wrapper); see stubtest-allowlist.txt.
 commands = [
     ["mypy"],
     [
         "python", "-m", "mypy.stubtest", "sharedbox._native",
-        "--ignore-disjoint-bases",
         "--allowlist", "stubtest-allowlist.txt",
     ],
 ]

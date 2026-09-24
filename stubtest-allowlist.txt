@@ -1,5 +1,8 @@
+# metaclass is nanobind's nb_type, not type
 sharedbox._native.Segment
-sharedbox._native.Segment.__init__
+# nanobind static methods are nb_func objects, which stubtest does not
+# recognise as functions or staticmethods; their signatures are exercised
+# by the native and box tests
 sharedbox._native.Segment.attach
 sharedbox._native.Segment.create
 sharedbox._native.Segment.unlink

@@ -56,7 +56,7 @@ class FieldFuture(Generic[T]):
                 raise TimeoutError(f"{self._field.name} did not change within {timeout} s")
         if self._state == CANCELLED:
             raise CancelledError()
-        # DONE is only ever set by _settle() together with the value, so this holds one.
+        # DONE is only set by _settle together with the value, so the cast holds.
         return cast(T, self._value)
 
     def cancel(self) -> bool:
