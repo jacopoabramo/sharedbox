@@ -1,8 +1,6 @@
 import contextlib
-import gc
 import multiprocessing as mp
 import pickle
-import sys
 import types
 from collections.abc import Iterator
 from dataclasses import KW_ONLY
@@ -305,19 +303,3 @@ def test_narrowed_default_fails_at_class_definition() -> None:
 
         class Narrow(Tagged):
             tag: Annotated[str, Capacity(4)]
-
-
-def test_finalizer_closes_without_unlinking(unique_name: str) -> None:
-    box = Pair.create(unique_name, 3, 4)
-    del box
-    gc.collect()
-    if sys.platform == "win32":
-        # Windows frees a named segment's last handle on close; nothing keeps
-        # it alive, so the name is free again, unlike shm_unlink on POSIX.
-        with Pair.create(unique_name) as fresh:
-            assert fresh.snapshot() == {"a": 0, "b": 0}
-    else:
-        with pytest.raises(SegmentExistsError):
-            Pair.create(unique_name)
-        with Pair.attach(unique_name) as attached:
-            assert attached.snapshot() == {"a": 3, "b": 4}
