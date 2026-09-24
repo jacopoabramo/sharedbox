@@ -4,7 +4,8 @@ import time
 
 from sharedbox import SharedBox
 
-ROUNDS = 20_000
+BATCH = 100
+ROUNDS = 200
 PINGS = 2_000
 
 
@@ -14,18 +15,21 @@ class Sample(SharedBox):
     level: float = 0.0
 
 
-def median_us(fn, rounds: int = ROUNDS) -> float:
+def median_us(fn, rounds: int = ROUNDS, batch: int = BATCH) -> float:
     samples = []
     for _ in range(rounds):
         start = time.perf_counter_ns()
-        fn()
-        samples.append(time.perf_counter_ns() - start)
+        for _ in range(batch):
+            fn()
+        samples.append((time.perf_counter_ns() - start) / batch)
     return statistics.median(samples) / 1000
 
 
 def responder(name: str) -> None:
     box = Sample.attach(name)
-    for seen, value in enumerate(box.watch("ping"), start=1):
+    pings = box.watch("ping")
+    box.pong = -1
+    for seen, value in enumerate(pings, start=1):
         box.pong = value
         if seen == PINGS:
             break
@@ -33,11 +37,11 @@ def responder(name: str) -> None:
 
 
 def round_trip_us(box: Sample) -> float:
+    pongs = iter(box.watch("pong"))
     child = mp.get_context("spawn").Process(target=responder, args=(box.name,))
     child.start()
-    time.sleep(1.0)
+    next(pongs)
     samples = []
-    pongs = iter(box.watch("pong"))
     for i in range(1, PINGS + 1):
         start = time.perf_counter_ns()
         box.ping = i
