@@ -211,6 +211,14 @@ std::unique_ptr<Segment> Segment::create(const std::string &name, const std::vec
                                          double lock_timeout) {
     if (fields.empty() || fields.size() > kMaxFields)
         throw std::invalid_argument("a box needs between 1 and 256 fields");
+    // Bounds record_size so segment_size()'s addition cannot wrap: without this, a
+    // record_size near 2^64 makes segment_size() overflow to a small value, create_only
+    // then succeeds against that small size, and allocate_aligned(record_size) throws
+    // afterwards, leaving the name behind.
+    constexpr std::uint64_t kMaxRecordSize = static_cast<std::uint64_t>(kMaxFields) * (kMaxCapacity + 8);
+    if (record_size > kMaxRecordSize)
+        throw std::invalid_argument("record_size " + std::to_string(record_size) + " exceeds the maximum of " +
+                                    std::to_string(kMaxRecordSize));
     for (const auto &f : fields)
         if (!field_fits(f.offset, f.capacity, static_cast<std::uint8_t>(f.kind), record_size))
             throw std::invalid_argument("field at offset " + std::to_string(f.offset) + " does not fit the record");
@@ -231,22 +239,31 @@ std::unique_ptr<Segment> Segment::create(const std::string &name, const std::vec
         throw;
     }
 
-    Header *h = impl->segment.construct<Header>(kHeaderName)();
-    void *record = impl->segment.allocate_aligned(static_cast<std::size_t>(record_size), 64);
-    std::memset(record, 0, static_cast<std::size_t>(record_size));
-    h->abi_version = kAbiVersion;
-    h->field_count = static_cast<std::uint32_t>(fields.size());
-    h->schema_hash = schema_hash;
-    h->record_size = record_size;
-    h->record = impl->segment.get_handle_from_address(record);
-    for (std::size_t i = 0; i < fields.size(); ++i) {
-        h->fields[i] = StoredField{fields[i].offset, fields[i].capacity, static_cast<std::uint8_t>(fields[i].kind), {0, 0, 0}};
-        impl->fields.push_back(h->fields[i]);
-    }
-    h->magic.store(kMagic, std::memory_order_release);
+    try {
+        Header *h = impl->segment.construct<Header>(kHeaderName)();
+        void *record = impl->segment.allocate_aligned(static_cast<std::size_t>(record_size), 64);
+        std::memset(record, 0, static_cast<std::size_t>(record_size));
+        h->abi_version = kAbiVersion;
+        h->field_count = static_cast<std::uint32_t>(fields.size());
+        h->schema_hash = schema_hash;
+        h->record_size = record_size;
+        h->record = impl->segment.get_handle_from_address(record);
+        for (std::size_t i = 0; i < fields.size(); ++i) {
+            h->fields[i] = StoredField{fields[i].offset, fields[i].capacity, static_cast<std::uint8_t>(fields[i].kind), {0, 0, 0}};
+            impl->fields.push_back(h->fields[i]);
+        }
+        h->magic.store(kMagic, std::memory_order_release);
 
-    impl->header = h;
-    impl->record = static_cast<unsigned char *>(record);
+        impl->header = h;
+        impl->record = static_cast<unsigned char *>(record);
+    } catch (...) {
+        // The segment exists on disk/in /dev/shm from create_only above; without this
+        // it would survive as a name no one can finish creating or safely attach to.
+#ifndef _WIN32
+        bipc::shared_memory_object::remove(name.c_str());
+#endif
+        throw;
+    }
     return std::unique_ptr<Segment>(new Segment(std::move(impl)));
 }
 
@@ -277,11 +294,16 @@ std::unique_ptr<Segment> Segment::attach(const std::string &name, std::uint64_t 
     if (h->schema_hash != schema_hash)
         throw SchemaMismatch("segment '" + name + "' was created by a different class");
 
+    // get_size() reads Boost's own allocator header inside the segment, not the OS
+    // mapping; find<>() above already trusts that same header, so this check catches
+    // corruption but not a deliberately forged header, which only a process that can
+    // already write the segment could produce.
     const std::uint64_t size = impl->segment.get_size();
     const std::uint64_t record_size = h->record_size;
     const std::uint32_t count = h->field_count;
-    if (count == 0 || count > kMaxFields || h->record < 0 || static_cast<std::uint64_t>(h->record) >= size ||
-        record_size > size - static_cast<std::uint64_t>(h->record))
+    const Managed::handle_t record_handle = h->record;
+    if (count == 0 || count > kMaxFields || record_handle < 0 || static_cast<std::uint64_t>(record_handle) >= size ||
+        record_size > size - static_cast<std::uint64_t>(record_handle))
         throw SchemaMismatch("segment '" + name + "' has a corrupt header");
     for (std::uint32_t i = 0; i < count; ++i) {
         StoredField f = h->fields[i];
@@ -291,7 +313,7 @@ std::unique_ptr<Segment> Segment::attach(const std::string &name, std::uint64_t 
     }
 
     impl->header = h;
-    impl->record = static_cast<unsigned char *>(impl->segment.get_address_from_handle(h->record));
+    impl->record = static_cast<unsigned char *>(impl->segment.get_address_from_handle(record_handle));
     return std::unique_ptr<Segment>(new Segment(std::move(impl)));
 }
 
@@ -371,10 +393,12 @@ void Segment::hold_write_lock() {
 }
 
 void Segment::close() {
-    std::unique_lock guard(impl_->lifetime);
-    if (impl_->closed)
+    // Flip the flag before taking the lock: libstdc++'s shared_mutex lets new readers
+    // overtake a waiting writer, so a steady stream of readers could starve this lock
+    // forever otherwise. check_open() now rejects every caller that arrives after this.
+    if (impl_->closed.exchange(true))
         return;
-    impl_->closed = true;
+    std::unique_lock guard(impl_->lifetime);
     impl_->header = nullptr;
     impl_->record = nullptr;
     impl_->segment = Managed();

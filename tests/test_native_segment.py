@@ -79,6 +79,12 @@ def test_layout_outside_record_is_rejected(unique_name: str) -> None:
         Segment.create(unique_name, [FieldDesc(32, 8, FieldKind.FIXED)], RECORD_SIZE, SCHEMA, 1.0)
 
 
+def test_failed_create_leaves_the_name_free(unique_name: str) -> None:
+    with pytest.raises(ValueError):
+        Segment.create(unique_name, [FieldDesc(0, 8, FieldKind.FIXED)], 2**40, SCHEMA, 1.0)
+    create(unique_name).close()
+
+
 def test_oversized_write_changes_nothing(unique_name: str) -> None:
     segment = create(unique_name)
     with pytest.raises(ValueError):
