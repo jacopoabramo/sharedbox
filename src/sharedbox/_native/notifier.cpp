@@ -39,7 +39,9 @@ void Notifier::wait(std::uint32_t expected, double timeout) {
     waiters_.fetch_add(1, std::memory_order_seq_cst);
     if (word_.load(std::memory_order_seq_cst) == expected) {
         DWORD ms = timeout <= 0 ? 0 : static_cast<DWORD>(timeout * 1000.0 + 0.5);
-        WaitForSingleObject(semaphore_, ms);
+        // ponytail: another waiter can take this waiter's permit, so a wake-up may arrive
+        // up to 50 ms late; a per-waiter event would remove the delay.
+        WaitForSingleObject(semaphore_, ms < 50 ? ms : 50);
     }
     waiters_.fetch_sub(1, std::memory_order_seq_cst);
 }

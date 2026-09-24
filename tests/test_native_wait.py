@@ -41,6 +41,29 @@ def test_wait_wakes_on_write_from_other_process(unique_name: str) -> None:
     segment.close()
 
 
+def test_wait_wakes_every_waiter(unique_name: str) -> None:
+    # Regression test for a Windows bug: a permit released for one waiter could be
+    # taken by another, leaving the first asleep until its full timeout. If this
+    # test hangs or times out on Windows, the wake-up delay bound has regressed.
+    segment = Segment.create(unique_name, FIELDS, 8, SCHEMA, 1.0)
+    generation = segment.generation()
+    results: list[int] = [-1] * 4
+
+    def waiter(index: int) -> None:
+        results[index] = segment.wait(generation, 20.0)
+
+    threads = [threading.Thread(target=waiter, args=(i,)) for i in range(4)]
+    for thread in threads:
+        thread.start()
+    time.sleep(0.2)
+    segment.write([(0, bytes(8))])
+    for thread in threads:
+        thread.join(timeout=2.0)
+        assert not thread.is_alive()
+    assert results == [generation + 1] * 4
+    segment.close()
+
+
 def test_wait_releases_the_gil(unique_name: str) -> None:
     segment = Segment.create(unique_name, FIELDS, 8, SCHEMA, 1.0)
     ticks = 0

@@ -254,10 +254,14 @@ if (pending > 0)
 The semaphore is only touched when someone waits, so writes to a box nobody
 watches never call into Windows.
 
-A wake-up can never be lost: the waiter reads `wake_word` before it reads
-`generation`, and the writer changes `generation` before `wake_word`. If a
-write lands between the waiter's two reads, `wake_word` no longer matches
-and the wait returns at once instead of sleeping [14].
+On Linux a wake-up can never be lost: the waiter reads `wake_word` before it
+reads `generation`, and the writer changes `generation` before `wake_word`.
+If a write lands between the waiter's two reads, `wake_word` no longer
+matches and the wait returns at once instead of sleeping [14]. On Windows,
+when several processes or threads wait on the same box, one waiter can take
+the permit released for another, so each Windows wait sleeps for at most
+50 ms before checking `wake_word` and `generation` again, which bounds how
+late a missed wake-up can arrive [16].
 
 The code for this is in `notifier.hpp` and `notifier.cpp`.
 
