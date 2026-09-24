@@ -6,6 +6,7 @@ import weakref
 from collections.abc import Callable
 from typing import Any, ClassVar, Protocol, Self, dataclass_transform, overload
 
+from ._events import FieldWatch, Watcher
 from ._layout import FieldSpec, Layout, build_layout, class_identity
 from ._native import Segment
 
@@ -34,10 +35,9 @@ def check_name(name: str) -> str:
     return name
 
 
-def release(watcher: Any, segment: Segment) -> None:
-    """Stop the box's watcher, if any, and detach from its segment."""
-    if watcher is not None:
-        watcher.stop()
+def release(watcher: Watcher, segment: Segment) -> None:
+    """Stop the box's watcher and detach from its segment."""
+    watcher.stop()
     segment.close()
 
 
@@ -150,7 +150,7 @@ class SharedBox:
         box._segment = Segment.attach(
             cls._layout_name() if name is None else check_name(name), cls._layout().schema_hash, cls.__lock_timeout__
         )
-        box._watcher = None
+        box._watcher = Watcher(box._segment)
         box._track()
         return box
 
@@ -188,7 +188,7 @@ class SharedBox:
         self._segment = Segment.create(
             name, [spec.native for spec in layout.fields], layout.record_size, layout.schema_hash, cls.__lock_timeout__
         )
-        self._watcher = None
+        self._watcher = Watcher(self._segment)
         self._track()
         self._segment.write(encoded)
 
@@ -217,6 +217,17 @@ class SharedBox:
         """Every field's value, read at one point in time."""
         raw = self._segment.read_all()
         return {spec.name: spec.decode(data) for spec, data in zip(type(self).__layout__.fields, raw)}
+
+    def watch(self, field: str) -> FieldWatch[Any]:
+        """Iterate over values written to ``field`` from now on."""
+        spec = self._spec(field)
+        return FieldWatch(self._watcher, spec, self._segment.version(spec.index))
+
+    def _spec(self, field: str) -> FieldSpec:
+        try:
+            return type(self).__layout__.by_name[field]
+        except KeyError:
+            raise ValueError(f"{type(self).__qualname__} has no field {field!r}") from None
 
     def force_unlock(self) -> None:
         """Release a write lock left behind by a process that died while writing."""

@@ -1,4 +1,5 @@
 from ._box import SharedBox
+from ._events import FieldWatch
 from ._layout import Capacity
 from ._native import (
     BoxClosedError,
@@ -11,6 +12,7 @@ from ._native import (
 __all__ = [
     "BoxClosedError",
     "Capacity",
+    "FieldWatch",
     "LockTimeoutError",
     "SchemaMismatchError",
     "SegmentExistsError",
