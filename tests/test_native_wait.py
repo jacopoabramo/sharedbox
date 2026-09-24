@@ -33,7 +33,9 @@ def test_wait_returns_at_once_when_behind(unique_name: str) -> None:
 
 def test_wait_wakes_on_write_from_other_process(unique_name: str) -> None:
     segment = Segment.create(unique_name, FIELDS, 8, SCHEMA, 1.0)
-    writer = mp.get_context("spawn").Process(target=write_after, args=(unique_name, 0.3))
+    writer = mp.get_context("spawn").Process(
+        target=write_after, args=(unique_name, 0.3)
+    )
     writer.start()
     start = time.monotonic()
     assert segment.wait(0, 20.0) == 1

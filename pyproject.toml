@@ -76,7 +76,7 @@ before-all = [
 environment = { VCPKG_ROOT = "C:/vcpkg-sharedbox" }
 
 [tool.ruff]
-line-length = 120
+line-length = 88
 
 [tool.mypy]
 strict = true

@@ -36,7 +36,9 @@ def collect(values: Iterable[int]) -> "queue.Queue[int]":
 def test_watch_sees_write_from_other_process(unique_name: str) -> None:
     with Counter.create(unique_name) as box:
         seen = collect(box.watch("value"))
-        writer = mp.get_context("spawn").Process(target=set_value_later, args=(unique_name, 7, 0.2))
+        writer = mp.get_context("spawn").Process(
+            target=set_value_later, args=(unique_name, 7, 0.2)
+        )
         writer.start()
         assert seen.get(timeout=20) == 7
         writer.join()

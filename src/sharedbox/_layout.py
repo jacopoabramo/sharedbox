@@ -23,7 +23,11 @@ MAX_FIELDS: Final[int] = 256
 ALIGN: Final[int] = 8
 INT: Final[struct.Struct] = struct.Struct("<q")
 FLOAT: Final[struct.Struct] = struct.Struct("<d")
-SCALARS: Final[dict[type, tuple[Kind, int]]] = {bool: ("bool", 1), int: ("int", 8), float: ("float", 8)}
+SCALARS: Final[dict[type, tuple[Kind, int]]] = {
+    bool: ("bool", 1),
+    int: ("int", 8),
+    float: ("float", 8),
+}
 PREFIXED: Final[tuple[Kind, ...]] = ("str", "bytes")
 
 
@@ -36,7 +40,9 @@ class Capacity:
 
     def __post_init__(self) -> None:
         if not 0 < self.size <= MAX_CAPACITY:
-            raise ValueError(f"capacity must be between 1 and {MAX_CAPACITY} bytes, got {self.size}")
+            raise ValueError(
+                f"capacity must be between 1 and {MAX_CAPACITY} bytes, got {self.size}"
+            )
 
 
 class NativeField(NamedTuple):
@@ -82,7 +88,9 @@ class FieldSpec:
             try:
                 return INT.pack(value)
             except struct.error:
-                raise OverflowError(f"{self.name} holds a signed 64-bit integer; {value} does not fit") from None
+                raise OverflowError(
+                    f"{self.name} holds a signed 64-bit integer; {value} does not fit"
+                ) from None
         if self.kind == "float":
             if isinstance(value, bool) or not isinstance(value, (int, float)):
                 raise self._type_error("float", value)
@@ -96,7 +104,9 @@ class FieldSpec:
                 raise self._type_error("bytes", value)
             data = bytes(value)
         if len(data) > self.capacity:
-            raise ValueError(f"{self.name} holds at most {self.capacity} bytes; the value encodes to {len(data)}")
+            raise ValueError(
+                f"{self.name} holds at most {self.capacity} bytes; the value encodes to {len(data)}"
+            )
         return data
 
     def decode(self, raw: bytes) -> Any:
@@ -170,7 +180,13 @@ def build_layout(cls: type, kw_only: bool = False) -> Layout:
     if not specs:
         raise TypeError(f"{cls.__qualname__} declares no fields")
     if len(specs) > MAX_FIELDS:
-        raise TypeError(f"{cls.__qualname__} declares {len(specs)} fields; the limit is {MAX_FIELDS}")
-    identity = "|".join([class_identity(cls), *(f"{s.name}:{s.kind}:{s.capacity}" for s in specs)])
-    schema_hash = int.from_bytes(hashlib.sha256(identity.encode()).digest()[:8], "little")
+        raise TypeError(
+            f"{cls.__qualname__} declares {len(specs)} fields; the limit is {MAX_FIELDS}"
+        )
+    identity = "|".join(
+        [class_identity(cls), *(f"{s.name}:{s.kind}:{s.capacity}" for s in specs)]
+    )
+    schema_hash = int.from_bytes(
+        hashlib.sha256(identity.encode()).digest()[:8], "little"
+    )
     return Layout(tuple(specs), offset, schema_hash, {s.name: s for s in specs})

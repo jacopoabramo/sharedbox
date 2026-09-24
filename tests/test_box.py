@@ -85,7 +85,10 @@ def write_pairs(name: str, count: int) -> None:
 
 
 def test_create_attach_and_share(unique_name: str) -> None:
-    with Point.create(unique_name, x=1.5, label="start") as owner, Point.attach(unique_name) as other:
+    with (
+        Point.create(unique_name, x=1.5, label="start") as owner,
+        Point.attach(unique_name) as other,
+    ):
         assert (other.x, other.y, other.label) == (1.5, 0.0, "start")
         other.y = 2.5
         assert owner.y == 2.5
@@ -98,7 +101,11 @@ def test_positional_values_and_attach_by_class() -> None:
     with Motor(1, False, "hello") as motor:
         child = ctx.Process(target=move_in_child, args=(results,))
         child.start()
-        assert results.get(timeout=20) == {"position": 1, "enabled": False, "label": "hello"}
+        assert results.get(timeout=20) == {
+            "position": 1,
+            "enabled": False,
+            "label": "hello",
+        }
         child.join()
         assert child.exitcode == 0
         assert motor.position == 10
@@ -111,8 +118,14 @@ def test_second_box_of_a_class_needs_a_name() -> None:
 
 def test_default_name_ignores_the_spawned_main_module() -> None:
     namespace = {"__annotations__": {"x": int}, "__qualname__": "Spawned"}
-    parent = cast(type[SharedBox], type("Spawned", (SharedBox,), {**namespace, "__module__": "__main__"}))
-    child = cast(type[SharedBox], type("Spawned", (SharedBox,), {**namespace, "__module__": "__mp_main__"}))
+    parent = cast(
+        type[SharedBox],
+        type("Spawned", (SharedBox,), {**namespace, "__module__": "__main__"}),
+    )
+    child = cast(
+        type[SharedBox],
+        type("Spawned", (SharedBox,), {**namespace, "__module__": "__mp_main__"}),
+    )
     try:
         with parent(4), child.attach() as other:
             assert other.x == 4  # type: ignore[attr-defined] # x is a field added dynamically, above
@@ -121,7 +134,10 @@ def test_default_name_ignores_the_spawned_main_module() -> None:
 
 
 def test_class_keyword_sets_the_name(unique_name: str) -> None:
-    named = cast(type[SharedBox], types.new_class("Named", (SharedBox,), {"name": unique_name}, with_x))
+    named = cast(
+        type[SharedBox],
+        types.new_class("Named", (SharedBox,), {"name": unique_name}, with_x),
+    )
     with named() as box, named.attach() as other:
         assert box.name == other.name == unique_name
 
@@ -188,14 +204,19 @@ def test_box_passed_to_child_process_arrives_attached(unique_name: str) -> None:
 
 
 def test_pickle_round_trip_attaches(unique_name: str) -> None:
-    with Point.create(unique_name, y=3.0) as box, pickle.loads(pickle.dumps(box)) as copy:
+    with (
+        Point.create(unique_name, y=3.0) as box,
+        pickle.loads(pickle.dumps(box)) as copy,
+    ):
         assert copy.name == unique_name
         assert copy.y == 3.0
 
 
 def test_update_is_atomic_across_processes(unique_name: str) -> None:
     with Pair.create(unique_name) as box:
-        writer = mp.get_context("spawn").Process(target=write_pairs, args=(unique_name, 50_000))
+        writer = mp.get_context("spawn").Process(
+            target=write_pairs, args=(unique_name, 50_000)
+        )
         writer.start()
         while writer.is_alive():
             snap = box.snapshot()
@@ -233,7 +254,9 @@ def test_same_name_twice(unique_name: str) -> None:
 
 
 def shape_class(annotations: dict[str, type]) -> type[SharedBox]:
-    return type("Shape", (SharedBox,), {"__qualname__": "Shape", "__annotations__": annotations})
+    return type(
+        "Shape", (SharedBox,), {"__qualname__": "Shape", "__annotations__": annotations}
+    )
 
 
 def test_attach_with_changed_class(unique_name: str) -> None:

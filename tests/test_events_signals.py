@@ -25,7 +25,9 @@ def test_field_signal_fires_for_write_in_other_process(unique_name: str) -> None
     seen: queue.Queue[tuple[int, int]] = queue.Queue()
     with Counter.create(unique_name) as box:
         box.events.value.connect(lambda new, old: seen.put((new, old)))
-        writer = mp.get_context("spawn").Process(target=set_value_later, args=(unique_name, 7, 0.2))
+        writer = mp.get_context("spawn").Process(
+            target=set_value_later, args=(unique_name, 7, 0.2)
+        )
         writer.start()
         assert seen.get(timeout=20) == (7, 0)
         writer.join()
@@ -60,7 +62,9 @@ def test_group_signal_reports_any_field(unique_name: str) -> None:
 def test_callback_on_main_thread(unique_name: str) -> None:
     seen: list[str] = []
     with Counter.create(unique_name) as box:
-        box.events.value.connect(lambda new: seen.append(threading.current_thread().name), thread="main")
+        box.events.value.connect(
+            lambda new: seen.append(threading.current_thread().name), thread="main"
+        )
         box.value = 1
         deadline = time.monotonic() + 5
         while not seen and time.monotonic() < deadline:

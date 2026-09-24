@@ -54,10 +54,14 @@ class Unlink:
     def __get__(self, box: None, owner: type[SharedBox]) -> _ClassUnlink: ...
     @overload
     def __get__(self, box: SharedBox, owner: type[SharedBox]) -> Callable[[], None]: ...
-    def __get__(self, box: SharedBox | None, owner: type[SharedBox]) -> Callable[..., None]:
+    def __get__(
+        self, box: SharedBox | None, owner: type[SharedBox]
+    ) -> Callable[..., None]:
         if box is not None:
             return lambda: Segment.unlink(check_name(box.name))
-        return lambda name=None: Segment.unlink(owner._layout_name() if name is None else check_name(name))
+        return lambda name=None: Segment.unlink(
+            owner._layout_name() if name is None else check_name(name)
+        )
 
 
 class Field:
@@ -81,7 +85,11 @@ class SharedBoxMeta(type):
     """Give every ``SharedBox`` subclass an empty ``__slots__``, so its instances have no ``__dict__``."""
 
     def __new__(
-        mcls, cls_name: str, bases: tuple[type, ...], namespace: dict[str, Any], **kwargs: Any
+        mcls,
+        cls_name: str,
+        bases: tuple[type, ...],
+        namespace: dict[str, Any],
+        **kwargs: Any,
     ) -> SharedBoxMeta:
         namespace.setdefault("__slots__", ())
         return super().__new__(mcls, cls_name, bases, namespace, **kwargs)
@@ -120,7 +128,9 @@ class SharedBox(metaclass=SharedBoxMeta):
         layout = build_layout(cls, kw_only)
         clashes = sorted(RESERVED.intersection(layout.by_name))
         if clashes:
-            raise TypeError(f"{cls.__qualname__}: field name(s) {', '.join(clashes)} clash with SharedBox methods")
+            raise TypeError(
+                f"{cls.__qualname__}: field name(s) {', '.join(clashes)} clash with SharedBox methods"
+            )
         defaults = dict(cls.__sharedbox_defaults__)
         for spec in layout.fields:
             value = cls.__dict__.get(spec.name, MISSING)
@@ -137,11 +147,15 @@ class SharedBox(metaclass=SharedBoxMeta):
             if spec.name in defaults:
                 seen_default = True
             elif seen_default:
-                raise TypeError(f"{cls.__qualname__}: field {spec.name!r} without a default follows a field with one")
+                raise TypeError(
+                    f"{cls.__qualname__}: field {spec.name!r} without a default follows a field with one"
+                )
         cls.__layout__ = layout
         cls.__sharedbox_defaults__ = defaults
         digest = hashlib.sha256(class_identity(cls).encode()).hexdigest()[:16]
-        cls.__sharedbox_name__ = f"sharedbox-{digest}" if name is None else check_name(name)
+        cls.__sharedbox_name__ = (
+            f"sharedbox-{digest}" if name is None else check_name(name)
+        )
         if lock_timeout is not None:
             if lock_timeout <= 0:
                 raise ValueError("lock_timeout must be positive")
@@ -163,7 +177,9 @@ class SharedBox(metaclass=SharedBoxMeta):
         """Open the box called ``name``, by default the one named after this class."""
         box = cls.__new__(cls)
         box._segment = Segment.attach(
-            cls._layout_name() if name is None else check_name(name), cls._layout().schema_hash, cls.__lock_timeout__
+            cls._layout_name() if name is None else check_name(name),
+            cls._layout().schema_hash,
+            cls.__lock_timeout__,
         )
         box._watcher = Watcher(box._segment)
         box._events = None
@@ -189,20 +205,32 @@ class SharedBox(metaclass=SharedBoxMeta):
         layout = cls._layout()
         slots = [spec for spec in layout.fields if not spec.kw_only]
         if len(args) > len(slots):
-            raise TypeError(f"{cls.__qualname__} takes {len(slots)} positional values, got {len(args)}")
+            raise TypeError(
+                f"{cls.__qualname__} takes {len(slots)} positional values, got {len(args)}"
+            )
         positional = {spec.name: arg for spec, arg in zip(slots, args)}
         twice = sorted(positional.keys() & values.keys())
         if twice:
-            raise TypeError(f"{cls.__qualname__} got more than one value for {', '.join(twice)}")
+            raise TypeError(
+                f"{cls.__qualname__} got more than one value for {', '.join(twice)}"
+            )
         values = {**positional, **values}
         self._check_names(values)
         merged = {**cls.__sharedbox_defaults__, **values}
         missing = [spec.name for spec in layout.fields if spec.name not in merged]
         if missing:
-            raise TypeError(f"{cls.__qualname__} is missing value(s) for {', '.join(missing)}")
-        encoded = [(spec.index, spec.encode(merged[spec.name])) for spec in layout.fields]
+            raise TypeError(
+                f"{cls.__qualname__} is missing value(s) for {', '.join(missing)}"
+            )
+        encoded = [
+            (spec.index, spec.encode(merged[spec.name])) for spec in layout.fields
+        ]
         self._segment = Segment.create(
-            name, [spec.native for spec in layout.fields], layout.record_size, layout.schema_hash, cls.__lock_timeout__
+            name,
+            [spec.native for spec in layout.fields],
+            layout.record_size,
+            layout.schema_hash,
+            cls.__lock_timeout__,
         )
         self._watcher = Watcher(self._segment)
         self._events = None
@@ -212,7 +240,9 @@ class SharedBox(metaclass=SharedBoxMeta):
     def _check_names(self, values: dict[str, Any]) -> None:
         unknown = sorted(values.keys() - type(self).__layout__.by_name.keys())
         if unknown:
-            raise TypeError(f"{type(self).__qualname__} has no field(s) {', '.join(unknown)}")
+            raise TypeError(
+                f"{type(self).__qualname__} has no field(s) {', '.join(unknown)}"
+            )
 
     @property
     def name(self) -> str:
@@ -228,12 +258,17 @@ class SharedBox(metaclass=SharedBoxMeta):
         """Write several fields at once; readers see all of them or none."""
         self._check_names(values)
         by_name = type(self).__layout__.by_name
-        self._segment.write([(by_name[n].index, by_name[n].encode(v)) for n, v in values.items()])
+        self._segment.write(
+            [(by_name[n].index, by_name[n].encode(v)) for n, v in values.items()]
+        )
 
     def snapshot(self) -> dict[str, Any]:
         """Every field's value, read at one point in time."""
         raw = self._segment.read_all()
-        return {spec.name: spec.decode(data) for spec, data in zip(type(self).__layout__.fields, raw)}
+        return {
+            spec.name: spec.decode(data)
+            for spec, data in zip(type(self).__layout__.fields, raw)
+        }
 
     def watch(self, field: str) -> FieldWatch[Any]:
         """Iterate over values written to ``field`` from now on."""
@@ -261,14 +296,18 @@ class SharedBox(metaclass=SharedBoxMeta):
         run for that write. Other fields still emit normally.
         """
         if self._events is None:
-            self._events = self._watcher.events(type(self).__events_class__, type(self).__layout__.fields)
+            self._events = self._watcher.events(
+                type(self).__events_class__, type(self).__layout__.fields
+            )
         return self._events
 
     def _spec(self, field: str) -> FieldSpec:
         try:
             return type(self).__layout__.by_name[field]
         except KeyError:
-            raise ValueError(f"{type(self).__qualname__} has no field {field!r}") from None
+            raise ValueError(
+                f"{type(self).__qualname__} has no field {field!r}"
+            ) from None
 
     def force_unlock(self) -> None:
         """Release a write lock left behind by a process that died while writing."""
@@ -292,5 +331,7 @@ class SharedBox(metaclass=SharedBoxMeta):
     def __repr__(self) -> str:
         if self.closed:
             return f"<{type(self).__qualname__} {self.name!r} closed>"
-        fields = ", ".join(f"{name}={value!r}" for name, value in self.snapshot().items())
+        fields = ", ".join(
+            f"{name}={value!r}" for name, value in self.snapshot().items()
+        )
         return f"{type(self).__qualname__}({fields})"

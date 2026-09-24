@@ -32,7 +32,13 @@ def test_offsets_are_aligned_and_packed() -> None:
 
 @pytest.mark.parametrize(
     ("name", "value"),
-    [("flag", True), ("count", -(2**63)), ("ratio", 0.25), ("label", "héllo"), ("blob", b"\x00\x01")],
+    [
+        ("flag", True),
+        ("count", -(2**63)),
+        ("ratio", 0.25),
+        ("label", "héllo"),
+        ("blob", b"\x00\x01"),
+    ],
 )
 def test_encode_decode_round_trip(name: str, value: object) -> None:
     spec = build_layout(Sample).by_name[name]
@@ -47,7 +53,9 @@ def test_keyword_only_fields() -> None:
 
     assert [f.kw_only for f in build_layout(Mixed).fields] == [False, True]
     assert [f.kw_only for f in build_layout(Mixed, kw_only=True).fields] == [True, True]
-    assert build_layout(Mixed).schema_hash == build_layout(Mixed, kw_only=True).schema_hash
+    assert (
+        build_layout(Mixed).schema_hash == build_layout(Mixed, kw_only=True).schema_hash
+    )
 
 
 def test_float_field_accepts_int() -> None:
@@ -105,7 +113,9 @@ def test_capacity_bounds() -> None:
 
 def test_spawned_main_module_has_the_same_identity() -> None:
     parent = type("Box", (), {"__annotations__": {"x": int}, "__module__": "__main__"})
-    child = type("Box", (), {"__annotations__": {"x": int}, "__module__": "__mp_main__"})
+    child = type(
+        "Box", (), {"__annotations__": {"x": int}, "__module__": "__mp_main__"}
+    )
     assert class_identity(parent) == class_identity(child) == "__main__.Box"
     assert build_layout(parent).schema_hash == build_layout(child).schema_hash
 

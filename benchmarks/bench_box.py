@@ -57,8 +57,14 @@ def main() -> None:
         rows = [
             ("SharedBox write", median_us(lambda: setattr(box, "level", 1.0))),
             ("SharedBox read", median_us(lambda: box.level)),
-            ("SharedBox update(2 fields)", median_us(lambda: box.update(ping=1, level=1.0))),
-            ("mp.Value write (with lock)", median_us(lambda: setattr(value, "value", 1.0))),
+            (
+                "SharedBox update(2 fields)",
+                median_us(lambda: box.update(ping=1, level=1.0)),
+            ),
+            (
+                "mp.Value write (with lock)",
+                median_us(lambda: setattr(value, "value", 1.0)),
+            ),
             ("mp.Value read (with lock)", median_us(lambda: value.value)),
             ("watch() round trip", round_trip_us(box)),
         ]

@@ -28,7 +28,9 @@ def test_async_watch_sees_write_from_other_process(unique_name: str) -> None:
     async def main() -> int:
         with Counter.create(unique_name) as box:
             watch = box.watch("value")
-            writer = mp.get_context("spawn").Process(target=set_value_later, args=(unique_name, 5, 0.2))
+            writer = mp.get_context("spawn").Process(
+                target=set_value_later, args=(unique_name, 5, 0.2)
+            )
             writer.start()
             value = await asyncio.wait_for(first(watch), 20)
             writer.join()

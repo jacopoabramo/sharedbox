@@ -75,7 +75,9 @@ def test_attach_with_other_schema(unique_name: str) -> None:
 
 def test_layout_outside_record_is_rejected(unique_name: str) -> None:
     with pytest.raises(ValueError):
-        Segment.create(unique_name, [NativeField(32, 8, False)], RECORD_SIZE, SCHEMA, 1.0)
+        Segment.create(
+            unique_name, [NativeField(32, 8, False)], RECORD_SIZE, SCHEMA, 1.0
+        )
 
 
 def test_failed_create_leaves_the_name_free(unique_name: str) -> None:
@@ -189,7 +191,9 @@ def test_close_while_other_threads_read(unique_name: str) -> None:
 
 def test_reads_never_see_half_a_write(unique_name: str) -> None:
     segment = create(unique_name)
-    writer = mp.get_context("spawn").Process(target=write_pair, args=(unique_name, 50_000))
+    writer = mp.get_context("spawn").Process(
+        target=write_pair, args=(unique_name, 50_000)
+    )
     writer.start()
     while writer.is_alive():
         number, text = segment.read_all()

@@ -29,7 +29,16 @@ class FieldFuture(Generic[T]):
     created at. Done callbacks run on the box's watcher thread.
     """
 
-    __slots__ = ("_callbacks", "_cond", "_field", "_since", "_state", "_value", "_version", "_watcher")
+    __slots__ = (
+        "_callbacks",
+        "_cond",
+        "_field",
+        "_since",
+        "_state",
+        "_value",
+        "_version",
+        "_watcher",
+    )
 
     def __init__(self, watcher: Watcher, field: FieldSpec, since: int) -> None:
         self._watcher = watcher
@@ -56,7 +65,9 @@ class FieldFuture(Generic[T]):
         """Block until the field changes and return its new value."""
         with self._cond:
             if not self._cond.wait_for(self.done, timeout):
-                raise TimeoutError(f"{self._field.name} did not change within {timeout} s")
+                raise TimeoutError(
+                    f"{self._field.name} did not change within {timeout} s"
+                )
         if self._state == CANCELLED:
             raise CancelledError()
         # DONE is only set by _settle together with the value, so the cast holds.
@@ -173,7 +184,16 @@ class FieldWatch(Generic[T]):
 class Watcher:
     """Resolves the pending futures of one box from a background thread."""
 
-    __slots__ = ("_fields", "_group", "_lock", "_pending", "_seen", "_segment", "_stop", "_thread")
+    __slots__ = (
+        "_fields",
+        "_group",
+        "_lock",
+        "_pending",
+        "_seen",
+        "_segment",
+        "_stop",
+        "_thread",
+    )
 
     def __init__(self, segment: Segment) -> None:
         self._segment = segment
@@ -192,7 +212,9 @@ class Watcher:
     def future(self, field: FieldSpec, since: int | None = None) -> FieldFuture[Any]:
         """A future for the first write to ``field`` after version ``since`` (default: now)."""
         current = self._segment.version(field.index)
-        fut: FieldFuture[Any] = FieldFuture(self, field, current if since is None else since)
+        fut: FieldFuture[Any] = FieldFuture(
+            self, field, current if since is None else since
+        )
         if current != fut._since:
             fut._settle(DONE, field.decode(self._segment.read(field.index)), current)
             return fut
@@ -204,12 +226,17 @@ class Watcher:
             self._start_locked()
         return fut
 
-    def events(self, factory: Callable[[], SignalGroup], fields: tuple[FieldSpec, ...]) -> SignalGroup:
+    def events(
+        self, factory: Callable[[], SignalGroup], fields: tuple[FieldSpec, ...]
+    ) -> SignalGroup:
         """The box's signal group, created on first use; the watcher emits into it from then on."""
         with self._lock:
             if self._group is None:
                 self._seen = {
-                    spec.index: (self._segment.version(spec.index), spec.decode(self._segment.read(spec.index)))
+                    spec.index: (
+                        self._segment.version(spec.index),
+                        spec.decode(self._segment.read(spec.index)),
+                    )
                     for spec in fields
                 }
                 self._fields = fields
@@ -252,7 +279,11 @@ class Watcher:
 
     def _start_locked(self) -> None:
         if self._thread is None:
-            self._thread = threading.Thread(target=self._run, name=f"sharedbox-watch-{self._segment.name}", daemon=True)
+            self._thread = threading.Thread(
+                target=self._run,
+                name=f"sharedbox-watch-{self._segment.name}",
+                daemon=True,
+            )
             self._thread.start()
 
     def _run(self) -> None:
@@ -278,7 +309,11 @@ class Watcher:
                     self._pending.remove(fut)
         try:
             for fut, version in ready:
-                fut._settle(DONE, fut._field.decode(self._segment.read(fut._field.index)), version)
+                fut._settle(
+                    DONE,
+                    fut._field.decode(self._segment.read(fut._field.index)),
+                    version,
+                )
         finally:
             for fut, _ in ready:
                 fut._settle(CANCELLED, None, fut._since)
