@@ -97,6 +97,8 @@ dev = [
     "tox-uv-bare>=1.36",
 ]
 
+# uv rebuilds an installed project only when these change; list the C++ sources
+# so an edit to them rebuilds the extension instead of reusing the old one.
 [tool.uv]
 cache-keys = [
     { file = "pyproject.toml" },
