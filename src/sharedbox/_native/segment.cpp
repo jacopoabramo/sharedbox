@@ -3,11 +3,13 @@
 #include "notifier.hpp"
 
 #include <atomic>
+#include <cerrno>
 #include <chrono>
 #include <cstring>
 #include <mutex>
 #include <new>
 #include <shared_mutex>
+#include <system_error>
 #include <thread>
 
 #include <boost/interprocess/exceptions.hpp>
@@ -438,8 +440,13 @@ void Segment::close() {
 
 void Segment::unlink(const std::string &name) {
 #ifndef _WIN32
-    if (!bipc::shared_memory_object::remove(name.c_str()))
+    errno = 0;
+    if (bipc::shared_memory_object::remove(name.c_str()))
+        return;
+    int error = errno;
+    if (error == ENOENT)
         throw SegmentMissing("no segment named '" + name + "'");
+    throw std::system_error(error, std::generic_category(), "cannot unlink segment '" + name + "'");
 #else
     (void)name;
 #endif

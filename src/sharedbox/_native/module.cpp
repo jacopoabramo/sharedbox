@@ -5,6 +5,8 @@
 #include <nanobind/stl/unique_ptr.h>
 #include <nanobind/stl/vector.h>
 
+#include <system_error>
+
 #include "segment.hpp"
 
 namespace nb = nanobind;
@@ -23,6 +25,18 @@ NB_MODULE(_native, m) {
     nb::exception<sharedbox::SchemaMismatch>(m, "SchemaMismatchError", PyExc_TypeError);
     nb::exception<sharedbox::SegmentClosed>(m, "BoxClosedError", PyExc_ValueError);
     nb::exception<sharedbox::LockTimeout>(m, "LockTimeoutError", PyExc_TimeoutError);
+    nb::register_exception_translator([](const std::exception_ptr &p, void *) {
+        try {
+            std::rethrow_exception(p);
+        } catch (const std::system_error &e) {
+            // Only errno values map onto OSError's errno; other categories fall through to RuntimeError.
+            if (e.code().category() != std::generic_category())
+                throw;
+            nb::object error = nb::steal(PyObject_CallFunction(PyExc_OSError, "is", e.code().value(), e.what()));
+            if (error.is_valid())
+                PyErr_SetObject(PyExc_OSError, error.ptr());
+        }
+    });
 
     nb::class_<Segment>(m, "Segment")
         .def_static(
