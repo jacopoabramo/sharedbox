@@ -37,15 +37,4 @@ else()
     target_link_libraries(_native PRIVATE rt Threads::Threads)
 endif()
 
-nanobind_add_stub(_native_stub
-    MODULE _native
-    OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/sharedbox/_native.pyi
-    PYTHON_PATH $<TARGET_FILE_DIR:_native>
-    DEPENDS _native
-    MARKER_FILE ${CMAKE_CURRENT_SOURCE_DIR}/src/sharedbox/py.typed)
-
 install(TARGETS _native LIBRARY DESTINATION sharedbox)
-install(FILES
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/sharedbox/_native.pyi
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/sharedbox/py.typed
-    DESTINATION sharedbox)

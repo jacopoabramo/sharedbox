@@ -1,49 +1,71 @@
 from collections.abc import Sequence
 
-
 class SegmentExistsError(FileExistsError):
-    pass
+    """A segment with that name already exists."""
 
 class SegmentNotFoundError(FileNotFoundError):
-    pass
+    """No segment has that name."""
 
 class SchemaMismatchError(TypeError):
-    pass
+    """The segment was created by a different class or layout."""
 
 class BoxClosedError(ValueError):
-    pass
+    """The segment handle has been closed."""
 
 class LockTimeoutError(TimeoutError):
-    pass
+    """The write lock stayed taken for longer than the lock timeout."""
 
 class Segment:
-    @staticmethod
-    def create(name: str, fields: Sequence[tuple[int, int, bool]], record_size: int, schema_hash: int, lock_timeout: float) -> Segment: ...
+    """A named shared-memory segment holding one fixed-layout record."""
 
     @staticmethod
-    def attach(name: str, schema_hash: int, lock_timeout: float) -> Segment: ...
-
-    def read(self, field: int) -> bytes: ...
-
-    def read_all(self) -> list[bytes]: ...
-
-    def write(self, values: Sequence[tuple[int, bytes]]) -> None: ...
-
-    def version(self, field: int) -> int: ...
-
-    def generation(self) -> int: ...
-
-    def wait(self, last_generation: int, timeout: float) -> int: ...
-
-    def force_unlock(self) -> None: ...
-
-    def close(self) -> None: ...
+    def create(
+        name: str,
+        fields: Sequence[tuple[int, int, bool]],
+        record_size: int,
+        schema_hash: int,
+        lock_timeout: float,
+    ) -> Segment:
+        """Create the segment; ``fields`` are ``(offset, capacity, prefixed)``."""
 
     @staticmethod
-    def unlink(name: str) -> None: ...
+    def attach(name: str, schema_hash: int, lock_timeout: float) -> Segment:
+        """Open an existing segment whose schema hash matches."""
+
+    @staticmethod
+    def unlink(name: str) -> None:
+        """Remove the name, as ``shm_unlink`` does; a no-op on Windows."""
+
+    def read(self, field: int) -> bytes:
+        """The field's bytes, read consistently with concurrent writes."""
+
+    def read_all(self) -> list[bytes]:
+        """Every field's bytes, read at one point in time."""
+
+    def write(self, values: Sequence[tuple[int, bytes]]) -> None:
+        """Write several fields under one lock."""
+
+    def version(self, field: int) -> int:
+        """How many writes the field has had."""
+
+    def generation(self) -> int:
+        """How many writes the segment has had."""
+
+    def wait(self, last_generation: int, timeout: float) -> int:
+        """Block until the generation differs from ``last_generation`` or ``timeout`` seconds pass."""
+
+    def force_unlock(self) -> None:
+        """Release a write lock left behind by a process that died while writing."""
+
+    def _hold_write_lock(self) -> None:
+        """Take the write lock and never release it; for tests."""
+
+    def close(self) -> None:
+        """Detach this handle; the segment stays until unlinked."""
 
     @property
-    def closed(self) -> bool: ...
+    def closed(self) -> bool:
+        """True after :meth:`close`."""
 
     @property
     def name(self) -> str: ...
