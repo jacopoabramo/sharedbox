@@ -62,6 +62,7 @@ NB_MODULE(_native, m) {
         .def("wait", &Segment::wait, "last_generation"_a, "timeout"_a, nb::call_guard<nb::gil_scoped_release>())
         .def("force_unlock", &Segment::force_unlock)
         .def("_hold_write_lock", &Segment::hold_write_lock)
+        .def("_after_fork", &Segment::after_fork)
         .def("close", &Segment::close)
         .def_static("unlink", &Segment::unlink, "name"_a)
         .def_prop_ro("closed", &Segment::closed)

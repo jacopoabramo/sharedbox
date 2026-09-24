@@ -6,6 +6,7 @@
 #include <chrono>
 #include <cstring>
 #include <mutex>
+#include <new>
 #include <shared_mutex>
 #include <thread>
 
@@ -413,6 +414,13 @@ void Segment::hold_write_lock() {
     std::shared_lock guard(impl_->lifetime);
     impl_->check_open();
     impl_->lock();
+}
+
+void Segment::after_fork() {
+    // A thread of the parent may have held the lock at fork time; that thread does not exist in
+    // the child, so the lock would never be released. The old one is overwritten, not destroyed,
+    // because destroying a held mutex is undefined.
+    new (&impl_->lifetime) std::shared_mutex();
 }
 
 void Segment::close() {

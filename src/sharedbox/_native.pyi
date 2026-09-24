@@ -67,6 +67,9 @@ class Segment:
     def _hold_write_lock(self) -> None:
         """Take the write lock and never release it; for tests."""
 
+    def _after_fork(self) -> None:
+        """Reset the handle's thread lock in a child created by ``fork``, before it starts threads."""
+
     def close(self) -> None:
         """Detach this handle; the segment stays until unlinked."""
 

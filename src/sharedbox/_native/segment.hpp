@@ -55,6 +55,8 @@ public:
     void force_unlock();
     /// Takes the write lock and never releases it; exists for tests.
     void hold_write_lock();
+    /// Resets per-process locks in a child created by fork(); call before any other thread starts.
+    void after_fork();
     /// Detaches this handle; the segment itself stays until unlinked.
     void close();
     bool closed() const;

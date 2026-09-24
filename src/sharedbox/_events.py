@@ -231,7 +231,7 @@ class Watcher:
     def events(
         self, factory: Callable[[], SignalGroup], fields: tuple[FieldSpec, ...]
     ) -> SignalGroup:
-        """The box's signal group, created on first use; the watcher emits into it from then on."""
+        """The box's signal group, created on first use; the watcher emits into it while running."""
         with self._lock:
             if self._group is None:
                 self._seen = {
@@ -243,7 +243,7 @@ class Watcher:
                 }
                 self._fields = fields
                 self._group = factory()
-                self._start_locked()
+            self._start_locked()
             return self._group
 
     def _emit_changes(self) -> None:
@@ -288,8 +288,21 @@ class Watcher:
         for fut in pending:
             fut._settle(CANCELLED, None, fut._since)
 
+    def after_fork(self) -> None:
+        """Forget the parent's thread and futures in a child created by ``fork``.
+
+        The thread starts again on the next :meth:`future` or :meth:`events` call.
+        """
+        stopped = self._stop.is_set()
+        self._lock = threading.RLock()
+        self._stop = threading.Event()
+        if stopped:
+            self._stop.set()
+        self._thread = None
+        self._pending = []
+
     def _start_locked(self) -> None:
-        if self._thread is None:
+        if self._thread is None and not self._stop.is_set():
             self._thread = threading.Thread(
                 target=self._run,
                 name=f"sharedbox-watch-{self._segment.name}",

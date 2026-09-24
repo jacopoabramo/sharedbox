@@ -1,7 +1,9 @@
 from __future__ import annotations
 
 import hashlib
+import os
 import re
+import sys
 import weakref
 from collections.abc import Callable
 from typing import Any, ClassVar, Protocol, Self, dataclass_transform, overload
@@ -29,6 +31,7 @@ RESERVED = frozenset(
     }
 )
 MISSING = object()
+LIVE: weakref.WeakSet[SharedBox] = weakref.WeakSet()
 
 
 def check_name(name: str) -> str:
@@ -43,6 +46,17 @@ def release(watcher: Watcher, segment: Segment) -> None:
         watcher.stop()
     finally:
         segment.close()
+
+
+def reset_after_fork() -> None:
+    """Make every box inherited through ``fork`` usable in the child."""
+    for box in list(LIVE):
+        box._segment._after_fork()
+        box._watcher.after_fork()
+
+
+if sys.platform != "win32":
+    os.register_at_fork(after_in_child=reset_after_fork)
 
 
 class _ClassUnlink(Protocol):
@@ -109,9 +123,8 @@ class SharedBox(metaclass=SharedBoxMeta):
     otherwise; :meth:`create` makes further boxes under explicit names.
     """
 
-    __slots__ = ("__weakref__", "_events", "_finalizer", "_segment", "_watcher")
+    __slots__ = ("__weakref__", "_finalizer", "_segment", "_watcher")
 
-    _events: SignalGroup | None
     __layout__: ClassVar[Layout]
     __sharedbox_defaults__: ClassVar[dict[str, Any]] = {}
     __lock_timeout__: ClassVar[float] = 5.0
@@ -184,7 +197,6 @@ class SharedBox(metaclass=SharedBoxMeta):
             cls.__lock_timeout__,
         )
         box._watcher = Watcher(box._segment)
-        box._events = None
         box._track()
         return box
 
@@ -201,6 +213,7 @@ class SharedBox(metaclass=SharedBoxMeta):
 
     def _track(self) -> None:
         self._finalizer = weakref.finalize(self, release, self._watcher, self._segment)
+        LIVE.add(self)
 
     def _open(self, name: str, args: tuple[Any, ...], values: dict[str, Any]) -> None:
         cls = type(self)
@@ -235,7 +248,6 @@ class SharedBox(metaclass=SharedBoxMeta):
             cls.__lock_timeout__,
         )
         self._watcher = Watcher(self._segment)
-        self._events = None
         self._track()
         self._segment.write(encoded)
 
@@ -300,11 +312,9 @@ class SharedBox(metaclass=SharedBoxMeta):
         the same signal already ran; callbacks connected after it do not
         run for that write. Other fields still emit normally.
         """
-        if self._events is None:
-            self._events = self._watcher.events(
-                type(self).__events_class__, type(self).__layout__.fields
-            )
-        return self._events
+        return self._watcher.events(
+            type(self).__events_class__, type(self).__layout__.fields
+        )
 
     def _spec(self, field: str) -> FieldSpec:
         try:
