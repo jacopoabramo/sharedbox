@@ -26,7 +26,8 @@ class FieldFuture(Generic[T]):
     """The next value written to one field of a box.
 
     Resolves on the first write to the field after the version it was
-    created at. Done callbacks run on the box's watcher thread.
+    created at. Done callbacks run on the box's watcher thread, or on the
+    thread that closes the box.
     """
 
     __slots__ = (
@@ -267,12 +268,19 @@ class Watcher:
             self._pending.remove(fut)
 
     def stop(self) -> None:
-        """Stop the thread and cancel every pending future."""
+        """Stop the thread, deliver writes it had not seen yet, and cancel every pending future."""
         self._stop.set()
         with self._lock:
             thread = self._thread
         if thread is not None and thread is not threading.current_thread():
             thread.join()
+            try:
+                self._resolve_ready()
+                self._emit_changes()
+            except Exception:
+                logger.exception(
+                    "checking box %r for changes on close failed", self._segment.name
+                )
         with self._lock:
             pending, self._pending = self._pending, []
         for fut in pending:

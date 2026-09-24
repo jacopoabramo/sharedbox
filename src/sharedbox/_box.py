@@ -39,8 +39,10 @@ def check_name(name: str) -> str:
 
 def release(watcher: Watcher, segment: Segment) -> None:
     """Stop the box's watcher and detach from its segment."""
-    watcher.stop()
-    segment.close()
+    try:
+        watcher.stop()
+    finally:
+        segment.close()
 
 
 class _ClassUnlink(Protocol):
@@ -283,7 +285,10 @@ class SharedBox(metaclass=SharedBoxMeta):
 
         Callbacks run on the box's watcher thread; connect with
         ``thread="main"`` and call ``psygnal.emit_queued()`` to run them on
-        the main thread instead.
+        the main thread instead. Closing the box delivers writes the watcher
+        thread had not seen yet, so callbacks may run once on the thread
+        that calls :meth:`close`, or on the thread that garbage collects
+        the box.
 
         If several writes happen between two checks by the watcher thread,
         only one emission happens, with the latest value; ``old`` is the

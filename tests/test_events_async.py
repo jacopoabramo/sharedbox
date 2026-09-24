@@ -159,3 +159,19 @@ def test_close_from_another_thread_ends_async_iteration(unique_name: str) -> Non
         return [value async for value in box.watch("value")]
 
     assert asyncio.run(asyncio.wait_for(main(), 5)) == []
+
+
+def test_write_just_before_close_is_delivered(unique_name: str) -> None:
+    seen: queue.Queue[int] = queue.Queue()
+
+    async def main() -> int:
+        box = Counter.create(unique_name)
+        box.events.value.connect(seen.put)
+        pending = asyncio.ensure_future(anext(aiter(box.watch("value"))))
+        await asyncio.sleep(0)
+        box.value = 1
+        box.close()
+        return await asyncio.wait_for(pending, 5)
+
+    assert asyncio.run(main()) == 1
+    assert seen.get(timeout=1) == 1
