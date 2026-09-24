@@ -1,9 +1,10 @@
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import logging
 import threading
-from collections.abc import Callable, Iterator
+from collections.abc import AsyncIterator, Callable, Generator, Iterator
 from concurrent.futures import CancelledError
 from typing import TYPE_CHECKING, Any, Generic, TypeVar, cast
 
@@ -74,6 +75,21 @@ class FieldFuture(Generic[T]):
                 return
         self._run(fn)
 
+    def __await__(self) -> Generator[Any, None, T]:
+        loop = asyncio.get_running_loop()
+        relay: asyncio.Future[T] = loop.create_future()
+
+        def forward(_: FieldFuture[T]) -> None:
+            with contextlib.suppress(RuntimeError):
+                loop.call_soon_threadsafe(copy_state, self, relay)
+
+        self.add_done_callback(forward)
+        try:
+            return (yield from relay.__await__())
+        except asyncio.CancelledError:
+            self.cancel()
+            raise
+
     def _settle(self, state: str, value: T | None, version: int) -> bool:
         with self._cond:
             if self._state != PENDING:
@@ -92,8 +108,18 @@ class FieldFuture(Generic[T]):
             logger.exception("callback for field %r raised", self._field.name)
 
 
+def copy_state(source: FieldFuture[T], relay: asyncio.Future[T]) -> None:
+    if relay.done():
+        return
+    if source.cancelled():
+        relay.cancel()
+    else:
+        # DONE is only set by _settle together with the value, so the cast holds.
+        relay.set_result(cast(T, source._value))
+
+
 class FieldWatch(Generic[T]):
-    """Values written to one field after the watch was created.
+    """Values written to one field after the watch was created, for ``for`` and ``async for``.
 
     A consumer slower than the writers gets the latest value and skips the
     ones in between. Iteration ends when the box is closed.
@@ -116,6 +142,25 @@ class FieldWatch(Generic[T]):
             try:
                 value = fut.result()
             except CancelledError:
+                if self._watcher.stopped:
+                    return
+                raise
+            since = fut.version
+            yield value
+
+    def __aiter__(self) -> AsyncIterator[T]:
+        return self._values()
+
+    async def _values(self) -> AsyncIterator[T]:
+        since = self._since
+        while True:
+            try:
+                fut: FieldFuture[T] = self._watcher.future(self._field, since)
+            except BoxClosedError:
+                return
+            try:
+                value = await fut
+            except asyncio.CancelledError:
                 if self._watcher.stopped:
                     return
                 raise
