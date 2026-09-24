@@ -252,9 +252,7 @@ class Watcher:
 
     def _start_locked(self) -> None:
         if self._thread is None:
-            self._thread = threading.Thread(
-                target=self._run, name=f"sharedbox-watch-{self._segment.name}", daemon=True
-            )
+            self._thread = threading.Thread(target=self._run, name=f"sharedbox-watch-{self._segment.name}", daemon=True)
             self._thread.start()
 
     def _run(self) -> None:
