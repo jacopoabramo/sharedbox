@@ -91,7 +91,6 @@ base_python = ["3.14t"]
 [dependency-groups]
 dev = [
     "nanobind>=3.1.0",
-    "numpy>=2.2.6",
     "pytest>=8.4.2",
     "ruff>=0.13.3",
     "tox>=4.28",

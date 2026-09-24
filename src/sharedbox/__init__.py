@@ -1,3 +1,1 @@
-from ._shareddict import SharedDict
-
-__all__ = ["SharedDict"]
+__all__: list[str] = []

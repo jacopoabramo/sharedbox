@@ -21,31 +21,30 @@ find_package(nanobind CONFIG REQUIRED)
 find_package(Boost REQUIRED CONFIG)
 find_package(Threads REQUIRED)
 
-nanobind_add_module(_shareddict
+nanobind_add_module(_native
     STABLE_ABI
     FREE_THREADED
     NB_DOMAIN sharedbox
-    src/sharedbox/shareddict.cpp
-    src/sharedbox/_core/sharedmemory.cpp)
-target_include_directories(_shareddict PRIVATE src/sharedbox src/sharedbox/_core)
-target_link_libraries(_shareddict PRIVATE Boost::headers)
+    src/sharedbox/_native/module.cpp
+    src/sharedbox/_native/segment.cpp)
+target_link_libraries(_native PRIVATE Boost::headers)
 
 if(WIN32)
-    target_compile_definitions(_shareddict PRIVATE
+    target_compile_definitions(_native PRIVATE
         BOOST_ALL_NO_LIB WIN32_LEAN_AND_MEAN NOMINMAX _WIN32_WINNT=0x0A00)
 else()
-    target_link_libraries(_shareddict PRIVATE rt Threads::Threads)
+    target_link_libraries(_native PRIVATE rt Threads::Threads)
 endif()
 
-nanobind_add_stub(_shareddict_stub
-    MODULE _shareddict
-    OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/sharedbox/_shareddict.pyi
-    PYTHON_PATH $<TARGET_FILE_DIR:_shareddict>
-    DEPENDS _shareddict
+nanobind_add_stub(_native_stub
+    MODULE _native
+    OUTPUT ${CMAKE_CURRENT_SOURCE_DIR}/src/sharedbox/_native.pyi
+    PYTHON_PATH $<TARGET_FILE_DIR:_native>
+    DEPENDS _native
     MARKER_FILE ${CMAKE_CURRENT_SOURCE_DIR}/src/sharedbox/py.typed)
 
-install(TARGETS _shareddict LIBRARY DESTINATION sharedbox)
+install(TARGETS _native LIBRARY DESTINATION sharedbox)
 install(FILES
-    ${CMAKE_CURRENT_SOURCE_DIR}/src/sharedbox/_shareddict.pyi
+    ${CMAKE_CURRENT_SOURCE_DIR}/src/sharedbox/_native.pyi
     ${CMAKE_CURRENT_SOURCE_DIR}/src/sharedbox/py.typed
     DESTINATION sharedbox)
