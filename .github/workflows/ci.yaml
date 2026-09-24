@@ -16,47 +16,15 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Windows
-          - os: windows-latest
-            python: cp310
-            platform_id: win_amd64
-          - os: windows-latest
-            python: cp311
-            platform_id: win_amd64
-          - os: windows-latest
-            python: cp312
-            platform_id: win_amd64
-          - os: windows-latest
-            python: cp313
-            platform_id: win_amd64
-          
-          # Linux x86_64
-          - os: ubuntu-latest
-            python: cp310
-            platform_id: manylinux_x86_64
-          - os: ubuntu-latest
-            python: cp311
-            platform_id: manylinux_x86_64
-          - os: ubuntu-latest
-            python: cp312
-            platform_id: manylinux_x86_64
-          - os: ubuntu-latest
-            python: cp313
-            platform_id: manylinux_x86_64
-          
-          # Linux musllinux x86_64
-          - os: ubuntu-latest
-            python: cp310
-            platform_id: musllinux_x86_64
-          - os: ubuntu-latest
-            python: cp311
-            platform_id: musllinux_x86_64
-          - os: ubuntu-latest
-            python: cp312
-            platform_id: musllinux_x86_64
-          - os: ubuntu-latest
-            python: cp313
-            platform_id: musllinux_x86_64
+          - { os: windows-latest, python: cp311, platform_id: win_amd64 }
+          - { os: windows-latest, python: cp312, platform_id: win_amd64 }
+          - { os: windows-latest, python: cp314t, platform_id: win_amd64 }
+          - { os: ubuntu-latest, python: cp311, platform_id: manylinux_x86_64 }
+          - { os: ubuntu-latest, python: cp312, platform_id: manylinux_x86_64 }
+          - { os: ubuntu-latest, python: cp314t, platform_id: manylinux_x86_64 }
+          - { os: ubuntu-latest, python: cp311, platform_id: musllinux_x86_64 }
+          - { os: ubuntu-latest, python: cp312, platform_id: musllinux_x86_64 }
+          - { os: ubuntu-latest, python: cp314t, platform_id: musllinux_x86_64 }
 
     steps:
       - uses: actions/checkout@v5

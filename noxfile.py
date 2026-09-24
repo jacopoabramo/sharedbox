@@ -3,7 +3,7 @@ import nox
 
 @nox.session(
     venv_backend="uv",
-    python=["3.10", "3.11", "3.12", "3.13"],
+    python=["3.11", "3.12", "3.13", "3.14", "3.14t"],
 )
 def tests(session: nox.Session) -> None:
     """
