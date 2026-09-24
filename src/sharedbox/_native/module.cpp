@@ -1,6 +1,7 @@
 #include <nanobind/nanobind.h>
 #include <nanobind/stl/pair.h>
 #include <nanobind/stl/string.h>
+#include <nanobind/stl/tuple.h>
 #include <nanobind/stl/unique_ptr.h>
 #include <nanobind/stl/vector.h>
 
@@ -8,8 +9,6 @@
 
 namespace nb = nanobind;
 using namespace nb::literals;
-using sharedbox::FieldDesc;
-using sharedbox::FieldKind;
 using sharedbox::Segment;
 
 namespace {
@@ -25,24 +24,19 @@ NB_MODULE(_native, m) {
     nb::exception<sharedbox::SegmentClosed>(m, "BoxClosedError", PyExc_ValueError);
     nb::exception<sharedbox::LockTimeout>(m, "LockTimeoutError", PyExc_TimeoutError);
 
-    nb::enum_<FieldKind>(m, "FieldKind")
-        .value("FIXED", FieldKind::Fixed)
-        .value("PREFIXED", FieldKind::Prefixed);
-
-    nb::class_<FieldDesc>(m, "FieldDesc")
-        .def(
-            "__init__",
-            [](FieldDesc *self, std::uint64_t offset, std::uint32_t capacity, FieldKind kind) {
-                new (self) FieldDesc{offset, capacity, kind};
-            },
-            "offset"_a, "capacity"_a, "kind"_a)
-        .def_ro("offset", &FieldDesc::offset)
-        .def_ro("capacity", &FieldDesc::capacity)
-        .def_ro("kind", &FieldDesc::kind);
-
     nb::class_<Segment>(m, "Segment")
-        .def_static("create", &Segment::create, "name"_a, "fields"_a, "record_size"_a, "schema_hash"_a,
-                    "lock_timeout"_a)
+        .def_static(
+            "create",
+            [](const std::string &name, const std::vector<std::tuple<std::uint64_t, std::uint32_t, bool>> &fields,
+               std::uint64_t record_size, std::uint64_t schema_hash, double lock_timeout) {
+                std::vector<sharedbox::FieldDesc> descs;
+                descs.reserve(fields.size());
+                for (const auto &[offset, capacity, prefixed] : fields)
+                    descs.push_back({offset, capacity,
+                                     prefixed ? sharedbox::FieldKind::Prefixed : sharedbox::FieldKind::Fixed});
+                return Segment::create(name, descs, record_size, schema_hash, lock_timeout);
+            },
+            "name"_a, "fields"_a, "record_size"_a, "schema_hash"_a, "lock_timeout"_a)
         .def_static("attach", &Segment::attach, "name"_a, "schema_hash"_a, "lock_timeout"_a)
         .def("read", [](const Segment &s, std::uint32_t field) { return to_bytes(s.read(field)); }, "field"_a)
         .def("read_all",

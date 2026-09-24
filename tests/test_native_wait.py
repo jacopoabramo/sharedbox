@@ -2,9 +2,10 @@ import multiprocessing as mp
 import threading
 import time
 
-from sharedbox._native import FieldDesc, FieldKind, Segment
+from sharedbox._layout import NativeField
+from sharedbox._native import Segment
 
-FIELDS = [FieldDesc(0, 8, FieldKind.FIXED)]
+FIELDS = [NativeField(0, 8, False)]
 SCHEMA = 0xA11
 
 

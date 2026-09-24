@@ -1,5 +1,4 @@
 from collections.abc import Sequence
-import enum
 
 
 class SegmentExistsError(FileExistsError):
@@ -17,26 +16,9 @@ class BoxClosedError(ValueError):
 class LockTimeoutError(TimeoutError):
     pass
 
-class FieldKind(enum.Enum):
-    FIXED = 0
-
-    PREFIXED = 1
-
-class FieldDesc:
-    def __init__(self, offset: int, capacity: int, kind: FieldKind) -> None: ...
-
-    @property
-    def offset(self) -> int: ...
-
-    @property
-    def capacity(self) -> int: ...
-
-    @property
-    def kind(self) -> FieldKind: ...
-
 class Segment:
     @staticmethod
-    def create(name: str, fields: Sequence[FieldDesc], record_size: int, schema_hash: int, lock_timeout: float) -> Segment: ...
+    def create(name: str, fields: Sequence[tuple[int, int, bool]], record_size: int, schema_hash: int, lock_timeout: float) -> Segment: ...
 
     @staticmethod
     def attach(name: str, schema_hash: int, lock_timeout: float) -> Segment: ...
