@@ -1,6 +1,7 @@
 """Point VS Code's C/C++ extension at the headers this checkout builds against."""
 
 import json
+import platform
 import sys
 import sysconfig
 from pathlib import Path
@@ -12,17 +13,35 @@ PROPERTIES = ROOT / ".vscode" / "c_cpp_properties.json"
 CONFIGURATION = "sharedbox"
 
 
+def wheel_tag() -> str:
+    """Tag of the wheel this interpreter builds, which names its folder under ``build/``."""
+    version = f"cp{sys.version_info.major}{sys.version_info.minor}"
+    if sysconfig.get_config_var("Py_GIL_DISABLED"):
+        abi = f"{version}-{version}t"
+    elif sys.version_info >= (3, 12):
+        # Matches wheel.py-api = "cp312" in pyproject.toml.
+        abi = "cp312-abi3"
+    else:
+        abi = f"{version}-{version}"
+    return f"{abi}-{sysconfig.get_platform().replace('-', '_').replace('.', '_')}"
+
+
+def vcpkg_triplet() -> str:
+    arch = {"amd64": "x64", "x86_64": "x64", "arm64": "arm64", "aarch64": "arm64"}[platform.machine().lower()]
+    return f"{arch}-windows" if sys.platform == "win32" else f"{arch}-linux"
+
+
 def include_paths() -> list[str]:
-    vcpkg = sorted(p for p in (ROOT / "build" / "vcpkg_installed").glob("*/include") if p.is_dir())
-    if not vcpkg:
-        raise SystemExit("build/vcpkg_installed has no headers yet; run `uv sync --dev` first")
+    vcpkg = ROOT / "build" / wheel_tag() / "vcpkg_installed" / vcpkg_triplet() / "include"
+    if not vcpkg.is_dir():
+        raise SystemExit(f"{vcpkg} does not exist; run `uv sync --dev` with this interpreter first")
     nanobind_root = Path(nanobind.include_dir()).parent
     paths = [
         ROOT / "src" / "sharedbox" / "_native",
         Path(sysconfig.get_path("include")),
         Path(nanobind.include_dir()),
         nanobind_root / "ext" / "robin_map" / "include",
-        *vcpkg,
+        vcpkg,
     ]
     return [path.as_posix() for path in paths if path.is_dir()]
 
