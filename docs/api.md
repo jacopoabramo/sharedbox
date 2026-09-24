@@ -49,6 +49,7 @@ class Stage(SharedBox):
 stage = Stage(0.0, 1.5, moving=True)
 print(stage)  # Stage(x=0.0, y=1.5, label='stage', moving=True, raw=b'')
 stage.close()
+Stage.unlink()
 ```
 
 A field is a public annotation with one of these types:
@@ -95,6 +96,7 @@ class Settings(SharedBox, name="app-settings", kw_only=True, lock_timeout=1.0):
 settings = Settings(rate=20.0)
 print(settings.name, settings.retries)  # app-settings 3
 settings.close()
+Settings.unlink()
 ```
 
 - `name`: the segment name for boxes made by calling the class. By default
@@ -103,8 +105,8 @@ settings.close()
   the same name. A name matches `[A-Za-z0-9_.-]{1,128}`; any other raises
   `ValueError`.
 - `kw_only`: make every field keyword-only.
-- `lock_timeout`: seconds to wait for the write lock before
-  `LockTimeoutError`, 5.0 by default. Must be positive.
+- `lock_timeout`: seconds a read or write waits for a write in progress
+  before `LockTimeoutError`, 5.0 by default. Must be positive.
 
 ### Creating and attaching
 
@@ -133,6 +135,8 @@ other.value += 1
 print(main.value, Counter.attach("counter-2").value)  # 1 5
 for box in (main, spare, other):
     box.close()
+Counter.unlink()
+Counter.unlink("counter-2")
 ```
 
 `name` is the segment name, to pass to `attach()` in another process.
@@ -157,6 +161,7 @@ point = Point()
 point.update(x=3, y=4)
 print(point.snapshot())  # {'x': 3, 'y': 4}
 point.close()
+Point.unlink()
 ```
 
 ### `events`
@@ -181,6 +186,7 @@ valve.events.open.connect(lambda new, old: print(old, "->", new))
 Valve.attach().open = True
 time.sleep(0.5)  # prints: False -> True
 valve.close()
+Valve.unlink()
 ```
 
 Signals differ from those of a local evented dataclass:
@@ -225,14 +231,16 @@ class Lamp(SharedBox):
 with Lamp() as lamp:
     lamp.on = True
 print(lamp.closed)  # True
+Lamp.unlink()
 ```
 
 ### `unlink`
 
 `MyBox.unlink(name=None)` removes a segment's name, by default the class's.
 `box.unlink()` removes the name of that box's segment. Boxes already
-attached keep working; new `attach()` calls fail. Call it once, usually
-from the process that created the box. See [Platform notes](#platform-notes)
+attached keep working. On Linux, later `attach()` calls then fail; on
+Windows `unlink()` does nothing. Call it once, usually from the process
+that created the box. See [Platform notes](#platform-notes)
 for how this differs between Linux and Windows.
 
 ```python
@@ -251,8 +259,8 @@ Job.unlink()
 ### `force_unlock`
 
 `force_unlock()` releases a write lock left taken by a process that died
-while writing. Writers waiting on such a lock raise `LockTimeoutError`,
-naming the process that holds it.
+while writing. Reads and writes waiting on such a lock raise
+`LockTimeoutError`, naming the process that holds it.
 
 ### Pickling
 
@@ -280,6 +288,7 @@ if __name__ == "__main__":
         child.start()
         child.join()
         print(progress.percent)  # 100.0
+    Progress.unlink()
 ```
 
 ### Stored data
@@ -315,6 +324,7 @@ with Tag() as tag:
         tag.text = "été!"  # 6 bytes in UTF-8
     except ValueError as error:
         print(error)  # text holds at most 4 bytes; the value encodes to 6
+Tag.unlink()
 ```
 
 ## `FieldWatch`
@@ -357,6 +367,7 @@ async def main() -> None:
             break
     await task
     sensor.close()
+    Sensor.unlink()
 
 
 asyncio.run(main())
@@ -370,7 +381,7 @@ asyncio.run(main())
 | `SegmentNotFoundError` | `FileNotFoundError` | attaching to, or unlinking on Linux, a name with no segment |
 | `SchemaMismatchError` | `TypeError` | attaching with a class whose module, name or fields differ from the creator's |
 | `BoxClosedError` | `ValueError` | using a box after `close()` |
-| `LockTimeoutError` | `TimeoutError` | the write lock stays taken for longer than `lock_timeout` |
+| `LockTimeoutError` | `TimeoutError` | a read or write waits for a write in progress for longer than `lock_timeout` |
 
 ## Platform notes
 

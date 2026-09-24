@@ -3,7 +3,7 @@
 > [!WARNING]
 > This project is a work in progress; be patient or feel free to contribute.
 
-Python inter-process shared containers leveraging the [`boost::interprocess`](https://www.boost.org/doc/libs/latest/doc/html/interprocess.html) library.
+`sharedbox` keeps records in shared memory. Each box is one named segment, made with the [`boost::interprocess`](https://www.boost.org/doc/libs/latest/doc/html/interprocess.html) library, and every process that opens it reads and writes the same fields.
 
 ## Installation
 
@@ -42,6 +42,7 @@ if __name__ == "__main__":
         child = mp.Process(target=worker)
         child.start()
         child.join()                      # prints: 1 -> 10
+    Motor.unlink()
 ```
 
 ## Reacting to changes
@@ -60,9 +61,9 @@ busy.
 
 As with `multiprocessing.shared_memory.SharedMemory`: `close()` (or leaving
 the `with` block) detaches one box and never destroys the data, and
-`unlink()` removes the segment's name. Call `MyBox.unlink()` once, usually
+`unlink()` removes the segment's name. Call `Motor.unlink()` once, usually
 from the process that created the box. On Linux a segment that is never
-unlinked stays in `/dev/shm` until reboot, and the next `MyBox(...)` then
+unlinked stays in `/dev/shm` until reboot, and the next `Motor(...)` then
 raises `SegmentExistsError`; on Windows the OS frees it when the last box
 closes and `unlink()` does nothing. sharedbox does not unlink anything at
 exit, like `SharedMemory(track=False)`.

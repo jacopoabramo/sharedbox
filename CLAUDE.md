@@ -66,7 +66,8 @@ allocated 64-byte aligned.
   up after `lock_timeout` with `LockTimeoutError`.
 - `generation`: counts every write. `wake_word` and `waiters` wake threads
   that wait for a change.
-- `writer_pid`: process holding the write lock; `force_unlock()` clears it.
+- `writer_pid`: process holding the write lock, cleared by a normal unlock.
+  `force_unlock()` releases the lock and leaves `writer_pid` as it is.
 - `fields[256]`: `offset`, `capacity`, `kind` (0 fixed, 1 prefixed) per field.
   `attach()` checks each one and keeps its own copy.
 - `versions[256]`: write count per field.
@@ -157,6 +158,7 @@ if __name__ == "__main__":
         child = mp.Process(target=worker)
         child.start()
         child.join()                      # prints: 1 -> 10
+    Motor.unlink()
 ```
 
 Every read decodes a fresh value from the segment. `update(**values)` writes
