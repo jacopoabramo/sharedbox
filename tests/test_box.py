@@ -302,3 +302,8 @@ def test_narrowed_default_fails_at_class_definition() -> None:
 
         class Narrow(Tagged):
             tag: Annotated[str, Capacity(4)]
+
+
+def test_misspelled_field_raises(unique_name: str) -> None:
+    with Point.create(unique_name) as box, pytest.raises(AttributeError):
+        box.postion = 3.0  # type: ignore[attr-defined]

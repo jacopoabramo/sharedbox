@@ -75,8 +75,18 @@ class Field:
         box._segment.write([(self.spec.index, self.spec.encode(value))])
 
 
+class SharedBoxMeta(type):
+    """Give every ``SharedBox`` subclass an empty ``__slots__``, so its instances have no ``__dict__``."""
+
+    def __new__(
+        mcls, cls_name: str, bases: tuple[type, ...], namespace: dict[str, Any], **kwargs: Any
+    ) -> SharedBoxMeta:
+        namespace.setdefault("__slots__", ())
+        return super().__new__(mcls, cls_name, bases, namespace, **kwargs)
+
+
 @dataclass_transform()
-class SharedBox:
+class SharedBox(metaclass=SharedBoxMeta):
     """A record whose annotated fields live in a named shared-memory segment.
 
     Subclass it and annotate fields with ``bool``, ``int``, ``float``,
