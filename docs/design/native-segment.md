@@ -226,22 +226,32 @@ add delay. Each write therefore increments `generation` and `wake_word`, and
 wakes whoever waits on `wake_word`.
 
 On Linux the kernel can put threads to sleep on a 32-bit value in shared
-memory and wake them from any process (the futex system call) [14]:
+memory and wake them from any process (the futex system call) [14].
+Waiters register in the `waiters` counter while they sleep, and a writer
+makes the wake call only when the counter is not zero:
 
 ```cpp
 // waiter: sleep only while wake_word still equals the value it saw
+waiters.fetch_add(1);
 syscall(SYS_futex, &wake_word, FUTEX_WAIT, expected, &timeout, nullptr, 0);
+waiters.fetch_sub(1);
 
 // writer, after each write
 wake_word.fetch_add(1);
-syscall(SYS_futex, &wake_word, FUTEX_WAKE, INT_MAX, nullptr, nullptr, 0);
+if (waiters.load() != 0)
+    syscall(SYS_futex, &wake_word, FUTEX_WAKE, INT_MAX, nullptr, nullptr, 0);
 ```
+
+A waiter that registers after the writer read `waiters` sees the new
+`wake_word`, so FUTEX_WAIT returns at once. A process killed while it
+waits leaves the counter one too high; writers then make the wake call on
+every write, as if someone waited, and no wake-up is lost.
 
 Windows has a similar call, `WaitOnAddress`, but it only works between
 threads of one process, not across processes [15]. So on Windows each box
 gets a named semaphore, `Local\sharedbox.<name>.wake` [16]. Waiters register
-in the `waiters` counter before sleeping, and a writer releases the
-semaphore once per registered waiter:
+in `waiters` the same way, and a writer releases the semaphore once per
+registered waiter:
 
 ```cpp
 // writer
@@ -251,8 +261,8 @@ if (pending > 0)
     ReleaseSemaphore(semaphore, pending, nullptr);
 ```
 
-The semaphore is only touched when someone waits, so writes to a box nobody
-watches never call into Windows.
+On both systems a write to a box nobody watches makes no system call to
+wake anyone.
 
 On Linux a wake-up can never be lost: the waiter reads `wake_word` before it
 reads `generation`, and the writer changes `generation` before `wake_word`.

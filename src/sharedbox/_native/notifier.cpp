@@ -57,6 +57,8 @@ Notifier::~Notifier() = default;
 
 void Notifier::wake_all() {
     word_.fetch_add(1, std::memory_order_seq_cst);
+    if (waiters_.load(std::memory_order_seq_cst) == 0)
+        return;
     syscall(SYS_futex, reinterpret_cast<std::uint32_t *>(&word_), FUTEX_WAKE, INT_MAX, nullptr, nullptr, 0);
 }
 
@@ -66,7 +68,11 @@ void Notifier::wait(std::uint32_t expected, double timeout) {
     timespec ts;
     ts.tv_sec = static_cast<time_t>(timeout);
     ts.tv_nsec = static_cast<long>((timeout - static_cast<double>(ts.tv_sec)) * 1e9);
+    // A waiter killed inside FUTEX_WAIT leaks one count; that only makes wake_all() always
+    // call FUTEX_WAKE again and never loses a wake-up.
+    waiters_.fetch_add(1, std::memory_order_seq_cst);
     syscall(SYS_futex, reinterpret_cast<std::uint32_t *>(&word_), FUTEX_WAIT, expected, &ts, nullptr, 0);
+    waiters_.fetch_sub(1, std::memory_order_seq_cst);
 }
 
 #endif
