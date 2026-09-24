@@ -1,6 +1,8 @@
 import contextlib
+import gc
 import multiprocessing as mp
 import pickle
+import sys
 import types
 from collections.abc import Iterator
 from dataclasses import KW_ONLY
@@ -247,7 +249,7 @@ def test_attach_with_changed_class(unique_name: str) -> None:
             shape_class({"x": int}).attach(unique_name)
 
 
-@pytest.mark.parametrize("field", ["name", "close", "update", "snapshot", "changed", "watch"])
+@pytest.mark.parametrize("field", ["name", "close", "update", "snapshot", "watch"])
 def test_field_named_like_a_method(field: str) -> None:
     with pytest.raises(TypeError, match=field):
         type("Clash", (SharedBox,), {"__annotations__": {field: int}})
@@ -292,3 +294,30 @@ def test_subclass_inherits_fields(unique_name: str) -> None:
 
     with Point3.create(unique_name, z=4.0) as box:
         assert box.snapshot() == {"x": 0.0, "y": 0.0, "label": "", "z": 4.0}
+
+
+class Tagged(SharedBox):
+    tag: Annotated[str, Capacity(16)] = "sixteen chars ok"
+
+
+def test_narrowed_default_fails_at_class_definition() -> None:
+    with pytest.raises(ValueError):
+
+        class Narrow(Tagged):
+            tag: Annotated[str, Capacity(4)]
+
+
+def test_finalizer_closes_without_unlinking(unique_name: str) -> None:
+    box = Pair.create(unique_name, 3, 4)
+    del box
+    gc.collect()
+    if sys.platform == "win32":
+        # Windows frees a named segment's last handle on close; nothing keeps
+        # it alive, so the name is free again, unlike shm_unlink on POSIX.
+        with Pair.create(unique_name) as fresh:
+            assert fresh.snapshot() == {"a": 0, "b": 0}
+    else:
+        with pytest.raises(SegmentExistsError):
+            Pair.create(unique_name)
+        with Pair.attach(unique_name) as attached:
+            assert attached.snapshot() == {"a": 3, "b": 4}

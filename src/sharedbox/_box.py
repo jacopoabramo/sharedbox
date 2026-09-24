@@ -1,10 +1,10 @@
 from __future__ import annotations
 
-import contextlib
 import hashlib
 import re
+import weakref
 from collections.abc import Callable
-from typing import Any, ClassVar, Self, dataclass_transform
+from typing import Any, ClassVar, Protocol, Self, dataclass_transform, overload
 
 from ._layout import FieldSpec, Layout, build_layout, class_identity
 from ._native import Segment
@@ -19,7 +19,6 @@ RESERVED = frozenset(
         "update",
         "snapshot",
         "watch",
-        "changed",
         "events",
         "force_unlock",
         "create",
@@ -35,9 +34,24 @@ def check_name(name: str) -> str:
     return name
 
 
+def release(watcher: Any, segment: Segment) -> None:
+    """Stop the box's watcher, if any, and detach from its segment."""
+    if watcher is not None:
+        watcher.stop()
+    segment.close()
+
+
+class _ClassUnlink(Protocol):
+    def __call__(self, name: str | None = None) -> None: ...
+
+
 class Unlink:
     """``Box.unlink(name=None)`` on the class, ``box.unlink()`` on an instance."""
 
+    @overload
+    def __get__(self, box: None, owner: type[SharedBox]) -> _ClassUnlink: ...
+    @overload
+    def __get__(self, box: SharedBox, owner: type[SharedBox]) -> Callable[[], None]: ...
     def __get__(self, box: SharedBox | None, owner: type[SharedBox]) -> Callable[..., None]:
         if box is not None:
             return lambda: Segment.unlink(check_name(box.name))
@@ -73,7 +87,7 @@ class SharedBox:
     otherwise; :meth:`create` makes further boxes under explicit names.
     """
 
-    __slots__ = ("_segment", "_watcher", "__weakref__")
+    __slots__ = ("__weakref__", "_finalizer", "_segment", "_watcher")
 
     __layout__: ClassVar[Layout]
     __sharedbox_defaults__: ClassVar[dict[str, Any]] = {}
@@ -100,6 +114,8 @@ class SharedBox:
                 spec.encode(value)
                 defaults[spec.name] = value
             setattr(cls, spec.name, Field(spec))
+        for field_name, value in defaults.items():
+            layout.by_name[field_name].encode(value)
         seen_default = False
         for spec in layout.fields:
             if spec.kw_only:
@@ -135,6 +151,7 @@ class SharedBox:
             cls._layout_name() if name is None else check_name(name), cls._layout().schema_hash, cls.__lock_timeout__
         )
         box._watcher = None
+        box._track()
         return box
 
     @classmethod
@@ -147,6 +164,9 @@ class SharedBox:
     def _layout_name(cls) -> str:
         cls._layout()
         return cls.__sharedbox_name__
+
+    def _track(self) -> None:
+        self._finalizer = weakref.finalize(self, release, self._watcher, self._segment)
 
     def _open(self, name: str, args: tuple[Any, ...], values: dict[str, Any]) -> None:
         cls = type(self)
@@ -169,6 +189,7 @@ class SharedBox:
             name, [spec.native for spec in layout.fields], layout.record_size, layout.schema_hash, cls.__lock_timeout__
         )
         self._watcher = None
+        self._track()
         self._segment.write(encoded)
 
     def _check_names(self, values: dict[str, Any]) -> None:
@@ -183,6 +204,7 @@ class SharedBox:
 
     @property
     def closed(self) -> bool:
+        """True after :meth:`close`."""
         return self._segment.closed
 
     def update(self, **values: Any) -> None:
@@ -204,17 +226,13 @@ class SharedBox:
 
     def close(self) -> None:
         """Detach from the segment; other boxes keep it. Use :meth:`unlink` to remove it."""
-        self._segment.close()
+        self._finalizer()
 
     def __enter__(self) -> Self:
         return self
 
     def __exit__(self, *exc_info: object) -> None:
         self.close()
-
-    def __del__(self) -> None:
-        with contextlib.suppress(Exception):
-            self.close()
 
     def __reduce__(self) -> tuple[Any, tuple[str]]:
         return (type(self).attach, (self.name,))
