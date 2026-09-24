@@ -1,5 +1,7 @@
 # `sharedbox`
 
+[![CodSpeed](https://img.shields.io/endpoint?url=https://codspeed.io/badge.json)](https://app.codspeed.io/jacopoabramo/sharedbox?utm_source=badge)
+
 > [!WARNING]
 > This project is a work in progress; be patient or feel free to contribute.
 
@@ -159,6 +161,16 @@ You can run tests using [nox](https://nox.thea.codes/en/stable/index.html)
 # install nox as a tool
 uv tool install nox
 nox -s tests
+```
+
+### Running benchmarks
+
+Performance benchmarks live in the `benchmarks/` folder and are written with
+[`pytest-codspeed`](https://codspeed.io/docs/reference/pytest-codspeed).
+They are run continuously in CI with [CodSpeed](https://codspeed.io).
+
+```bash
+uv run pytest benchmarks --codspeed
 ```
 
 ## License
