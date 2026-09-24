@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.18...4.4)
+cmake_minimum_required(VERSION 3.30...4.4)
 
 if(NOT DEFINED ENV{VCPKG_ROOT})
     message(FATAL_ERROR "Set VCPKG_ROOT to a vcpkg checkout.")
@@ -19,6 +19,7 @@ execute_process(
     OUTPUT_STRIP_TRAILING_WHITESPACE OUTPUT_VARIABLE nanobind_ROOT)
 find_package(nanobind CONFIG REQUIRED)
 find_package(Boost REQUIRED CONFIG)
+find_package(Threads REQUIRED)
 
 nanobind_add_module(_shareddict
     STABLE_ABI
@@ -33,7 +34,7 @@ if(WIN32)
     target_compile_definitions(_shareddict PRIVATE
         BOOST_ALL_NO_LIB WIN32_LEAN_AND_MEAN NOMINMAX _WIN32_WINNT=0x0A00)
 else()
-    target_link_libraries(_shareddict PRIVATE rt)
+    target_link_libraries(_shareddict PRIVATE rt Threads::Threads)
 endif()
 
 nanobind_add_stub(_shareddict_stub
