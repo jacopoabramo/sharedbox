@@ -50,7 +50,7 @@ build-verbosity = 1
 before-all = [
     "yum install -y curl zip unzip tar git",
     "git clone https://github.com/microsoft/vcpkg.git /opt/vcpkg",
-    "git -C /opt/vcpkg checkout a62ce77d56ee07513b4b67de1ec2daeaebfae51a",
+    "git -C /opt/vcpkg checkout dc1232a6e05dcc49703091e83743e3b4df9b9b7c",
     "/opt/vcpkg/bootstrap-vcpkg.sh -disableMetrics",
 ]
 environment = { VCPKG_ROOT = "/opt/vcpkg" }
@@ -60,7 +60,7 @@ select = "*-musllinux*"
 before-all = [
     "apk add --no-cache curl zip unzip tar git build-base cmake ninja pkgconf linux-headers",
     "git clone https://github.com/microsoft/vcpkg.git /opt/vcpkg",
-    "git -C /opt/vcpkg checkout a62ce77d56ee07513b4b67de1ec2daeaebfae51a",
+    "git -C /opt/vcpkg checkout dc1232a6e05dcc49703091e83743e3b4df9b9b7c",
     "/opt/vcpkg/bootstrap-vcpkg.sh -disableMetrics",
 ]
 environment = { VCPKG_ROOT = "/opt/vcpkg", VCPKG_FORCE_SYSTEM_BINARIES = "1" }
@@ -68,7 +68,7 @@ environment = { VCPKG_ROOT = "/opt/vcpkg", VCPKG_FORCE_SYSTEM_BINARIES = "1" }
 [tool.cibuildwheel.windows]
 before-all = [
     "git clone https://github.com/microsoft/vcpkg.git C:/vcpkg-sharedbox",
-    "git -C C:/vcpkg-sharedbox checkout a62ce77d56ee07513b4b67de1ec2daeaebfae51a",
+    "git -C C:/vcpkg-sharedbox checkout dc1232a6e05dcc49703091e83743e3b4df9b9b7c",
     "C:/vcpkg-sharedbox/bootstrap-vcpkg.bat -disableMetrics",
 ]
 environment = { VCPKG_ROOT = "C:/vcpkg-sharedbox" }
