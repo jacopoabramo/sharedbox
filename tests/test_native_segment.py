@@ -4,6 +4,7 @@ import struct
 import sys
 import threading
 import time
+from collections.abc import Callable
 
 import pytest
 
@@ -165,28 +166,32 @@ def test_held_lock_times_out_and_force_unlock_recovers(unique_name: str) -> None
     owner.close()
 
 
-def test_close_while_other_threads_read(unique_name: str) -> None:
+def test_close_while_other_threads_read_and_write(unique_name: str) -> None:
     segment = create(unique_name)
     errors: list[BaseException] = []
 
-    def read_until_closed() -> None:
+    def until_closed(call: Callable[[], object]) -> None:
         try:
             while True:
-                segment.read_all()
+                call()
         except BoxClosedError:
             pass
-        except BaseException as error:  # noqa: BLE001 (record any unexpected error from the reader thread)
+        except BaseException as error:  # noqa: BLE001 (record any unexpected error from the thread)
             errors.append(error)
 
-    readers = [threading.Thread(target=read_until_closed) for _ in range(4)]
-    for reader in readers:
-        reader.start()
+    def write() -> None:
+        segment.write([(0, struct.pack("<q", 1)), (1, b"x")])
+
+    calls = [segment.read_all] * 4 + [write] * 4
+    threads = [threading.Thread(target=until_closed, args=(call,)) for call in calls]
+    for thread in threads:
+        thread.start()
     time.sleep(0.2)
     segment.close()
-    for reader in readers:
-        reader.join(timeout=5)
+    for thread in threads:
+        thread.join(timeout=5)
     assert errors == []
-    assert not any(reader.is_alive() for reader in readers)
+    assert not any(thread.is_alive() for thread in threads)
 
 
 def test_reads_never_see_half_a_write(unique_name: str) -> None:
