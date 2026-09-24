@@ -96,3 +96,12 @@ dev = [
     "tox>=4.28",
     "tox-uv-bare>=1.36",
 ]
+
+[tool.uv]
+cache-keys = [
+    { file = "pyproject.toml" },
+    { file = "CMakeLists.txt" },
+    { file = "vcpkg.json" },
+    { file = "src/sharedbox/_native/**/*" },
+    { git = { commit = true } },
+]
