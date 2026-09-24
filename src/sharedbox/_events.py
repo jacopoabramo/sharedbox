@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING, Any, Generic, TypeVar, cast
 
 from psygnal import Signal, SignalGroup
 
-from ._native import BoxClosedError
+from ._native import BoxClosedError, LockTimeoutError
 
 if TYPE_CHECKING:
     from ._layout import FieldSpec, Layout
@@ -290,8 +290,11 @@ class Watcher:
         with contextlib.suppress(BoxClosedError):
             generation = self._segment.generation()
             while not self._stop.is_set():
-                self._resolve_ready()
-                self._emit_changes()
+                try:
+                    self._resolve_ready()
+                    self._emit_changes()
+                except LockTimeoutError as error:
+                    logger.warning("%s", error)
                 if self._stop.is_set():
                     return
                 generation = self._segment.wait(generation, POLL)
@@ -303,20 +306,17 @@ class Watcher:
         ready = [(fut, version) for fut, version in ready if version != fut._since]
         if not ready:
             return
+        # Read every value before removing any future, so a failed read leaves them all pending.
+        values = [
+            (fut, fut._field.decode(self._segment.read(fut._field.index)), version)
+            for fut, version in ready
+        ]
         with self._lock:
             for fut, _ in ready:
                 with contextlib.suppress(ValueError):
                     self._pending.remove(fut)
-        try:
-            for fut, version in ready:
-                fut._settle(
-                    DONE,
-                    fut._field.decode(self._segment.read(fut._field.index)),
-                    version,
-                )
-        finally:
-            for fut, _ in ready:
-                fut._settle(CANCELLED, None, fut._since)
+        for fut, value, version in values:
+            fut._settle(DONE, value, version)
 
 
 def events_class(owner: type, layout: Layout) -> type[SignalGroup]:

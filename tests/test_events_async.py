@@ -1,5 +1,7 @@
 import asyncio
 import multiprocessing as mp
+import queue
+import threading
 import time
 
 import pytest
@@ -98,3 +100,38 @@ def test_async_watch_ends_on_close(unique_name: str) -> None:
         return [value async for value in box.watch("value")]
 
     assert asyncio.run(main()) == [1]
+
+
+class Guarded(SharedBox, lock_timeout=0.2):
+    value: int = 0
+    other: int = 0
+
+
+def test_watcher_recovers_after_a_lock_timeout(
+    unique_name: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    seen: queue.Queue[int] = queue.Queue()
+    entered, release = threading.Event(), threading.Event()
+
+    def block(new: int) -> None:
+        entered.set()
+        release.wait(5)
+
+    async def main() -> int:
+        with Guarded.create(unique_name) as box:
+            box.events.other.connect(block)
+            box.events.value.connect(seen.put)
+            pending = asyncio.ensure_future(anext(aiter(box.watch("value"))))
+            await asyncio.sleep(0)
+            box.other = 1
+            assert entered.wait(5)
+            box.value = 2
+            box._segment._hold_write_lock()
+            release.set()
+            await asyncio.sleep(0.5)
+            box.force_unlock()
+            return await asyncio.wait_for(pending, 5)
+
+    assert asyncio.run(main()) == 2
+    assert seen.get(timeout=5) == 2
+    assert "locked" in caplog.text
