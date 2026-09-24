@@ -85,7 +85,7 @@ class SharedBoxMeta(type):
         return super().__new__(mcls, cls_name, bases, namespace, **kwargs)
 
 
-@dataclass_transform()
+@dataclass_transform(eq_default=False)
 class SharedBox(metaclass=SharedBoxMeta):
     """A record whose annotated fields live in a named shared-memory segment.
 
