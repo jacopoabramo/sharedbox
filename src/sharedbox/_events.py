@@ -5,7 +5,7 @@ import logging
 import threading
 from collections.abc import Callable, Iterator
 from concurrent.futures import CancelledError
-from typing import TYPE_CHECKING, Any, Generic, TypeVar
+from typing import TYPE_CHECKING, Any, Generic, TypeVar, cast
 
 from ._native import BoxClosedError
 
@@ -34,7 +34,7 @@ class FieldFuture(Generic[T]):
         self._since = since
         self._cond = threading.Condition()
         self._state = PENDING
-        self._value: Any = None
+        self._value: T | None = None
         self._version = since
         self._callbacks: list[Callable[[FieldFuture[T]], object]] = []
 
@@ -56,7 +56,8 @@ class FieldFuture(Generic[T]):
                 raise TimeoutError(f"{self._field.name} did not change within {timeout} s")
         if self._state == CANCELLED:
             raise CancelledError()
-        return self._value
+        # DONE is only ever set by _settle() together with the value, so this holds one.
+        return cast(T, self._value)
 
     def cancel(self) -> bool:
         """Stop waiting. Returns False if the future already has a value."""
@@ -73,7 +74,7 @@ class FieldFuture(Generic[T]):
                 return
         self._run(fn)
 
-    def _settle(self, state: str, value: Any, version: int) -> bool:
+    def _settle(self, state: str, value: T | None, version: int) -> bool:
         with self._cond:
             if self._state != PENDING:
                 return False

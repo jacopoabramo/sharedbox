@@ -73,9 +73,14 @@ before-all = [
 ]
 environment = { VCPKG_ROOT = "C:/vcpkg-sharedbox" }
 
+[tool.mypy]
+strict = true
+warn_unreachable = true
+files = ["src", "tests"]
+
 [tool.tox]
 requires = ["tox>=4.64.1", "tox-uv-bare>=1.36"]
-env_list = ["py311", "py312", "py313", "py314", "py314t"]
+env_list = ["py311", "py312", "py313", "py314", "py314t", "mypy"]
 
 [tool.tox.env_run_base]
 runner = "uv-venv-lock-runner"
@@ -87,6 +92,20 @@ commands = [["pytest", "-q", { replace = "posargs", extend = true }]]
 
 [tool.tox.env.py314t]
 base_python = ["3.14t"]
+
+[tool.tox.env.mypy]
+# nanobind classes use their own metaclass and their own C-level static-method
+# and constructor wrappers, which stubtest cannot match against a plain stub;
+# --ignore-disjoint-bases and the allowlist suppress only those known,
+# unfixable mismatches for Segment.
+commands = [
+    ["mypy"],
+    [
+        "python", "-m", "mypy.stubtest", "sharedbox._native",
+        "--ignore-disjoint-bases",
+        "--allowlist", "stubtest-allowlist.txt",
+    ],
+]
 
 [dependency-groups]
 dev = [

@@ -4,7 +4,7 @@ import pickle
 import types
 from collections.abc import Iterator
 from dataclasses import KW_ONLY
-from typing import Annotated
+from typing import Annotated, cast
 
 import pytest
 
@@ -111,17 +111,17 @@ def test_second_box_of_a_class_needs_a_name() -> None:
 
 def test_default_name_ignores_the_spawned_main_module() -> None:
     namespace = {"__annotations__": {"x": int}, "__qualname__": "Spawned"}
-    parent = type("Spawned", (SharedBox,), {**namespace, "__module__": "__main__"})
-    child = type("Spawned", (SharedBox,), {**namespace, "__module__": "__mp_main__"})
+    parent = cast(type[SharedBox], type("Spawned", (SharedBox,), {**namespace, "__module__": "__main__"}))
+    child = cast(type[SharedBox], type("Spawned", (SharedBox,), {**namespace, "__module__": "__mp_main__"}))
     try:
         with parent(4), child.attach() as other:
-            assert other.x == 4
+            assert other.x == 4  # type: ignore[attr-defined] # x is a field added dynamically, above
     finally:
         parent.unlink()
 
 
 def test_class_keyword_sets_the_name(unique_name: str) -> None:
-    named = types.new_class("Named", (SharedBox,), {"name": unique_name}, with_x)
+    named = cast(type[SharedBox], types.new_class("Named", (SharedBox,), {"name": unique_name}, with_x))
     with named() as box, named.attach() as other:
         assert box.name == other.name == unique_name
 
@@ -172,7 +172,7 @@ def test_required_field_after_default() -> None:
 
         class Bad(SharedBox):
             a: int = 0
-            b: int
+            b: int  # type: ignore[misc] # the point of this test is that SharedBox rejects this at runtime too
 
 
 def test_box_passed_to_child_process_arrives_attached(unique_name: str) -> None:

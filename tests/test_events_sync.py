@@ -24,7 +24,12 @@ def set_value_later(name: str, value: int, delay: float) -> None:
 
 def collect(values: Iterable[int]) -> "queue.Queue[int]":
     out: queue.Queue[int] = queue.Queue()
-    threading.Thread(target=lambda: [out.put(value) for value in values], daemon=True).start()
+
+    def consume() -> None:
+        for value in values:
+            out.put(value)
+
+    threading.Thread(target=consume, daemon=True).start()
     return out
 
 
@@ -82,7 +87,7 @@ def test_close_ends_a_blocked_iteration(unique_name: str) -> None:
         seen.extend(watch)
         finished.set()
 
-    consumer = threading.Thread(target=consume)
+    consumer = threading.Thread(target=consume, daemon=True)
     consumer.start()
     box.value = 1
     time.sleep(0.3)
@@ -107,7 +112,12 @@ def test_dropping_a_watched_box_stops_its_thread(unique_name: str) -> None:
     box = Counter.create(unique_name)
     watch = box.watch("value")
     seen: queue.Queue[int] = queue.Queue()
-    consumer = threading.Thread(target=lambda: [seen.put(value) for value in watch])
+
+    def consume() -> None:
+        for value in watch:
+            seen.put(value)
+
+    consumer = threading.Thread(target=consume, daemon=True)
     consumer.start()
     box.value = 1
     assert seen.get(timeout=5) == 1

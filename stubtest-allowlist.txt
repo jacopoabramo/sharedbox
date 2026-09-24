@@ -1,0 +1,5 @@
+sharedbox._native.Segment
+sharedbox._native.Segment.__init__
+sharedbox._native.Segment.attach
+sharedbox._native.Segment.create
+sharedbox._native.Segment.unlink
