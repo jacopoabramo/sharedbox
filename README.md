@@ -1,5 +1,7 @@
 # `sharedbox`
 
+[![CodSpeed](https://img.shields.io/endpoint?url=https://codspeed.io/badge.json)](https://app.codspeed.io/jacopoabramo/sharedbox?utm_source=badge)
+
 > [!WARNING]
 > This project is a work in progress; be patient or feel free to contribute.
 
@@ -149,6 +151,16 @@ uv run pytest               # current interpreter
 uv run tox                  # every supported Python version, plus mypy
 uv run tox -e py314t        # one version
 ```
+
+### Running benchmarks
+
+```bash
+uv run python benchmarks/bench_ops.py        # single operations, against the standard library
+uv run python benchmarks/bench_roundtrip.py  # change notification between two processes
+uv run pytest benchmarks --codspeed          # the benchmarks CI runs
+```
+
+CI runs the pytest benchmarks on CodSpeed for every push and pull request to `main`.
 
 ## License
 

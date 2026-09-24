@@ -23,11 +23,15 @@ sharedbox/
 |       `-- notifier.{hpp,cpp} wakes waiters across processes (futex, named semaphore)
 |-- tests/                     pytest; many tests spawn processes
 |   `-- type_checks/           checked by mypy, never imported at run time
-|-- benchmarks/bench_box.py    latency benchmarks, not tests
+|-- benchmarks/                not collected by the default pytest run
+|   |-- bench_ops.py           pyperf timings of single operations, against the stdlib
+|   |-- bench_roundtrip.py     cross-process round trip percentiles
+|   `-- test_bench_box.py      pytest-codspeed benchmarks, run by codspeed.yml
 |-- scripts/vscode_setup.py    points VS Code's C/C++ extension at the build headers
 |-- docs/api.md                API reference
 |-- docs/design/               design notes for the native segment
 |-- .github/workflows/ci.yaml  cibuildwheel wheels, tests, PyPI publish
+|-- .github/workflows/codspeed.yml  benchmarks on CodSpeed
 |-- CMakeLists.txt             extension build
 |-- vcpkg.json                 Boost dependency and vcpkg baseline
 |-- stubtest-allowlist.txt     stubtest exceptions for nanobind types
