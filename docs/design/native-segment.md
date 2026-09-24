@@ -259,8 +259,7 @@ A wake-up can never be lost: the waiter reads `wake_word` before it reads
 write lands between the waiter's two reads, `wake_word` no longer matches
 and the wait returns at once instead of sleeping [14].
 
-The code for this goes in `notifier.hpp` and `notifier.cpp`, which are not in
-the repository yet.
+The code for this is in `notifier.hpp` and `notifier.cpp`.
 
 ## 6. Closing a box while other threads still use it
 

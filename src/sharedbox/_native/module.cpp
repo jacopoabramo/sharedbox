@@ -46,7 +46,7 @@ NB_MODULE(_native, m) {
         .def_static("attach", &Segment::attach, "name"_a, "schema_hash"_a, "lock_timeout"_a)
         .def("read", [](const Segment &s, std::uint32_t field) { return to_bytes(s.read(field)); }, "field"_a)
         .def("read_all",
-             [](const Segment &s) {
+             [](const Segment &s) -> nb::typed<nb::list, nb::bytes> {
                  std::vector<std::string> values = s.read_all();
                  nb::list_builder out(values.size());
                  for (const auto &value : values)
@@ -65,6 +65,7 @@ NB_MODULE(_native, m) {
             "values"_a)
         .def("version", &Segment::version, "field"_a)
         .def("generation", &Segment::generation)
+        .def("wait", &Segment::wait, "last_generation"_a, "timeout"_a, nb::call_guard<nb::gil_scoped_release>())
         .def("force_unlock", &Segment::force_unlock)
         .def("_hold_write_lock", &Segment::hold_write_lock)
         .def("close", &Segment::close)

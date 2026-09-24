@@ -50,6 +50,8 @@ public:
     void write(const std::vector<std::pair<std::uint32_t, std::string>> &values);
     std::uint64_t version(std::uint32_t field) const;
     std::uint64_t generation() const;
+    /// Returns the generation once it differs from last_generation, or after timeout seconds.
+    std::uint64_t wait(std::uint64_t last_generation, double timeout) const;
     void force_unlock();
     /// Takes the write lock and never releases it; exists for tests.
     void hold_write_lock();

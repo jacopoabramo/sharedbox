@@ -1,5 +1,7 @@
 #include "segment.hpp"
 
+#include "notifier.hpp"
+
 #include <atomic>
 #include <chrono>
 #include <cstring>
@@ -125,6 +127,7 @@ struct Segment::Impl {
     std::vector<StoredField> fields;
     double lock_timeout = 5.0;
     std::atomic<bool> closed{false};
+    std::unique_ptr<Notifier> notifier;
     // Without a GIL (free-threaded builds) close() can race any other call; it takes this exclusively.
     mutable std::shared_mutex lifetime;
 
@@ -256,6 +259,7 @@ std::unique_ptr<Segment> Segment::create(const std::string &name, const std::vec
 
         impl->header = h;
         impl->record = static_cast<unsigned char *>(record);
+        impl->notifier = std::make_unique<Notifier>(name, impl->header->wake_word, impl->header->waiters);
     } catch (...) {
         // The segment exists on disk/in /dev/shm from create_only above; without this
         // it would survive as a name no one can finish creating or safely attach to.
@@ -314,6 +318,7 @@ std::unique_ptr<Segment> Segment::attach(const std::string &name, std::uint64_t 
 
     impl->header = h;
     impl->record = static_cast<unsigned char *>(impl->segment.get_address_from_handle(record_handle));
+    impl->notifier = std::make_unique<Notifier>(name, impl->header->wake_word, impl->header->waiters);
     return std::unique_ptr<Segment>(new Segment(std::move(impl)));
 }
 
@@ -363,6 +368,7 @@ void Segment::write(const std::vector<std::pair<std::uint32_t, std::string>> &va
     }
     impl_->unlock();
     impl_->header->generation.fetch_add(1, std::memory_order_seq_cst);
+    impl_->notifier->wake_all();
 }
 
 std::uint64_t Segment::version(std::uint32_t index) const {
@@ -376,6 +382,23 @@ std::uint64_t Segment::generation() const {
     std::shared_lock guard(impl_->lifetime);
     impl_->check_open();
     return impl_->header->generation.load(std::memory_order_acquire);
+}
+
+std::uint64_t Segment::wait(std::uint64_t last_generation, double timeout) const {
+    std::shared_lock guard(impl_->lifetime);
+    impl_->check_open();
+    const Clock::time_point deadline = Clock::now() + to_duration(timeout);
+    for (;;) {
+        // Read the word before the generation: a write landing in between changes the word, so the wait returns.
+        std::uint32_t word = impl_->header->wake_word.load(std::memory_order_seq_cst);
+        std::uint64_t current = impl_->header->generation.load(std::memory_order_seq_cst);
+        if (current != last_generation)
+            return current;
+        double remaining = std::chrono::duration<double>(deadline - Clock::now()).count();
+        if (remaining <= 0)
+            return current;
+        impl_->notifier->wait(word, remaining);
+    }
 }
 
 void Segment::force_unlock() {
@@ -399,6 +422,7 @@ void Segment::close() {
     if (impl_->closed.exchange(true))
         return;
     std::unique_lock guard(impl_->lifetime);
+    impl_->notifier.reset();
     impl_->header = nullptr;
     impl_->record = nullptr;
     impl_->segment = Managed();

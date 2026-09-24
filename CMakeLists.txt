@@ -26,7 +26,8 @@ nanobind_add_module(_native
     FREE_THREADED
     NB_DOMAIN sharedbox
     src/sharedbox/_native/module.cpp
-    src/sharedbox/_native/segment.cpp)
+    src/sharedbox/_native/segment.cpp
+    src/sharedbox/_native/notifier.cpp)
 target_link_libraries(_native PRIVATE Boost::headers)
 
 if(WIN32)
