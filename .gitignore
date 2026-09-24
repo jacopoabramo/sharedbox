@@ -17,5 +17,3 @@ wheels/
 src/sharedbox/_version.py
 
 wheelhouse/
-
-.nox/
