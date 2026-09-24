@@ -108,7 +108,10 @@ class FieldWatch(Generic[T]):
     def __iter__(self) -> Iterator[T]:
         since = self._since
         while True:
-            fut: FieldFuture[T] = self._watcher.future(self._field, since)
+            try:
+                fut: FieldFuture[T] = self._watcher.future(self._field, since)
+            except BoxClosedError:
+                return
             try:
                 value = fut.result()
             except CancelledError:
@@ -127,7 +130,7 @@ class Watcher:
     def __init__(self, segment: Segment) -> None:
         self._segment = segment
         self._pending: list[FieldFuture[Any]] = []
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
 
@@ -143,6 +146,9 @@ class Watcher:
             fut._settle(DONE, field.decode(self._segment.read(field.index)), current)
             return fut
         with self._lock:
+            if self._stop.is_set():
+                fut._settle(CANCELLED, None, fut._since)
+                return fut
             self._pending.append(fut)
             self._start_locked()
         return fut
@@ -154,8 +160,10 @@ class Watcher:
     def stop(self) -> None:
         """Stop the thread and cancel every pending future."""
         self._stop.set()
-        if self._thread is not None and self._thread is not threading.current_thread():
-            self._thread.join()
+        with self._lock:
+            thread = self._thread
+        if thread is not None and thread is not threading.current_thread():
+            thread.join()
         with self._lock:
             pending, self._pending = self._pending, []
         for fut in pending:
@@ -188,5 +196,9 @@ class Watcher:
             for fut, _ in ready:
                 with contextlib.suppress(ValueError):
                     self._pending.remove(fut)
-        for fut, version in ready:
-            fut._settle(DONE, fut._field.decode(self._segment.read(fut._field.index)), version)
+        try:
+            for fut, version in ready:
+                fut._settle(DONE, fut._field.decode(self._segment.read(fut._field.index)), version)
+        finally:
+            for fut, _ in ready:
+                fut._settle(CANCELLED, None, fut._since)

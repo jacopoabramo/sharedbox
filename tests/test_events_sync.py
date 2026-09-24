@@ -75,29 +75,52 @@ def test_two_watches_both_see_a_write(unique_name: str) -> None:
 def test_close_ends_a_blocked_iteration(unique_name: str) -> None:
     box = Counter.create(unique_name)
     seen: list[int] = []
+    finished = threading.Event()
     watch = box.watch("value")
-    consumer = threading.Thread(target=lambda: seen.extend(watch))
+
+    def consume() -> None:
+        seen.extend(watch)
+        finished.set()
+
+    consumer = threading.Thread(target=consume)
     consumer.start()
     box.value = 1
     time.sleep(0.3)
     box.close()
     consumer.join(timeout=5)
     assert not consumer.is_alive()
+    assert finished.is_set()
     assert seen[-1:] == [1]
+
+
+def test_close_ends_iteration_between_values(unique_name: str) -> None:
+    with Counter.create(unique_name) as box:
+        it = iter(box.watch("value"))
+        box.value = 1
+        assert next(it) == 1
+        box.close()
+        with pytest.raises(StopIteration):
+            next(it)
 
 
 def test_dropping_a_watched_box_stops_its_thread(unique_name: str) -> None:
     box = Counter.create(unique_name)
-    seen = collect(box.watch("value"))
+    watch = box.watch("value")
+    seen: "queue.Queue[int]" = queue.Queue()
+    consumer = threading.Thread(target=lambda: [seen.put(value) for value in watch])
+    consumer.start()
     box.value = 1
     assert seen.get(timeout=5) == 1
     thread_name = f"sharedbox-watch-{unique_name}"
-    del box, seen
+    del box
     gc.collect()
     deadline = time.monotonic() + 5
-    while any(t.name == thread_name for t in threading.enumerate()) and time.monotonic() < deadline:
+    while (
+        any(t.name == thread_name for t in threading.enumerate()) or consumer.is_alive()
+    ) and time.monotonic() < deadline:
         time.sleep(0.01)
     assert not any(t.name == thread_name for t in threading.enumerate())
+    assert not consumer.is_alive()
 
 
 def test_unknown_field(unique_name: str) -> None:
