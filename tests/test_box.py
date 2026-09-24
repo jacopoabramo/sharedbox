@@ -94,7 +94,7 @@ def test_create_attach_and_share(unique_name: str) -> None:
 
 def test_positional_values_and_attach_by_class() -> None:
     ctx = mp.get_context("spawn")
-    results: "mp.Queue[dict[str, object]]" = ctx.Queue()
+    results: mp.Queue[dict[str, object]] = ctx.Queue()
     with Motor(1, False, "hello") as motor:
         child = ctx.Process(target=move_in_child, args=(results,))
         child.start()
@@ -177,7 +177,7 @@ def test_required_field_after_default() -> None:
 
 def test_box_passed_to_child_process_arrives_attached(unique_name: str) -> None:
     ctx = mp.get_context("spawn")
-    results: "mp.Queue[dict[str, object]]" = ctx.Queue()
+    results: mp.Queue[dict[str, object]] = ctx.Queue()
     with Point.create(unique_name, 1.0, label="hi") as box:
         child = ctx.Process(target=read_in_child, args=(box, results))
         child.start()
@@ -188,10 +188,9 @@ def test_box_passed_to_child_process_arrives_attached(unique_name: str) -> None:
 
 
 def test_pickle_round_trip_attaches(unique_name: str) -> None:
-    with Point.create(unique_name, y=3.0) as box:
-        with pickle.loads(pickle.dumps(box)) as copy:
-            assert copy.name == unique_name
-            assert copy.y == 3.0
+    with Point.create(unique_name, y=3.0) as box, pickle.loads(pickle.dumps(box)) as copy:
+        assert copy.name == unique_name
+        assert copy.y == 3.0
 
 
 def test_update_is_atomic_across_processes(unique_name: str) -> None:

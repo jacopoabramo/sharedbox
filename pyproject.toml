@@ -74,7 +74,7 @@ before-all = [
 environment = { VCPKG_ROOT = "C:/vcpkg-sharedbox" }
 
 [tool.tox]
-requires = ["tox>=4.28", "tox-uv-bare>=1.36"]
+requires = ["tox>=4.64.1", "tox-uv-bare>=1.36"]
 env_list = ["py311", "py312", "py313", "py314", "py314t"]
 
 [tool.tox.env_run_base]
@@ -90,10 +90,11 @@ base_python = ["3.14t"]
 
 [dependency-groups]
 dev = [
+    "mypy>=2.3.1",
     "nanobind>=3.1.0",
-    "pytest>=8.4.2",
-    "ruff>=0.13.3",
-    "tox>=4.28",
+    "pytest>=9.1.1",
+    "ruff>=0.16.8",
+    "tox>=4.64.1",
     "tox-uv-bare>=1.36",
 ]
 

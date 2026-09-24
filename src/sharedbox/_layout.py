@@ -4,8 +4,15 @@ import hashlib
 import struct
 from collections.abc import Mapping
 from dataclasses import KW_ONLY, dataclass
-from typing import Annotated, Any, ClassVar, NamedTuple, get_args, get_origin, get_type_hints
-
+from typing import (
+    Annotated,
+    Any,
+    ClassVar,
+    NamedTuple,
+    get_args,
+    get_origin,
+    get_type_hints,
+)
 
 MAX_CAPACITY = 1 << 20
 MAX_FIELDS = 256

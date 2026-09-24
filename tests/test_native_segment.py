@@ -173,7 +173,7 @@ def test_close_while_other_threads_read(unique_name: str) -> None:
                 segment.read_all()
         except BoxClosedError:
             pass
-        except BaseException as error:
+        except BaseException as error:  # noqa: BLE001 (record any unexpected error from the reader thread)
             errors.append(error)
 
     readers = [threading.Thread(target=read_until_closed) for _ in range(4)]

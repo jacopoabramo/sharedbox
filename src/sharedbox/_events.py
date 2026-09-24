@@ -3,9 +3,9 @@ from __future__ import annotations
 import contextlib
 import logging
 import threading
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from concurrent.futures import CancelledError
-from typing import TYPE_CHECKING, Any, Callable, Generic, TypeVar
+from typing import TYPE_CHECKING, Any, Generic, TypeVar
 
 from ._native import BoxClosedError
 
@@ -26,7 +26,7 @@ class FieldFuture(Generic[T]):
     created at. Done callbacks run on the box's watcher thread.
     """
 
-    __slots__ = ("_watcher", "_field", "_since", "_cond", "_state", "_value", "_version", "_callbacks")
+    __slots__ = ("_callbacks", "_cond", "_field", "_since", "_state", "_value", "_version", "_watcher")
 
     def __init__(self, watcher: Watcher, field: FieldSpec, since: int) -> None:
         self._watcher = watcher
@@ -98,7 +98,7 @@ class FieldWatch(Generic[T]):
     ones in between. Iteration ends when the box is closed.
     """
 
-    __slots__ = ("_watcher", "_field", "_since")
+    __slots__ = ("_field", "_since", "_watcher")
 
     def __init__(self, watcher: Watcher, field: FieldSpec, since: int) -> None:
         self._watcher = watcher
@@ -125,7 +125,7 @@ class FieldWatch(Generic[T]):
 class Watcher:
     """Resolves the pending futures of one box from a background thread."""
 
-    __slots__ = ("_segment", "_pending", "_lock", "_stop", "_thread")
+    __slots__ = ("_lock", "_pending", "_segment", "_stop", "_thread")
 
     def __init__(self, segment: Segment) -> None:
         self._segment = segment
