@@ -174,7 +174,8 @@ class FieldWatch(Generic[T]):
             try:
                 value = await fut
             except asyncio.CancelledError:
-                if self._watcher.stopped:
+                task = asyncio.current_task()
+                if self._watcher.stopped and (task is None or not task.cancelling()):
                     return
                 raise
             since = fut.version

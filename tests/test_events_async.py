@@ -135,3 +135,27 @@ def test_watcher_recovers_after_a_lock_timeout(
     assert asyncio.run(main()) == 2
     assert seen.get(timeout=5) == 2
     assert "locked" in caplog.text
+
+
+def test_cancelling_the_consumer_while_the_box_closes_raises(unique_name: str) -> None:
+    async def main() -> None:
+        box = Counter.create(unique_name)
+        consumer = asyncio.ensure_future(first(box.watch("value")))
+        await asyncio.sleep(0)
+        closer = threading.Thread(target=box.close)
+        closer.start()
+        closer.join()
+        consumer.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await consumer
+
+    asyncio.run(main())
+
+
+def test_close_from_another_thread_ends_async_iteration(unique_name: str) -> None:
+    async def main() -> list[int]:
+        box = Counter.create(unique_name)
+        threading.Timer(0.2, box.close).start()
+        return [value async for value in box.watch("value")]
+
+    assert asyncio.run(asyncio.wait_for(main(), 5)) == []
