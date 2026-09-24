@@ -8,19 +8,23 @@ from typing import (
     Annotated,
     Any,
     ClassVar,
+    Final,
+    Literal,
     NamedTuple,
     get_args,
     get_origin,
     get_type_hints,
 )
 
-MAX_CAPACITY = 1 << 20
-MAX_FIELDS = 256
-ALIGN = 8
-INT = struct.Struct("<q")
-FLOAT = struct.Struct("<d")
-SCALARS: dict[Any, tuple[str, int]] = {bool: ("bool", 1), int: ("int", 8), float: ("float", 8)}
-PREFIXED = ("str", "bytes")
+Kind = Literal["bool", "int", "float", "str", "bytes"]
+
+MAX_CAPACITY: Final[int] = 1 << 20
+MAX_FIELDS: Final[int] = 256
+ALIGN: Final[int] = 8
+INT: Final[struct.Struct] = struct.Struct("<q")
+FLOAT: Final[struct.Struct] = struct.Struct("<d")
+SCALARS: Final[dict[type, tuple[Kind, int]]] = {bool: ("bool", 1), int: ("int", 8), float: ("float", 8)}
+PREFIXED: Final[tuple[Kind, ...]] = ("str", "bytes")
 
 
 @dataclass(frozen=True)
@@ -53,7 +57,7 @@ class FieldSpec:
     name: str
     index: int
     """Position in declaration order; also the field's number in the native segment."""
-    kind: str
+    kind: Kind
     """One of ``"bool"``, ``"int"``, ``"float"``, ``"str"``, ``"bytes"``."""
     offset: int
     """Byte offset of the field from the start of the record."""
@@ -107,7 +111,7 @@ class FieldSpec:
             return raw.decode("utf-8", errors="replace")
         return raw
 
-    def _type_error(self, expected: str, value: Any) -> TypeError:
+    def _type_error(self, expected: str, value: object) -> TypeError:
         return TypeError(f"{self.name} expects {expected}, got {type(value).__name__}")
 
 
@@ -124,8 +128,8 @@ class Layout:
     by_name: Mapping[str, FieldSpec]
 
 
-def classify(name: str, hint: Any) -> tuple[str, int]:
-    if hint in SCALARS:
+def classify(name: str, hint: object) -> tuple[Kind, int]:
+    if isinstance(hint, type) and hint in SCALARS:
         return SCALARS[hint]
     if get_origin(hint) is Annotated:
         base, *extras = get_args(hint)
