@@ -247,9 +247,11 @@ class Watcher:
             return self._group
 
     def _emit_changes(self) -> None:
-        if self._group is None:
+        with self._lock:
+            group, fields = self._group, self._fields
+        if group is None:
             return
-        for spec in self._fields:
+        for spec in fields:
             version = self._segment.version(spec.index)
             seen_version, old = self._seen[spec.index]
             if version == seen_version:
@@ -259,7 +261,7 @@ class Watcher:
             if new == old:
                 continue
             try:
-                self._group[spec.name].emit(new, old)
+                group[spec.name].emit(new, old)
             except Exception:
                 logger.exception("a callback for field %r raised", spec.name)
 
