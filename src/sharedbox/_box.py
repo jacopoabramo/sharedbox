@@ -244,9 +244,21 @@ class SharedBox(metaclass=SharedBoxMeta):
     def events(self) -> SignalGroup:
         """One psygnal signal per field, emitted as ``(new, old)`` when any thread or process changes it.
 
+        Differs from a local evented dataclass in these ways:
+
         Callbacks run on the box's watcher thread; connect with
         ``thread="main"`` and call ``psygnal.emit_queued()`` to run them on
         the main thread instead.
+
+        If several writes happen between two checks by the watcher thread,
+        only one emission happens, with the latest value; ``old`` is the
+        value from the last emission. A write that leaves the value
+        unchanged emits nothing. For the first emission of a field, ``old``
+        is the value the field held when ``events`` was first accessed.
+
+        A callback that raises is logged. Callbacks connected before it on
+        the same signal already ran; callbacks connected after it do not
+        run for that write. Other fields still emit normally.
         """
         if self._events is None:
             self._events = self._watcher.events(type(self).__events_class__, type(self).__layout__.fields)

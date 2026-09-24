@@ -69,7 +69,7 @@ def test_callback_on_main_thread(unique_name: str) -> None:
     assert seen == ["MainThread"]
 
 
-def test_failing_callback_does_not_stop_emission(unique_name: str) -> None:
+def test_watcher_keeps_emitting_after_a_callback_raises(unique_name: str) -> None:
     seen: queue.Queue[int] = queue.Queue()
 
     def fail(new: int) -> None:
