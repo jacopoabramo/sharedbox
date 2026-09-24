@@ -6,7 +6,9 @@ import weakref
 from collections.abc import Callable
 from typing import Any, ClassVar, Protocol, Self, dataclass_transform, overload
 
-from ._events import FieldWatch, Watcher
+from psygnal import SignalGroup
+
+from ._events import FieldWatch, Watcher, events_class
 from ._layout import FieldSpec, Layout, build_layout, class_identity
 from ._native import Segment
 
@@ -97,12 +99,14 @@ class SharedBox(metaclass=SharedBoxMeta):
     otherwise; :meth:`create` makes further boxes under explicit names.
     """
 
-    __slots__ = ("__weakref__", "_finalizer", "_segment", "_watcher")
+    __slots__ = ("__weakref__", "_events", "_finalizer", "_segment", "_watcher")
 
+    _events: SignalGroup | None
     __layout__: ClassVar[Layout]
     __sharedbox_defaults__: ClassVar[dict[str, Any]] = {}
     __lock_timeout__: ClassVar[float] = 5.0
     __sharedbox_name__: ClassVar[str]
+    __events_class__: ClassVar[type[SignalGroup]]
 
     def __init_subclass__(
         cls,
@@ -142,6 +146,7 @@ class SharedBox(metaclass=SharedBoxMeta):
             if lock_timeout <= 0:
                 raise ValueError("lock_timeout must be positive")
             cls.__lock_timeout__ = lock_timeout
+        cls.__events_class__ = events_class(cls, layout)
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         self._open(type(self)._layout_name(), args, kwargs)
@@ -161,6 +166,7 @@ class SharedBox(metaclass=SharedBoxMeta):
             cls._layout_name() if name is None else check_name(name), cls._layout().schema_hash, cls.__lock_timeout__
         )
         box._watcher = Watcher(box._segment)
+        box._events = None
         box._track()
         return box
 
@@ -199,6 +205,7 @@ class SharedBox(metaclass=SharedBoxMeta):
             name, [spec.native for spec in layout.fields], layout.record_size, layout.schema_hash, cls.__lock_timeout__
         )
         self._watcher = Watcher(self._segment)
+        self._events = None
         self._track()
         self._segment.write(encoded)
 
@@ -232,6 +239,18 @@ class SharedBox(metaclass=SharedBoxMeta):
         """Iterate over values written to ``field`` from now on."""
         spec = self._spec(field)
         return FieldWatch(self._watcher, spec, self._segment.version(spec.index))
+
+    @property
+    def events(self) -> SignalGroup:
+        """One psygnal signal per field, emitted as ``(new, old)`` when any thread or process changes it.
+
+        Callbacks run on the box's watcher thread; connect with
+        ``thread="main"`` and call ``psygnal.emit_queued()`` to run them on
+        the main thread instead.
+        """
+        if self._events is None:
+            self._events = self._watcher.events(type(self).__events_class__, type(self).__layout__.fields)
+        return self._events
 
     def _spec(self, field: str) -> FieldSpec:
         try:

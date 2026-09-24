@@ -8,10 +8,12 @@ from collections.abc import AsyncIterator, Callable, Generator, Iterator
 from concurrent.futures import CancelledError
 from typing import TYPE_CHECKING, Any, Generic, TypeVar, cast
 
+from psygnal import Signal, SignalGroup
+
 from ._native import BoxClosedError
 
 if TYPE_CHECKING:
-    from ._layout import FieldSpec
+    from ._layout import FieldSpec, Layout
     from ._native import Segment
 
 T = TypeVar("T")
@@ -171,7 +173,7 @@ class FieldWatch(Generic[T]):
 class Watcher:
     """Resolves the pending futures of one box from a background thread."""
 
-    __slots__ = ("_lock", "_pending", "_segment", "_stop", "_thread")
+    __slots__ = ("_fields", "_group", "_lock", "_pending", "_seen", "_segment", "_stop", "_thread")
 
     def __init__(self, segment: Segment) -> None:
         self._segment = segment
@@ -179,6 +181,9 @@ class Watcher:
         self._lock = threading.RLock()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
+        self._group: SignalGroup | None = None
+        self._fields: tuple[FieldSpec, ...] = ()
+        self._seen: dict[int, tuple[int, Any]] = {}
 
     @property
     def stopped(self) -> bool:
@@ -198,6 +203,36 @@ class Watcher:
             self._pending.append(fut)
             self._start_locked()
         return fut
+
+    def events(self, factory: Callable[[], SignalGroup], fields: tuple[FieldSpec, ...]) -> SignalGroup:
+        """The box's signal group, created on first use; the watcher emits into it from then on."""
+        with self._lock:
+            if self._group is None:
+                self._seen = {
+                    spec.index: (self._segment.version(spec.index), spec.decode(self._segment.read(spec.index)))
+                    for spec in fields
+                }
+                self._fields = fields
+                self._group = factory()
+                self._start_locked()
+            return self._group
+
+    def _emit_changes(self) -> None:
+        if self._group is None:
+            return
+        for spec in self._fields:
+            version = self._segment.version(spec.index)
+            seen_version, old = self._seen[spec.index]
+            if version == seen_version:
+                continue
+            new = spec.decode(self._segment.read(spec.index))
+            self._seen[spec.index] = (version, new)
+            if new == old:
+                continue
+            try:
+                self._group[spec.name].emit(new, old)
+            except Exception:
+                logger.exception("a callback for field %r raised", spec.name)
 
     def discard(self, fut: FieldFuture[Any]) -> None:
         with self._lock, contextlib.suppress(ValueError):
@@ -227,6 +262,7 @@ class Watcher:
             generation = self._segment.generation()
             while not self._stop.is_set():
                 self._resolve_ready()
+                self._emit_changes()
                 if self._stop.is_set():
                     return
                 generation = self._segment.wait(generation, POLL)
@@ -248,3 +284,9 @@ class Watcher:
         finally:
             for fut, _ in ready:
                 fut._settle(CANCELLED, None, fut._since)
+
+
+def events_class(owner: type, layout: Layout) -> type[SignalGroup]:
+    """A psygnal ``SignalGroup`` subclass with one ``(new, old)`` signal per field of ``owner``."""
+    signals = {spec.name: Signal(object, object) for spec in layout.fields}
+    return type(f"{owner.__name__}Events", (SignalGroup,), signals)
