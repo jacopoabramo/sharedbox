@@ -1,9 +1,7 @@
 from collections.abc import Sequence
+from typing import Never
 
-from typing_extensions import (  # noqa: UP035 (kept together; disjoint_base has no typing equivalent yet)
-    Never,
-    disjoint_base,
-)
+from typing_extensions import disjoint_base
 
 class SegmentExistsError(FileExistsError):
     """A segment with that name already exists."""
