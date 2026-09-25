@@ -229,7 +229,10 @@ Signals differ from those of a local evented dataclass:
 
 - Callbacks run on the box's watcher thread. Connect with `thread="main"`
   and call `psygnal.emit_queued()` from the main thread to run them there
-  instead.
+  instead. On free-threaded Python, call `psygnal.emit_queued()` once on the
+  main thread before the first write: psygnal creates that thread's queue on
+  first use, and a callback queued from the watcher thread at the same moment
+  can be lost.
 - Closing the box delivers writes the watcher thread had not seen yet, so
   callbacks may run once on the thread that calls `close()`, or on the
   thread that garbage collects the box.
