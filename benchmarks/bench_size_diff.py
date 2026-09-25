@@ -24,8 +24,15 @@ def load(root: Path) -> dict[str, int]:
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("this_dir", type=Path, help="directory of this run's size JSON files")
-    parser.add_argument("main_dir", type=Path, nargs="?", help="directory of the baseline's size JSON files")
+    parser.add_argument(
+        "this_dir", type=Path, help="directory of this run's size JSON files"
+    )
+    parser.add_argument(
+        "main_dir",
+        type=Path,
+        nargs="?",
+        help="directory of the baseline's size JSON files",
+    )
     return parser.parse_args(argv)
 
 

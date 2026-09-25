@@ -1,9 +1,9 @@
 """Wheel and extension-module size, read straight from the zip.
 
-    uv run python benchmarks/bench_size.py                 # dist/*.whl, wheelhouse/*.whl
-    uv run python benchmarks/bench_size.py dist/*.whl       # explicit wheels
-    uv run python benchmarks/bench_size.py --json sizes.json
-    uv run python benchmarks/bench_size.py --markdown
+uv run python benchmarks/bench_size.py                 # dist/*.whl, wheelhouse/*.whl
+uv run python benchmarks/bench_size.py dist/*.whl       # explicit wheels
+uv run python benchmarks/bench_size.py --json sizes.json
+uv run python benchmarks/bench_size.py --markdown
 """
 
 import argparse
@@ -54,7 +54,9 @@ def measure(wheel: Path) -> WheelSize:
 
 
 def default_wheels() -> list[Path]:
-    wheels = sorted(Path("dist").glob("*.whl")) + sorted(Path("wheelhouse").glob("*.whl"))
+    wheels = sorted(Path("dist").glob("*.whl")) + sorted(
+        Path("wheelhouse").glob("*.whl")
+    )
     return wheels
 
 
@@ -80,9 +82,15 @@ def to_markdown(sizes: list[WheelSize]) -> str:
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("wheels", nargs="*", help="wheel files (default: dist/*.whl, wheelhouse/*.whl)")
-    parser.add_argument("--json", metavar="PATH", help="write machine-readable output to PATH")
-    parser.add_argument("--markdown", action="store_true", help="print a Markdown table")
+    parser.add_argument(
+        "wheels", nargs="*", help="wheel files (default: dist/*.whl, wheelhouse/*.whl)"
+    )
+    parser.add_argument(
+        "--json", metavar="PATH", help="write machine-readable output to PATH"
+    )
+    parser.add_argument(
+        "--markdown", action="store_true", help="print a Markdown table"
+    )
     return parser.parse_args(argv)
 
 
