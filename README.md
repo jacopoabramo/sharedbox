@@ -1,6 +1,11 @@
 # `sharedbox`
 
+[![PyPI](https://img.shields.io/pypi/v/sharedbox)](https://pypi.org/project/sharedbox/)
+[![CI](https://github.com/jacopoabramo/sharedbox/actions/workflows/ci.yaml/badge.svg?branch=main)](https://github.com/jacopoabramo/sharedbox/actions/workflows/ci.yaml)
 [![CodSpeed](https://img.shields.io/endpoint?url=https://codspeed.io/badge.json)](https://app.codspeed.io/jacopoabramo/sharedbox?utm_source=badge)
+[![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
+[![clang-format](https://img.shields.io/badge/C%2B%2B%20style-clang--format-blue)](https://clang.llvm.org/docs/ClangFormat.html)
+[![Checked with mypy](https://www.mypy-lang.org/static/mypy_badge.svg)](https://mypy-lang.org/)
 
 > [!WARNING]
 > This project is a work in progress; be patient or feel free to contribute.
