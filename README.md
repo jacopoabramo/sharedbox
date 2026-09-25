@@ -160,6 +160,7 @@ uv run tox -e py314t        # one version
 ```bash
 uv run python benchmarks/bench_ops.py        # single operations, against the standard library
 uv run python benchmarks/bench_roundtrip.py  # change notification between two processes
+uv run python benchmarks/bench_size.py       # wheel and extension module size
 uv run pytest benchmarks --codspeed          # the benchmarks CI runs
 ```
 
