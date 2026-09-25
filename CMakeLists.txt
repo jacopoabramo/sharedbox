@@ -24,6 +24,7 @@ find_package(Threads REQUIRED)
 nanobind_add_module(_native
     STABLE_ABI
     FREE_THREADED
+    LTO
     NB_DOMAIN sharedbox
     src/sharedbox/_native/module.cpp
     src/sharedbox/_native/segment.cpp
