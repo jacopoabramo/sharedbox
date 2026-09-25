@@ -9,6 +9,17 @@ on:
     types: [ published ]
 
 jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: astral-sh/setup-uv@v7
+
+      - name: Run prek
+        run: uv run --locked --only-group lint prek run --all-files --show-diff-on-failure
+
   build_wheels:
     name: Build wheel for ${{ matrix.python }}-${{ matrix.platform_id }}
     runs-on: ${{ matrix.os }}
@@ -55,6 +66,19 @@ jobs:
     needs: [build_wheels]
     if: github.event_name == 'release' && github.event.action == 'published'
     steps:
+      - name: Check the release tag and pre-release flag
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+          PRERELEASE: ${{ github.event.release.prerelease }}
+        run: |
+          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(rc[0-9]+)?$ ]]; then
+            echo "::error::tag $TAG is not vX.Y.Z or vX.Y.ZrcN"; exit 1
+          fi
+          case "$TAG" in
+            *rc*) [ "$PRERELEASE" = "true" ] || { echo "::error::$TAG must be marked pre-release"; exit 1; } ;;
+            *)    [ "$PRERELEASE" = "false" ] || { echo "::error::$TAG must not be marked pre-release"; exit 1; } ;;
+          esac
+
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
@@ -63,6 +87,11 @@ jobs:
       - name: Build SDist
         run: pipx run build --sdist
 
+      - name: Check the sdist version matches the tag
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: test -f "dist/sharedbox-${TAG#v}.tar.gz"
+
       - uses: actions/upload-artifact@v4
         with:
           name: cibw-sdist
@@ -70,9 +99,11 @@ jobs:
 
   upload_pypi:
     name: Upload to PyPI
-    needs: [build_wheels, make_sdist]
+    needs: [lint, build_wheels, make_sdist]
     runs-on: ubuntu-latest
-    environment: pypi
+    environment:
+      name: pypi
+      url: https://pypi.org/p/sharedbox
     permissions:
       id-token: write
     if: github.event_name == 'release' && github.event.action == 'published'
