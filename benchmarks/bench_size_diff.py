@@ -12,6 +12,13 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from typing import TypedDict
+
+
+class DiffRow(TypedDict):
+    tag: str
+    current: int
+    baseline: int | None
 
 
 def load(root: Path) -> dict[str, int]:
@@ -20,6 +27,35 @@ def load(root: Path) -> dict[str, int]:
         for entry in json.loads(path.read_text()):
             sizes[entry["tag"]] = entry["wheel_size"]
     return sizes
+
+
+def diff_rows(this: dict[str, int], main: dict[str, int]) -> list[DiffRow]:
+    if not main:
+        return []
+    return [
+        DiffRow(tag=tag, current=this[tag], baseline=main.get(tag))
+        for tag in sorted(this)
+    ]
+
+
+def to_markdown(rows: list[DiffRow]) -> str:
+    lines = ["## Wheel size vs main"]
+    if not rows:
+        lines.append("No baseline size data from main; nothing to compare.")
+        return "\n".join(lines)
+
+    lines += ["| wheel | this run | main | change |", "| --- | --- | --- | --- |"]
+    for row in rows:
+        current, baseline = row["current"], row["baseline"]
+        if baseline is None:
+            lines.append(f"| {row['tag']} | {current:,} B | n/a | n/a |")
+        else:
+            delta = current - baseline
+            sign = "+" if delta >= 0 else ""
+            lines.append(
+                f"| {row['tag']} | {current:,} B | {baseline:,} B | {sign}{delta:,} B |"
+            )
+    return "\n".join(lines)
 
 
 def parse_args(argv: list[str]) -> argparse.Namespace:
@@ -42,22 +78,7 @@ def main(argv: list[str] | None = None) -> int:
     this = load(args.this_dir)
     main_sizes = load(args.main_dir) if args.main_dir and args.main_dir.exists() else {}
 
-    print("## Wheel size vs main")
-    if not main_sizes:
-        print("No baseline size data from main; nothing to compare.")
-        return 0
-
-    print("| wheel | this run | main | change |")
-    print("| --- | --- | --- | --- |")
-    for tag in sorted(this):
-        current = this[tag]
-        baseline = main_sizes.get(tag)
-        if baseline is None:
-            print(f"| {tag} | {current:,} B | n/a | n/a |")
-        else:
-            delta = current - baseline
-            sign = "+" if delta >= 0 else ""
-            print(f"| {tag} | {current:,} B | {baseline:,} B | {sign}{delta:,} B |")
+    print(to_markdown(diff_rows(this, main_sizes)))
     return 0
 
 
