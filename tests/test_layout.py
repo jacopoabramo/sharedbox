@@ -16,33 +16,25 @@ class Sample:
     _private: int
 
 
-def test_offsets_are_aligned_and_packed() -> None:
+def test_fields_are_packed_by_alignment() -> None:
     layout = build_layout(Sample)
     assert [(f.name, f.kind, f.offset, f.capacity) for f in layout.fields] == [
-        ("flag", "bool", 0, 1),
-        ("count", "int", 8, 8),
-        ("ratio", "float", 16, 8),
-        ("label", "str", 24, 10),
-        ("blob", "bytes", 40, 3),
+        ("flag", "bool", 39, 1),
+        ("count", "int", 0, 8),
+        ("ratio", "float", 8, 8),
+        ("label", "str", 16, 10),
+        ("blob", "bytes", 32, 3),
     ]
-    assert layout.record_size == 48
-    assert layout.by_name["label"].native == (24, 10, 3)
-    assert layout.by_name["count"].native == (8, 8, 1)
+    assert layout.record_size == 40
+    assert layout.by_name["label"].native == (16, 10, 3)
+    assert layout.by_name["flag"].native == (39, 1, 0)
 
 
-@pytest.mark.parametrize(
-    ("name", "value"),
-    [
-        ("flag", True),
-        ("count", -(2**63)),
-        ("ratio", 0.25),
-        ("label", "héllo"),
-        ("blob", b"\x00\x01"),
-    ],
-)
-def test_encode_decode_round_trip(name: str, value: object) -> None:
-    spec = build_layout(Sample).by_name[name]
-    assert spec.decode(spec.encode(value)) == value
+def test_check_refuses_what_a_write_would() -> None:
+    spec = build_layout(Sample).by_name["count"]
+    spec.check(3)
+    with pytest.raises(TypeError, match="Sample.count expects int, got str"):
+        spec.check("3")
 
 
 def test_keyword_only_fields() -> None:
@@ -59,8 +51,7 @@ def test_keyword_only_fields() -> None:
 
 
 def test_float_field_accepts_int() -> None:
-    spec = build_layout(Sample).by_name["ratio"]
-    assert spec.decode(spec.encode(2)) == 2.0
+    build_layout(Sample).by_name["ratio"].check(2)
 
 
 @pytest.mark.parametrize(
@@ -77,7 +68,7 @@ def test_float_field_accepts_int() -> None:
 )
 def test_encode_rejects(name: str, value: object, error: type[Exception]) -> None:
     with pytest.raises(error):
-        build_layout(Sample).by_name[name].encode(value)
+        build_layout(Sample).by_name[name].check(value)
 
 
 def test_unsupported_annotation() -> None:
