@@ -1,0 +1,39 @@
+name: CodSpeed
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  benchmarks:
+    name: Run benchmarks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Set up vcpkg at the manifest baseline
+        run: |
+          git clone https://github.com/microsoft/vcpkg.git "${{ runner.temp }}/vcpkg"
+          git -C "${{ runner.temp }}/vcpkg" checkout "$(jq -r '."builtin-baseline"' vcpkg.json)"
+          "${{ runner.temp }}/vcpkg/bootstrap-vcpkg.sh" -disableMetrics
+          echo "VCPKG_ROOT=${{ runner.temp }}/vcpkg" >> "$GITHUB_ENV"
+
+      - uses: astral-sh/setup-uv@v7
+
+      - name: Install the project
+        run: uv sync --dev --frozen --python 3.12
+
+      - name: Run benchmarks
+        uses: CodSpeedHQ/action@v5
+        with:
+          mode: simulation
+          run: uv run --no-sync pytest benchmarks --codspeed

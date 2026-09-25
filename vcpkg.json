@@ -1,0 +1,8 @@
+{
+  "name": "sharedbox",
+  "version-string": "0.0.0",
+  "dependencies": [
+    "boost-interprocess"
+  ],
+  "builtin-baseline": "dc1232a6e05dcc49703091e83743e3b4df9b9b7c"
+}

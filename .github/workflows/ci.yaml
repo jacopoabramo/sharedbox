@@ -1,6 +1,6 @@
 name: CI
 
-on: 
+on:
   push:
     branches: [ main ]
   pull_request:
@@ -9,6 +9,19 @@ on:
     types: [ published ]
 
 jobs:
+  lint:
+    name: Lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+
+      # local hooks in prek.toml call `uv run --locked --only-group lint ...`
+      - uses: astral-sh/setup-uv@v7
+
+      - uses: j178/prek-action@4e14d07f9231acabce116ccfca13b13dd9755ece # v3.0.0
+        with:
+          prek-version: "0.5.3"
+
   build_wheels:
     name: Build wheel for ${{ matrix.python }}-${{ matrix.platform_id }}
     runs-on: ${{ matrix.os }}
@@ -16,60 +29,28 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          # Windows
-          - os: windows-latest
-            python: cp310
-            platform_id: win_amd64
-          - os: windows-latest
-            python: cp311
-            platform_id: win_amd64
-          - os: windows-latest
-            python: cp312
-            platform_id: win_amd64
-          - os: windows-latest
-            python: cp313
-            platform_id: win_amd64
-          
-          # Linux x86_64
-          - os: ubuntu-latest
-            python: cp310
-            platform_id: manylinux_x86_64
-          - os: ubuntu-latest
-            python: cp311
-            platform_id: manylinux_x86_64
-          - os: ubuntu-latest
-            python: cp312
-            platform_id: manylinux_x86_64
-          - os: ubuntu-latest
-            python: cp313
-            platform_id: manylinux_x86_64
-          
-          # Linux musllinux x86_64
-          - os: ubuntu-latest
-            python: cp310
-            platform_id: musllinux_x86_64
-          - os: ubuntu-latest
-            python: cp311
-            platform_id: musllinux_x86_64
-          - os: ubuntu-latest
-            python: cp312
-            platform_id: musllinux_x86_64
-          - os: ubuntu-latest
-            python: cp313
-            platform_id: musllinux_x86_64
+          - { os: windows-latest, python: cp311, platform_id: win_amd64 }
+          - { os: windows-latest, python: cp312, platform_id: win_amd64 }
+          - { os: windows-latest, python: cp314t, platform_id: win_amd64 }
+          - { os: ubuntu-latest, python: cp311, platform_id: manylinux_x86_64 }
+          - { os: ubuntu-latest, python: cp312, platform_id: manylinux_x86_64 }
+          - { os: ubuntu-latest, python: cp314t, platform_id: manylinux_x86_64 }
+          - { os: ubuntu-latest, python: cp311, platform_id: musllinux_x86_64 }
+          - { os: ubuntu-latest, python: cp312, platform_id: musllinux_x86_64 }
+          - { os: ubuntu-latest, python: cp314t, platform_id: musllinux_x86_64 }
 
     steps:
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
           ref: ${{ github.event_name == 'release' && github.event.release.tag_name || '' }}
-      
+
       - name: Build wheels
         uses: pypa/cibuildwheel@v3.2.0
         env:
           CIBW_BUILD: ${{ matrix.python }}-${{ matrix.platform_id }}
           CIBW_CONTAINER_ENGINE: "docker; create_args: --shm-size=1g"
-          CIBW_TEST_REQUIRES: pytest numpy
+          CIBW_TEST_REQUIRES: pytest
           CIBW_TEST_COMMAND: pytest {project}/tests
         with:
           package-dir: .
@@ -81,12 +62,81 @@ jobs:
           name: cibw-wheels-${{ matrix.python }}-${{ matrix.platform_id }}
           path: ./wheelhouse/*.whl
 
+      - name: Measure wheel and extension size
+        shell: bash
+        run: |
+          echo "### Wheel size: ${{ matrix.python }}-${{ matrix.platform_id }}" >> "$GITHUB_STEP_SUMMARY"
+          # Run by path, not with -m: importing the sharedbox package loads its
+          # compiled extension and psygnal, which this runner does not have installed.
+          python src/sharedbox/benchmarks/size.py wheelhouse/*.whl --json wheelhouse/sizes.json --markdown >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload size artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: wheel-sizes-${{ matrix.python }}-${{ matrix.platform_id }}
+          path: wheelhouse/sizes.json
+
+  sizes:
+    name: Report wheel size changes
+    runs-on: ubuntu-latest
+    needs: [build_wheels]
+    permissions:
+      contents: read
+      actions: read
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v5
+
+      - name: Download this run's size artifacts
+        uses: actions/download-artifact@v5
+        with:
+          pattern: wheel-sizes-*
+          path: sizes/this
+
+      - name: Find the latest successful run on main
+        id: baseline
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          run_id=$(gh run list --repo "${{ github.repository }}" --workflow ci.yaml \
+            --branch main --status success --limit 1 --json databaseId --jq '.[0].databaseId // empty')
+          echo "run_id=$run_id" >> "$GITHUB_OUTPUT"
+
+      - name: Download the baseline's size artifacts
+        if: steps.baseline.outputs.run_id != ''
+        continue-on-error: true
+        uses: actions/download-artifact@v5
+        with:
+          pattern: wheel-sizes-*
+          path: sizes/main
+          run-id: ${{ steps.baseline.outputs.run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Report size differences
+        shell: bash
+        # Run by path, not with -m: importing the sharedbox package loads its
+        # compiled extension and psygnal, which this runner does not have installed.
+        run: python src/sharedbox/benchmarks/size_diff.py sizes/this sizes/main >> "$GITHUB_STEP_SUMMARY"
+
   make_sdist:
     name: Make SDist
     runs-on: ubuntu-latest
     needs: [build_wheels]
     if: github.event_name == 'release' && github.event.action == 'published'
     steps:
+      - name: Check the release tag and pre-release flag
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+          PRERELEASE: ${{ github.event.release.prerelease }}
+        run: |
+          if ! [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(rc[0-9]+)?$ ]]; then
+            echo "::error::tag $TAG is not vX.Y.Z or vX.Y.ZrcN"; exit 1
+          fi
+          case "$TAG" in
+            *rc*) [ "$PRERELEASE" = "true" ] || { echo "::error::$TAG must be marked pre-release"; exit 1; } ;;
+            *)    [ "$PRERELEASE" = "false" ] || { echo "::error::$TAG must not be marked pre-release"; exit 1; } ;;
+          esac
+
       - uses: actions/checkout@v5
         with:
           fetch-depth: 0
@@ -95,6 +145,11 @@ jobs:
       - name: Build SDist
         run: pipx run build --sdist
 
+      - name: Check the sdist version matches the tag
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: test -f "dist/sharedbox-${TAG#v}.tar.gz"
+
       - uses: actions/upload-artifact@v4
         with:
           name: cibw-sdist
@@ -102,9 +157,11 @@ jobs:
 
   upload_pypi:
     name: Upload to PyPI
-    needs: [build_wheels, make_sdist]
+    needs: [lint, build_wheels, make_sdist]
     runs-on: ubuntu-latest
-    environment: pypi
+    environment:
+      name: pypi
+      url: https://pypi.org/p/sharedbox
     permissions:
       id-token: write
     if: github.event_name == 'release' && github.event.action == 'published'

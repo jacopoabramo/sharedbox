@@ -1,5 +1,5 @@
 [build-system]
-requires = ["scikit-build-core>=0.10.7", "nanobind>=2.9.2", "setuptools-scm>=8"]
+requires = ["scikit-build-core>=1.0", "nanobind>=3.1.0", "setuptools-scm>=8"]
 build-backend = "scikit_build_core.build"
 
 [project]
@@ -11,24 +11,39 @@ authors = [
 ]
 readme = "README.md"
 license = "Apache-2.0"
-requires-python = ">=3.10"
+requires-python = ">=3.11"
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Developers",
-    "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: Free Threading :: 2 - Beta",
     "Programming Language :: C++",
     "Topic :: Software Development :: Libraries :: Python Modules",
+]
+dependencies = [
+    "psygnal>=0.16.1",
+]
+
+[project.scripts]
+benchbox = "sharedbox.benchmarks.cli:main"
+
+[project.optional-dependencies]
+benchmarks = [
+    "pyperf>=2.10.0",
+    "typer>=0.27.2",
 ]
 
 [tool.scikit-build]
 metadata.version.provider = "scikit_build_core.metadata.setuptools_scm"
 sdist.include = ["src/sharedbox/_version.py"]
-build-dir = "build"
+build-dir = "build/{wheel_tag}"
+wheel.py-api = "cp312"
 
 [tool.scikit-build.cmake]
+version = ">=3.30"
 build-type = "Release"
 
 [tool.setuptools_scm]
@@ -38,45 +53,112 @@ version_file = "src/sharedbox/_version.py"
 testpaths = ["tests"]
 
 [tool.cibuildwheel]
+build = ["cp311-*", "cp312-*", "cp314t-*"]
 skip = ["*-win32"]
-build = ["cp310-*", "cp311-*", "cp312-*", "cp313-*"]
-# tests randomly fail on musllinux;
-# skipping them for now but requires investigation
-test-skip = ["*-musllinux*"]
+build-verbosity = 1
 
 [tool.cibuildwheel.linux]
 before-all = [
-    # prepare the system
-    "yum update -y || apk update",
-    "yum install -y curl zip unzip tar git || apk add --no-cache curl zip unzip tar git build-base cmake ninja",
-    # clone vcpkg with shallow history to save space
-    "cd /opt && git clone https://github.com/microsoft/vcpkg.git --single-branch --branch master",
-    "cd /opt/vcpkg && ./bootstrap-vcpkg.sh",
-    # install boost-interprocess via vcpkg
-    "/opt/vcpkg/vcpkg install boost-interprocess",
-    # cleanup to save disk space
-    "rm -rf /opt/vcpkg/buildtrees /opt/vcpkg/downloads"
+    "yum install -y curl zip unzip tar git",
+    "git clone https://github.com/microsoft/vcpkg.git /opt/vcpkg",
+    "git -C /opt/vcpkg checkout dc1232a6e05dcc49703091e83743e3b4df9b9b7c",
+    "/opt/vcpkg/bootstrap-vcpkg.sh -disableMetrics",
 ]
-environment = { VCPKG_ROOT="/opt/vcpkg" }
+environment = { VCPKG_ROOT = "/opt/vcpkg" }
 
-# musllinux-specific configuration
 [[tool.cibuildwheel.overrides]]
 select = "*-musllinux*"
-environment = { VCPKG_ROOT="/opt/vcpkg",VCPKG_FORCE_SYSTEM_BINARIES = "1" }
+before-all = [
+    "apk add --no-cache curl zip unzip tar git build-base cmake ninja pkgconf linux-headers",
+    "git clone https://github.com/microsoft/vcpkg.git /opt/vcpkg",
+    "git -C /opt/vcpkg checkout dc1232a6e05dcc49703091e83743e3b4df9b9b7c",
+    "/opt/vcpkg/bootstrap-vcpkg.sh -disableMetrics",
+]
+environment = { VCPKG_ROOT = "/opt/vcpkg", VCPKG_FORCE_SYSTEM_BINARIES = "1" }
 
 [tool.cibuildwheel.windows]
 before-all = [
-    # vcpkg already included in the runner
-    # install boost-interprocess via vcpkg
-    "vcpkg install boost-interprocess",
+    "git clone https://github.com/microsoft/vcpkg.git C:/vcpkg-sharedbox",
+    "git -C C:/vcpkg-sharedbox checkout dc1232a6e05dcc49703091e83743e3b4df9b9b7c",
+    "C:/vcpkg-sharedbox/bootstrap-vcpkg.bat -disableMetrics",
 ]
-environment = { VCPKG_ROOT="C:/vcpkg" }
-    
+environment = { VCPKG_ROOT = "C:/vcpkg-sharedbox" }
+
+[tool.ruff]
+line-length = 88
+
+[tool.mypy]
+strict = true
+warn_unreachable = true
+files = ["src", "tests"]
+
+[[tool.mypy.overrides]]
+module = ["pyperf"]
+ignore_missing_imports = true
+
+[tool.tox]
+requires = ["tox>=4.64.1", "tox-uv-bare>=1.36"]
+env_list = ["py311", "py312", "py313", "py314", "py314t", "mypy", "lint"]
+
+[tool.tox.env_run_base]
+runner = "uv-venv-lock-runner"
+dependency_groups = ["dev"]
+# CMakeLists.txt requires VCPKG_ROOT to locate the vcpkg Boost install; tox
+# does not forward arbitrary environment variables to the build subprocess.
+pass_env = ["VCPKG_ROOT"]
+commands = [["pytest", "-q", { replace = "posargs", extend = true }]]
+
+[tool.tox.env.py314t]
+base_python = ["3.14t"]
+
+[tool.tox.env.lint]
+runner = "uv-venv-lock-runner"
+skip_install = true
+dependency_groups = ["lint"]
+commands = [["prek", "run", "--all-files", "--show-diff-on-failure"]]
+
+[tool.tox.env.mypy]
+dependency_groups = ["dev", "benchmarks"]
+# The allowlist covers what stubtest cannot see in nanobind's compiled types
+# (its own metaclass, its own static-method wrapper); see stubtest-allowlist.txt.
+commands = [
+    ["mypy"],
+    [
+        "python", "-m", "mypy.stubtest", "sharedbox._native",
+        "--allowlist", "stubtest-allowlist.txt",
+    ],
+]
 
 [dependency-groups]
+benchmarks = [
+    "pyperf>=2.10.0",
+    "typer>=0.27.2",
+]
 dev = [
-    "nanobind>=2.9.2",
-    "numpy>=2.2.6",
-    "pytest>=8.4.2",
-    "ruff>=0.13.3",
+    "mypy>=2.3.1",
+    "nanobind>=3.1.0",
+    "pytest>=9.1.1",
+    "pytest-codspeed>=5.0.3",
+    "tox>=4.64.1",
+    "tox-uv-bare>=1.36",
+]
+lint = [
+    "clang-format>=23.1.1",
+    "prek>=0.5.3",
+    "ruff>=0.16.8",
+]
+
+# uv rebuilds an installed project only
+# when these change;
+# list the C++ sources
+# so an edit to them rebuilds the extension
+# instead of reusing the old one.
+[tool.uv]
+default-groups = ["dev", "lint", "benchmarks"]
+cache-keys = [
+    { file = "pyproject.toml" },
+    { file = "CMakeLists.txt" },
+    { file = "vcpkg.json" },
+    { file = "src/sharedbox/_native/**/*" },
+    { git = { commit = true } },
 ]
