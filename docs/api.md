@@ -207,6 +207,19 @@ Signals differ from those of a local evented dataclass:
 - A callback that raises is logged to the `sharedbox` logger. Callbacks
   connected before it on the same signal have already run; those connected
   after it do not run for that emission. Other fields still emit.
+- The watcher thread also serves this box's `watch()` iterators, so a slow
+  callback delays them.
+- A callback that refers to the box, such as a lambda that reads a field,
+  keeps the box alive until `close()`. Close such a box explicitly or use it
+  in a `with` block.
+- A field named like an attribute of psygnal's `SignalGroup` (`connect`,
+  `disconnect`, `all`, `signals`, `block` and others) makes psygnal warn when
+  the class is defined, and `box.events.<name>` then returns that attribute.
+  `box.events["<name>"]` returns the field's signal.
+- A child process created with `fork` while a callback is running can hang
+  the first time that signal emits in the child, because the child inherits
+  the signal's lock as held. Start child processes with `spawn` or
+  `forkserver`, or fork while no callback runs.
 
 ### `watch`
 
