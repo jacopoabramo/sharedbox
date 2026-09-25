@@ -62,16 +62,17 @@ for a new name and raises `SegmentExistsError` if it is taken.
 
 The segment holds a named object `"sharedbox.header"` (64 bytes, one cache
 line) and one block with the tail and the record. The tail is `field_count`
-`StoredField` entries of 8 bytes (`u32 offset`, `u32 capacity_and_kind`, top
-bit set for a prefixed field), then one `u64` write count per field. The
-record follows, 64-byte aligned. The segment size is these plus 1024 bytes
-for Boost's bookkeeping, rounded up to 4 KiB. `static_assert`s in
-`segment.cpp` check every `sizeof` and `offsetof`.
+`StoredField` entries of 8 bytes (`u32 offset`, `u32 capacity_and_kind`: low
+24 bits the capacity, top 8 the field's kind code), then one `u64` write
+count per field. The record follows, 64-byte aligned. The segment size is
+these plus 1024 bytes for Boost's bookkeeping, rounded up to 4 KiB.
+`static_assert`s in `segment.cpp` check every `sizeof` and `offsetof`.
 
 `Header` fields:
 
-- `magic`: written last on create; `attach()` waits for it.
-- `abi_version`: `2`; any other value is refused. `magic` and `abi_version`
+- `magic`: written last on create, after the initial field values are in
+  the record; `attach()` waits for it.
+- `abi_version`: `3`; any other value is refused. `magic` and `abi_version`
   keep their offsets across versions.
 - `field_count`, `record_size`.
 - `schema_hash`: first 8 bytes of SHA-256 over the class identity and each
@@ -90,15 +91,17 @@ for Boost's bookkeeping, rounded up to 4 KiB. `static_assert`s in
 
 ### Record encoding
 
-Fields in declaration order, base classes first, each starting at a multiple
-of 8 bytes. Everything is little-endian.
+Fields are packed by descending alignment (`int` and `float` first, then
+`str`/`bytes`, then `bool`), not declaration order, each starting at a
+multiple of its own alignment. The native module converts values to and
+from these bytes; nothing is pickled. Everything is little-endian.
 
 - `bool`: 1 byte, `0x00` or `0x01`.
 - `int`: 8 bytes, signed.
 - `float`: 8 bytes, IEEE 754 double.
 - `str`, `bytes`: `u32` length, then up to `capacity` bytes (UTF-8 for `str`).
 
-Nothing is pickled. At most 256 fields; a capacity is 1 byte to 1 MiB.
+At most 256 fields; a capacity is 1 byte to 1 MiB.
 
 ### Lifecycle
 

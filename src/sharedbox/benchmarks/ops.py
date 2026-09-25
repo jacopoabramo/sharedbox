@@ -3,8 +3,9 @@
 Every contender holds the same record: an int, a float and a string of up
 to 32 bytes. ``mp.Value/Array`` takes one lock per value, so its "update two
 fields" and "read all" rows take two or three locks one after the other.
-Rows under ``split`` time the native segment's raw byte read and write in
-isolation, without the type conversion and validation ``get``/``set`` do.
+Rows under ``split`` isolate the native segment's typed ``set``/``get``,
+which convert the Python value in the native module, against the raw
+``_write``/``_read`` calls that move already-encoded bytes.
 
     python -m sharedbox.benchmarks.ops -o ops.json
     python -m sharedbox.benchmarks.ops --fast --filter "read*"
@@ -236,10 +237,12 @@ BENCHMARKS: list[tuple[str, str, str, list[str]]] = [
         NAMESPACE,
         ["{'a': ns.a, 'b': ns.b, 's': ns.s}"],
     ),
-    ("native write int", "split", BOX, ["seg._write([(0, raw_a)])"]),
-    ("native read int", "split", BOX, ["seg._read(0)"]),
-    ("native write str", "split", BOX, ["seg._write([(2, raw_s)])"]),
-    ("native read str", "split", BOX, ["seg._read(2)"]),
+    ("native set int", "split", BOX, ["seg.set([(0, 1)])"]),
+    ("native get int", "split", BOX, ["seg.get(0)"]),
+    ("raw write int", "split", BOX, ["seg._write([(0, raw_a)])"]),
+    ("raw read int", "split", BOX, ["seg._read(0)"]),
+    ("native set str", "split", BOX, ["seg.set([(2, 'hello')])"]),
+    ("native get str", "split", BOX, ["seg.get(2)"]),
 ]
 
 

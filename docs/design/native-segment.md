@@ -62,7 +62,7 @@ with one entry per field, and the record that holds the field values.
 ```cpp
 struct alignas(64) Header {                    // offset
     std::atomic<std::uint64_t> magic;          //  0  written last; marks the header as complete
-    std::uint32_t abi_version;                 //  8  layout version, 2
+    std::uint32_t abi_version;                 //  8  layout version, 3
     std::uint32_t field_count;                 // 12
     std::uint64_t schema_hash;                 // 16  fingerprint of the Python class
     std::uint32_t record_size;                 // 24
@@ -77,7 +77,7 @@ struct alignas(64) Header {                    // offset
 
 struct StoredField {                           // one entry of the field table
     std::uint32_t offset;
-    std::uint32_t capacity_and_kind;           // top bit set: the field has a length prefix
+    std::uint32_t capacity_and_kind;           // low 24 bits: capacity; top 8: the field's kind code
 };
 ```
 
@@ -91,13 +91,15 @@ same offsets as in layout version 1, so a process can open a block of an
 older version and report which version it is.
 
 The field table, which the code calls the tail, holds `field_count` entries
-of 8 bytes, followed by one 8-byte write counter per field. A capacity is
-at most 1 MiB and needs 21 bits, so the kind of the field is kept in the top
-bit of the capacity instead of in a byte of its own, which would pad each
-entry to 12 bytes. The table and the record share one allocation, with the
-record moved forward to the next 64-byte boundary. Boost's aligned
-allocation temporarily asks for twice the requested size, which would make
-a box with a 1 MiB field need a block of over 2 MiB.
+of 8 bytes, followed by one 8-byte write counter per field. Each entry packs
+a 32-bit offset and a 32-bit `capacity_and_kind`: the low 24 bits hold the
+capacity (at most 1 MiB, which needs 21 bits) and the top 8 hold the field's
+kind code (`bool` 0, `int` 1, `float` 2, `str` 3, `bytes` 4), so the entry
+stays 8 bytes with no byte of its own set aside for the kind. The table and
+the record share one allocation, with the record moved forward to the next
+64-byte boundary. Boost's aligned allocation temporarily asks for twice the
+requested size, which would make a box with a 1 MiB field need a block of
+over 2 MiB.
 
 The block is as large as these parts plus 1024 bytes for Boost's own
 bookkeeping, which needs at most 552 bytes on Windows and on Linux with glibc, rounded
@@ -113,17 +115,25 @@ Each field has a fixed place and a fixed size in the record. A number takes
 record: | count (8) | ratio (8) | label: length (4) + up to 32 bytes, padded to 8 |
 ```
 
+Fields are packed by descending alignment (the 8-byte `int` and `float`
+fields first, then `str` and `bytes`, then `bool`), not declaration order,
+so a field's place in the record need not match its place in the class.
+
+The values passed to `create()` are written into the record before the
+header's `magic` word is set, so an attaching process never sees a record
+before every field holds its starting value.
+
 Why fixed places instead of something more flexible, such as a dictionary
 stored in shared memory:
 
 - Reading or writing a field is one copy of a known number of bytes to or
   from a known address. There is no structure to walk and nothing to
   rebalance.
-- Values are stored as plain bytes the Python side encodes (`struct` for
-  numbers, UTF-8 for text). Nothing is ever unpickled. Unpickling runs code
-  chosen by whoever wrote the bytes [5], so a box whose values were pickles
-  would let any process that can write the block run code in every process
-  that reads it.
+- Values are stored as plain bytes the native module converts (packing
+  numbers the way `struct` would, text as UTF-8). Nothing is ever unpickled.
+  Unpickling runs code chosen by whoever wrote the bytes [5], so a box whose
+  values were pickles would let any process that can write the block run
+  code in every process that reads it.
 - A process that opens the block with a different version of the class is
   refused: the `schema_hash` in the header must match the hash the opener
   computes from its own class.

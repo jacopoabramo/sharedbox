@@ -49,10 +49,9 @@ def test_snapshot(benchmark: BenchmarkFixture, box: Record) -> None:
     benchmark(box.snapshot)
 
 
-def test_encode_int(benchmark: BenchmarkFixture) -> None:
-    benchmark(Record.__layout__.by_name["a"].encode, 1)
+def test_native_set_int(benchmark: BenchmarkFixture, box: Record) -> None:
+    benchmark(box._segment.set, [(0, 1)])
 
 
-def test_decode_int(benchmark: BenchmarkFixture) -> None:
-    spec = Record.__layout__.by_name["a"]
-    benchmark(spec.decode, spec.encode(1))
+def test_native_get_int(benchmark: BenchmarkFixture, box: Record) -> None:
+    benchmark(box._segment.get, 0)

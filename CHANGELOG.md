@@ -28,6 +28,8 @@ Dates are marked as `DD-MM-YYYY`
 - Wheels per platform: `cp311-cp311`, `cp312-abi3` for CPython 3.12 and
   newer, and `cp314-cp314t` for free-threaded CPython 3.14.
 - Boost is installed through a vcpkg manifest pinned to one baseline.
+- `SharedBox` fields are converted in the native module and packed by
+  alignment; segments use layout version 3.
 
 ### Removed
 
