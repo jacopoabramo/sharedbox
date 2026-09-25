@@ -27,14 +27,20 @@ def wheel_tag() -> str:
 
 
 def vcpkg_triplet() -> str:
-    arch = {"amd64": "x64", "x86_64": "x64", "arm64": "arm64", "aarch64": "arm64"}[platform.machine().lower()]
+    arch = {"amd64": "x64", "x86_64": "x64", "arm64": "arm64", "aarch64": "arm64"}[
+        platform.machine().lower()
+    ]
     return f"{arch}-windows" if sys.platform == "win32" else f"{arch}-linux"
 
 
 def include_paths() -> list[str]:
-    vcpkg = ROOT / "build" / wheel_tag() / "vcpkg_installed" / vcpkg_triplet() / "include"
+    vcpkg = (
+        ROOT / "build" / wheel_tag() / "vcpkg_installed" / vcpkg_triplet() / "include"
+    )
     if not vcpkg.is_dir():
-        raise SystemExit(f"{vcpkg} does not exist; run `uv sync --dev` with this interpreter first")
+        raise SystemExit(
+            f"{vcpkg} does not exist; run `uv sync --dev` with this interpreter first"
+        )
     nanobind_root = Path(nanobind.include_dir()).parent
     paths = [
         ROOT / "src" / "sharedbox" / "_native",
@@ -47,7 +53,11 @@ def include_paths() -> list[str]:
 
 
 def defines() -> list[str]:
-    names = ["BOOST_ALL_NO_LIB", "WIN32_LEAN_AND_MEAN", "NOMINMAX", "_WIN32_WINNT=0x0A00"] if sys.platform == "win32" else []
+    names = (
+        ["BOOST_ALL_NO_LIB", "WIN32_LEAN_AND_MEAN", "NOMINMAX", "_WIN32_WINNT=0x0A00"]
+        if sys.platform == "win32"
+        else []
+    )
     if sysconfig.get_config_var("Py_GIL_DISABLED"):
         names.append("Py_GIL_DISABLED=1")
     return names
@@ -55,10 +65,20 @@ def defines() -> list[str]:
 
 def main() -> None:
     try:
-        properties = json.loads(PROPERTIES.read_text(encoding="utf-8")) if PROPERTIES.exists() else {}
+        properties = (
+            json.loads(PROPERTIES.read_text(encoding="utf-8"))
+            if PROPERTIES.exists()
+            else {}
+        )
     except json.JSONDecodeError as error:
-        raise SystemExit(f"{PROPERTIES} is not plain JSON ({error}); remove comments or the file and run again")
-    others = [c for c in properties.get("configurations", []) if c.get("name") != CONFIGURATION]
+        raise SystemExit(
+            f"{PROPERTIES} is not plain JSON ({error}); remove comments or the file and run again"
+        )
+    others = [
+        c
+        for c in properties.get("configurations", [])
+        if c.get("name") != CONFIGURATION
+    ]
     configuration = {
         "name": CONFIGURATION,
         "includePath": include_paths(),
