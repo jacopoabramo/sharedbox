@@ -6,13 +6,16 @@ fields" and "read all" rows take two or three locks one after the other.
 Rows under ``split`` time SharedBox's Python encoding and its native call
 separately.
 
-    uv run python benchmarks/bench_ops.py -o ops.json
+    python -m sharedbox.benchmarks.ops -o ops.json
+    python -m sharedbox.benchmarks.ops --fast --filter "read*"
 """
 
+import argparse
 import atexit
 import multiprocessing as mp
 import os
 import struct
+from fnmatch import fnmatchcase
 from multiprocessing.shared_memory import ShareableList, SharedMemory
 from typing import Annotated, Any
 
@@ -59,7 +62,9 @@ def open_values() -> tuple[Any, ...]:
 
 
 def open_list() -> tuple[Any, ...]:
-    shared = ShareableList([0, 0.0, " " * 32], name=f"bench-ops-list-{os.getpid()}")
+    shared = ShareableList[Any](
+        [0, 0.0, " " * 32], name=f"bench-ops-list-{os.getpid()}"
+    )
     atexit.register(shared.shm.unlink)
     atexit.register(shared.shm.close)
     return (shared,)
@@ -244,10 +249,29 @@ BENCHMARKS: list[tuple[str, str, str, list[str]]] = [
 ]
 
 
+def forward_filter(cmd: list[str], args: argparse.Namespace) -> None:
+    if args.filter:
+        cmd.extend(("--filter", args.filter))
+
+
 def main() -> None:
-    runner = pyperf.Runner()
+    runner = pyperf.Runner(
+        # Workers start the module by name, so they import the same sharedbox
+        # whether it runs from a checkout or from an installed wheel.
+        program_args=("-m", "sharedbox.benchmarks.ops"),
+        add_cmdline_args=forward_filter,
+    )
+    runner.argparser.add_argument(
+        "--filter",
+        metavar="PATTERN",
+        help="run only benchmarks whose operation/contender name matches this "
+        "glob pattern",
+    )
+    pattern = runner.parse_args().filter
     for operation, contender, setup, stmt in BENCHMARKS:
-        runner.timeit(f"{operation}/{contender}", stmt, setup, globals=globals())
+        name = f"{operation}/{contender}"
+        if pattern is None or fnmatchcase(name, pattern):
+            runner.timeit(name, stmt, setup, globals=globals())
 
 
 if __name__ == "__main__":

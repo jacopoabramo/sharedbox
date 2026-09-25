@@ -66,7 +66,9 @@ jobs:
         shell: bash
         run: |
           echo "### Wheel size: ${{ matrix.python }}-${{ matrix.platform_id }}" >> "$GITHUB_STEP_SUMMARY"
-          python benchmarks/bench_size.py wheelhouse/*.whl --json wheelhouse/sizes.json --markdown >> "$GITHUB_STEP_SUMMARY"
+          # Run by path, not with -m: importing the sharedbox package loads its
+          # compiled extension, which this runner does not have installed.
+          python src/sharedbox/benchmarks/size.py wheelhouse/*.whl --json wheelhouse/sizes.json --markdown >> "$GITHUB_STEP_SUMMARY"
 
       - name: Upload size artifact
         uses: actions/upload-artifact@v4
@@ -112,7 +114,9 @@ jobs:
 
       - name: Report size differences
         shell: bash
-        run: python benchmarks/bench_size_diff.py sizes/this sizes/main >> "$GITHUB_STEP_SUMMARY"
+        # Run by path, not with -m: importing the sharedbox package loads its
+        # compiled extension, which this runner does not have installed.
+        run: python src/sharedbox/benchmarks/size_diff.py sizes/this sizes/main >> "$GITHUB_STEP_SUMMARY"
 
   make_sdist:
     name: Make SDist

@@ -1,9 +1,9 @@
 """Wheel and extension-module size, read straight from the zip.
 
-uv run python benchmarks/bench_size.py                 # dist/*.whl, wheelhouse/*.whl
-uv run python benchmarks/bench_size.py dist/*.whl       # explicit wheels
-uv run python benchmarks/bench_size.py --json sizes.json
-uv run python benchmarks/bench_size.py --markdown
+python -m sharedbox.benchmarks.size             # dist/*.whl, wheelhouse/*.whl
+python -m sharedbox.benchmarks.size dist/*.whl  # explicit wheels
+python -m sharedbox.benchmarks.size --json sizes.json
+python -m sharedbox.benchmarks.size --markdown
 """
 
 import argparse
