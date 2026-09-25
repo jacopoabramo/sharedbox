@@ -116,9 +116,13 @@ dev = [
     "pyperf>=2.10.0",
     "pytest>=9.1.1",
     "pytest-codspeed>=5.0.3",
-    "ruff>=0.16.8",
     "tox>=4.64.1",
     "tox-uv-bare>=1.36",
+]
+lint = [
+    "clang-format>=23.1.1",
+    "prek>=0.5.3",
+    "ruff>=0.16.8",
 ]
 
 # uv rebuilds an installed project only
@@ -127,6 +131,7 @@ dev = [
 # so an edit to them rebuilds the extension
 # instead of reusing the old one.
 [tool.uv]
+default-groups = ["dev", "lint"]
 cache-keys = [
     { file = "pyproject.toml" },
     { file = "CMakeLists.txt" },
