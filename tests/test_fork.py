@@ -11,7 +11,9 @@ from multiprocessing.synchronize import Event
 
 import pytest
 
-from sharedbox import SharedBox
+from sharedbox import LockTimeoutError, SharedBox
+from sharedbox._layout import NativeField
+from sharedbox._native import Segment
 
 pytestmark = [
     pytest.mark.skipif(sys.platform == "win32", reason="Windows has no fork"),
@@ -29,6 +31,10 @@ class Counter(SharedBox):
 
 def close_box(box: Counter) -> None:
     box.close()
+
+
+def hold_write_lock(segment: Segment) -> None:
+    segment._hold_write_lock()
 
 
 def watch_box(box: Counter, ready: Event, out: "Queue[int]") -> None:
@@ -108,3 +114,13 @@ def test_unlink_reports_a_refused_unlink_as_oserror(unique_name: str) -> None:
         ]
         assert finish(child) == 0
     Counter.unlink(unique_name)
+
+
+def test_forked_child_records_its_own_pid_in_a_raw_segment(unique_name: str) -> None:
+    segment = Segment.create(unique_name, [NativeField(0, 8, False)], 8, 1, 0.3)
+    child = fork(hold_write_lock, segment)
+    assert finish(child) == 0
+    with pytest.raises(LockTimeoutError, match=rf"locked by pid {child.pid}\b"):
+        segment.write([(0, bytes(8))])
+    segment.force_unlock()
+    segment.close()
