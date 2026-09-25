@@ -229,10 +229,7 @@ Signals differ from those of a local evented dataclass:
 
 - Callbacks run on the box's watcher thread. Connect with `thread="main"`
   and call `psygnal.emit_queued()` from the main thread to run them there
-  instead. On free-threaded Python, call `psygnal.emit_queued()` once on the
-  main thread before the first write: psygnal creates that thread's queue on
-  first use, and a callback queued from the watcher thread at the same moment
-  can be lost.
+  instead.
 - Closing the box delivers writes the watcher thread had not seen yet, so
   callbacks may run once on the thread that calls `close()`, or on the
   thread that garbage collects the box.
@@ -258,6 +255,47 @@ Signals differ from those of a local evented dataclass:
   the first time that signal emits in the child, because the child inherits
   the signal's lock as held. Start child processes with `spawn` or
   `forkserver`, or fork while no callback runs.
+
+`events` is an ordinary psygnal `SignalGroup`, so psygnal's own tools for
+controlling emissions apply to it:
+
+- `psygnal.qt.start_emitting_from_queue()` starts a Qt timer on the calling
+  thread that runs callbacks connected with `thread="main"`, so a Qt
+  application does not call `emit_queued()` itself.
+- `blocked()` (or `block()` and `unblock()`) on a signal drops its emissions
+  in this process while it is blocked; changes made meanwhile are not
+  emitted later.
+- `paused()` holds emissions made inside a block and releases them at the
+  end, in order; with a reducer they are combined into one emission.
+- `psygnal.throttled` and `psygnal.debounced` limit how often a callback
+  runs, for fields that change many times a second.
+
+```python
+import time
+
+from psygnal import throttled
+
+from sharedbox import SharedBox
+
+
+class Pump(SharedBox):
+    flow: float = 0.0
+
+
+@throttled(timeout=100)
+def show_flow(new: float, old: float) -> None:
+    print("flow", new)
+
+
+pump = Pump()
+pump.events.flow.connect(show_flow)
+for i in range(20):
+    pump.flow = float(i)
+    time.sleep(0.01)
+time.sleep(0.3)  # prints a few values, not twenty
+pump.close()
+Pump.unlink()
+```
 
 ### `watch`
 
