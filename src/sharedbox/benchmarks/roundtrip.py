@@ -123,17 +123,18 @@ def box_round_trips(ctx: SpawnContext, opts: Options) -> list[int]:
         sent[0] = i
         box.ping = i
 
+    child: SpawnProcess | None = None
     try:
         pongs: Iterator[int] = iter(box.watch("pong"))
         child = run_child(ctx, box_child, name, opts.total)
         threading.Thread(target=watchdog, daemon=True).start()
         if next(pongs, None) != -1:
             raise SystemExit(f"{label}: the child did not start")
-        samples = measure(label, send, lambda i: next(pongs, None) == i, opts)
-        stop_child(child, opts.timeout)
-        return samples
+        return measure(label, send, lambda i: next(pongs, None) == i, opts)
     finally:
         done.set()
+        if child is not None:
+            stop_child(child, opts.timeout)
         box.close()
         PingPong.unlink(name)
 
@@ -151,18 +152,19 @@ def event_round_trips(ctx: SpawnContext, opts: Options) -> list[int]:
     label = "mp.Event"
     ping, pong = ctx.Event(), ctx.Event()
     child = run_child(ctx, event_child, ping, pong, opts.total, opts.timeout)
-    if not pong.wait(opts.timeout):
-        raise SystemExit(f"{label}: the child did not start")
-    pong.clear()
 
     def receive(_: int) -> bool:
         answered = pong.wait(opts.timeout)
         pong.clear()
         return answered
 
-    samples = measure(label, lambda _: ping.set(), receive, opts)
-    stop_child(child, opts.timeout)
-    return samples
+    try:
+        if not pong.wait(opts.timeout):
+            raise SystemExit(f"{label}: the child did not start")
+        pong.clear()
+        return measure(label, lambda _: ping.set(), receive, opts)
+    finally:
+        stop_child(child, opts.timeout)
 
 
 def pipe_child(conn: Connection, total: int, timeout: float) -> None:
@@ -177,16 +179,17 @@ def pipe_round_trips(ctx: SpawnContext, opts: Options) -> list[int]:
     label = "mp.Pipe"
     conn, child_conn = ctx.Pipe()
     child = run_child(ctx, pipe_child, child_conn, opts.total, opts.timeout)
-    if not (conn.poll(opts.timeout) and conn.recv() == -1):
-        raise SystemExit(f"{label}: the child did not start")
-    samples = measure(
-        label,
-        conn.send,
-        lambda i: conn.poll(opts.timeout) and conn.recv() == i,
-        opts,
-    )
-    stop_child(child, opts.timeout)
-    return samples
+    try:
+        if not (conn.poll(opts.timeout) and conn.recv() == -1):
+            raise SystemExit(f"{label}: the child did not start")
+        return measure(
+            label,
+            conn.send,
+            lambda i: conn.poll(opts.timeout) and conn.recv() == i,
+            opts,
+        )
+    finally:
+        stop_child(child, opts.timeout)
 
 
 def buffer(shm: SharedMemory) -> memoryview:
@@ -220,19 +223,20 @@ def poll_round_trips(ctx: SpawnContext, opts: Options) -> list[int]:
     label = "SharedMemory polling"
     shm = SharedMemory(f"bench-roundtrip-{os.getpid()}", create=True, size=16)
     buf = buffer(shm)
+    child: SpawnProcess | None = None
     try:
         child = run_child(ctx, poll_child, shm.name, opts.total)
         if not poll_until(buf, -1, opts.timeout):
             raise SystemExit(f"{label}: the child did not start")
-        samples = measure(
+        return measure(
             label,
             lambda i: INT.pack_into(buf, 0, i),
             lambda i: poll_until(buf, i, opts.timeout),
             opts,
         )
-        stop_child(child, opts.timeout)
-        return samples
     finally:
+        if child is not None:
+            stop_child(child, opts.timeout)
         shm.close()
         shm.unlink()
 
