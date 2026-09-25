@@ -108,3 +108,39 @@ def test_no_emission_after_close(unique_name: str) -> None:
     with pytest.raises(queue.Empty):
         seen.get(timeout=0.3)
     other.close()
+
+
+def test_writes_between_two_checks_give_one_emission(unique_name: str) -> None:
+    seen: queue.Queue[tuple[int, int]] = queue.Queue()
+    entered, release = threading.Event(), threading.Event()
+
+    def block(new: int) -> None:
+        entered.set()
+        release.wait(5)
+
+    with Counter.create(unique_name) as box:
+        box.events.other.connect(block)
+        box.events.value.connect(lambda new, old: seen.put((new, old)))
+        box.other = 1
+        assert entered.wait(5)
+        box.value = 1
+        box.value = 2
+        release.set()
+        assert seen.get(timeout=5) == (2, 0)
+        with pytest.raises(queue.Empty):
+            seen.get(timeout=0.3)
+
+
+def test_old_is_the_last_emitted_value_after_a_same_value_write(
+    unique_name: str,
+) -> None:
+    seen: queue.Queue[tuple[int, int]] = queue.Queue()
+    with Counter.create(unique_name) as box:
+        box.events.value.connect(lambda new, old: seen.put((new, old)))
+        box.value = 5
+        assert seen.get(timeout=5) == (5, 0)
+        box.value = 5
+        with pytest.raises(queue.Empty):
+            seen.get(timeout=0.3)
+        box.value = 6
+        assert seen.get(timeout=5) == (6, 5)
