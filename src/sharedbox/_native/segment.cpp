@@ -8,6 +8,7 @@
 #include <cstring>
 #include <mutex>
 #include <new>
+#include <optional>
 #include <shared_mutex>
 #include <system_error>
 #include <thread>
@@ -92,8 +93,22 @@ void cpu_relax() {
 
 class Backoff {
 public:
-    explicit Backoff(double timeout) : deadline_(Clock::now() + to_duration(timeout)) {}
-    bool expired() const { return Clock::now() >= deadline_; }
+    explicit Backoff(double timeout) : timeout_(timeout) {}
+
+    // The clock is read only once the fast (uncontended) path has already failed once,
+    // so an uncontended lock() or read_consistent() never reads the clock at all. This
+    // means lock_timeout is measured from the first failed attempt, not from
+    // construction; the difference is one failed attempt's worth of time, negligible
+    // next to lock_timeout's default of seconds.
+    bool expired() {
+        Clock::time_point now = Clock::now();
+        if (!deadline_) {
+            deadline_ = now + to_duration(timeout_);
+            return false;
+        }
+        return now >= *deadline_;
+    }
+
     void pause() {
         if (++spins_ < 64)
             cpu_relax();
@@ -102,7 +117,8 @@ public:
     }
 
 private:
-    Clock::time_point deadline_;
+    double timeout_;
+    std::optional<Clock::time_point> deadline_;
     unsigned spins_ = 0;
 };
 
