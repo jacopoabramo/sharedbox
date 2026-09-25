@@ -17,6 +17,13 @@ sharedbox/
 |   |-- _events.py             FieldWatch, the watcher thread, psygnal events
 |   |-- _native.pyi            hand-written stub for the extension
 |   |-- py.typed
+|   |-- benchmarks/            the sharedbox-bench command (extra: benchmarks)
+|   |   |-- cli.py             entry point; exits with an install hint without Typer
+|   |   |-- _app.py            Typer commands: ops, roundtrip, size, all
+|   |   |-- ops.py             pyperf timings of single operations, against the stdlib
+|   |   |-- roundtrip.py       cross-process round trip percentiles
+|   |   |-- size.py            wheel and extension size (standard library only)
+|   |   `-- size_diff.py       wheel size table against main, for CI (standard library only)
 |   `-- _native/
 |       |-- module.cpp         nanobind module: Segment and the error classes
 |       |-- segment.{hpp,cpp}  the segment: header, record, sequence lock
@@ -24,8 +31,6 @@ sharedbox/
 |-- tests/                     pytest; many tests spawn processes
 |   `-- type_checks/           checked by mypy, never imported at run time
 |-- benchmarks/                not collected by the default pytest run
-|   |-- bench_ops.py           pyperf timings of single operations, against the stdlib
-|   |-- bench_roundtrip.py     cross-process round trip percentiles
 |   `-- test_bench_box.py      pytest-codspeed benchmarks, run by codspeed.yml
 |-- scripts/vscode_setup.py    points VS Code's C/C++ extension at the build headers
 |-- docs/api.md                API reference

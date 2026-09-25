@@ -157,14 +157,35 @@ uv run tox -e py314t        # one version
 
 ### Running benchmarks
 
+The `benchmarks` extra installs a `sharedbox-bench` command that measures
+`sharedbox` on your own machine:
+
 ```bash
-uv run python benchmarks/bench_ops.py        # single operations, against the standard library
-uv run python benchmarks/bench_roundtrip.py  # change notification between two processes
-uv run python benchmarks/bench_size.py       # wheel and extension module size
-uv run pytest benchmarks --codspeed          # the benchmarks CI runs
+pip install "sharedbox[benchmarks]"
+
+sharedbox-bench ops                  # single operations, against the standard library
+sharedbox-bench ops --fast --filter "read*" --json ops.json
+sharedbox-bench roundtrip            # change notification between two processes
+sharedbox-bench size dist/*.whl      # wheel and extension module size
+sharedbox-bench all --out results    # all of the above, plus results/summary.md
 ```
 
-CI runs the pytest benchmarks on CodSpeed for every push and pull request to `main`.
+`ops` runs on [pyperf](https://pyperf.readthedocs.io); arguments after `--`
+are passed to it unchanged. `all` writes each command's JSON output and a
+Markdown summary with the OS, CPU, Python version and build, and the
+`sharedbox` version. It measures wheel sizes only when it finds wheels in
+`dist/` or `wheelhouse/`. `python -m sharedbox.benchmarks` runs the same
+command.
+
+In a checkout, `uv sync` installs the extra's dependencies, so
+`uv run sharedbox-bench` works there too. The pytest benchmarks are separate
+and live only in the repository:
+
+```bash
+uv run pytest benchmarks --codspeed
+```
+
+CI runs them on CodSpeed for every push and pull request to `main`.
 
 ## License
 

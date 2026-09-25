@@ -18,6 +18,9 @@ Dates are marked as `DD-MM-YYYY`
   field.
 - `BoxClosedError`, `LockTimeoutError`, `SchemaMismatchError`,
   `SegmentExistsError`, `SegmentNotFoundError`.
+- `sharedbox-bench`: command with `ops`, `roundtrip`, `size` and `all`
+  benchmarks, also run as `python -m sharedbox.benchmarks`.
+- `benchmarks` extra: installs Typer and pyperf for `sharedbox-bench`.
 
 ### Changed
 
