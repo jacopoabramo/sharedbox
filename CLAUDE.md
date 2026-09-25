@@ -4,7 +4,7 @@
 `SharedBox` is a base class: a subclass's annotated fields are stored in one
 named segment that every process can open. The segment is C++
 (Boost.Interprocess) exposed to Python with nanobind; the Python side decides
-the layout and encodes values.
+the layout and the native module converts values.
 
 ## Repository layout
 
