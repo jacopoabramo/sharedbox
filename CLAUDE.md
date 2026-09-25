@@ -35,6 +35,8 @@ sharedbox/
 |-- CMakeLists.txt             extension build
 |-- vcpkg.json                 Boost dependency and vcpkg baseline
 |-- stubtest-allowlist.txt     stubtest exceptions for nanobind types
+|-- .clang-format              clang-format style for src/sharedbox/_native/
+|-- prek.toml                  prek hooks: ruff, clang-format, and the builtin checks
 |-- pyproject.toml             scikit-build-core, setuptools-scm, pytest, cibuildwheel, mypy, tox
 `-- uv.lock
 ```
@@ -132,8 +134,11 @@ uv run tox -e py314t                   # one env
 ```
 
 CI (`.github/workflows/ci.yaml`) builds the wheels above with cibuildwheel,
-runs pytest against each wheel, and publishes to PyPI on a GitHub release.
-Docker runs with `--shm-size=1g`, so keep test segments under that.
+runs pytest against each wheel, and publishes to PyPI. Publishing runs only
+from a GitHub release tagged `vX.Y.Z` and marked as a release, or
+`vX.Y.ZrcN` and marked as a pre-release; any other tag or mismatch between
+the tag and the pre-release flag fails the build before it uploads. Docker
+runs with `--shm-size=1g`, so keep test segments under that.
 
 ## Usage
 
@@ -172,6 +177,7 @@ process.
 ## Conventions
 
 - Changelog: `CHANGELOG.md`, Keep a Changelog format, dates as `DD-MM-YYYY`.
-- Lint and format Python with `ruff` (dev dependency).
+- Lint and format Python with `ruff` and C++ with `clang-format`, both run
+  through prek: `uv run prek run --all-files`, `uv run tox -e lint`.
 - Change dependencies with `uv add` / `uv remove`, never by editing
   `pyproject.toml`.

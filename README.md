@@ -144,6 +144,9 @@ uv run python scripts/vscode_setup.py
 
 Run it again after changing the Python version or deleting `build/`.
 
+Run `uv run prek install` once to lint and format each commit; `uv run tox
+-e lint` runs the same checks on demand.
+
 ### Running tests
 
 ```bash
