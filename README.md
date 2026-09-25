@@ -174,10 +174,11 @@ sharedbox-bench all --out results    # all of the above, plus results/summary.md
 are passed to it unchanged. `all` writes each command's JSON output and a
 Markdown summary with the OS, CPU, Python version and build, and the
 `sharedbox` version. It measures wheel sizes only when it finds wheels in
-`dist/` or `wheelhouse/`. `python -m sharedbox.benchmarks` runs the same
-command.
+`dist/` or `wheelhouse/`, and then measures every wheel there, older builds
+included. `python -m sharedbox.benchmarks` runs the same command.
 
-In a checkout, `uv sync` installs the extra's dependencies, so
+In a checkout, `uv sync` installs the `benchmarks` dependency group, which
+has the same packages as the extra, so
 `uv run sharedbox-bench` works there too. The pytest benchmarks are separate
 and live only in the repository:
 
