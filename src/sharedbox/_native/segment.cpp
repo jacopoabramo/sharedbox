@@ -22,6 +22,7 @@
 #else
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <boost/interprocess/shared_memory_object.hpp>
+#include <pthread.h>
 #include <unistd.h>
 #endif
 
@@ -74,13 +75,19 @@ Clock::duration to_duration(double seconds) {
     return std::chrono::duration_cast<Clock::duration>(std::chrono::duration<double>(seconds));
 }
 
-std::int64_t current_pid() {
 #ifdef _WIN32
-    return static_cast<std::int64_t>(GetCurrentProcessId());
+std::int64_t current_pid() { return static_cast<std::int64_t>(GetCurrentProcessId()); }
 #else
-    return static_cast<std::int64_t>(getpid());
+// getpid() is a real system call on Linux (neither glibc nor musl cache it), so the pid is
+// read once and read again in every child created by fork, whoever calls fork.
+std::atomic<std::int64_t> cached_pid{0};
+
+void read_pid() { cached_pid.store(static_cast<std::int64_t>(getpid()), std::memory_order_relaxed); }
+
+[[maybe_unused]] const bool pid_tracked = (read_pid(), pthread_atfork(nullptr, nullptr, read_pid) == 0);
+
+std::int64_t current_pid() { return cached_pid.load(std::memory_order_relaxed); }
 #endif
-}
 
 void cpu_relax() {
 #if defined(_WIN32)
@@ -148,9 +155,6 @@ struct Segment::Impl {
     // Validated copy of the header's field table; the shared one can be rewritten by any process.
     std::vector<StoredField> fields;
     double lock_timeout = 5.0;
-    // Cached once per process (and refreshed in after_fork()) since a per-write getpid()
-    // call is a real system call on Linux (neither glibc nor musl cache it).
-    std::int64_t pid = 0;
     std::atomic<bool> closed{false};
     std::unique_ptr<Notifier> notifier;
     // Without a GIL (free-threaded builds) close() can race any other call; it takes this exclusively.
@@ -204,7 +208,7 @@ struct Segment::Impl {
             if ((seq & 1u) == 0 && header->seq.compare_exchange_weak(seq, seq + 1, std::memory_order_acquire,
                                                                      std::memory_order_relaxed)) {
                 std::atomic_thread_fence(std::memory_order_release);
-                header->writer_pid.store(pid, std::memory_order_relaxed);
+                header->writer_pid.store(current_pid(), std::memory_order_relaxed);
                 return;
             }
             if (backoff.expired())
@@ -256,7 +260,6 @@ std::unique_ptr<Segment> Segment::create(const std::string &name, const std::vec
     auto impl = std::make_unique<Impl>();
     impl->name = name;
     impl->lock_timeout = lock_timeout;
-    impl->pid = current_pid();
 
     bipc::permissions perms;
 #ifndef _WIN32
@@ -305,7 +308,6 @@ std::unique_ptr<Segment> Segment::attach(const std::string &name, std::uint64_t 
     auto impl = std::make_unique<Impl>();
     impl->name = name;
     impl->lock_timeout = lock_timeout;
-    impl->pid = current_pid();
     try {
         impl->segment = Managed(bipc::open_only, name.c_str());
     } catch (const bipc::interprocess_exception &e) {
@@ -454,7 +456,6 @@ void Segment::after_fork() {
     // the child, so the lock would never be released. The old one is overwritten, not destroyed,
     // because destroying a held mutex is undefined.
     new (&impl_->lifetime) std::shared_mutex();
-    impl_->pid = current_pid();
 }
 
 void Segment::close() {
