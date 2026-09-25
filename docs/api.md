@@ -106,7 +106,8 @@ Settings.unlink()
   `ValueError`.
 - `kw_only`: make every field keyword-only.
 - `lock_timeout`: seconds a read or write waits for a write in progress
-  before `LockTimeoutError`, 5.0 by default. Must be positive.
+  before `LockTimeoutError`, 5.0 by default. Must be finite and in
+  `(0, 86400]`; any other value raises `ValueError`.
 
 ### Creating and attaching
 
