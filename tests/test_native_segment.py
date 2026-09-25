@@ -1,10 +1,13 @@
+import contextlib
+import mmap
 import multiprocessing as mp
 import os
 import struct
 import sys
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Generator
+from multiprocessing.shared_memory import SharedMemory
 
 import pytest
 
@@ -29,6 +32,33 @@ def create(name: str, timeout: float = 1.0) -> Segment:
 
 def attach(name: str, timeout: float = 1.0) -> Segment:
     return Segment.attach(name, SCHEMA, timeout)
+
+
+MAGIC = b"SHREDBX1"
+
+
+@contextlib.contextmanager
+def raw_bytes(name: str) -> Generator[memoryview, None, None]:
+    if sys.platform == "win32":
+        shm = SharedMemory(name)
+        try:
+            assert shm.buf is not None
+            yield shm.buf
+        finally:
+            shm.close()
+    else:
+        with (
+            open(f"/dev/shm/{name}", "r+b") as file,
+            mmap.mmap(file.fileno(), 0) as mapping,
+            memoryview(mapping) as view,
+        ):
+            yield view
+
+
+def patch_header(name: str, offset: int, fmt: str, value: int) -> None:
+    with raw_bytes(name) as view:
+        header = bytes(view).index(MAGIC)
+        struct.pack_into(fmt, view, header + offset, value)
 
 
 def write_pair(name: str, count: int) -> None:
@@ -227,4 +257,39 @@ def test_bad_wait_timeout_is_refused(unique_name: str, timeout: float) -> None:
     segment = create(unique_name)
     with pytest.raises(ValueError):
         segment.wait(segment.generation(), timeout)
+    segment.close()
+
+
+def test_small_segment_takes_a_few_pages(unique_name: str) -> None:
+    segment = Segment.create(
+        unique_name, [*FIELDS, NativeField(32, 8, False)], 40, SCHEMA, 1.0
+    )
+    assert segment._size <= 16 * 1024
+    segment.close()
+
+
+@pytest.mark.parametrize(
+    ("offset", "fmt", "value"),
+    [
+        pytest.param(32, "<I", 0xFFFF_FFF0, id="tail-outside"),
+        pytest.param(32, "<I", 0xFFFF_FFFF, id="tail-unaligned"),
+        pytest.param(12, "<I", 256, id="tail-too-long"),
+        pytest.param(28, "<I", 0xFFFF_FFF0, id="record-outside"),
+    ],
+)
+def test_corrupt_header_is_refused(
+    unique_name: str, offset: int, fmt: str, value: int
+) -> None:
+    segment = create(unique_name)
+    patch_header(unique_name, offset, fmt, value)
+    with pytest.raises(SchemaMismatchError, match="corrupt header"):
+        attach(unique_name)
+    segment.close()
+
+
+def test_older_layout_is_refused(unique_name: str) -> None:
+    segment = create(unique_name)
+    patch_header(unique_name, 8, "<I", 1)
+    with pytest.raises(SchemaMismatchError, match="uses layout version 1"):
+        attach(unique_name)
     segment.close()

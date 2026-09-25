@@ -80,6 +80,7 @@ NB_MODULE(_native, m) {
         .def("_after_fork", &Segment::after_fork)
         .def("close", &Segment::close)
         .def_static("unlink", &Segment::unlink, "name"_a)
+        .def_prop_ro("_size", &Segment::size)
         .def_prop_ro("closed", &Segment::closed)
         .def_prop_ro("name", &Segment::name);
 }

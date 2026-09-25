@@ -77,6 +77,10 @@ class Segment:
         """Detach this handle; the segment stays until unlinked."""
 
     @property
+    def _size(self) -> int:
+        """Bytes of shared memory the segment manages."""
+
+    @property
     def closed(self) -> bool:
         """True after :meth:`close`."""
 

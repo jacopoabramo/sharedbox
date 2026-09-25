@@ -371,3 +371,23 @@ def test_collecting_a_box_while_holding_its_watcher_lock_does_not_hang(
 
     threading.Thread(target=collect_under_the_lock, daemon=True).start()
     assert finished.wait(5)
+
+
+def test_box_with_the_most_fields(unique_name: str) -> None:
+    widest = shape_class({f"f{i}": int for i in range(256)})
+    with (
+        widest.create(unique_name, *range(256)) as box,
+        widest.attach(unique_name) as other,
+    ):
+        box.update(f0=-1, f255=-2)
+        assert list(other.snapshot().values()) == [-1, *range(1, 255), -2]
+
+
+def test_field_of_the_largest_capacity(unique_name: str) -> None:
+    largest = shape_class({"data": Annotated[bytes, Capacity(1 << 20)]})  # type: ignore[dict-item] # Annotated is a valid field annotation
+    value = bytes(range(256)) * 4096
+    with (
+        largest.create(unique_name, data=value),
+        largest.attach(unique_name) as other,
+    ):
+        assert other.data == value  # type: ignore[attr-defined] # data is a field added dynamically, above

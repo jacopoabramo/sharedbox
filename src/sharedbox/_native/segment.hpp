@@ -59,6 +59,8 @@ public:
     void after_fork();
     /// Detaches this handle; the segment itself stays until unlinked.
     void close();
+    /// Bytes of shared memory the segment manages.
+    std::uint64_t size() const;
     bool closed() const;
     const std::string &name() const;
     /// Removes the name, like shm_unlink: existing handles keep working. A no-op on

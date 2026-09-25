@@ -6,13 +6,16 @@
 #include <cerrno>
 #include <chrono>
 #include <cmath>
+#include <cstddef>
 #include <cstring>
+#include <memory>
 #include <mutex>
 #include <new>
 #include <optional>
 #include <shared_mutex>
 #include <system_error>
 #include <thread>
+#include <type_traits>
 
 #include <boost/interprocess/exceptions.hpp>
 #include <boost/interprocess/permissions.hpp>
@@ -38,36 +41,77 @@ using Managed = bipc::managed_shared_memory;
 #endif
 
 constexpr std::uint64_t kMagic = 0x3158424445524853ull;
-constexpr std::uint32_t kAbiVersion = 1;
+constexpr std::uint32_t kAbiVersion = 2;
 constexpr std::uint32_t kMaxFields = 256;
 constexpr std::uint32_t kMaxCapacity = 1u << 20;
+constexpr std::uint64_t kMaxRecordSize = static_cast<std::uint64_t>(kMaxFields) * (kMaxCapacity + 8);
+constexpr std::uint32_t kPrefixed = 1u << 31;
+constexpr std::size_t kRecordAlignment = 64;
+// Boost 1.92 needs at most 552 bytes for its own bookkeeping and the named header's entry,
+// measured on Windows and on Linux (glibc) by shrinking the segment until creation failed.
+constexpr std::size_t kBoostOverhead = 1024;
+// Rounding to a smaller unit than the real page size only makes the OS round up again.
+constexpr std::size_t kPageSize = 4096;
 constexpr const char *kHeaderName = "sharedbox.header";
+
+using Version = std::atomic<std::uint64_t>;
 
 static_assert(std::atomic<std::uint64_t>::is_always_lock_free);
 static_assert(std::atomic<std::uint32_t>::is_always_lock_free);
+// Earlier segment managers ignore alignas when constructing a named object.
+static_assert(BOOST_INTERPROCESS_SEGMENT_MANAGER_ABI >= 2);
 
+// The top bit of capacity_and_kind marks a length-prefixed field: a capacity needs 21 bits,
+// and a separate kind byte would pad the entry to 12 bytes.
 struct StoredField {
-    std::uint64_t offset;
-    std::uint32_t capacity;
-    std::uint8_t kind;
-    std::uint8_t reserved[3];
+    std::uint32_t offset;
+    std::uint32_t capacity_and_kind;
 };
+static_assert(std::is_standard_layout_v<StoredField>);
+static_assert(sizeof(StoredField) == 8 && alignof(StoredField) == 4);
+static_assert(offsetof(StoredField, offset) == 0 && offsetof(StoredField, capacity_and_kind) == 4);
 
-struct Header {
+// One cache line. Everything before writer_pid is written at creation and read only by
+// attach, so sharing the line with the members every write changes costs nothing, and a
+// write touches a single header line. magic and abi_version keep their offsets in every
+// layout version, so attach can name the version of an older segment.
+struct alignas(64) Header {
     std::atomic<std::uint64_t> magic;
     std::uint32_t abi_version;
     std::uint32_t field_count;
     std::uint64_t schema_hash;
-    std::uint64_t record_size;
-    Managed::handle_t record;
+    std::uint32_t record_size;
+    std::uint32_t record;
+    std::uint32_t tail;
+    std::atomic<std::uint32_t> writer_pid;
     std::atomic<std::uint64_t> seq;
     std::atomic<std::uint64_t> generation;
     std::atomic<std::uint32_t> wake_word;
     std::atomic<std::uint32_t> waiters;
-    std::atomic<std::int64_t> writer_pid;
-    StoredField fields[kMaxFields];
-    std::atomic<std::uint64_t> versions[kMaxFields];
 };
+static_assert(std::is_standard_layout_v<Header>);
+static_assert(sizeof(Header) == 64 && alignof(Header) == 64);
+static_assert(offsetof(Header, magic) == 0 && offsetof(Header, abi_version) == 8);
+static_assert(offsetof(Header, field_count) == 12 && offsetof(Header, schema_hash) == 16);
+static_assert(offsetof(Header, record_size) == 24 && offsetof(Header, record) == 28);
+static_assert(offsetof(Header, tail) == 32 && offsetof(Header, writer_pid) == 36);
+static_assert(offsetof(Header, seq) == 40 && offsetof(Header, generation) == 48);
+static_assert(offsetof(Header, wake_word) == 56 && offsetof(Header, waiters) == 60);
+static_assert(sizeof(Version) == 8 && alignof(Version) == 8);
+
+// The tail holds field_count StoredField entries followed by field_count versions; entries
+// are 8 bytes, so the versions stay 8-byte aligned when the tail is.
+constexpr std::size_t tail_size(std::size_t field_count) {
+    return field_count * (sizeof(StoredField) + sizeof(Version));
+}
+
+constexpr std::size_t segment_size(std::uint64_t record_size, std::size_t field_count) {
+    std::size_t raw = sizeof(Header) + tail_size(field_count) + kRecordAlignment - 1 +
+                      static_cast<std::size_t>(record_size) + kBoostOverhead;
+    return (raw + kPageSize - 1) / kPageSize * kPageSize;
+}
+// Offsets into the segment are stored in 32 bits.
+static_assert(segment_size(kMaxRecordSize, kMaxFields) <= UINT32_MAX);
 
 using Clock = std::chrono::steady_clock;
 
@@ -76,17 +120,17 @@ Clock::duration to_duration(double seconds) {
 }
 
 #ifdef _WIN32
-std::int64_t current_pid() { return static_cast<std::int64_t>(GetCurrentProcessId()); }
+std::uint32_t current_pid() { return static_cast<std::uint32_t>(GetCurrentProcessId()); }
 #else
 // getpid() is a real system call on Linux (neither glibc nor musl cache it), so the pid is
 // read once and read again in every child created by fork, whoever calls fork.
-std::atomic<std::int64_t> cached_pid{0};
+std::atomic<std::uint32_t> cached_pid{0};
 
-void read_pid() { cached_pid.store(static_cast<std::int64_t>(getpid()), std::memory_order_relaxed); }
+void read_pid() { cached_pid.store(static_cast<std::uint32_t>(getpid()), std::memory_order_relaxed); }
 
 [[maybe_unused]] const bool pid_tracked = (read_pid(), pthread_atfork(nullptr, nullptr, read_pid) == 0);
 
-std::int64_t current_pid() { return cached_pid.load(std::memory_order_relaxed); }
+std::uint32_t current_pid() { return cached_pid.load(std::memory_order_relaxed); }
 #endif
 
 void cpu_relax() {
@@ -132,17 +176,13 @@ void check_lock_timeout(double lock_timeout) {
         throw std::invalid_argument("lock_timeout must be finite and in (0, 86400]");
 }
 
-bool field_fits(std::uint64_t offset, std::uint32_t capacity, std::uint8_t kind, std::uint64_t record_size) {
-    if (kind > 1 || capacity == 0 || capacity > kMaxCapacity || offset % 8 != 0 || offset > record_size)
+bool field_fits(const FieldDesc &f, std::uint64_t record_size) {
+    bool prefixed = f.kind == FieldKind::Prefixed;
+    if ((!prefixed && f.kind != FieldKind::Fixed) || f.capacity == 0 || f.capacity > kMaxCapacity ||
+        f.offset % 8 != 0 || f.offset > record_size)
         return false;
-    std::uint64_t span = capacity + (kind == 1 ? sizeof(std::uint32_t) : 0);
-    return span <= record_size - offset;
-}
-
-std::size_t segment_size(std::uint64_t record_size) {
-    constexpr std::size_t kGranularity = 64 * 1024;
-    std::size_t raw = sizeof(Header) + static_cast<std::size_t>(record_size) + kGranularity;
-    return (raw + kGranularity - 1) / kGranularity * kGranularity;
+    std::uint64_t span = f.capacity + (prefixed ? sizeof(std::uint32_t) : 0);
+    return span <= record_size - f.offset;
 }
 
 } // namespace
@@ -152,8 +192,9 @@ struct Segment::Impl {
     Managed segment;
     Header *header = nullptr;
     unsigned char *record = nullptr;
-    // Validated copy of the header's field table; the shared one can be rewritten by any process.
-    std::vector<StoredField> fields;
+    Version *versions = nullptr;
+    // Validated copy of the field table; the shared one can be rewritten by any process.
+    std::vector<FieldDesc> fields;
     double lock_timeout = 5.0;
     std::atomic<bool> closed{false};
     std::unique_ptr<Notifier> notifier;
@@ -165,16 +206,16 @@ struct Segment::Impl {
             throw SegmentClosed("box '" + name + "' is closed");
     }
 
-    const StoredField &field(std::uint32_t index) const {
+    const FieldDesc &field(std::uint32_t index) const {
         if (index >= fields.size())
             throw std::out_of_range("field index " + std::to_string(index) + " is out of range");
         return fields[index];
     }
 
     // Races with writers by design; read_consistent discards copies taken during a write.
-    void copy_out(const StoredField &f, std::string &out) const {
+    void copy_out(const FieldDesc &f, std::string &out) const {
         const unsigned char *src = record + f.offset;
-        if (f.kind == static_cast<std::uint8_t>(FieldKind::Fixed)) {
+        if (f.kind == FieldKind::Fixed) {
             out.assign(reinterpret_cast<const char *>(src), f.capacity);
             return;
         }
@@ -246,14 +287,13 @@ std::unique_ptr<Segment> Segment::create(const std::string &name, const std::vec
         throw std::invalid_argument("a box needs between 1 and 256 fields");
     // Bounds record_size so segment_size()'s addition cannot wrap: without this, a
     // record_size near 2^64 makes segment_size() overflow to a small value, create_only
-    // then succeeds against that small size, and allocate_aligned(record_size) throws
-    // afterwards, leaving the name behind.
-    constexpr std::uint64_t kMaxRecordSize = static_cast<std::uint64_t>(kMaxFields) * (kMaxCapacity + 8);
+    // then succeeds against that small size, and allocating the record throws afterwards,
+    // leaving the name behind.
     if (record_size > kMaxRecordSize)
         throw std::invalid_argument("record_size " + std::to_string(record_size) + " exceeds the maximum of " +
                                     std::to_string(kMaxRecordSize));
     for (const auto &f : fields)
-        if (!field_fits(f.offset, f.capacity, static_cast<std::uint8_t>(f.kind), record_size))
+        if (!field_fits(f, record_size))
             throw std::invalid_argument("field at offset " + std::to_string(f.offset) +
                                         " does not fit the record");
 
@@ -266,7 +306,8 @@ std::unique_ptr<Segment> Segment::create(const std::string &name, const std::vec
     perms.set_permissions(0600);
 #endif
     try {
-        impl->segment = Managed(bipc::create_only, name.c_str(), segment_size(record_size), nullptr, perms);
+        impl->segment =
+            Managed(bipc::create_only, name.c_str(), segment_size(record_size, fields.size()), nullptr, perms);
     } catch (const bipc::interprocess_exception &e) {
         if (e.get_error_code() == bipc::already_exists_error)
             throw SegmentExists("a segment named '" + name + "' already exists");
@@ -275,21 +316,33 @@ std::unique_ptr<Segment> Segment::create(const std::string &name, const std::vec
 
     try {
         Header *h = impl->segment.construct<Header>(kHeaderName)();
-        void *record = impl->segment.allocate_aligned(static_cast<std::size_t>(record_size), 64);
-        std::memset(record, 0, static_cast<std::size_t>(record_size));
-        h->abi_version = kAbiVersion;
-        h->field_count = static_cast<std::uint32_t>(fields.size());
-        h->schema_hash = schema_hash;
-        h->record_size = record_size;
-        h->record = impl->segment.get_handle_from_address(record);
-        for (std::size_t i = 0; i < fields.size(); ++i) {
-            h->fields[i] = StoredField{
-                fields[i].offset, fields[i].capacity, static_cast<std::uint8_t>(fields[i].kind), {0, 0, 0}};
-            impl->fields.push_back(h->fields[i]);
+        const std::size_t count = fields.size();
+        const auto record_bytes = static_cast<std::size_t>(record_size);
+        // Boost's allocate_aligned reserves twice the requested size while it looks for an
+        // aligned address, so the tail and the record share one block, aligned here.
+        std::size_t space = kRecordAlignment - 1 + record_bytes;
+        auto *tail = static_cast<unsigned char *>(impl->segment.allocate(tail_size(count) + space));
+        void *record = tail + tail_size(count);
+        std::align(kRecordAlignment, record_bytes, record, space);
+        std::memset(record, 0, record_bytes);
+        auto *versions = reinterpret_cast<Version *>(tail + count * sizeof(StoredField));
+        for (std::size_t i = 0; i < count; ++i) {
+            const StoredField stored{static_cast<std::uint32_t>(fields[i].offset),
+                                     fields[i].capacity | (fields[i].kind == FieldKind::Prefixed ? kPrefixed : 0)};
+            std::memcpy(tail + i * sizeof(StoredField), &stored, sizeof stored);
+            new (&versions[i]) Version(0);
         }
+        impl->fields = fields;
+        h->abi_version = kAbiVersion;
+        h->field_count = static_cast<std::uint32_t>(count);
+        h->schema_hash = schema_hash;
+        h->record_size = static_cast<std::uint32_t>(record_size);
+        h->record = static_cast<std::uint32_t>(impl->segment.get_handle_from_address(record));
+        h->tail = static_cast<std::uint32_t>(impl->segment.get_handle_from_address(tail));
         h->magic.store(kMagic, std::memory_order_release);
 
         impl->header = h;
+        impl->versions = versions;
         impl->record = static_cast<unsigned char *>(record);
         impl->notifier = std::make_unique<Notifier>(name, impl->header->wake_word, impl->header->waiters);
     } catch (...) {
@@ -316,18 +369,27 @@ std::unique_ptr<Segment> Segment::attach(const std::string &name, std::uint64_t 
         throw;
     }
 
-    auto found = impl->segment.find<Header>(kHeaderName);
-    Header *h = found.first;
-    if (h == nullptr || found.second != 1)
+    // Found as bytes because an older layout's header has another size; magic and
+    // abi_version are read at their fixed offsets before the size is compared.
+    auto found = impl->segment.find<unsigned char>(kHeaderName);
+    unsigned char *raw = found.first;
+    if (raw == nullptr || found.second < offsetof(Header, abi_version) + sizeof(std::uint32_t) ||
+        reinterpret_cast<std::uintptr_t>(raw) % alignof(std::uint64_t) != 0)
         throw SchemaMismatch("segment '" + name + "' is not a sharedbox");
+    const auto &magic = *reinterpret_cast<const std::atomic<std::uint64_t> *>(raw);
     Backoff wait_for_creator(1.0);
-    while (h->magic.load(std::memory_order_acquire) != kMagic) {
+    while (magic.load(std::memory_order_acquire) != kMagic) {
         if (wait_for_creator.expired())
             throw SchemaMismatch("segment '" + name + "' is not a sharedbox");
         wait_for_creator.pause();
     }
-    if (h->abi_version != kAbiVersion)
-        throw SchemaMismatch("segment '" + name + "' uses layout version " + std::to_string(h->abi_version));
+    std::uint32_t abi_version;
+    std::memcpy(&abi_version, raw + offsetof(Header, abi_version), sizeof abi_version);
+    if (abi_version != kAbiVersion)
+        throw SchemaMismatch("segment '" + name + "' uses layout version " + std::to_string(abi_version));
+    if (found.second != sizeof(Header) || reinterpret_cast<std::uintptr_t>(raw) % alignof(Header) != 0)
+        throw SchemaMismatch("segment '" + name + "' has a corrupt header");
+    Header *h = reinterpret_cast<Header *>(raw);
     if (h->schema_hash != schema_hash)
         throw SchemaMismatch("segment '" + name + "' was created by a different class");
 
@@ -338,20 +400,29 @@ std::unique_ptr<Segment> Segment::attach(const std::string &name, std::uint64_t 
     const std::uint64_t size = impl->segment.get_size();
     const std::uint64_t record_size = h->record_size;
     const std::uint32_t count = h->field_count;
-    const Managed::handle_t record_handle = h->record;
-    if (count == 0 || count > kMaxFields || record_handle < 0 ||
-        static_cast<std::uint64_t>(record_handle) >= size ||
-        record_size > size - static_cast<std::uint64_t>(record_handle))
+    const std::uint64_t record_handle = h->record;
+    const std::uint64_t tail_handle = h->tail;
+    if (count == 0 || count > kMaxFields || record_handle >= size || record_size > size - record_handle ||
+        tail_handle >= size || tail_size(count) > size - tail_handle)
+        throw SchemaMismatch("segment '" + name + "' has a corrupt header");
+    auto *tail = static_cast<unsigned char *>(
+        impl->segment.get_address_from_handle(static_cast<Managed::handle_t>(tail_handle)));
+    if (reinterpret_cast<std::uintptr_t>(tail) % alignof(Version) != 0)
         throw SchemaMismatch("segment '" + name + "' has a corrupt header");
     for (std::uint32_t i = 0; i < count; ++i) {
-        StoredField f = h->fields[i];
-        if (!field_fits(f.offset, f.capacity, f.kind, record_size))
+        StoredField stored;
+        std::memcpy(&stored, tail + i * sizeof(StoredField), sizeof stored);
+        const FieldDesc f{stored.offset, stored.capacity_and_kind & ~kPrefixed,
+                          (stored.capacity_and_kind & kPrefixed) ? FieldKind::Prefixed : FieldKind::Fixed};
+        if (!field_fits(f, record_size))
             throw SchemaMismatch("segment '" + name + "' has a corrupt header");
         impl->fields.push_back(f);
     }
 
     impl->header = h;
-    impl->record = static_cast<unsigned char *>(impl->segment.get_address_from_handle(record_handle));
+    impl->versions = reinterpret_cast<Version *>(tail + count * sizeof(StoredField));
+    impl->record = static_cast<unsigned char *>(
+        impl->segment.get_address_from_handle(static_cast<Managed::handle_t>(record_handle)));
     impl->notifier = std::make_unique<Notifier>(name, impl->header->wake_word, impl->header->waiters);
     return std::unique_ptr<Segment>(new Segment(std::move(impl)));
 }
@@ -359,7 +430,7 @@ std::unique_ptr<Segment> Segment::attach(const std::string &name, std::uint64_t 
 std::string Segment::read(std::uint32_t index) const {
     std::shared_lock guard(impl_->lifetime);
     impl_->check_open();
-    const StoredField &f = impl_->field(index);
+    const FieldDesc &f = impl_->field(index);
     std::string out;
     impl_->read_consistent([&] { impl_->copy_out(f, out); });
     return out;
@@ -380,8 +451,8 @@ void Segment::write(const std::vector<std::pair<std::uint32_t, std::string>> &va
     std::shared_lock guard(impl_->lifetime);
     impl_->check_open();
     for (const auto &[index, bytes] : values) {
-        const StoredField &f = impl_->field(index);
-        bool fixed = f.kind == static_cast<std::uint8_t>(FieldKind::Fixed);
+        const FieldDesc &f = impl_->field(index);
+        bool fixed = f.kind == FieldKind::Fixed;
         if (fixed ? bytes.size() != f.capacity : bytes.size() > f.capacity)
             throw std::invalid_argument("value for field " + std::to_string(index) + " is " +
                                         std::to_string(bytes.size()) + " bytes; the field holds " +
@@ -389,16 +460,16 @@ void Segment::write(const std::vector<std::pair<std::uint32_t, std::string>> &va
     }
     impl_->lock();
     for (const auto &[index, bytes] : values) {
-        const StoredField &f = impl_->fields[index];
+        const FieldDesc &f = impl_->fields[index];
         unsigned char *dst = impl_->record + f.offset;
-        if (f.kind == static_cast<std::uint8_t>(FieldKind::Fixed)) {
+        if (f.kind == FieldKind::Fixed) {
             std::memcpy(dst, bytes.data(), bytes.size());
         } else {
             auto length = static_cast<std::uint32_t>(bytes.size());
             std::memcpy(dst, &length, sizeof length);
             std::memcpy(dst + sizeof length, bytes.data(), bytes.size());
         }
-        impl_->header->versions[index].fetch_add(1, std::memory_order_relaxed);
+        impl_->versions[index].fetch_add(1, std::memory_order_relaxed);
     }
     impl_->unlock();
     impl_->header->generation.fetch_add(1, std::memory_order_seq_cst);
@@ -409,7 +480,7 @@ std::uint64_t Segment::version(std::uint32_t index) const {
     std::shared_lock guard(impl_->lifetime);
     impl_->check_open();
     impl_->field(index);
-    return impl_->header->versions[index].load(std::memory_order_acquire);
+    return impl_->versions[index].load(std::memory_order_acquire);
 }
 
 std::uint64_t Segment::generation() const {
@@ -467,6 +538,7 @@ void Segment::close() {
     std::unique_lock guard(impl_->lifetime);
     impl_->notifier.reset();
     impl_->header = nullptr;
+    impl_->versions = nullptr;
     impl_->record = nullptr;
     impl_->segment = Managed();
 }
@@ -483,6 +555,12 @@ void Segment::unlink(const std::string &name) {
 #else
     (void)name;
 #endif
+}
+
+std::uint64_t Segment::size() const {
+    std::shared_lock guard(impl_->lifetime);
+    impl_->check_open();
+    return impl_->segment.get_size();
 }
 
 bool Segment::closed() const { return impl_->closed; }
