@@ -133,10 +133,11 @@ def copy_state(source: FieldFuture[T], relay: asyncio.Future[T]) -> None:
 
 
 class FieldWatch(Generic[T]):
-    """Values written to one field after the watch was created, for ``for`` and ``async for``.
+    """New values of one field, for ``for`` and ``async for``.
 
-    A consumer slower than the writers gets the latest value and skips the
-    ones in between. Iteration ends when the box is closed.
+    Only writes made after the watch was created count. A consumer slower
+    than the writers gets the latest value and skips the ones in between.
+    Iteration ends when the box is closed.
     """
 
     __slots__ = ("_field", "_since", "_watcher")
@@ -279,6 +280,8 @@ class Watcher:
             try:
                 self._resolve_ready()
                 self._emit_changes()
+            except LockTimeoutError as error:
+                logger.warning("%s", error)
             except Exception:
                 logger.exception(
                     "checking box %r for changes on close failed", self._segment.name
@@ -313,12 +316,17 @@ class Watcher:
     def _run(self) -> None:
         with contextlib.suppress(BoxClosedError):
             generation = self._segment.generation()
+            timed_out = False
             while not self._stop.is_set():
                 try:
                     self._resolve_ready()
                     self._emit_changes()
+                    timed_out = False
                 except LockTimeoutError as error:
-                    logger.warning("%s", error)
+                    # A dead writer keeps the lock until force_unlock(); warn once per outage.
+                    if not timed_out:
+                        logger.warning("%s", error)
+                    timed_out = True
                 if self._stop.is_set():
                     return
                 generation = self._segment.wait(generation, POLL)

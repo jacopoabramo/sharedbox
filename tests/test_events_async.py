@@ -134,7 +134,7 @@ def test_watcher_recovers_after_a_lock_timeout(
 
     assert asyncio.run(main()) == 2
     assert seen.get(timeout=5) == 2
-    assert "locked" in caplog.text
+    assert caplog.text.count("locked") == 1
 
 
 def test_cancelling_the_consumer_while_the_box_closes_raises(unique_name: str) -> None:
