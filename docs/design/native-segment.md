@@ -100,7 +100,7 @@ allocation temporarily asks for twice the requested size, which would make
 a box with a 1 MiB field need a block of over 2 MiB.
 
 The block is as large as these parts plus 1024 bytes for Boost's own
-bookkeeping, which needs at most 552 bytes on Windows and on Linux, rounded
+bookkeeping, which needs at most 552 bytes on Windows and on Linux with glibc, rounded
 up to 4 KiB. A box with three small fields takes 4 KiB; one with 256
 integer fields takes 8 KiB. `static_assert`s on `sizeof` and `offsetof` in
 `segment.cpp` stop the build if any of these layouts changes by accident.
