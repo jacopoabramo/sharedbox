@@ -100,6 +100,77 @@ stored in shared memory:
   refused: the `schema_hash` in the header must match the hash the opener
   computes from its own class.
 
+### The class fingerprint (`schema_hash`)
+
+The C++ side has no idea what the bytes in the record mean. It knows each
+field's offset, capacity and whether it has a length prefix, but not whether
+8 bytes at offset 16 are an `int` or a `float`, or which field is called
+`position`. Only the Python class knows that. So when two processes open the
+same block, something has to confirm they agree on the meaning of every byte;
+otherwise one process would read another's `float` as an `int`, or the field
+it calls `speed` at the offset where the other writes `position`, and get
+wrong values with no error.
+
+The fingerprint is how they agree. The Python side computes it from the
+class when the class is defined (`build_layout` in `_layout.py`):
+
+```python
+identity = "|".join(
+    [class_identity(cls), *(f"{s.name}:{s.kind}:{s.capacity}" for s in specs)]
+)
+schema_hash = int.from_bytes(hashlib.sha256(identity.encode()).digest()[:8], "little")
+```
+
+For a class `Motor` in module `robot` with fields `position: int`,
+`enabled: bool` and `label: Annotated[str, Capacity(32)]`, the text that is
+hashed is:
+
+```text
+robot.Motor|position:int:8|enabled:bool:1|label:str:32
+```
+
+- `class_identity` is `module.qualname`. `__mp_main__` is replaced by
+  `__main__`, because multiprocessing's spawn start method re-imports the
+  main script under that name, and the same class must give the same
+  fingerprint in the parent and in a spawned child.
+- Each field adds its name, its kind (`bool`, `int`, `float`, `str`,
+  `bytes`) and its capacity in bytes (1 for `bool`, 8 for `int` and `float`,
+  the `Capacity` for `str` and `bytes`), in declaration order with base class
+  fields first.
+- The first 8 bytes of the SHA-256 digest, read as a little-endian unsigned
+  64-bit integer, are the fingerprint.
+
+Offsets are not part of the text: they follow from the kinds, capacities and
+order, so hashing those covers them.
+
+The creating process stores the fingerprint in the header. A process that
+attaches passes the fingerprint of its own class, and the C++ side compares
+the two, right after checking `abi_version` and before it looks at the field
+table or the record:
+
+```cpp
+if (h->schema_hash != schema_hash)
+    throw SchemaMismatch("segment '" + name + "' was created by a different class");
+```
+
+Anything that changes the meaning of the bytes changes the fingerprint and
+makes `attach()` raise `SchemaMismatchError`: a field added, removed,
+renamed, reordered or given another type or capacity, and the class moved to
+another module or renamed. A change that leaves the bytes' meaning alone
+does not: a new method, a docstring, a default value.
+
+What the fingerprint is not:
+
+- It is not a check of who created the block. Any process that can write the
+  block can write any fingerprint into the header. It protects against
+  mistakes, such as an old and a new version of a program running at the
+  same time, not against a hostile process; section 3 and the `0600`
+  permissions deal with that.
+- It does not cover changes in how sharedbox itself lays out a record
+  between releases. The header's `abi_version` does.
+- 8 bytes of SHA-256 give 2^64 possible values, so two different classes
+  sharing a fingerprint by accident is not a practical concern.
+
 The record's position is stored as an offset rather than as an address,
 because each process maps the block at a different address [6]. Boost's
 `get_handle_from_address` and `get_address_from_handle` convert between the
@@ -244,8 +315,9 @@ if (waiters.load() != 0)
 
 A waiter that registers after the writer read `waiters` sees the new
 `wake_word`, so FUTEX_WAIT returns at once. A process killed while it
-waits leaves the counter one too high; writers then make the wake call on
-every write, as if someone waited, and no wake-up is lost.
+waits leaves the counter one too high for as long as the segment exists;
+writers then make the wake call on every write, as if someone waited, and
+no wake-up is lost.
 
 Windows has a similar call, `WaitOnAddress`, but it only works between
 threads of one process, not across processes [15]. So on Windows each box
@@ -263,6 +335,15 @@ if (pending > 0)
 
 On both systems a write to a box nobody watches makes no system call to
 wake anyone.
+
+On Windows a waiter killed while it waits costs more than on Linux. The
+counter stays one too high, so every later write releases a permit that no
+waiter takes. The permits add up, to at most `LONG_MAX`, the semaphore's
+maximum, and every later wait on that box then returns at once instead of
+sleeping, so a waiting thread keeps checking `generation` in a loop and uses
+CPU until the permits are used up. No wake-up is lost. Removing a dead
+waiter's count needs a check of whether a process is still running, which
+the segment does not have yet.
 
 On Linux a wake-up can never be lost: the waiter reads `wake_word` before it
 reads `generation`, and the writer changes `generation` before `wake_word`.
