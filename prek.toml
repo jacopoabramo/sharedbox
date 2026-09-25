@@ -1,0 +1,20 @@
+# Hooks run through `uv run --locked --only-group lint`, so prek, tox and CI
+# all use the exact tool versions pinned in uv.lock.
+[[repos]]
+repo = "builtin"
+hooks = [
+  { id = "end-of-file-fixer" },
+  { id = "trailing-whitespace" },
+  { id = "check-yaml" },
+  { id = "check-toml" },
+  { id = "check-added-large-files" },
+  { id = "check-merge-conflict" },
+]
+
+[[repos]]
+repo = "local"
+hooks = [
+  { id = "ruff-check", name = "ruff check", language = "system", entry = "uv run --locked --only-group lint ruff check --fix --force-exclude", types_or = ["python", "pyi"], require_serial = true },
+  { id = "ruff-format", name = "ruff format", language = "system", entry = "uv run --locked --only-group lint ruff format --force-exclude", types_or = ["python", "pyi"], require_serial = true },
+  { id = "clang-format", name = "clang-format", language = "system", entry = "uv run --locked --only-group lint clang-format -i", types_or = ["c++", "c"], files = "^src/sharedbox/_native/", require_serial = true },
+]
