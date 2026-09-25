@@ -15,10 +15,12 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # local hooks in prek.toml call `uv run --locked --only-group lint ...`
       - uses: astral-sh/setup-uv@v7
 
-      - name: Run prek
-        run: uv run --locked --only-group lint prek run --all-files --show-diff-on-failure
+      - uses: j178/prek-action@4e14d07f9231acabce116ccfca13b13dd9755ece # v3.0.0
+        with:
+          prek-version: "0.5.3"
 
   build_wheels:
     name: Build wheel for ${{ matrix.python }}-${{ matrix.platform_id }}
