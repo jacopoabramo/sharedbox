@@ -1,6 +1,9 @@
 import contextlib
+import gc
 import multiprocessing as mp
 import pickle
+import threading
+import time
 import types
 from collections.abc import Iterator
 from dataclasses import KW_ONLY
@@ -347,3 +350,24 @@ def test_narrowed_default_fails_at_class_definition() -> None:
 def test_misspelled_field_raises(unique_name: str) -> None:
     with Point.create(unique_name) as box, pytest.raises(AttributeError):
         box.postion = 3.0  # type: ignore[attr-defined]
+
+
+def test_collecting_a_box_while_holding_its_watcher_lock_does_not_hang(
+    unique_name: str,
+) -> None:
+    finished = threading.Event()
+
+    def collect_under_the_lock() -> None:
+        box = Point.create(unique_name)
+        box.events.x.connect(lambda new: None)
+        # The watcher thread takes this lock on every pass, so the finalizer runs on
+        # a thread the watcher thread is waiting for.
+        lock = box._watcher._lock
+        with lock:
+            time.sleep(0.3)
+            del box
+            gc.collect()
+        finished.set()
+
+    threading.Thread(target=collect_under_the_lock, daemon=True).start()
+    assert finished.wait(5)

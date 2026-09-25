@@ -40,10 +40,15 @@ def check_name(name: str) -> str:
     return name
 
 
-def release(watcher: Watcher, segment: Segment) -> None:
-    """Stop the box's watcher and detach from its segment."""
+def release(watcher: Watcher, segment: Segment, wait: bool = True) -> None:
+    """Stop the box's watcher and detach from its segment.
+
+    With ``wait`` false the watcher thread is not joined and writes it has not
+    seen yet are not delivered; the thread ends on its own once the segment is
+    closed.
+    """
     try:
-        watcher.stop()
+        watcher.stop(wait)
     finally:
         segment.close()
 
@@ -212,7 +217,11 @@ class SharedBox(metaclass=SharedBoxMeta):
         return cls.__sharedbox_name__
 
     def _track(self) -> None:
-        self._finalizer = weakref.finalize(self, release, self._watcher, self._segment)
+        # The finalizer may run on a thread that holds the watcher's lock, which the
+        # watcher thread may be waiting for, so it must not join that thread.
+        self._finalizer = weakref.finalize(
+            self, release, self._watcher, self._segment, False
+        )
         LIVE.add(self)
 
     def _open(self, name: str, args: tuple[Any, ...], values: dict[str, Any]) -> None:
@@ -332,7 +341,8 @@ class SharedBox(metaclass=SharedBoxMeta):
 
     def close(self) -> None:
         """Detach from the segment; other boxes keep it. Use :meth:`unlink` to remove it."""
-        self._finalizer()
+        if self._finalizer.detach() is not None:
+            release(self._watcher, self._segment)
 
     def __enter__(self) -> Self:
         return self

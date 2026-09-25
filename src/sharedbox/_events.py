@@ -270,12 +270,16 @@ class Watcher:
         with self._lock, contextlib.suppress(ValueError):
             self._pending.remove(fut)
 
-    def stop(self) -> None:
-        """Stop the thread, deliver writes it had not seen yet, and cancel every pending future."""
+    def stop(self, wait: bool = True) -> None:
+        """Stop the thread and cancel every pending future.
+
+        With ``wait`` true, also wait for the thread to end and deliver the
+        writes it had not seen yet.
+        """
         self._stop.set()
         with self._lock:
             thread = self._thread
-        if thread is not None and thread is not threading.current_thread():
+        if wait and thread is not None and thread is not threading.current_thread():
             thread.join()
             try:
                 self._resolve_ready()
