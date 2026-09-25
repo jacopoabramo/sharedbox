@@ -207,3 +207,24 @@ def test_reads_never_see_half_a_write(unique_name: str) -> None:
     writer.join()
     assert writer.exitcode == 0
     segment.close()
+
+
+BAD_TIMEOUTS = [float("inf"), float("nan"), 0.0, -1.0, 86401.0]
+
+
+@pytest.mark.parametrize("timeout", BAD_TIMEOUTS)
+def test_bad_lock_timeout_is_refused(unique_name: str, timeout: float) -> None:
+    with pytest.raises(ValueError):
+        create(unique_name, timeout)
+    segment = create(unique_name)
+    with pytest.raises(ValueError):
+        attach(unique_name, timeout)
+    segment.close()
+
+
+@pytest.mark.parametrize("timeout", [float("inf"), float("nan"), -1.0, 86401.0])
+def test_bad_wait_timeout_is_refused(unique_name: str, timeout: float) -> None:
+    segment = create(unique_name)
+    with pytest.raises(ValueError):
+        segment.wait(segment.generation(), timeout)
+    segment.close()
