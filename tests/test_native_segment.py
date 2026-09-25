@@ -272,7 +272,6 @@ def test_small_segment_takes_a_few_pages(unique_name: str) -> None:
     ("offset", "fmt", "value"),
     [
         pytest.param(32, "<I", 0xFFFF_FFF0, id="tail-outside"),
-        pytest.param(32, "<I", 0xFFFF_FFFF, id="tail-unaligned"),
         pytest.param(12, "<I", 256, id="tail-too-long"),
         pytest.param(28, "<I", 0xFFFF_FFF0, id="record-outside"),
     ],
@@ -282,6 +281,21 @@ def test_corrupt_header_is_refused(
 ) -> None:
     segment = create(unique_name)
     patch_header(unique_name, offset, fmt, value)
+    with pytest.raises(SchemaMismatchError, match="corrupt header"):
+        attach(unique_name)
+    segment.close()
+
+
+def test_unaligned_tail_is_refused(unique_name: str) -> None:
+    segment = create(unique_name)
+    with raw_bytes(unique_name) as view:
+        header = bytes(view).index(MAGIC)
+        (tail,) = struct.unpack_from("<I", view, header + 32)
+        entries = struct.pack("<IIII", 0, 8, 8, 16 | 1 << 31)
+        table = bytes(view).index(entries)
+        # A valid field table at the shifted offset, so only the alignment check can refuse it.
+        view[table + 4 : table + 4 + len(entries)] = entries
+        struct.pack_into("<I", view, header + 32, tail + 4)
     with pytest.raises(SchemaMismatchError, match="corrupt header"):
         attach(unique_name)
     segment.close()
