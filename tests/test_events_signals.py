@@ -65,6 +65,10 @@ def test_callback_on_main_thread(unique_name: str) -> None:
         box.events.value.connect(
             lambda new: seen.append(threading.current_thread().name), thread="main"
         )
+        # psygnal creates the main thread's queue on first use through a defaultdict; on a
+        # free-threaded build the watcher thread's first emission can race that creation and
+        # land in a queue emit_queued() never reads, so the queue is created here first.
+        psygnal.emit_queued()
         box.value = 1
         deadline = time.monotonic() + 5
         while not seen and time.monotonic() < deadline:
