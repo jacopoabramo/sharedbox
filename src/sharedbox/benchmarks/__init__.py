@@ -1,1 +1,1 @@
-"""Benchmarks of sharedbox, and the ``sharedbox-bench`` command that runs them."""
+"""Benchmarks of sharedbox, and the ``benchbox`` command that runs them."""

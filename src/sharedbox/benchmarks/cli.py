@@ -1,8 +1,8 @@
-"""Entry point of the ``sharedbox-bench`` command."""
+"""Entry point of the ``benchbox`` command."""
 
 from importlib.util import find_spec
 
-INSTALL_HINT = "sharedbox-bench needs Typer and pyperf: install sharedbox[benchmarks]"
+INSTALL_HINT = "benchbox needs Typer and pyperf: install sharedbox[benchmarks]"
 
 
 def main() -> None:
@@ -11,4 +11,4 @@ def main() -> None:
         raise SystemExit(INSTALL_HINT)
     from sharedbox.benchmarks._app import app
 
-    app(prog_name="sharedbox-bench")
+    app(prog_name="benchbox")

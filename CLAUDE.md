@@ -17,7 +17,7 @@ sharedbox/
 |   |-- _events.py             FieldWatch, the watcher thread, psygnal events
 |   |-- _native.pyi            hand-written stub for the extension
 |   |-- py.typed
-|   |-- benchmarks/            the sharedbox-bench command (extra: benchmarks)
+|   |-- benchmarks/            the benchbox command (extra: benchmarks)
 |   |   |-- cli.py             entry point; exits with an install hint without Typer
 |   |   |-- _app.py            Typer commands: ops, roundtrip, size, all
 |   |   |-- ops.py             pyperf timings of single operations, against the stdlib

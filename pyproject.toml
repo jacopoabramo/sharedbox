@@ -28,7 +28,7 @@ dependencies = [
 ]
 
 [project.scripts]
-sharedbox-bench = "sharedbox.benchmarks.cli:main"
+benchbox = "sharedbox.benchmarks.cli:main"
 
 [project.optional-dependencies]
 benchmarks = [

@@ -1,4 +1,4 @@
-"""The ``sharedbox-bench`` commands."""
+"""The ``benchbox`` commands."""
 
 import json
 import os

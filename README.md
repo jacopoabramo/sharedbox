@@ -157,17 +157,17 @@ uv run tox -e py314t        # one version
 
 ### Running benchmarks
 
-The `benchmarks` extra installs a `sharedbox-bench` command that measures
+The `benchmarks` extra installs a `benchbox` command that measures
 `sharedbox` on your own machine:
 
 ```bash
 pip install "sharedbox[benchmarks]"
 
-sharedbox-bench ops                  # single operations, against the standard library
-sharedbox-bench ops --fast --filter "read*" --json ops.json
-sharedbox-bench roundtrip            # change notification between two processes
-sharedbox-bench size dist/*.whl      # wheel and extension module size
-sharedbox-bench all --out results    # all of the above, plus results/summary.md
+benchbox ops               # single operations, against the standard library
+benchbox ops --fast --filter "read*" --json ops.json
+benchbox roundtrip         # change notification between two processes
+benchbox size dist/*.whl   # wheel and extension module size
+benchbox all --out results # all of the above, plus results/summary.md
 ```
 
 `ops` runs on [pyperf](https://pyperf.readthedocs.io); arguments after `--`
@@ -179,7 +179,7 @@ included. `python -m sharedbox.benchmarks` runs the same command.
 
 In a checkout, `uv sync` installs the `benchmarks` dependency group, which
 has the same packages as the extra, so
-`uv run sharedbox-bench` works there too. The pytest benchmarks are separate
+`uv run benchbox` works there too. The pytest benchmarks are separate
 and live only in the repository:
 
 ```bash
