@@ -1,5 +1,6 @@
 #include "segment.hpp"
 
+#include "liveness.hpp"
 #include "notifier.hpp"
 
 #include <atomic>
@@ -25,8 +26,6 @@
 #else
 #include <boost/interprocess/managed_shared_memory.hpp>
 #include <boost/interprocess/shared_memory_object.hpp>
-#include <pthread.h>
-#include <unistd.h>
 #endif
 
 namespace bipc = boost::interprocess;
@@ -119,20 +118,6 @@ using Clock = std::chrono::steady_clock;
 Clock::duration to_duration(double seconds) {
     return std::chrono::duration_cast<Clock::duration>(std::chrono::duration<double>(seconds));
 }
-
-#ifdef _WIN32
-std::uint32_t current_pid() { return static_cast<std::uint32_t>(GetCurrentProcessId()); }
-#else
-// getpid() is a real system call on Linux (neither glibc nor musl cache it), so the pid is
-// read once and read again in every child created by fork, whoever calls fork.
-std::atomic<std::uint32_t> cached_pid{0};
-
-void read_pid() { cached_pid.store(static_cast<std::uint32_t>(getpid()), std::memory_order_relaxed); }
-
-[[maybe_unused]] const bool pid_tracked = (read_pid(), pthread_atfork(nullptr, nullptr, read_pid) == 0);
-
-std::uint32_t current_pid() { return cached_pid.load(std::memory_order_relaxed); }
-#endif
 
 void cpu_relax() {
 #if defined(_WIN32)
@@ -337,7 +322,7 @@ struct Segment::Impl {
             !header->seq.compare_exchange_weak(seq, seq + 1, std::memory_order_acquire, std::memory_order_relaxed))
             return false;
         std::atomic_thread_fence(std::memory_order_release);
-        header->writer_pid.store(current_pid(), std::memory_order_relaxed);
+        header->writer_pid.store(current_process().pid, std::memory_order_relaxed);
         return true;
     }
 

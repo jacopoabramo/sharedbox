@@ -8,6 +8,7 @@
 #include <system_error>
 
 #include "codec.hpp"
+#include "liveness.hpp"
 #include "segment.hpp"
 
 namespace nb = nanobind;
@@ -63,6 +64,12 @@ NB_MODULE(_native, m) {
             sharedbox::encode({0, capacity, to_kind(kind)}, name, value.ptr());
         },
         "kind"_a, "capacity"_a, "name"_a, "value"_a);
+
+    m.def("_process_start", &sharedbox::process_start, "pid"_a);
+    m.def(
+        "_process_alive",
+        [](std::uint32_t pid, std::uint64_t start) { return sharedbox::process_alive({pid, start}); }, "pid"_a,
+        "start"_a);
 
     nb::class_<Segment>(m, "Segment")
         .def_static(

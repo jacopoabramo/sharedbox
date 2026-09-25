@@ -21,6 +21,12 @@ class LockTimeoutError(TimeoutError):
 def check(kind: int, capacity: int, name: str, value: object) -> None:
     """Raise what writing ``value`` to a field of this kind and capacity would raise."""
 
+def _process_start(pid: int) -> int:
+    """The process's start time, 0 if no such process exists; for tests."""
+
+def _process_alive(pid: int, start: int) -> bool:
+    """True if a process with this pid and start time is running; for tests."""
+
 @disjoint_base
 class Segment:
     """A named shared-memory segment holding one fixed-layout record."""

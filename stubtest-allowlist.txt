@@ -3,6 +3,8 @@ sharedbox._native.Segment
 # nanobind module functions and static methods are nb_func objects, which
 # stubtest does not recognise as functions or staticmethods; their signatures
 # are exercised by the native and box tests
+sharedbox._native._process_alive
+sharedbox._native._process_start
 sharedbox._native.check
 sharedbox._native.Segment.attach
 sharedbox._native.Segment.create
