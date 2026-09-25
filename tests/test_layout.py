@@ -26,8 +26,8 @@ def test_offsets_are_aligned_and_packed() -> None:
         ("blob", "bytes", 40, 3),
     ]
     assert layout.record_size == 48
-    assert layout.by_name["label"].native == (24, 10, True)
-    assert layout.by_name["count"].native.prefixed is False
+    assert layout.by_name["label"].native == (24, 10, 3)
+    assert layout.by_name["count"].native == (8, 8, 1)
 
 
 @pytest.mark.parametrize(

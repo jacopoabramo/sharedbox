@@ -21,17 +21,19 @@ from sharedbox._native import (
     SegmentNotFoundError,
 )
 
-FIELDS = [NativeField(0, 8, False), NativeField(8, 16, True)]
+BOOL, INT, FLOAT, STR, BYTES = range(5)
+FIELDS = [NativeField(0, 8, INT), NativeField(8, 16, BYTES)]
+NAMES = ["a", "b"]
 RECORD_SIZE = 32
 SCHEMA = 0x5EED
 
 
 def create(name: str, timeout: float = 1.0) -> Segment:
-    return Segment.create(name, FIELDS, RECORD_SIZE, SCHEMA, timeout)
+    return Segment.create(name, FIELDS, NAMES, RECORD_SIZE, SCHEMA, timeout, [])
 
 
 def attach(name: str, timeout: float = 1.0) -> Segment:
-    return Segment.attach(name, SCHEMA, timeout)
+    return Segment.attach(name, NAMES, SCHEMA, timeout)
 
 
 MAGIC = b"SHREDBX1"
@@ -64,24 +66,24 @@ def patch_header(name: str, offset: int, fmt: str, value: int) -> None:
 def write_pair(name: str, count: int) -> None:
     segment = attach(name)
     for i in range(count):
-        segment.write([(0, struct.pack("<q", i)), (1, str(i).encode())])
+        segment._write([(0, struct.pack("<q", i)), (1, str(i).encode())])
     segment.close()
 
 
 def test_attached_segment_sees_writes(unique_name: str) -> None:
     owner = create(unique_name)
     other = attach(unique_name)
-    owner.write([(0, struct.pack("<q", 42)), (1, b"hello")])
-    assert other.read(0) == struct.pack("<q", 42)
-    assert other.read(1) == b"hello"
-    assert other.read_all() == [struct.pack("<q", 42), b"hello"]
+    owner._write([(0, struct.pack("<q", 42)), (1, b"hello")])
+    assert other._read(0) == struct.pack("<q", 42)
+    assert other._read(1) == b"hello"
+    assert other._read_all() == [struct.pack("<q", 42), b"hello"]
     other.close()
     owner.close()
 
 
 def test_new_segment_reads_zero(unique_name: str) -> None:
     segment = create(unique_name)
-    assert segment.read_all() == [bytes(8), b""]
+    assert segment._read_all() == [bytes(8), b""]
     segment.close()
 
 
@@ -100,28 +102,30 @@ def test_attach_to_missing_name(unique_name: str) -> None:
 def test_attach_with_other_schema(unique_name: str) -> None:
     segment = create(unique_name)
     with pytest.raises(SchemaMismatchError):
-        Segment.attach(unique_name, SCHEMA + 1, 1.0)
+        Segment.attach(unique_name, NAMES, SCHEMA + 1, 1.0)
     segment.close()
 
 
 def test_layout_outside_record_is_rejected(unique_name: str) -> None:
     with pytest.raises(ValueError):
         Segment.create(
-            unique_name, [NativeField(32, 8, False)], RECORD_SIZE, SCHEMA, 1.0
+            unique_name, [NativeField(32, 8, INT)], ["a"], RECORD_SIZE, SCHEMA, 1.0, []
         )
 
 
 def test_failed_create_leaves_the_name_free(unique_name: str) -> None:
     with pytest.raises(ValueError):
-        Segment.create(unique_name, [NativeField(0, 8, False)], 2**40, SCHEMA, 1.0)
+        Segment.create(
+            unique_name, [NativeField(0, 8, INT)], ["a"], 2**40, SCHEMA, 1.0, []
+        )
     create(unique_name).close()
 
 
 def test_oversized_write_changes_nothing(unique_name: str) -> None:
     segment = create(unique_name)
     with pytest.raises(ValueError):
-        segment.write([(0, struct.pack("<q", 1)), (1, b"x" * 17)])
-    assert segment.read(0) == bytes(8)
+        segment._write([(0, struct.pack("<q", 1)), (1, b"x" * 17)])
+    assert segment._read(0) == bytes(8)
     assert segment.version(0) == 0
     segment.close()
 
@@ -129,21 +133,21 @@ def test_oversized_write_changes_nothing(unique_name: str) -> None:
 def test_fixed_field_needs_exact_size(unique_name: str) -> None:
     segment = create(unique_name)
     with pytest.raises(ValueError):
-        segment.write([(0, b"abc")])
+        segment._write([(0, b"abc")])
     segment.close()
 
 
 def test_unknown_field_index(unique_name: str) -> None:
     segment = create(unique_name)
     with pytest.raises(IndexError):
-        segment.read(2)
+        segment._read(2)
     segment.close()
 
 
 def test_versions_and_generation_count_writes(unique_name: str) -> None:
     segment = create(unique_name)
-    segment.write([(1, b"a")])
-    segment.write([(0, bytes(8)), (1, b"b")])
+    segment._write([(1, b"a")])
+    segment._write([(0, bytes(8)), (1, b"b")])
     assert (segment.version(0), segment.version(1), segment.generation()) == (1, 2, 2)
     segment.close()
 
@@ -158,17 +162,17 @@ def test_unlink_removes_the_name_like_shared_memory(unique_name: str) -> None:
             attach(unique_name)
         with pytest.raises(SegmentNotFoundError):
             Segment.unlink(unique_name)
-    owner.write([(1, b"still mapped")])
-    assert owner.read(1) == b"still mapped"
+    owner._write([(1, b"still mapped")])
+    assert owner._read(1) == b"still mapped"
     owner.close()
 
 
 def test_close_keeps_the_segment_for_others(unique_name: str) -> None:
     owner = create(unique_name)
     other = attach(unique_name)
-    owner.write([(1, b"kept")])
+    owner._write([(1, b"kept")])
     owner.close()
-    assert other.read(1) == b"kept"
+    assert other._read(1) == b"kept"
     other.close()
 
 
@@ -178,7 +182,7 @@ def test_closed_segment_refuses_use(unique_name: str) -> None:
     segment.close()
     assert segment.closed
     with pytest.raises(BoxClosedError):
-        segment.read(0)
+        segment._read(0)
 
 
 def test_held_lock_times_out_and_force_unlock_recovers(unique_name: str) -> None:
@@ -186,12 +190,12 @@ def test_held_lock_times_out_and_force_unlock_recovers(unique_name: str) -> None
     owner._hold_write_lock()
     other = attach(unique_name, timeout=0.2)
     with pytest.raises(LockTimeoutError, match=str(os.getpid())):
-        other.write([(1, b"x")])
+        other._write([(1, b"x")])
     with pytest.raises(LockTimeoutError):
-        other.read(1)
+        other._read(1)
     other.force_unlock()
-    other.write([(1, b"x")])
-    assert other.read(1) == b"x"
+    other._write([(1, b"x")])
+    assert other._read(1) == b"x"
     other.close()
     owner.close()
 
@@ -210,9 +214,9 @@ def test_close_while_other_threads_read_and_write(unique_name: str) -> None:
             errors.append(error)
 
     def write() -> None:
-        segment.write([(0, struct.pack("<q", 1)), (1, b"x")])
+        segment._write([(0, struct.pack("<q", 1)), (1, b"x")])
 
-    calls = [segment.read_all] * 4 + [write] * 4
+    calls = [segment._read_all] * 4 + [write] * 4
     threads = [threading.Thread(target=until_closed, args=(call,)) for call in calls]
     for thread in threads:
         thread.start()
@@ -231,7 +235,7 @@ def test_reads_never_see_half_a_write(unique_name: str) -> None:
     )
     writer.start()
     while writer.is_alive():
-        number, text = segment.read_all()
+        number, text = segment._read_all()
         if text:
             assert str(struct.unpack("<q", number)[0]).encode() == text
     writer.join()
@@ -262,7 +266,13 @@ def test_bad_wait_timeout_is_refused(unique_name: str, timeout: float) -> None:
 
 def test_small_segment_takes_a_few_pages(unique_name: str) -> None:
     segment = Segment.create(
-        unique_name, [*FIELDS, NativeField(32, 8, False)], 40, SCHEMA, 1.0
+        unique_name,
+        [*FIELDS, NativeField(32, 8, INT)],
+        [*NAMES, "c"],
+        40,
+        SCHEMA,
+        1.0,
+        [],
     )
     assert segment._size <= 16 * 1024
     segment.close()
@@ -291,7 +301,7 @@ def test_unaligned_tail_is_refused(unique_name: str) -> None:
     with raw_bytes(unique_name) as view:
         header = bytes(view).index(MAGIC)
         (tail,) = struct.unpack_from("<I", view, header + 32)
-        entries = struct.pack("<IIII", 0, 8, 8, 16 | 1 << 31)
+        entries = struct.pack("<IIII", 0, 8 | INT << 24, 8, 16 | BYTES << 24)
         table = bytes(view).index(entries)
         # A valid field table at the shifted offset, so only the alignment check can refuse it.
         view[table + 4 : table + 4 + len(entries)] = entries
@@ -307,3 +317,82 @@ def test_older_layout_is_refused(unique_name: str) -> None:
     with pytest.raises(SchemaMismatchError, match="uses layout version 1"):
         attach(unique_name)
     segment.close()
+
+
+def test_attach_waits_for_a_creator_that_has_not_made_its_header(
+    unique_name: str,
+) -> None:
+    # The header's named object is found inside the same wait as the magic word,
+    # so an attach racing create sees SegmentNotFoundError or a finished segment,
+    # never "not a sharedbox".
+    errors: list[BaseException] = []
+
+    def attach_loop() -> None:
+        for _ in range(200):
+            try:
+                attach(unique_name).close()
+                return
+            except SegmentNotFoundError:
+                continue
+            except BaseException as error:  # noqa: BLE001
+                errors.append(error)
+                return
+
+    thread = threading.Thread(target=attach_loop)
+    thread.start()
+    segment = create(unique_name)
+    thread.join(10)
+    segment.close()
+    assert not errors
+
+
+def test_a_blocked_read_lets_other_threads_run(unique_name: str) -> None:
+    segment = create(unique_name, timeout=1.0)
+    other = attach(unique_name, timeout=1.0)
+    segment._hold_write_lock()
+    ticks = 0
+    done = threading.Event()
+
+    def count() -> None:
+        nonlocal ticks
+        while not done.is_set():
+            ticks += 1
+
+    thread = threading.Thread(target=count)
+    thread.start()
+    with pytest.raises(LockTimeoutError):
+        other._read(0)
+    done.set()
+    thread.join()
+    assert ticks > 1000
+    segment.force_unlock()
+    other.close()
+    segment.close()
+
+
+def test_close_waits_for_a_read_blocked_on_the_lock(unique_name: str) -> None:
+    # The blocked read has released the GIL and takes it back before it returns, so
+    # close() must not hold the GIL while it waits for that read. If this test hangs,
+    # it does.
+    owner = create(unique_name)
+    segment = attach(unique_name, timeout=0.5)
+    owner._hold_write_lock()
+    errors: list[BaseException] = []
+
+    def read() -> None:
+        try:
+            segment._read(0)
+        except BaseException as error:  # noqa: BLE001
+            errors.append(error)
+
+    reader = threading.Thread(target=read, daemon=True)
+    reader.start()
+    time.sleep(0.1)
+    closer = threading.Thread(target=segment.close, daemon=True)
+    closer.start()
+    closer.join(10)
+    reader.join(10)
+    assert not closer.is_alive() and not reader.is_alive()
+    assert [type(error) for error in errors] == [LockTimeoutError]
+    owner.force_unlock()
+    owner.close()

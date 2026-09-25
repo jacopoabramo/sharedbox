@@ -29,6 +29,13 @@ SCALARS: Final[dict[type, tuple[Kind, int]]] = {
     float: ("float", 8),
 }
 PREFIXED: Final[tuple[Kind, ...]] = ("str", "bytes")
+KIND_CODES: Final[dict[Kind, int]] = {
+    "bool": 0,
+    "int": 1,
+    "float": 2,
+    "str": 3,
+    "bytes": 4,
+}
 
 
 @dataclass(frozen=True)
@@ -52,8 +59,8 @@ class NativeField(NamedTuple):
     """Byte offset of the field from the start of the record."""
     capacity: int
     """Bytes reserved for the value, not counting the length prefix."""
-    prefixed: bool
-    """True for ``str`` and ``bytes``: a 4-byte length precedes the data."""
+    kind: int
+    """0 bool, 1 int, 2 float, 3 str, 4 bytes."""
 
 
 @dataclass(frozen=True)
@@ -74,7 +81,7 @@ class FieldSpec:
 
     @property
     def native(self) -> NativeField:
-        return NativeField(self.offset, self.capacity, self.kind in PREFIXED)
+        return NativeField(self.offset, self.capacity, KIND_CODES[self.kind])
 
     def encode(self, value: Any) -> bytes:
         """Encode ``value`` for this field; raises before anything is written."""

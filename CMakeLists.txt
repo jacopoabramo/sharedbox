@@ -8,7 +8,7 @@ set(CMAKE_TOOLCHAIN_FILE "$ENV{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake"
 
 project(${SKBUILD_PROJECT_NAME} LANGUAGES CXX)
 
-set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 find_package(Python 3.11 REQUIRED
@@ -26,6 +26,7 @@ nanobind_add_module(_native
     FREE_THREADED
     LTO
     NB_DOMAIN sharedbox
+    src/sharedbox/_native/codec.cpp
     src/sharedbox/_native/module.cpp
     src/sharedbox/_native/segment.cpp
     src/sharedbox/_native/notifier.cpp)

@@ -240,12 +240,12 @@ BENCHMARKS: list[tuple[str, str, str, list[str]]] = [
     ),
     ("encode int", "split", BOX, ["spec_a.encode(1)"]),
     ("decode int", "split", BOX, ["spec_a.decode(raw_a)"]),
-    ("native write int", "split", BOX, ["seg.write([(0, raw_a)])"]),
-    ("native read int", "split", BOX, ["seg.read(0)"]),
+    ("native write int", "split", BOX, ["seg._write([(0, raw_a)])"]),
+    ("native read int", "split", BOX, ["seg._read(0)"]),
     ("encode str", "split", BOX, ["spec_s.encode('hello')"]),
     ("decode str", "split", BOX, ["spec_s.decode(raw_s)"]),
-    ("native write str", "split", BOX, ["seg.write([(2, raw_s)])"]),
-    ("native read str", "split", BOX, ["seg.read(2)"]),
+    ("native write str", "split", BOX, ["seg._write([(2, raw_s)])"]),
+    ("native read str", "split", BOX, ["seg._read(2)"]),
 ]
 
 

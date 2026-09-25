@@ -1,5 +1,6 @@
 #pragma once
 
+#include <cstddef>
 #include <cstdint>
 #include <memory>
 #include <stdexcept>
@@ -9,13 +10,20 @@
 
 namespace sharedbox {
 
-enum class FieldKind : std::uint8_t { Fixed = 0, Prefixed = 1 };
+enum class FieldKind : std::uint8_t { Bool = 0, Int = 1, Float = 2, Str = 3, Bytes = 4 };
 
 struct FieldDesc {
-    std::uint64_t offset;
+    std::uint32_t offset;
     std::uint32_t capacity;
     FieldKind kind;
 };
+
+bool kind_is_valid(std::uint32_t code);
+/// True for str and bytes, whose payload follows a 4-byte length.
+bool is_prefixed(FieldKind kind);
+std::size_t field_alignment(FieldKind kind);
+/// Bytes the field occupies in the record, the length prefix included.
+std::size_t field_span(const FieldDesc &field);
 
 struct SegmentExists : std::runtime_error {
     using std::runtime_error::runtime_error;
@@ -33,19 +41,28 @@ struct LockTimeout : std::runtime_error {
     using std::runtime_error::runtime_error;
 };
 
+using WaitHook = void *(*)();
+using ResumeHook = void (*)(void *);
+/// Called around a wait for another writer's lock; module.cpp releases the GIL there.
+void set_wait_hooks(WaitHook before, ResumeHook after);
+
 /// A named shared-memory segment holding one fixed-layout record.
 class Segment {
 public:
+    /// values are written before any other process can attach; names label fields in error messages.
     static std::unique_ptr<Segment> create(const std::string &name, const std::vector<FieldDesc> &fields,
-                                           std::uint64_t record_size, std::uint64_t schema_hash,
-                                           double lock_timeout);
-    static std::unique_ptr<Segment> attach(const std::string &name, std::uint64_t schema_hash,
-                                           double lock_timeout);
+                                           const std::vector<std::string> &names, std::uint64_t record_size,
+                                           std::uint64_t schema_hash, double lock_timeout,
+                                           const std::vector<std::pair<std::uint32_t, std::string>> &values);
+    static std::unique_ptr<Segment> attach(const std::string &name, const std::vector<std::string> &names,
+                                           std::uint64_t schema_hash, double lock_timeout);
     ~Segment();
     Segment(const Segment &) = delete;
     Segment &operator=(const Segment &) = delete;
 
     std::string read(std::uint32_t field) const;
+    /// The field's version and bytes, read together.
+    std::pair<std::uint64_t, std::string> read_versioned(std::uint32_t field) const;
     std::vector<std::string> read_all() const;
     void write(const std::vector<std::pair<std::uint32_t, std::string>> &values);
     std::uint64_t version(std::uint32_t field) const;
@@ -63,6 +80,9 @@ public:
     std::uint64_t size() const;
     bool closed() const;
     const std::string &name() const;
+    double lock_timeout() const;
+    const FieldDesc &field(std::uint32_t index) const;
+    const std::string &field_name(std::uint32_t index) const;
     /// Removes the name, like shm_unlink: existing handles keep working. A no-op on
     /// Windows, where the OS frees the segment when its last handle closes.
     static void unlink(const std::string &name);
