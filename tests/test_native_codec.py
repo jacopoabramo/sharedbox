@@ -80,6 +80,7 @@ def test_float_field_accepts_int(unique_name: str) -> None:
         (0, 2**63, OverflowError, "count holds a signed 64-bit integer"),
         (0, 1.5, TypeError, "count expects int, got float"),
         (1, "1", TypeError, "ratio expects float, got str"),
+        (1, 2**1024, OverflowError, "ratio holds a 64-bit float"),
         (2, b"x", TypeError, "label expects str, got bytes"),
         (
             2,

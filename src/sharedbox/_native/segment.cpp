@@ -523,7 +523,7 @@ std::unique_ptr<Segment> Segment::attach(const std::string &name, const std::vec
         std::memcpy(&stored, tail + i * sizeof(StoredField), sizeof stored);
         const std::uint32_t kind = stored.capacity_and_kind >> kKindShift;
         const FieldDesc f{stored.offset, stored.capacity_and_kind & kCapacityMask, static_cast<FieldKind>(kind)};
-        if (!kind_is_valid(kind) || !field_fits(f, record_size))
+        if (!field_fits(f, record_size))
             throw SchemaMismatch("segment '" + name + "' has a corrupt header");
         impl->fields.push_back(f);
     }

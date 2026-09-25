@@ -390,6 +390,12 @@ def test_close_waits_for_a_read_blocked_on_the_lock(unique_name: str) -> None:
     time.sleep(0.1)
     closer = threading.Thread(target=segment.close, daemon=True)
     closer.start()
+    while not segment.closed:
+        time.sleep(0.001)
+    # Lets the closer queue on the lock, so this read arrives while close() is pending.
+    time.sleep(0.05)
+    with pytest.raises(BoxClosedError):
+        segment._read(0)
     closer.join(10)
     reader.join(10)
     assert not closer.is_alive() and not reader.is_alive()

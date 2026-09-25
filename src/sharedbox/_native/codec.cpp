@@ -67,8 +67,12 @@ std::string encode(const FieldDesc &field, const std::string &name, PyObject *va
         if (PyBool_Check(value) || !(PyFloat_Check(value) || PyLong_Check(value)))
             wrong_type(field, name, value);
         double number = PyFloat_AsDouble(value);
-        if (number == -1.0 && PyErr_Occurred())
-            throw nb::python_error();
+        if (number == -1.0 && PyErr_Occurred()) {
+            if (!PyErr_ExceptionMatches(PyExc_OverflowError))
+                throw nb::python_error();
+            PyErr_Clear();
+            raise(PyExc_OverflowError, name + " holds a 64-bit float; the value does not fit");
+        }
         std::string out(8, '\0');
         std::memcpy(out.data(), &number, 8);
         return out;
