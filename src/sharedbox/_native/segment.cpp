@@ -5,6 +5,7 @@
 #include <atomic>
 #include <cerrno>
 #include <chrono>
+#include <cmath>
 #include <cstring>
 #include <mutex>
 #include <new>
@@ -122,6 +123,11 @@ private:
     unsigned spins_ = 0;
 };
 
+void check_lock_timeout(double lock_timeout) {
+    if (!(std::isfinite(lock_timeout) && lock_timeout > 0 && lock_timeout <= 86400))
+        throw std::invalid_argument("lock_timeout must be finite and in (0, 86400]");
+}
+
 bool field_fits(std::uint64_t offset, std::uint32_t capacity, std::uint8_t kind, std::uint64_t record_size) {
     if (kind > 1 || capacity == 0 || capacity > kMaxCapacity || offset % 8 != 0 || offset > record_size)
         return false;
@@ -234,6 +240,7 @@ Segment::~Segment() {
 std::unique_ptr<Segment> Segment::create(const std::string &name, const std::vector<FieldDesc> &fields,
                                          std::uint64_t record_size, std::uint64_t schema_hash,
                                          double lock_timeout) {
+    check_lock_timeout(lock_timeout);
     if (fields.empty() || fields.size() > kMaxFields)
         throw std::invalid_argument("a box needs between 1 and 256 fields");
     // Bounds record_size so segment_size()'s addition cannot wrap: without this, a
@@ -295,6 +302,7 @@ std::unique_ptr<Segment> Segment::create(const std::string &name, const std::vec
 }
 
 std::unique_ptr<Segment> Segment::attach(const std::string &name, std::uint64_t schema_hash, double lock_timeout) {
+    check_lock_timeout(lock_timeout);
     auto impl = std::make_unique<Impl>();
     impl->name = name;
     impl->lock_timeout = lock_timeout;

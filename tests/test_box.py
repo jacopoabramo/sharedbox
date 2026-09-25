@@ -293,6 +293,23 @@ def test_invalid_explicit_name() -> None:
         Point.unlink("has space")
 
 
+@pytest.mark.parametrize(
+    "value", [float("inf"), float("-inf"), float("nan"), 0, -1, 86401]
+)
+def test_bad_lock_timeout_fails_at_class_definition(value: float) -> None:
+    with pytest.raises(ValueError):
+        types.new_class("BadTimeout", (SharedBox,), {"lock_timeout": value}, with_x)
+
+
+def test_max_lock_timeout_is_accepted(unique_name: str) -> None:
+    named = cast(
+        type[SharedBox],
+        types.new_class("MaxTimeout", (SharedBox,), {"lock_timeout": 86400}, with_x),
+    )
+    with named.create(unique_name) as box:
+        assert box.x == 0  # type: ignore[attr-defined] # x is a field added dynamically, above
+
+
 def test_closed_box(unique_name: str) -> None:
     box = Point.create(unique_name)
     box.close()

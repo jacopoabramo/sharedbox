@@ -172,8 +172,8 @@ class SharedBox(metaclass=SharedBoxMeta):
             f"sharedbox-{digest}" if name is None else check_name(name)
         )
         if lock_timeout is not None:
-            if lock_timeout <= 0:
-                raise ValueError("lock_timeout must be positive")
+            if not (0 < lock_timeout <= 86400):
+                raise ValueError("lock_timeout must be finite and in (0, 86400]")
             cls.__lock_timeout__ = lock_timeout
         cls.__events_class__ = events_class(cls, layout)
 
