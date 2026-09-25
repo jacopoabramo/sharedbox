@@ -56,26 +56,54 @@ impl->segment = Managed(bipc::create_only, name.c_str(), size, nullptr, perms);
 
 ## 2. A fixed layout: header, field table, record
 
-Inside the block there are two things: a header with bookkeeping, and the
-record that holds the field values.
+Inside the block there are three things: a fixed 64-byte header, a table
+with one entry per field, and the record that holds the field values.
 
 ```cpp
-struct Header {
-    std::atomic<std::uint64_t> magic;          // written last; marks the header as complete
-    std::uint32_t abi_version;                 // layout version of this header
-    std::uint32_t field_count;
-    std::uint64_t schema_hash;                 // fingerprint of the Python class
-    std::uint64_t record_size;
-    Managed::handle_t record;                  // where the record starts, as an offset
-    std::atomic<std::uint64_t> seq;            // the write lock, see section 4
-    std::atomic<std::uint64_t> generation;     // counts every write
-    std::atomic<std::uint32_t> wake_word;      // used to wake waiters, see section 5
-    std::atomic<std::uint32_t> waiters;
-    std::atomic<std::int64_t> writer_pid;      // who holds the write lock
-    StoredField fields[kMaxFields];            // offset, capacity, kind of each field
-    std::atomic<std::uint64_t> versions[kMaxFields];  // counts writes per field
+struct alignas(64) Header {                    // offset
+    std::atomic<std::uint64_t> magic;          //  0  written last; marks the header as complete
+    std::uint32_t abi_version;                 //  8  layout version, 2
+    std::uint32_t field_count;                 // 12
+    std::uint64_t schema_hash;                 // 16  fingerprint of the Python class
+    std::uint32_t record_size;                 // 24
+    std::uint32_t record;                      // 28  where the record starts, as an offset
+    std::uint32_t tail;                        // 32  where the field table starts, as an offset
+    std::atomic<std::uint32_t> writer_pid;     // 36  who holds the write lock
+    std::atomic<std::uint64_t> seq;            // 40  the write lock, see section 4
+    std::atomic<std::uint64_t> generation;     // 48  counts every write
+    std::atomic<std::uint32_t> wake_word;      // 56  used to wake waiters, see section 5
+    std::atomic<std::uint32_t> waiters;        // 60
+};
+
+struct StoredField {                           // one entry of the field table
+    std::uint32_t offset;
+    std::uint32_t capacity_and_kind;           // top bit set: the field has a length prefix
 };
 ```
+
+The header fills one 64-byte cache line exactly, with no padding. The
+members up to `tail` are written when the block is created and read only
+while a process attaches. The members from `writer_pid` on change on every
+write. Keeping both groups in one line means a write changes one line of
+the header rather than two, and no process reads the first group often
+enough for the writes to slow it down. `magic` and `abi_version` sit at the
+same offsets as in layout version 1, so a process can open a block of an
+older version and report which version it is.
+
+The field table, which the code calls the tail, holds `field_count` entries
+of 8 bytes, followed by one 8-byte write counter per field. A capacity is
+at most 1 MiB and needs 21 bits, so the kind of the field is kept in the top
+bit of the capacity instead of in a byte of its own, which would pad each
+entry to 12 bytes. The table and the record share one allocation, with the
+record moved forward to the next 64-byte boundary. Boost's aligned
+allocation temporarily asks for twice the requested size, which would make
+a box with a 1 MiB field need a block of over 2 MiB.
+
+The block is as large as these parts plus 1024 bytes for Boost's own
+bookkeeping, which needs at most 552 bytes on Windows and on Linux, rounded
+up to 4 KiB. A box with three small fields takes 4 KiB; one with 256
+integer fields takes 8 KiB. `static_assert`s on `sizeof` and `offsetof` in
+`segment.cpp` stop the build if any of these layouts changes by accident.
 
 Each field has a fixed place and a fixed size in the record. A number takes
 8 bytes. Text and raw bytes take a 4-byte length followed by up to
@@ -189,16 +217,20 @@ keeps its own copy:
 
 ```cpp
 for (std::uint32_t i = 0; i < count; ++i) {
-    StoredField f = h->fields[i];              // copy first, then check the copy
-    if (!field_fits(f.offset, f.capacity, f.kind, record_size))
+    StoredField stored;
+    std::memcpy(&stored, tail + i * sizeof(StoredField), sizeof stored);  // copy first
+    const FieldDesc f{stored.offset, stored.capacity_and_kind & ~kPrefixed, ...};
+    if (!field_fits(f, record_size))           // then check the copy
         throw SchemaMismatch("segment '" + name + "' has a corrupt header");
     impl->fields.push_back(f);                 // only this copy is used afterwards
 }
 ```
 
-Every later copy of field data uses `impl->fields`, never `h->fields`. The
-record's offset is read once into a local variable in the same way, and that
-one value is both checked and used.
+Every later copy of field data uses `impl->fields`, never the shared table.
+The offsets of the record and of the table, the record size and the field
+count are each read once into a local variable in the same way. Each one is
+checked against the size of the block before anything is read through it,
+and the checked value is the one used.
 
 The same idea applies to values arriving from Python: `write()` checks the
 size of every value before it takes the write lock, so a bad value in a

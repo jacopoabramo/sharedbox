@@ -60,18 +60,26 @@ default `sharedbox-` plus 16 hex digits of SHA-256 over the class's
 `module.qualname` (`__mp_main__` counts as `__main__`). Creating always asks
 for a new name and raises `SegmentExistsError` if it is taken.
 
-The segment holds a named object `"sharedbox.header"` and the record,
-allocated 64-byte aligned.
+The segment holds a named object `"sharedbox.header"` (64 bytes, one cache
+line) and one block with the tail and the record. The tail is `field_count`
+`StoredField` entries of 8 bytes (`u32 offset`, `u32 capacity_and_kind`, top
+bit set for a prefixed field), then one `u64` write count per field. The
+record follows, 64-byte aligned. The segment size is these plus 1024 bytes
+for Boost's bookkeeping, rounded up to 4 KiB. `static_assert`s in
+`segment.cpp` check every `sizeof` and `offsetof`.
 
 `Header` fields:
 
 - `magic`: written last on create; `attach()` waits for it.
-- `abi_version`: `1`; any other value is refused.
+- `abi_version`: `2`; any other value is refused. `magic` and `abi_version`
+  keep their offsets across versions.
 - `field_count`, `record_size`.
 - `schema_hash`: first 8 bytes of SHA-256 over the class identity and each
   field's `name:kind:capacity`. `attach()` raises `SchemaMismatchError` if
   it differs.
-- `record`: offset of the record in the segment.
+- `record`, `tail`: `u32` offsets of the record and the tail in the segment.
+  `attach()` checks both against the segment size, checks each field table
+  entry and keeps its own copy.
 - `seq`: sequence lock. Even when free, odd while a write runs. Readers copy
   and retry if `seq` moved; writers take it with a compare-and-swap and give
   up after `lock_timeout` with `LockTimeoutError`.
@@ -79,9 +87,6 @@ allocated 64-byte aligned.
   that wait for a change.
 - `writer_pid`: process holding the write lock, cleared by a normal unlock.
   `force_unlock()` releases the lock and leaves `writer_pid` as it is.
-- `fields[256]`: `offset`, `capacity`, `kind` (0 fixed, 1 prefixed) per field.
-  `attach()` checks each one and keeps its own copy.
-- `versions[256]`: write count per field.
 
 ### Record encoding
 
