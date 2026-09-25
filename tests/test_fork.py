@@ -53,10 +53,9 @@ def busy_box(name: str) -> Counter:
     """A box whose watcher thread is waiting inside the segment, with events connected."""
     box = Counter.create(name)
     box.events.value.connect(lambda new: None)
+    changes = iter(box.watch("value"))
     seen: queue.Queue[int] = queue.Queue()
-    threading.Thread(
-        target=lambda: seen.put(next(iter(box.watch("value")))), daemon=True
-    ).start()
+    threading.Thread(target=lambda: seen.put(next(changes)), daemon=True).start()
     box.value = 1
     seen.get(timeout=5)
     return box
