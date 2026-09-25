@@ -96,11 +96,8 @@ class Backoff {
 public:
     explicit Backoff(double timeout) : timeout_(timeout) {}
 
-    // The clock is read only once the fast (uncontended) path has already failed once,
-    // so an uncontended lock() or read_consistent() never reads the clock at all. This
-    // means lock_timeout is measured from the first failed attempt, not from
-    // construction; the difference is one failed attempt's worth of time, negligible
-    // next to lock_timeout's default of seconds.
+    // Read the clock only after the first failed attempt, so an uncontended lock or read
+    // makes no clock call; the timeout counts from that attempt.
     bool expired() {
         Clock::time_point now = Clock::now();
         if (!deadline_) {
@@ -420,6 +417,8 @@ std::uint64_t Segment::generation() const {
 }
 
 std::uint64_t Segment::wait(std::uint64_t last_generation, double timeout) const {
+    if (!(std::isfinite(timeout) && timeout >= 0 && timeout <= 86400))
+        throw std::invalid_argument("timeout must be finite and in [0, 86400]");
     std::shared_lock guard(impl_->lifetime);
     impl_->check_open();
     const Clock::time_point deadline = Clock::now() + to_duration(timeout);

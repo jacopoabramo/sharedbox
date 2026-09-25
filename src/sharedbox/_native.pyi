@@ -59,7 +59,10 @@ class Segment:
         """How many writes the segment has had."""
 
     def wait(self, last_generation: int, timeout: float) -> int:
-        """Block until the generation differs from ``last_generation`` or ``timeout`` seconds pass."""
+        """Block until the generation differs from ``last_generation`` or ``timeout`` seconds pass.
+
+        ``timeout`` must be finite and between 0 and 86400.
+        """
 
     def force_unlock(self) -> None:
         """Release a write lock left behind by a process that died while writing."""
