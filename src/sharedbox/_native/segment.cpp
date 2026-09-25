@@ -253,7 +253,8 @@ std::unique_ptr<Segment> Segment::create(const std::string &name, const std::vec
                                     std::to_string(kMaxRecordSize));
     for (const auto &f : fields)
         if (!field_fits(f.offset, f.capacity, static_cast<std::uint8_t>(f.kind), record_size))
-            throw std::invalid_argument("field at offset " + std::to_string(f.offset) + " does not fit the record");
+            throw std::invalid_argument("field at offset " + std::to_string(f.offset) +
+                                        " does not fit the record");
 
     auto impl = std::make_unique<Impl>();
     impl->name = name;
@@ -282,7 +283,8 @@ std::unique_ptr<Segment> Segment::create(const std::string &name, const std::vec
         h->record_size = record_size;
         h->record = impl->segment.get_handle_from_address(record);
         for (std::size_t i = 0; i < fields.size(); ++i) {
-            h->fields[i] = StoredField{fields[i].offset, fields[i].capacity, static_cast<std::uint8_t>(fields[i].kind), {0, 0, 0}};
+            h->fields[i] = StoredField{
+                fields[i].offset, fields[i].capacity, static_cast<std::uint8_t>(fields[i].kind), {0, 0, 0}};
             impl->fields.push_back(h->fields[i]);
         }
         h->magic.store(kMagic, std::memory_order_release);
@@ -338,7 +340,8 @@ std::unique_ptr<Segment> Segment::attach(const std::string &name, std::uint64_t 
     const std::uint64_t record_size = h->record_size;
     const std::uint32_t count = h->field_count;
     const Managed::handle_t record_handle = h->record;
-    if (count == 0 || count > kMaxFields || record_handle < 0 || static_cast<std::uint64_t>(record_handle) >= size ||
+    if (count == 0 || count > kMaxFields || record_handle < 0 ||
+        static_cast<std::uint64_t>(record_handle) >= size ||
         record_size > size - static_cast<std::uint64_t>(record_handle))
         throw SchemaMismatch("segment '" + name + "' has a corrupt header");
     for (std::uint32_t i = 0; i < count; ++i) {

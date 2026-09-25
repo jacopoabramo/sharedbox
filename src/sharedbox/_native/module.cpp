@@ -52,7 +52,8 @@ NB_MODULE(_native, m) {
             },
             "name"_a, "fields"_a, "record_size"_a, "schema_hash"_a, "lock_timeout"_a)
         .def_static("attach", &Segment::attach, "name"_a, "schema_hash"_a, "lock_timeout"_a)
-        .def("read", [](const Segment &s, std::uint32_t field) { return to_bytes(s.read(field)); }, "field"_a)
+        .def(
+            "read", [](const Segment &s, std::uint32_t field) { return to_bytes(s.read(field)); }, "field"_a)
         .def("read_all",
              [](const Segment &s) -> nb::typed<nb::list, nb::bytes> {
                  std::vector<std::string> values = s.read_all();
