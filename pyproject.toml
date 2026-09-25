@@ -85,7 +85,7 @@ files = ["src", "tests"]
 
 [tool.tox]
 requires = ["tox>=4.64.1", "tox-uv-bare>=1.36"]
-env_list = ["py311", "py312", "py313", "py314", "py314t", "mypy"]
+env_list = ["py311", "py312", "py313", "py314", "py314t", "mypy", "lint"]
 
 [tool.tox.env_run_base]
 runner = "uv-venv-lock-runner"
@@ -97,6 +97,12 @@ commands = [["pytest", "-q", { replace = "posargs", extend = true }]]
 
 [tool.tox.env.py314t]
 base_python = ["3.14t"]
+
+[tool.tox.env.lint]
+runner = "uv-venv-lock-runner"
+skip_install = true
+dependency_groups = ["lint"]
+commands = [["prek", "run", "--all-files", "--show-diff-on-failure"]]
 
 [tool.tox.env.mypy]
 # The allowlist covers what stubtest cannot see in nanobind's compiled types
