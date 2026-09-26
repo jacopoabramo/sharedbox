@@ -20,6 +20,9 @@ std::uint64_t process_start(std::uint32_t pid);
 /// This process.
 ProcessId current_process();
 
+/// This process's pid, without reading its start time.
+std::uint32_t current_pid();
+
 /// False when no process has that pid, or one does with a different start time. A process whose
 /// start time cannot be read counts as alive.
 bool process_alive(const ProcessId &id);

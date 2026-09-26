@@ -253,7 +253,8 @@ struct Segment::Impl {
     double lock_timeout = 5.0;
     std::atomic<bool> closed{false};
     std::unique_ptr<Notifier> notifier;
-    // Without a GIL (free-threaded builds) close() can race any other call; it takes this exclusively.
+    // close() can race any other call on every build, since lock waits release the GIL and the
+    // free-threaded build has none; it takes this exclusively.
     mutable std::shared_mutex lifetime;
 
     void check_open() const {
@@ -322,7 +323,7 @@ struct Segment::Impl {
             !header->seq.compare_exchange_weak(seq, seq + 1, std::memory_order_acquire, std::memory_order_relaxed))
             return false;
         std::atomic_thread_fence(std::memory_order_release);
-        header->writer_pid.store(current_process().pid, std::memory_order_relaxed);
+        header->writer_pid.store(current_pid(), std::memory_order_relaxed);
         return true;
     }
 
