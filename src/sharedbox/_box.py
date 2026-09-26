@@ -6,13 +6,13 @@ import re
 import sys
 import weakref
 from collections.abc import Callable
-from typing import Any, ClassVar, Protocol, Self, dataclass_transform, overload
+from typing import Any, ClassVar, Protocol, Self, TypeVar, dataclass_transform, overload
 
 from psygnal import SignalGroup
 
 from ._events import FieldWatch, Watcher, events_class
 from ._layout import FieldSpec, Layout, build_layout, class_identity
-from ._native import Segment
+from ._native import SchemaMismatchError, Segment
 
 NAME = re.compile(r"[A-Za-z0-9_.-]{1,128}")
 RESERVED = frozenset(
@@ -62,6 +62,19 @@ def reset_after_fork() -> None:
 
 if sys.platform != "win32":
     os.register_at_fork(after_in_child=reset_after_fork)
+
+
+B = TypeVar("B", bound="SharedBox")
+
+
+def unpickle_box(cls: type[B], name: str, schema_hash: int) -> B:
+    """Attach to the box a pickle refers to, if this process's class has the same fields."""
+    if cls._layout().schema_hash != schema_hash:
+        raise SchemaMismatchError(
+            f"{cls.__qualname__} was pickled by a process whose {cls.__qualname__} "
+            "has different fields; both processes must import the same class"
+        )
+    return cls.attach(name)
 
 
 class _ClassUnlink(Protocol):
@@ -348,8 +361,11 @@ class SharedBox(metaclass=SharedBoxMeta):
     def __exit__(self, *exc_info: object) -> None:
         self.close()
 
-    def __reduce__(self) -> tuple[Any, tuple[str]]:
-        return (type(self).attach, (self.name,))
+    def __reduce__(self) -> tuple[Callable[..., SharedBox], tuple[type, str, int]]:
+        return (
+            unpickle_box,
+            (type(self), self.name, type(self).__layout__.schema_hash),
+        )
 
     def __repr__(self) -> str:
         if self.closed:

@@ -357,8 +357,21 @@ while writing. Reads and writes waiting on such a lock raise
 
 ### Pickling
 
-A pickled box holds only its class and segment name. Unpickling attaches to
-the segment, so a box can be passed to a child process as an argument.
+A pickled box holds its class, segment name and schema hash. Unpickling
+attaches a new handle: an independent box on the same data, which the
+receiving process closes. `copy.copy` and `copy.deepcopy` do the same, like
+`multiprocessing.shared_memory.SharedMemory`.
+
+Unpickling fails with `SchemaMismatchError` when the receiving process's
+class has different fields, and with `SegmentNotFoundError` when the segment
+is gone. Pickled boxes are for handing a box to a running process, not for
+storing.
+
+With the `fork` start method, arguments are not pickled: the child uses the
+parent's box object, which keeps working after the fork.
+
+Each unpickle opens the segment again, so a pool should attach once per
+worker instead of pickling the box for every task:
 
 ```python
 import multiprocessing as mp
@@ -366,22 +379,27 @@ import multiprocessing as mp
 from sharedbox import SharedBox
 
 
-class Progress(SharedBox):
-    percent: float = 0.0
+class Status(SharedBox):
+    last_item: int = -1
 
 
-def work(progress: Progress) -> None:
-    progress.percent = 100.0
-    progress.close()
+status: Status
+
+
+def start_worker(name: str) -> None:
+    global status
+    status = Status.attach(name)
+
+
+def work(item: int) -> int:
+    status.last_item = item
+    return item * 2
 
 
 if __name__ == "__main__":
-    with Progress() as progress:
-        child = mp.Process(target=work, args=(progress,))
-        child.start()
-        child.join()
-        print(progress.percent)  # 100.0
-    Progress.unlink()
+    with Status() as box, mp.Pool(4, initializer=start_worker, initargs=(box.name,)) as pool:
+        print(sum(pool.map(work, range(100))))  # 9900
+    Status.unlink()
 ```
 
 ### Stored data

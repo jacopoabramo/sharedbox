@@ -215,6 +215,32 @@ def test_pickle_round_trip_attaches(unique_name: str) -> None:
         assert copy.y == 3.0
 
 
+def test_pickle_carries_the_schema(unique_name: str) -> None:
+    from sharedbox._box import unpickle_box
+
+    with Point.create(unique_name) as box:
+        _, (cls, name, schema_hash) = box.__reduce__()
+        assert (cls, name, schema_hash) == (
+            Point,
+            unique_name,
+            Point.__layout__.schema_hash,
+        )
+        with pytest.raises(SchemaMismatchError, match="Point was pickled by a process"):
+            unpickle_box(Point, unique_name, schema_hash ^ 1)
+
+
+def test_copy_attaches_a_second_handle(unique_name: str) -> None:
+    import copy
+
+    with Point.create(unique_name) as box:
+        other = copy.copy(box)
+        assert other is not box
+        other.x = 2.0
+        assert box.x == 2.0
+        other.close()
+        assert not box.closed
+
+
 def test_update_is_atomic_across_processes(unique_name: str) -> None:
     with Pair.create(unique_name) as box:
         writer = mp.get_context("spawn").Process(

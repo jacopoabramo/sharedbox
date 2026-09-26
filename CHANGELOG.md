@@ -30,6 +30,8 @@ Dates are marked as `DD-MM-YYYY`
 - Boost is installed through a vcpkg manifest pinned to one baseline.
 - `SharedBox` fields are converted in the native module and packed by
   alignment; segments use layout version 3.
+- A pickled `SharedBox` carries its class's schema hash; unpickling with a
+  different class raises `SchemaMismatchError`.
 
 ### Removed
 
