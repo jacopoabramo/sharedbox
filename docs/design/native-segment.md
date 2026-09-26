@@ -512,7 +512,8 @@ start time of whatever process has the pid now and decides:
   was reused.
 - A process has the pid but its start time cannot be read, because it
   belongs to another user or `/proc` is mounted with `hidepid`: alive. The
-  process exists, and nothing shows it is a different one.
+  process exists, and nothing shows it is a different one. The same holds
+  when the recorded start time is the one that could not be read.
 - On Linux, a zombie (state `Z` or `X` in `/proc/<pid>/stat`) is dead. It
   has exited and keeps its `/proc` entry only until its parent reaps
   it [26].
