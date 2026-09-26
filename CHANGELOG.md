@@ -32,6 +32,9 @@ Dates are marked as `DD-MM-YYYY`
   alignment; segments use layout version 3.
 - A pickled `SharedBox` carries its class's schema hash; unpickling with a
   different class raises `SchemaMismatchError`.
+- `SharedBox`: an error about a field names the field as `Class.field`.
+- `SharedBox`: a read or write that waits for another writer's lock lets
+  other threads run.
 
 ### Fixed
 

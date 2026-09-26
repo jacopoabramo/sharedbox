@@ -13,7 +13,7 @@ sharedbox/
 |-- src/sharedbox/
 |   |-- __init__.py            re-exports the public API
 |   |-- _box.py                SharedBox: class keywords, fields, create/attach, update, snapshot, unlink
-|   |-- _layout.py             Capacity, field offsets and encoding, schema hash
+|   |-- _layout.py             Capacity, field offsets and kind codes, schema hash
 |   |-- _events.py             FieldWatch, the watcher thread, psygnal events
 |   |-- _native.pyi            hand-written stub for the extension
 |   |-- py.typed

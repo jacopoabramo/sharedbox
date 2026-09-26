@@ -402,36 +402,61 @@ The code for this is in `notifier.hpp` and `notifier.cpp`.
 
 ## 6. Closing a box while other threads still use it
 
-On a normal Python build, the global interpreter lock (GIL) keeps two
-Python threads from running C++ code of this module at the same time. The
-free-threaded build has no GIL [17], and Python 3.14 is the first version
-where that build is supported rather than experimental [22]. Without the
-GIL, one thread could call `close()` and unmap the memory while another
-thread is copying from it.
+One thread can call `close()` and unmap the memory while another thread of
+the same process is copying from it. The free-threaded build has no global
+interpreter lock (GIL) [17], and Python 3.14 is the first version where that
+build is supported rather than experimental [22]. A normal build does not
+prevent the race either: a read or write that waits for another writer's
+lock releases the GIL while it waits, so `close()` can run in the meantime.
 
 Each open box therefore has a reader-writer lock that only protects its own
-lifetime [18]. Every operation takes it in shared mode; `close()` takes it
-exclusively, so it waits until running operations finish:
+lifetime [18]. Every operation holds it in shared mode; `close()` takes it
+exclusively, so it waits until running operations finish.
+
+A wait for the write lock (section 4), or for a copy that no write
+interrupted, releases the GIL through `WaitScope`, a guard whose constructor
+calls `PyEval_SaveThread` and whose destructor calls `PyEval_RestoreThread`.
+Other Python threads run during the wait, but the waiting thread needs the
+GIL back before it can return and give up its shared hold on the lifetime
+lock. Two orderings would then deadlock, and the code rules out both:
+
+- `close()` holding the GIL while it waits for the exclusive lock. The
+  waiting operation could never take the GIL back and finish. `close()` is
+  bound with `nb::call_guard<nb::gil_scoped_release>`, so it releases the GIL
+  before it waits.
+- A new call blocking on the lifetime lock while it holds the GIL. The C++
+  standard allows a reader-writer lock to make new readers queue behind a
+  waiting writer; with such a lock the new call waits for `close()`,
+  `close()` waits for the operation already running, and that operation
+  waits for the GIL the new call holds. `enter()` therefore never blocks: it
+  retries a non-blocking attempt, and checks `closed` on every pass.
 
 ```cpp
-std::string Segment::read(std::uint32_t index) const {
-    std::shared_lock guard(impl_->lifetime);   // many operations at once are fine
-    impl_->check_open();                        // raises BoxClosedError after close()
-    ...
+std::shared_lock<std::shared_mutex> enter() const {
+    std::shared_lock guard(lifetime, std::try_to_lock);
+    while (!guard.owns_lock()) {
+        check_open();                          // raises BoxClosedError once close() has begun
+        std::this_thread::yield();
+        guard.try_lock();
+    }
+    check_open();
+    return guard;
 }
 
-void Segment::close() {
-    if (impl_->closed.exchange(true))           // new calls now fail check_open()
+void Segment::close() {                        // runs without the GIL
+    if (impl_->closed.exchange(true))          // enter() now refuses new calls
         return;
     std::unique_lock guard(impl_->lifetime);   // wait for calls already running
     ...                                         // then unmap
 }
 ```
 
-`close()` marks the box as closed before it waits. On Linux, the standard
-reader-writer lock lets new readers in ahead of a waiting writer [19], so if
-`close()` waited first, a stream of reads could keep it waiting forever.
-Marking first turns those new reads away with `BoxClosedError`.
+`close()` stores `closed` before it asks for the exclusive lock. A call that
+cannot get the shared lock, because `close()` holds it or waits for it,
+raises `BoxClosedError` instead of waiting. On Linux the standard
+reader-writer lock lets new readers in ahead of a waiting writer [19]; a
+call that gets in after `closed` is stored raises `BoxClosedError` at once
+and lets go, so new calls hold the lock only for that check.
 
 This lock is only about one box object inside one process. The sequence
 counter from section 4 is what coordinates processes.

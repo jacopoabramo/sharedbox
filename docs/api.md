@@ -434,7 +434,7 @@ with Tag() as tag:
     try:
         tag.text = "été!"  # 6 bytes in UTF-8
     except ValueError as error:
-        print(error)  # text holds at most 4 bytes; the value encodes to 6
+        print(error)  # Tag.text holds at most 4 bytes; the value encodes to 6
 Tag.unlink()
 ```
 
