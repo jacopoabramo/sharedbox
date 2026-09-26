@@ -62,7 +62,7 @@ with one entry per field, and the record that holds the field values.
 ```cpp
 struct alignas(64) Header {                    // offset
     std::atomic<std::uint64_t> magic;          //  0  written last; marks the header as complete
-    std::uint32_t abi_version;                 //  8  layout version, 3
+    std::uint32_t layout_version;              //  8  layout version, 3
     std::uint32_t field_count;                 // 12
     std::uint64_t schema_hash;                 // 16  fingerprint of the Python class
     std::uint32_t record_size;                 // 24
@@ -86,8 +86,8 @@ members up to `tail` are written when the block is created and read only
 while a process attaches. The members from `writer_pid` on change on every
 write. Keeping both groups in one line means a write changes one line of
 the header rather than two, and no process reads the first group often
-enough for the writes to slow it down. `magic` and `abi_version` sit at the
-same offsets as in layout version 1, so a process can open a block of an
+enough for the writes to slow it down. `magic` and `layout_version` sit at
+the same offsets as in layout version 1, so a process can open a block of an
 older version and report which version it is.
 
 The field table, which the code calls the tail, holds `field_count` entries
@@ -184,7 +184,7 @@ order, so hashing those covers them.
 
 The creating process stores the fingerprint in the header. A process that
 attaches passes the fingerprint of its own class, and the C++ side compares
-the two, right after checking `abi_version` and before it looks at the field
+the two, right after checking `layout_version` and before it looks at the field
 table or the record:
 
 ```cpp
@@ -206,7 +206,7 @@ What the fingerprint is not:
   same time, not against a hostile process; section 3 and the `0600`
   permissions deal with that.
 - It does not cover changes in how sharedbox itself lays out a record
-  between releases. The header's `abi_version` does.
+  between releases. The header's `layout_version` does.
 - 8 bytes of SHA-256 give 2^64 possible values, so two different classes
   sharing a fingerprint by accident is not a practical concern.
 

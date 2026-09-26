@@ -74,8 +74,8 @@ these plus 1024 bytes for Boost's bookkeeping, rounded up to 4 KiB.
 
 - `magic`: written last on create, after the initial field values are in
   the record; `attach()` waits for it.
-- `abi_version`: `3`; any other value is refused. `magic` and `abi_version`
-  keep their offsets across versions.
+- `layout_version`: `3`; any other value is refused. `magic` and
+  `layout_version` keep their offsets across versions.
 - `field_count`, `record_size`.
 - `schema_hash`: first 8 bytes of SHA-256 over the class identity and each
   field's `name:kind:capacity`. `attach()` raises `SchemaMismatchError` if

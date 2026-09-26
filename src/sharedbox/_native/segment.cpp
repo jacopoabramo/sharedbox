@@ -40,7 +40,7 @@ using Managed = bipc::managed_shared_memory;
 #endif
 
 constexpr std::uint64_t kMagic = 0x3158424445524853ull;
-constexpr std::uint32_t kAbiVersion = 3;
+constexpr std::uint32_t kLayoutVersion = 3;
 constexpr std::uint32_t kMaxFields = 256;
 constexpr std::uint32_t kMaxCapacity = 1u << 20;
 constexpr std::uint64_t kMaxRecordSize = static_cast<std::uint64_t>(kMaxFields) * (kMaxCapacity + 8);
@@ -73,11 +73,11 @@ static_assert(offsetof(StoredField, offset) == 0 && offsetof(StoredField, capaci
 
 // One cache line. Everything before writer_pid is written at creation and read only by
 // attach, so sharing the line with the members every write changes costs nothing, and a
-// write touches a single header line. magic and abi_version keep their offsets in every
+// write touches a single header line. magic and layout_version keep their offsets in every
 // layout version, so attach can name the version of an older segment.
 struct alignas(64) Header {
     std::atomic<std::uint64_t> magic;
-    std::uint32_t abi_version;
+    std::uint32_t layout_version;
     std::uint32_t field_count;
     std::uint64_t schema_hash;
     std::uint32_t record_size;
@@ -91,7 +91,7 @@ struct alignas(64) Header {
 };
 static_assert(std::is_standard_layout_v<Header>);
 static_assert(sizeof(Header) == 64 && alignof(Header) == 64);
-static_assert(offsetof(Header, magic) == 0 && offsetof(Header, abi_version) == 8);
+static_assert(offsetof(Header, magic) == 0 && offsetof(Header, layout_version) == 8);
 static_assert(offsetof(Header, field_count) == 12 && offsetof(Header, schema_hash) == 16);
 static_assert(offsetof(Header, record_size) == 24 && offsetof(Header, record) == 28);
 static_assert(offsetof(Header, tail) == 32 && offsetof(Header, writer_pid) == 36);
@@ -421,7 +421,7 @@ std::unique_ptr<Segment> Segment::create(const std::string &name, const std::vec
         // Before magic is published, so an attacher never sees the record without these values.
         for (const auto &[index, bytes] : values)
             store(static_cast<unsigned char *>(record), fields[index], bytes);
-        h->abi_version = kAbiVersion;
+        h->layout_version = kLayoutVersion;
         h->field_count = static_cast<std::uint32_t>(count);
         h->schema_hash = schema_hash;
         h->record_size = static_cast<std::uint32_t>(record_size);
@@ -460,7 +460,7 @@ std::unique_ptr<Segment> Segment::attach(const std::string &name, const std::vec
     }
 
     // Found as bytes because an older layout's header has another size; magic and
-    // abi_version are read at their fixed offsets before the size is compared. The lookup
+    // layout_version are read at their fixed offsets before the size is compared. The lookup
     // is inside the wait because the creator may not have constructed the header yet.
     Backoff wait_for_creator(1.0);
     unsigned char *raw = nullptr;
@@ -469,7 +469,7 @@ std::unique_ptr<Segment> Segment::attach(const std::string &name, const std::vec
         auto found = impl->segment.find<unsigned char>(kHeaderName);
         raw = found.first;
         raw_size = found.second;
-        if (raw != nullptr && raw_size >= offsetof(Header, abi_version) + sizeof(std::uint32_t) &&
+        if (raw != nullptr && raw_size >= offsetof(Header, layout_version) + sizeof(std::uint32_t) &&
             reinterpret_cast<std::uintptr_t>(raw) % alignof(std::uint64_t) == 0 &&
             reinterpret_cast<const std::atomic<std::uint64_t> *>(raw)->load(std::memory_order_acquire) == kMagic)
             break;
@@ -477,10 +477,10 @@ std::unique_ptr<Segment> Segment::attach(const std::string &name, const std::vec
             throw SchemaMismatch("segment '" + name + "' is not a sharedbox");
         wait_for_creator.pause();
     }
-    std::uint32_t abi_version;
-    std::memcpy(&abi_version, raw + offsetof(Header, abi_version), sizeof abi_version);
-    if (abi_version != kAbiVersion)
-        throw SchemaMismatch("segment '" + name + "' uses layout version " + std::to_string(abi_version));
+    std::uint32_t layout_version;
+    std::memcpy(&layout_version, raw + offsetof(Header, layout_version), sizeof layout_version);
+    if (layout_version != kLayoutVersion)
+        throw SchemaMismatch("segment '" + name + "' uses layout version " + std::to_string(layout_version));
     if (raw_size != sizeof(Header) || reinterpret_cast<std::uintptr_t>(raw) % alignof(Header) != 0)
         throw SchemaMismatch("segment '" + name + "' has a corrupt header");
     Header *h = reinterpret_cast<Header *>(raw);
