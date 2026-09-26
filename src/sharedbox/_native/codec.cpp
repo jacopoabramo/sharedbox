@@ -25,6 +25,20 @@ const char *kind_name(FieldKind kind) {
     return "?";
 }
 
+// Releases the buffer on every way out of encode(), exceptions included.
+class Buffer {
+public:
+    explicit Buffer(PyObject *value) {
+        if (PyObject_GetBuffer(value, &view, PyBUF_FULL_RO) != 0)
+            throw nb::python_error();
+    }
+    ~Buffer() { PyBuffer_Release(&view); }
+    Buffer(const Buffer &) = delete;
+    Buffer &operator=(const Buffer &) = delete;
+
+    Py_buffer view;
+};
+
 [[noreturn]] void raise(PyObject *type, const std::string &message) {
     PyErr_SetString(type, message.c_str());
     throw nb::python_error();
@@ -80,18 +94,16 @@ std::string encode(const FieldDesc &field, const std::string &name, PyObject *va
         return std::string(data, size);
     }
     case FieldKind::Bytes: {
-        if (PyUnicode_Check(value) || !PyObject_CheckBuffer(value))
+        if (!PyBytes_Check(value) && !PyByteArray_Check(value) && !PyMemoryView_Check(value))
             goto wrong_type;
-        Py_buffer view;
-        if (PyObject_GetBuffer(value, &view, PyBUF_SIMPLE) != 0)
-            throw nb::python_error();
-        size = static_cast<std::size_t>(view.len);
-        if (size > field.capacity) {
-            PyBuffer_Release(&view);
+        Buffer buffer(value);
+        size = static_cast<std::size_t>(buffer.view.len);
+        if (size > field.capacity)
             goto too_long;
-        }
-        std::string out(static_cast<const char *>(view.buf), size);
-        PyBuffer_Release(&view);
+        std::string out(size, '\0');
+        // Copies a strided memoryview in logical order, as bytes() would.
+        if (PyBuffer_ToContiguous(out.data(), &buffer.view, buffer.view.len, 'C') != 0)
+            throw nb::python_error();
         return out;
     }
     }
