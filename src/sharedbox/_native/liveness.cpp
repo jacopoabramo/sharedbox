@@ -42,6 +42,8 @@ ProcessId current_process() {
     return self;
 }
 
+std::uint32_t current_pid() { return GetCurrentProcessId(); }
+
 #else
 
 std::uint64_t process_start(std::uint32_t pid) {
@@ -61,20 +63,26 @@ std::uint64_t process_start(std::uint32_t pid) {
     std::string text((std::istreambuf_iterator<char>(stat)), std::istreambuf_iterator<char>());
     // Field 2, the command name, may contain spaces and parentheses, so the fixed fields are
     // counted from the last ')'.
+    // kill has already found the process, so a stat that cannot be parsed means an unknown
+    // start time, not a missing process.
     auto close = text.rfind(')');
     if (close == std::string::npos)
-        return 0;
+        return kStartUnknown;
     std::istringstream rest(text.substr(close + 1));
     std::string field;
+    if (!(rest >> field))
+        return kStartUnknown;
     // A zombie has exited but keeps its /proc entry until its parent reaps it.
-    if (!(rest >> field) || field == "Z" || field == "X")
+    if (field == "Z" || field == "X")
         return 0;
     // Field 3 was the state; starttime is field 22.
     for (int i = 4; i < 22 && rest >> field; ++i) {
     }
     std::uint64_t start = 0;
-    rest >> start;
-    return start;
+    if (!(rest >> start))
+        return kStartUnknown;
+    // 0 means no process, so a process started at boot tick 0 reports 1.
+    return start == 0 ? 1 : start;
 }
 
 namespace {
@@ -104,6 +112,8 @@ ProcessId current_process() {
     }
     return {pid, start};
 }
+
+std::uint32_t current_pid() { return cached_pid.load(std::memory_order_relaxed); }
 
 #endif
 
