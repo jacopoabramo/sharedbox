@@ -6,9 +6,9 @@ states a choice and shows the code that implements it. Numbers in brackets,
 such as [1], point to the sources in the [References](#references) list at
 the end, where each idea can be checked.
 
-The Python side decides which fields a box has and turns values into bytes.
-The C++ side only moves bytes: it owns the shared memory, knows where each
-field lives, and makes sure a reader never sees a half-finished write.
+The Python side decides which fields a box has and where each one lives.
+The C++ side owns the shared memory, converts values to and from their
+stored bytes, and makes sure a reader never sees a half-finished write.
 
 ## 1. One named block of shared memory per box
 
@@ -140,10 +140,11 @@ stored in shared memory:
 
 ### The class fingerprint (`schema_hash`)
 
-The C++ side has no idea what the bytes in the record mean. It knows each
-field's offset, capacity and whether it has a length prefix, but not whether
-8 bytes at offset 16 are an `int` or a `float`, or which field is called
-`position`. Only the Python class knows that. So when two processes open the
+The field table tells the C++ side each field's offset, capacity and kind,
+but the creating process wrote that table, and an attaching process takes it
+as it finds it. Nothing in it says which field is called `position`, or
+whether the attaching class declares the field at offset 16 as an `int` or a
+`float`. Only the Python class knows that. So when two processes open the
 same block, something has to confirm they agree on the meaning of every byte;
 otherwise one process would read another's `float` as an `int`, or the field
 it calls `speed` at the offset where the other writes `position`, and get
@@ -229,7 +230,8 @@ keeps its own copy:
 for (std::uint32_t i = 0; i < count; ++i) {
     StoredField stored;
     std::memcpy(&stored, tail + i * sizeof(StoredField), sizeof stored);  // copy first
-    const FieldDesc f{stored.offset, stored.capacity_and_kind & ~kPrefixed, ...};
+    const std::uint32_t kind = stored.capacity_and_kind >> kKindShift;
+    const FieldDesc f{stored.offset, stored.capacity_and_kind & kCapacityMask, static_cast<FieldKind>(kind)};
     if (!field_fits(f, record_size))           // then check the copy
         throw SchemaMismatch("segment '" + name + "' has a corrupt header");
     impl->fields.push_back(f);                 // only this copy is used afterwards
@@ -384,8 +386,8 @@ waiter takes. The permits add up, to at most `LONG_MAX`, the semaphore's
 maximum, and every later wait on that box then returns at once instead of
 sleeping, so a waiting thread keeps checking `generation` in a loop and uses
 CPU until the permits are used up. No wake-up is lost. Removing a dead
-waiter's count needs a check of whether a process is still running, which
-the segment does not have yet.
+waiter's count needs a check of whether a process is still running;
+section 9 describes that check, which the segment does not use yet.
 
 On Linux a wake-up can never be lost: the waiter reads `wake_word` before it
 reads `generation`, and the writer changes `generation` before `wake_word`.
@@ -462,9 +464,13 @@ The module is built with nanobind, which connects C++ to Python.
 nanobind_add_module(_native
     STABLE_ABI
     FREE_THREADED
+    LTO
     NB_DOMAIN sharedbox
+    src/sharedbox/_native/codec.cpp
+    src/sharedbox/_native/liveness.cpp
     src/sharedbox/_native/module.cpp
-    src/sharedbox/_native/segment.cpp)
+    src/sharedbox/_native/segment.cpp
+    src/sharedbox/_native/notifier.cpp)
 ```
 
 `STABLE_ABI` asks for a module that works on every later Python version
@@ -482,6 +488,36 @@ the build [21] [23], which is why one line produces all three wheels:
 
 Free-threaded Python cannot load stable-ABI modules [23]; a stable ABI for
 free-threaded builds (`abi3t`) starts with Python 3.15 [24].
+
+## 9. Checking whether a process is still running
+
+A process id alone does not identify a process: once a process exits, the
+operating system can give its pid to a new one. `liveness.cpp` therefore
+names a process by its pid and its start time, the way psutil tells a
+process from a later one with the same pid [25]:
+
+```cpp
+struct ProcessId {
+    std::uint32_t pid;
+    std::uint64_t start;   // creation time on Windows, clock ticks since boot on Linux
+};
+```
+
+On Windows the start time is the creation time from `GetProcessTimes`. On
+Linux it is field 22 of `/proc/<pid>/stat` [26]. `process_alive()` reads the
+start time of whatever process has the pid now and decides:
+
+- No process has the pid: dead.
+- A process has the pid but started at another time: dead, because the pid
+  was reused.
+- A process has the pid but its start time cannot be read, because it
+  belongs to another user or `/proc` is mounted with `hidepid`: alive. The
+  process exists, and nothing shows it is a different one.
+- On Linux, a zombie (state `Z` or `X` in `/proc/<pid>/stat`) is dead. It
+  has exited and keeps its `/proc` entry only until its parent reaps
+  it [26].
+
+Nothing in the segment uses this check yet. `writer_pid` holds only a pid.
 
 ## References
 
@@ -554,3 +590,10 @@ free-threaded builds (`abi3t`) starts with Python 3.15 [24].
     https://nanobind.readthedocs.io/en/latest/free_threaded.html
 24. PEP 803, the stable ABI for free-threaded builds (`abi3t`).
     https://peps.python.org/pep-0803/
+25. psutil (BSD-3-Clause), `Process`: a process is identified by its pid
+    and its creation time, so a reused pid is not mistaken for the same
+    process.
+    https://github.com/giampaolo/psutil
+26. Linux manual page `proc_pid_stat(5)`: the process state (field 3) and
+    `starttime` (field 22).
+    https://man7.org/linux/man-pages/man5/proc_pid_stat.5.html

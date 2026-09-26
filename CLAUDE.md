@@ -26,6 +26,8 @@ sharedbox/
 |   |   `-- size_diff.py       wheel size table against main, for CI (standard library only)
 |   `-- _native/
 |       |-- module.cpp         nanobind module: Segment and the error classes
+|       |-- codec.{hpp,cpp}    converts field values to and from their stored bytes
+|       |-- liveness.{hpp,cpp} whether a process is still running (pid and start time)
 |       |-- segment.{hpp,cpp}  the segment: header, record, sequence lock
 |       `-- notifier.{hpp,cpp} wakes waiters across processes (futex, named semaphore)
 |-- tests/                     pytest; many tests spawn processes

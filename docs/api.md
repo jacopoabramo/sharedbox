@@ -490,7 +490,7 @@ asyncio.run(main())
 | --- | --- | --- |
 | `SegmentExistsError` | `FileExistsError` | creating a box under a name that is already taken |
 | `SegmentNotFoundError` | `FileNotFoundError` | attaching to, or unlinking on Linux, a name with no segment |
-| `SchemaMismatchError` | `TypeError` | attaching with a class whose module, name or fields differ from the creator's |
+| `SchemaMismatchError` | `TypeError` | attaching, or unpickling a box, with a class whose module, name or fields differ from the creator's |
 | `BoxClosedError` | `ValueError` | using a box after `close()` |
 | `LockTimeoutError` | `TimeoutError` | a read or write waits for a write in progress for longer than `lock_timeout` |
 

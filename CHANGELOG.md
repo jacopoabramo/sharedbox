@@ -33,6 +33,16 @@ Dates are marked as `DD-MM-YYYY`
 - A pickled `SharedBox` carries its class's schema hash; unpickling with a
   different class raises `SchemaMismatchError`.
 
+### Fixed
+
+- `SharedBox.watch()`: no longer yields the same value twice.
+- `SharedBox.attach()`: no longer fails when it runs while another process
+  is still creating the box.
+- `SharedBox`: a process that attaches while the box is being created sees
+  the initial values, never a zeroed record.
+- `SharedBox.close()`: no longer deadlocks while another thread's read or
+  write waits for the write lock.
+
 ### Removed
 
 - Python 3.10 support.
