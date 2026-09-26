@@ -82,14 +82,11 @@ NB_MODULE(_native, m) {
                 descs.reserve(fields.size());
                 for (const auto &[offset, capacity, kind] : fields)
                     descs.push_back({offset, capacity, to_kind(kind)});
-                if (names.size() != descs.size())
-                    throw std::invalid_argument("got " + std::to_string(names.size()) + " field names for " +
-                                                std::to_string(descs.size()) + " fields");
+                sharedbox::check_names(names, descs.size());
                 Encoded encoded;
                 encoded.reserve(values.size());
                 for (const auto &[index, value] : values) {
-                    if (index >= descs.size())
-                        throw std::out_of_range("field index " + std::to_string(index) + " is out of range");
+                    sharedbox::check_index(index, descs.size());
                     encoded.emplace_back(index, sharedbox::encode(descs[index], names[index], value.ptr()));
                 }
                 return Segment::create(name, descs, names, record_size, schema_hash, lock_timeout, encoded);

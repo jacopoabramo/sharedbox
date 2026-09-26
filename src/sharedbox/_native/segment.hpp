@@ -19,6 +19,10 @@ struct FieldDesc {
 };
 
 bool kind_is_valid(std::uint32_t code);
+/// Throws std::out_of_range unless index < count.
+void check_index(std::uint32_t index, std::size_t count);
+/// Throws std::invalid_argument unless there is one name per field.
+void check_names(const std::vector<std::string> &names, std::size_t count);
 /// True for str and bytes, whose payload follows a 4-byte length.
 bool is_prefixed(FieldKind kind);
 std::size_t field_alignment(FieldKind kind);

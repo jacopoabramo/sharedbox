@@ -174,8 +174,7 @@ bool field_fits(const FieldDesc &f, std::uint64_t record_size) {
 void check_values(const std::vector<FieldDesc> &fields,
                   const std::vector<std::pair<std::uint32_t, std::string>> &values) {
     for (const auto &[index, bytes] : values) {
-        if (index >= fields.size())
-            throw std::out_of_range("field index " + std::to_string(index) + " is out of range");
+        check_index(index, fields.size());
         const FieldDesc &f = fields[index];
         if (is_prefixed(f.kind) ? bytes.size() > f.capacity : bytes.size() != f.capacity)
             throw std::invalid_argument("value for field " + std::to_string(index) + " is " +
@@ -192,12 +191,6 @@ void store(unsigned char *record, const FieldDesc &f, const std::string &bytes) 
         dst += sizeof length;
     }
     std::memcpy(dst, bytes.data(), bytes.size());
-}
-
-void check_names(const std::vector<std::string> &names, std::size_t count) {
-    if (names.size() != count)
-        throw std::invalid_argument("got " + std::to_string(names.size()) + " field names for " +
-                                    std::to_string(count) + " fields");
 }
 
 WaitHook before_wait = []() -> void * { return nullptr; };
@@ -217,6 +210,17 @@ private:
 } // namespace
 
 bool kind_is_valid(std::uint32_t code) { return code <= static_cast<std::uint32_t>(FieldKind::Bytes); }
+
+void check_index(std::uint32_t index, std::size_t count) {
+    if (index >= count)
+        throw std::out_of_range("field index " + std::to_string(index) + " is out of range");
+}
+
+void check_names(const std::vector<std::string> &names, std::size_t count) {
+    if (names.size() != count)
+        throw std::invalid_argument("got " + std::to_string(names.size()) + " field names for " +
+                                    std::to_string(count) + " fields");
+}
 
 bool is_prefixed(FieldKind kind) { return kind == FieldKind::Str || kind == FieldKind::Bytes; }
 
@@ -277,8 +281,7 @@ struct Segment::Impl {
     }
 
     const FieldDesc &field(std::uint32_t index) const {
-        if (index >= fields.size())
-            throw std::out_of_range("field index " + std::to_string(index) + " is out of range");
+        check_index(index, fields.size());
         return fields[index];
     }
 
