@@ -1,6 +1,7 @@
 import contextlib
 import gc
 import multiprocessing as mp
+import os
 import pickle
 import threading
 import time
@@ -36,7 +37,10 @@ class Required(SharedBox):
     value: int
 
 
-class Motor(SharedBox):
+# A fixed name, not the class's derived default, so parallel pytest runs (parallel
+# tox environments, for instance) never fight over the same segment; move_in_child
+# sees the same name because it inherits SHAREDBOX_TEST_RUN from this process.
+class Motor(SharedBox, name=f"sbtest-motor-{os.environ['SHAREDBOX_TEST_RUN']}"):
     position: int
     enabled: bool
     label: Annotated[str, Capacity(32)]
@@ -120,7 +124,10 @@ def test_second_box_of_a_class_needs_a_name() -> None:
 
 
 def test_default_name_ignores_the_spawned_main_module() -> None:
-    namespace = {"__annotations__": {"x": int}, "__qualname__": "Spawned"}
+    # __qualname__ carries the run token so the derived default name does not collide
+    # with another pytest run's; neither class here is pickled or sent to a child.
+    qualname = f"Spawned_{os.environ['SHAREDBOX_TEST_RUN']}"
+    namespace = {"__annotations__": {"x": int}, "__qualname__": qualname}
     parent = cast(
         type[SharedBox],
         type("Spawned", (SharedBox,), {**namespace, "__module__": "__main__"}),

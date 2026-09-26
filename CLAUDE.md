@@ -145,14 +145,16 @@ uv run pytest tests/test_box.py -k pickle
 uv run pytest -n auto --dist loadfile  # same suite, split across files
 uv run tox                             # py311 to py314, py314t, mypy
 uv run tox -e py314t                   # one env
+uv run tox -p auto                     # same environments, in parallel
 ```
 
-`-n auto --dist loadfile` (pytest-xdist) keeps each test file on one worker,
-so `tests/test_box.py`'s class-derived default segment name never collides
-with itself across workers. `tox -p auto` runs environments in parallel too,
-but does not get this treatment: `uv run tox -p auto` fails with
-`SegmentExistsError` because several environments create that same default
-name at once.
+`tests/conftest.py` sets `SHAREDBOX_TEST_RUN` once per pytest run and every
+process it spawns inherits it, so the fixed segment names in
+`tests/test_box.py` (`Motor`, and the two classes in
+`test_default_name_ignores_the_spawned_main_module`) stay unique to that
+run. That is what lets `-n auto --dist loadfile` and `tox -p auto` run
+several workers or environments at once without fighting over the same
+segment name.
 
 CI (`.github/workflows/ci.yaml`) builds the wheels above with cibuildwheel,
 runs pytest against each wheel, and publishes to PyPI. Publishing runs only
