@@ -46,7 +46,7 @@ def open_box() -> tuple[Any, ...]:
     box = Record.create(name, 0, 0.0, "")
     atexit.register(Record.unlink, name)
     atexit.register(box.close)
-    return box, box._segment, INT.pack(1), b"hello"
+    return box, box._segment, INT.pack(1)
 
 
 def open_shm() -> tuple[Any, ...]:
@@ -93,7 +93,7 @@ def resources(kind: str) -> tuple[Any, ...]:
     return OPEN[kind]
 
 
-BOX = "box, seg, raw_a, raw_s = resources('box')"
+BOX = "box, seg, raw_a = resources('box')"
 SHM = "buf, lock = resources('shm')"
 VALUES = "a, b, s = resources('values')"
 LIST = "shared, = resources('list')"
