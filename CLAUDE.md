@@ -142,9 +142,17 @@ produces all three.
 ```sh
 uv run pytest                          # current interpreter
 uv run pytest tests/test_box.py -k pickle
+uv run pytest -n auto --dist loadfile  # same suite, split across files
 uv run tox                             # py311 to py314, py314t, mypy
 uv run tox -e py314t                   # one env
 ```
+
+`-n auto --dist loadfile` (pytest-xdist) keeps each test file on one worker,
+so `tests/test_box.py`'s class-derived default segment name never collides
+with itself across workers. `tox -p auto` runs environments in parallel too,
+but does not get this treatment: `uv run tox -p auto` fails with
+`SegmentExistsError` because several environments create that same default
+name at once.
 
 CI (`.github/workflows/ci.yaml`) builds the wheels above with cibuildwheel,
 runs pytest against each wheel, and publishes to PyPI. Publishing runs only

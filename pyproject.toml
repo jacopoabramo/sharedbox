@@ -139,6 +139,7 @@ dev = [
     "nanobind>=3.1.0",
     "pytest>=9.1.1",
     "pytest-codspeed>=5.0.3",
+    "pytest-xdist>=3.8.0",
     "tox>=4.64.1",
     "tox-uv-bare>=1.36",
 ]
