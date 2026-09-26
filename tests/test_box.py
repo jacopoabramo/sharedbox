@@ -3,6 +3,7 @@ import gc
 import multiprocessing as mp
 import os
 import pickle
+import sys
 import threading
 import time
 import types
@@ -38,9 +39,13 @@ class Required(SharedBox):
 
 
 # A fixed name, not the class's derived default, so parallel pytest runs (parallel
-# tox environments, for instance) never fight over the same segment; move_in_child
-# sees the same name because it inherits SHAREDBOX_TEST_RUN from this process.
-class Motor(SharedBox, name=f"sbtest-motor-{os.environ['SHAREDBOX_TEST_RUN']}"):
+# tox environments or xdist workers, for instance) never fight over the same segment;
+# move_in_child sees the same name because it inherits both variables from this process.
+class Motor(
+    SharedBox,
+    name=f"sbtest-motor-{os.environ['SHAREDBOX_TEST_RUN']}"
+    f"{os.environ.get('PYTEST_XDIST_WORKER', '')}",
+):
     position: int
     enabled: bool
     label: Annotated[str, Capacity(32)]
@@ -124,9 +129,13 @@ def test_second_box_of_a_class_needs_a_name() -> None:
 
 
 def test_default_name_ignores_the_spawned_main_module() -> None:
-    # __qualname__ carries the run token so the derived default name does not collide
-    # with another pytest run's; neither class here is pickled or sent to a child.
-    qualname = f"Spawned_{os.environ['SHAREDBOX_TEST_RUN']}"
+    # __qualname__ carries the run token and the xdist worker so the derived default
+    # name does not collide with another run's or worker's; neither class here is
+    # pickled or sent to a child.
+    qualname = (
+        f"Spawned_{os.environ['SHAREDBOX_TEST_RUN']}"
+        f"{os.environ.get('PYTEST_XDIST_WORKER', '')}"
+    )
     namespace = {"__annotations__": {"x": int}, "__qualname__": qualname}
     parent = cast(
         type[SharedBox],
@@ -222,18 +231,23 @@ def test_pickle_round_trip_attaches(unique_name: str) -> None:
         assert copy.y == 3.0
 
 
-def test_pickle_carries_the_schema(unique_name: str) -> None:
-    from sharedbox._box import unpickle_box
-
+def test_pickle_carries_the_schema(
+    unique_name: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
     with Point.create(unique_name) as box:
-        _, (cls, name, schema_hash) = box.__reduce__()
-        assert (cls, name, schema_hash) == (
-            Point,
-            unique_name,
-            Point.__layout__.schema_hash,
+        data = pickle.dumps(box)
+        other = type(
+            "Point",
+            (SharedBox,),
+            {
+                "__qualname__": "Point",
+                "__module__": Point.__module__,
+                "__annotations__": {"x": int},
+            },
         )
+        monkeypatch.setattr(sys.modules[Point.__module__], "Point", other)
         with pytest.raises(SchemaMismatchError, match="Point was pickled by a process"):
-            unpickle_box(Point, unique_name, schema_hash ^ 1)
+            pickle.loads(data)
 
 
 def test_copy_attaches_a_second_handle(unique_name: str) -> None:

@@ -158,4 +158,5 @@ def test_watch_never_yields_a_value_twice(unique_name: str) -> None:
             if not thread.is_alive():
                 break
         thread.join(10)
+    assert seen
     assert seen == sorted(set(seen))

@@ -71,17 +71,18 @@ def test_wait_wakes_every_waiter(unique_name: str) -> None:
 
 def test_wait_releases_the_gil(unique_name: str) -> None:
     segment = Segment.create(unique_name, FIELDS, NAMES, 8, SCHEMA, 1.0, [])
-    ticks = 0
+    ticks: list[float] = []
+    done = threading.Event()
 
     def count() -> None:
-        nonlocal ticks
-        deadline = time.monotonic() + 0.3
-        while time.monotonic() < deadline:
-            ticks += 1
+        while not done.wait(0.01):
+            ticks.append(time.monotonic())
 
     counter = threading.Thread(target=count)
     counter.start()
-    segment.wait(0, 0.3)
+    start = time.monotonic()
+    segment.wait(0, 1.0)
+    done.set()
     counter.join()
-    assert ticks > 1000
+    assert any(start + 0.3 <= tick <= start + 0.7 for tick in ticks)
     segment.close()

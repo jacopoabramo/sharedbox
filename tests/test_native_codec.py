@@ -1,3 +1,4 @@
+import array
 import enum
 import math
 import struct
@@ -65,6 +66,13 @@ def test_nan_round_trips_bit_for_bit(unique_name: str) -> None:
     segment.close()
 
 
+def test_strided_memoryview_is_stored_in_order(unique_name: str) -> None:
+    segment = create(unique_name)
+    segment.set([(3, memoryview(b"abcdef")[::2])])
+    assert segment.get(3) == b"ace"
+    segment.close()
+
+
 def test_float_field_accepts_int(unique_name: str) -> None:
     segment = create(unique_name)
     segment.set([(1, 3)])
@@ -91,6 +99,7 @@ def test_float_field_accepts_int(unique_name: str) -> None:
         (2, "\ud800", UnicodeEncodeError, ""),
         (3, "x", TypeError, "blob expects bytes, got str"),
         (3, b"abcd", ValueError, "blob holds at most 3 bytes"),
+        (3, array.array("b", [1]), TypeError, "blob expects bytes, got array"),
         (4, 1, TypeError, "flag expects bool, got int"),
     ],
 )

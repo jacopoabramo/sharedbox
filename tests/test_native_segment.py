@@ -326,17 +326,20 @@ def test_attach_waits_for_a_creator_that_has_not_made_its_header(
     # so an attach racing create sees SegmentNotFoundError or a finished segment,
     # never "not a sharedbox".
     errors: list[BaseException] = []
+    attached = threading.Event()
 
     def attach_loop() -> None:
-        for _ in range(200):
+        deadline = time.monotonic() + 5.0
+        while time.monotonic() < deadline:
             try:
                 attach(unique_name).close()
-                return
             except SegmentNotFoundError:
                 continue
             except BaseException as error:  # noqa: BLE001
                 errors.append(error)
                 return
+            attached.set()
+            return
 
     thread = threading.Thread(target=attach_loop)
     thread.start()
@@ -344,27 +347,28 @@ def test_attach_waits_for_a_creator_that_has_not_made_its_header(
     thread.join(10)
     segment.close()
     assert not errors
+    assert attached.is_set()
 
 
 def test_a_blocked_read_lets_other_threads_run(unique_name: str) -> None:
     segment = create(unique_name, timeout=1.0)
     other = attach(unique_name, timeout=1.0)
     segment._hold_write_lock()
-    ticks = 0
+    ticks: list[float] = []
     done = threading.Event()
 
     def count() -> None:
-        nonlocal ticks
-        while not done.is_set():
-            ticks += 1
+        while not done.wait(0.01):
+            ticks.append(time.monotonic())
 
     thread = threading.Thread(target=count)
     thread.start()
+    start = time.monotonic()
     with pytest.raises(LockTimeoutError):
         other._read(0)
     done.set()
     thread.join()
-    assert ticks > 1000
+    assert any(start + 0.3 <= tick <= start + 0.7 for tick in ticks)
     segment.force_unlock()
     other.close()
     segment.close()
