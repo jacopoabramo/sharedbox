@@ -44,15 +44,16 @@ const char *kind_name(FieldKind kind) {
 } // namespace
 
 std::string encode(const FieldDesc &field, const std::string &name, PyObject *value) {
+    std::size_t size = 0;
     switch (field.kind) {
     case FieldKind::Bool: {
         if (!PyBool_Check(value))
-            wrong_type(field, name, value);
+            goto wrong_type;
         return std::string(1, value == Py_True ? '\x01' : '\x00');
     }
     case FieldKind::Int: {
         if (PyBool_Check(value) || !PyLong_Check(value))
-            wrong_type(field, name, value);
+            goto wrong_type;
         int overflow = 0;
         long long number = PyLong_AsLongLongAndOverflow(value, &overflow);
         if (overflow != 0)
@@ -65,7 +66,7 @@ std::string encode(const FieldDesc &field, const std::string &name, PyObject *va
     }
     case FieldKind::Float: {
         if (PyBool_Check(value) || !(PyFloat_Check(value) || PyLong_Check(value)))
-            wrong_type(field, name, value);
+            goto wrong_type;
         double number = PyFloat_AsDouble(value);
         if (number == -1.0 && PyErr_Occurred()) {
             if (!PyErr_ExceptionMatches(PyExc_OverflowError))
@@ -79,25 +80,26 @@ std::string encode(const FieldDesc &field, const std::string &name, PyObject *va
     }
     case FieldKind::Str: {
         if (!PyUnicode_Check(value))
-            wrong_type(field, name, value);
-        Py_ssize_t size = 0;
-        const char *data = PyUnicode_AsUTF8AndSize(value, &size);
+            goto wrong_type;
+        Py_ssize_t length = 0;
+        const char *data = PyUnicode_AsUTF8AndSize(value, &length);
         if (data == nullptr)
             throw nb::python_error();
-        if (static_cast<std::size_t>(size) > field.capacity)
-            too_long(field, name, static_cast<std::size_t>(size));
-        return std::string(data, static_cast<std::size_t>(size));
+        size = static_cast<std::size_t>(length);
+        if (size > field.capacity)
+            goto too_long;
+        return std::string(data, size);
     }
     case FieldKind::Bytes: {
         if (PyUnicode_Check(value) || !PyObject_CheckBuffer(value))
-            wrong_type(field, name, value);
+            goto wrong_type;
         Py_buffer view;
         if (PyObject_GetBuffer(value, &view, PyBUF_SIMPLE) != 0)
             throw nb::python_error();
-        std::size_t size = static_cast<std::size_t>(view.len);
+        size = static_cast<std::size_t>(view.len);
         if (size > field.capacity) {
             PyBuffer_Release(&view);
-            too_long(field, name, size);
+            goto too_long;
         }
         std::string out(static_cast<const char *>(view.buf), size);
         PyBuffer_Release(&view);
@@ -105,6 +107,10 @@ std::string encode(const FieldDesc &field, const std::string &name, PyObject *va
     }
     }
     raise(PyExc_SystemError, "unknown field kind");
+wrong_type:
+    wrong_type(field, name, value);
+too_long:
+    too_long(field, name, size);
 }
 
 PyObject *decode(const FieldDesc &field, const char *data, std::size_t size) {
