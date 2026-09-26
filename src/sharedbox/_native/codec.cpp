@@ -30,17 +30,6 @@ const char *kind_name(FieldKind kind) {
     throw nb::python_error();
 }
 
-[[noreturn]] void wrong_type(const FieldDesc &field, const std::string &name, PyObject *value) {
-    nb::object type_name = nb::handle(reinterpret_cast<PyObject *>(Py_TYPE(value))).attr("__name__");
-    raise(PyExc_TypeError,
-          name + " expects " + kind_name(field.kind) + ", got " + nb::borrow<nb::str>(type_name).c_str());
-}
-
-[[noreturn]] void too_long(const FieldDesc &field, const std::string &name, std::size_t size) {
-    raise(PyExc_ValueError, name + " holds at most " + std::to_string(field.capacity) +
-                                " bytes; the value encodes to " + std::to_string(size));
-}
-
 } // namespace
 
 std::string encode(const FieldDesc &field, const std::string &name, PyObject *value) {
@@ -107,10 +96,13 @@ std::string encode(const FieldDesc &field, const std::string &name, PyObject *va
     }
     }
     raise(PyExc_SystemError, "unknown field kind");
-wrong_type:
-    wrong_type(field, name, value);
 too_long:
-    too_long(field, name, size);
+    raise(PyExc_ValueError, name + " holds at most " + std::to_string(field.capacity) +
+                                " bytes; the value encodes to " + std::to_string(size));
+wrong_type:
+    nb::object type_name = nb::handle(reinterpret_cast<PyObject *>(Py_TYPE(value))).attr("__name__");
+    raise(PyExc_TypeError,
+          name + " expects " + kind_name(field.kind) + ", got " + nb::borrow<nb::str>(type_name).c_str());
 }
 
 PyObject *decode(const FieldDesc &field, const char *data, std::size_t size) {
