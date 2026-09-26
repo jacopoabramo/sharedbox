@@ -6,9 +6,9 @@ states a choice and shows the code that implements it. Numbers in brackets,
 such as [1], point to the sources in the [References](#references) list at
 the end, where each idea can be checked.
 
-The Python side decides which fields a box has and turns values into bytes.
-The C++ side only moves bytes: it owns the shared memory, knows where each
-field lives, and makes sure a reader never sees a half-finished write.
+The Python side decides which fields a box has and where each one lives.
+The C++ side owns the shared memory, converts values to and from their
+stored bytes, and makes sure a reader never sees a half-finished write.
 
 ## 1. One named block of shared memory per box
 
@@ -62,7 +62,7 @@ with one entry per field, and the record that holds the field values.
 ```cpp
 struct alignas(64) Header {                    // offset
     std::atomic<std::uint64_t> magic;          //  0  written last; marks the header as complete
-    std::uint32_t abi_version;                 //  8  layout version, 2
+    std::uint32_t layout_version;              //  8  layout version, 3
     std::uint32_t field_count;                 // 12
     std::uint64_t schema_hash;                 // 16  fingerprint of the Python class
     std::uint32_t record_size;                 // 24
@@ -77,7 +77,7 @@ struct alignas(64) Header {                    // offset
 
 struct StoredField {                           // one entry of the field table
     std::uint32_t offset;
-    std::uint32_t capacity_and_kind;           // top bit set: the field has a length prefix
+    std::uint32_t capacity_and_kind;           // low 24 bits: capacity; top 8: the field's kind code
 };
 ```
 
@@ -86,18 +86,20 @@ members up to `tail` are written when the block is created and read only
 while a process attaches. The members from `writer_pid` on change on every
 write. Keeping both groups in one line means a write changes one line of
 the header rather than two, and no process reads the first group often
-enough for the writes to slow it down. `magic` and `abi_version` sit at the
-same offsets as in layout version 1, so a process can open a block of an
+enough for the writes to slow it down. `magic` and `layout_version` sit at
+the same offsets as in layout version 1, so a process can open a block of an
 older version and report which version it is.
 
 The field table, which the code calls the tail, holds `field_count` entries
-of 8 bytes, followed by one 8-byte write counter per field. A capacity is
-at most 1 MiB and needs 21 bits, so the kind of the field is kept in the top
-bit of the capacity instead of in a byte of its own, which would pad each
-entry to 12 bytes. The table and the record share one allocation, with the
-record moved forward to the next 64-byte boundary. Boost's aligned
-allocation temporarily asks for twice the requested size, which would make
-a box with a 1 MiB field need a block of over 2 MiB.
+of 8 bytes, followed by one 8-byte write counter per field. Each entry packs
+a 32-bit offset and a 32-bit `capacity_and_kind`: the low 24 bits hold the
+capacity (at most 1 MiB, which needs 21 bits) and the top 8 hold the field's
+kind code (`bool` 0, `int` 1, `float` 2, `str` 3, `bytes` 4), so the entry
+stays 8 bytes with no byte of its own set aside for the kind. The table and
+the record share one allocation, with the record moved forward to the next
+64-byte boundary. Boost's aligned allocation temporarily asks for twice the
+requested size, which would make a box with a 1 MiB field need a block of
+over 2 MiB.
 
 The block is as large as these parts plus 1024 bytes for Boost's own
 bookkeeping, which needs at most 552 bytes on Windows and on Linux with glibc, rounded
@@ -113,27 +115,36 @@ Each field has a fixed place and a fixed size in the record. A number takes
 record: | count (8) | ratio (8) | label: length (4) + up to 32 bytes, padded to 8 |
 ```
 
+Fields are packed by descending alignment (the 8-byte `int` and `float`
+fields first, then `str` and `bytes`, then `bool`), not declaration order,
+so a field's place in the record need not match its place in the class.
+
+The values passed to `create()` are written into the record before the
+header's `magic` word is set, so an attaching process never sees a record
+before every field holds its starting value.
+
 Why fixed places instead of something more flexible, such as a dictionary
 stored in shared memory:
 
 - Reading or writing a field is one copy of a known number of bytes to or
   from a known address. There is no structure to walk and nothing to
   rebalance.
-- Values are stored as plain bytes the Python side encodes (`struct` for
-  numbers, UTF-8 for text). Nothing is ever unpickled. Unpickling runs code
-  chosen by whoever wrote the bytes [5], so a box whose values were pickles
-  would let any process that can write the block run code in every process
-  that reads it.
+- Values are stored as plain bytes the native module converts (packing
+  numbers the way `struct` would, text as UTF-8). Nothing is ever unpickled.
+  Unpickling runs code chosen by whoever wrote the bytes [5], so a box whose
+  values were pickles would let any process that can write the block run
+  code in every process that reads it.
 - A process that opens the block with a different version of the class is
   refused: the `schema_hash` in the header must match the hash the opener
   computes from its own class.
 
 ### The class fingerprint (`schema_hash`)
 
-The C++ side has no idea what the bytes in the record mean. It knows each
-field's offset, capacity and whether it has a length prefix, but not whether
-8 bytes at offset 16 are an `int` or a `float`, or which field is called
-`position`. Only the Python class knows that. So when two processes open the
+The field table tells the C++ side each field's offset, capacity and kind,
+but the creating process wrote that table, and an attaching process takes it
+as it finds it. Nothing in it says which field is called `position`, or
+whether the attaching class declares the field at offset 16 as an `int` or a
+`float`. Only the Python class knows that. So when two processes open the
 same block, something has to confirm they agree on the meaning of every byte;
 otherwise one process would read another's `float` as an `int`, or the field
 it calls `speed` at the offset where the other writes `position`, and get
@@ -173,7 +184,7 @@ order, so hashing those covers them.
 
 The creating process stores the fingerprint in the header. A process that
 attaches passes the fingerprint of its own class, and the C++ side compares
-the two, right after checking `abi_version` and before it looks at the field
+the two, right after checking `layout_version` and before it looks at the field
 table or the record:
 
 ```cpp
@@ -195,7 +206,7 @@ What the fingerprint is not:
   same time, not against a hostile process; section 3 and the `0600`
   permissions deal with that.
 - It does not cover changes in how sharedbox itself lays out a record
-  between releases. The header's `abi_version` does.
+  between releases. The header's `layout_version` does.
 - 8 bytes of SHA-256 give 2^64 possible values, so two different classes
   sharing a fingerprint by accident is not a practical concern.
 
@@ -219,7 +230,8 @@ keeps its own copy:
 for (std::uint32_t i = 0; i < count; ++i) {
     StoredField stored;
     std::memcpy(&stored, tail + i * sizeof(StoredField), sizeof stored);  // copy first
-    const FieldDesc f{stored.offset, stored.capacity_and_kind & ~kPrefixed, ...};
+    const std::uint32_t kind = stored.capacity_and_kind >> kKindShift;
+    const FieldDesc f{stored.offset, stored.capacity_and_kind & kCapacityMask, static_cast<FieldKind>(kind)};
     if (!field_fits(f, record_size))           // then check the copy
         throw SchemaMismatch("segment '" + name + "' has a corrupt header");
     impl->fields.push_back(f);                 // only this copy is used afterwards
@@ -374,8 +386,8 @@ waiter takes. The permits add up, to at most `LONG_MAX`, the semaphore's
 maximum, and every later wait on that box then returns at once instead of
 sleeping, so a waiting thread keeps checking `generation` in a loop and uses
 CPU until the permits are used up. No wake-up is lost. Removing a dead
-waiter's count needs a check of whether a process is still running, which
-the segment does not have yet.
+waiter's count needs a check of whether a process is still running;
+section 9 describes that check, which the segment does not use yet.
 
 On Linux a wake-up can never be lost: the waiter reads `wake_word` before it
 reads `generation`, and the writer changes `generation` before `wake_word`.
@@ -390,36 +402,61 @@ The code for this is in `notifier.hpp` and `notifier.cpp`.
 
 ## 6. Closing a box while other threads still use it
 
-On a normal Python build, the global interpreter lock (GIL) keeps two
-Python threads from running C++ code of this module at the same time. The
-free-threaded build has no GIL [17], and Python 3.14 is the first version
-where that build is supported rather than experimental [22]. Without the
-GIL, one thread could call `close()` and unmap the memory while another
-thread is copying from it.
+One thread can call `close()` and unmap the memory while another thread of
+the same process is copying from it. The free-threaded build has no global
+interpreter lock (GIL) [17], and Python 3.14 is the first version where that
+build is supported rather than experimental [22]. A normal build does not
+prevent the race either: a read or write that waits for another writer's
+lock releases the GIL while it waits, so `close()` can run in the meantime.
 
 Each open box therefore has a reader-writer lock that only protects its own
-lifetime [18]. Every operation takes it in shared mode; `close()` takes it
-exclusively, so it waits until running operations finish:
+lifetime [18]. Every operation holds it in shared mode; `close()` takes it
+exclusively, so it waits until running operations finish.
+
+A wait for the write lock (section 4), or for a copy that no write
+interrupted, releases the GIL through `WaitScope`, a guard whose constructor
+calls `PyEval_SaveThread` and whose destructor calls `PyEval_RestoreThread`.
+Other Python threads run during the wait, but the waiting thread needs the
+GIL back before it can return and give up its shared hold on the lifetime
+lock. Two orderings would then deadlock, and the code rules out both:
+
+- `close()` holding the GIL while it waits for the exclusive lock. The
+  waiting operation could never take the GIL back and finish. `close()` is
+  bound with `nb::call_guard<nb::gil_scoped_release>`, so it releases the GIL
+  before it waits.
+- A new call blocking on the lifetime lock while it holds the GIL. The C++
+  standard allows a reader-writer lock to make new readers queue behind a
+  waiting writer; with such a lock the new call waits for `close()`,
+  `close()` waits for the operation already running, and that operation
+  waits for the GIL the new call holds. `enter()` therefore never blocks: it
+  retries a non-blocking attempt, and checks `closed` on every pass.
 
 ```cpp
-std::string Segment::read(std::uint32_t index) const {
-    std::shared_lock guard(impl_->lifetime);   // many operations at once are fine
-    impl_->check_open();                        // raises BoxClosedError after close()
-    ...
+std::shared_lock<std::shared_mutex> enter() const {
+    std::shared_lock guard(lifetime, std::try_to_lock);
+    while (!guard.owns_lock()) {
+        check_open();                          // raises BoxClosedError once close() has begun
+        std::this_thread::yield();
+        guard.try_lock();
+    }
+    check_open();
+    return guard;
 }
 
-void Segment::close() {
-    if (impl_->closed.exchange(true))           // new calls now fail check_open()
+void Segment::close() {                        // runs without the GIL
+    if (impl_->closed.exchange(true))          // enter() now refuses new calls
         return;
     std::unique_lock guard(impl_->lifetime);   // wait for calls already running
     ...                                         // then unmap
 }
 ```
 
-`close()` marks the box as closed before it waits. On Linux, the standard
-reader-writer lock lets new readers in ahead of a waiting writer [19], so if
-`close()` waited first, a stream of reads could keep it waiting forever.
-Marking first turns those new reads away with `BoxClosedError`.
+`close()` stores `closed` before it asks for the exclusive lock. A call that
+cannot get the shared lock, because `close()` holds it or waits for it,
+raises `BoxClosedError` instead of waiting. On Linux the standard
+reader-writer lock lets new readers in ahead of a waiting writer [19]; a
+call that gets in after `closed` is stored raises `BoxClosedError` at once
+and lets go, so new calls hold the lock only for that check.
 
 This lock is only about one box object inside one process. The sequence
 counter from section 4 is what coordinates processes.
@@ -452,9 +489,13 @@ The module is built with nanobind, which connects C++ to Python.
 nanobind_add_module(_native
     STABLE_ABI
     FREE_THREADED
+    LTO
     NB_DOMAIN sharedbox
+    src/sharedbox/_native/codec.cpp
+    src/sharedbox/_native/liveness.cpp
     src/sharedbox/_native/module.cpp
-    src/sharedbox/_native/segment.cpp)
+    src/sharedbox/_native/segment.cpp
+    src/sharedbox/_native/notifier.cpp)
 ```
 
 `STABLE_ABI` asks for a module that works on every later Python version
@@ -472,6 +513,37 @@ the build [21] [23], which is why one line produces all three wheels:
 
 Free-threaded Python cannot load stable-ABI modules [23]; a stable ABI for
 free-threaded builds (`abi3t`) starts with Python 3.15 [24].
+
+## 9. Checking whether a process is still running
+
+A process id alone does not identify a process: once a process exits, the
+operating system can give its pid to a new one. `liveness.cpp` therefore
+names a process by its pid and its start time, the way psutil tells a
+process from a later one with the same pid [25]:
+
+```cpp
+struct ProcessId {
+    std::uint32_t pid;
+    std::uint64_t start;   // creation time on Windows, clock ticks since boot on Linux
+};
+```
+
+On Windows the start time is the creation time from `GetProcessTimes`. On
+Linux it is field 22 of `/proc/<pid>/stat` [26]. `process_alive()` reads the
+start time of whatever process has the pid now and decides:
+
+- No process has the pid: dead.
+- A process has the pid but started at another time: dead, because the pid
+  was reused.
+- A process has the pid but its start time cannot be read, because it
+  belongs to another user or `/proc` is mounted with `hidepid`: alive. The
+  process exists, and nothing shows it is a different one. The same holds
+  when the recorded start time is the one that could not be read.
+- On Linux, a zombie (state `Z` or `X` in `/proc/<pid>/stat`) is dead. It
+  has exited and keeps its `/proc` entry only until its parent reaps
+  it [26].
+
+Nothing in the segment uses this check yet. `writer_pid` holds only a pid.
 
 ## References
 
@@ -544,3 +616,10 @@ free-threaded builds (`abi3t`) starts with Python 3.15 [24].
     https://nanobind.readthedocs.io/en/latest/free_threaded.html
 24. PEP 803, the stable ABI for free-threaded builds (`abi3t`).
     https://peps.python.org/pep-0803/
+25. psutil (BSD-3-Clause), `Process`: a process is identified by its pid
+    and its creation time, so a reused pid is not mistaken for the same
+    process.
+    https://github.com/giampaolo/psutil
+26. Linux manual page `proc_pid_stat(5)`: the process state (field 3) and
+    `starttime` (field 22).
+    https://man7.org/linux/man-pages/man5/proc_pid_stat.5.html

@@ -3,8 +3,9 @@
 Every contender holds the same record: an int, a float and a string of up
 to 32 bytes. ``mp.Value/Array`` takes one lock per value, so its "update two
 fields" and "read all" rows take two or three locks one after the other.
-Rows under ``split`` time SharedBox's Python encoding and its native call
-separately.
+Rows under ``split`` isolate the native segment's typed ``set``/``get``,
+which convert the Python value in the native module, against the raw
+``_write``/``_read`` calls that move already-encoded bytes.
 
     python -m sharedbox.benchmarks.ops -o ops.json
     python -m sharedbox.benchmarks.ops --fast --filter "read*"
@@ -45,9 +46,7 @@ def open_box() -> tuple[Any, ...]:
     box = Record.create(name, 0, 0.0, "")
     atexit.register(Record.unlink, name)
     atexit.register(box.close)
-    fields = Record.__layout__.by_name
-    a, s = fields["a"], fields["s"]
-    return box, box._segment, a, s, a.encode(1), s.encode("hello")
+    return box, box._segment, INT.pack(1)
 
 
 def open_shm() -> tuple[Any, ...]:
@@ -94,7 +93,7 @@ def resources(kind: str) -> tuple[Any, ...]:
     return OPEN[kind]
 
 
-BOX = "box, seg, spec_a, spec_s, raw_a, raw_s = resources('box')"
+BOX = "box, seg, raw_a = resources('box')"
 SHM = "buf, lock = resources('shm')"
 VALUES = "a, b, s = resources('values')"
 LIST = "shared, = resources('list')"
@@ -238,14 +237,12 @@ BENCHMARKS: list[tuple[str, str, str, list[str]]] = [
         NAMESPACE,
         ["{'a': ns.a, 'b': ns.b, 's': ns.s}"],
     ),
-    ("encode int", "split", BOX, ["spec_a.encode(1)"]),
-    ("decode int", "split", BOX, ["spec_a.decode(raw_a)"]),
-    ("native write int", "split", BOX, ["seg.write([(0, raw_a)])"]),
-    ("native read int", "split", BOX, ["seg.read(0)"]),
-    ("encode str", "split", BOX, ["spec_s.encode('hello')"]),
-    ("decode str", "split", BOX, ["spec_s.decode(raw_s)"]),
-    ("native write str", "split", BOX, ["seg.write([(2, raw_s)])"]),
-    ("native read str", "split", BOX, ["seg.read(2)"]),
+    ("native set int", "split", BOX, ["seg.set([(0, 1)])"]),
+    ("native get int", "split", BOX, ["seg.get(0)"]),
+    ("raw write int", "split", BOX, ["seg._write([(0, raw_a)])"]),
+    ("raw read int", "split", BOX, ["seg._read(0)"]),
+    ("native set str", "split", BOX, ["seg.set([(2, 'hello')])"]),
+    ("native get str", "split", BOX, ["seg.get(2)"]),
 ]
 
 

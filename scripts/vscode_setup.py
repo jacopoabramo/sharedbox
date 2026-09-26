@@ -83,7 +83,7 @@ def main() -> None:
         "name": CONFIGURATION,
         "includePath": include_paths(),
         "defines": defines(),
-        "cppStandard": "c++17",
+        "cppStandard": "c++20",
     }
     properties["configurations"] = [*others, configuration]
     properties.setdefault("version", 4)

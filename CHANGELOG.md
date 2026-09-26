@@ -28,6 +28,23 @@ Dates are marked as `DD-MM-YYYY`
 - Wheels per platform: `cp311-cp311`, `cp312-abi3` for CPython 3.12 and
   newer, and `cp314-cp314t` for free-threaded CPython 3.14.
 - Boost is installed through a vcpkg manifest pinned to one baseline.
+- `SharedBox` fields are converted in the native module and packed by
+  alignment; segments use layout version 3.
+- A pickled `SharedBox` carries its class's schema hash; unpickling with a
+  different class raises `SchemaMismatchError`.
+- `SharedBox`: an error about a field names the field as `Class.field`.
+- `SharedBox`: a read or write that waits for another writer's lock lets
+  other threads run.
+
+### Fixed
+
+- `SharedBox.watch()`: no longer yields the same value twice.
+- `SharedBox.attach()`: no longer fails when it runs while another process
+  is still creating the box.
+- `SharedBox`: a process that attaches while the box is being created sees
+  the initial values, never a zeroed record.
+- `SharedBox.close()`: no longer deadlocks while another thread's read or
+  write waits for the write lock.
 
 ### Removed
 

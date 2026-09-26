@@ -4,7 +4,7 @@
 `SharedBox` is a base class: a subclass's annotated fields are stored in one
 named segment that every process can open. The segment is C++
 (Boost.Interprocess) exposed to Python with nanobind; the Python side decides
-the layout and encodes values.
+the layout and the native module converts values.
 
 ## Repository layout
 
@@ -13,7 +13,7 @@ sharedbox/
 |-- src/sharedbox/
 |   |-- __init__.py            re-exports the public API
 |   |-- _box.py                SharedBox: class keywords, fields, create/attach, update, snapshot, unlink
-|   |-- _layout.py             Capacity, field offsets and encoding, schema hash
+|   |-- _layout.py             Capacity, field offsets and kind codes, schema hash
 |   |-- _events.py             FieldWatch, the watcher thread, psygnal events
 |   |-- _native.pyi            hand-written stub for the extension
 |   |-- py.typed
@@ -26,6 +26,8 @@ sharedbox/
 |   |   `-- size_diff.py       wheel size table against main, for CI (standard library only)
 |   `-- _native/
 |       |-- module.cpp         nanobind module: Segment and the error classes
+|       |-- codec.{hpp,cpp}    converts field values to and from their stored bytes
+|       |-- liveness.{hpp,cpp} whether a process is still running (pid and start time)
 |       |-- segment.{hpp,cpp}  the segment: header, record, sequence lock
 |       `-- notifier.{hpp,cpp} wakes waiters across processes (futex, named semaphore)
 |-- tests/                     pytest; many tests spawn processes
@@ -62,17 +64,18 @@ for a new name and raises `SegmentExistsError` if it is taken.
 
 The segment holds a named object `"sharedbox.header"` (64 bytes, one cache
 line) and one block with the tail and the record. The tail is `field_count`
-`StoredField` entries of 8 bytes (`u32 offset`, `u32 capacity_and_kind`, top
-bit set for a prefixed field), then one `u64` write count per field. The
-record follows, 64-byte aligned. The segment size is these plus 1024 bytes
-for Boost's bookkeeping, rounded up to 4 KiB. `static_assert`s in
-`segment.cpp` check every `sizeof` and `offsetof`.
+`StoredField` entries of 8 bytes (`u32 offset`, `u32 capacity_and_kind`: low
+24 bits the capacity, top 8 the field's kind code), then one `u64` write
+count per field. The record follows, 64-byte aligned. The segment size is
+these plus 1024 bytes for Boost's bookkeeping, rounded up to 4 KiB.
+`static_assert`s in `segment.cpp` check every `sizeof` and `offsetof`.
 
 `Header` fields:
 
-- `magic`: written last on create; `attach()` waits for it.
-- `abi_version`: `2`; any other value is refused. `magic` and `abi_version`
-  keep their offsets across versions.
+- `magic`: written last on create, after the initial field values are in
+  the record; `attach()` waits for it.
+- `layout_version`: `3`; any other value is refused. `magic` and
+  `layout_version` keep their offsets across versions.
 - `field_count`, `record_size`.
 - `schema_hash`: first 8 bytes of SHA-256 over the class identity and each
   field's `name:kind:capacity`. `attach()` raises `SchemaMismatchError` if
@@ -90,15 +93,17 @@ for Boost's bookkeeping, rounded up to 4 KiB. `static_assert`s in
 
 ### Record encoding
 
-Fields in declaration order, base classes first, each starting at a multiple
-of 8 bytes. Everything is little-endian.
+Fields are packed by descending alignment (`int` and `float` first, then
+`str`/`bytes`, then `bool`), not declaration order, each starting at a
+multiple of its own alignment. The native module converts values to and
+from these bytes; nothing is pickled. Everything is little-endian.
 
 - `bool`: 1 byte, `0x00` or `0x01`.
 - `int`: 8 bytes, signed.
 - `float`: 8 bytes, IEEE 754 double.
 - `str`, `bytes`: `u32` length, then up to `capacity` bytes (UTF-8 for `str`).
 
-Nothing is pickled. At most 256 fields; a capacity is 1 byte to 1 MiB.
+At most 256 fields; a capacity is 1 byte to 1 MiB.
 
 ### Lifecycle
 
@@ -139,9 +144,19 @@ produces all three.
 ```sh
 uv run pytest                          # current interpreter
 uv run pytest tests/test_box.py -k pickle
+uv run pytest -n auto --dist loadfile  # same suite, split across files
 uv run tox                             # py311 to py314, py314t, mypy
 uv run tox -e py314t                   # one env
+uv run tox -p auto                     # same environments, in parallel
 ```
+
+`tests/conftest.py` sets `SHAREDBOX_TEST_RUN` once per pytest run and every
+process it spawns inherits it, so the fixed segment names in
+`tests/test_box.py` (`Motor`, and the two classes in
+`test_default_name_ignores_the_spawned_main_module`) stay unique to that
+run. That is what lets `-n auto --dist loadfile` and `tox -p auto` run
+several workers or environments at once without fighting over the same
+segment name.
 
 CI (`.github/workflows/ci.yaml`) builds the wheels above with cibuildwheel,
 runs pytest against each wheel, and publishes to PyPI. Publishing runs only

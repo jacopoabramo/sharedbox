@@ -138,3 +138,25 @@ def test_dropping_a_watched_box_stops_its_thread(unique_name: str) -> None:
 def test_unknown_field(unique_name: str) -> None:
     with Counter.create(unique_name) as box, pytest.raises(ValueError, match="missing"):
         box.watch("missing")
+
+
+def test_watch_never_yields_a_value_twice(unique_name: str) -> None:
+    with Counter.create(unique_name) as box:
+        changes = box.watch("value")
+        seen: list[int] = []
+
+        def consume() -> None:
+            for value in changes:
+                seen.append(value)
+                if len(seen) >= 200:
+                    break
+
+        thread = threading.Thread(target=consume)
+        thread.start()
+        for i in range(1, 5000):
+            box.value = i
+            if not thread.is_alive():
+                break
+        thread.join(10)
+    assert seen
+    assert seen == sorted(set(seen))

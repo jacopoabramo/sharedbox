@@ -214,12 +214,12 @@ class Watcher:
 
     def future(self, field: FieldSpec, since: int | None = None) -> FieldFuture[Any]:
         """A future for the first write to ``field`` after version ``since`` (default: now)."""
-        current = self._segment.version(field.index)
+        current, value = self._segment.get_versioned(field.index)
         fut: FieldFuture[Any] = FieldFuture(
             self, field, current if since is None else since
         )
         if current != fut._since:
-            fut._settle(DONE, field.decode(self._segment.read(field.index)), current)
+            fut._settle(DONE, value, current)
             return fut
         with self._lock:
             if self._stop.is_set():
@@ -236,10 +236,7 @@ class Watcher:
         with self._lock:
             if self._group is None:
                 self._seen = {
-                    spec.index: (
-                        self._segment.version(spec.index),
-                        spec.decode(self._segment.read(spec.index)),
-                    )
+                    spec.index: self._segment.get_versioned(spec.index)
                     for spec in fields
                 }
                 self._fields = fields
@@ -257,7 +254,7 @@ class Watcher:
             seen_version, old = self._seen[spec.index]
             if version == seen_version:
                 continue
-            new = spec.decode(self._segment.read(spec.index))
+            version, new = self._segment.get_versioned(spec.index)
             self._seen[spec.index] = (version, new)
             if new == old:
                 continue
@@ -343,10 +340,10 @@ class Watcher:
         if not ready:
             return
         # Read every value before removing any future, so a failed read leaves them all pending.
-        values = [
-            (fut, fut._field.decode(self._segment.read(fut._field.index)), version)
-            for fut, version in ready
-        ]
+        values: list[tuple[FieldFuture[Any], Any, int]] = []
+        for fut, _ in ready:
+            version, value = self._segment.get_versioned(fut._field.index)
+            values.append((fut, value, version))
         with self._lock:
             for fut, _ in ready:
                 with contextlib.suppress(ValueError):

@@ -6,6 +6,11 @@ from collections.abc import Iterator
 
 import pytest
 
+# A spawned child inherits this from its parent's environment, so a fixed
+# segment name built from it stays the same across a run's own processes
+# while differing from any other run's.
+TEST_RUN = os.environ.setdefault("SHAREDBOX_TEST_RUN", uuid.uuid4().hex[:8])
+
 
 @pytest.fixture
 def unique_name() -> Iterator[str]:

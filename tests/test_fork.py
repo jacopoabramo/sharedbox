@@ -21,6 +21,7 @@ pytestmark = [
 ]
 
 
+INT = 1
 NOBODY = 65534
 ROOT = sys.platform != "win32" and os.geteuid() == 0
 
@@ -117,10 +118,12 @@ def test_unlink_reports_a_refused_unlink_as_oserror(unique_name: str) -> None:
 
 
 def test_forked_child_records_its_own_pid_in_a_raw_segment(unique_name: str) -> None:
-    segment = Segment.create(unique_name, [NativeField(0, 8, False)], 8, 1, 0.3)
+    segment = Segment.create(
+        unique_name, [NativeField(0, 8, INT)], ["a"], 8, 1, 0.3, []
+    )
     child = fork(hold_write_lock, segment)
     assert finish(child) == 0
     with pytest.raises(LockTimeoutError, match=rf"locked by pid {child.pid}\b"):
-        segment.write([(0, bytes(8))])
+        segment._write([(0, bytes(8))])
     segment.force_unlock()
     segment.close()

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import struct
 from collections.abc import Mapping
 from dataclasses import KW_ONLY, dataclass
 from typing import (
@@ -16,19 +15,33 @@ from typing import (
     get_type_hints,
 )
 
+from ._native import check as native_check
+
 Kind = Literal["bool", "int", "float", "str", "bytes"]
 
 MAX_CAPACITY: Final[int] = 1 << 20
 MAX_FIELDS: Final[int] = 256
 ALIGN: Final[int] = 8
-INT: Final[struct.Struct] = struct.Struct("<q")
-FLOAT: Final[struct.Struct] = struct.Struct("<d")
 SCALARS: Final[dict[type, tuple[Kind, int]]] = {
     bool: ("bool", 1),
     int: ("int", 8),
     float: ("float", 8),
 }
 PREFIXED: Final[tuple[Kind, ...]] = ("str", "bytes")
+KIND_CODES: Final[dict[Kind, int]] = {
+    "bool": 0,
+    "int": 1,
+    "float": 2,
+    "str": 3,
+    "bytes": 4,
+}
+ALIGNMENT: Final[dict[Kind, int]] = {
+    "int": 8,
+    "float": 8,
+    "str": 4,
+    "bytes": 4,
+    "bool": 1,
+}
 
 
 @dataclass(frozen=True)
@@ -52,8 +65,8 @@ class NativeField(NamedTuple):
     """Byte offset of the field from the start of the record."""
     capacity: int
     """Bytes reserved for the value, not counting the length prefix."""
-    prefixed: bool
-    """True for ``str`` and ``bytes``: a 4-byte length precedes the data."""
+    kind: int
+    """0 bool, 1 int, 2 float, 3 str, 4 bytes."""
 
 
 @dataclass(frozen=True)
@@ -71,58 +84,16 @@ class FieldSpec:
     """Encoded size in bytes; for ``str`` and ``bytes`` the most the value may take."""
     kw_only: bool = False
     """True after a ``KW_ONLY`` annotation or in a ``kw_only=True`` class."""
+    label: str = ""
+    """``"<Class>.<field>"``, used in error messages."""
 
     @property
     def native(self) -> NativeField:
-        return NativeField(self.offset, self.capacity, self.kind in PREFIXED)
+        return NativeField(self.offset, self.capacity, KIND_CODES[self.kind])
 
-    def encode(self, value: Any) -> bytes:
-        """Encode ``value`` for this field; raises before anything is written."""
-        if self.kind == "bool":
-            if not isinstance(value, bool):
-                raise self._type_error("bool", value)
-            return b"\x01" if value else b"\x00"
-        if self.kind == "int":
-            if isinstance(value, bool) or not isinstance(value, int):
-                raise self._type_error("int", value)
-            try:
-                return INT.pack(value)
-            except struct.error:
-                raise OverflowError(
-                    f"{self.name} holds a signed 64-bit integer; {value} does not fit"
-                ) from None
-        if self.kind == "float":
-            if isinstance(value, bool) or not isinstance(value, (int, float)):
-                raise self._type_error("float", value)
-            return FLOAT.pack(float(value))
-        if self.kind == "str":
-            if not isinstance(value, str):
-                raise self._type_error("str", value)
-            data = value.encode("utf-8")
-        else:
-            if not isinstance(value, (bytes, bytearray, memoryview)):
-                raise self._type_error("bytes", value)
-            data = bytes(value)
-        if len(data) > self.capacity:
-            raise ValueError(
-                f"{self.name} holds at most {self.capacity} bytes; the value encodes to {len(data)}"
-            )
-        return data
-
-    def decode(self, raw: bytes) -> Any:
-        """Decode bytes read from this field."""
-        if self.kind == "bool":
-            return raw != b"\x00"
-        if self.kind == "int":
-            return INT.unpack(raw)[0]
-        if self.kind == "float":
-            return FLOAT.unpack(raw)[0]
-        if self.kind == "str":
-            return raw.decode("utf-8", errors="replace")
-        return raw
-
-    def _type_error(self, expected: str, value: object) -> TypeError:
-        return TypeError(f"{self.name} expects {expected}, got {type(value).__name__}")
+    def check(self, value: Any) -> None:
+        """Raise what writing ``value`` to this field would raise."""
+        native_check(KIND_CODES[self.kind], self.capacity, self.label, value)
 
 
 @dataclass(frozen=True)
@@ -163,10 +134,11 @@ def build_layout(cls: type, kw_only: bool = False) -> Layout:
     """Lay out the public annotated fields of ``cls``, base classes first.
 
     Fields after a ``dataclasses.KW_ONLY`` annotation, or every field when
-    ``kw_only`` is true, are keyword-only.
+    ``kw_only`` is true, are keyword-only. Fields are packed by descending
+    alignment (8-byte fields, then ``str``/``bytes``, then ``bool``), not
+    declaration order; ``Layout.fields`` keeps the declaration order.
     """
-    specs: list[FieldSpec] = []
-    offset = 0
+    found: list[tuple[str, Kind, int, bool]] = []
     for name, hint in get_type_hints(cls, include_extras=True).items():
         if hint is KW_ONLY:
             kw_only = True
@@ -174,19 +146,39 @@ def build_layout(cls: type, kw_only: bool = False) -> Layout:
         if name.startswith("_") or hint is ClassVar or get_origin(hint) is ClassVar:
             continue
         kind, capacity = classify(name, hint)
-        specs.append(FieldSpec(name, len(specs), kind, offset, capacity, kw_only))
-        span = capacity + (4 if kind in PREFIXED else 0)
-        offset += -(-span // ALIGN) * ALIGN
-    if not specs:
+        found.append((name, kind, capacity, kw_only))
+    if not found:
         raise TypeError(f"{cls.__qualname__} declares no fields")
-    if len(specs) > MAX_FIELDS:
+    if len(found) > MAX_FIELDS:
         raise TypeError(
-            f"{cls.__qualname__} declares {len(specs)} fields; the limit is {MAX_FIELDS}"
+            f"{cls.__qualname__} declares {len(found)} fields; the limit is {MAX_FIELDS}"
         )
+    order = sorted(range(len(found)), key=lambda i: -ALIGNMENT[found[i][1]])
+    offsets = [0] * len(found)
+    offset = 0
+    for i in order:
+        kind, capacity = found[i][1], found[i][2]
+        align = ALIGNMENT[kind]
+        offset = -(-offset // align) * align
+        offsets[i] = offset
+        offset += capacity + (4 if kind in PREFIXED else 0)
+    record_size = -(-offset // ALIGN) * ALIGN
+    specs = tuple(
+        FieldSpec(
+            name,
+            i,
+            kind,
+            offsets[i],
+            capacity,
+            field_kw_only,
+            f"{cls.__qualname__}.{name}",
+        )
+        for i, (name, kind, capacity, field_kw_only) in enumerate(found)
+    )
     identity = "|".join(
         [class_identity(cls), *(f"{s.name}:{s.kind}:{s.capacity}" for s in specs)]
     )
     schema_hash = int.from_bytes(
         hashlib.sha256(identity.encode()).digest()[:8], "little"
     )
-    return Layout(tuple(specs), offset, schema_hash, {s.name: s for s in specs})
+    return Layout(specs, record_size, schema_hash, {s.name: s for s in specs})

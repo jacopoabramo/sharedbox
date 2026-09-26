@@ -6,13 +6,13 @@ import re
 import sys
 import weakref
 from collections.abc import Callable
-from typing import Any, ClassVar, Protocol, Self, dataclass_transform, overload
+from typing import Any, ClassVar, Protocol, Self, TypeVar, dataclass_transform, overload
 
 from psygnal import SignalGroup
 
 from ._events import FieldWatch, Watcher, events_class
 from ._layout import FieldSpec, Layout, build_layout, class_identity
-from ._native import Segment
+from ._native import SchemaMismatchError, Segment
 
 NAME = re.compile(r"[A-Za-z0-9_.-]{1,128}")
 RESERVED = frozenset(
@@ -64,6 +64,19 @@ if sys.platform != "win32":
     os.register_at_fork(after_in_child=reset_after_fork)
 
 
+B = TypeVar("B", bound="SharedBox")
+
+
+def unpickle_box(cls: type[B], name: str, schema_hash: int) -> B:
+    """Attach to the box a pickle refers to, if this process's class has the same fields."""
+    if cls._layout().schema_hash != schema_hash:
+        raise SchemaMismatchError(
+            f"{cls.__qualname__} was pickled by a process whose {cls.__qualname__} "
+            "has different fields; both processes must import the same class"
+        )
+    return cls.attach(name)
+
+
 class _ClassUnlink(Protocol):
     def __call__(self, name: str | None = None) -> None: ...
 
@@ -96,10 +109,10 @@ class Field:
     def __get__(self, box: SharedBox | None, owner: type | None = None) -> Any:
         if box is None:
             return self
-        return self.spec.decode(box._segment.read(self.spec.index))
+        return box._segment.get(self.spec.index)
 
     def __set__(self, box: SharedBox, value: Any) -> None:
-        box._segment.write([(self.spec.index, self.spec.encode(value))])
+        box._segment.set([(self.spec.index, value)])
 
 
 class SharedBoxMeta(type):
@@ -155,11 +168,11 @@ class SharedBox(metaclass=SharedBoxMeta):
         for spec in layout.fields:
             value = cls.__dict__.get(spec.name, MISSING)
             if value is not MISSING and not isinstance(value, Field):
-                spec.encode(value)
+                spec.check(value)
                 defaults[spec.name] = value
             setattr(cls, spec.name, Field(spec))
         for field_name, value in defaults.items():
-            layout.by_name[field_name].encode(value)
+            layout.by_name[field_name].check(value)
         seen_default = False
         for spec in layout.fields:
             if spec.kw_only:
@@ -196,9 +209,11 @@ class SharedBox(metaclass=SharedBoxMeta):
     def attach(cls, name: str | None = None) -> Self:
         """Open the box called ``name``, by default the one named after this class."""
         box = cls.__new__(cls)
+        layout = cls._layout()
         box._segment = Segment.attach(
             cls._layout_name() if name is None else check_name(name),
-            cls._layout().schema_hash,
+            [spec.label for spec in layout.fields],
+            layout.schema_hash,
             cls.__lock_timeout__,
         )
         box._watcher = Watcher(box._segment)
@@ -246,19 +261,17 @@ class SharedBox(metaclass=SharedBoxMeta):
             raise TypeError(
                 f"{cls.__qualname__} is missing value(s) for {', '.join(missing)}"
             )
-        encoded = [
-            (spec.index, spec.encode(merged[spec.name])) for spec in layout.fields
-        ]
         self._segment = Segment.create(
             name,
             [spec.native for spec in layout.fields],
+            [spec.label for spec in layout.fields],
             layout.record_size,
             layout.schema_hash,
             cls.__lock_timeout__,
+            [(spec.index, merged[spec.name]) for spec in layout.fields],
         )
         self._watcher = Watcher(self._segment)
         self._track()
-        self._segment.write(encoded)
 
     def _check_names(self, values: dict[str, Any]) -> None:
         unknown = sorted(values.keys() - type(self).__layout__.by_name.keys())
@@ -281,16 +294,14 @@ class SharedBox(metaclass=SharedBoxMeta):
         """Write several fields at once; readers see all of them or none."""
         self._check_names(values)
         by_name = type(self).__layout__.by_name
-        self._segment.write(
-            [(by_name[n].index, by_name[n].encode(v)) for n, v in values.items()]
-        )
+        self._segment.set([(by_name[n].index, v) for n, v in values.items()])
 
     def snapshot(self) -> dict[str, Any]:
         """Every field's value, read at one point in time."""
-        raw = self._segment.read_all()
+        values = self._segment.get_all()
         return {
-            spec.name: spec.decode(data)
-            for spec, data in zip(type(self).__layout__.fields, raw)
+            spec.name: value
+            for spec, value in zip(type(self).__layout__.fields, values)
         }
 
     def watch(self, field: str) -> FieldWatch[Any]:
@@ -350,8 +361,11 @@ class SharedBox(metaclass=SharedBoxMeta):
     def __exit__(self, *exc_info: object) -> None:
         self.close()
 
-    def __reduce__(self) -> tuple[Any, tuple[str]]:
-        return (type(self).attach, (self.name,))
+    def __reduce__(self) -> tuple[Callable[..., SharedBox], tuple[type, str, int]]:
+        return (
+            unpickle_box,
+            (type(self), self.name, type(self).__layout__.schema_hash),
+        )
 
     def __repr__(self) -> str:
         if self.closed:

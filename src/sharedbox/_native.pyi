@@ -18,6 +18,15 @@ class BoxClosedError(ValueError):
 class LockTimeoutError(TimeoutError):
     """The write lock stayed taken for longer than the lock timeout."""
 
+def check(kind: int, capacity: int, name: str, value: object) -> None:
+    """Raise what writing ``value`` to a field of this kind and capacity would raise."""
+
+def _process_start(pid: int) -> int:
+    """The process's start time, 0 if no such process exists; for tests."""
+
+def _process_alive(pid: int, start: int) -> bool:
+    """True if a process with this pid and start time is running; for tests."""
+
 @disjoint_base
 class Segment:
     """A named shared-memory segment holding one fixed-layout record."""
@@ -28,29 +37,48 @@ class Segment:
     @staticmethod
     def create(
         name: str,
-        fields: Sequence[tuple[int, int, bool]],
+        fields: Sequence[tuple[int, int, int]],
+        names: Sequence[str],
         record_size: int,
         schema_hash: int,
         lock_timeout: float,
+        values: Sequence[tuple[int, object]],
     ) -> Segment:
-        """Create the segment; ``fields`` are ``(offset, capacity, prefixed)``."""
+        """Create the segment with ``values`` written before any other process can see it.
+
+        ``fields`` are ``(offset, capacity, kind)``; ``names`` are used in error messages.
+        """
 
     @staticmethod
-    def attach(name: str, schema_hash: int, lock_timeout: float) -> Segment:
+    def attach(
+        name: str, names: Sequence[str], schema_hash: int, lock_timeout: float
+    ) -> Segment:
         """Open an existing segment whose schema hash matches."""
 
     @staticmethod
     def unlink(name: str) -> None:
         """Remove the name, as ``shm_unlink`` does; a no-op on Windows."""
 
-    def read(self, field: int) -> bytes:
-        """The field's bytes, read consistently with concurrent writes."""
+    def get(self, field: int) -> object:
+        """The field's value."""
 
-    def read_all(self) -> list[bytes]:
-        """Every field's bytes, read at one point in time."""
+    def get_versioned(self, field: int) -> tuple[int, object]:
+        """The field's version and value, read together."""
 
-    def write(self, values: Sequence[tuple[int, bytes]]) -> None:
-        """Write several fields under one lock."""
+    def get_all(self) -> list[object]:
+        """Every field's value, read at one point in time."""
+
+    def set(self, values: Sequence[tuple[int, object]]) -> None:
+        """Convert every value, then write them all under one lock."""
+
+    def _read(self, field: int) -> bytes:
+        """The field's bytes, read consistently with concurrent writes; for tests."""
+
+    def _read_all(self) -> list[bytes]:
+        """Every field's bytes, read at one point in time; for tests."""
+
+    def _write(self, values: Sequence[tuple[int, bytes]]) -> None:
+        """Write several fields' bytes under one lock; for tests."""
 
     def version(self, field: int) -> int:
         """How many writes the field has had."""
@@ -86,3 +114,6 @@ class Segment:
 
     @property
     def name(self) -> str: ...
+    @property
+    def lock_timeout(self) -> float:
+        """Seconds a read or write waits for another writer's lock."""
