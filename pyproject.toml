@@ -160,6 +160,7 @@ cache-keys = [
     { file = "pyproject.toml" },
     { file = "CMakeLists.txt" },
     { file = "vcpkg.json" },
+    { file = "include/**/*" },
     { file = "src/sharedbox/_native/**/*" },
     { git = { commit = true } },
 ]

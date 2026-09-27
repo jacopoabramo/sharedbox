@@ -327,9 +327,9 @@ private:
         static_assert(!std::is_reference_v<U>, "sharedbox::result: transform must not return a reference");
         if constexpr (std::is_void_v<U>) {
             if (!self.has_value())
-                return result<void>(unexpected(self.error()));
+                return result<U>(unexpected(self.error()));
             std::forward<F>(f)(*std::forward<Self>(self));
-            return result<void>();
+            return result<U>();
         } else {
             if (!self.has_value())
                 return result<U>(unexpected(self.error()));
@@ -404,6 +404,10 @@ struct process_cache {
     std::atomic<std::uint64_t> pidns{0};
 };
 
+// False once pthread_atfork could not be registered, which makes every cached value unsafe across an
+// unnoticed fork; the accessors then read everything fresh instead of trusting the cache.
+inline std::atomic<bool> atfork_registered{true};
+
 inline process_cache &cache() noexcept;
 
 #ifndef _WIN32
@@ -413,6 +417,11 @@ inline void after_fork() noexcept {
     c.start.store(0, std::memory_order_relaxed);
     c.pidns.store(0, std::memory_order_relaxed);
 }
+
+inline std::uint64_t read_pidns() noexcept {
+    struct stat st;
+    return stat("/proc/self/ns/pid", &st) == 0 ? static_cast<std::uint64_t>(st.st_ino) : 0;
+}
 #endif
 
 // Every accessor goes through here, so the fork handler is registered before the first value is
@@ -420,7 +429,8 @@ inline void after_fork() noexcept {
 inline process_cache &cache() noexcept {
     static process_cache c = [] {
 #ifndef _WIN32
-        pthread_atfork(nullptr, nullptr, after_fork);
+        if (pthread_atfork(nullptr, nullptr, after_fork) != 0)
+            atfork_registered.store(false, std::memory_order_relaxed);
 #endif
         return process_cache{};
     }();
@@ -428,6 +438,13 @@ inline process_cache &cache() noexcept {
 }
 
 } // namespace detail
+
+#ifndef _WIN32
+// Runs the cache's first initialisation at load time, while only one thread exists. Without this, a
+// fork while another thread is still inside that initialisation would leave the child stopped on the
+// same compiler-generated guard, which only the (now absent) initialising thread would ever clear.
+inline const bool process_cache_ready = (detail::cache(), true);
+#endif
 
 // What process_start returns for a process that exists but cannot be inspected.
 inline constexpr std::uint64_t start_unknown = UINT64_MAX;
@@ -437,6 +454,8 @@ inline std::uint32_t current_pid() noexcept {
 #ifdef _WIN32
     return static_cast<std::uint32_t>(GetCurrentProcessId());
 #else
+    if (!detail::atfork_registered.load(std::memory_order_relaxed))
+        return static_cast<std::uint32_t>(getpid());
     detail::process_cache &c = detail::cache();
     std::uint32_t pid = c.pid.load(std::memory_order_relaxed);
     if (pid == 0) {
@@ -466,6 +485,7 @@ inline std::uint64_t process_start(std::uint32_t pid) noexcept {
     CloseHandle(process);
     return start;
 #else
+    static_assert(sizeof(pid_t) == sizeof(int));
     // kill(0, ...) and negative pids address process groups, not one process.
     if (pid == 0 || pid > static_cast<std::uint32_t>(INT_MAX))
         return 0;
@@ -478,9 +498,12 @@ inline std::uint64_t process_start(std::uint32_t pid) noexcept {
     char path[32];
     std::snprintf(path, sizeof path, "/proc/%u/stat", static_cast<unsigned>(pid));
     const int fd = open(path, O_RDONLY | O_CLOEXEC);
-    // /proc mounted with hidepid hides processes of other users, which kill reports as EPERM.
+    const int open_errno = errno;
+    // /proc mounted with hidepid hides processes of other users, which kill reports as EPERM. Any
+    // other reason open can fail (EMFILE, ENFILE, ENOMEM, ...) means the process could not be
+    // inspected, not that it is gone.
     if (fd < 0)
-        return denied ? start_unknown : 0;
+        return (denied || (open_errno != ENOENT && open_errno != ESRCH)) ? start_unknown : 0;
     char text[1024];
     const ssize_t n = read(fd, text, sizeof text - 1);
     close(fd);
@@ -518,6 +541,10 @@ inline std::uint64_t process_start(std::uint32_t pid) noexcept {
 
 // This process's start time, read on first use.
 inline std::uint64_t current_start() noexcept {
+#ifndef _WIN32
+    if (!detail::atfork_registered.load(std::memory_order_relaxed))
+        return process_start(current_pid());
+#endif
     detail::process_cache &c = detail::cache();
     std::uint64_t start = c.start.load(std::memory_order_relaxed);
     if (start == 0) {
@@ -533,11 +560,12 @@ inline std::uint64_t current_pidns() noexcept {
 #ifdef _WIN32
     return 0;
 #else
+    if (!detail::atfork_registered.load(std::memory_order_relaxed))
+        return detail::read_pidns();
     detail::process_cache &c = detail::cache();
     std::uint64_t cached = c.pidns.load(std::memory_order_relaxed);
     if (cached == 0) {
-        struct stat st;
-        cached = stat("/proc/self/ns/pid", &st) == 0 ? static_cast<std::uint64_t>(st.st_ino) + 1 : 1;
+        cached = detail::read_pidns() + 1;
         c.pidns.store(cached, std::memory_order_relaxed);
     }
     return cached - 1;

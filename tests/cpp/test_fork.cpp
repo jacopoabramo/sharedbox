@@ -9,6 +9,7 @@
 #include <doctest/doctest.h>
 #include <sharedbox/sharedbox.hpp>
 
+#include <sys/resource.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -28,6 +29,27 @@ TEST_CASE("the child of a fork reads its pid, start time and namespace again") {
         const bool own_pid = sharedbox::current_pid() == static_cast<std::uint32_t>(getpid()) &&
                              sharedbox::current_pid() != parent_pid;
         _exit(reset && same_namespace && own_pid ? 0 : 1);
+    }
+    int code = 0;
+    CHECK(waitpid(child, &code, 0) == child);
+    CHECK((WIFEXITED(code) && WEXITSTATUS(code) == 0));
+}
+
+// process_start opens /proc/<pid>/stat after kill() has already found the process; if that open then
+// fails for a reason other than the process being gone (EMFILE here), the result must say "unknown",
+// not "no such process". Forking keeps this process's own descriptor limit intact for doctest's report.
+TEST_CASE("an open failure other than the process being gone reports an unknown start time") {
+    const std::uint32_t parent_pid = sharedbox::current_pid();
+    const pid_t child = fork();
+    if (child < 0) {
+        FAIL("fork failed");
+    }
+    if (child == 0) {
+        rlimit limit{0, 0};
+        if (setrlimit(RLIMIT_NOFILE, &limit) != 0)
+            _exit(2);
+        const std::uint64_t start = sharedbox::process_start(parent_pid);
+        _exit(start == sharedbox::start_unknown ? 0 : 1);
     }
     int code = 0;
     CHECK(waitpid(child, &code, 0) == child);
