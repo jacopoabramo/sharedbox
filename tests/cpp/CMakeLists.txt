@@ -13,6 +13,18 @@ FetchContent_Declare(doctest
     SYSTEM)
 FetchContent_MakeAvailable(doctest)
 
+# The include path, libraries and warnings every test target builds with.
+function(sbx_test_target target)
+    target_include_directories(${target} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../../include")
+    target_link_libraries(${target} PRIVATE doctest::doctest_with_main Threads::Threads)
+    if(MSVC)
+        target_compile_options(${target} PRIVATE /W4 /WX)
+    else()
+        target_compile_options(${target} PRIVATE -Wall -Wextra -Werror)
+        target_link_libraries(${target} PRIVATE rt)
+    endif()
+endfunction()
+
 set(sbx_tests test_result test_atomics test_mapping)
 if(NOT WIN32)
     # fork() and pid namespaces exist only on POSIX.
@@ -43,14 +55,7 @@ if("cxx_std_23" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
 endif()
 
 foreach(target IN LISTS sbx_tests)
-    target_include_directories(${target} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../../include")
-    target_link_libraries(${target} PRIVATE doctest::doctest_with_main Threads::Threads)
-    if(MSVC)
-        target_compile_options(${target} PRIVATE /W4 /WX)
-    else()
-        target_compile_options(${target} PRIVATE -Wall -Wextra -Werror)
-        target_link_libraries(${target} PRIVATE rt)
-    endif()
+    sbx_test_target(${target})
     add_test(NAME ${target} COMMAND ${target})
     set_tests_properties(${target} PROPERTIES TIMEOUT 60)
 endforeach()
@@ -58,8 +63,7 @@ endforeach()
 # Needs a 16 MiB /dev/shm, so CI runs it in a container instead of through CTest.
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     add_executable(test_small_shm test_small_shm.cpp)
-    target_include_directories(test_small_shm PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../../include")
-    target_link_libraries(test_small_shm PRIVATE doctest::doctest_with_main Threads::Threads rt)
+    sbx_test_target(test_small_shm)
 endif()
 
 # Each case builds compile_fail.cpp with one call that must not compile and passes on its static_assert

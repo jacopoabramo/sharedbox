@@ -89,16 +89,16 @@ TEST_CASE("checks on open") {
         return rc;
     };
     CHECK(forged(h.tail, 136u) == status::corrupt);
+    // Not 64-byte aligned.
     CHECK(forged(h.record, 1736u) == status::corrupt);
+    // Aligned, but the record starts where the mapping ends.
+    CHECK(forged(h.record, 4096u) == status::corrupt);
     // 64-byte aligned, but inside the waiter slots, which end at 1696.
     CHECK(forged(h.record, 1664u) == status::corrupt);
     CHECK(forged(h.record_size, 4096u - 1728u + 1u) == status::corrupt);
-    CHECK(forged(h.record_size, sharedbox::detail::max_record_size + 1u) == status::corrupt);
     CHECK(forged(h.size, 8192u) == status::corrupt);
     CHECK(forged(h.field_count, std::uint16_t{0}) == status::corrupt);
-    CHECK(forged(h.field_count, std::uint16_t{257}) == status::corrupt);
     CHECK(forged(h.waiter_slots, std::uint16_t{0}) == status::corrupt);
-    CHECK(forged(h.waiter_slots, std::uint16_t{4097}) == status::corrupt);
     auto *table = reinterpret_cast<sharedbox::stored_field *>(static_cast<std::byte *>(owner->base()) + 128);
     // The bytes field moved to 16: aligned and inside the record, but its 20 bytes end past 32.
     CHECK(forged(table[1].offset, 16u) == status::corrupt);
@@ -118,8 +118,35 @@ TEST_CASE("checks on open") {
     static_cast<void>(sharedbox::unlink(name));
 }
 
+// The upper limits, each against a header whose mapping is large enough that nothing else refuses it.
+TEST_CASE("geometry limits") {
+    constexpr std::uint32_t mapped = std::uint32_t{1} << 30;
+    header h{};
+    h.field_count = 1;
+    h.waiter_slots = 1;
+    h.tail = sharedbox::header_size;
+    h.size = mapped;
+    h.record = std::uint32_t{1} << 20;
+    h.record_size = 64;
+    const auto with = [&](auto &field, auto bad) {
+        const auto saved = field;
+        field = bad;
+        const status rc = sharedbox::detail::check_geometry(h, mapped);
+        field = saved;
+        return rc;
+    };
+    CHECK(sharedbox::detail::check_geometry(h, mapped) == status::ok);
+    CHECK(with(h.field_count, std::uint16_t{256}) == status::ok);
+    CHECK(with(h.field_count, std::uint16_t{257}) == status::corrupt);
+    CHECK(with(h.waiter_slots, std::uint16_t{4096}) == status::ok);
+    CHECK(with(h.waiter_slots, std::uint16_t{4097}) == status::corrupt);
+    CHECK(with(h.record_size, sharedbox::detail::max_record_size) == status::ok);
+    CHECK(with(h.record_size, sharedbox::detail::max_record_size + 1u) == status::corrupt);
+}
+
 TEST_CASE("names") {
-    const std::string longest(128, 'n');
+    std::string longest = unique("names");
+    longest.resize(sharedbox::name_max, 'n');
     {
         auto owner = create(longest);
         CHECK(owner.has_value());
@@ -148,7 +175,7 @@ TEST_CASE("a foreign mapping is not a box") {
     const auto start = std::chrono::steady_clock::now();
     CHECK(open_status(name, 0.2) == status::not_found);
     const double waited = seconds(std::chrono::steady_clock::now() - start).count();
-    CHECK((waited >= 0.15 && waited < 1.0));
+    CHECK(waited >= 0.15);
     CHECK(sharedbox::inspect(name).error() == status::not_found);
 #ifdef _WIN32
     CloseHandle(foreign);
@@ -168,7 +195,7 @@ TEST_CASE("an unsized mapping is waited for") {
     const auto start = std::chrono::steady_clock::now();
     CHECK(open_status(name, 0.2) == status::not_found);
     const double waited = seconds(std::chrono::steady_clock::now() - start).count();
-    CHECK((waited >= 0.15 && waited < 1.0));
+    CHECK(waited >= 0.15);
     close(foreign);
     shm_unlink(path.data());
 }

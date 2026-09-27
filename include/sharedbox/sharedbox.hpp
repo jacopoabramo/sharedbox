@@ -615,16 +615,24 @@ public:
         return now >= deadline_;
     }
 
+    // Spins, then yields, then sleeps for a doubling interval capped at 1 ms, so a wait on a creator that
+    // never finishes does not keep a core busy for the whole timeout.
     void pause() noexcept {
-        if (++spins_ < 64)
+        ++spins_;
+        if (spins_ < 64) {
             cpu_relax();
-        else
+        } else if (spins_ < 128) {
             std::this_thread::yield();
+        } else {
+            std::this_thread::sleep_for(sleep_);
+            sleep_ = std::min(sleep_ * 2, std::chrono::microseconds(1000));
+        }
     }
 
 private:
     double timeout_;
     clock::time_point deadline_{};
+    std::chrono::microseconds sleep_{10};
     unsigned spins_ = 0;
     bool started_ = false;
 };
