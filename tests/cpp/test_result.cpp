@@ -2,19 +2,49 @@
 // Both must behave the same for the calls this library and its users make.
 #include "check.hpp"
 
+#include <algorithm>
 #include <memory>
 #include <type_traits>
+
+#ifdef SBX_EXPECT_STD_EXPECTED
+#include <expected>
+#endif
 
 using sharedbox::result;
 using sharedbox::status;
 
 namespace {
 
-#if defined(__cpp_lib_expected) && __cpp_lib_expected >= 202202L
+// CMake defines this where the compiler has std::expected with the monadic operations, so a header that
+// falls back to its own type there fails the build.
+#ifdef SBX_EXPECT_STD_EXPECTED
 static_assert(std::is_same_v<result<int>, std::expected<int, status>>);
+#endif
+
+#if defined(__cpp_lib_expected) && __cpp_lib_expected >= 202211L
 constexpr const char *flavour = "result (std::expected)";
 #else
 constexpr const char *flavour = "result (C++20)";
+#endif
+
+// windows.h defines min and max as macros unless NOMINMAX is set first, which breaks this line.
+static_assert(std::max(1, 2) == 2);
+
+// A value that converts to T only explicitly gives an explicit constructor, as std::expected does.
+struct only_explicit {
+    explicit only_explicit(int) {}
+};
+static_assert(std::is_constructible_v<result<only_explicit>, int>);
+static_assert(!std::is_convertible_v<int, result<only_explicit>>);
+static_assert(std::is_convertible_v<int, result<long>>);
+
+#if defined(__cpp_lib_expected) && __cpp_lib_expected >= 202211L
+// std::expected<bool, E> converts another expected by its value, not through its explicit operator bool.
+static_assert(requires(result<int> r) { result<bool>(r); });
+#else
+// The C++20 result has no converting constructor from another result, so result<bool> must not be built
+// from one through its explicit operator bool.
+static_assert(!std::is_constructible_v<result<bool>, result<int>>);
 #endif
 
 result<int> half(int n) {
@@ -52,6 +82,30 @@ void test_chaining() {
     CHECK(check_positive(0).error() == status::range && check_positive(1).has_value());
 }
 
+void test_lvalue_calls() {
+    result<int> ok = half(8);
+    const result<int> bad = half(3);
+    const auto zero = [](status) -> result<int> { return 0; };
+    CHECK(*ok.and_then(half) == 2 && bad.and_then(half).error() == status::range);
+    CHECK(*ok.transform([](int n) { return n + 1; }) == 5);
+    CHECK(bad.transform([](int n) { return n + 1; }).error() == status::range);
+    CHECK(*ok.or_else(zero) == 4 && *bad.or_else(zero) == 0);
+    result<void> done;
+    const result<void> failed = sharedbox::unexpected(status::os);
+    CHECK(done.and_then([] { return half(8); }).value_or(0) == 4);
+    CHECK(failed.and_then([] { return half(8); }).error() == status::os);
+    CHECK(*done.transform([] { return 1; }) == 1 && failed.transform([] { return 1; }).error() == status::os);
+    CHECK(failed.or_else([](status) -> result<void> { return {}; }).has_value());
+}
+
+// An error is an error whatever its status, status::ok included, as with std::unexpected.
+void test_error_ok_is_still_an_error() {
+    const result<void> v = sharedbox::unexpected(status::ok);
+    CHECK(!v.has_value() && v.error() == status::ok);
+    const result<int> i = sharedbox::unexpected(status::ok);
+    CHECK(!i.has_value() && i.error() == status::ok);
+}
+
 void test_move_only_values() {
     result<std::unique_ptr<int>> made = std::make_unique<int>(7);
     CHECK(made && **made == 7);
@@ -66,6 +120,8 @@ void test_move_only_values() {
 int main() {
     test_value_and_error();
     test_chaining();
+    test_lvalue_calls();
+    test_error_ok_is_still_an_error();
     test_move_only_values();
     return finish(flavour);
 }

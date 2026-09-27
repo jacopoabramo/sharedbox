@@ -16,6 +16,19 @@ if("cxx_std_23" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
     add_executable(test_result_cxx23 test_result.cpp)
     set_target_properties(test_result_cxx23 PROPERTIES CXX_STANDARD 23)
     list(APPEND sbx_tests test_result_cxx23)
+    include(CheckCXXSourceCompiles)
+    set(CMAKE_CXX_STANDARD 23)
+    check_cxx_source_compiles([=[
+        #include <expected>
+        #if !defined(__cpp_lib_expected) || __cpp_lib_expected < 202211L
+        #error no monadic std::expected
+        #endif
+        int main() { return 0; }
+    ]=] SBX_HAS_STD_EXPECTED)
+    set(CMAKE_CXX_STANDARD 20)
+    if(SBX_HAS_STD_EXPECTED)
+        target_compile_definitions(test_result_cxx23 PRIVATE SBX_EXPECT_STD_EXPECTED)
+    endif()
 endif()
 
 foreach(target IN LISTS sbx_tests)
@@ -29,4 +42,22 @@ foreach(target IN LISTS sbx_tests)
     endif()
     add_test(NAME ${target} COMMAND ${target})
     set_tests_properties(${target} PROPERTIES TIMEOUT 60)
+endforeach()
+
+# Each case builds compile_fail.cpp with one call that must not compile and passes on its static_assert
+# message. The C++20 result only: std::expected words its own messages.
+set(sbx_compile_fail
+    "or_else_type=or_else must return the same result type"
+    "transform_reference=transform must not return a reference"
+    "value_or_explicit=value_or needs a value convertible to T")
+foreach(entry IN LISTS sbx_compile_fail)
+    string(REPLACE "=" ";" parts "${entry}")
+    list(GET parts 0 case)
+    list(GET parts 1 message)
+    add_executable(fail_${case} EXCLUDE_FROM_ALL compile_fail.cpp)
+    set_target_properties(fail_${case} PROPERTIES EXCLUDE_FROM_DEFAULT_BUILD ON)
+    target_include_directories(fail_${case} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../../include")
+    target_compile_definitions(fail_${case} PRIVATE SBX_FAIL_${case})
+    add_test(NAME fail_${case} COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target fail_${case} --config $<CONFIG>)
+    set_tests_properties(fail_${case} PROPERTIES PASS_REGULAR_EXPRESSION "${message}" TIMEOUT 120)
 endforeach()

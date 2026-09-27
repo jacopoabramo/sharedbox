@@ -27,11 +27,17 @@
 #include <variant>
 #include <version>
 
-#if defined(__cpp_lib_expected) && __cpp_lib_expected >= 202202L
+#if defined(__cpp_lib_expected) && __cpp_lib_expected >= 202211L
 #include <expected>
 #endif
 
 #ifdef _WIN32
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
 #include <windows.h>
 
 #include <bcrypt.h>
@@ -207,7 +213,7 @@ static_assert(offsetof(sbx_handle, release) == 32);
 static_assert(offsetof(sbx_handle, private_data) == 40);
 
 // Only lock-free atomics work on memory shared between processes: a fallback that takes a lock would
-// keep that lock in one process.
+// keep that lock in one process. With Clang's libc++, std::atomic_ref needs libc++ 19 or later.
 static_assert(std::atomic_ref<std::uint32_t>::is_always_lock_free);
 static_assert(std::atomic_ref<std::uint64_t>::is_always_lock_free);
 inline constexpr std::size_t align32 = std::atomic_ref<std::uint32_t>::required_alignment;
@@ -229,7 +235,7 @@ static_assert(SBX_E_LOCK_TIMEOUT == int(status::lock_timeout) && SBX_E_TIMEOUT =
 static_assert(SBX_E_NO_SLOT == int(status::no_slot) && SBX_E_RANGE == int(status::range));
 static_assert(SBX_E_OS == int(status::os));
 
-#if defined(__cpp_lib_expected) && __cpp_lib_expected >= 202202L
+#if defined(__cpp_lib_expected) && __cpp_lib_expected >= 202211L
 
 template <class T> using result = std::expected<T, status>;
 using unexpected = std::unexpected<status>;
@@ -246,6 +252,13 @@ private:
     status error_;
 };
 
+template <class T> class result;
+
+namespace detail {
+template <class> inline constexpr bool is_result = false;
+template <class T> inline constexpr bool is_result<result<T>> = true;
+} // namespace detail
+
 // A value or an error status, with the part of the interface of std::expected<T, status> this library
 // uses. value() on an error terminates, where std::expected would throw.
 template <class T> class result {
@@ -255,8 +268,10 @@ public:
 
     template <class U = T>
         requires(std::is_constructible_v<T, U> && !std::is_same_v<std::remove_cvref_t<U>, result> &&
-                 !std::is_same_v<std::remove_cvref_t<U>, unexpected>)
-    constexpr result(U &&v) : v_(std::in_place_index<0>, std::forward<U>(v)) {}
+                 !std::is_same_v<std::remove_cvref_t<U>, unexpected> &&
+                 !(std::is_same_v<std::remove_cv_t<T>, bool> && detail::is_result<std::remove_cvref_t<U>>))
+    constexpr explicit(!std::is_convertible_v<U, T>) result(U &&v)
+        : v_(std::in_place_index<0>, std::forward<U>(v)) {}
     constexpr result(unexpected e) : v_(std::in_place_index<1>, e) {}
 
     constexpr bool has_value() const noexcept { return v_.index() == 0; }
@@ -271,9 +286,11 @@ public:
     constexpr T &&value() && { return checked(), std::move(**this); }
     constexpr status error() const noexcept { return std::get_if<1>(&v_)->error(); }
     template <class U> constexpr T value_or(U &&fallback) const & {
+        static_assert(std::is_convertible_v<U, T>, "sharedbox::result: value_or needs a value convertible to T");
         return has_value() ? **this : static_cast<T>(std::forward<U>(fallback));
     }
     template <class U> constexpr T value_or(U &&fallback) && {
+        static_assert(std::is_convertible_v<U, T>, "sharedbox::result: value_or needs a value convertible to T");
         return has_value() ? std::move(**this) : static_cast<T>(std::forward<U>(fallback));
     }
     template <class F> constexpr auto and_then(F &&f) & { return then(*this, std::forward<F>(f)); }
@@ -283,9 +300,13 @@ public:
     template <class F> constexpr auto transform(F &&f) const & { return map(*this, std::forward<F>(f)); }
     template <class F> constexpr auto transform(F &&f) && { return map(std::move(*this), std::forward<F>(f)); }
     template <class F> constexpr result or_else(F &&f) const & {
+        static_assert(std::is_same_v<std::remove_cvref_t<std::invoke_result_t<F, status>>, result>,
+                      "sharedbox::result: or_else must return the same result type");
         return has_value() ? result(**this) : std::forward<F>(f)(error());
     }
     template <class F> constexpr result or_else(F &&f) && {
+        static_assert(std::is_same_v<std::remove_cvref_t<std::invoke_result_t<F, status>>, result>,
+                      "sharedbox::result: or_else must return the same result type");
         return has_value() ? result(std::move(**this)) : std::forward<F>(f)(error());
     }
 
@@ -301,7 +322,8 @@ private:
         return R(unexpected(self.error()));
     }
     template <class Self, class F> static constexpr auto map(Self &&self, F &&f) {
-        using U = std::remove_cvref_t<std::invoke_result_t<F, decltype(*std::forward<Self>(self))>>;
+        using U = std::remove_cv_t<std::invoke_result_t<F, decltype(*std::forward<Self>(self))>>;
+        static_assert(!std::is_reference_v<U>, "sharedbox::result: transform must not return a reference");
         if constexpr (std::is_void_v<U>) {
             if (!self.has_value())
                 return result<void>(unexpected(self.error()));
@@ -323,9 +345,9 @@ public:
     using error_type = status;
 
     constexpr result() noexcept = default;
-    constexpr result(unexpected e) noexcept : error_(e.error()) {}
+    constexpr result(unexpected e) noexcept : has_value_(false), error_(e.error()) {}
 
-    constexpr bool has_value() const noexcept { return error_ == status::ok; }
+    constexpr bool has_value() const noexcept { return has_value_; }
     constexpr explicit operator bool() const noexcept { return has_value(); }
     constexpr void operator*() const noexcept {}
     constexpr void value() const {
@@ -340,7 +362,8 @@ public:
         return R(unexpected(error_));
     }
     template <class F> constexpr auto transform(F &&f) const {
-        using U = std::remove_cvref_t<std::invoke_result_t<F>>;
+        using U = std::remove_cv_t<std::invoke_result_t<F>>;
+        static_assert(!std::is_reference_v<U>, "sharedbox::result: transform must not return a reference");
         if constexpr (std::is_void_v<U>) {
             if (has_value())
                 std::forward<F>(f)();
@@ -352,10 +375,13 @@ public:
         }
     }
     template <class F> constexpr result or_else(F &&f) const {
+        static_assert(std::is_same_v<std::remove_cvref_t<std::invoke_result_t<F, status>>, result>,
+                      "sharedbox::result: or_else must return the same result type");
         return has_value() ? *this : std::forward<F>(f)(error_);
     }
 
 private:
+    bool has_value_ = true;
     status error_ = status::ok;
 };
 
