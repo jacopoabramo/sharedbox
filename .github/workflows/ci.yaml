@@ -22,6 +22,26 @@ jobs:
         with:
           prek-version: "0.5.3"
 
+  cpp_header:
+    name: C++ header on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Build and run the C++ tests
+        shell: bash
+        run: |
+          cmake -S tests/cpp -B build-cpp -DCMAKE_BUILD_TYPE=Release
+          cmake --build build-cpp --config Release
+          ctest --test-dir build-cpp -C Release --output-on-failure
+
   build_wheels:
     name: Build wheel for ${{ matrix.python }}-${{ matrix.platform_id }}
     runs-on: ${{ matrix.os }}
@@ -157,7 +177,7 @@ jobs:
 
   upload_pypi:
     name: Upload to PyPI
-    needs: [lint, build_wheels, make_sdist]
+    needs: [lint, cpp_header, build_wheels, make_sdist]
     runs-on: ubuntu-latest
     environment:
       name: pypi

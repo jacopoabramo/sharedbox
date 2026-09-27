@@ -19,3 +19,5 @@ src/sharedbox/_version.py
 wheelhouse/
 
 graphify-out/
+
+build-cpp/

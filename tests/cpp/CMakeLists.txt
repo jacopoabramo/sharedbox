@@ -1,0 +1,32 @@
+cmake_minimum_required(VERSION 3.20)
+project(sharedbox_cpp_tests LANGUAGES CXX)
+enable_testing()
+
+set(CMAKE_CXX_STANDARD 20)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+find_package(Threads REQUIRED)
+
+set(sbx_tests test_result test_atomics)
+foreach(target IN LISTS sbx_tests)
+    add_executable(${target} ${target}.cpp)
+endforeach()
+
+# The same test again where the standard library has std::expected, which result then names.
+if("cxx_std_23" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
+    add_executable(test_result_cxx23 test_result.cpp)
+    set_target_properties(test_result_cxx23 PROPERTIES CXX_STANDARD 23)
+    list(APPEND sbx_tests test_result_cxx23)
+endif()
+
+foreach(target IN LISTS sbx_tests)
+    target_include_directories(${target} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../../include")
+    target_link_libraries(${target} PRIVATE Threads::Threads)
+    if(MSVC)
+        target_compile_options(${target} PRIVATE /W4 /WX)
+    else()
+        target_compile_options(${target} PRIVATE -Wall -Wextra -Werror)
+        target_link_libraries(${target} PRIVATE rt)
+    endif()
+    add_test(NAME ${target} COMMAND ${target})
+    set_tests_properties(${target} PROPERTIES TIMEOUT 60)
+endforeach()
