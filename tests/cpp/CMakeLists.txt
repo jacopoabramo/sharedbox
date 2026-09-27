@@ -13,7 +13,7 @@ FetchContent_Declare(doctest
     SYSTEM)
 FetchContent_MakeAvailable(doctest)
 
-set(sbx_tests test_result test_atomics)
+set(sbx_tests test_result test_atomics test_mapping)
 if(NOT WIN32)
     # fork() and pid namespaces exist only on POSIX.
     list(APPEND sbx_tests test_fork)
@@ -54,6 +54,13 @@ foreach(target IN LISTS sbx_tests)
     add_test(NAME ${target} COMMAND ${target})
     set_tests_properties(${target} PROPERTIES TIMEOUT 60)
 endforeach()
+
+# Needs a 16 MiB /dev/shm, so CI runs it in a container instead of through CTest.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    add_executable(test_small_shm test_small_shm.cpp)
+    target_include_directories(test_small_shm PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../../include")
+    target_link_libraries(test_small_shm PRIVATE doctest::doctest_with_main Threads::Threads rt)
+endif()
 
 # Each case builds compile_fail.cpp with one call that must not compile and passes on its static_assert
 # message. The C++20 result only: std::expected words its own messages.

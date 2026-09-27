@@ -52,6 +52,11 @@ jobs:
           cmake --build build-cpp --config ${{ matrix.build }}
           ctest --test-dir build-cpp -C ${{ matrix.build }} --output-on-failure
 
+      - name: Create a box larger than a 16 MiB /dev/shm
+        if: runner.os == 'Linux' && matrix.build == 'Release'
+        run: |
+          docker run --rm --shm-size=16m -v "$PWD":/src -w /src ubuntu:24.04 build-cpp/test_small_shm
+
   build_wheels:
     name: Build wheel for ${{ matrix.python }}-${{ matrix.platform_id }}
     runs-on: ${{ matrix.os }}
