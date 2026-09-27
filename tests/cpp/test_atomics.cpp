@@ -1,7 +1,8 @@
 // The atomic operations the protocols use, on the header's own fields, under contention. Each test
 // fails if a field is reached through something other than a lock-free atomic of its full width, or
 // with a weaker ordering than the protocol names.
-#include "check.hpp"
+#include <doctest/doctest.h>
+#include <sharedbox/sharedbox.hpp>
 
 #include <array>
 #include <atomic>
@@ -13,7 +14,12 @@
 namespace {
 
 constexpr int threads = 4;
+// The sanitizer build of CI passes a smaller count; the store-buffering test is slow under ASan.
+#ifdef SHAREDBOX_TEST_ROUNDS
+constexpr int rounds = SHAREDBOX_TEST_ROUNDS;
+#else
 constexpr int rounds = 100000;
+#endif
 constexpr std::uint32_t total = threads * rounds;
 
 using sharedbox::detail::atomic;
@@ -29,7 +35,7 @@ template <class F> void run_threads(int count, F f) {
 // fetch_add: every thread records the values it got back. Each old value from the start up to the
 // final count must come back exactly once: a lost update repeats one, and an operation that returns
 // the new value, or truncates the high word, shifts them all.
-void test_fetch_add_returns_each_old_value_once() {
+TEST_CASE("fetch add returns each old value once") {
     auto h = std::make_unique<sharedbox::header>();
     constexpr std::uint32_t start32 = UINT32_MAX - 10;
     constexpr std::uint64_t start64 = std::uint64_t{1} << 40;
@@ -59,7 +65,7 @@ void test_fetch_add_returns_each_old_value_once() {
 }
 
 // compare_exchange: a loop of swaps must lose no update, and a failed swap must change nothing.
-void test_compare_exchange_loses_no_update() {
+TEST_CASE("compare exchange loses no update") {
     auto h = std::make_unique<sharedbox::header>();
     h->seq = std::uint64_t{1} << 40;
     run_threads(threads, [&](int) {
@@ -81,7 +87,7 @@ void test_compare_exchange_loses_no_update() {
 
 // load and store: a writer flips seq and writer_pid between all-zero and all-one bits; a reader must
 // never see a mix, which an access made of two narrower halves produces.
-void test_loads_and_stores_do_not_tear() {
+TEST_CASE("loads and stores do not tear") {
     auto h = std::make_unique<sharedbox::header>();
     std::atomic<int> torn{0};
     run_threads(2, [&](int t) {
@@ -143,11 +149,6 @@ void store_buffering(bool fenced) {
 
 } // namespace
 
-int main() {
-    test_fetch_add_returns_each_old_value_once();
-    test_compare_exchange_loses_no_update();
-    test_loads_and_stores_do_not_tear();
-    store_buffering(false);
-    store_buffering(true);
-    return finish("atomics");
-}
+TEST_CASE("a seq_cst store is not passed by a later load") { store_buffering(false); }
+
+TEST_CASE("a seq_cst fence is not passed by a later load") { store_buffering(true); }

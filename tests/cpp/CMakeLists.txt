@@ -1,10 +1,17 @@
-cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.25)
 project(sharedbox_cpp_tests LANGUAGES CXX)
 enable_testing()
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 find_package(Threads REQUIRED)
+
+include(FetchContent)
+FetchContent_Declare(doctest
+    URL https://github.com/doctest/doctest/archive/refs/tags/v2.4.12.tar.gz
+    URL_HASH SHA256=73381c7aa4dee704bd935609668cf41880ea7f19fa0504a200e13b74999c2d70
+    SYSTEM)
+FetchContent_MakeAvailable(doctest)
 
 set(sbx_tests test_result test_atomics)
 foreach(target IN LISTS sbx_tests)
@@ -33,7 +40,7 @@ endif()
 
 foreach(target IN LISTS sbx_tests)
     target_include_directories(${target} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../../include")
-    target_link_libraries(${target} PRIVATE Threads::Threads)
+    target_link_libraries(${target} PRIVATE doctest::doctest_with_main Threads::Threads)
     if(MSVC)
         target_compile_options(${target} PRIVATE /W4 /WX)
     else()

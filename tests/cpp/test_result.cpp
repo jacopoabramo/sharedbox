@@ -1,6 +1,7 @@
 // sharedbox::result: the header's own type on C++20, std::expected<T, status> where the library has it.
 // Both must behave the same for the calls this library and its users make.
-#include "check.hpp"
+#include <doctest/doctest.h>
+#include <sharedbox/sharedbox.hpp>
 
 #include <algorithm>
 #include <memory>
@@ -19,12 +20,6 @@ namespace {
 // falls back to its own type there fails the build.
 #ifdef SBX_EXPECT_STD_EXPECTED
 static_assert(std::is_same_v<result<int>, std::expected<int, status>>);
-#endif
-
-#if defined(__cpp_lib_expected) && __cpp_lib_expected >= 202211L
-constexpr const char *flavour = "result (std::expected)";
-#else
-constexpr const char *flavour = "result (C++20)";
 #endif
 
 // windows.h defines min and max as macros unless NOMINMAX is set first, which breaks this line.
@@ -59,15 +54,15 @@ result<void> check_positive(int n) {
     return {};
 }
 
-void test_value_and_error() {
+TEST_CASE("value and error") {
     const result<int> ok = half(8);
-    CHECK(ok.has_value() && static_cast<bool>(ok) && *ok == 4 && ok.value() == 4);
+    CHECK((ok.has_value() && static_cast<bool>(ok) && *ok == 4 && ok.value() == 4));
     const result<int> bad = half(3);
-    CHECK(!bad && bad.error() == status::range);
-    CHECK(bad.value_or(-1) == -1 && ok.value_or(-1) == 4);
+    CHECK((!bad && bad.error() == status::range));
+    CHECK((bad.value_or(-1) == -1 && ok.value_or(-1) == 4));
 }
 
-void test_chaining() {
+TEST_CASE("chaining") {
     CHECK(*half(8).and_then(half) == 2);
     CHECK(half(6).and_then(half).error() == status::range);
     CHECK(half(3).and_then(half).error() == status::range);
@@ -76,52 +71,43 @@ void test_chaining() {
     CHECK(*half(3).or_else([](status) -> result<int> { return 0; }) == 0);
     CHECK(*half(8).or_else([](status) -> result<int> { return 0; }) == 4);
     int calls = 0;
-    CHECK(half(8).transform([&](int) { ++calls; }).has_value() && calls == 1);
+    CHECK((half(8).transform([&](int) { ++calls; }).has_value() && calls == 1));
     CHECK(check_positive(1).and_then([] { return half(8); }).value_or(0) == 4);
     CHECK(check_positive(0).and_then([] { return half(8); }).error() == status::range);
-    CHECK(check_positive(0).error() == status::range && check_positive(1).has_value());
+    CHECK((check_positive(0).error() == status::range && check_positive(1).has_value()));
 }
 
-void test_lvalue_calls() {
+TEST_CASE("lvalue calls") {
     result<int> ok = half(8);
     const result<int> bad = half(3);
     const auto zero = [](status) -> result<int> { return 0; };
-    CHECK(*ok.and_then(half) == 2 && bad.and_then(half).error() == status::range);
+    CHECK((*ok.and_then(half) == 2 && bad.and_then(half).error() == status::range));
     CHECK(*ok.transform([](int n) { return n + 1; }) == 5);
     CHECK(bad.transform([](int n) { return n + 1; }).error() == status::range);
-    CHECK(*ok.or_else(zero) == 4 && *bad.or_else(zero) == 0);
+    CHECK((*ok.or_else(zero) == 4 && *bad.or_else(zero) == 0));
     result<void> done;
     const result<void> failed = sharedbox::unexpected(status::os);
     CHECK(done.and_then([] { return half(8); }).value_or(0) == 4);
     CHECK(failed.and_then([] { return half(8); }).error() == status::os);
-    CHECK(*done.transform([] { return 1; }) == 1 && failed.transform([] { return 1; }).error() == status::os);
+    CHECK((*done.transform([] { return 1; }) == 1 && failed.transform([] { return 1; }).error() == status::os));
     CHECK(failed.or_else([](status) -> result<void> { return {}; }).has_value());
 }
 
 // An error is an error whatever its status, status::ok included, as with std::unexpected.
-void test_error_ok_is_still_an_error() {
+TEST_CASE("an error with status ok is still an error") {
     const result<void> v = sharedbox::unexpected(status::ok);
-    CHECK(!v.has_value() && v.error() == status::ok);
+    CHECK((!v.has_value() && v.error() == status::ok));
     const result<int> i = sharedbox::unexpected(status::ok);
-    CHECK(!i.has_value() && i.error() == status::ok);
+    CHECK((!i.has_value() && i.error() == status::ok));
 }
 
-void test_move_only_values() {
+TEST_CASE("move only values") {
     result<std::unique_ptr<int>> made = std::make_unique<int>(7);
-    CHECK(made && **made == 7);
+    CHECK((made && **made == 7));
     std::unique_ptr<int> taken = *std::move(made);
-    CHECK(taken != nullptr && *taken == 7);
+    CHECK((taken != nullptr && *taken == 7));
     const result<std::unique_ptr<int>> failed = sharedbox::unexpected(status::os);
     CHECK(failed.error() == status::os);
 }
 
 } // namespace
-
-int main() {
-    test_value_and_error();
-    test_chaining();
-    test_lvalue_calls();
-    test_error_ok_is_still_an_error();
-    test_move_only_values();
-    return finish(flavour);
-}

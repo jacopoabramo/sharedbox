@@ -23,13 +23,22 @@ jobs:
           prek-version: "0.5.3"
 
   cpp_header:
-    name: C++ header on ${{ matrix.os }}
+    name: C++ header on ${{ matrix.os }} (${{ matrix.build }})
     runs-on: ${{ matrix.os }}
     timeout-minutes: 10
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-latest, windows-latest]
+        include:
+          - { os: ubuntu-latest, build: Release, flags: "" }
+          - { os: windows-latest, build: Release, flags: "" }
+          # No ThreadSanitizer: the sequence lock's reader copies the record while a writer may change it, by design.
+          - os: ubuntu-latest
+            build: RelWithDebInfo
+            flags: -fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all -DSHAREDBOX_TEST_ROUNDS=20000
+    env:
+      ASAN_OPTIONS: detect_leaks=1
+      UBSAN_OPTIONS: print_stacktrace=1
     steps:
       - uses: actions/checkout@v5
         with:
@@ -38,9 +47,10 @@ jobs:
       - name: Build and run the C++ tests
         shell: bash
         run: |
-          cmake -S tests/cpp -B build-cpp -DCMAKE_BUILD_TYPE=Release
-          cmake --build build-cpp --config Release
-          ctest --test-dir build-cpp -C Release --output-on-failure
+          cmake -S tests/cpp -B build-cpp -DCMAKE_BUILD_TYPE=${{ matrix.build }} \
+            -DCMAKE_CXX_FLAGS="${{ matrix.flags }}" -DCMAKE_C_FLAGS="${{ matrix.flags }}"
+          cmake --build build-cpp --config ${{ matrix.build }}
+          ctest --test-dir build-cpp -C ${{ matrix.build }} --output-on-failure
 
   build_wheels:
     name: Build wheel for ${{ matrix.python }}-${{ matrix.platform_id }}
