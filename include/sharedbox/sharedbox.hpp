@@ -253,6 +253,7 @@ private:
 };
 
 template <class T> class result;
+template <> class result<void>;
 
 namespace detail {
 template <class> inline constexpr bool is_result = false;
