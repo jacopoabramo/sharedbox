@@ -44,6 +44,8 @@ def include_paths() -> list[str]:
         Path(sysconfig.get_path("include")),
         Path(nanobind.include_dir()),
         nanobind_root / "ext" / "robin_map" / "include",
+        # doctest, fetched by the C++ tests' CMake configure into build-cpp.
+        ROOT / "build-cpp" / "_deps" / "doctest-src",
         vcpkg,
     ]
     return [path.as_posix() for path in paths if path.is_dir()]
