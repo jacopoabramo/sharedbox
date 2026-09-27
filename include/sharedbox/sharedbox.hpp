@@ -395,6 +395,164 @@ template <class T> SHAREDBOX_HOT std::atomic_ref<T> atomic(T &word) noexcept { r
 
 } // namespace detail
 
+namespace detail {
+
+struct process_cache {
+    std::atomic<std::uint32_t> pid{0};
+    std::atomic<std::uint64_t> start{0};
+    // The namespace plus one: 0 until it is read, 1 when it cannot be.
+    std::atomic<std::uint64_t> pidns{0};
+};
+
+inline process_cache &cache() noexcept;
+
+#ifndef _WIN32
+inline void after_fork() noexcept {
+    process_cache &c = cache();
+    c.pid.store(static_cast<std::uint32_t>(getpid()), std::memory_order_relaxed);
+    c.start.store(0, std::memory_order_relaxed);
+    c.pidns.store(0, std::memory_order_relaxed);
+}
+#endif
+
+// Every accessor goes through here, so the fork handler is registered before the first value is
+// cached; the static's initialisation runs once per program, under the compiler's guard.
+inline process_cache &cache() noexcept {
+    static process_cache c = [] {
+#ifndef _WIN32
+        pthread_atfork(nullptr, nullptr, after_fork);
+#endif
+        return process_cache{};
+    }();
+    return c;
+}
+
+} // namespace detail
+
+// What process_start returns for a process that exists but cannot be inspected.
+inline constexpr std::uint64_t start_unknown = UINT64_MAX;
+
+// This process's pid. On Linux it is read once and again in every child created by fork.
+inline std::uint32_t current_pid() noexcept {
+#ifdef _WIN32
+    return static_cast<std::uint32_t>(GetCurrentProcessId());
+#else
+    detail::process_cache &c = detail::cache();
+    std::uint32_t pid = c.pid.load(std::memory_order_relaxed);
+    if (pid == 0) {
+        pid = static_cast<std::uint32_t>(getpid());
+        c.pid.store(pid, std::memory_order_relaxed);
+    }
+    return pid;
+#endif
+}
+
+// When the process started, in an OS-specific unit: 0 when no running process has that pid,
+// start_unknown when one does but its start time cannot be read.
+inline std::uint64_t process_start(std::uint32_t pid) noexcept {
+#ifdef _WIN32
+    HANDLE process = OpenProcess(SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+    if (process == nullptr)
+        return GetLastError() == ERROR_ACCESS_DENIED ? start_unknown : 0;
+    std::uint64_t start = 0;
+    // An exited process stays queryable while a handle to it is open, and its exit code may be any
+    // value, STILL_ACTIVE included; only the handle's signal state is reliable.
+    if (WaitForSingleObject(process, 0) == WAIT_TIMEOUT) {
+        FILETIME created, exited, kernel, user;
+        start = GetProcessTimes(process, &created, &exited, &kernel, &user)
+                    ? (std::uint64_t{created.dwHighDateTime} << 32) | created.dwLowDateTime
+                    : start_unknown;
+    }
+    CloseHandle(process);
+    return start;
+#else
+    // kill(0, ...) and negative pids address process groups, not one process.
+    if (pid == 0 || pid > static_cast<std::uint32_t>(INT_MAX))
+        return 0;
+    bool denied = false;
+    if (kill(static_cast<pid_t>(pid), 0) != 0) {
+        if (errno == ESRCH)
+            return 0;
+        denied = errno == EPERM;
+    }
+    char path[32];
+    std::snprintf(path, sizeof path, "/proc/%u/stat", static_cast<unsigned>(pid));
+    const int fd = open(path, O_RDONLY | O_CLOEXEC);
+    // /proc mounted with hidepid hides processes of other users, which kill reports as EPERM.
+    if (fd < 0)
+        return denied ? start_unknown : 0;
+    char text[1024];
+    const ssize_t n = read(fd, text, sizeof text - 1);
+    close(fd);
+    // kill has found the process, so a stat that cannot be parsed means an unknown start time.
+    if (n <= 0)
+        return start_unknown;
+    text[n] = '\0';
+    // Field 2, the command name, may hold spaces and parentheses; the fixed fields follow the last ')'.
+    const char *s = std::strrchr(text, ')');
+    if (s == nullptr)
+        return start_unknown;
+    ++s;
+    while (*s == ' ')
+        ++s;
+    if (*s == '\0')
+        return start_unknown;
+    // Field 3 is the state; a zombie has exited but keeps its /proc entry until it is reaped.
+    if (*s == 'Z' || *s == 'X')
+        return 0;
+    for (int field = 3; field < 22; ++field) {
+        while (*s != '\0' && *s != ' ')
+            ++s;
+        while (*s == ' ')
+            ++s;
+    }
+    if (*s < '0' || *s > '9')
+        return start_unknown;
+    std::uint64_t start = 0;
+    while (*s >= '0' && *s <= '9')
+        start = start * 10 + static_cast<std::uint64_t>(*s++ - '0');
+    // 0 means no process, so a process started at boot tick 0 reports 1.
+    return start == 0 ? 1 : start;
+#endif
+}
+
+// This process's start time, read on first use.
+inline std::uint64_t current_start() noexcept {
+    detail::process_cache &c = detail::cache();
+    std::uint64_t start = c.start.load(std::memory_order_relaxed);
+    if (start == 0) {
+        start = process_start(current_pid());
+        c.start.store(start, std::memory_order_relaxed);
+    }
+    return start;
+}
+
+// The inode number of /proc/self/ns/pid, which tells pid namespaces apart. 0 means unknown: on Linux
+// when /proc cannot be read, and always on Windows, which has no pid namespaces.
+inline std::uint64_t current_pidns() noexcept {
+#ifdef _WIN32
+    return 0;
+#else
+    detail::process_cache &c = detail::cache();
+    std::uint64_t cached = c.pidns.load(std::memory_order_relaxed);
+    if (cached == 0) {
+        struct stat st;
+        cached = stat("/proc/self/ns/pid", &st) == 0 ? static_cast<std::uint64_t>(st.st_ino) + 1 : 1;
+        c.pidns.store(cached, std::memory_order_relaxed);
+    }
+    return cached - 1;
+#endif
+}
+
+// False when no process has that pid, or one does with another start time. A process whose start
+// time cannot be read counts as alive, so nothing is freed on a guess.
+inline bool process_alive(std::uint32_t pid, std::uint64_t start) noexcept {
+    if (pid == 0)
+        return false;
+    const std::uint64_t now = process_start(pid);
+    return now != 0 && (now == start_unknown || start == start_unknown || now == start);
+}
+
 } // namespace sharedbox
 
 #endif

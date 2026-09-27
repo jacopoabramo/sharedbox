@@ -1,7 +1,8 @@
 #include "segment.hpp"
 
-#include "liveness.hpp"
 #include "notifier.hpp"
+
+#include <sharedbox/sharedbox.hpp>
 
 #include <atomic>
 #include <cerrno>

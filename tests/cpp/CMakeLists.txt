@@ -14,6 +14,10 @@ FetchContent_Declare(doctest
 FetchContent_MakeAvailable(doctest)
 
 set(sbx_tests test_result test_atomics)
+if(NOT WIN32)
+    # fork() and pid namespaces exist only on POSIX.
+    list(APPEND sbx_tests test_fork)
+endif()
 foreach(target IN LISTS sbx_tests)
     add_executable(${target} ${target}.cpp)
 endforeach()

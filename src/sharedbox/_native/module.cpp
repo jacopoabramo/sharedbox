@@ -7,8 +7,9 @@
 
 #include <system_error>
 
+#include <sharedbox/sharedbox.hpp>
+
 #include "codec.hpp"
-#include "liveness.hpp"
 #include "segment.hpp"
 
 namespace nb = nanobind;
@@ -65,10 +66,10 @@ NB_MODULE(_native, m) {
         },
         "kind"_a, "capacity"_a, "name"_a, "value"_a);
 
-    m.def("_process_start", &sharedbox::process_start, "pid"_a);
+    m.def("_process_start", [](std::uint32_t pid) { return sharedbox::process_start(pid); }, "pid"_a);
     m.def(
         "_process_alive",
-        [](std::uint32_t pid, std::uint64_t start) { return sharedbox::process_alive({pid, start}); }, "pid"_a,
+        [](std::uint32_t pid, std::uint64_t start) { return sharedbox::process_alive(pid, start); }, "pid"_a,
         "start"_a);
 
     nb::class_<Segment>(m, "Segment")

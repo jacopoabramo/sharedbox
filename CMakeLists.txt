@@ -27,11 +27,11 @@ nanobind_add_module(_native
     LTO
     NB_DOMAIN sharedbox
     src/sharedbox/_native/codec.cpp
-    src/sharedbox/_native/liveness.cpp
     src/sharedbox/_native/module.cpp
     src/sharedbox/_native/segment.cpp
     src/sharedbox/_native/notifier.cpp)
 target_link_libraries(_native PRIVATE Boost::headers)
+target_include_directories(_native PRIVATE include)
 
 if(WIN32)
     target_compile_definitions(_native PRIVATE
