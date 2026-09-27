@@ -37,12 +37,9 @@ def include_paths() -> list[str]:
     vcpkg = (
         ROOT / "build" / wheel_tag() / "vcpkg_installed" / vcpkg_triplet() / "include"
     )
-    if not vcpkg.is_dir():
-        raise SystemExit(
-            f"{vcpkg} does not exist; run `uv sync --dev` with this interpreter first"
-        )
     nanobind_root = Path(nanobind.include_dir()).parent
     paths = [
+        ROOT / "include",
         ROOT / "src" / "sharedbox" / "_native",
         Path(sysconfig.get_path("include")),
         Path(nanobind.include_dir()),
@@ -83,6 +80,7 @@ def main() -> None:
         "name": CONFIGURATION,
         "includePath": include_paths(),
         "defines": defines(),
+        "cStandard": "c11",
         "cppStandard": "c++20",
     }
     properties["configurations"] = [*others, configuration]
