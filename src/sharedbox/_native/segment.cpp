@@ -218,8 +218,8 @@ std::unique_ptr<Segment> Segment::create(const std::string &name, const std::vec
     impl->name = name;
     impl->names = names;
     impl->lock_timeout = lock_timeout;
-    result<handle> made = handle::create(name, table, static_cast<std::uint32_t>(record_size), schema_hash,
-                                         waiter_slots, initial);
+    result<handle> made =
+        handle::create(name, table, static_cast<std::uint32_t>(record_size), schema_hash, waiter_slots, initial);
     impl->box = impl->check(std::move(made));
     impl->bind();
     return std::unique_ptr<Segment>(new Segment(std::move(impl)));
