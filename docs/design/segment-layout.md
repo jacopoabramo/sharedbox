@@ -69,7 +69,8 @@ record       record            record_size bytes, 64-byte aligned
              (zero padding up to a multiple of 4096)
 ```
 
-Every structure is packed, and `static_assert`s in `sharedbox.hpp` pin its
+No structure has implicit padding: gaps are explicit `pad` and `reserved`
+members, and `static_assert`s in `sharedbox.hpp` pin each structure's
 `sizeof`, `alignof` and every `offsetof`, and that it is standard-layout
 and trivially copyable.
 
@@ -207,7 +208,8 @@ Every shared word is a plain integer in the mapping, accessed through
    error instead of a later `SIGBUS`; `ftruncate` is the fallback where
    the file system does not support it. New pages read as zero on both
    platforms.
-2. Write line 0 except `magic`, the creator fields and the field table.
+2. Write the field table, the creator fields and the rest of line 0
+   except `magic`.
    `create_id` comes from the OS random source (`getrandom` on Linux,
    falling back to `/dev/urandom` where it is missing or refused;
    `BCryptGenRandom` on Windows) and is drawn again if 0. The creator
@@ -520,7 +522,7 @@ extension use.
   `MapViewOfFile` on Windows), not from the name, so it works after
   `unlink()`.
 - `minor_version()` is the lower of the segment's `layout_minor` and the
-  header's own.
+  `layout_minor` of the `sharedbox.hpp` the caller was compiled with.
 - Shared memory that never becomes a box within the timeout is
   `status::not_found`.
 - Thread safety: every member function may be called from several threads
@@ -553,9 +555,10 @@ typedef struct sbx_handle {
 - `private_data` belongs to the build that made the handle, and only that
   build's `release` reads it.
 - A consumer never reads another build's `private_data`. It takes the
-  handle with `handle::from_capsule` (or `sbx_import`), which checks the
-  segment through `base` and `size` as attach does (steps 2 to 5 of
-  Attach), keeps its own copy of the struct and of the field table, and
+  handle with `handle::from_capsule` (or `sbx_import`). It does not wait
+  for `magic`: it loads it once and returns `status::corrupt` if it is not
+  set or `size` is below 4096, then runs steps 3 to 5 of Attach on the
+  segment at `base`. It keeps its own copy of the struct and of the field table, and
   checks no schema: the consumer compares `schema_hash()`. On success it
   clears the capsule struct's `release`, and destroying the new handle
   calls the producer's `release`. The consumer's handle opens slot events

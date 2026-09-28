@@ -142,9 +142,6 @@ look at the counter, is the one Boehm shows to be correct for C++ [6].
 
 Why not an ordinary mutex:
 
-- A mutex shared between processes needs either the operating system's
-  help or a spin loop, and both cost more than one compare-and-swap when
-  nobody is competing.
 - A reader never makes a writer wait. With a mutex, a slow reader delays
   every writer.
 - A process that dies holding a mutex leaves it held in a way other
@@ -168,12 +165,14 @@ holding the lock; `force_unlock()` releases it.
 
 The wait for the lock spins, then yields, then sleeps for a doubling
 interval of at most 1 ms. On Windows a sleep ends on a timer tick, so a
-wait is bounded below by the timer granularity: on a GitHub Actions
-Windows runner a 1 ms `lock_timeout` ended after 15.7 ms (median of 200
-waits), against 1.2 ms on a GitHub Actions Linux runner. A lock holder
-that is descheduled for one timer tick can also make a short timeout
-expire: on the same Windows runner, with a 10 ms `lock_timeout`, 1 of
-4.3 million writes by two contending writers timed out.
+wait is bounded below by the timer granularity. In the stress tests on
+GitHub Actions runners (CI runs 36440952244 and 36443594984), a 1 ms
+`lock_timeout` ended after 15.7 and 15.8 ms on Windows (median of 200
+waits), against 1.18 and 1.16 ms on Linux. A lock holder that is
+descheduled for one timer tick can also make a short timeout expire: with
+a 10 ms `lock_timeout` and two contending writers, the Windows runner
+timed out 1 of 4.3 million writes in the first run and none of 2.9
+million in the second.
 
 ## 5. Waking a process that waits for a change
 
@@ -193,11 +192,12 @@ segment, and a write wakes the slots that are occupied.
   `Local\sharedbox.<name>.w<i>` [11], and a writer sets the event of every
   occupied slot. On both systems a write to a box nobody waits on makes no
   system call to wake anyone: the writer reads `waiters` and stops at 0.
-- A process killed while it holds a slot does not keep it. The next
-  register or attach in any process checks each occupied slot's owner with
-  the liveness rules of section 9 and frees the slots of dead processes,
-  except slots recorded in another pid namespace, whose pids cannot be
-  checked from here.
+- A slot held by a process that was killed is freed by the next register
+  or attach, except in the cases listed under
+  [Known limits](segment-layout.md#waiter-slots). That process checks each
+  occupied slot's owner with the liveness rules of section 9; a slot
+  recorded in another pid namespace is never freed, because its pid cannot
+  be checked from here.
 - The Python watcher waits in steps of at most 1 s. The step is not a poll
   for changes: writes and `interrupt()` wake it at once. After each step
   the watcher checks that its slot still records its own pid, start time

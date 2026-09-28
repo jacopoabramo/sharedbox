@@ -29,12 +29,12 @@ Dates are marked as `DD-MM-YYYY`
   for other extensions.
 - `SupportsSharedBox`: protocol for functions that accept a box.
 - `get_include()`: folder holding `sharedbox/sharedbox.hpp`,
-  `sharedbox_c.h` and `sharedbox_c.cpp`.
+  `sharedbox/sharedbox_c.h` and `sharedbox/sharedbox_c.cpp`.
 - `sharedbox.hpp`: header-only C++20 implementation of the segment layout,
   installed in the wheel with a CMake config (`sharedbox::headers`).
 - `sharedbox_c.h`: minimal C interface (`sbx_open`, `sbx_import`,
   `sbx_schema_hash`, `sbx_read`, `sbx_write`, `sbx_release`), built
-  through `sharedbox::c`; it may be removed in a future major version.
+  through `sharedbox::c`.
 
 ```python
 class Frame(SharedBox, identity="camera/frame/1", max_waiters=16):

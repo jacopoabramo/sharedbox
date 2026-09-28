@@ -5,8 +5,8 @@
 named segment that every process can open. The segment is a plain named
 mapping laid out by `include/sharedbox/sharedbox.hpp` (C++20, header-only),
 which the nanobind extension runs on; `sharedbox_c.h` is a minimal C
-interface to the same header. Boost is not used. The Python side decides the layout
-and the native module converts values.
+interface to the same header. Boost is not used. The Python side decides
+the layout and the native module converts values.
 
 ## Repository layout
 

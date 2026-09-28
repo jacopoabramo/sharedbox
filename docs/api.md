@@ -152,8 +152,8 @@ Settings.unlink()
 - `lock_timeout`: seconds a read or write waits for a write in progress
   before `LockTimeoutError`, 5.0 by default. Must be finite and in
   `(0, 86400]`; any other value raises `ValueError`. On Windows a wait
-  ends on a timer tick, so a timeout of a few milliseconds can take about
-  15 ms to expire.
+  ends on a timer tick, so a timeout can expire late by up to one timer
+  tick, 15.6 ms at the default Windows timer resolution.
 - `identity`: a non-empty string, by default the class's `module.qualname`
   (with `__mp_main__` read as `__main__`); anything else raises
   `TypeError`. It enters the schema hash and names the box when `name` is
@@ -608,8 +608,9 @@ asyncio.run(main())
 
 Windows: the segment is a file mapping named `Local\sharedbox.<name>`,
 backed by the page file. Windows frees it when the last box or capsule
-handle using it is closed, and `unlink()` does nothing. A `lock_timeout` of
-a few milliseconds can take about one timer tick (15.6 ms) to expire.
+handle using it is closed, and `unlink()` does nothing. A `lock_timeout` can
+expire late by up to one timer tick, 15.6 ms at the default Windows timer
+resolution.
 
 Linux: the segment is the file `/dev/shm/sharedbox.<name>`, created with
 mode `0600`, so only the same user can open it. Only `unlink()` removes its

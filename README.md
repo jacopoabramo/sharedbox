@@ -86,8 +86,8 @@ The full API is described in [docs/api.md](./docs/api.md).
 
 ## C++ and C
 
-The segment layout is documented and implemented by a header-only C++20
-library, `sharedbox.hpp`, installed with the wheel together with a minimal C
+The segment layout is implemented by a header-only C++20 library,
+`sharedbox.hpp`, installed with the wheel together with a minimal C
 interface, `sharedbox_c.h`. C++ and C code can use a box through them,
 either as an extension that takes a box from Python or as a standalone
 program; [docs/library-authors.md](./docs/library-authors.md) shows how.
