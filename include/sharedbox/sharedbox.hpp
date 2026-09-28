@@ -1028,7 +1028,7 @@ public:
     [[nodiscard]] result<std::uint64_t> read_record(std::span<std::byte> buf) const;
     // The stored bytes of field inside a copy made by read_record.
     std::span<const std::byte> payload(std::uint16_t field, std::span<const std::byte> record) const noexcept;
-    // Writes every value under one lock, so readers see all of them or none.
+    // Writes every value under one lock, so readers see all of them or none, then wakes waiters.
     [[nodiscard]] result<void> write(std::span<const value> values, seconds lock_timeout);
     // Writes since creation, seq >> 1: every write adds 2 to seq, and a force_unlock counts as one.
     std::uint64_t generation() const noexcept;
@@ -1052,6 +1052,12 @@ public:
     bool waiter_held(std::uint16_t slot) const noexcept;
     // Occupied waiter slots.
     std::uint32_t waiters() const noexcept;
+    // Blocks in a slot this handle holds until the generation differs from last_generation, the slot is
+    // interrupted, or timeout passes (status::timeout).
+    [[nodiscard]] result<wake> wait(std::uint16_t slot, std::uint64_t last_generation, seconds timeout);
+    // Ends the wait in slot, of any process, with wake::interrupted; the flag stays set until that waiter
+    // sees it, so an interrupt sent before the wait starts still ends it.
+    [[nodiscard]] result<void> interrupt(std::uint16_t slot);
 
 private:
     explicit handle(detail::state *s) noexcept : s_(s) {}
@@ -1084,6 +1090,9 @@ struct state {
     void *(*before_wait)() = nullptr;
     void (*after_wait)(void *) = nullptr;
     std::array<std::atomic<std::uint64_t>, max_waiter_slots / 64> owned{};
+#ifdef _WIN32
+    std::unique_ptr<std::atomic<HANDLE>[]> events;
+#endif
 
     ~state();
 };
@@ -1092,6 +1101,10 @@ inline bool owned_clear(state &s, std::uint16_t i) noexcept;
 inline bool slot_is_mine(const state &s, std::uint16_t i) noexcept;
 inline void free_slot(const state &s, std::uint16_t i) noexcept;
 inline void free_dead_waiters(const state &s) noexcept;
+SHAREDBOX_HOT void wake_waiters(const state &s) noexcept;
+#ifdef _WIN32
+inline HANDLE event(const state &s, std::uint16_t slot) noexcept;
+#endif
 
 inline state::~state() {
     if (hdr != nullptr)
@@ -1099,6 +1112,12 @@ inline state::~state() {
             // A child created by fork inherits the bits of its parent's slots; those stay the parent's.
             if (owned_clear(*this, i) && slot_is_mine(*this, i))
                 free_slot(*this, i);
+#ifdef _WIN32
+    if (events != nullptr)
+        for (std::uint16_t i = 0; i < waiter_slots; ++i)
+            if (HANDLE e = events[i].load(std::memory_order_relaxed); e != nullptr)
+                CloseHandle(e);
+#endif
 }
 
 // A state for a mapping of the given shape, or nullptr when memory runs out.
@@ -1110,6 +1129,11 @@ inline std::unique_ptr<state> make_state(std::string_view name, std::uint16_t fi
     s->fields.reset(new (std::nothrow) field_spec[field_count]);
     if (s->fields == nullptr)
         return nullptr;
+#ifdef _WIN32
+    s->events.reset(new (std::nothrow) std::atomic<HANDLE>[waiter_slots]());
+    if (s->events == nullptr)
+        return nullptr;
+#endif
     std::memcpy(s->name, name.data(), name.size());
     s->field_count = field_count;
     s->waiter_slots = waiter_slots;
@@ -1450,6 +1474,7 @@ SHAREDBOX_HOT result<void> handle::write(std::span<const value> values, seconds 
         count.store(count.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
     }
     unlock(*locked);
+    detail::wake_waiters(s);
     return {};
 }
 
@@ -1612,6 +1637,17 @@ inline result<std::uint16_t> handle::register_waiter() {
         detail::atomic(w.owner_pidns).store(pidns, std::memory_order_relaxed);
         detail::atomic(w.owner_start).store(start, std::memory_order_release);
         detail::owned_set(s, i);
+#ifdef _WIN32
+        HANDLE e = detail::event(s, i);
+        if (e == nullptr) {
+            detail::keep_os_error keep;
+            detail::owned_clear(s, i);
+            detail::free_slot(s, i);
+            return unexpected(status::os);
+        }
+        // Drops a wake-up meant for an earlier owner of the slot.
+        ResetEvent(e);
+#endif
         return i;
     }
     return unexpected(status::no_slot);
@@ -1629,6 +1665,104 @@ inline bool handle::waiter_held(std::uint16_t slot) const noexcept {
 
 inline std::uint32_t handle::waiters() const noexcept {
     return detail::atomic(s_->hdr->waiters).load(std::memory_order_acquire);
+}
+
+namespace detail {
+
+#ifdef _WIN32
+// The auto-reset event of waiter slot i, opened on first use and kept until the handle is destroyed.
+inline HANDLE event(const state &s, std::uint16_t slot) noexcept {
+    std::atomic<HANDLE> &cell = s.events[slot];
+    HANDLE e = cell.load(std::memory_order_acquire);
+    if (e != nullptr)
+        return e;
+    char suffix[8];
+    std::snprintf(suffix, sizeof suffix, ".w%u", static_cast<unsigned>(slot));
+    const wide_name wide = make_wide_name(s.name, suffix);
+    e = CreateEventW(nullptr, FALSE, FALSE, wide.data());
+    if (e == nullptr)
+        return nullptr;
+    HANDLE previous = nullptr;
+    if (!cell.compare_exchange_strong(previous, e, std::memory_order_acq_rel, std::memory_order_acquire)) {
+        CloseHandle(e);
+        return previous;
+    }
+    return e;
+}
+#endif
+
+SHAREDBOX_HOT void wake_waiters(const state &s) noexcept {
+    header &h = *s.hdr;
+    // seq_cst, not only release: the load of waiters below must not move before this increment or the
+    // swap of seq, or a waiter registering at the same time could be missed.
+    atomic(h.wake_word).fetch_add(1, std::memory_order_seq_cst);
+    // waiters is never below the number of claimed slots, so 0 means no one to wake.
+    if (atomic(h.waiters).load(std::memory_order_seq_cst) == 0)
+        return;
+#ifdef _WIN32
+    for (std::uint16_t i = 0; i < s.waiter_slots; ++i)
+        if (atomic(s.slots[i].owner_pid).load(std::memory_order_seq_cst) != 0)
+            if (HANDLE e = event(s, i); e != nullptr)
+                SetEvent(e);
+#else
+    syscall(SYS_futex, &h.wake_word, futex_wake, INT_MAX, nullptr, nullptr, 0);
+#endif
+}
+
+} // namespace detail
+
+inline result<wake> handle::wait(std::uint16_t slot, std::uint64_t last_generation, seconds timeout) {
+    detail::state &s = *s_;
+    if (slot >= s.waiter_slots || !detail::owned_test(s, slot) || !detail::timeout_ok(timeout, true))
+        return unexpected(status::range);
+    header &h = *s.hdr;
+    const detail::clock::time_point deadline =
+        detail::clock::now() + std::chrono::duration_cast<detail::clock::duration>(timeout);
+    for (;;) {
+        // The word is read before the generation: a write between the two changes the word, and the
+        // futex then refuses to sleep.
+        const std::uint32_t word = detail::atomic(h.wake_word).load(std::memory_order_seq_cst);
+        if (detail::atomic(h.seq).load(std::memory_order_seq_cst) >> 1 != last_generation)
+            return wake::changed;
+        std::uint32_t set = 1;
+        if (detail::atomic(s.slots[slot].interrupt)
+                .compare_exchange_strong(set, 0, std::memory_order_acq_rel, std::memory_order_relaxed))
+            return wake::interrupted;
+        const detail::clock::duration remaining = deadline - detail::clock::now();
+        if (remaining <= detail::clock::duration::zero())
+            return unexpected(status::timeout);
+#ifdef _WIN32
+        static_cast<void>(word);
+        HANDLE e = detail::event(s, slot);
+        if (e == nullptr)
+            return unexpected(status::os);
+        const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(remaining).count();
+        WaitForSingleObject(e, static_cast<DWORD>(ms) + 1);
+#else
+        const auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(remaining).count();
+        timespec ts{};
+        ts.tv_sec = static_cast<time_t>(ns / 1000000000);
+        ts.tv_nsec = static_cast<long>(ns % 1000000000);
+        syscall(SYS_futex, &h.wake_word, detail::futex_wait, word, &ts, nullptr, 0);
+#endif
+    }
+}
+
+inline result<void> handle::interrupt(std::uint16_t slot) {
+    detail::state &s = *s_;
+    if (slot >= s.waiter_slots)
+        return unexpected(status::range);
+    detail::atomic(s.slots[slot].interrupt).store(1, std::memory_order_seq_cst);
+#ifdef _WIN32
+    HANDLE e = detail::event(s, slot);
+    if (e == nullptr)
+        return unexpected(status::os);
+    SetEvent(e);
+#else
+    detail::atomic(s.hdr->wake_word).fetch_add(1, std::memory_order_seq_cst);
+    syscall(SYS_futex, &s.hdr->wake_word, detail::futex_wake, INT_MAX, nullptr, nullptr, 0);
+#endif
+    return {};
 }
 
 } // namespace sharedbox

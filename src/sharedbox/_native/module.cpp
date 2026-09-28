@@ -1,4 +1,5 @@
 #include <nanobind/nanobind.h>
+#include <nanobind/stl/optional.h>
 #include <nanobind/stl/pair.h>
 #include <nanobind/stl/string.h>
 #include <nanobind/stl/tuple.h>
@@ -254,7 +255,9 @@ NB_MODULE(_native, m) {
         .def("register_waiter", &Segment::register_waiter)
         .def("release_waiter", &Segment::release_waiter, "slot"_a)
         .def("waiter_held", &Segment::waiter_held, "slot"_a)
-        .def("wait", &Segment::wait, "last_generation"_a, "timeout"_a, nb::call_guard<nb::gil_scoped_release>())
+        .def("interrupt", &Segment::interrupt, "slot"_a)
+        .def("wait", &Segment::wait, "last_generation"_a, "timeout"_a, "slot"_a = nb::none(),
+             nb::call_guard<nb::gil_scoped_release>())
         .def("force_unlock", &Segment::force_unlock)
         .def("_hold_write_lock", &Segment::hold_write_lock)
         .def("_release_held_lock", &Segment::release_held_lock)

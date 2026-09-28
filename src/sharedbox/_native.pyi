@@ -93,10 +93,13 @@ class Segment:
     def generation(self) -> int:
         """How many writes the segment has had."""
 
-    def wait(self, last_generation: int, timeout: float) -> int:
-        """Block until the generation differs from ``last_generation`` or ``timeout`` seconds pass.
+    def wait(
+        self, last_generation: int, timeout: float, slot: int | None = None
+    ) -> int:
+        """Block until the generation differs from ``last_generation``, ``slot`` is interrupted, or ``timeout`` seconds pass.
 
-        ``timeout`` must be finite and between 0 and 86400.
+        Returns the generation. Without ``slot`` the call claims a slot for its
+        own duration. ``timeout`` must be finite and between 0 and 86400.
         """
 
     def register_waiter(self) -> int:
@@ -107,6 +110,9 @@ class Segment:
 
     def waiter_held(self, slot: int) -> bool:
         """True while ``slot`` is still this process's; false once it was freed under it."""
+
+    def interrupt(self, slot: int) -> None:
+        """End the wait in ``slot``, in any process, or the next one if none is running."""
 
     def force_unlock(self) -> None:
         """Release a write lock left behind by a process that died while writing."""

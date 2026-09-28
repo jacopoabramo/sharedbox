@@ -4,6 +4,8 @@ import queue
 import threading
 import time
 from collections.abc import Iterable
+from multiprocessing.queues import Queue
+from multiprocessing.synchronize import Event
 
 import pytest
 
@@ -160,3 +162,44 @@ def test_watch_never_yields_a_value_twice(unique_name: str) -> None:
         thread.join(10)
     assert seen
     assert seen == sorted(set(seen))
+
+
+def watch_in_child(name: str, ready: "Event", out: "Queue[int]") -> None:
+    box = Counter.attach(name)
+    values = iter(box.watch("value"))
+    ready.set()
+    out.put(next(values))
+    box.close()
+
+
+def test_close_returns_promptly_while_the_watcher_waits(unique_name: str) -> None:
+    box = Counter.create(unique_name)
+    box.events.value.connect(lambda new: None)
+    thread_name = f"sharedbox-watch-{unique_name}"
+    time.sleep(0.2)
+    start = time.monotonic()
+    box.close()
+    assert time.monotonic() - start < 1.0
+    assert not any(
+        t.name == thread_name and t.is_alive() for t in threading.enumerate()
+    )
+
+
+def test_closing_one_process_box_leaves_another_process_watch_working(
+    unique_name: str,
+) -> None:
+    context = mp.get_context("spawn")
+    ready = context.Event()
+    out: Queue[int] = context.Queue()
+    with Counter.create(unique_name) as owner:
+        child = context.Process(target=watch_in_child, args=(unique_name, ready, out))
+        child.start()
+        assert ready.wait(20)
+        watcher = Counter.attach(unique_name)
+        watcher.events.value.connect(lambda new: None)
+        time.sleep(0.2)
+        watcher.close()
+        owner.value = 3
+        assert out.get(timeout=20) == 3
+        child.join(20)
+        assert child.exitcode == 0

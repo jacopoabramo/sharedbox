@@ -3,6 +3,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -99,12 +100,15 @@ public:
     /// Claims a waiter slot for this process; free it with release_waiter.
     std::uint16_t register_waiter();
     void release_waiter(std::uint16_t slot);
+    /// Ends the wait in slot, of any process, or the next one if none is running.
+    void interrupt(std::uint16_t slot);
     /// Whether slot is still this process's; false once it was freed under it.
     bool waiter_held(std::uint16_t slot) const;
     /// Occupied waiter slots; for tests.
     std::uint32_t waiters() const;
-    /// Returns the generation once it differs from last_generation, or after timeout seconds.
-    std::uint64_t wait(std::uint64_t last_generation, double timeout) const;
+    /// Returns the generation once it differs from last_generation, the slot is interrupted, or
+    /// timeout seconds pass. Without a slot the call claims one for its own duration.
+    std::uint64_t wait(std::uint64_t last_generation, double timeout, std::optional<std::uint16_t> slot) const;
     void force_unlock();
     /// Takes the write lock and keeps it until release_held_lock; exists for tests.
     void hold_write_lock();

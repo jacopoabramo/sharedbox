@@ -1,13 +1,10 @@
 #include "segment.hpp"
 
-#include "notifier.hpp"
-
 #include <sharedbox/sharedbox.hpp>
 
 #include <algorithm>
 #include <atomic>
 #include <cerrno>
-#include <chrono>
 #include <cmath>
 #include <iterator>
 #include <limits>
@@ -21,8 +18,6 @@
 
 namespace sharedbox {
 namespace {
-
-using Clock = std::chrono::steady_clock;
 
 void check_lock_timeout(double lock_timeout) {
     if (!(std::isfinite(lock_timeout) && lock_timeout > 0 && lock_timeout <= max_timeout))
@@ -109,7 +104,6 @@ struct Segment::Impl {
     std::vector<std::string> names;
     double lock_timeout = default_lock_timeout;
     std::atomic<bool> closed{false};
-    std::unique_ptr<Notifier> notifier;
     // close() can race any other call on every build, since lock waits release the GIL and the
     // free-threaded build has none; it takes this exclusively.
     mutable std::shared_mutex lifetime;
@@ -125,8 +119,6 @@ struct Segment::Impl {
         }
         static_cast<void>(box.set_lock_timeout(seconds(lock_timeout)));
         box.set_wait_hooks(before_wait, after_wait);
-        auto *h = static_cast<header *>(box.base());
-        notifier = std::make_unique<Notifier>(name, h->wake_word, h->waiters);
     }
 
     [[noreturn]] void fail(status code) const {
@@ -177,7 +169,6 @@ struct Segment::Impl {
         if (!written && written.error() == status::range)
             check_values(fields, values);
         check(result<void>(written));
-        notifier->wake_all();
     }
 };
 
@@ -320,24 +311,20 @@ std::uint64_t Segment::generation() const {
     return impl_->box.generation();
 }
 
-std::uint64_t Segment::wait(std::uint64_t last_generation, double timeout) const {
+std::uint64_t Segment::wait(std::uint64_t last_generation, double timeout,
+                            std::optional<std::uint16_t> slot) const {
     if (!(std::isfinite(timeout) && timeout >= 0 && timeout <= max_timeout))
         throw std::invalid_argument("timeout must be finite and in [0, 86400]");
     auto guard = impl_->enter();
-    auto *h = static_cast<header *>(impl_->box.base());
-    const Clock::time_point deadline =
-        Clock::now() + std::chrono::duration_cast<Clock::duration>(seconds(timeout));
-    for (;;) {
-        // Read the word before the generation: a write landing in between changes the word, so the wait returns.
-        const std::uint32_t word = detail::atomic(h->wake_word).load(std::memory_order_seq_cst);
-        const std::uint64_t current = impl_->box.generation();
-        if (current != last_generation)
-            return current;
-        const double remaining = std::chrono::duration<double>(deadline - Clock::now()).count();
-        if (remaining <= 0)
-            return current;
-        impl_->notifier->wait(word, remaining);
-    }
+    const std::uint16_t held = slot ? *slot : impl_->check(impl_->box.register_waiter());
+    const result<wake> woken = impl_->box.wait(held, last_generation, seconds(timeout));
+    if (!slot)
+        impl_->box.release_waiter(held);
+    if (!woken && woken.error() == status::range)
+        throw std::invalid_argument("waiter slot " + std::to_string(held) + " is not held by this box");
+    if (!woken && woken.error() != status::timeout)
+        impl_->fail(woken.error());
+    return impl_->box.generation();
 }
 
 std::uint16_t Segment::register_waiter() {
@@ -348,6 +335,13 @@ std::uint16_t Segment::register_waiter() {
 void Segment::release_waiter(std::uint16_t slot) {
     auto guard = impl_->enter();
     impl_->box.release_waiter(slot);
+}
+
+void Segment::interrupt(std::uint16_t slot) {
+    auto guard = impl_->enter();
+    if (slot >= impl_->box.waiter_slots())
+        throw std::invalid_argument("waiter slot " + std::to_string(slot) + " is out of range");
+    impl_->check(impl_->box.interrupt(slot));
 }
 
 bool Segment::waiter_held(std::uint16_t slot) const {
@@ -389,7 +383,6 @@ void Segment::close() {
     if (impl_->closed.exchange(true))
         return;
     std::unique_lock guard(impl_->lifetime);
-    impl_->notifier.reset();
     impl_->box = handle();
 }
 

@@ -21,8 +21,7 @@ nanobind_add_module(_native
     NB_DOMAIN sharedbox
     src/sharedbox/_native/codec.cpp
     src/sharedbox/_native/module.cpp
-    src/sharedbox/_native/segment.cpp
-    src/sharedbox/_native/notifier.cpp)
+    src/sharedbox/_native/segment.cpp)
 target_include_directories(_native PRIVATE include)
 
 if(WIN32)
