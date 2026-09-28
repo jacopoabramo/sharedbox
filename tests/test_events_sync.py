@@ -179,7 +179,8 @@ def test_close_returns_promptly_while_the_watcher_waits(unique_name: str) -> Non
     time.sleep(0.2)
     start = time.monotonic()
     box.close()
-    assert time.monotonic() - start < 1.0
+    # Without the interrupt, close() waits out the rest of the 1 s step, about 0.8 s.
+    assert time.monotonic() - start < 0.5
     assert not any(
         t.name == thread_name and t.is_alive() for t in threading.enumerate()
     )
