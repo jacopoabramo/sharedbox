@@ -443,9 +443,12 @@ inline process_cache &cache() noexcept {
 } // namespace detail
 
 #ifndef _WIN32
-// Runs the cache's first initialisation at load time, while only one thread exists. Without this, a
-// fork while another thread is still inside that initialisation would leave the child stopped on the
-// same compiler-generated guard, which only the (now absent) initialising thread would ever clear.
+// Runs the cache's first initialisation while the executable or shared library that includes this
+// header is loaded, before its code can call the accessors. Otherwise a fork while another thread is
+// inside that initialisation would leave the child stopped on the compiler-generated guard, which
+// only the (now absent) initialising thread would clear. For an executable this is before main; a
+// library loaded with dlopen runs it inside dlopen, where other threads may already exist, so a fork
+// from one of them during that call is not covered.
 inline const bool process_cache_ready = (detail::cache(), true);
 #endif
 
