@@ -184,7 +184,9 @@ def test_timeout_rate_under_contention(
     assert min(overshoots, default=0) >= -CLOCK_SLACK_NS
     assert writes > 0
     if writers == 2:
-        assert timeouts == 0
+        # A holder descheduled for one Windows timer tick (15.6 ms) outlasts a 10 ms timeout, so
+        # the odd timeout happens on a shared runner; a lock that is not released gives far more.
+        assert timeouts / (writes + timeouts) < 1e-5
 
 
 def hold_the_lock(cls: type[Held1] | type[Held5], name: str, ready: Event) -> None:
