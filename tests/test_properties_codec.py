@@ -52,6 +52,7 @@ def box() -> Iterator[Codec]:
 @given(field=st.sampled_from(["s1", "s4", "s64", "s4096"]), value=ANY_TEXT)
 @example(field="s4", value="\ud800")
 @example(field="s4", value="\U0001f600")
+@example(field="s4096", value="a" * 4097)
 @example(field="s1", value="é")
 def test_str_round_trips_or_is_refused(box: Codec, field: str, value: str) -> None:
     before = getattr(box, field)

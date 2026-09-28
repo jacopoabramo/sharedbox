@@ -20,6 +20,17 @@ settings.register_profile("thorough", max_examples=2000, deadline=None)
 settings.load_profile("ci")
 
 
+def pytest_ignore_collect(collection_path: Path, config: pytest.Config) -> bool | None:
+    # A deselected stress module is still imported, and its box classes then outlive the
+    # extension at exit, which nanobind reports as leaked instances.
+    if (
+        collection_path.name == "stress"
+        and config.getoption("markexpr") == "not stress"
+    ):
+        return True
+    return None
+
+
 @pytest.fixture
 def unique_name() -> Iterator[str]:
     name = f"sbtest-{uuid.uuid4().hex[:16]}"
