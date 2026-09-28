@@ -74,7 +74,10 @@ int sbx_write(sbx_handle *h, const sbx_value *values, size_t n, double lock_time
     return written ? SBX_OK : static_cast<int>(written.error());
 }
 
-uint64_t sbx_schema_hash(const sbx_handle *h) { return owned(h)->schema_hash(); }
+uint64_t sbx_schema_hash(const sbx_handle *h) {
+    const sharedbox::handle *owner = owned(h);
+    return owner == nullptr ? 0 : owner->schema_hash();
+}
 
 void sbx_release(sbx_handle *h) {
     if (h != nullptr && h->release != nullptr)

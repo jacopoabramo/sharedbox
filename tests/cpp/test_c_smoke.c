@@ -36,6 +36,7 @@ int main(void) {
     ok = ok && sbx_read(&h, 1, &got, sizeof got, NULL, NULL) == SBX_E_RANGE;
     sbx_release(&h);
     ok = ok && h.release == NULL && sbx_read(&h, 0, &got, sizeof got, NULL, NULL) == SBX_E_RANGE;
+    ok = ok && sbx_schema_hash(&h) == 0 && sbx_schema_hash(NULL) == 0;
     smoke_remove();
     if (!ok) {
         fprintf(stderr, "c smoke: a check failed\n");

@@ -59,8 +59,8 @@ int sbx_read(const sbx_handle *h, uint16_t field, void *buf, size_t cap, size_t 
 /* Writes every value under one lock, so readers see all of them or none. */
 int sbx_write(sbx_handle *h, const sbx_value *values, size_t n, double lock_timeout);
 
-/* The schema hash the box was created with; compare it with the one the caller expects. h must come
- * from sbx_open or sbx_import. */
+/* The schema hash the box was created with; compare it with the one the caller expects. 0 when h was
+ * not made by sbx_open or sbx_import, or has been released. */
 uint64_t sbx_schema_hash(const sbx_handle *h);
 
 /* Releases any handle, including one from another build; h itself may then be reused or freed. */

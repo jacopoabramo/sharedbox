@@ -132,10 +132,14 @@ def test_a_c_library_keeps_the_box_after_close_and_unlink(
     box = Frame.create(unique_name, 0.5, 3)
     capsule = box.__sharedbox_box__()
     schema = Frame.__layout__.schema_hash
+    mismatched = box.__sharedbox_box__()
     other_schema = consumer.consumer_take(
-        get_pointer(box.__sharedbox_box__(), b"sharedbox_box"), schema ^ 1
+        get_pointer(mismatched, b"sharedbox_box"), schema ^ 1
     )
     assert not other_schema
+    # Only the schema check rejects a handle after sbx_import has taken it from the capsule.
+    assert handle_of(mismatched).release is None
+    del mismatched
     taken = consumer.consumer_take(get_pointer(capsule, b"sharedbox_box"), schema)
     assert taken
     assert set_name(capsule, USED_NAME) == 0

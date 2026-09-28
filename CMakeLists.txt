@@ -21,6 +21,7 @@ add_library(sharedbox_c INTERFACE)
 add_library(sharedbox::c ALIAS sharedbox_c)
 target_sources(sharedbox_c INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/include/sharedbox/sharedbox_c.cpp")
 target_link_libraries(sharedbox_c INTERFACE sharedbox::headers)
+include(cmake/sharedbox-require-cxx.cmake)
 
 if(NOT SKBUILD)
     return()
@@ -50,4 +51,4 @@ endif()
 
 install(TARGETS _native LIBRARY DESTINATION sharedbox)
 install(DIRECTORY include/ DESTINATION sharedbox/include)
-install(FILES cmake/sharedbox-config.cmake DESTINATION sharedbox/share/cmake/sharedbox)
+install(FILES cmake/sharedbox-config.cmake cmake/sharedbox-require-cxx.cmake DESTINATION sharedbox/share/cmake/sharedbox)
