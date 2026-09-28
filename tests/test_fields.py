@@ -355,13 +355,11 @@ class PlainMarkerChild(PlainMarkerBase):
 
 
 @pytest.mark.parametrize(
-    ("box", "plain"),
-    [
-        (PositionalChild, PlainPositionalChild),
-        (KwChild, PlainKwChild),
-        (MarkerChild, PlainMarkerChild),
-    ],
+    "name",
+    ["PositionalChild", "KwChild", "MarkerChild"],
     ids=["kw_only base", "kw_only child", "KW_ONLY in the base"],
 )
-def test_kw_only_is_inherited_as_in_a_dataclass(box: type, plain: type) -> None:
+def test_kw_only_is_inherited_as_in_a_dataclass(name: str) -> None:
+    # Classes held by parametrize outlive the extension at exit, which nanobind reports as leaks.
+    box, plain = globals()[name], globals()[f"Plain{name}"]
     assert str(inspect.signature(box)) == str(inspect.signature(plain))
