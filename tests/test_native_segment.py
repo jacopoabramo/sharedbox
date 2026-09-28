@@ -479,7 +479,7 @@ def test_exists_says_the_creator_is_gone(unique_name: str) -> None:
         create(unique_name)
     assert f"pid {child.pid}" in str(error.value)
     if sys.platform == "win32":
-        assert "another process still has the box open" in str(error.value)
+        assert "possibly this one) still has it open" in str(error.value)
         assert "unlink" not in str(error.value)
     else:
         assert "left over from a crash" in str(error.value)
@@ -520,7 +520,7 @@ def test_exists_says_a_name_without_a_box_may_be_left_over(unique_name: str) -> 
         with pytest.raises(SegmentExistsError, match="holds no published box") as error:
             create(unique_name)
         if sys.platform == "win32":
-            assert "another process still has it open" in str(error.value)
+            assert "possibly this one) still has it open" in str(error.value)
             assert "unlink" not in str(error.value)
         else:
             assert "crash during create" in str(error.value)

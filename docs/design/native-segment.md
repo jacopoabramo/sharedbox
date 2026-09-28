@@ -367,8 +367,8 @@ The check is used in two places:
   `Box.unlink(name)` removes it, and a name that holds no published box
   may be left over from a crash during create. On Windows a name exists
   only while some process holds a handle to it, so the message says
-  instead that another process still has it open and that it goes away
-  when that process closes it. Nothing is removed automatically: other
+  instead that a process, possibly this one, still has it open and that
+  the name is freed when every handle to it is closed. Nothing is removed automatically: other
   processes may still use a segment whose creator died.
 
 ## References

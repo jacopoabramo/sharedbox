@@ -59,8 +59,8 @@ std::string exists_message(const std::string &name, const std::vector<std::strin
 #ifdef _WIN32
         // A Windows name exists only while some process holds a handle to it, and it may name an
         // object of another kind, so there is nothing to remove.
-        return taken + "; it holds no published box, and another process still has it open; the name is "
-                       "freed when that process closes it";
+        return taken + "; it holds no published box, and a process (possibly this one) still has it open; "
+                       "the name is freed when every handle to it is closed";
 #else
         return taken + "; it holds no published box, so it may be left over from a crash during create, and " +
                unlink + " removes it";
@@ -81,8 +81,8 @@ std::string exists_message(const std::string &name, const std::vector<std::strin
         return taken + "; its creator, pid " + std::to_string(seen->creator_pid) + ", is still running";
 #ifdef _WIN32
     return taken + "; its creator, pid " + std::to_string(seen->creator_pid) +
-           ", is no longer running, but another process still has the box open; it goes away when that "
-           "process closes it";
+           ", is no longer running, but a process (possibly this one) still has it open; the name is freed "
+           "when every handle to it is closed";
 #else
     return taken + "; its creator, pid " + std::to_string(seen->creator_pid) +
            ", is no longer running, so it is probably left over from a crash, and " + unlink + " removes it";
