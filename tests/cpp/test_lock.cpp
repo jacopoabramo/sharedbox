@@ -25,17 +25,21 @@ TEST_CASE("a late unlock leaves the next writer locked") {
     auto b = handle::open(name, seconds(1.0));
     REQUIRE((a && b));
     const auto locked_a = a->lock(seconds(1.0));
-    CHECK((locked_a && b->writer_pid() == sharedbox::current_pid()));
+    REQUIRE(locked_a.has_value());
+    CHECK(b->writer_pid() == sharedbox::current_pid());
     const std::uint64_t g0 = b->generation();
     CHECK(b->force_unlock().has_value());
     CHECK(b->writer_pid() == sharedbox::current_pid());
     const std::uint64_t g1 = b->generation();
     const auto locked_b = b->lock(seconds(1.0));
-    CHECK(locked_b.has_value());
+    REQUIRE(locked_b.has_value());
     const std::uint64_t before = seq_of(*b);
     a->unlock(*locked_a);
     CHECK((seq_of(*b) == before && (seq_of(*b) & 1u) == 1));
     CHECK(b->writer_pid() == sharedbox::current_pid());
+    // b still holds the lock, so no one else can take it.
+    const auto third = a->lock(seconds(0.05));
+    CHECK((!third && third.error() == status::lock_timeout));
     const std::uint64_t g2 = b->generation();
     b->unlock(*locked_b);
     CHECK((seq_of(*b) == before + 1 && b->writer_pid() == 0));
@@ -84,7 +88,7 @@ TEST_CASE("a held lock times out") {
     auto a = handle::create(name, fields, 32, 1, 1, {});
     REQUIRE(a.has_value());
     const auto locked = a->lock(seconds(1.0));
-    CHECK(locked.has_value());
+    REQUIRE(locked.has_value());
     const std::int64_t number = 1;
     const sharedbox::value value{0, std::as_bytes(std::span(&number, 1))};
     CHECK(a->write({&value, 1}, seconds(0.05)).error() == status::lock_timeout);
