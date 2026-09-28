@@ -7,11 +7,17 @@ from collections.abc import Callable, Iterator
 from pathlib import Path
 
 import pytest
+from hypothesis import settings
 
 # A spawned child inherits this from its parent's environment, so a fixed
 # segment name built from it stays the same across a run's own processes
 # while differing from any other run's.
 TEST_RUN = os.environ.setdefault("SHAREDBOX_TEST_RUN", uuid.uuid4().hex[:8])
+
+# ci keeps the default suite fast; the stress job asks for thorough with --hypothesis-profile.
+settings.register_profile("ci", max_examples=50, deadline=None, derandomize=False)
+settings.register_profile("thorough", max_examples=2000, deadline=None)
+settings.load_profile("ci")
 
 
 @pytest.fixture

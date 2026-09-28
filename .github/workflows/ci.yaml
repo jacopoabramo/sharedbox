@@ -97,7 +97,7 @@ jobs:
         env:
           CIBW_BUILD: ${{ matrix.python }}-${{ matrix.platform_id }}
           CIBW_CONTAINER_ENGINE: "docker; create_args: --shm-size=1g"
-          CIBW_TEST_REQUIRES: pytest
+          CIBW_TEST_REQUIRES: pytest hypothesis
           CIBW_TEST_COMMAND: pytest {project}/tests
         with:
           package-dir: .
@@ -191,10 +191,11 @@ jobs:
         shell: bash
         run: |
           uv venv --python 3.12 .stress
-          uv pip install --python .stress wheelhouse/*.whl pytest
+          uv pip install --python .stress wheelhouse/*.whl pytest hypothesis
           python=.stress/bin/python
           [ -x "$python" ] || python=.stress/Scripts/python.exe
           "$python" -m pytest -m stress -q -p no:cacheprovider
+          "$python" -m pytest tests/test_properties_codec.py tests/test_properties_layout.py tests/test_properties_forged.py tests/test_properties_stateful.py -q -p no:cacheprovider --hypothesis-profile=thorough
 
       - uses: actions/upload-artifact@v4
         if: always()
