@@ -29,21 +29,20 @@ void check_lock_timeout(double lock_timeout) {
         throw std::invalid_argument("lock_timeout must be finite and in (0, 86400]");
 }
 
-void check_values(const std::vector<FieldDesc> &fields,
-                  const std::vector<std::pair<std::uint32_t, std::string>> &values) {
-    for (const auto &[index, bytes] : values) {
-        check_index(index, fields.size());
-        const FieldDesc &f = fields[index];
-        if (is_prefixed(f.kind) ? bytes.size() > f.capacity : bytes.size() != f.capacity)
-            throw std::invalid_argument("value for field " + std::to_string(index) + " is " +
-                                        std::to_string(bytes.size()) + " bytes; the field holds " +
+void check_values(const std::vector<FieldDesc> &fields, std::span<const value> values) {
+    for (const value &v : values) {
+        check_index(v.field, fields.size());
+        const FieldDesc &f = fields[v.field];
+        if (is_prefixed(f.kind) ? v.bytes.size() > f.capacity : v.bytes.size() != f.capacity)
+            throw std::invalid_argument("value for field " + std::to_string(v.field) + " is " +
+                                        std::to_string(v.bytes.size()) + " bytes; the field holds " +
                                         std::to_string(f.capacity));
     }
 }
 
 field_spec to_spec(const FieldDesc &f) { return {f.offset, f.capacity, static_cast<std::uint8_t>(f.kind)}; }
 
-std::span<const std::byte> bytes_of(const std::string &s) { return std::as_bytes(std::span(s.data(), s.size())); }
+std::span<const std::byte> bytes_of(std::string_view s) { return std::as_bytes(std::span(s.data(), s.size())); }
 
 WaitHook before_wait = []() -> void * { return nullptr; };
 ResumeHook after_wait = [](void *) {};
@@ -168,28 +167,14 @@ struct Segment::Impl {
         return fields[index];
     }
 
-    // Most values fit in the stack buffer; a longer one is read again into a buffer of its stored
-    // length, never of the field's capacity. Words rather than chars, so MSVC's /GS adds no stack
-    // cookie check to every read.
-    std::string read(std::uint32_t index, std::uint64_t *version) const {
-        field(index);
-        const auto f = static_cast<std::uint16_t>(index);
-        std::uint64_t stack[32];
-        read_value got = check(box.read(f, std::as_writable_bytes(std::span(stack))));
-        if (got.len <= sizeof stack) {
-            if (version != nullptr)
-                *version = got.version;
-            return std::string(reinterpret_cast<const char *>(stack), got.len);
-        }
-        std::string out;
-        do {
-            out.resize(got.len);
-            got = check(box.read(f, std::as_writable_bytes(std::span(out.data(), out.size()))));
-        } while (got.len > out.size());
-        out.resize(got.len);
-        if (version != nullptr)
-            *version = got.version;
-        return out;
+    // Every value's index is checked; the caller holds enter()'s guard.
+    void write(std::span<const value> values) {
+        const result<void> written = box.write(values, seconds(lock_timeout));
+        // write checks the values too; this finds which one, for the message.
+        if (!written && written.error() == status::range)
+            check_values(fields, values);
+        check(result<void>(written));
+        notifier->wake_all();
     }
 };
 
@@ -212,15 +197,18 @@ std::unique_ptr<Segment> Segment::create(const std::string &name, const std::vec
     check_names(names, fields.size());
     if (record_size > std::numeric_limits<std::uint32_t>::max())
         throw std::invalid_argument("record_size " + std::to_string(record_size) + " is too large");
-    check_values(fields, values);
+    std::vector<value> initial;
+    initial.reserve(values.size());
+    for (const auto &[index, bytes] : values) {
+        // Checked before the narrowing cast, which would otherwise turn index 65536 into field 0.
+        check_index(index, fields.size());
+        initial.push_back({static_cast<std::uint16_t>(index), bytes_of(bytes)});
+    }
+    check_values(fields, initial);
     std::vector<field_spec> table;
     table.reserve(fields.size());
     for (const auto &f : fields)
         table.push_back(to_spec(f));
-    std::vector<value> initial;
-    initial.reserve(values.size());
-    for (const auto &[index, bytes] : values)
-        initial.push_back({static_cast<std::uint16_t>(index), bytes_of(bytes)});
 
     auto impl = std::make_unique<Impl>();
     impl->name = name;
@@ -257,16 +245,21 @@ std::unique_ptr<Segment> Segment::attach(const std::string &name, const std::vec
     return std::unique_ptr<Segment>(new Segment(std::move(impl)));
 }
 
-std::string Segment::read(std::uint32_t index) const {
+void Segment::read(std::uint32_t index, FieldRead &out) const {
     auto guard = impl_->enter();
-    return impl_->read(index, nullptr);
-}
-
-std::pair<std::uint64_t, std::string> Segment::read_versioned(std::uint32_t index) const {
-    auto guard = impl_->enter();
-    std::uint64_t version = 0;
-    std::string value = impl_->read(index, &version);
-    return {version, std::move(value)};
+    out.field = &impl_->field(index);
+    const auto f = static_cast<std::uint16_t>(index);
+    read_value got = impl_->check(impl_->box.read(f, std::as_writable_bytes(std::span(out.words))));
+    if (got.len <= sizeof out.words) {
+        out.bytes = {reinterpret_cast<const char *>(out.words), got.len};
+    } else {
+        do {
+            out.large.resize(got.len);
+            got = impl_->check(impl_->box.read(f, std::as_writable_bytes(std::span(out.large))));
+        } while (got.len > out.large.size());
+        out.bytes = {out.large.data(), got.len};
+    }
+    out.version = got.version;
 }
 
 std::unique_ptr<std::byte[]> Segment::read_record() const {
@@ -302,12 +295,14 @@ void Segment::write(const std::vector<std::pair<std::uint32_t, std::string>> &va
         check_index(values[i].first, impl_->fields.size());
         converted[i] = {static_cast<std::uint16_t>(values[i].first), bytes_of(values[i].second)};
     }
-    const result<void> written = impl_->box.write({converted, values.size()}, seconds(impl_->lock_timeout));
-    // write checks the values too; this finds which one, for the message.
-    if (!written && written.error() == status::range)
-        check_values(impl_->fields, values);
-    impl_->check(result<void>(written));
-    impl_->notifier->wake_all();
+    impl_->write({converted, values.size()});
+}
+
+void Segment::write_one(std::uint32_t index, std::string_view bytes) {
+    auto guard = impl_->enter();
+    check_index(index, impl_->fields.size());
+    const value one{static_cast<std::uint16_t>(index), bytes_of(bytes)};
+    impl_->write({&one, 1});
 }
 
 std::uint64_t Segment::version(std::uint32_t index) const {

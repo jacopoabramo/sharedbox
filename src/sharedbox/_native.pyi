@@ -1,7 +1,9 @@
 from collections.abc import Sequence
-from typing import Never
+from typing import Any, Never, Self, overload
 
 from typing_extensions import disjoint_base
+
+from ._layout import FieldSpec
 
 class SegmentExistsError(FileExistsError):
     """A segment with that name already exists."""
@@ -120,3 +122,18 @@ class Segment:
     @property
     def lock_timeout(self) -> float:
         """Seconds a read or write waits for another writer's lock."""
+
+@disjoint_base
+class Field:
+    """Reads and writes one field of the box it is accessed through."""
+
+    def __init__(self, spec: FieldSpec, segment_slot: object) -> None:
+        """``segment_slot`` is ``SharedBox.__dict__["_segment"]``, the descriptor of the slot holding a box's segment."""
+
+    @property
+    def spec(self) -> FieldSpec: ...
+    @overload
+    def __get__(self, box: None, owner: type | None = None, /) -> Self: ...
+    @overload
+    def __get__(self, box: object, owner: type | None = None, /) -> Any: ...
+    def __set__(self, box: object, value: object, /) -> None: ...

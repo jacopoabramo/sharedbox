@@ -5,8 +5,11 @@
 #include <nanobind/stl/unique_ptr.h>
 #include <nanobind/stl/vector.h>
 
+#include <exception>
+#include <new>
 #include <string_view>
 #include <system_error>
+#include <utility>
 
 #include <sharedbox/sharedbox.hpp>
 
@@ -22,8 +25,6 @@ namespace {
 using Values = std::vector<std::pair<std::uint32_t, nb::object>>;
 using Encoded = std::vector<std::pair<std::uint32_t, std::string>>;
 
-nb::bytes to_bytes(const std::string &value) { return nb::bytes(value.data(), value.size()); }
-
 sharedbox::FieldKind to_kind(std::uint32_t code) {
     if (!sharedbox::kind_is_valid(code))
         throw std::invalid_argument("unknown field kind " + std::to_string(code));
@@ -36,6 +37,86 @@ nb::object decode_value(const sharedbox::FieldDesc &field, std::string_view byte
         throw nb::python_error();
     return nb::steal(value);
 }
+
+nb::object get(const Segment &s, std::uint32_t index) {
+    sharedbox::FieldRead read;
+    s.read(index, read);
+    return decode_value(*read.field, read.bytes);
+}
+
+void set_one(Segment &s, std::uint32_t index, nb::handle value) {
+    s.write_one(index, sharedbox::encode(s.field(index), s.field_name(index), value.ptr()));
+}
+
+// Both set in NB_MODULE.
+PyTypeObject *segment_type = nullptr;
+PyObject *reraise = nullptr;
+thread_local std::exception_ptr pending;
+
+// Type slots run outside nanobind's dispatch, which is what translates C++ exceptions for bound
+// functions. Rethrowing from a bound function applies the same translators, so a field raises what
+// Segment.get and Segment.set raise.
+void set_error() noexcept {
+    pending = std::current_exception();
+    Py_XDECREF(PyObject_CallNoArgs(reraise));
+}
+
+struct Field {
+    nb::object spec;
+    std::uint32_t index;
+    // SharedBox's _segment slot, and the function that reads it from a box.
+    nb::object segment_slot;
+    descrgetfunc read_slot;
+};
+
+// A new reference to the Segment in box's _segment slot, or nullptr with an exception set: the
+// AttributeError of an empty slot, as a Python descriptor reading box._segment would raise.
+PyObject *segment_of(const Field &f, PyObject *box) {
+    PyObject *segment = f.read_slot(f.segment_slot.ptr(), box, reinterpret_cast<PyObject *>(Py_TYPE(box)));
+    if (segment != nullptr && Py_TYPE(segment) != segment_type) {
+        Py_DECREF(segment);
+        PyErr_SetString(PyExc_TypeError, "_segment does not hold a Segment");
+        return nullptr;
+    }
+    return segment;
+}
+
+PyObject *field_get(PyObject *self, PyObject *box, PyObject *) noexcept {
+    if (box == nullptr || box == Py_None)
+        return Py_NewRef(self);
+    const Field &f = *nb::inst_ptr<Field>(self);
+    const nb::object segment = nb::steal(segment_of(f, box));
+    if (!segment.is_valid())
+        return nullptr;
+    try {
+        return get(*nb::inst_ptr<Segment>(segment), f.index).release().ptr();
+    } catch (...) {
+        set_error();
+        return nullptr;
+    }
+}
+
+int field_set(PyObject *self, PyObject *box, PyObject *value) noexcept {
+    if (value == nullptr) {
+        PyErr_SetString(PyExc_AttributeError, "a SharedBox field cannot be deleted");
+        return -1;
+    }
+    const Field &f = *nb::inst_ptr<Field>(self);
+    const nb::object segment = nb::steal(segment_of(f, box));
+    if (!segment.is_valid())
+        return -1;
+    try {
+        set_one(*nb::inst_ptr<Segment>(segment), f.index, value);
+        return 0;
+    } catch (...) {
+        set_error();
+        return -1;
+    }
+}
+
+PyType_Slot field_slots[] = {{Py_tp_descr_get, reinterpret_cast<void *>(field_get)},
+                             {Py_tp_descr_set, reinterpret_cast<void *>(field_set)},
+                             {0, nullptr}};
 
 } // namespace
 
@@ -95,16 +176,13 @@ NB_MODULE(_native, m) {
             },
             "name"_a, "fields"_a, "names"_a, "record_size"_a, "schema_hash"_a, "lock_timeout"_a, "values"_a)
         .def_static("attach", &Segment::attach, "name"_a, "names"_a, "schema_hash"_a, "lock_timeout"_a)
-        .def(
-            "get",
-            [](const Segment &s, std::uint32_t index) { return decode_value(s.field(index), s.read(index)); },
-            "field"_a)
+        .def("get", &get, "field"_a)
         .def(
             "get_versioned",
             [](const Segment &s, std::uint32_t index) {
-                const sharedbox::FieldDesc &f = s.field(index);
-                auto [version, bytes] = s.read_versioned(index);
-                return nb::make_tuple(version, decode_value(f, bytes));
+                sharedbox::FieldRead read;
+                s.read(index, read);
+                return nb::make_tuple(read.version, decode_value(*read.field, read.bytes));
             },
             "field"_a)
         .def("get_all",
@@ -127,7 +205,13 @@ NB_MODULE(_native, m) {
             },
             "values"_a)
         .def(
-            "_read", [](const Segment &s, std::uint32_t field) { return to_bytes(s.read(field)); }, "field"_a)
+            "_read",
+            [](const Segment &s, std::uint32_t index) {
+                sharedbox::FieldRead read;
+                s.read(index, read);
+                return nb::bytes(read.bytes.data(), read.bytes.size());
+            },
+            "field"_a)
         .def("_read_all",
              [](const Segment &s) -> nb::typed<nb::list, nb::bytes> {
                  const auto record = s.read_record();
@@ -163,4 +247,21 @@ NB_MODULE(_native, m) {
         .def_prop_ro("closed", &Segment::closed)
         .def_prop_ro("name", &Segment::name)
         .def_prop_ro("lock_timeout", &Segment::lock_timeout);
+
+    segment_type = reinterpret_cast<PyTypeObject *>(nb::type<Segment>().ptr());
+    reraise = nb::cpp_function([] { std::rethrow_exception(std::exchange(pending, nullptr)); }).release().ptr();
+
+    nb::class_<Field>(m, "Field", nb::type_slots(field_slots))
+        .def(
+            "__init__",
+            [](Field *self, nb::object spec, nb::object segment_slot) {
+                auto read_slot =
+                    reinterpret_cast<descrgetfunc>(PyType_GetSlot(Py_TYPE(segment_slot.ptr()), Py_tp_descr_get));
+                if (read_slot == nullptr)
+                    throw nb::type_error("segment_slot must be a descriptor");
+                const auto index = nb::cast<std::uint32_t>(spec.attr("index"));
+                new (self) Field{std::move(spec), index, std::move(segment_slot), read_slot};
+            },
+            "spec"_a, "segment_slot"_a)
+        .def_ro("spec", &Field::spec);
 }

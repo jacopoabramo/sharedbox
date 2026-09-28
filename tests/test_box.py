@@ -16,6 +16,7 @@ import pytest
 from sharedbox import (
     BoxClosedError,
     Capacity,
+    LockTimeoutError,
     SchemaMismatchError,
     SegmentExistsError,
     SegmentNotFoundError,
@@ -438,3 +439,63 @@ def test_field_of_the_largest_capacity(unique_name: str) -> None:
         largest.attach(unique_name) as other,
     ):
         assert other.data == value  # type: ignore[attr-defined] # data is a field added dynamically, above
+
+
+class Chunk(SharedBox):
+    data: Annotated[bytes, Capacity(4096)] = b""
+
+
+class Quick(SharedBox, lock_timeout=0.2):
+    value: int = 0
+
+
+@pytest.mark.parametrize("size", [0, 255, 256, 257, 4096])
+def test_values_either_side_of_the_read_buffer(unique_name: str, size: int) -> None:
+    value = (bytes(range(256)) * 16)[:size]
+    with Chunk.create(unique_name) as box, Chunk.attach(unique_name) as other:
+        box.data = value
+        assert other.data == value
+        assert other._segment.get_versioned(0) == (1, value)
+        assert other._segment._read(0) == value
+
+
+def test_field_errors_match_the_segment(unique_name: str) -> None:
+    box = Point.create(unique_name)
+    with pytest.raises(TypeError, match=r"Point\.x expects float, got str"):
+        box.x = "1"  # type: ignore[assignment]
+    with pytest.raises(AttributeError):
+        del box.x
+    assert box.x == 0.0
+    box.close()
+    with pytest.raises(BoxClosedError):
+        box.x = 1.0
+
+
+def test_a_held_lock_times_out_field_reads_and_writes(unique_name: str) -> None:
+    with Quick.create(unique_name) as box, Quick.attach(unique_name) as other:
+        box._segment._hold_write_lock()
+        with pytest.raises(LockTimeoutError, match=rf"locked by pid {os.getpid()}\b"):
+            _ = other.value
+        with pytest.raises(LockTimeoutError):
+            other.value = 1
+        box._segment._release_held_lock()
+        other.value = 2
+        assert box.value == 2
+
+
+def test_a_box_without_a_segment_raises_attribute_error() -> None:
+    box = Point.__new__(Point)
+    with pytest.raises(AttributeError, match="_segment"):
+        _ = box.x
+    with pytest.raises(AttributeError, match="_segment"):
+        box.x = 1.0
+
+
+def test_a_subclass_with_a_dict_still_writes_to_the_box(unique_name: str) -> None:
+    class Loose(Point):
+        __slots__ = ("__dict__",)
+
+    with Loose.create(unique_name) as box, Loose.attach(unique_name) as other:
+        box.note = "local"  # type: ignore[attr-defined] # Loose has a __dict__
+        box.x = 2.0
+        assert (other.x, box.note) == (2.0, "local")  # type: ignore[attr-defined] # as above

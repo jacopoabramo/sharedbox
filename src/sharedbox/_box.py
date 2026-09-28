@@ -12,7 +12,7 @@ from psygnal import SignalGroup
 
 from ._events import FieldWatch, Watcher, events_class
 from ._layout import FieldSpec, Layout, build_layout, class_identity
-from ._native import SchemaMismatchError, Segment
+from ._native import Field, SchemaMismatchError, Segment
 
 NAME = re.compile(r"[A-Za-z0-9_.-]{1,128}")
 RESERVED = frozenset(
@@ -98,23 +98,6 @@ class Unlink:
         )
 
 
-class Field:
-    """Reads and writes one field of the box it is accessed through."""
-
-    __slots__ = ("spec",)
-
-    def __init__(self, spec: FieldSpec) -> None:
-        self.spec = spec
-
-    def __get__(self, box: SharedBox | None, owner: type | None = None) -> Any:
-        if box is None:
-            return self
-        return box._segment.get(self.spec.index)
-
-    def __set__(self, box: SharedBox, value: Any) -> None:
-        box._segment.set([(self.spec.index, value)])
-
-
 class SharedBoxMeta(type):
     """Give every ``SharedBox`` subclass an empty ``__slots__``, so its instances have no ``__dict__``."""
 
@@ -165,12 +148,13 @@ class SharedBox(metaclass=SharedBoxMeta):
                 f"{cls.__qualname__}: field name(s) {', '.join(clashes)} clash with SharedBox methods"
             )
         defaults = dict(cls.__sharedbox_defaults__)
+        segment_slot = SharedBox.__dict__["_segment"]
         for spec in layout.fields:
             value = cls.__dict__.get(spec.name, MISSING)
             if value is not MISSING and not isinstance(value, Field):
                 spec.check(value)
                 defaults[spec.name] = value
-            setattr(cls, spec.name, Field(spec))
+            setattr(cls, spec.name, Field(spec, segment_slot))
         for field_name, value in defaults.items():
             layout.by_name[field_name].check(value)
         seen_default = False

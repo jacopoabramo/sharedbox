@@ -51,6 +51,21 @@ using ResumeHook = void (*)(void *);
 /// Called around a wait for another writer's lock; module.cpp releases the GIL there.
 void set_wait_hooks(WaitHook before, ResumeHook after);
 
+/// One field as Segment::read found it. bytes points into this object, so it cannot be copied.
+struct FieldRead {
+    FieldRead() = default;
+    FieldRead(const FieldRead &) = delete;
+    FieldRead &operator=(const FieldRead &) = delete;
+
+    const FieldDesc *field = nullptr;
+    std::uint64_t version = 0;
+    std::string_view bytes;
+    // Most values fit in words; a longer one is read again into large, at its stored length, never at
+    // the field's capacity. Words rather than chars, so MSVC's /GS adds no stack cookie check to every read.
+    std::uint64_t words[32];
+    std::string large;
+};
+
 /// A named shared-memory segment holding one fixed-layout record.
 class Segment {
 public:
@@ -65,15 +80,16 @@ public:
     Segment(const Segment &) = delete;
     Segment &operator=(const Segment &) = delete;
 
-    std::string read(std::uint32_t field) const;
-    /// The field's version and bytes, read together.
-    std::pair<std::uint64_t, std::string> read_versioned(std::uint32_t field) const;
+    /// Reads the field's bytes and version, from one moment, into out.
+    void read(std::uint32_t field, FieldRead &out) const;
     /// A copy of the whole record, every field from one moment; payload() finds a field in it.
     std::unique_ptr<std::byte[]> read_record() const;
     /// The stored bytes of field inside a copy made by read_record.
     std::string_view payload(std::uint32_t field, const std::byte *record) const;
     std::uint32_t field_count() const;
     void write(const std::vector<std::pair<std::uint32_t, std::string>> &values);
+    /// write() of a single value, without building a vector.
+    void write_one(std::uint32_t field, std::string_view bytes);
     std::uint64_t version(std::uint32_t field) const;
     std::uint64_t generation() const;
     /// Returns the generation once it differs from last_generation, or after timeout seconds.
