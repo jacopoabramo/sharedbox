@@ -7,7 +7,7 @@
 #include <windows.h>
 #else
 #include <ctime>
-#include <linux/futex.h>
+#include <sharedbox/sharedbox.hpp>
 #include <sys/syscall.h>
 #include <unistd.h>
 #endif
@@ -56,7 +56,7 @@ void Notifier::wake_all() {
     word_.fetch_add(1, std::memory_order_seq_cst);
     if (waiters_.load(std::memory_order_seq_cst) == 0)
         return;
-    syscall(SYS_futex, raw_word_, FUTEX_WAKE, INT_MAX, nullptr, nullptr, 0);
+    syscall(SYS_futex, raw_word_, detail::futex_wake, INT_MAX, nullptr, nullptr, 0);
 }
 
 void Notifier::wait(std::uint32_t expected, double timeout) {
@@ -68,7 +68,7 @@ void Notifier::wait(std::uint32_t expected, double timeout) {
     // A waiter killed inside FUTEX_WAIT leaks one count; that only makes wake_all() always
     // call FUTEX_WAKE again and never loses a wake-up.
     waiters_.fetch_add(1, std::memory_order_seq_cst);
-    syscall(SYS_futex, raw_word_, FUTEX_WAIT, expected, &ts, nullptr, 0);
+    syscall(SYS_futex, raw_word_, detail::futex_wait, expected, &ts, nullptr, 0);
     waiters_.fetch_sub(1, std::memory_order_seq_cst);
 }
 

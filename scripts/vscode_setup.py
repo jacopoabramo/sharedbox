@@ -1,7 +1,6 @@
 """Point VS Code's C/C++ extension at the headers this checkout builds against."""
 
 import json
-import platform
 import sys
 import sysconfig
 from pathlib import Path
@@ -26,17 +25,7 @@ def wheel_tag() -> str:
     return f"{abi}-{sysconfig.get_platform().replace('-', '_').replace('.', '_')}"
 
 
-def vcpkg_triplet() -> str:
-    arch = {"amd64": "x64", "x86_64": "x64", "arm64": "arm64", "aarch64": "arm64"}[
-        platform.machine().lower()
-    ]
-    return f"{arch}-windows" if sys.platform == "win32" else f"{arch}-linux"
-
-
 def include_paths() -> list[str]:
-    vcpkg = (
-        ROOT / "build" / wheel_tag() / "vcpkg_installed" / vcpkg_triplet() / "include"
-    )
     nanobind_root = Path(nanobind.include_dir()).parent
     paths = [
         ROOT / "include",
@@ -46,14 +35,13 @@ def include_paths() -> list[str]:
         nanobind_root / "ext" / "robin_map" / "include",
         # doctest, fetched by the C++ tests' CMake configure into build-cpp.
         ROOT / "build-cpp" / "_deps" / "doctest-src",
-        vcpkg,
     ]
     return [path.as_posix() for path in paths if path.is_dir()]
 
 
 def defines() -> list[str]:
     names = (
-        ["BOOST_ALL_NO_LIB", "WIN32_LEAN_AND_MEAN", "NOMINMAX", "_WIN32_WINNT=0x0A00"]
+        ["WIN32_LEAN_AND_MEAN", "NOMINMAX", "_WIN32_WINNT=0x0A00"]
         if sys.platform == "win32"
         else []
     )
