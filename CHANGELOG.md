@@ -77,6 +77,9 @@ class Frame(SharedBox, identity="camera/frame/1", max_waiters=16):
 - `SharedBox`: an error about a field names the field as `Class.field`.
 - `SharedBox`: a read or write that waits for another writer's lock lets
   other threads run.
+- `SharedBox.update()`: takes about half the time; field names are checked
+  only when one is unknown.
+- `SharedBox.snapshot()`: builds its dict in the native module.
 
 ### Fixed
 
