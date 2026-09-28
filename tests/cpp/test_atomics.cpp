@@ -1,8 +1,13 @@
 // The atomic operations the protocols use, on the header's own fields, under contention. Each test
 // fails if a field is reached through something other than a lock-free atomic of its full width, or
 // with a weaker ordering than the protocol names.
+// Defined here so the header must leave it defined.
+#define NOMINMAX
 #include <doctest/doctest.h>
 #include <sharedbox/sharedbox.hpp>
+#ifndef NOMINMAX
+#error "sharedbox.hpp removed a NOMINMAX it did not define"
+#endif
 
 #include <array>
 #include <atomic>

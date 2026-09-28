@@ -53,6 +53,10 @@ so the project must enable the CXX language as well as C; configure stops
 with a message if it does not. On Linux both targets link `rt` and
 `Threads::Threads`.
 
+On Windows `sharedbox.hpp` includes `windows.h` and `bcrypt.h`. Unless you
+defined them already, it defines `NOMINMAX` and `WIN32_LEAN_AND_MEAN`
+before that include and removes them at its end.
+
 ### C++
 
 Call `__sharedbox_box__`, take the handle out of the capsule with

@@ -25,6 +25,11 @@ static_assert(std::is_same_v<result<int>, std::expected<int, status>>);
 // windows.h defines min and max as macros unless NOMINMAX is set first, which breaks this line.
 static_assert(std::max(1, 2) == 2);
 
+// The header removes the macros it defined, so they do not reach code that includes it.
+#if defined(SHAREDBOX_HOT) || (defined(_WIN32) && (defined(NOMINMAX) || defined(WIN32_LEAN_AND_MEAN)))
+#error "sharedbox.hpp left one of its own macros defined"
+#endif
+
 // A value that converts to T only explicitly gives an explicit constructor, as std::expected does.
 struct only_explicit {
     explicit only_explicit(int) {}

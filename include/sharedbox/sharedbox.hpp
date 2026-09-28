@@ -32,11 +32,14 @@
 #endif
 
 #ifdef _WIN32
+// Defined only for windows.h, and removed again at the end of this header.
 #ifndef NOMINMAX
 #define NOMINMAX
+#define SHAREDBOX_DEFINED_NOMINMAX
 #endif
 #ifndef WIN32_LEAN_AND_MEAN
 #define WIN32_LEAN_AND_MEAN
+#define SHAREDBOX_DEFINED_WIN32_LEAN_AND_MEAN
 #endif
 #include <windows.h>
 
@@ -625,7 +628,8 @@ public:
             std::this_thread::yield();
         } else {
             std::this_thread::sleep_for(sleep_);
-            sleep_ = std::min(sleep_ * 2, std::chrono::microseconds(1000));
+            // The parentheses stop a min macro, from windows.h included earlier without NOMINMAX.
+            sleep_ = (std::min)(sleep_ * 2, std::chrono::microseconds(1000));
         }
     }
 
@@ -1890,5 +1894,15 @@ inline sbx_handle *handle::to_capsule() && {
 }
 
 } // namespace sharedbox
+
+#undef SHAREDBOX_HOT
+#ifdef SHAREDBOX_DEFINED_NOMINMAX
+#undef NOMINMAX
+#undef SHAREDBOX_DEFINED_NOMINMAX
+#endif
+#ifdef SHAREDBOX_DEFINED_WIN32_LEAN_AND_MEAN
+#undef WIN32_LEAN_AND_MEAN
+#undef SHAREDBOX_DEFINED_WIN32_LEAN_AND_MEAN
+#endif
 
 #endif
