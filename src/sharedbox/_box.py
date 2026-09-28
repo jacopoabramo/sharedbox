@@ -1,11 +1,14 @@
 from __future__ import annotations
 
+import dataclasses
 import hashlib
+import inspect
 import os
 import re
 import sys
 import weakref
 from collections.abc import Callable
+from dataclasses import MISSING
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -20,8 +23,18 @@ from typing import (
 from psygnal import SignalGroup
 
 from ._events import FieldWatch, Watcher, events_class
-from ._layout import FieldSpec, Layout, build_layout, class_identity
-from ._native import LAYOUT_VERSION, Field, SchemaMismatchError, Segment
+from ._layout import (
+    Field,
+    FieldSpec,
+    Layout,
+    build_layout,
+    class_identity,
+    declared,
+    field,
+    own_kw_only,
+)
+from ._native import LAYOUT_VERSION, SchemaMismatchError, Segment
+from ._native import Field as FieldDescriptor
 
 if TYPE_CHECKING:
     if sys.version_info >= (3, 13):
@@ -45,7 +58,6 @@ RESERVED = frozenset(
         "attach",
     }
 )
-MISSING = object()
 MAX_WAITERS = 4096
 LIVE: weakref.WeakSet[SharedBox] = weakref.WeakSet()
 
@@ -81,6 +93,51 @@ if sys.platform != "win32":
 
 
 B = TypeVar("B", bound="SharedBox")
+
+
+class FactoryDefault:
+    """Stands for a factory default in a constructor signature, as in a dataclass's."""
+
+    def __repr__(self) -> str:
+        return "<factory>"
+
+
+FACTORY = FactoryDefault()
+REQUIRED = field()
+
+
+def has_default(param: Field) -> bool:
+    return param.default is not MISSING or param.default_factory is not MISSING
+
+
+def signature(params: list[Field]) -> inspect.Signature:
+    """The constructor signature a dataclass with these fields would have."""
+    return inspect.Signature(
+        [
+            inspect.Parameter(
+                p.name,
+                inspect.Parameter.KEYWORD_ONLY
+                if p.kw_only
+                else inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                default=p.default
+                if p.default is not MISSING
+                else FACTORY
+                if p.default_factory is not MISSING
+                else inspect.Parameter.empty,
+                annotation=p.type,
+            )
+            for p in sorted((p for p in params if p.init), key=lambda p: p.kw_only)
+        ],
+        return_annotation=None,
+    )
+
+
+def fields(class_or_box: type[SharedBox] | SharedBox) -> tuple[Field, ...]:
+    """Every field of a ``SharedBox`` subclass or box, in declaration order."""
+    cls = class_or_box if isinstance(class_or_box, type) else type(class_or_box)
+    if not issubclass(cls, SharedBox) or cls is SharedBox:
+        raise TypeError("fields() takes a SharedBox subclass or one of its boxes")
+    return cls.__sharedbox_init__
 
 
 def unpickle_box(
@@ -155,7 +212,7 @@ class SharedBoxMeta(type):
         return super().__new__(mcls, cls_name, bases, namespace, **kwargs)
 
 
-@dataclass_transform(eq_default=False)
+@dataclass_transform(eq_default=False, field_specifiers=(field,))
 class SharedBox(metaclass=SharedBoxMeta):
     """A record whose annotated fields live in a named shared-memory segment.
 
@@ -172,7 +229,9 @@ class SharedBox(metaclass=SharedBoxMeta):
     __slots__ = ("__weakref__", "_finalizer", "_segment", "_watcher")
 
     __layout__: ClassVar[Layout]
-    __sharedbox_defaults__: ClassVar[dict[str, Any]] = {}
+    __sharedbox_options__: ClassVar[dict[str, Field]] = {}
+    __sharedbox_init__: ClassVar[tuple[Field, ...]] = ()
+    __signature__: ClassVar[inspect.Signature]
     __lock_timeout__: ClassVar[float] = 5.0
     __max_waiters__: ClassVar[int] = 64
     __sharedbox_name__: ClassVar[str]
@@ -201,28 +260,65 @@ class SharedBox(metaclass=SharedBoxMeta):
             raise TypeError(
                 f"{cls.__qualname__}: field name(s) {', '.join(clashes)} clash with SharedBox methods"
             )
-        defaults = dict(cls.__sharedbox_defaults__)
+        found = declared(cls)
+        known = {attr for attr, _, _ in found}
+        stray = sorted(
+            attr
+            for attr, value in cls.__dict__.items()
+            if isinstance(value, Field) and attr not in known
+        )
+        if stray:
+            raise TypeError(
+                f"{cls.__qualname__}: field() is used for {', '.join(stray)}, which are not fields"
+            )
+        options = dict(cls.__sharedbox_options__)
+        own = own_kw_only(cls, kw_only)
+        inherited: dict[str, bool] = {}
+        for base in reversed(cls.__mro__[1:]):
+            inherited.update(
+                (p.name, p.kw_only) for p in base.__dict__.get("__sharedbox_init__", ())
+            )
         segment_slot = SharedBox.__dict__["_segment"]
-        for spec in layout.fields:
-            value = cls.__dict__.get(spec.name, MISSING)
-            if value is not MISSING and not isinstance(value, Field):
-                spec.check(value)
-                defaults[spec.name] = value
-            setattr(cls, spec.name, Field(spec, segment_slot))
-        for field_name, value in defaults.items():
-            layout.by_name[field_name].check(value)
+        params: list[Field] = []
+        for attr, hint, _ in found:
+            value = cls.__dict__.get(attr, MISSING)
+            if isinstance(value, Field):
+                options[attr] = value
+            elif value is not MISSING and not isinstance(value, FieldDescriptor):
+                options[attr] = field(default=value)
+            given = options.get(attr, REQUIRED)
+            if attr not in own:
+                attr_kw_only = inherited.get(attr, False)
+            elif given.kw_only is MISSING:
+                attr_kw_only = own[attr]
+            else:
+                attr_kw_only = given.kw_only
+            param = dataclasses.replace(
+                given, name=attr, type=hint, kw_only=attr_kw_only
+            )
+            spec = layout.by_name[attr]
+            if param.default is not MISSING:
+                spec.check(param.default)
+            if not param.init and not has_default(param):
+                raise TypeError(
+                    f"{cls.__qualname__}: field {attr!r} has init=False and no default"
+                )
+            setattr(cls, attr, FieldDescriptor(spec, segment_slot))
+            params.append(param)
         seen_default = False
-        for spec in layout.fields:
-            if spec.kw_only:
+        for param in params:
+            if param.kw_only or not param.init:
                 continue
-            if spec.name in defaults:
+            if has_default(param):
                 seen_default = True
             elif seen_default:
                 raise TypeError(
-                    f"{cls.__qualname__}: field {spec.name!r} without a default follows a field with one"
+                    f"{cls.__qualname__}: field {param.name!r} without a default follows a field with one"
                 )
         cls.__layout__ = layout
-        cls.__sharedbox_defaults__ = defaults
+        cls.__sharedbox_options__ = options
+        cls.__sharedbox_init__ = tuple(params)
+        cls.__signature__ = signature(params)
         cls.__sharedbox_name__ = (
             hashlib.sha256(cls.__sharedbox_identity__.encode()).hexdigest()[:16]
             if name is None
@@ -291,25 +387,41 @@ class SharedBox(metaclass=SharedBoxMeta):
     def _open(self, name: str, args: tuple[Any, ...], values: dict[str, Any]) -> None:
         cls = type(self)
         layout = cls._layout()
-        slots = [spec for spec in layout.fields if not spec.kw_only]
+        params = [p for p in cls.__sharedbox_init__ if p.init]
+        slots = [p.name for p in params if not p.kw_only]
         if len(args) > len(slots):
             raise TypeError(
                 f"{cls.__qualname__} takes {len(slots)} positional values, got {len(args)}"
             )
-        positional = {spec.name: arg for spec, arg in zip(slots, args)}
+        positional = dict(zip(slots, args))
         twice = sorted(positional.keys() & values.keys())
         if twice:
             raise TypeError(
                 f"{cls.__qualname__} got more than one value for {', '.join(twice)}"
             )
         values = {**positional, **values}
-        self._check_names(values)
-        merged = {**cls.__sharedbox_defaults__, **values}
-        missing = [spec.name for spec in layout.fields if spec.name not in merged]
+        unknown = values.keys() - {p.name for p in params}
+        no_init = sorted(unknown & layout.by_name.keys())
+        if no_init:
+            raise TypeError(
+                f"{cls.__qualname__}: field(s) {', '.join(no_init)} have init=False"
+            )
+        if unknown:
+            raise TypeError(
+                f"{cls.__qualname__} has no field(s) {', '.join(sorted(unknown))}"
+            )
+        missing = [
+            p.name for p in params if p.name not in values and not has_default(p)
+        ]
         if missing:
             raise TypeError(
                 f"{cls.__qualname__} is missing value(s) for {', '.join(missing)}"
             )
+        for p in cls.__sharedbox_init__:
+            if p.name not in values:
+                values[p.name] = (
+                    p.default if p.default_factory is MISSING else p.default_factory()
+                )
         self._segment = Segment.create(
             name,
             [spec.native for spec in layout.fields],
@@ -317,7 +429,7 @@ class SharedBox(metaclass=SharedBoxMeta):
             layout.record_size,
             layout.schema_hash,
             cls.__lock_timeout__,
-            [(spec.index, merged[spec.name]) for spec in layout.fields],
+            [(spec.index, values[spec.name]) for spec in layout.fields],
             cls.__max_waiters__,
         )
         self._watcher = Watcher(self._segment)
@@ -448,7 +560,10 @@ class SharedBox(metaclass=SharedBoxMeta):
     def __repr__(self) -> str:
         if self.closed:
             return f"<{type(self).__qualname__} {self.name!r} closed>"
-        fields = ", ".join(
-            f"{name}={value!r}" for name, value in self.snapshot().items()
+        values = self.snapshot()
+        shown = ", ".join(
+            f"{p.name}={values[p.name]!r}"
+            for p in type(self).__sharedbox_init__
+            if p.repr
         )
-        return f"{type(self).__qualname__}({fields})"
+        return f"{type(self).__qualname__}({shown})"
