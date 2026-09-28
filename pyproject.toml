@@ -51,6 +51,8 @@ version_file = "src/sharedbox/_version.py"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = ["stress: long runs that measure timing, throughput and memory; run with -m stress"]
+addopts = ["-m", "not stress"]
 
 [tool.cibuildwheel]
 build = ["cp311-*", "cp312-*", "cp314t-*"]

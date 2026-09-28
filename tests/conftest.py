@@ -1,8 +1,10 @@
 import contextlib
+import json
 import os
 import sys
 import uuid
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
+from pathlib import Path
 
 import pytest
 
@@ -19,3 +21,28 @@ def unique_name() -> Iterator[str]:
     if sys.platform.startswith("linux"):
         with contextlib.suppress(FileNotFoundError):
             os.unlink(f"/dev/shm/sharedbox.{name}")
+
+
+STRESS_OUT = Path(__file__).resolve().parent.parent / "build" / "stress"
+STRESS_TABLES: list[tuple[str, dict[str, object]]] = []
+
+
+@pytest.fixture
+def report(request: pytest.FixtureRequest) -> Callable[[dict[str, object]], None]:
+    """Writes a stress test's numbers to build/stress/<test>.json and to the run's summary."""
+
+    def write(results: dict[str, object]) -> None:
+        results = {"platform": sys.platform, **results}
+        STRESS_OUT.mkdir(parents=True, exist_ok=True)
+        path = STRESS_OUT / f"{request.node.name}.json"
+        path.write_text(json.dumps(results, indent=2), encoding="utf-8")
+        STRESS_TABLES.append((request.node.name, results))
+
+    return write
+
+
+def pytest_terminal_summary(terminalreporter: pytest.TerminalReporter) -> None:
+    for name, results in STRESS_TABLES:
+        terminalreporter.write_sep("-", name)
+        for key, value in results.items():
+            terminalreporter.write_line(f"{key:>30}  {value}")

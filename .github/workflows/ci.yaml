@@ -7,6 +7,7 @@ on:
     branches: [ main ]
   release:
     types: [ published ]
+  workflow_dispatch:
 
 jobs:
   lint:
@@ -163,6 +164,42 @@ jobs:
         # Run by path, not with -m: importing the sharedbox package loads its
         # compiled extension and psygnal, which this runner does not have installed.
         run: python src/sharedbox/benchmarks/size_diff.py sizes/this sizes/main >> "$GITHUB_STEP_SUMMARY"
+
+  stress:
+    name: Stress tests on ${{ matrix.os }}
+    if: github.event_name == 'workflow_dispatch'
+    needs: [build_wheels]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, wheel: cibw-wheels-cp312-manylinux_x86_64 }
+          - { os: windows-latest, wheel: cibw-wheels-cp312-win_amd64 }
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: astral-sh/setup-uv@v7
+
+      - uses: actions/download-artifact@v5
+        with:
+          name: ${{ matrix.wheel }}
+          path: wheelhouse
+
+      - name: Run the stress tests against the built wheel
+        shell: bash
+        run: |
+          uv venv --python 3.12 .stress
+          uv pip install --python .stress wheelhouse/*.whl pytest
+          python=$(ls .stress/bin/python .stress/Scripts/python.exe 2>/dev/null | head -n 1)
+          "$python" -m pytest -m stress -q -p no:cacheprovider
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: stress-${{ matrix.os }}
+          path: build/stress/*.json
 
   make_sdist:
     name: Make SDist
