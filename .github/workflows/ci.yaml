@@ -7,6 +7,7 @@ on:
     branches: [ main ]
   release:
     types: [ published ]
+  workflow_dispatch:
 
 jobs:
   lint:
@@ -21,6 +22,52 @@ jobs:
       - uses: j178/prek-action@4e14d07f9231acabce116ccfca13b13dd9755ece # v3.0.0
         with:
           prek-version: "0.5.3"
+
+  cpp_header:
+    name: C++ header on ${{ matrix.os }} (${{ matrix.build }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, build: Release, flags: "" }
+          - { os: windows-latest, build: Release, flags: "" }
+          # No ThreadSanitizer: the sequence lock's reader copies the record while a writer may change it, by design.
+          - os: ubuntu-latest
+            build: RelWithDebInfo
+            flags: -fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all -DSHAREDBOX_TEST_ROUNDS=20000
+    env:
+      ASAN_OPTIONS: detect_leaks=1
+      UBSAN_OPTIONS: print_stacktrace=1
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Build and run the C++ tests
+        shell: bash
+        run: |
+          cmake -S tests/cpp -B build-cpp -DCMAKE_BUILD_TYPE=${{ matrix.build }} \
+            -DCMAKE_C_FLAGS_INIT="${{ matrix.flags }}" -DCMAKE_CXX_FLAGS_INIT="${{ matrix.flags }}"
+          cmake --build build-cpp --config ${{ matrix.build }}
+          ctest --test-dir build-cpp -C ${{ matrix.build }} --output-on-failure
+
+      - uses: astral-sh/setup-uv@v7
+
+      - name: Build the extension and run the C consumer
+        if: matrix.build == 'Release'
+        shell: bash
+        env:
+          SHAREDBOX_REQUIRE_C_CONSUMER: "1"
+        run: |
+          uv sync --dev
+          uv run --no-sync pytest tests/test_capsule.py -q
+
+      - name: Create a box larger than a 16 MiB /dev/shm
+        if: runner.os == 'Linux' && matrix.build == 'Release'
+        run: |
+          docker run --rm --shm-size=16m -v "$PWD":/src -w /src ubuntu:24.04 build-cpp/test_small_shm
 
   build_wheels:
     name: Build wheel for ${{ matrix.python }}-${{ matrix.platform_id }}
@@ -50,7 +97,7 @@ jobs:
         env:
           CIBW_BUILD: ${{ matrix.python }}-${{ matrix.platform_id }}
           CIBW_CONTAINER_ENGINE: "docker; create_args: --shm-size=1g"
-          CIBW_TEST_REQUIRES: pytest
+          CIBW_TEST_REQUIRES: pytest hypothesis
           CIBW_TEST_COMMAND: pytest {project}/tests
         with:
           package-dir: .
@@ -118,6 +165,44 @@ jobs:
         # compiled extension and psygnal, which this runner does not have installed.
         run: python src/sharedbox/benchmarks/size_diff.py sizes/this sizes/main >> "$GITHUB_STEP_SUMMARY"
 
+  stress:
+    name: Stress tests on ${{ matrix.os }}
+    if: github.event_name == 'workflow_dispatch'
+    needs: [build_wheels]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, wheel: cibw-wheels-cp312-manylinux_x86_64 }
+          - { os: windows-latest, wheel: cibw-wheels-cp312-win_amd64 }
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: astral-sh/setup-uv@v7
+
+      - uses: actions/download-artifact@v5
+        with:
+          name: ${{ matrix.wheel }}
+          path: wheelhouse
+
+      - name: Run the stress tests against the built wheel
+        shell: bash
+        run: |
+          uv venv --python 3.12 .stress
+          uv pip install --python .stress wheelhouse/*.whl pytest hypothesis
+          python=.stress/bin/python
+          [ -x "$python" ] || python=.stress/Scripts/python.exe
+          "$python" -m pytest -m stress -q -p no:cacheprovider
+          "$python" -m pytest tests/test_properties_codec.py tests/test_properties_layout.py tests/test_properties_forged.py tests/test_properties_stateful.py -q -p no:cacheprovider --hypothesis-profile=thorough
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: stress-${{ matrix.os }}
+          path: build/stress/*.json
+
   make_sdist:
     name: Make SDist
     runs-on: ubuntu-latest
@@ -157,7 +242,7 @@ jobs:
 
   upload_pypi:
     name: Upload to PyPI
-    needs: [lint, build_wheels, make_sdist]
+    needs: [lint, cpp_header, build_wheels, make_sdist]
     runs-on: ubuntu-latest
     environment:
       name: pypi

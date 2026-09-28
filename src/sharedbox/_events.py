@@ -6,11 +6,11 @@ import logging
 import threading
 from collections.abc import AsyncIterator, Callable, Generator, Iterator
 from concurrent.futures import CancelledError
-from typing import TYPE_CHECKING, Any, Generic, TypeVar, cast
+from typing import TYPE_CHECKING, Any, Final, Generic, TypeVar, cast
 
 from psygnal import Signal, SignalGroup
 
-from ._native import BoxClosedError, LockTimeoutError
+from ._native import BoxClosedError, LockTimeoutError, WaiterSlotsFullError
 
 if TYPE_CHECKING:
     from ._layout import FieldSpec, Layout
@@ -18,7 +18,7 @@ if TYPE_CHECKING:
 
 T = TypeVar("T")
 PENDING, DONE, CANCELLED = "pending", "done", "cancelled"
-POLL = 0.1
+STEP: Final = 1.0
 logger = logging.getLogger("sharedbox")
 
 
@@ -194,6 +194,8 @@ class Watcher:
         "_pending",
         "_seen",
         "_segment",
+        "_slot",
+        "_slots_full",
         "_stop",
         "_thread",
     )
@@ -207,6 +209,8 @@ class Watcher:
         self._group: SignalGroup | None = None
         self._fields: tuple[FieldSpec, ...] = ()
         self._seen: dict[int, tuple[int, Any]] = {}
+        self._slot: int | None = None
+        self._slots_full = False
 
     @property
     def stopped(self) -> bool:
@@ -274,6 +278,11 @@ class Watcher:
         writes it had not seen yet.
         """
         self._stop.set()
+        slot = self._slot
+        if slot is not None:
+            # Ends the watcher's wait now rather than at its next step.
+            with contextlib.suppress(BoxClosedError):
+                self._segment.interrupt(slot)
         with self._lock:
             thread = self._thread
         if wait and thread is not None and thread is not threading.current_thread():
@@ -304,6 +313,7 @@ class Watcher:
             self._stop.set()
         self._thread = None
         self._pending = []
+        self._slot = None
 
     def _start_locked(self) -> None:
         if self._thread is None and not self._stop.is_set():
@@ -314,23 +324,51 @@ class Watcher:
             )
             self._thread.start()
 
+    def _claim(self) -> int | None:
+        """A waiter slot that still records this process, or None while every slot is taken."""
+        slot = self._slot
+        if slot is not None and self._segment.waiter_held(slot):
+            return slot
+        if slot is not None:
+            # Freed under this watcher, by mistake or by a bookkeeping bug; claim another.
+            self._segment.release_waiter(slot)
+        try:
+            self._slot = self._segment.register_waiter()
+        except WaiterSlotsFullError as error:
+            self._slot = None
+            if not self._slots_full:
+                logger.warning("%s; checking for changes once a second", error)
+            self._slots_full = True
+            return None
+        self._slots_full = False
+        return self._slot
+
     def _run(self) -> None:
         with contextlib.suppress(BoxClosedError):
-            generation = self._segment.generation()
-            timed_out = False
-            while not self._stop.is_set():
-                try:
-                    self._resolve_ready()
-                    self._emit_changes()
-                    timed_out = False
-                except LockTimeoutError as error:
-                    # A dead writer keeps the lock until force_unlock(); warn once per outage.
-                    if not timed_out:
-                        logger.warning("%s", error)
-                    timed_out = True
-                if self._stop.is_set():
-                    return
-                generation = self._segment.wait(generation, POLL)
+            try:
+                generation = self._segment.generation()
+                timed_out = False
+                while not self._stop.is_set():
+                    try:
+                        self._resolve_ready()
+                        self._emit_changes()
+                        timed_out = False
+                    except LockTimeoutError as error:
+                        # A dead writer keeps the lock until force_unlock(); warn once per outage.
+                        if not timed_out:
+                            logger.warning("%s", error)
+                        timed_out = True
+                    slot = self._claim()
+                    if self._stop.is_set():
+                        return
+                    if slot is None:
+                        self._stop.wait(STEP)
+                        continue
+                    # The step bounds how long a freed slot or a missed wake-up goes unnoticed.
+                    generation = self._segment.wait(generation, STEP, slot)
+            finally:
+                if self._slot is not None:
+                    self._segment.release_waiter(self._slot)
 
     def _resolve_ready(self) -> None:
         with self._lock:

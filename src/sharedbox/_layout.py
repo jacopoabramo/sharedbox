@@ -105,7 +105,7 @@ class Layout:
     record_size: int
     """Bytes the record needs, a multiple of 8."""
     schema_hash: int
-    """First 8 bytes of SHA-256 over the class identity and every field's name, kind and capacity."""
+    """First 8 bytes of SHA-256 over the identity and every field's name, kind and capacity, read little-endian."""
     by_name: Mapping[str, FieldSpec]
 
 
@@ -130,13 +130,16 @@ def class_identity(cls: type) -> str:
     return f"{module}.{cls.__qualname__}"
 
 
-def build_layout(cls: type, kw_only: bool = False) -> Layout:
+def build_layout(
+    cls: type, kw_only: bool = False, identity: str | None = None
+) -> Layout:
     """Lay out the public annotated fields of ``cls``, base classes first.
 
     Fields after a ``dataclasses.KW_ONLY`` annotation, or every field when
     ``kw_only`` is true, are keyword-only. Fields are packed by descending
     alignment (8-byte fields, then ``str``/``bytes``, then ``bool``), not
-    declaration order; ``Layout.fields`` keeps the declaration order.
+    declaration order; ``Layout.fields`` keeps the declaration order. The
+    schema hash covers ``identity``, by default :func:`class_identity`.
     """
     found: list[tuple[str, Kind, int, bool]] = []
     for name, hint in get_type_hints(cls, include_extras=True).items():
@@ -175,10 +178,11 @@ def build_layout(cls: type, kw_only: bool = False) -> Layout:
         )
         for i, (name, kind, capacity, field_kw_only) in enumerate(found)
     )
-    identity = "|".join(
-        [class_identity(cls), *(f"{s.name}:{s.kind}:{s.capacity}" for s in specs)]
+    text = "|".join(
+        [
+            class_identity(cls) if identity is None else identity,
+            *(f"{s.name}:{s.kind}:{s.capacity}" for s in specs),
+        ]
     )
-    schema_hash = int.from_bytes(
-        hashlib.sha256(identity.encode()).digest()[:8], "little"
-    )
+    schema_hash = int.from_bytes(hashlib.sha256(text.encode()).digest()[:8], "little")
     return Layout(specs, record_size, schema_hash, {s.name: s for s in specs})

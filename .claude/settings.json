@@ -1,0 +1,33 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git status:*)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)",
+      "Bash(git show:*)",
+      "Bash(git rev-parse:*)",
+      "Bash(git branch:*)",
+      "Bash(git merge-base:*)",
+      "Bash(git ls-files:*)",
+      "Bash(git fetch:*)",
+      "Bash(gh run list:*)",
+      "Bash(gh run view:*)",
+      "Bash(gh run watch:*)",
+      "Bash(gh pr view:*)",
+      "Bash(gh pr checks:*)",
+      "Bash(ls:*)",
+      "Bash(cat:*)",
+      "Bash(grep:*)",
+      "Bash(sed -n:*)",
+      "Bash(head:*)",
+      "Bash(tail:*)",
+      "Bash(wc:*)"
+    ],
+    "deny": [
+      "Bash(git push:*)",
+      "Bash(git reset --hard:*)",
+      "Bash(rm -rf:*)",
+      "Bash(gh pr merge:*)"
+    ]
+  }
+}

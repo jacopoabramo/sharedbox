@@ -6,13 +6,28 @@ import re
 import sys
 import weakref
 from collections.abc import Callable
-from typing import Any, ClassVar, Protocol, Self, TypeVar, dataclass_transform, overload
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    ClassVar,
+    Protocol,
+    Self,
+    TypeVar,
+    dataclass_transform,
+    overload,
+)
 
 from psygnal import SignalGroup
 
 from ._events import FieldWatch, Watcher, events_class
 from ._layout import FieldSpec, Layout, build_layout, class_identity
-from ._native import SchemaMismatchError, Segment
+from ._native import LAYOUT_VERSION, Field, SchemaMismatchError, Segment
+
+if TYPE_CHECKING:
+    if sys.version_info >= (3, 13):
+        from types import CapsuleType
+    else:
+        from typing_extensions import CapsuleType
 
 NAME = re.compile(r"[A-Za-z0-9_.-]{1,128}")
 RESERVED = frozenset(
@@ -31,6 +46,7 @@ RESERVED = frozenset(
     }
 )
 MISSING = object()
+MAX_WAITERS = 4096
 LIVE: weakref.WeakSet[SharedBox] = weakref.WeakSet()
 
 
@@ -67,14 +83,34 @@ if sys.platform != "win32":
 B = TypeVar("B", bound="SharedBox")
 
 
-def unpickle_box(cls: type[B], name: str, schema_hash: int) -> B:
-    """Attach to the box a pickle refers to, if this process's class has the same fields."""
+def unpickle_box(
+    cls: type[B], name: str, schema_hash: int, create_id: int | None = None
+) -> B:
+    """Attach to the box a pickle refers to, if this process's class has the same fields.
+
+    With ``create_id``, the box under ``name`` must also be the one that was
+    pickled, not another created under the same name since.
+    """
     if cls._layout().schema_hash != schema_hash:
         raise SchemaMismatchError(
             f"{cls.__qualname__} was pickled by a process whose {cls.__qualname__} "
             "has different fields; both processes must import the same class"
         )
-    return cls.attach(name)
+    box = cls.attach(name)
+    if create_id is not None and box._segment.create_id != create_id:
+        box.close()
+        raise SchemaMismatchError(
+            f"{cls.__qualname__} was pickled from a different box named {name!r}"
+        )
+    return box
+
+
+class SupportsSharedBox(Protocol):
+    """An object that hands its shared-memory segment to other extensions, as :class:`SharedBox` does."""
+
+    def __sharedbox_box__(
+        self, max_version: tuple[int, int] | None = None
+    ) -> CapsuleType: ...
 
 
 class _ClassUnlink(Protocol):
@@ -98,23 +134,6 @@ class Unlink:
         )
 
 
-class Field:
-    """Reads and writes one field of the box it is accessed through."""
-
-    __slots__ = ("spec",)
-
-    def __init__(self, spec: FieldSpec) -> None:
-        self.spec = spec
-
-    def __get__(self, box: SharedBox | None, owner: type | None = None) -> Any:
-        if box is None:
-            return self
-        return box._segment.get(self.spec.index)
-
-    def __set__(self, box: SharedBox, value: Any) -> None:
-        box._segment.set([(self.spec.index, value)])
-
-
 class SharedBoxMeta(type):
     """Give every ``SharedBox`` subclass an empty ``__slots__``, so its instances have no ``__dict__``."""
 
@@ -125,7 +144,14 @@ class SharedBoxMeta(type):
         namespace: dict[str, Any],
         **kwargs: Any,
     ) -> SharedBoxMeta:
-        namespace.setdefault("__slots__", ())
+        slots = namespace.setdefault("__slots__", ())
+        # A second _segment slot would hide the one every Field reads.
+        if any(isinstance(base, SharedBoxMeta) for base in bases) and "_segment" in (
+            (slots,) if isinstance(slots, str) else slots
+        ):
+            raise TypeError(
+                f"{cls_name}: __slots__ cannot name _segment, which SharedBox already has"
+            )
         return super().__new__(mcls, cls_name, bases, namespace, **kwargs)
 
 
@@ -137,8 +163,10 @@ class SharedBox(metaclass=SharedBoxMeta):
     ``Annotated[str, Capacity(n)]`` or ``Annotated[bytes, Capacity(n)]``.
     Calling the subclass with the field values, as with a dataclass, creates
     the segment; :meth:`attach` opens it from any thread or process. The
-    segment is named after the class unless the ``name`` class keyword says
-    otherwise; :meth:`create` makes further boxes under explicit names.
+    segment is named after the class's identity (the ``identity`` class
+    keyword, by default ``module.qualname``) unless the ``name`` class
+    keyword says otherwise; :meth:`create` makes further boxes under
+    explicit names.
     """
 
     __slots__ = ("__weakref__", "_finalizer", "_segment", "_watcher")
@@ -146,7 +174,9 @@ class SharedBox(metaclass=SharedBoxMeta):
     __layout__: ClassVar[Layout]
     __sharedbox_defaults__: ClassVar[dict[str, Any]] = {}
     __lock_timeout__: ClassVar[float] = 5.0
+    __max_waiters__: ClassVar[int] = 64
     __sharedbox_name__: ClassVar[str]
+    __sharedbox_identity__: ClassVar[str]
     __events_class__: ClassVar[type[SignalGroup]]
 
     def __init_subclass__(
@@ -155,22 +185,30 @@ class SharedBox(metaclass=SharedBoxMeta):
         name: str | None = None,
         kw_only: bool = False,
         lock_timeout: float | None = None,
+        max_waiters: int | None = None,
+        identity: str | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init_subclass__(**kwargs)
-        layout = build_layout(cls, kw_only)
+        if identity is not None and (not isinstance(identity, str) or not identity):
+            raise TypeError(f"{cls.__qualname__}: identity must be a non-empty string")
+        cls.__sharedbox_identity__ = (
+            class_identity(cls) if identity is None else identity
+        )
+        layout = build_layout(cls, kw_only, cls.__sharedbox_identity__)
         clashes = sorted(RESERVED.intersection(layout.by_name))
         if clashes:
             raise TypeError(
                 f"{cls.__qualname__}: field name(s) {', '.join(clashes)} clash with SharedBox methods"
             )
         defaults = dict(cls.__sharedbox_defaults__)
+        segment_slot = SharedBox.__dict__["_segment"]
         for spec in layout.fields:
             value = cls.__dict__.get(spec.name, MISSING)
             if value is not MISSING and not isinstance(value, Field):
                 spec.check(value)
                 defaults[spec.name] = value
-            setattr(cls, spec.name, Field(spec))
+            setattr(cls, spec.name, Field(spec, segment_slot))
         for field_name, value in defaults.items():
             layout.by_name[field_name].check(value)
         seen_default = False
@@ -185,14 +223,25 @@ class SharedBox(metaclass=SharedBoxMeta):
                 )
         cls.__layout__ = layout
         cls.__sharedbox_defaults__ = defaults
-        digest = hashlib.sha256(class_identity(cls).encode()).hexdigest()[:16]
         cls.__sharedbox_name__ = (
-            f"sharedbox-{digest}" if name is None else check_name(name)
+            hashlib.sha256(cls.__sharedbox_identity__.encode()).hexdigest()[:16]
+            if name is None
+            else check_name(name)
         )
         if lock_timeout is not None:
             if not (0 < lock_timeout <= 86400):
                 raise ValueError("lock_timeout must be finite and in (0, 86400]")
             cls.__lock_timeout__ = lock_timeout
+        if max_waiters is not None:
+            if (
+                isinstance(max_waiters, bool)
+                or not isinstance(max_waiters, int)
+                or not 1 <= max_waiters <= MAX_WAITERS
+            ):
+                raise ValueError(
+                    f"max_waiters must be an int between 1 and {MAX_WAITERS}"
+                )
+            cls.__max_waiters__ = max_waiters
         cls.__events_class__ = events_class(cls, layout)
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -269,6 +318,7 @@ class SharedBox(metaclass=SharedBoxMeta):
             layout.schema_hash,
             cls.__lock_timeout__,
             [(spec.index, merged[spec.name]) for spec in layout.fields],
+            cls.__max_waiters__,
         )
         self._watcher = Watcher(self._segment)
         self._track()
@@ -350,6 +400,27 @@ class SharedBox(metaclass=SharedBoxMeta):
 
     unlink = Unlink()
 
+    def __sharedbox_box__(
+        self, max_version: tuple[int, int] | None = None, **kwargs: Any
+    ) -> CapsuleType:
+        """A ``"sharedbox_box"`` capsule holding a handle with its own mapping of the segment.
+
+        Closing or unlinking the box does not affect the handle. A
+        ``max_version`` whose major differs from the box's layout raises
+        ``BufferError``; any other keyword raises ``NotImplementedError``.
+        """
+        if kwargs:
+            raise NotImplementedError(
+                f"__sharedbox_box__ does not support {', '.join(sorted(kwargs))}"
+            )
+        major, minor = LAYOUT_VERSION
+        if max_version is not None and max_version[0] != major:
+            raise BufferError(
+                f"box {self.name!r} has layout {major}.{minor}; "
+                f"the caller supports major version {max_version[0]}"
+            )
+        return self._segment._export()
+
     def close(self) -> None:
         """Detach from the segment; other boxes keep it. Use :meth:`unlink` to remove it."""
         if self._finalizer.detach() is not None:
@@ -361,10 +432,17 @@ class SharedBox(metaclass=SharedBoxMeta):
     def __exit__(self, *exc_info: object) -> None:
         self.close()
 
-    def __reduce__(self) -> tuple[Callable[..., SharedBox], tuple[type, str, int]]:
+    def __reduce__(
+        self,
+    ) -> tuple[Callable[..., SharedBox], tuple[type, str, int, int]]:
         return (
             unpickle_box,
-            (type(self), self.name, type(self).__layout__.schema_hash),
+            (
+                type(self),
+                self.name,
+                type(self).__layout__.schema_hash,
+                self._segment.create_id,
+            ),
         )
 
     def __repr__(self) -> str:

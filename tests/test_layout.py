@@ -111,6 +111,26 @@ def test_spawned_main_module_has_the_same_identity() -> None:
     assert build_layout(parent).schema_hash == build_layout(child).schema_hash
 
 
+def test_schema_hash_matches_the_published_vector() -> None:
+    motor = type(
+        "Motor",
+        (),
+        {
+            "__annotations__": {
+                "position": int,
+                "enabled": bool,
+                "label": Annotated[str, Capacity(32)],
+            },
+            "__module__": "__main__",
+        },
+    )
+    assert build_layout(motor).schema_hash == 0x82CE467598596A72
+    assert (
+        build_layout(motor, identity="__main__.Motor").schema_hash == 0x82CE467598596A72
+    )
+    assert build_layout(motor, identity="motor/2").schema_hash != 0x82CE467598596A72
+
+
 def test_schema_hash_tracks_layout() -> None:
     class A:
         x: int

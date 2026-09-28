@@ -3,12 +3,15 @@ import gc
 import multiprocessing as mp
 import os
 import pickle
+import re
+import subprocess
 import sys
 import threading
 import time
 import types
 from collections.abc import Iterator
 from dataclasses import KW_ONLY
+from multiprocessing.synchronize import Event
 from typing import Annotated, cast
 
 import pytest
@@ -16,11 +19,13 @@ import pytest
 from sharedbox import (
     BoxClosedError,
     Capacity,
+    LockTimeoutError,
     SchemaMismatchError,
     SegmentExistsError,
     SegmentNotFoundError,
     SharedBox,
 )
+from sharedbox._box import unpickle_box
 
 
 class Point(SharedBox):
@@ -56,6 +61,13 @@ def move_in_child(results: "mp.Queue[dict[str, object]]") -> None:
     results.put(motor.snapshot())
     motor.position = 10
     motor.close()
+
+
+def create_point_and_exit(name: str, created: Event, attached: Event) -> None:
+    box = Point.create(name)
+    created.set()
+    attached.wait(20)
+    box.close()
 
 
 class Config(SharedBox, kw_only=True):
@@ -250,6 +262,34 @@ def test_pickle_carries_the_schema(
             pickle.loads(data)
 
 
+def test_a_pickle_of_a_box_made_again_is_refused(unique_name: str) -> None:
+    box = Point.create(unique_name)
+    data = pickle.dumps(box)
+    box.close()
+    Point.unlink(unique_name)
+    with (
+        Point.create(unique_name),
+        pytest.raises(SchemaMismatchError, match="pickled from a different box"),
+    ):
+        pickle.loads(data)
+
+
+def test_unpickle_box_with_three_arguments_still_attaches(unique_name: str) -> None:
+    with (
+        Point.create(unique_name, y=3.0) as box,
+        unpickle_box(Point, unique_name, type(box).__layout__.schema_hash) as copy,
+    ):
+        assert copy.name == unique_name
+        assert copy.y == 3.0
+
+
+def test_pickling_a_closed_box_raises(unique_name: str) -> None:
+    box = Point.create(unique_name)
+    box.close()
+    with pytest.raises(BoxClosedError):
+        pickle.dumps(box)
+
+
 def test_copy_attaches_a_second_handle(unique_name: str) -> None:
     import copy
 
@@ -300,6 +340,26 @@ def test_invalid_value_leaves_field_unchanged(unique_name: str) -> None:
 
 def test_same_name_twice(unique_name: str) -> None:
     with Point.create(unique_name), pytest.raises(SegmentExistsError):
+        Point.create(unique_name)
+
+
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="Windows frees the name with its last handle"
+)
+def test_exists_names_the_class_to_unlink(unique_name: str) -> None:
+    context = mp.get_context("spawn")
+    created, attached = context.Event(), context.Event()
+    child = context.Process(
+        target=create_point_and_exit, args=(unique_name, created, attached)
+    )
+    child.start()
+    assert created.wait(20)
+    attached.set()
+    child.join(20)
+    assert child.exitcode == 0
+    with pytest.raises(
+        SegmentExistsError, match=re.escape(f"Point.unlink('{unique_name}')")
+    ):
         Point.create(unique_name)
 
 
@@ -438,3 +498,181 @@ def test_field_of_the_largest_capacity(unique_name: str) -> None:
         largest.attach(unique_name) as other,
     ):
         assert other.data == value  # type: ignore[attr-defined] # data is a field added dynamically, above
+
+
+class Chunk(SharedBox):
+    data: Annotated[bytes, Capacity(4096)] = b""
+
+
+class Quick(SharedBox, lock_timeout=0.2):
+    value: int = 0
+
+
+@pytest.mark.parametrize("size", [0, 255, 256, 257, 4096])
+def test_values_either_side_of_the_read_buffer(unique_name: str, size: int) -> None:
+    value = (bytes(range(256)) * 16)[:size]
+    with Chunk.create(unique_name) as box, Chunk.attach(unique_name) as other:
+        box.data = value
+        assert other.data == value
+        assert other._segment.get_versioned(0) == (1, value)
+        assert other._segment._read(0) == value
+
+
+def test_field_errors_match_the_segment(unique_name: str) -> None:
+    box = Point.create(unique_name)
+    with pytest.raises(TypeError, match=r"Point\.x expects float, got str"):
+        box.x = "1"  # type: ignore[assignment]
+    with pytest.raises(AttributeError, match="^a SharedBox field cannot be deleted$"):
+        del box.x
+    assert box.x == 0.0
+    box.close()
+    with pytest.raises(BoxClosedError):
+        box.x = 1.0
+
+
+def test_a_held_lock_times_out_field_reads_and_writes(unique_name: str) -> None:
+    with Quick.create(unique_name) as box, Quick.attach(unique_name) as other:
+        box._segment._hold_write_lock()
+        with pytest.raises(LockTimeoutError, match=rf"locked by pid {os.getpid()}\b"):
+            _ = other.value
+        with pytest.raises(LockTimeoutError):
+            other.value = 1
+        box._segment._release_held_lock()
+        other.value = 2
+        assert box.value == 2
+
+
+def test_a_box_without_a_segment_raises_attribute_error() -> None:
+    box = Point.__new__(Point)
+    with pytest.raises(AttributeError, match="_segment"):
+        _ = box.x
+    with pytest.raises(AttributeError, match="_segment"):
+        box.x = 1.0
+
+
+def test_a_subclass_with_a_dict_still_writes_to_the_box(unique_name: str) -> None:
+    class Loose(Point):
+        __slots__ = ("__dict__",)
+
+    with Loose.create(unique_name) as box, Loose.attach(unique_name) as other:
+        box.note = "local"  # type: ignore[attr-defined] # Loose has a __dict__
+        box.x = 2.0
+        assert (other.x, box.note) == (2.0, "local")  # type: ignore[attr-defined] # as above
+
+
+def test_a_segment_slot_holding_something_else_raises_type_error() -> None:
+    box = Point.__new__(Point)
+    box._segment = 3  # type: ignore[assignment]
+    with pytest.raises(TypeError, match="^_segment does not hold a Segment$"):
+        _ = box.x
+    with pytest.raises(TypeError, match="^_segment does not hold a Segment$"):
+        box.x = 1.0
+
+
+UNINITIALISED = """
+from sharedbox import SharedBox
+from sharedbox._native import Field, Segment
+
+class Point(SharedBox):
+    x: float = 0.0
+
+class Plain:
+    x = Field.__new__(Field)
+
+box = Point.__new__(Point)
+box._segment = Segment.__new__(Segment)
+for action in (lambda: Plain().x, lambda: setattr(Plain(), "x", 1.0), lambda: box.x, lambda: setattr(box, "x", 1.0)):
+    try:
+        action()
+    except TypeError as e:
+        print(e)
+"""
+
+
+def test_uninitialised_native_objects_raise_type_error() -> None:
+    # In a child process, because reaching an uninitialised object would crash the interpreter.
+    done = subprocess.run(
+        [sys.executable, "-c", UNINITIALISED],
+        capture_output=True,
+        check=False,
+        text=True,
+        timeout=60,
+    )
+    assert (done.returncode, done.stdout.splitlines()) == (
+        0,
+        ["Field.__init__ was not called"] * 2
+        + ["_segment does not hold a Segment"] * 2,
+    )
+
+
+def test_a_subclass_cannot_declare_its_own_segment_slot() -> None:
+    with pytest.raises(TypeError, match="_segment"):
+
+        class Shadow(Point):
+            __slots__ = ("_segment",)
+
+
+RUN = f"{os.environ['SHAREDBOX_TEST_RUN']}{os.environ.get('PYTEST_XDIST_WORKER', '')}"
+
+
+def reading_class(module: str, identity: str) -> type[SharedBox]:
+    def body(namespace: dict[str, object]) -> None:
+        namespace["__annotations__"] = {"value": int}
+        namespace["__module__"] = module
+
+    return cast(
+        type[SharedBox],
+        types.new_class("Reading", (SharedBox,), {"identity": identity}, body),
+    )
+
+
+def test_default_name_and_hash_follow_the_published_vector() -> None:
+    namespace = {
+        "__annotations__": {
+            "position": int,
+            "enabled": bool,
+            "label": Annotated[str, Capacity(32)],
+        },
+        "__module__": "__main__",
+        "__qualname__": "Motor",
+    }
+    motor = cast(type[SharedBox], type("Motor", (SharedBox,), namespace))
+    assert motor._layout_name() == "5b4f7004d44277b7"
+    assert motor.__layout__.schema_hash == 0x82CE467598596A72
+
+
+def test_classes_with_one_identity_share_a_box_by_class() -> None:
+    identity = f"sbtest/reading/{RUN}"
+    first = reading_class("package_a.readings", identity)
+    second = reading_class("package_b.readings", identity)
+    try:
+        with first(5), second.attach() as other:
+            assert other.value == 5  # type: ignore[attr-defined] # value is a field added dynamically, above
+    finally:
+        first.unlink()
+
+
+def test_a_changed_identity_is_refused(unique_name: str) -> None:
+    old = reading_class(__name__, "sbtest/reading/1")
+    new = reading_class(__name__, "sbtest/reading/2")
+    with old.create(unique_name, 1), pytest.raises(SchemaMismatchError):
+        new.attach(unique_name)
+
+
+def test_identity_is_not_inherited() -> None:
+    class Base(SharedBox, identity="sbtest/base/1"):
+        value: int = 0
+
+    class Child(Base):
+        pass
+
+    assert Child.__sharedbox_identity__ == f"{__name__}.{Child.__qualname__}"
+    assert Child.__layout__.schema_hash != Base.__layout__.schema_hash
+
+
+@pytest.mark.parametrize("identity", ["", 3])
+def test_identity_must_be_a_non_empty_string(identity: object) -> None:
+    with pytest.raises(TypeError, match="identity"):
+
+        class Bad(SharedBox, identity=identity):
+            value: int = 0

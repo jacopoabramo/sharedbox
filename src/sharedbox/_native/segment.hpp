@@ -3,10 +3,14 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
+
+struct sbx_handle;
 
 namespace sharedbox {
 
@@ -44,11 +48,29 @@ struct SegmentClosed : std::runtime_error {
 struct LockTimeout : std::runtime_error {
     using std::runtime_error::runtime_error;
 };
+struct NoWaiterSlot : std::runtime_error {
+    using std::runtime_error::runtime_error;
+};
 
 using WaitHook = void *(*)();
 using ResumeHook = void (*)(void *);
 /// Called around a wait for another writer's lock; module.cpp releases the GIL there.
 void set_wait_hooks(WaitHook before, ResumeHook after);
+
+/// One field as Segment::read found it. bytes points into this object, so it cannot be copied.
+struct FieldRead {
+    FieldRead() = default;
+    FieldRead(const FieldRead &) = delete;
+    FieldRead &operator=(const FieldRead &) = delete;
+
+    const FieldDesc *field = nullptr;
+    std::uint64_t version = 0;
+    std::string_view bytes;
+    // Most values fit in words; a longer one is read again into large, at its stored length, never at
+    // the field's capacity. Words rather than chars, so MSVC's /GS adds no stack cookie check to every read.
+    std::uint64_t words[32];
+    std::string large;
+};
 
 /// A named shared-memory segment holding one fixed-layout record.
 class Segment {
@@ -57,6 +79,7 @@ public:
     static std::unique_ptr<Segment> create(const std::string &name, const std::vector<FieldDesc> &fields,
                                            const std::vector<std::string> &names, std::uint64_t record_size,
                                            std::uint64_t schema_hash, double lock_timeout,
+                                           std::uint16_t waiter_slots,
                                            const std::vector<std::pair<std::uint32_t, std::string>> &values);
     static std::unique_ptr<Segment> attach(const std::string &name, const std::vector<std::string> &names,
                                            std::uint64_t schema_hash, double lock_timeout);
@@ -64,23 +87,44 @@ public:
     Segment(const Segment &) = delete;
     Segment &operator=(const Segment &) = delete;
 
-    std::string read(std::uint32_t field) const;
-    /// The field's version and bytes, read together.
-    std::pair<std::uint64_t, std::string> read_versioned(std::uint32_t field) const;
-    std::vector<std::string> read_all() const;
+    /// Reads the field's bytes and version, from one moment, into out.
+    void read(std::uint32_t field, FieldRead &out) const;
+    /// A copy of the whole record, every field from one moment; payload() finds a field in it.
+    std::unique_ptr<std::byte[]> read_record() const;
+    /// The stored bytes of field inside a copy made by read_record.
+    std::string_view payload(std::uint32_t field, const std::byte *record) const;
+    std::uint32_t field_count() const;
     void write(const std::vector<std::pair<std::uint32_t, std::string>> &values);
+    /// write() of a single value, without building a vector.
+    void write_one(std::uint32_t field, std::string_view bytes);
     std::uint64_t version(std::uint32_t field) const;
     std::uint64_t generation() const;
-    /// Returns the generation once it differs from last_generation, or after timeout seconds.
-    std::uint64_t wait(std::uint64_t last_generation, double timeout) const;
+    /// Claims a waiter slot for this process; free it with release_waiter.
+    std::uint16_t register_waiter();
+    void release_waiter(std::uint16_t slot);
+    /// Ends the wait in slot, of any process, or the next one if none is running.
+    void interrupt(std::uint16_t slot);
+    /// Whether slot is still this process's; false once it was freed under it.
+    bool waiter_held(std::uint16_t slot) const;
+    /// Occupied waiter slots; for tests.
+    std::uint32_t waiters() const;
+    /// Random at creation; a box made again under the same name has another.
+    std::uint64_t create_id() const;
+    /// A heap handle with its own mapping of the segment, for a capsule. Call its release, then
+    /// delete it.
+    sbx_handle *export_handle() const;
+    /// Returns the generation once it differs from last_generation, the slot is interrupted, or
+    /// timeout seconds pass. Without a slot the call claims one for its own duration.
+    std::uint64_t wait(std::uint64_t last_generation, double timeout, std::optional<std::uint16_t> slot) const;
     void force_unlock();
-    /// Takes the write lock and never releases it; exists for tests.
+    /// Takes the write lock and keeps it until release_held_lock; exists for tests.
     void hold_write_lock();
+    void release_held_lock();
     /// Resets per-process locks in a child created by fork(); call before any other thread starts.
     void after_fork();
     /// Detaches this handle; the segment itself stays until unlinked.
     void close();
-    /// Bytes of shared memory the segment manages.
+    /// Bytes of the segment's mapping.
     std::uint64_t size() const;
     bool closed() const;
     const std::string &name() const;

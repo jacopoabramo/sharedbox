@@ -10,7 +10,7 @@
 > [!WARNING]
 > This project is a work in progress; be patient or feel free to contribute.
 
-`sharedbox` keeps records in shared memory. Each box is one named segment, made with the [`boost::interprocess`](https://www.boost.org/doc/libs/latest/doc/html/interprocess.html) library, and every process that opens it reads and writes the same fields.
+`sharedbox` keeps records in shared memory. Each box is one named segment, and every process that opens it reads and writes the same fields.
 
 ## Installation
 
@@ -84,6 +84,14 @@ exit, like `SharedMemory(track=False)`.
 
 The full API is described in [docs/api.md](./docs/api.md).
 
+## C++ and C
+
+The segment layout is implemented by a header-only C++20 library,
+`sharedbox.hpp`, installed with the wheel together with a minimal C
+interface, `sharedbox_c.h`. C++ and C code can use a box through them,
+either as an extension that takes a box from Python or as a standalone
+program; [docs/library-authors.md](./docs/library-authors.md) shows how.
+
 ## Wheels
 
 Each platform gets one wheel for CPython 3.11, one `abi3` wheel for CPython
@@ -97,36 +105,8 @@ Windows x64 and Linux x86_64 (glibc and musl).
 - [`git`](https://git-scm.com/downloads)
 - [`uv`](https://docs.astral.sh/uv/getting-started/installation/)
 - Python >= 3.11
-- [`vcpkg`](https://vcpkg.io/en/)
 - [`CMake`](https://cmake.org/download/) >= 3.30
-- A C++17 compatible compiler (MSVC on Windows, GCC on Linux)
-
-> [!NOTE]
-> CMake finds `vcpkg` through the `VCPKG_ROOT` environment variable and stops if it is not set.
-
-### Install and configure vcpkg
-
-[Install and bootstrap vcpkg](https://learn.microsoft.com/en-us/vcpkg/get_started/get-started?pivots=shell-cmd) somewhere on your system.
-
-#### Windows
-```cmd
-cd C:\
-git clone https://github.com/microsoft/vcpkg.git
-cd vcpkg
-bootstrap-vcpkg.bat
-
-# Set the VCPKG_ROOT environment variable (permanently)
-setx VCPKG_ROOT "C:\vcpkg"
-```
-
-#### Linux
-```bash
-git clone https://github.com/microsoft/vcpkg.git ~/vcpkg
-~/vcpkg/bootstrap-vcpkg.sh
-export VCPKG_ROOT=~/vcpkg   # add this line to your shell profile
-```
-
-Boost is listed in `vcpkg.json` and installed by CMake on the first build.
+- A C++20 compiler (MSVC on Windows, GCC on Linux)
 
 ### Build the package
 
@@ -141,7 +121,7 @@ uv sync --dev
 ### Development setup
 
 After `uv sync --dev`, run this once to point VS Code's C/C++ extension at
-the CPython, nanobind and Boost headers the build uses:
+the CPython, nanobind and sharedbox headers the build uses:
 
 ```bash
 uv run python scripts/vscode_setup.py
@@ -158,6 +138,15 @@ Run `uv run prek install` once to lint and format each commit; `uv run tox
 uv run pytest               # current interpreter
 uv run tox                  # every supported Python version, plus mypy
 uv run tox -e py314t        # one version
+uv run pytest -m stress     # stress tests, deselected by default (about 3 minutes)
+```
+
+The C++ tests of the header build with CMake:
+
+```bash
+cmake -S tests/cpp -B build-cpp -DCMAKE_BUILD_TYPE=Release
+cmake --build build-cpp --config Release
+ctest --test-dir build-cpp -C Release --output-on-failure
 ```
 
 ### Running benchmarks
@@ -196,5 +185,3 @@ CI runs them on CodSpeed for every push and pull request to `main`.
 ## License
 
 Licensed under [Apache 2.0](./LICENSE)
-
-`sharedbox` is built using the Boost C++ library, which is licensed under the [Boost Software License](https://boost.org.cpp.al/LICENSE_1_0.txt).

@@ -2,17 +2,27 @@
 
 `sharedbox` gives Python processes a record that lives in shared memory.
 `SharedBox` is a base class: a subclass's annotated fields are stored in one
-named segment that every process can open. The segment is C++
-(Boost.Interprocess) exposed to Python with nanobind; the Python side decides
+named segment that every process can open. The segment is a plain named
+mapping laid out by `include/sharedbox/sharedbox.hpp` (C++20, header-only),
+which the nanobind extension runs on; `sharedbox_c.h` is a minimal C
+interface to the same header. Boost is not used. The Python side decides
 the layout and the native module converts values.
 
 ## Repository layout
 
 ```text
 sharedbox/
+|-- include/sharedbox/
+|   |-- sharedbox.hpp          layout 1.0 and its protocols: create, open, lock, read, write, waiter slots, capsule handle
+|   |-- sharedbox_c.h          minimal C interface: sbx_open, sbx_import, sbx_read, sbx_write, sbx_schema_hash, sbx_release
+|   `-- sharedbox_c.cpp        its implementation, compiled by the consumer (CMake target sharedbox::c)
+|-- cmake/
+|   |-- sharedbox-config.cmake       find_package(sharedbox) from an installed wheel; the build writes
+|   |                                sharedbox-config-version.cmake next to it in the wheel
+|   `-- sharedbox-require-cxx.cmake  stops configure when sharedbox::c is linked without CXX
 |-- src/sharedbox/
-|   |-- __init__.py            re-exports the public API
-|   |-- _box.py                SharedBox: class keywords, fields, create/attach, update, snapshot, unlink
+|   |-- __init__.py            re-exports the public API, get_include()
+|   |-- _box.py                SharedBox: class keywords, fields, create/attach, update, snapshot, unlink, __sharedbox_box__
 |   |-- _layout.py             Capacity, field offsets and kind codes, schema hash
 |   |-- _events.py             FieldWatch, the watcher thread, psygnal events
 |   |-- _native.pyi            hand-written stub for the extension
@@ -25,24 +35,29 @@ sharedbox/
 |   |   |-- size.py            wheel and extension size (standard library only)
 |   |   `-- size_diff.py       wheel size table against main, for CI (standard library only)
 |   `-- _native/
-|       |-- module.cpp         nanobind module: Segment and the error classes
+|       |-- module.cpp         nanobind module: Segment, the Field descriptor and the error classes
 |       |-- codec.{hpp,cpp}    converts field values to and from their stored bytes
-|       |-- liveness.{hpp,cpp} whether a process is still running (pid and start time)
-|       |-- segment.{hpp,cpp}  the segment: header, record, sequence lock
-|       `-- notifier.{hpp,cpp} wakes waiters across processes (futex, named semaphore)
+|       `-- segment.{hpp,cpp}  Segment: a sharedbox::handle plus error messages and the lifetime lock
 |-- tests/                     pytest; many tests spawn processes
+|   |-- test_capsule.py        __sharedbox_box__, and the C consumer in tests/cpp/consumer/
+|   |-- test_native_waiters.py waiter slots, dead owners, interrupt
+|   |-- test_properties_*.py   Hypothesis property tests
+|   |-- stress/                stress tests, marker stress, deselected by default
+|   |-- cpp/                   C++ tests (doctest, CTest) and the C smoke test
+|   |   `-- consumer/          a C library built against an installed wheel, loaded by test_capsule.py
 |   `-- type_checks/           checked by mypy, never imported at run time
 |-- benchmarks/                not collected by the default pytest run
 |   `-- test_bench_box.py      pytest-codspeed benchmarks, run by codspeed.yml
 |-- scripts/vscode_setup.py    points VS Code's C/C++ extension at the build headers
 |-- docs/api.md                API reference
-|-- docs/design/               design notes for the native segment
-|-- .github/workflows/ci.yaml  cibuildwheel wheels, tests, PyPI publish
+|-- docs/library-authors.md    accepting a box in C++ or C code
+|-- docs/design/segment-layout.md  layout 1.0, names and protocols
+|-- docs/design/native-segment.md  why the segment is built the way it is
+|-- .github/workflows/ci.yaml  C++ tests, cibuildwheel wheels, tests, stress, PyPI publish
 |-- .github/workflows/codspeed.yml  benchmarks on CodSpeed
-|-- CMakeLists.txt             extension build
-|-- vcpkg.json                 Boost dependency and vcpkg baseline
+|-- CMakeLists.txt             sharedbox::headers, sharedbox::c, extension build
 |-- stubtest-allowlist.txt     stubtest exceptions for nanobind types
-|-- .clang-format              clang-format style for src/sharedbox/_native/
+|-- .clang-format              clang-format style for the C and C++ sources
 |-- prek.toml                  prek hooks: ruff, clang-format, and the builtin checks
 |-- pyproject.toml             scikit-build-core, setuptools-scm, pytest, cibuildwheel, mypy, tox
 `-- uv.lock
@@ -53,43 +68,38 @@ sharedbox/
 
 ## Memory layout
 
-The design and its reasons are in `docs/design/native-segment.md`.
+The specification is `docs/design/segment-layout.md`; the reasons are in
+`docs/design/native-segment.md`.
 
-One segment per box: `managed_windows_shared_memory` on Windows (page-file
-backed), `managed_shared_memory` on Linux (`/dev/shm`, mode `0600`). The
-name is the `name` class keyword, the name passed to `create()`, or by
-default `sharedbox-` plus 16 hex digits of SHA-256 over the class's
-`module.qualname` (`__mp_main__` counts as `__main__`). Creating always asks
-for a new name and raises `SegmentExistsError` if it is taken.
+One mapping per box, named `sharedbox.<name>`: `/dev/shm/sharedbox.<name>`
+on Linux (mode `0600`), `Local\sharedbox.<name>` on Windows (page-file
+backed). Windows waiter slot `i` also has an auto-reset event
+`Local\sharedbox.<name>.w<i>`. The box name is the `name` class keyword,
+the name passed to `create()`, or by default 16 hex digits of SHA-256 over
+the class's identity (the `identity` class keyword, by default
+`module.qualname`, with `__mp_main__` counted as `__main__`). Creating
+always asks for a new name and raises `SegmentExistsError` if it is taken.
 
-The segment holds a named object `"sharedbox.header"` (64 bytes, one cache
-line) and one block with the tail and the record. The tail is `field_count`
-`StoredField` entries of 8 bytes (`u32 offset`, `u32 capacity_and_kind`: low
-24 bits the capacity, top 8 the field's kind code), then one `u64` write
-count per field. The record follows, 64-byte aligned. The segment size is
-these plus 1024 bytes for Boost's bookkeeping, rounded up to 4 KiB.
-`static_assert`s in `segment.cpp` check every `sizeof` and `offsetof`.
+Layout 1.0, from offset 0:
 
-`Header` fields:
+- Header, 128 bytes. Line 0, written once at creation: `magic`,
+  `layout_major` 1, `layout_minor` 0, `field_count`, `waiter_slots`,
+  `schema_hash`, `record_size`, `record`, `tail` (always 128), `size`, and
+  the creator fields `create_id`, `creator_start`, `creator_pid`. Line 1,
+  changed by writes and waits: `seq` (sequence lock; the generation is
+  `seq >> 1`, there is no generation field), `writer_pid`, `wake_word`,
+  `waiters`, `creator_pidns`. Both lines keep reserved zero bytes.
+- The tail: `field_count` field table entries of 8 bytes (`u32 offset`,
+  `u32 capacity_and_kind`: low 24 bits the capacity, top 8 the kind code),
+  one `u64` write count per field, then `waiter_slots` slots of 24 bytes
+  (`owner_start`, `owner_pidns`, `owner_pid`, `interrupt`).
+- The record, at a multiple of 64. The mapping size is rounded up to 4 KiB.
 
-- `magic`: written last on create, after the initial field values are in
-  the record; `attach()` waits for it.
-- `layout_version`: `3`; any other value is refused. `magic` and
-  `layout_version` keep their offsets across versions.
-- `field_count`, `record_size`.
-- `schema_hash`: first 8 bytes of SHA-256 over the class identity and each
-  field's `name:kind:capacity`. `attach()` raises `SchemaMismatchError` if
-  it differs.
-- `record`, `tail`: `u32` offsets of the record and the tail in the segment.
-  `attach()` checks both against the segment size, checks each field table
-  entry and keeps its own copy.
-- `seq`: sequence lock. Even when free, odd while a write runs. Readers copy
-  and retry if `seq` moved; writers take it with a compare-and-swap and give
-  up after `lock_timeout` with `LockTimeoutError`.
-- `generation`: counts every write. `wake_word` and `waiters` wake threads
-  that wait for a change.
-- `writer_pid`: process holding the write lock, cleared by a normal unlock.
-  `force_unlock()` releases the lock and leaves `writer_pid` as it is.
+`magic` is stored last on create, with release ordering, after the initial
+values are in the record; attach waits for it. Attach refuses another
+`layout_major`, checks every geometry field against the mapping size,
+copies the field table and uses only the copy. `static_assert`s in
+`sharedbox.hpp` check every `sizeof` and `offsetof`.
 
 ### Record encoding
 
@@ -107,21 +117,23 @@ At most 256 fields; a capacity is 1 byte to 1 MiB.
 
 ### Lifecycle
 
-- `close()` stops the watcher thread and detaches this box. Later reads and
-  writes raise `BoxClosedError`. Garbage collection closes a box too.
+- `close()` interrupts and stops the watcher thread and detaches this box.
+  Later reads and writes raise `BoxClosedError`. Garbage collection closes
+  a box too.
+- `__sharedbox_box__()` returns a capsule whose handle has its own mapping
+  of the segment; `close()` and `unlink()` do not affect it.
 - `unlink()` removes the name on Linux and does nothing on Windows, where the
   OS frees the segment with its last handle.
 - A Linux segment that is never unlinked stays in `/dev/shm`. Most tests use the
-  `unique_name` fixture, which removes the file afterwards.
+  `unique_name` fixture, which removes `/dev/shm/sharedbox.<name>` afterwards.
+- On Linux every open box keeps a file descriptor, so about 1000 open boxes
+  reach the default `ulimit -n` of 1024.
 
 ## Build
 
-scikit-build-core drives CMake (3.30 or newer), which needs:
-
-- `VCPKG_ROOT` set; CMake stops without it.
-- Boost from `vcpkg.json`, installed by CMake on the first build.
-- nanobind (build dependency) and a C++17 compiler (MSVC or GCC). macOS is
-  not supported.
+scikit-build-core drives CMake (3.30 or newer), which needs a C++20
+compiler (MSVC or GCC) and nanobind (a build dependency); it needs
+neither `VCPKG_ROOT` nor Boost. macOS is not supported.
 
 The version comes from git tags through setuptools-scm, written to
 `src/sharedbox/_version.py` (ignored by git).
@@ -131,8 +143,11 @@ uv sync --dev                          # creates .venv, builds and installs the 
 uv run python scripts/vscode_setup.py  # once, for VS Code's C/C++ extension
 ```
 
-`[tool.uv] cache-keys` lists the C++ sources, so `uv sync` rebuilds the
-extension after they change. Build folders are `build/<wheel tag>`.
+`[tool.uv] cache-keys` lists the C++ sources, headers and `cmake/`, so
+`uv sync` rebuilds the extension after they change. Build folders are
+`build/<wheel tag>`. The wheel also carries `include/sharedbox/` under
+`sharedbox/include/` and the CMake config and config version file under
+`sharedbox/share/cmake/sharedbox/`.
 
 Wheels per platform (Windows x64, Linux x86_64 glibc and musl): `cp311-cp311`,
 `cp312-abi3` for CPython 3.12 and newer, and `cp314-cp314t` for free-threaded
@@ -157,6 +172,45 @@ process it spawns inherits it, so the fixed segment names in
 run. That is what lets `-n auto --dist loadfile` and `tox -p auto` run
 several workers or environments at once without fighting over the same
 segment name.
+
+C++ tests, in `tests/cpp/` (they add this repository the way a
+`FetchContent` user does):
+
+```sh
+cmake -S tests/cpp -B build-cpp -DCMAKE_BUILD_TYPE=Release
+cmake --build build-cpp --config Release
+ctest --test-dir build-cpp -C Release --output-on-failure
+```
+
+`tests/test_capsule.py` builds the C consumer in `tests/cpp/consumer/`
+against the installed wheel with CMake and skips when CMake is missing;
+`SHAREDBOX_REQUIRE_C_CONSUMER=1` makes that a failure. The `cpp_header` CI
+job runs the C++ tests on Linux and Windows, again on Linux with
+AddressSanitizer and UndefinedBehaviorSanitizer, then the C consumer with
+that variable set.
+
+Performance check for changes to the read or write path, on Windows
+cp311: run `uv run benchbox ops --fast --filter "*int*"` three times on
+the branch and three times on `main` in the same session, and compare the
+medians of `read int/SharedBox` and `write int/SharedBox`.
+
+Property tests (`tests/test_properties_*.py`) run in the normal suite under
+the Hypothesis profile `ci` (50 examples); `--hypothesis-profile=thorough`
+runs 2000.
+
+Stress tests (`tests/stress/`) carry the `stress` marker and are deselected
+by default:
+
+```sh
+uv run pytest -m stress                              # about 3 minutes
+SHAREDBOX_STRESS_SCALE=0.05 uv run pytest -m stress  # a short run
+```
+
+They write their numbers to `build/stress/*.json` and print them at the end
+of the run. On CI the `stress` job runs only when the workflow is started
+by hand (`workflow_dispatch`), on ubuntu-latest and windows-latest against
+the cp312 wheel, and also runs the property tests with the `thorough`
+profile.
 
 CI (`.github/workflows/ci.yaml`) builds the wheels above with cibuildwheel,
 runs pytest against each wheel, and publishes to PyPI. Publishing runs only
@@ -197,12 +251,14 @@ if __name__ == "__main__":
 
 Every read decodes a fresh value from the segment. `update(**values)` writes
 several fields at once; `watch(field)` and `events` report changes from any
-process.
+process. C++ and C code take a box through `__sharedbox_box__` or open it by
+name; see `docs/library-authors.md`.
 
 ## Conventions
 
 - Changelog: `CHANGELOG.md`, Keep a Changelog format, dates as `DD-MM-YYYY`.
-- Lint and format Python with `ruff` and C++ with `clang-format`, both run
+- Lint and format Python with `ruff` and C and C++ with `clang-format`
+  (`src/sharedbox/_native/`, `include/sharedbox/`, `tests/cpp/`), both run
   through prek: `uv run prek run --all-files`, `uv run tox -e lint`.
 - Change dependencies with `uv add` / `uv remove`, never by editing
   `pyproject.toml`.
