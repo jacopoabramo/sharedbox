@@ -47,7 +47,7 @@ std::string exists_message(const std::string &name, const std::vector<std::strin
     const std::string taken = "a segment named '" + name + "' already exists";
     const std::string::size_type dot = names.empty() ? std::string::npos : names[0].rfind('.');
     const std::string unlink = dot == std::string::npos ? "unlink('" + name + "') on its class"
-                                                         : names[0].substr(0, dot) + ".unlink('" + name + "')";
+                                                        : names[0].substr(0, dot) + ".unlink('" + name + "')";
     const result<header> seen = inspect(name);
     if (!seen) {
         if (seen.error() != status::not_found)
