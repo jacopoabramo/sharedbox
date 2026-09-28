@@ -30,6 +30,9 @@ static_assert(std::max(1, 2) == 2);
 #error "sharedbox.hpp left one of its own macros defined"
 #endif
 
+// The C++ names live in a versioned inline namespace, reachable without naming it.
+static_assert(std::is_same_v<sharedbox::handle, sharedbox::v1::handle>);
+
 // A value that converts to T only explicitly gives an explicit constructor, as std::expected does.
 struct only_explicit {
     explicit only_explicit(int) {}

@@ -57,6 +57,13 @@ On Windows `sharedbox.hpp` includes `windows.h` and `bcrypt.h`. Unless you
 defined them already, it defines `NOMINMAX` and `WIN32_LEAN_AND_MEAN`
 before that include and removes them at its end.
 
+The header declares its C++ names in `sharedbox::v1`, an inline
+namespace, so code still writes `sharedbox::handle`. The inline namespace
+changes when the header's C++ interface changes incompatibly, so two
+libraries built against different versions of the header can live in one
+program. The C functions `sbx_*` keep their names across versions. Names
+in `sharedbox::detail` are internal and may change in any release.
+
 ### C++
 
 Call `__sharedbox_box__`, take the handle out of the capsule with

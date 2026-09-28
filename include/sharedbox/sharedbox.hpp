@@ -73,6 +73,9 @@
 #endif
 
 namespace sharedbox {
+// Renamed when this header's C++ interface changes incompatibly, so code built against two versions
+// of the header can be linked into one program without the two definitions of a name colliding.
+inline namespace v1 {
 
 inline constexpr std::uint16_t layout_major = 1;
 inline constexpr std::uint16_t layout_minor = 0;
@@ -1896,6 +1899,7 @@ inline sbx_handle *handle::to_capsule() && {
     return out.release();
 }
 
+} // namespace v1
 } // namespace sharedbox
 
 #undef SHAREDBOX_HOT

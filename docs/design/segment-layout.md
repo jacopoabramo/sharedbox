@@ -400,8 +400,11 @@ still runs, runs in another pid namespace, or has exited.
 
 ## Implementation language
 
-The core is C++20, header-only, in namespace `sharedbox`. C programs use it
-through `sharedbox_c.h`.
+The core is C++20, header-only, in namespace `sharedbox`. Its names are
+declared in the inline namespace `sharedbox::v1`, which changes when the
+C++ interface changes incompatibly, so code built against two versions of
+the header can be linked into one program. C programs use it through
+`sharedbox_c.h`, whose `sbx_*` functions are not versioned this way.
 
 - The layout structs are plain standard-layout types with integer members.
 - Atomics: `std::atomic_ref` on those members. `static_assert`s require
@@ -432,8 +435,14 @@ through `sharedbox_c.h`.
 
 ```cpp
 namespace sharedbox {
+inline namespace v1 {
 
 inline constexpr std::uint16_t layout_major = 1, layout_minor = 0;
+// Also: the layout constants handle_version, magic, header_size, name_max, max_fields,
+// max_capacity, max_waiter_slots, default_waiter_slots, record_alignment, page_size,
+// max_timeout, default_lock_timeout, kind_shift, capacity_mask and kind_bool, kind_int,
+// kind_float, kind_str, kind_bytes; the structs header, stored_field and waiter_slot
+// (see Layout); result<T> and unexpected (see Implementation language).
 
 enum class status : int { ok = 0, exists = -1, not_found = -2, layout = -3, schema = -4,
                           corrupt = -5, lock_timeout = -6, timeout = -7, no_slot = -8,
@@ -487,6 +496,7 @@ public:
 result<void> unlink(std::string_view name) noexcept;
 result<header> inspect(std::string_view name) noexcept;
 
+}  // namespace v1
 }  // namespace sharedbox
 ```
 
