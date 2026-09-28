@@ -1,8 +1,6 @@
 {
   "permissions": {
     "allow": [
-      "Bash(uv run:*)",
-      "Bash(uv sync:*)",
       "Bash(git status:*)",
       "Bash(git diff:*)",
       "Bash(git log:*)",
@@ -12,38 +10,24 @@
       "Bash(git merge-base:*)",
       "Bash(git ls-files:*)",
       "Bash(git fetch:*)",
-      "Bash(git add:*)",
-      "Bash(git commit:*)",
-      "Bash(git -C C:/git/claude-plans status:*)",
-      "Bash(git -C C:/git/claude-plans log:*)",
       "Bash(gh run list:*)",
       "Bash(gh run view:*)",
       "Bash(gh run watch:*)",
       "Bash(gh pr view:*)",
       "Bash(gh pr checks:*)",
-      "Bash(gh api repos/jacopoabramo/sharedbox/:*)",
-      "Bash(cmake:*)",
-      "Bash(ctest:*)",
       "Bash(ls:*)",
       "Bash(cat:*)",
       "Bash(grep:*)",
       "Bash(sed -n:*)",
       "Bash(head:*)",
       "Bash(tail:*)",
-      "Bash(find:*)",
-      "Bash(wc:*)",
-      "Bash(printf:*)",
-      "Bash(echo:*)",
-      "Edit",
-      "Write"
+      "Bash(wc:*)"
     ],
     "deny": [
       "Bash(git push:*)",
       "Bash(git reset --hard:*)",
       "Bash(rm -rf:*)",
-      "Bash(gh pr merge:*)",
-      "Bash(gh api -X:*)",
-      "Bash(gh api --method:*)"
+      "Bash(gh pr merge:*)"
     ]
   }
 }
