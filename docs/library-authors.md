@@ -62,7 +62,7 @@ before that include and removes them at its end.
 The header declares its C++ names in `sharedbox::v1`, an inline
 namespace, so code still writes `sharedbox::handle`. The inline namespace
 changes when the header's C++ interface changes incompatibly, so two
-libraries built against different versions of the header can live in one
+libraries built against different versions of the header can be linked into one
 program. The C functions `sbx_*` keep their names across versions. Names
 in `sharedbox::detail` are internal and may change in any release.
 
