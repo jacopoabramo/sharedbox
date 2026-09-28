@@ -18,4 +18,4 @@ def unique_name() -> Iterator[str]:
     yield name
     if sys.platform.startswith("linux"):
         with contextlib.suppress(FileNotFoundError):
-            os.unlink(f"/dev/shm/{name}")
+            os.unlink(f"/dev/shm/sharedbox.{name}")

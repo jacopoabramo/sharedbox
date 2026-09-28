@@ -2,12 +2,14 @@ import contextlib
 import mmap
 import multiprocessing as mp
 import os
+import shutil
 import struct
 import sys
 import threading
 import time
 from collections.abc import Callable, Generator
 from multiprocessing.shared_memory import SharedMemory
+from multiprocessing.synchronize import Event
 
 import pytest
 
@@ -42,7 +44,7 @@ MAGIC = b"SHREDBX1"
 @contextlib.contextmanager
 def raw_bytes(name: str) -> Generator[memoryview, None, None]:
     if sys.platform == "win32":
-        shm = SharedMemory(name)
+        shm = SharedMemory(f"sharedbox.{name}")
         try:
             assert shm.buf is not None
             yield shm.buf
@@ -50,7 +52,7 @@ def raw_bytes(name: str) -> Generator[memoryview, None, None]:
             shm.close()
     else:
         with (
-            open(f"/dev/shm/{name}", "r+b") as file,
+            open(f"/dev/shm/sharedbox.{name}", "r+b") as file,
             mmap.mmap(file.fileno(), 0) as mapping,
             memoryview(mapping) as view,
         ):
@@ -59,8 +61,41 @@ def raw_bytes(name: str) -> Generator[memoryview, None, None]:
 
 def patch_header(name: str, offset: int, fmt: str, value: int) -> None:
     with raw_bytes(name) as view:
-        header = bytes(view).index(MAGIC)
-        struct.pack_into(fmt, view, header + offset, value)
+        struct.pack_into(fmt, view, offset, value)
+
+
+@contextlib.contextmanager
+def foreign_mapping(name: str) -> Generator[None, None, None]:
+    """Shared memory under a box's object name, made by software other than sharedbox."""
+    if sys.platform == "win32":
+        with mmap.mmap(-1, 4096, tagname=f"sharedbox.{name}"):
+            yield
+    else:
+        fd = os.open(
+            f"/dev/shm/sharedbox.{name}", os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o600
+        )
+        try:
+            os.ftruncate(fd, 4096)
+            yield
+        finally:
+            os.close(fd)
+
+
+def own_pidns() -> int:
+    """This process's pid namespace as sharedbox.hpp records it: 0 on Windows."""
+    return 0 if sys.platform == "win32" else os.stat("/proc/self/ns/pid").st_ino
+
+
+def hold_lock_until_killed(name: str, ready: Event) -> None:
+    segment = attach(name)
+    segment._hold_write_lock()
+    ready.set()
+    time.sleep(60)
+
+
+def shm_free_bytes() -> int:
+    """Free bytes in /dev/shm; more than any box where there is none, as on Windows."""
+    return shutil.disk_usage("/dev/shm").free if os.path.isdir("/dev/shm") else 1 << 62
 
 
 def write_pair(name: str, count: int) -> None:
@@ -264,7 +299,7 @@ def test_bad_wait_timeout_is_refused(unique_name: str, timeout: float) -> None:
     segment.close()
 
 
-def test_small_segment_takes_a_few_pages(unique_name: str) -> None:
+def test_small_box_takes_one_page(unique_name: str) -> None:
     segment = Segment.create(
         unique_name,
         [*FIELDS, NativeField(32, 8, INT)],
@@ -274,16 +309,80 @@ def test_small_segment_takes_a_few_pages(unique_name: str) -> None:
         1.0,
         [],
     )
-    assert segment._size <= 16 * 1024
+    assert segment._size == 4096
     segment.close()
+
+
+def test_raw_bytes_follow_layout_1_0(unique_name: str) -> None:
+    fields = [
+        NativeField(0, 8, INT),
+        NativeField(8, 8, FLOAT),
+        NativeField(16, 1, BOOL),
+    ]
+    segment = Segment.create(
+        unique_name,
+        fields,
+        ["a", "b", "c"],
+        24,
+        0x1122334455667788,
+        1.0,
+        [(0, 7), (2, True)],
+    )
+    segment.set([(1, 0.5)])
+    with raw_bytes(unique_name) as view:
+        raw = bytes(view)
+    segment.close()
+    assert len(raw) == 4096
+    assert raw[0:8] == MAGIC
+    assert raw[8:12] == bytes([1, 0, 0, 0])
+    assert struct.unpack_from("<HHQIIII", raw, 12) == (
+        3,
+        64,
+        0x1122334455667788,
+        24,
+        1728,
+        128,
+        4096,
+    )
+    create_id, creator_start, creator_pid = struct.unpack_from("<QQI", raw, 40)
+    assert create_id != 0
+    assert creator_start != 0
+    assert creator_pid == os.getpid()
+    assert raw[60:64] == bytes(4)
+    # seq, writer_pid, wake_word and waiters after one write, with no one waiting.
+    assert struct.unpack_from("<QIII", raw, 64) == (2, 0, 1, 0)
+    assert raw[84:88] == bytes(4)
+    assert struct.unpack_from("<Q", raw, 88) == (own_pidns(),)
+    assert raw[96:128] == bytes(32)
+    assert struct.unpack_from("<6I", raw, 128) == (
+        0,
+        8 | INT << 24,
+        8,
+        8 | FLOAT << 24,
+        16,
+        1 | BOOL << 24,
+    )
+    assert struct.unpack_from("<3Q", raw, 152) == (0, 1, 0)
+    assert raw[176:1728] == bytes(1552)
+    assert struct.unpack_from("<qd?", raw, 1728) == (7, 0.5, True)
+    assert raw[1745:] == bytes(4096 - 1745)
 
 
 @pytest.mark.parametrize(
     ("offset", "fmt", "value"),
     [
-        pytest.param(32, "<I", 0xFFFF_FFF0, id="tail-outside"),
-        pytest.param(12, "<I", 256, id="tail-too-long"),
-        pytest.param(28, "<I", 0xFFFF_FFF0, id="record-outside"),
+        pytest.param(12, "<H", 0, id="no-fields"),
+        pytest.param(12, "<H", 256, id="table-over-the-record"),
+        pytest.param(14, "<H", 0, id="no-waiter-slots"),
+        pytest.param(14, "<H", 4097, id="too-many-waiter-slots"),
+        pytest.param(24, "<I", 4000, id="record-past-the-mapping"),
+        pytest.param(28, "<I", 0xFFFF_FFC0, id="record-outside"),
+        pytest.param(28, "<I", 128, id="record-over-the-table"),
+        pytest.param(28, "<I", 1736, id="record-unaligned"),
+        pytest.param(32, "<I", 136, id="tail-moved"),
+        pytest.param(36, "<I", 8192, id="size-differs"),
+        pytest.param(128, "<I", 32, id="field-past-the-record"),
+        pytest.param(132, "<I", 8 | 9 << 24, id="unknown-kind"),
     ],
 )
 def test_corrupt_header_is_refused(
@@ -296,27 +395,94 @@ def test_corrupt_header_is_refused(
     segment.close()
 
 
-def test_unaligned_tail_is_refused(unique_name: str) -> None:
+def test_another_major_version_is_refused(unique_name: str) -> None:
     segment = create(unique_name)
+    patch_header(unique_name, 8, "<H", 2)
+    with pytest.raises(SchemaMismatchError, match=r"uses layout 2\.0"):
+        attach(unique_name)
+    segment.close()
+
+
+def test_a_higher_minor_version_opens(unique_name: str) -> None:
+    owner = create(unique_name)
+    patch_header(unique_name, 10, "<H", 7)
+    other = attach(unique_name)
+    owner._write([(1, b"minor")])
+    assert other._read(1) == b"minor"
+    other.close()
+    owner.close()
+
+
+def test_a_name_at_the_length_limit(unique_name: str) -> None:
+    name = (unique_name + "x" * 128)[:128]
+    owner = create(name)
+    try:
+        other = attach(name)
+        other._write([(1, b"long")])
+        assert owner._read(1) == b"long"
+        other.close()
+    finally:
+        owner.close()
+        Segment.unlink(name)
+
+
+def test_a_foreign_mapping_under_the_name_is_not_a_box(unique_name: str) -> None:
+    with foreign_mapping(unique_name):
+        with pytest.raises(SegmentExistsError):
+            create(unique_name)
+        with pytest.raises(SegmentNotFoundError):
+            attach(unique_name, timeout=0.2)
+
+
+def test_a_writer_killed_holding_the_lock(unique_name: str) -> None:
+    segment = create(unique_name, timeout=0.3)
+    context = mp.get_context("spawn")
+    ready = context.Event()
+    child = context.Process(target=hold_lock_until_killed, args=(unique_name, ready))
+    child.start()
+    assert ready.wait(20)
+    child.kill()
+    child.join(20)
+    with pytest.raises(LockTimeoutError, match=rf"locked by pid {child.pid}\b"):
+        segment._write([(1, b"x")])
+    with pytest.raises(LockTimeoutError):
+        segment._read(1)
+    segment.force_unlock()
     with raw_bytes(unique_name) as view:
-        header = bytes(view).index(MAGIC)
-        (tail,) = struct.unpack_from("<I", view, header + 32)
-        entries = struct.pack("<IIII", 0, 8 | INT << 24, 8, 16 | BYTES << 24)
-        table = bytes(view).index(entries)
-        # A valid field table at the shifted offset, so only the alignment check can refuse it.
-        view[table + 4 : table + 4 + len(entries)] = entries
-        struct.pack_into("<I", view, header + 32, tail + 4)
-    with pytest.raises(SchemaMismatchError, match="corrupt header"):
-        attach(unique_name)
+        assert struct.unpack_from("<I", view, 72) == (child.pid,)
+    segment._write([(1, b"after")])
+    assert segment._read(1) == b"after"
     segment.close()
 
 
-def test_older_layout_is_refused(unique_name: str) -> None:
-    segment = create(unique_name)
-    patch_header(unique_name, 8, "<I", 1)
-    with pytest.raises(SchemaMismatchError, match="uses layout version 1"):
-        attach(unique_name)
-    segment.close()
+def test_force_unlock_of_a_live_writer_leaves_the_box_usable(unique_name: str) -> None:
+    writer = create(unique_name, timeout=0.3)
+    other = attach(unique_name, timeout=0.3)
+    writer._hold_write_lock()
+    other.force_unlock()
+    other._write([(1, b"forced")])
+    generation = other.generation()
+    # The slow writer finishes after all; the box must stay unlocked.
+    writer._release_held_lock()
+    assert writer.generation() >= generation
+    other._write([(1, b"after")])
+    assert writer._read(1) == b"after"
+    other.close()
+    writer.close()
+
+
+@pytest.mark.skipif(
+    shm_free_bytes() > 250 << 20,
+    reason="needs a /dev/shm smaller than the largest box, as in a container's default 64 MiB",
+)
+def test_a_box_larger_than_dev_shm_fails_at_create(unique_name: str) -> None:
+    fields = [NativeField(i * (4 + (1 << 20)), 1 << 20, BYTES) for i in range(250)]
+    size = 250 * (4 + (1 << 20))
+    with pytest.raises(OSError):
+        Segment.create(
+            unique_name, fields, [f"f{i}" for i in range(250)], size, SCHEMA, 1.0, []
+        )
+    create(unique_name).close()
 
 
 def test_attach_waits_for_a_creator_that_has_not_made_its_header(

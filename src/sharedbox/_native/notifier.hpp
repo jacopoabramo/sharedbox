@@ -9,8 +9,7 @@ namespace sharedbox {
 /// Blocks threads of any process until a shared 32-bit word changes.
 class Notifier {
 public:
-    Notifier(const std::string &segment_name, std::atomic<std::uint32_t> &word,
-             std::atomic<std::uint32_t> &waiters);
+    Notifier(const std::string &segment_name, std::uint32_t &word, std::uint32_t &waiters);
     ~Notifier();
     Notifier(const Notifier &) = delete;
     Notifier &operator=(const Notifier &) = delete;
@@ -21,8 +20,9 @@ public:
     void wait(std::uint32_t expected, double timeout);
 
 private:
-    std::atomic<std::uint32_t> &word_;
-    std::atomic<std::uint32_t> &waiters_;
+    std::uint32_t *raw_word_;
+    std::atomic_ref<std::uint32_t> word_;
+    std::atomic_ref<std::uint32_t> waiters_;
 #ifdef _WIN32
     void *semaphore_ = nullptr;
 #endif

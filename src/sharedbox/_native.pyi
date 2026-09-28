@@ -96,7 +96,10 @@ class Segment:
         """Release a write lock left behind by a process that died while writing."""
 
     def _hold_write_lock(self) -> None:
-        """Take the write lock and never release it; for tests."""
+        """Take the write lock and keep it until :meth:`_release_held_lock`; for tests."""
+
+    def _release_held_lock(self) -> None:
+        """Release the lock :meth:`_hold_write_lock` took, as its writer would; for tests."""
 
     def _after_fork(self) -> None:
         """Reset the handle's thread lock in a child created by ``fork``, before it starts threads."""
@@ -106,7 +109,7 @@ class Segment:
 
     @property
     def _size(self) -> int:
-        """Bytes of shared memory the segment manages."""
+        """Bytes of the segment's mapping."""
 
     @property
     def closed(self) -> bool:

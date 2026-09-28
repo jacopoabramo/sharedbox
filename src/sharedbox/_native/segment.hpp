@@ -5,6 +5,7 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <string_view>
 #include <utility>
 #include <vector>
 
@@ -67,20 +68,25 @@ public:
     std::string read(std::uint32_t field) const;
     /// The field's version and bytes, read together.
     std::pair<std::uint64_t, std::string> read_versioned(std::uint32_t field) const;
-    std::vector<std::string> read_all() const;
+    /// A copy of the whole record, every field from one moment; payload() finds a field in it.
+    std::unique_ptr<std::byte[]> read_record() const;
+    /// The stored bytes of field inside a copy made by read_record.
+    std::string_view payload(std::uint32_t field, const std::byte *record) const;
+    std::uint32_t field_count() const;
     void write(const std::vector<std::pair<std::uint32_t, std::string>> &values);
     std::uint64_t version(std::uint32_t field) const;
     std::uint64_t generation() const;
     /// Returns the generation once it differs from last_generation, or after timeout seconds.
     std::uint64_t wait(std::uint64_t last_generation, double timeout) const;
     void force_unlock();
-    /// Takes the write lock and never releases it; exists for tests.
+    /// Takes the write lock and keeps it until release_held_lock; exists for tests.
     void hold_write_lock();
+    void release_held_lock();
     /// Resets per-process locks in a child created by fork(); call before any other thread starts.
     void after_fork();
     /// Detaches this handle; the segment itself stays until unlinked.
     void close();
-    /// Bytes of shared memory the segment manages.
+    /// Bytes of the segment's mapping.
     std::uint64_t size() const;
     bool closed() const;
     const std::string &name() const;

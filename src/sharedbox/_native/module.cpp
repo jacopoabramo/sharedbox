@@ -5,6 +5,7 @@
 #include <nanobind/stl/unique_ptr.h>
 #include <nanobind/stl/vector.h>
 
+#include <string_view>
 #include <system_error>
 
 #include <sharedbox/sharedbox.hpp>
@@ -29,7 +30,7 @@ sharedbox::FieldKind to_kind(std::uint32_t code) {
     return static_cast<sharedbox::FieldKind>(code);
 }
 
-nb::object decode_value(const sharedbox::FieldDesc &field, const std::string &bytes) {
+nb::object decode_value(const sharedbox::FieldDesc &field, std::string_view bytes) {
     PyObject *value = sharedbox::decode(field, bytes.data(), bytes.size());
     if (value == nullptr)
         throw nb::python_error();
@@ -108,10 +109,10 @@ NB_MODULE(_native, m) {
             "field"_a)
         .def("get_all",
              [](const Segment &s) -> nb::list {
-                 std::vector<std::string> values = s.read_all();
+                 const auto record = s.read_record();
                  nb::list out;
-                 for (std::uint32_t i = 0; i < values.size(); ++i)
-                     out.append(decode_value(s.field(i), values[i]));
+                 for (std::uint32_t i = 0; i < s.field_count(); ++i)
+                     out.append(decode_value(s.field(i), s.payload(i, record.get())));
                  return out;
              })
         .def(
@@ -129,10 +130,12 @@ NB_MODULE(_native, m) {
             "_read", [](const Segment &s, std::uint32_t field) { return to_bytes(s.read(field)); }, "field"_a)
         .def("_read_all",
              [](const Segment &s) -> nb::typed<nb::list, nb::bytes> {
-                 std::vector<std::string> values = s.read_all();
-                 nb::list_builder out(values.size());
-                 for (const auto &value : values)
-                     out.put(to_bytes(value));
+                 const auto record = s.read_record();
+                 nb::list_builder out(s.field_count());
+                 for (std::uint32_t i = 0; i < s.field_count(); ++i) {
+                     const std::string_view value = s.payload(i, record.get());
+                     out.put(nb::bytes(value.data(), value.size()));
+                 }
                  return out.commit();
              })
         .def(
@@ -150,6 +153,7 @@ NB_MODULE(_native, m) {
         .def("wait", &Segment::wait, "last_generation"_a, "timeout"_a, nb::call_guard<nb::gil_scoped_release>())
         .def("force_unlock", &Segment::force_unlock)
         .def("_hold_write_lock", &Segment::hold_write_lock)
+        .def("_release_held_lock", &Segment::release_held_lock)
         .def("_after_fork", &Segment::after_fork)
         // A read blocked on another writer's lock releases the GIL and needs it back before it
         // lets close() through, so close() must not hold the GIL while it waits.

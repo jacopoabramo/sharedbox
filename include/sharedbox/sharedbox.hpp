@@ -1015,6 +1015,34 @@ public:
     void *base() const noexcept;
     std::uint64_t size() const noexcept;
 
+    // How long a read waits for another writer's lock before it gives status::lock_timeout; 5 s until set.
+    [[nodiscard]] result<void> set_lock_timeout(seconds timeout) noexcept;
+    // Called around a wait for another writer's lock: before the first pause and after the last.
+    void set_wait_hooks(void *(*before)(), void (*after)(void *)) noexcept;
+    // Copies the field's stored bytes, and no more, into buf, with the field's write count from the same
+    // moment. If they do not fit, nothing is copied and len says how many bytes they need; a buf of the
+    // field's capacity always fits.
+    [[nodiscard]] result<read_value> read(std::uint16_t field, std::span<std::byte> buf) const;
+    // Copies the whole record, every field from one moment, into buf of at least record_size() bytes,
+    // and returns the generation of that moment.
+    [[nodiscard]] result<std::uint64_t> read_record(std::span<std::byte> buf) const;
+    // The stored bytes of field inside a copy made by read_record.
+    std::span<const std::byte> payload(std::uint16_t field, std::span<const std::byte> record) const noexcept;
+    // Writes every value under one lock, so readers see all of them or none.
+    [[nodiscard]] result<void> write(std::span<const value> values, seconds lock_timeout);
+    // Writes since creation, seq >> 1: every write adds 2 to seq, and a force_unlock counts as one.
+    std::uint64_t generation() const noexcept;
+    // Writes to the field since creation; field must be below field_count().
+    std::uint64_t version(std::uint16_t field) const noexcept;
+    // The pid holding the write lock, 0 when free; after force_unlock, the last holder.
+    std::uint32_t writer_pid() const noexcept;
+    // Releases a write lock left by a process that died while writing. writer_pid keeps its value.
+    [[nodiscard]] result<void> force_unlock() noexcept;
+    // Takes the write lock and returns the even seq it was taken from, for unlock; write does both
+    // itself. For tests that hold the lock.
+    [[nodiscard]] result<std::uint64_t> lock(seconds lock_timeout);
+    void unlock(std::uint64_t locked) noexcept;
+
 private:
     explicit handle(detail::state *s) noexcept : s_(s) {}
     void swap(handle &other) noexcept { std::swap(s_, other.s_); }
@@ -1042,6 +1070,9 @@ struct state {
     std::uint64_t size = 0;
     std::unique_ptr<field_spec[]> fields;
     os_mapping map;
+    double lock_timeout = default_lock_timeout;
+    void *(*before_wait)() = nullptr;
+    void (*after_wait)(void *) = nullptr;
 
     ~state();
 };
@@ -1256,6 +1287,167 @@ inline std::uint64_t handle::size() const noexcept { return s_->size; }
     header copy;
     std::memcpy(&copy, hdr, sizeof copy);
     return copy;
+}
+
+namespace detail {
+
+// Runs attempt until it succeeds, pausing between tries; false once timeout seconds have passed. The
+// hooks run only when the first try fails, before the first pause and after the last.
+template <class F> SHAREDBOX_HOT bool retry(const state &s, double timeout, F &&attempt) {
+    if (attempt())
+        return true;
+    void *hook = s.before_wait != nullptr ? s.before_wait() : nullptr;
+    backoff wait(timeout);
+    bool done = false;
+    while (!wait.expired()) {
+        wait.pause();
+        if (attempt()) {
+            done = true;
+            break;
+        }
+    }
+    if (s.after_wait != nullptr)
+        s.after_wait(hook);
+    return done;
+}
+
+} // namespace detail
+
+inline result<void> handle::set_lock_timeout(seconds timeout) noexcept {
+    if (!detail::timeout_ok(timeout, false))
+        return unexpected(status::range);
+    s_->lock_timeout = timeout.count();
+    return {};
+}
+
+inline void handle::set_wait_hooks(void *(*before)(), void (*after)(void *)) noexcept {
+    s_->before_wait = before;
+    s_->after_wait = after;
+}
+
+SHAREDBOX_HOT result<read_value> handle::read(std::uint16_t field, std::span<std::byte> buf) const {
+    const detail::state &s = *s_;
+    if (field >= s.field_count)
+        return unexpected(status::range);
+    const field_spec &f = s.fields[field];
+    auto seq = detail::atomic(s.hdr->seq);
+    read_value out{0, 0};
+    const bool done = detail::retry(s, s.lock_timeout, [&]() noexcept {
+        const std::uint64_t before = seq.load(std::memory_order_acquire);
+        if ((before & 1u) != 0)
+            return false;
+        const std::span<const std::byte> src = detail::payload(f, s.record);
+        if (!src.empty() && src.size() <= buf.size())
+            std::memcpy(buf.data(), src.data(), src.size());
+        const std::uint64_t version = detail::atomic(s.counts[field]).load(std::memory_order_relaxed);
+        std::atomic_thread_fence(std::memory_order_acquire);
+        if (seq.load(std::memory_order_acquire) != before)
+            return false;
+        out = {src.size(), version};
+        return true;
+    });
+    if (!done)
+        return unexpected(status::lock_timeout);
+    return out;
+}
+
+inline result<std::uint64_t> handle::read_record(std::span<std::byte> buf) const {
+    const detail::state &s = *s_;
+    if (buf.size() < s.record_size)
+        return unexpected(status::range);
+    auto seq = detail::atomic(s.hdr->seq);
+    std::uint64_t generation = 0;
+    const bool done = detail::retry(s, s.lock_timeout, [&]() noexcept {
+        const std::uint64_t before = seq.load(std::memory_order_acquire);
+        if ((before & 1u) != 0)
+            return false;
+        std::memcpy(buf.data(), s.record, s.record_size);
+        std::atomic_thread_fence(std::memory_order_acquire);
+        if (seq.load(std::memory_order_acquire) != before)
+            return false;
+        generation = before >> 1;
+        return true;
+    });
+    if (!done)
+        return unexpected(status::lock_timeout);
+    return generation;
+}
+
+inline std::span<const std::byte> handle::payload(std::uint16_t field,
+                                                  std::span<const std::byte> record) const noexcept {
+    return detail::payload(s_->fields[field], record.data());
+}
+
+SHAREDBOX_HOT result<std::uint64_t> handle::lock(seconds lock_timeout) {
+    detail::state &s = *s_;
+    if (!detail::timeout_ok(lock_timeout, false))
+        return unexpected(status::range);
+    auto seq = detail::atomic(s.hdr->seq);
+    std::uint64_t locked = 0;
+    const bool done = detail::retry(s, lock_timeout.count(), [&]() noexcept {
+        std::uint64_t even = seq.load(std::memory_order_relaxed);
+        if ((even & 1u) != 0 ||
+            !seq.compare_exchange_strong(even, even + 1, std::memory_order_acquire, std::memory_order_relaxed))
+            return false;
+        // Keeps the record stores that follow from moving before the odd sequence number.
+        std::atomic_thread_fence(std::memory_order_release);
+        detail::atomic(s.hdr->writer_pid).store(current_pid(), std::memory_order_relaxed);
+        locked = even;
+        return true;
+    });
+    if (!done)
+        return unexpected(status::lock_timeout);
+    return locked;
+}
+
+SHAREDBOX_HOT void handle::unlock(std::uint64_t locked) noexcept {
+    header &h = *s_->hdr;
+    // A force_unlock landing between this check and the swap can leave writer_pid cleared; only the
+    // message of a later lock timeout depends on it.
+    if (detail::atomic(h.seq).load(std::memory_order_relaxed) == locked + 1)
+        detail::atomic(h.writer_pid).store(0, std::memory_order_relaxed);
+    // If a force_unlock has released this writer's lock, seq has moved on and may belong to another
+    // writer's lock, so the swap fails and changes nothing.
+    std::uint64_t expected = locked + 1;
+    detail::atomic(h.seq).compare_exchange_strong(expected, locked + 2, std::memory_order_release,
+                                                  std::memory_order_relaxed);
+}
+
+SHAREDBOX_HOT result<void> handle::write(std::span<const value> values, seconds lock_timeout) {
+    detail::state &s = *s_;
+    if (!detail::values_ok({s.fields.get(), s.field_count}, values))
+        return unexpected(status::range);
+    const result<std::uint64_t> locked = lock(lock_timeout);
+    if (!locked)
+        return unexpected(locked.error());
+    for (const value &v : values) {
+        detail::store(s, v);
+        // Only the lock holder changes a count, so a plain store of the sum is enough.
+        auto count = detail::atomic(s.counts[v.field]);
+        count.store(count.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
+    }
+    unlock(*locked);
+    return {};
+}
+
+inline std::uint64_t handle::generation() const noexcept {
+    return detail::atomic(s_->hdr->seq).load(std::memory_order_acquire) >> 1;
+}
+
+inline std::uint64_t handle::version(std::uint16_t field) const noexcept {
+    return detail::atomic(s_->counts[field]).load(std::memory_order_acquire);
+}
+
+inline std::uint32_t handle::writer_pid() const noexcept {
+    return detail::atomic(s_->hdr->writer_pid).load(std::memory_order_relaxed);
+}
+
+inline result<void> handle::force_unlock() noexcept {
+    auto seq = detail::atomic(s_->hdr->seq);
+    std::uint64_t odd = seq.load(std::memory_order_relaxed);
+    if ((odd & 1u) != 0)
+        seq.compare_exchange_strong(odd, odd + 1, std::memory_order_release, std::memory_order_relaxed);
+    return {};
 }
 
 } // namespace sharedbox

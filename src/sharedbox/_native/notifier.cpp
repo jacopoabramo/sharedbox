@@ -16,9 +16,8 @@ namespace sharedbox {
 
 #ifdef _WIN32
 
-Notifier::Notifier(const std::string &segment_name, std::atomic<std::uint32_t> &word,
-                   std::atomic<std::uint32_t> &waiters)
-    : word_(word), waiters_(waiters) {
+Notifier::Notifier(const std::string &segment_name, std::uint32_t &word, std::uint32_t &waiters)
+    : raw_word_(&word), word_(word), waiters_(waiters) {
     // Segment names are ASCII, so widening byte by byte is exact.
     std::wstring name = L"Local\\sharedbox." + std::wstring(segment_name.begin(), segment_name.end()) + L".wake";
     semaphore_ = CreateSemaphoreW(nullptr, 0, LONG_MAX, name.c_str());
@@ -48,10 +47,8 @@ void Notifier::wait(std::uint32_t expected, double timeout) {
 
 #else
 
-static_assert(sizeof(std::atomic<std::uint32_t>) == sizeof(std::uint32_t));
-
-Notifier::Notifier(const std::string &, std::atomic<std::uint32_t> &word, std::atomic<std::uint32_t> &waiters)
-    : word_(word), waiters_(waiters) {}
+Notifier::Notifier(const std::string &, std::uint32_t &word, std::uint32_t &waiters)
+    : raw_word_(&word), word_(word), waiters_(waiters) {}
 
 Notifier::~Notifier() = default;
 
@@ -59,7 +56,7 @@ void Notifier::wake_all() {
     word_.fetch_add(1, std::memory_order_seq_cst);
     if (waiters_.load(std::memory_order_seq_cst) == 0)
         return;
-    syscall(SYS_futex, reinterpret_cast<std::uint32_t *>(&word_), FUTEX_WAKE, INT_MAX, nullptr, nullptr, 0);
+    syscall(SYS_futex, raw_word_, FUTEX_WAKE, INT_MAX, nullptr, nullptr, 0);
 }
 
 void Notifier::wait(std::uint32_t expected, double timeout) {
@@ -71,7 +68,7 @@ void Notifier::wait(std::uint32_t expected, double timeout) {
     // A waiter killed inside FUTEX_WAIT leaks one count; that only makes wake_all() always
     // call FUTEX_WAKE again and never loses a wake-up.
     waiters_.fetch_add(1, std::memory_order_seq_cst);
-    syscall(SYS_futex, reinterpret_cast<std::uint32_t *>(&word_), FUTEX_WAIT, expected, &ts, nullptr, 0);
+    syscall(SYS_futex, raw_word_, FUTEX_WAIT, expected, &ts, nullptr, 0);
     waiters_.fetch_sub(1, std::memory_order_seq_cst);
 }
 

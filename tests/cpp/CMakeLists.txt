@@ -25,7 +25,7 @@ function(sbx_test_target target)
     endif()
 endfunction()
 
-set(sbx_tests test_result test_atomics test_mapping)
+set(sbx_tests test_result test_atomics test_mapping test_lock)
 if(NOT WIN32)
     # fork() and pid namespaces exist only on POSIX.
     list(APPEND sbx_tests test_fork)
