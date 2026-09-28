@@ -253,10 +253,10 @@ class Watcher:
             group, fields = self._group, self._fields
         if group is None:
             return
+        versions = self._segment.versions()
         for spec in fields:
-            version = self._segment.version(spec.index)
             seen_version, old = self._seen[spec.index]
-            if version == seen_version:
+            if versions[spec.index] == seen_version:
                 continue
             version, new = self._segment.get_versioned(spec.index)
             self._seen[spec.index] = (version, new)
@@ -373,17 +373,19 @@ class Watcher:
     def _resolve_ready(self) -> None:
         with self._lock:
             pending = list(self._pending)
-        ready = [(fut, self._segment.version(fut._field.index)) for fut in pending]
-        ready = [(fut, version) for fut, version in ready if version != fut._since]
+        if not pending:
+            return
+        versions = self._segment.versions()
+        ready = [fut for fut in pending if versions[fut._field.index] != fut._since]
         if not ready:
             return
         # Read every value before removing any future, so a failed read leaves them all pending.
         values: list[tuple[FieldFuture[Any], Any, int]] = []
-        for fut, _ in ready:
+        for fut in ready:
             version, value = self._segment.get_versioned(fut._field.index)
             values.append((fut, value, version))
         with self._lock:
-            for fut, _ in ready:
+            for fut in ready:
                 with contextlib.suppress(ValueError):
                     self._pending.remove(fut)
         for fut, value, version in values:

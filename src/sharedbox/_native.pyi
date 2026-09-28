@@ -99,6 +99,9 @@ class Segment:
     def version(self, field: int) -> int:
         """How many writes the field has had."""
 
+    def versions(self) -> list[int]:
+        """:meth:`version` of every field, in field order."""
+
     def generation(self) -> int:
         """How many writes the segment has had."""
 

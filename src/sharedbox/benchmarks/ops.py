@@ -243,6 +243,7 @@ BENCHMARKS: list[tuple[str, str, str, list[str]]] = [
     ("raw read int", "split", BOX, ["seg._read(0)"]),
     ("native set str", "split", BOX, ["seg.set([(2, 'hello')])"]),
     ("native get str", "split", BOX, ["seg.get(2)"]),
+    ("native versions", "split", BOX, ["seg.versions()"]),
 ]
 
 

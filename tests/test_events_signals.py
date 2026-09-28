@@ -148,3 +148,13 @@ def test_old_is_the_last_emitted_value_after_a_same_value_write(
             seen.get(timeout=0.3)
         box.value = 6
         assert seen.get(timeout=5) == (6, 5)
+
+
+def test_one_update_emits_every_changed_field(unique_name: str) -> None:
+    seen: queue.Queue[tuple[str, int, int]] = queue.Queue()
+    with Counter.create(unique_name) as box:
+        box.events.value.connect(lambda new, old: seen.put(("value", new, old)))
+        box.events.other.connect(lambda new, old: seen.put(("other", new, old)))
+        box.update(value=1, other=2)
+        got = {seen.get(timeout=5), seen.get(timeout=5)}
+        assert got == {("value", 1, 0), ("other", 2, 0)}

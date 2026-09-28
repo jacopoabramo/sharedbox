@@ -653,3 +653,14 @@ def test_get_dict_needs_one_name_per_field(unique_name: str) -> None:
     with pytest.raises(ValueError, match="1 field names for 2 fields"):
         segment.get_dict(("a",))
     segment.close()
+
+
+def test_versions_lists_every_field_in_order(unique_name: str) -> None:
+    segment = create(unique_name)
+    segment._write([(1, b"a")])
+    segment._write([(0, bytes(8)), (1, b"b")])
+    segment._write([(1, b"c")])
+    assert segment.versions() == [1, 3]
+    segment.close()
+    with pytest.raises(BoxClosedError):
+        segment.versions()

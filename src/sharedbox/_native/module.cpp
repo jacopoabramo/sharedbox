@@ -271,6 +271,7 @@ NB_MODULE(_native, m) {
             },
             "values"_a)
         .def("version", &Segment::version, "field"_a)
+        .def("versions", &Segment::versions)
         .def("generation", &Segment::generation)
         .def("register_waiter", &Segment::register_waiter)
         .def("release_waiter", &Segment::release_waiter, "slot"_a)
