@@ -1,6 +1,8 @@
 # API reference
 
-Everything below is importable from `sharedbox`.
+Everything below is importable from `sharedbox`, including
+`SupportsSharedBox` and `get_include()` (see
+[`__sharedbox_box__`](#__sharedbox_box__-for-library-authors)).
 
 ## When to use `SharedBox`
 
@@ -42,7 +44,8 @@ field, before the assignment returns.
 ```python
 class SharedBox:
     def __init_subclass__(cls, *, name: str | None = None, kw_only: bool = False,
-                          lock_timeout: float | None = None) -> None: ...
+                          lock_timeout: float | None = None, max_waiters: int | None = None,
+                          identity: str | None = None) -> None: ...
     def __init__(self, *args, **kwargs) -> None: ...
     @classmethod
     def create(cls, name: str, /, *args, **kwargs) -> Self: ...
@@ -57,6 +60,8 @@ class SharedBox:
     def force_unlock(self) -> None: ...
     def close(self) -> None: ...
     unlink                       # MyBox.unlink(name=None) or box.unlink()
+    def __sharedbox_box__(self, max_version: tuple[int, int] | None = None,
+                          **kwargs) -> CapsuleType: ...
 ```
 
 Base class for a record whose annotated fields live in one named
@@ -113,7 +118,12 @@ default cannot follow one with a default.
 Assigning a value of the wrong type raises `TypeError`, and a `str` or
 `bytes` value longer than its capacity raises `ValueError`. Either way the
 stored value does not change. Assigning to a name that is not a field raises
-`AttributeError`.
+`AttributeError`, and so does deleting a field
+(`AttributeError: a SharedBox field cannot be deleted`).
+
+A box has no `__dict__`: every subclass gets empty `__slots__` unless it
+declares its own. A subclass's `__slots__` may not name `_segment`, which
+`SharedBox` uses; that raises `TypeError` when the class is defined.
 
 Two boxes compare equal only if they are the same object.
 
@@ -135,26 +145,66 @@ Settings.unlink()
 ```
 
 - `name`: the segment name for boxes made by calling the class. By default
-  it is `sharedbox-` followed by 16 hex digits derived from the class's
-  module and qualified name, so every process that imports the class uses
-  the same name. A name matches `[A-Za-z0-9_.-]{1,128}`; any other raises
-  `ValueError`.
+  it is 16 hex digits of SHA-256 over the class's identity (see
+  `identity`), so every process that imports the class uses the same name.
+  A name matches `[A-Za-z0-9_.-]{1,128}`; any other raises `ValueError`.
 - `kw_only`: make every field keyword-only.
 - `lock_timeout`: seconds a read or write waits for a write in progress
   before `LockTimeoutError`, 5.0 by default. Must be finite and in
-  `(0, 86400]`; any other value raises `ValueError`.
+  `(0, 86400]`; any other value raises `ValueError`. On Windows a wait
+  ends on a timer tick, so a timeout of a few milliseconds can take about
+  15 ms to expire.
+- `identity`: a non-empty string, by default the class's `module.qualname`
+  (with `__mp_main__` read as `__main__`); anything else raises
+  `TypeError`. It enters the schema hash and names the box when `name` is
+  not given. A subclass does not inherit it. Two classes with the same
+  identity and fields share a box, even when they live in different
+  modules. Changing the identity, for example from `"motor/1"` to
+  `"motor/2"`, makes processes that still use the old one fail to attach.
+- `max_waiters`: 1 to 4096, default 64; any other value raises
+  `ValueError`. Each box handle whose `watch()` or `events` is in use
+  holds one waiter slot, counted across every process. A watcher that
+  finds every slot taken logs a warning to the `sharedbox` logger and
+  checks for changes once a second until a slot is free.
+
+```python
+from sharedbox import SharedBox
+
+
+class Frame(SharedBox, identity="camera/frame/1", max_waiters=16):
+    exposure: float = 0.01
+    count: int = 0
+
+
+with Frame() as frame:
+    print(len(frame.name))  # 16
+Frame.unlink()
+```
 
 ### Creating and attaching
 
 Calling the class creates the segment under the class's name and writes the
 given values. `create(name, ...)` does the same under another name, so one
 class can describe several boxes. Both raise `SegmentExistsError` if the name is
-taken.
+taken. Its message says which case it is:
+
+- the box's creator is still running, with its pid;
+- the creator runs in another pid namespace, such as another container;
+- the creator is no longer running, so the box is probably left over from
+  a crash, and `Box.unlink(name)` removes it;
+- the name holds no published box, so it may be left over from a crash
+  during create, and `Box.unlink(name)` removes it.
+
+When none of these can be told, the message only says the name is taken.
+Nothing is removed automatically: other processes may still use a box
+whose creator has exited.
 
 `attach(name=None)` opens an existing segment, by default the one named
-after the class. It raises `SegmentNotFoundError` if there is none, and
-`SchemaMismatchError` if the segment was made by a different class or a
-different version of this class.
+after the class. It raises `SegmentNotFoundError` if there is none, or if
+the shared memory under that name does not become a box within 1 s (the
+lock timeout, if shorter). It raises `SchemaMismatchError` if the segment
+was made by a different class or a different version of this class, or
+uses another major version of the segment layout.
 
 ```python
 from sharedbox import SharedBox
@@ -357,14 +407,17 @@ while writing. Reads and writes waiting on such a lock raise
 
 ### Pickling
 
-A pickled box holds its class, segment name and schema hash. Unpickling
+A pickled box holds its class, segment name, schema hash and the box's
+create id, a random number drawn when the box was created. Unpickling
 attaches a new handle: an independent box on the same data, which the
 receiving process closes. `copy.copy` and `copy.deepcopy` do the same, like
 `multiprocessing.shared_memory.SharedMemory`.
 
 Unpickling fails with `SchemaMismatchError` when the receiving process's
-class has different fields, and with `SegmentNotFoundError` when the segment
-is gone. Pickled boxes are for handing a box to a running process, not for
+class has different fields, or when the box under that name was unlinked
+and created again since the pickle was made ("was pickled from a different
+box named ..."). It fails with `SegmentNotFoundError` when the segment is
+gone. Pickled boxes are for handing a box to a running process, not for
 storing.
 
 With the `fork` start method, arguments are not pickled: the child uses the
@@ -405,7 +458,64 @@ if __name__ == "__main__":
 ### Stored data
 
 Values are stored as fixed-size bytes: `struct` encoding for numbers, UTF-8
-for text. Stored bytes are never unpickled or executed.
+for text. Stored bytes are never unpickled or executed. The layout of the
+segment is specified in
+[design/segment-layout.md](design/segment-layout.md).
+
+### Passing a box to other libraries
+
+A library that supports sharedbox, such as a C++ extension, takes the box
+object itself:
+
+```python
+with Frame() as frame:
+    camera.run(frame)            # camera: an extension that supports sharedbox
+```
+
+The library gets its own handle on the segment, so closing or unlinking
+the box does not affect it.
+
+### `__sharedbox_box__` (for library authors)
+
+```python
+def __sharedbox_box__(self, max_version: tuple[int, int] | None = None,
+                      **kwargs) -> CapsuleType: ...
+```
+
+A protocol for extensions that accept a box, in the style of the Arrow
+PyCapsule Interface. Python code does not call it; a consuming library does.
+
+- It returns a PyCapsule named `"sharedbox_box"` holding a pointer to an
+  `sbx_handle` (declared in `sharedbox/sharedbox_c.h`). The handle has its
+  own mapping of the segment, made from the box's OS handle, so it works
+  after `unlink()`.
+- `max_version` is the `(major, minor)` layout version the caller
+  supports. A major other than the box's raises `BufferError`; `None`
+  means the box's own version. Any other keyword raises
+  `NotImplementedError`.
+- A consumer takes the handle with `sharedbox::handle::from_capsule` (C++)
+  or `sbx_import` (C), renames the capsule `"used_sharedbox_box"`, compares
+  the box's schema hash with the one it expects, and destroys (C++) or
+  releases (C) the handle itself. A capsule that is never taken releases
+  the handle when it is garbage collected.
+- `release` touches no Python objects and does not need the GIL, so it may
+  run on any thread and after interpreter shutdown.
+- On Windows the segment stays alive while a handle is held.
+- `sharedbox.SupportsSharedBox` is a `typing.Protocol` with this method,
+  for annotating functions that accept a box:
+
+  ```python
+  from sharedbox import SupportsSharedBox
+
+  def run(frame: SupportsSharedBox) -> None: ...
+  ```
+
+- `sharedbox.get_include()` returns the folder holding
+  `sharedbox/sharedbox.hpp`, `sharedbox/sharedbox_c.h` and
+  `sharedbox/sharedbox_c.cpp`, to add to an extension's include path.
+
+[library-authors.md](library-authors.md) shows how to build an extension
+that accepts a box.
 
 ## `Capacity`
 
@@ -488,20 +598,27 @@ asyncio.run(main())
 
 | Class | Base | Raised when |
 | --- | --- | --- |
-| `SegmentExistsError` | `FileExistsError` | creating a box under a name that is already taken |
-| `SegmentNotFoundError` | `FileNotFoundError` | attaching to, or unlinking on Linux, a name with no segment |
-| `SchemaMismatchError` | `TypeError` | attaching, or unpickling a box, with a class whose module, name or fields differ from the creator's |
+| `SegmentExistsError` | `FileExistsError` | creating a box under a name that is already taken; the message says whether the creator still runs (see [Creating and attaching](#creating-and-attaching)) |
+| `SegmentNotFoundError` | `FileNotFoundError` | attaching to, or unlinking on Linux, a name with no segment; attaching to shared memory that does not become a box within 1 s |
+| `SchemaMismatchError` | `TypeError` | attaching, or unpickling a box, with a class whose identity or fields differ from the creator's; a segment of another layout major version (the message names it); unpickling after the box was created again |
 | `BoxClosedError` | `ValueError` | using a box after `close()` |
 | `LockTimeoutError` | `TimeoutError` | a read or write waits for a write in progress for longer than `lock_timeout` |
 
 ## Platform notes
 
-Windows: the segment is backed by the page file. Windows frees it when the
-last box using it is closed, and `unlink()` does nothing.
+Windows: the segment is a file mapping named `Local\sharedbox.<name>`,
+backed by the page file. Windows frees it when the last box or capsule
+handle using it is closed, and `unlink()` does nothing. A `lock_timeout` of
+a few milliseconds can take about one timer tick (15.6 ms) to expire.
 
-Linux: the segment is a file in `/dev/shm`, created with mode `0600`, so only
-the same user can open it. Only `unlink()` removes its name. A segment that
-is never unlinked stays until reboot, and creating a box under its name
-raises `SegmentExistsError`.
+Linux: the segment is the file `/dev/shm/sharedbox.<name>`, created with
+mode `0600`, so only the same user can open it. Only `unlink()` removes its
+name. A segment that is never unlinked stays until reboot, and creating a
+box under its name raises `SegmentExistsError`. Every open box keeps one
+file descriptor, so a process reaches the default limit of 1024
+(`ulimit -n`) at about 1000 open boxes.
+
+Releases up to 0.3.0rc0 named segments differently and used another
+layout, so they and this release do not see each other's boxes.
 
 macOS is not supported.
