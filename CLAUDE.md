@@ -17,7 +17,8 @@ sharedbox/
 |   |-- sharedbox_c.h          minimal C interface: sbx_open, sbx_import, sbx_read, sbx_write, sbx_schema_hash, sbx_release
 |   `-- sharedbox_c.cpp        its implementation, compiled by the consumer (CMake target sharedbox::c)
 |-- cmake/
-|   |-- sharedbox-config.cmake       find_package(sharedbox) from an installed wheel
+|   |-- sharedbox-config.cmake       find_package(sharedbox) from an installed wheel; the build writes
+|   |                                sharedbox-config-version.cmake next to it in the wheel
 |   `-- sharedbox-require-cxx.cmake  stops configure when sharedbox::c is linked without CXX
 |-- src/sharedbox/
 |   |-- __init__.py            re-exports the public API, get_include()
@@ -145,7 +146,7 @@ uv run python scripts/vscode_setup.py  # once, for VS Code's C/C++ extension
 `[tool.uv] cache-keys` lists the C++ sources, headers and `cmake/`, so
 `uv sync` rebuilds the extension after they change. Build folders are
 `build/<wheel tag>`. The wheel also carries `include/sharedbox/` under
-`sharedbox/include/` and the CMake config under
+`sharedbox/include/` and the CMake config and config version file under
 `sharedbox/share/cmake/sharedbox/`.
 
 Wheels per platform (Windows x64, Linux x86_64 glibc and musl): `cp311-cp311`,

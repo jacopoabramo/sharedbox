@@ -667,7 +667,10 @@ computed in Rust and checked against the test vector above.
 - `include/sharedbox/sharedbox.hpp`, `sharedbox_c.h` and `sharedbox_c.cpp`
   are in the repository; the build installs them into the wheel under
   `sharedbox/include/`, and `cmake/sharedbox-config.cmake` under
-  `sharedbox/share/cmake/sharedbox/`.
+  `sharedbox/share/cmake/sharedbox/`, next to a
+  `sharedbox-config-version.cmake` the build writes from the package
+  version. Before 1.0 it accepts a request for the same minor version
+  only (`SameMinorVersion`), from 1.0 on the same major version.
 - CMake targets: `sharedbox::headers`, an interface target that requires
   `cxx_std_20` (and links `rt` and `Threads::Threads` on Linux, `bcrypt`
   on Windows), and

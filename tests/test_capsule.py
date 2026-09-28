@@ -1,5 +1,6 @@
 import ctypes
 import gc
+import importlib.metadata
 import os
 import shutil
 import subprocess
@@ -57,8 +58,18 @@ def consumer(tmp_path_factory: pytest.TempPathFactory) -> ctypes.CDLL:
         pytest.skip("building the C consumer needs cmake")
     build = tmp_path_factory.mktemp("consumer")
     prefix = Path(sharedbox.get_include()).parent
+    # The installed package's major.minor, which its config version file must accept.
+    version = ".".join(importlib.metadata.version("sharedbox").split(".")[:2])
     subprocess.run(
-        [cmake, "-S", str(CONSUMER), "-B", str(build), f"-DCMAKE_PREFIX_PATH={prefix}"],
+        [
+            cmake,
+            "-S",
+            str(CONSUMER),
+            "-B",
+            str(build),
+            f"-DCMAKE_PREFIX_PATH={prefix}",
+            f"-DSHAREDBOX_VERSION={version}",
+        ],
         check=True,
     )
     subprocess.run([cmake, "--build", str(build), "--config", "Release"], check=True)

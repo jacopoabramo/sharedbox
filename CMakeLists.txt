@@ -53,4 +53,18 @@ endif()
 
 install(TARGETS _native LIBRARY DESTINATION sharedbox)
 install(DIRECTORY include/ DESTINATION sharedbox/include)
-install(FILES cmake/sharedbox-config.cmake cmake/sharedbox-require-cxx.cmake DESTINATION sharedbox/share/cmake/sharedbox)
+# Before 1.0 a new minor version may break the interface, so a request for 0.3 accepts only 0.3.x.
+if(SKBUILD_PROJECT_VERSION VERSION_LESS 1)
+    set(_sharedbox_compatibility SameMinorVersion)
+else()
+    set(_sharedbox_compatibility SameMajorVersion)
+endif()
+include(CMakePackageConfigHelpers)
+write_basic_package_version_file("${CMAKE_CURRENT_BINARY_DIR}/sharedbox-config-version.cmake"
+    VERSION "${SKBUILD_PROJECT_VERSION}"
+    COMPATIBILITY ${_sharedbox_compatibility})
+install(FILES
+    cmake/sharedbox-config.cmake
+    cmake/sharedbox-require-cxx.cmake
+    "${CMAKE_CURRENT_BINARY_DIR}/sharedbox-config-version.cmake"
+    DESTINATION sharedbox/share/cmake/sharedbox)
