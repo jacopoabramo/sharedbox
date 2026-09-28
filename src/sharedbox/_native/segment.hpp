@@ -98,6 +98,8 @@ public:
     /// write() of a single value, without building a vector.
     void write_one(std::uint32_t field, std::string_view bytes);
     std::uint64_t version(std::uint32_t field) const;
+    /// version() of every field, in field order.
+    std::vector<std::uint64_t> versions() const;
     std::uint64_t generation() const;
     /// Claims a waiter slot for this process; free it with release_waiter.
     std::uint16_t register_waiter();

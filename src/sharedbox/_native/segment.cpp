@@ -355,6 +355,14 @@ std::uint64_t Segment::version(std::uint32_t index) const {
     return impl_->box.version(static_cast<std::uint16_t>(index));
 }
 
+std::vector<std::uint64_t> Segment::versions() const {
+    auto guard = impl_->enter();
+    std::vector<std::uint64_t> out(impl_->fields.size());
+    for (std::size_t i = 0; i < out.size(); ++i)
+        out[i] = impl_->box.version(static_cast<std::uint16_t>(i));
+    return out;
+}
+
 std::uint64_t Segment::generation() const {
     auto guard = impl_->enter();
     return impl_->box.generation();

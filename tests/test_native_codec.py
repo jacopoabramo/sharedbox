@@ -125,7 +125,7 @@ def test_check_matches_set() -> None:
 def test_initial_values_are_visible_on_attach(unique_name: str) -> None:
     segment = create(unique_name, [(0, 42), (2, "ready")])
     other = Segment.attach(unique_name, NAMES, SCHEMA, 1.0)
-    assert other.get_all() == [42, 0.0, "ready", b"", False]
+    assert list(other.get_dict(tuple(NAMES)).values()) == [42, 0.0, "ready", b"", False]
     other.close()
     segment.close()
 
