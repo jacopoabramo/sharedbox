@@ -27,7 +27,9 @@ function(sbx_test_target target)
 endfunction()
 
 set(sbx_tests test_result test_atomics test_mapping test_lock test_slots test_wait)
-if(NOT WIN32)
+if(WIN32)
+    list(APPEND sbx_tests test_windows_h)
+else()
     # fork() and pid namespaces exist only on POSIX.
     list(APPEND sbx_tests test_fork)
 endif()
