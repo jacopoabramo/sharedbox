@@ -328,7 +328,7 @@ class SharedBox(metaclass=SharedBoxMeta):
         if unknown:
             raise TypeError(
                 f"{type(self).__qualname__} has no field(s) {', '.join(unknown)}"
-            )
+            ) from None
 
     @property
     def name(self) -> str:
@@ -342,9 +342,13 @@ class SharedBox(metaclass=SharedBoxMeta):
 
     def update(self, **values: Any) -> None:
         """Write several fields at once; readers see all of them or none."""
-        self._check_names(values)
         by_name = type(self).__layout__.by_name
-        self._segment.set([(by_name[n].index, v) for n, v in values.items()])
+        try:
+            pairs = [(by_name[n].index, v) for n, v in values.items()]
+        except KeyError:
+            self._check_names(values)
+            raise
+        self._segment.set(pairs)
 
     def snapshot(self) -> dict[str, Any]:
         """Every field's value, read at one point in time."""

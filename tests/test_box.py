@@ -8,6 +8,7 @@ import subprocess
 import sys
 import threading
 import time
+import traceback
 import types
 from collections.abc import Iterator
 from dataclasses import KW_ONLY
@@ -676,3 +677,21 @@ def test_identity_must_be_a_non_empty_string(identity: object) -> None:
 
         class Bad(SharedBox, identity=identity):
             value: int = 0
+
+
+def test_update_names_every_unknown_field_and_writes_nothing(unique_name: str) -> None:
+    with Point.create(unique_name) as box:
+        with pytest.raises(TypeError) as error:
+            box.update(x=1.0, zz=1, a=2)
+        assert str(error.value) == "Point has no field(s) a, zz"
+        assert "KeyError" not in "".join(traceback.format_exception(error.value))
+        assert box.x == 0.0
+
+
+def test_update_and_snapshot_on_a_closed_box_raise(unique_name: str) -> None:
+    box = Point.create(unique_name)
+    box.close()
+    with pytest.raises(BoxClosedError):
+        box.update(x=1.0)
+    with pytest.raises(BoxClosedError):
+        box.snapshot()
