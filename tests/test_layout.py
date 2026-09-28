@@ -126,8 +126,7 @@ def test_schema_hash_matches_the_published_vector() -> None:
     )
     assert build_layout(motor).schema_hash == 0x82CE467598596A72
     assert (
-        build_layout(motor, identity="__main__.Motor").schema_hash
-        == 0x82CE467598596A72
+        build_layout(motor, identity="__main__.Motor").schema_hash == 0x82CE467598596A72
     )
     assert build_layout(motor, identity="motor/2").schema_hash != 0x82CE467598596A72
 
