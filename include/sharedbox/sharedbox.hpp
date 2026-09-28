@@ -1007,6 +1007,13 @@ public:
     [[nodiscard]] static result<handle> create(std::string_view name, std::span<const field_spec> fields,
                                                std::uint32_t record_size, std::uint64_t schema_hash,
                                                std::uint16_t waiter_slots, std::span<const value> initial);
+    // As create, but open waits until publish() is called, so the creator can change the values first.
+    [[nodiscard]] static result<handle>
+    create_unpublished(std::string_view name, std::span<const field_spec> fields, std::uint32_t record_size,
+                       std::uint64_t schema_hash, std::uint16_t waiter_slots, std::span<const value> initial);
+    // Lets open find a box made by create_unpublished. status::range if the box is already published,
+    // as every box a handle made by open or from_capsule reaches is.
+    [[nodiscard]] result<void> publish() noexcept;
     // Opens the box called name, waiting up to timeout for a creator that has not finished. The caller
     // compares schema_hash() with its own.
     [[nodiscard]] static result<handle> open(std::string_view name, seconds timeout);
@@ -1233,6 +1240,15 @@ inline handle::~handle() { delete s_; }
 inline result<handle> handle::create(std::string_view name, std::span<const field_spec> fields,
                                      std::uint32_t record_size, std::uint64_t schema_hash,
                                      std::uint16_t waiter_slots, std::span<const value> initial) {
+    result<handle> made = create_unpublished(name, fields, record_size, schema_hash, waiter_slots, initial);
+    if (made)
+        static_cast<void>(made->publish());
+    return made;
+}
+
+inline result<handle> handle::create_unpublished(std::string_view name, std::span<const field_spec> fields,
+                                                 std::uint32_t record_size, std::uint64_t schema_hash,
+                                                 std::uint16_t waiter_slots, std::span<const value> initial) {
     if (!detail::name_ok(name) || fields.empty() || fields.size() > max_fields || waiter_slots == 0 ||
         waiter_slots > max_waiter_slots || record_size > detail::max_record_size)
         return unexpected(status::range);
@@ -1284,8 +1300,15 @@ inline result<handle> handle::create(std::string_view name, std::span<const fiel
     detail::bind(*s, base, size, layout_minor);
     for (const value &v : initial)
         detail::store(*s, v);
-    detail::atomic(h.magic).store(magic, std::memory_order_release);
     return handle(s.release());
+}
+
+inline result<void> handle::publish() noexcept {
+    std::uint64_t unpublished = 0;
+    if (!detail::atomic(s_->hdr->magic)
+             .compare_exchange_strong(unpublished, magic, std::memory_order_release, std::memory_order_relaxed))
+        return unexpected(status::range);
+    return {};
 }
 
 inline result<handle> handle::open(std::string_view name, seconds timeout) {

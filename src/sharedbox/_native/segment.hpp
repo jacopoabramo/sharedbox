@@ -76,11 +76,11 @@ struct FieldRead {
 class Segment {
 public:
     /// values are written before any other process can attach; names label fields in error messages.
-    static std::unique_ptr<Segment> create(const std::string &name, const std::vector<FieldDesc> &fields,
-                                           const std::vector<std::string> &names, std::uint64_t record_size,
-                                           std::uint64_t schema_hash, double lock_timeout,
-                                           std::uint16_t waiter_slots,
-                                           const std::vector<std::pair<std::uint32_t, std::string>> &values);
+    /// Without publish, no other process can attach until publish() is called.
+    static std::unique_ptr<Segment>
+    create(const std::string &name, const std::vector<FieldDesc> &fields, const std::vector<std::string> &names,
+           std::uint64_t record_size, std::uint64_t schema_hash, double lock_timeout, std::uint16_t waiter_slots,
+           const std::vector<std::pair<std::uint32_t, std::string>> &values, bool publish = true);
     static std::unique_ptr<Segment> attach(const std::string &name, const std::vector<std::string> &names,
                                            std::uint64_t schema_hash, double lock_timeout);
     ~Segment();
@@ -100,6 +100,9 @@ public:
     std::uint64_t version(std::uint32_t field) const;
     /// version() of every field, in field order.
     std::vector<std::uint64_t> versions() const;
+    /// Lets other processes attach to a segment created without publish; throws std::invalid_argument
+    /// if it is already published.
+    void publish();
     std::uint64_t generation() const;
     /// Claims a waiter slot for this process; free it with release_waiter.
     std::uint16_t register_waiter();

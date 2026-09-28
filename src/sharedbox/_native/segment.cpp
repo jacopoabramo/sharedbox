@@ -232,7 +232,8 @@ std::unique_ptr<Segment> Segment::create(const std::string &name, const std::vec
                                          const std::vector<std::string> &names, std::uint64_t record_size,
                                          std::uint64_t schema_hash, double lock_timeout,
                                          std::uint16_t waiter_slots,
-                                         const std::vector<std::pair<std::uint32_t, std::string>> &values) {
+                                         const std::vector<std::pair<std::uint32_t, std::string>> &values,
+                                         bool publish) {
     check_lock_timeout(lock_timeout);
     if (fields.empty() || fields.size() > max_fields)
         throw std::invalid_argument("a box needs between 1 and 256 fields");
@@ -256,8 +257,10 @@ std::unique_ptr<Segment> Segment::create(const std::string &name, const std::vec
     impl->name = name;
     impl->names = names;
     impl->lock_timeout = lock_timeout;
-    result<handle> made =
-        handle::create(name, table, static_cast<std::uint32_t>(record_size), schema_hash, waiter_slots, initial);
+    const auto size = static_cast<std::uint32_t>(record_size);
+    result<handle> made = publish
+                              ? handle::create(name, table, size, schema_hash, waiter_slots, initial)
+                              : handle::create_unpublished(name, table, size, schema_hash, waiter_slots, initial);
     if (!made && made.error() == status::exists)
         throw SegmentExists(exists_message(name, names));
     impl->box = impl->check(std::move(made));
@@ -361,6 +364,12 @@ std::vector<std::uint64_t> Segment::versions() const {
     for (std::size_t i = 0; i < out.size(); ++i)
         out[i] = impl_->box.version(static_cast<std::uint16_t>(i));
     return out;
+}
+
+void Segment::publish() {
+    auto guard = impl_->enter();
+    if (!impl_->box.publish())
+        throw std::invalid_argument("box '" + impl_->name + "' is already published");
 }
 
 std::uint64_t Segment::generation() const {

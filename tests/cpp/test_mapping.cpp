@@ -7,6 +7,7 @@
 #include <chrono>
 #include <cstring>
 #include <string>
+#include <thread>
 
 using sharedbox::handle;
 using sharedbox::header;
@@ -213,6 +214,32 @@ TEST_CASE("create refuses bad fields") {
     const sharedbox::value short_int{0, seven};
     CHECK(handle::create(name, fields, 32, 1, 64, {&short_int, 1}).error() == status::range);
     CHECK(open_status(name, 0.1) == status::not_found);
+}
+
+// open waits for publish(); create does both steps at once, so only create_unpublished shows the wait.
+TEST_CASE("create_unpublished is opened only after publish") {
+    const std::string name = unique("unpublished");
+    static const std::int64_t initial = 42;
+    const sharedbox::value value{0, std::as_bytes(std::span(&initial, 1))};
+    auto owner = handle::create_unpublished(name, fields, 32, 0x5EED, 64, {&value, 1});
+    REQUIRE(owner.has_value());
+    CHECK(open_status(name, 0.1) == status::not_found);
+    CHECK(sharedbox::inspect(name).error() == status::not_found);
+    CHECK(create(name).error() == status::exists);
+    status seen = status::os;
+    std::thread opener([&] { seen = open_status(name, 5.0); });
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    CHECK(owner->publish().has_value());
+    opener.join();
+    CHECK(seen == status::ok);
+    CHECK(owner->publish().error() == status::range);
+    auto other = handle::open(name, seconds(1.0));
+    REQUIRE(other.has_value());
+    CHECK(other->publish().error() == status::range);
+    std::int64_t stored = 0;
+    std::memcpy(&stored, static_cast<const std::byte *>(other->base()) + 1728, sizeof stored);
+    CHECK(stored == 42);
+    static_cast<void>(sharedbox::unlink(name));
 }
 
 } // namespace
