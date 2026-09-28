@@ -61,9 +61,9 @@ TEST_CASE("creator is recorded") {
         auto owner = create(name);
         REQUIRE(owner.has_value());
         const header &h = header_of(*owner);
-        CHECK(h.creator_pid == sharedbox::current_pid());
-        CHECK(h.creator_start == sharedbox::current_start());
-        CHECK(h.creator_pidns == sharedbox::current_pidns());
+        CHECK(h.creator_pid == sharedbox::detail::current_pid());
+        CHECK(h.creator_start == sharedbox::detail::current_start());
+        CHECK(h.creator_pidns == sharedbox::detail::current_pidns());
         const auto seen = sharedbox::inspect(name);
         CHECK((seen && seen->creator_pid == h.creator_pid && seen->create_id == owner->create_id()));
         first_id = owner->create_id();

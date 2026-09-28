@@ -14,9 +14,9 @@
 #include <unistd.h>
 
 TEST_CASE("the child of a fork reads its pid, start time and namespace again") {
-    const std::uint64_t parent_pidns = sharedbox::current_pidns();
-    const std::uint32_t parent_pid = sharedbox::current_pid();
-    CHECK(sharedbox::current_start() != 0);
+    const std::uint64_t parent_pidns = sharedbox::detail::current_pidns();
+    const std::uint32_t parent_pid = sharedbox::detail::current_pid();
+    CHECK(sharedbox::detail::current_start() != 0);
     CHECK((sharedbox::detail::cache().pidns.load() != 0 && sharedbox::detail::cache().start.load() != 0));
     const pid_t child = fork();
     if (child < 0) {
@@ -25,9 +25,9 @@ TEST_CASE("the child of a fork reads its pid, start time and namespace again") {
     if (child == 0) {
         const bool reset =
             sharedbox::detail::cache().pidns.load() == 0 && sharedbox::detail::cache().start.load() == 0;
-        const bool same_namespace = sharedbox::current_pidns() == parent_pidns;
-        const bool own_pid = sharedbox::current_pid() == static_cast<std::uint32_t>(getpid()) &&
-                             sharedbox::current_pid() != parent_pid;
+        const bool same_namespace = sharedbox::detail::current_pidns() == parent_pidns;
+        const bool own_pid = sharedbox::detail::current_pid() == static_cast<std::uint32_t>(getpid()) &&
+                             sharedbox::detail::current_pid() != parent_pid;
         _exit(reset && same_namespace && own_pid ? 0 : 1);
     }
     int code = 0;
@@ -39,7 +39,7 @@ TEST_CASE("the child of a fork reads its pid, start time and namespace again") {
 // fails for a reason other than the process being gone (EMFILE here), the result must say "unknown",
 // not "no such process". Forking keeps this process's own descriptor limit intact for doctest's report.
 TEST_CASE("an open failure other than the process being gone reports an unknown start time") {
-    const std::uint32_t parent_pid = sharedbox::current_pid();
+    const std::uint32_t parent_pid = sharedbox::detail::current_pid();
     const pid_t child = fork();
     if (child < 0) {
         FAIL("fork failed");
@@ -48,8 +48,8 @@ TEST_CASE("an open failure other than the process being gone reports an unknown 
         rlimit limit{0, 0};
         if (setrlimit(RLIMIT_NOFILE, &limit) != 0)
             _exit(2);
-        const std::uint64_t start = sharedbox::process_start(parent_pid);
-        _exit(start == sharedbox::start_unknown ? 0 : 1);
+        const std::uint64_t start = sharedbox::detail::process_start(parent_pid);
+        _exit(start == sharedbox::detail::start_unknown ? 0 : 1);
     }
     int code = 0;
     CHECK(waitpid(child, &code, 0) == child);

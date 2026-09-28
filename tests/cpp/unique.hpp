@@ -7,5 +7,5 @@
 
 // A box name no other test process uses.
 inline std::string unique(const char *tag) {
-    return "sbtest-cpp-" + std::string(tag) + "-" + std::to_string(sharedbox::current_pid());
+    return "sbtest-cpp-" + std::string(tag) + "-" + std::to_string(sharedbox::detail::current_pid());
 }

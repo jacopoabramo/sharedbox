@@ -26,17 +26,17 @@ TEST_CASE("a late unlock leaves the next writer locked") {
     REQUIRE((a && b));
     const auto locked_a = a->lock(seconds(1.0));
     REQUIRE(locked_a.has_value());
-    CHECK(b->writer_pid() == sharedbox::current_pid());
+    CHECK(b->writer_pid() == sharedbox::detail::current_pid());
     const std::uint64_t g0 = b->generation();
     CHECK(b->force_unlock().has_value());
-    CHECK(b->writer_pid() == sharedbox::current_pid());
+    CHECK(b->writer_pid() == sharedbox::detail::current_pid());
     const std::uint64_t g1 = b->generation();
     const auto locked_b = b->lock(seconds(1.0));
     REQUIRE(locked_b.has_value());
     const std::uint64_t before = seq_of(*b);
     a->unlock(*locked_a);
     CHECK((seq_of(*b) == before && (seq_of(*b) & 1u) == 1));
-    CHECK(b->writer_pid() == sharedbox::current_pid());
+    CHECK(b->writer_pid() == sharedbox::detail::current_pid());
     // b still holds the lock, so no one else can take it.
     const auto third = a->lock(seconds(0.05));
     CHECK((!third && third.error() == status::lock_timeout));

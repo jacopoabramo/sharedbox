@@ -219,17 +219,21 @@ static_assert(offsetof(sbx_handle, private_data) == 40);
 // keep that lock in one process. With Clang's libc++, std::atomic_ref needs libc++ 19 or later.
 static_assert(std::atomic_ref<std::uint32_t>::is_always_lock_free);
 static_assert(std::atomic_ref<std::uint64_t>::is_always_lock_free);
+namespace detail {
 inline constexpr std::size_t align32 = std::atomic_ref<std::uint32_t>::required_alignment;
 inline constexpr std::size_t align64 = std::atomic_ref<std::uint64_t>::required_alignment;
-static_assert(offsetof(header, magic) % align64 == 0 && offsetof(header, seq) % align64 == 0);
-static_assert(offsetof(header, writer_pid) % align32 == 0 && offsetof(header, wake_word) % align32 == 0);
-static_assert(offsetof(header, waiters) % align32 == 0);
-static_assert(offsetof(waiter_slot, owner_start) % align64 == 0 &&
-              offsetof(waiter_slot, owner_pidns) % align64 == 0);
-static_assert(offsetof(waiter_slot, owner_pid) % align32 == 0 && offsetof(waiter_slot, interrupt) % align32 == 0);
+} // namespace detail
+static_assert(offsetof(header, magic) % detail::align64 == 0 && offsetof(header, seq) % detail::align64 == 0);
+static_assert(offsetof(header, writer_pid) % detail::align32 == 0 &&
+              offsetof(header, wake_word) % detail::align32 == 0);
+static_assert(offsetof(header, waiters) % detail::align32 == 0);
+static_assert(offsetof(waiter_slot, owner_start) % detail::align64 == 0 &&
+              offsetof(waiter_slot, owner_pidns) % detail::align64 == 0);
+static_assert(offsetof(waiter_slot, owner_pid) % detail::align32 == 0 &&
+              offsetof(waiter_slot, interrupt) % detail::align32 == 0);
 // The write counts start at header_size + field_count * sizeof(stored_field), the slots after them.
-static_assert(header_size % align64 == 0 && sizeof(stored_field) % align64 == 0);
-static_assert(sizeof(waiter_slot) % align64 == 0 && page_size % alignof(header) == 0);
+static_assert(header_size % detail::align64 == 0 && sizeof(stored_field) % detail::align64 == 0);
+static_assert(sizeof(waiter_slot) % detail::align64 == 0 && page_size % alignof(header) == 0);
 
 static_assert(SBX_OK == int(status::ok) && SBX_E_EXISTS == int(status::exists));
 static_assert(SBX_E_NOT_FOUND == int(status::not_found) && SBX_E_LAYOUT == int(status::layout));
@@ -440,8 +444,6 @@ inline process_cache &cache() noexcept {
     return c;
 }
 
-} // namespace detail
-
 #ifndef _WIN32
 // Runs the cache's first initialisation while the executable or shared library that includes this
 // header is loaded, before its code can call the accessors. Otherwise a fork while another thread is
@@ -449,7 +451,7 @@ inline process_cache &cache() noexcept {
 // only the (now absent) initialising thread would clear. For an executable this is before main; a
 // library loaded with dlopen runs it inside dlopen, where other threads may already exist, so a fork
 // from one of them during that call is not covered.
-inline const bool process_cache_ready = (detail::cache(), true);
+inline const bool process_cache_ready = (cache(), true);
 #endif
 
 // What process_start returns for a process that exists but cannot be inspected.
@@ -460,9 +462,9 @@ inline std::uint32_t current_pid() noexcept {
 #ifdef _WIN32
     return static_cast<std::uint32_t>(GetCurrentProcessId());
 #else
-    if (!detail::atfork_registered.load(std::memory_order_relaxed))
+    if (!atfork_registered.load(std::memory_order_relaxed))
         return static_cast<std::uint32_t>(getpid());
-    detail::process_cache &c = detail::cache();
+    process_cache &c = cache();
     std::uint32_t pid = c.pid.load(std::memory_order_relaxed);
     if (pid == 0) {
         pid = static_cast<std::uint32_t>(getpid());
@@ -548,10 +550,10 @@ inline std::uint64_t process_start(std::uint32_t pid) noexcept {
 // This process's start time, read on first use.
 inline std::uint64_t current_start() noexcept {
 #ifndef _WIN32
-    if (!detail::atfork_registered.load(std::memory_order_relaxed))
+    if (!atfork_registered.load(std::memory_order_relaxed))
         return process_start(current_pid());
 #endif
-    detail::process_cache &c = detail::cache();
+    process_cache &c = cache();
     std::uint64_t start = c.start.load(std::memory_order_relaxed);
     if (start == 0) {
         start = process_start(current_pid());
@@ -566,12 +568,12 @@ inline std::uint64_t current_pidns() noexcept {
 #ifdef _WIN32
     return 0;
 #else
-    if (!detail::atfork_registered.load(std::memory_order_relaxed))
-        return detail::read_pidns();
-    detail::process_cache &c = detail::cache();
+    if (!atfork_registered.load(std::memory_order_relaxed))
+        return read_pidns();
+    process_cache &c = cache();
     std::uint64_t cached = c.pidns.load(std::memory_order_relaxed);
     if (cached == 0) {
-        cached = detail::read_pidns() + 1;
+        cached = read_pidns() + 1;
         c.pidns.store(cached, std::memory_order_relaxed);
     }
     return cached - 1;
@@ -586,8 +588,6 @@ inline bool process_alive(std::uint32_t pid, std::uint64_t start) noexcept {
     const std::uint64_t now = process_start(pid);
     return now != 0 && (now == start_unknown || start == start_unknown || now == start);
 }
-
-namespace detail {
 
 inline constexpr std::uint32_t max_record_size = max_fields * (max_capacity + 8u);
 inline constexpr std::size_t object_name_max = 160;
@@ -1263,9 +1263,9 @@ inline result<handle> handle::create(std::string_view name, std::span<const fiel
     h.tail = header_size;
     h.size = static_cast<std::uint32_t>(size);
     h.create_id = *id;
-    h.creator_start = current_start();
-    h.creator_pid = current_pid();
-    h.creator_pidns = current_pidns();
+    h.creator_start = detail::current_start();
+    h.creator_pid = detail::current_pid();
+    h.creator_pidns = detail::current_pidns();
     for (std::uint16_t i = 0; i < count; ++i) {
         const stored_field stored{fields[i].offset,
                                   fields[i].capacity | std::uint32_t{fields[i].kind} << kind_shift};
@@ -1460,7 +1460,7 @@ SHAREDBOX_HOT result<std::uint64_t> handle::lock(seconds lock_timeout) {
             return false;
         // Keeps the record stores that follow from moving before the odd sequence number.
         std::atomic_thread_fence(std::memory_order_release);
-        detail::atomic(s.hdr->writer_pid).store(current_pid(), std::memory_order_relaxed);
+        detail::atomic(s.hdr->writer_pid).store(detail::current_pid(), std::memory_order_relaxed);
         locked = even;
         return true;
     });
@@ -1642,9 +1642,9 @@ inline void free_dead_waiters(const state &s) noexcept {
 
 inline result<std::uint16_t> handle::register_waiter() {
     detail::state &s = *s_;
-    const std::uint32_t pid = current_pid();
-    const std::uint64_t start = current_start();
-    const std::uint64_t pidns = current_pidns();
+    const std::uint32_t pid = detail::current_pid();
+    const std::uint64_t start = detail::current_start();
+    const std::uint64_t pidns = detail::current_pidns();
     detail::free_dead_waiters(s);
     for (std::uint16_t i = 0; i < s.waiter_slots; ++i) {
         waiter_slot &w = s.slots[i];

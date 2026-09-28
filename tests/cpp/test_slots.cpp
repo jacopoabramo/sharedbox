@@ -70,9 +70,9 @@ TEST_CASE("a dead owner's slot claimed again before it is freed is left to the n
     sharedbox::detail::state view;
     view.hdr = static_cast<sharedbox::header *>(h->base());
     sharedbox::waiter_slot &s = slot_0(*h);
-    const std::uint32_t new_owner = sharedbox::current_pid();
+    const std::uint32_t new_owner = sharedbox::detail::current_pid();
     s.owner_start = 12345;
-    s.owner_pidns = sharedbox::current_pidns();
+    s.owner_pidns = sharedbox::detail::current_pidns();
     s.owner_pid = new_owner;
     atomic(waiters(*h)).fetch_add(1);
 
@@ -101,7 +101,7 @@ TEST_CASE("a claim made while a dead owner's slot is being freed survives the re
     other.slots = &s;
     other.waiter_slots = h->waiter_slots();
     s.owner_start = 12345;
-    s.owner_pidns = sharedbox::current_pidns();
+    s.owner_pidns = sharedbox::detail::current_pidns();
     s.owner_pid = dead;
     atomic(waiters(*h)).fetch_add(1);
 
@@ -127,7 +127,7 @@ TEST_CASE("a claim made while a dead owner's slot is being freed survives the re
 
 TEST_CASE("a dead owner's slot is freed only when both namespaces are known and equal") {
     constexpr sharedbox::field_spec fields[1] = {{0, 8, sharedbox::kind_int}};
-    const std::uint64_t own = sharedbox::current_pidns();
+    const std::uint64_t own = sharedbox::detail::current_pidns();
     const std::string name = unique("slots");
     CHECK(own != 0);
     auto h = handle::create(name, fields, 8, 1, 4, {});
@@ -144,7 +144,7 @@ TEST_CASE("a dead owner's slot is freed only when both namespaces are known and 
 
     // This process's own namespace unknown, as without /proc: the cache holds the namespace plus one.
     sharedbox::detail::cache().pidns.store(1);
-    CHECK(sharedbox::current_pidns() == 0);
+    CHECK(sharedbox::detail::current_pidns() == 0);
     fake_dead_owner(*h, 0);
     CHECK(!registering_frees_slot_0(*h));
     fake_dead_owner(*h, own);

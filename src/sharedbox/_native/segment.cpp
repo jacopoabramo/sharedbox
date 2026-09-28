@@ -71,13 +71,13 @@ std::string exists_message(const std::string &name, const std::vector<std::strin
 #ifndef _WIN32
     // A pid means something only inside its namespace: with either namespace unknown (0), or a
     // real mismatch, there is nothing safe to say about whether the creator is still running.
-    const std::uint64_t own_pidns = current_pidns();
+    const std::uint64_t own_pidns = detail::current_pidns();
     if (seen->creator_pidns == 0 || own_pidns == 0)
         return taken;
     if (seen->creator_pidns != own_pidns)
         return taken + "; it was created in another pid namespace, such as another container";
 #endif
-    if (process_alive(seen->creator_pid, seen->creator_start))
+    if (detail::process_alive(seen->creator_pid, seen->creator_start))
         return taken + "; its creator, pid " + std::to_string(seen->creator_pid) + ", is still running";
 #ifdef _WIN32
     return taken + "; its creator, pid " + std::to_string(seen->creator_pid) +
