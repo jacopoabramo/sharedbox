@@ -31,6 +31,7 @@ RESERVED = frozenset(
     }
 )
 MISSING = object()
+MAX_WAITERS = 4096
 LIVE: weakref.WeakSet[SharedBox] = weakref.WeakSet()
 
 
@@ -136,6 +137,7 @@ class SharedBox(metaclass=SharedBoxMeta):
     __layout__: ClassVar[Layout]
     __sharedbox_defaults__: ClassVar[dict[str, Any]] = {}
     __lock_timeout__: ClassVar[float] = 5.0
+    __max_waiters__: ClassVar[int] = 64
     __sharedbox_name__: ClassVar[str]
     __events_class__: ClassVar[type[SignalGroup]]
 
@@ -145,6 +147,7 @@ class SharedBox(metaclass=SharedBoxMeta):
         name: str | None = None,
         kw_only: bool = False,
         lock_timeout: float | None = None,
+        max_waiters: int | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init_subclass__(**kwargs)
@@ -184,6 +187,16 @@ class SharedBox(metaclass=SharedBoxMeta):
             if not (0 < lock_timeout <= 86400):
                 raise ValueError("lock_timeout must be finite and in (0, 86400]")
             cls.__lock_timeout__ = lock_timeout
+        if max_waiters is not None:
+            if (
+                isinstance(max_waiters, bool)
+                or not isinstance(max_waiters, int)
+                or not 1 <= max_waiters <= MAX_WAITERS
+            ):
+                raise ValueError(
+                    f"max_waiters must be an int between 1 and {MAX_WAITERS}"
+                )
+            cls.__max_waiters__ = max_waiters
         cls.__events_class__ = events_class(cls, layout)
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
@@ -260,6 +273,7 @@ class SharedBox(metaclass=SharedBoxMeta):
             layout.schema_hash,
             cls.__lock_timeout__,
             [(spec.index, merged[spec.name]) for spec in layout.fields],
+            cls.__max_waiters__,
         )
         self._watcher = Watcher(self._segment)
         self._track()

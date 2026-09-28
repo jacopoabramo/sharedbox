@@ -133,6 +133,9 @@ struct Segment::Impl {
         if (code == status::lock_timeout)
             throw LockTimeout("box '" + name + "' is locked by pid " + std::to_string(box.writer_pid()) +
                               "; call force_unlock() if that process is gone");
+        if (code == status::no_slot)
+            throw NoWaiterSlot("all " + std::to_string(box.waiter_slots()) + " waiter slots of box '" + name +
+                               "' are in use");
         throw_status(code, name);
     }
 
@@ -190,6 +193,7 @@ Segment::~Segment() {
 std::unique_ptr<Segment> Segment::create(const std::string &name, const std::vector<FieldDesc> &fields,
                                          const std::vector<std::string> &names, std::uint64_t record_size,
                                          std::uint64_t schema_hash, double lock_timeout,
+                                         std::uint16_t waiter_slots,
                                          const std::vector<std::pair<std::uint32_t, std::string>> &values) {
     check_lock_timeout(lock_timeout);
     if (fields.empty() || fields.size() > max_fields)
@@ -215,7 +219,7 @@ std::unique_ptr<Segment> Segment::create(const std::string &name, const std::vec
     impl->names = names;
     impl->lock_timeout = lock_timeout;
     result<handle> made = handle::create(name, table, static_cast<std::uint32_t>(record_size), schema_hash,
-                                         default_waiter_slots, initial);
+                                         waiter_slots, initial);
     impl->box = impl->check(std::move(made));
     impl->bind();
     return std::unique_ptr<Segment>(new Segment(std::move(impl)));
@@ -334,6 +338,26 @@ std::uint64_t Segment::wait(std::uint64_t last_generation, double timeout) const
             return current;
         impl_->notifier->wait(word, remaining);
     }
+}
+
+std::uint16_t Segment::register_waiter() {
+    auto guard = impl_->enter();
+    return impl_->check(impl_->box.register_waiter());
+}
+
+void Segment::release_waiter(std::uint16_t slot) {
+    auto guard = impl_->enter();
+    impl_->box.release_waiter(slot);
+}
+
+bool Segment::waiter_held(std::uint16_t slot) const {
+    auto guard = impl_->enter();
+    return impl_->box.waiter_held(slot);
+}
+
+std::uint32_t Segment::waiters() const {
+    auto guard = impl_->enter();
+    return impl_->box.waiters();
 }
 
 void Segment::force_unlock() {

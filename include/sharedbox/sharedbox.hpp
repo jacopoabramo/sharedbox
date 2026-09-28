@@ -1043,6 +1043,16 @@ public:
     [[nodiscard]] result<std::uint64_t> lock(seconds lock_timeout);
     void unlock(std::uint64_t locked) noexcept;
 
+    // Claims a free waiter slot for this process, first freeing the slots of processes that have exited.
+    [[nodiscard]] result<std::uint16_t> register_waiter();
+    // Frees a slot this handle claimed; any other slot is left alone.
+    void release_waiter(std::uint16_t slot) noexcept;
+    // Whether this handle claimed slot and the slot still records this process; false once it was freed
+    // under it, when the caller releases it and claims another.
+    bool waiter_held(std::uint16_t slot) const noexcept;
+    // Occupied waiter slots.
+    std::uint32_t waiters() const noexcept;
+
 private:
     explicit handle(detail::state *s) noexcept : s_(s) {}
     void swap(handle &other) noexcept { std::swap(s_, other.s_); }
@@ -1073,11 +1083,23 @@ struct state {
     double lock_timeout = default_lock_timeout;
     void *(*before_wait)() = nullptr;
     void (*after_wait)(void *) = nullptr;
+    std::array<std::atomic<std::uint64_t>, max_waiter_slots / 64> owned{};
 
     ~state();
 };
 
-inline state::~state() = default;
+inline bool owned_clear(state &s, std::uint16_t i) noexcept;
+inline bool slot_is_mine(const state &s, std::uint16_t i) noexcept;
+inline void free_slot(const state &s, std::uint16_t i) noexcept;
+inline void free_dead_waiters(const state &s) noexcept;
+
+inline state::~state() {
+    if (hdr != nullptr)
+        for (std::uint16_t i = 0; i < waiter_slots; ++i)
+            // A child created by fork inherits the bits of its parent's slots; those stay the parent's.
+            if (owned_clear(*this, i) && slot_is_mine(*this, i))
+                free_slot(*this, i);
+}
 
 // A state for a mapping of the given shape, or nullptr when memory runs out.
 inline std::unique_ptr<state> make_state(std::string_view name, std::uint16_t field_count,
@@ -1245,6 +1267,7 @@ inline result<handle> handle::open(std::string_view name, seconds timeout) {
     s->create_id = line0.create_id;
     s->map = std::move(*map);
     detail::bind(*s, s->map.base(), s->map.size(), line0.layout_minor);
+    detail::free_dead_waiters(*s);
     return handle(s.release());
 }
 
@@ -1448,6 +1471,109 @@ inline result<void> handle::force_unlock() noexcept {
     if ((odd & 1u) != 0)
         seq.compare_exchange_strong(odd, odd + 1, std::memory_order_release, std::memory_order_relaxed);
     return {};
+}
+
+namespace detail {
+
+inline bool owned_test(const state &s, std::uint16_t i) noexcept {
+    return (s.owned[i / 64].load(std::memory_order_relaxed) >> (i % 64) & 1u) != 0;
+}
+
+inline void owned_set(state &s, std::uint16_t i) noexcept {
+    s.owned[i / 64].fetch_or(std::uint64_t{1} << (i % 64), std::memory_order_acq_rel);
+}
+
+// Returns whether the bit was set.
+inline bool owned_clear(state &s, std::uint16_t i) noexcept {
+    const std::uint64_t bit = std::uint64_t{1} << (i % 64);
+    return (s.owned[i / 64].fetch_and(~bit, std::memory_order_acq_rel) & bit) != 0;
+}
+
+// Whether slot i still records this process: a slot freed by mistake and claimed by another process
+// is left to its new owner.
+inline bool slot_is_mine(const state &s, std::uint16_t i) noexcept {
+    waiter_slot &w = s.slots[i];
+    return atomic(w.owner_pid).load(std::memory_order_acquire) == current_pid() &&
+           atomic(w.owner_start).load(std::memory_order_acquire) == current_start() &&
+           atomic(w.owner_pidns).load(std::memory_order_acquire) == current_pidns();
+}
+
+// owner_start is cleared before owner_pid, so a process that sees the pid of a new owner never pairs
+// it with the start time of the old one and frees a live slot.
+inline void free_slot(const state &s, std::uint16_t i) noexcept {
+    waiter_slot &w = s.slots[i];
+    atomic(w.owner_start).store(0, std::memory_order_relaxed);
+    atomic(s.hdr->waiters).fetch_sub(1, std::memory_order_seq_cst);
+    atomic(w.owner_pid).store(0, std::memory_order_release);
+}
+
+// Frees every slot whose owner has exited. Clearing owner_start first decides which of several
+// processes freeing the same slot decrements waiters.
+inline void free_dead_waiters(const state &s) noexcept {
+    const std::uint32_t self = current_pid();
+    const std::uint64_t own_pidns = current_pidns();
+    for (std::uint16_t i = 0; i < s.waiter_slots; ++i) {
+        waiter_slot &w = s.slots[i];
+        const std::uint32_t pid = atomic(w.owner_pid).load(std::memory_order_acquire);
+        if (pid == 0)
+            continue;
+        std::uint64_t start = atomic(w.owner_start).load(std::memory_order_acquire);
+#ifdef _WIN32
+        static_cast<void>(own_pidns);
+        const bool checkable = true;
+#else
+        // A pid means something only inside its namespace: a slot of another namespace, or with either
+        // namespace unknown (0), counts as alive. Windows has no pid namespaces.
+        const std::uint64_t pidns = atomic(w.owner_pidns).load(std::memory_order_acquire);
+        const bool checkable = pidns != 0 && own_pidns != 0 && pidns == own_pidns;
+#endif
+        // start 0: claimed a moment ago and not stamped yet.
+        if (start == 0 || !checkable || (pid == self && start == current_start()) || process_alive(pid, start))
+            continue;
+        if (!atomic(w.owner_start)
+                 .compare_exchange_strong(start, 0, std::memory_order_acq_rel, std::memory_order_relaxed))
+            continue;
+        atomic(s.hdr->waiters).fetch_sub(1, std::memory_order_seq_cst);
+        atomic(w.owner_pid).store(0, std::memory_order_release);
+    }
+}
+
+} // namespace detail
+
+inline result<std::uint16_t> handle::register_waiter() {
+    detail::state &s = *s_;
+    const std::uint32_t pid = current_pid();
+    const std::uint64_t start = current_start();
+    const std::uint64_t pidns = current_pidns();
+    detail::free_dead_waiters(s);
+    for (std::uint16_t i = 0; i < s.waiter_slots; ++i) {
+        waiter_slot &w = s.slots[i];
+        std::uint32_t none = 0;
+        if (!detail::atomic(w.owner_pid)
+                 .compare_exchange_strong(none, pid, std::memory_order_acq_rel, std::memory_order_relaxed))
+            continue;
+        detail::atomic(w.interrupt).store(0, std::memory_order_relaxed);
+        detail::atomic(w.owner_pidns).store(pidns, std::memory_order_relaxed);
+        detail::atomic(w.owner_start).store(start, std::memory_order_release);
+        detail::atomic(s.hdr->waiters).fetch_add(1, std::memory_order_seq_cst);
+        detail::owned_set(s, i);
+        return i;
+    }
+    return unexpected(status::no_slot);
+}
+
+inline void handle::release_waiter(std::uint16_t slot) noexcept {
+    detail::state &s = *s_;
+    if (slot < s.waiter_slots && detail::owned_clear(s, slot) && detail::slot_is_mine(s, slot))
+        detail::free_slot(s, slot);
+}
+
+inline bool handle::waiter_held(std::uint16_t slot) const noexcept {
+    return slot < s_->waiter_slots && detail::owned_test(*s_, slot) && detail::slot_is_mine(*s_, slot);
+}
+
+inline std::uint32_t handle::waiters() const noexcept {
+    return detail::atomic(s_->hdr->waiters).load(std::memory_order_acquire);
 }
 
 } // namespace sharedbox

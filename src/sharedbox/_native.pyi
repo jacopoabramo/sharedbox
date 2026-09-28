@@ -20,6 +20,9 @@ class BoxClosedError(ValueError):
 class LockTimeoutError(TimeoutError):
     """The write lock stayed taken for longer than the lock timeout."""
 
+class WaiterSlotsFullError(RuntimeError):
+    """Every waiter slot of the box is taken."""
+
 def check(kind: int, capacity: int, name: str, value: object) -> None:
     """Raise what writing ``value`` to a field of this kind and capacity would raise."""
 
@@ -45,10 +48,12 @@ class Segment:
         schema_hash: int,
         lock_timeout: float,
         values: Sequence[tuple[int, object]],
+        waiter_slots: int = 64,
     ) -> Segment:
         """Create the segment with ``values`` written before any other process can see it.
 
         ``fields`` are ``(offset, capacity, kind)``; ``names`` are used in error messages.
+        ``waiter_slots`` is how many threads, across processes, can wait at once.
         """
 
     @staticmethod
@@ -94,6 +99,15 @@ class Segment:
         ``timeout`` must be finite and between 0 and 86400.
         """
 
+    def register_waiter(self) -> int:
+        """Claim a waiter slot for this process; free it with :meth:`release_waiter`."""
+
+    def release_waiter(self, slot: int) -> None:
+        """Free a slot claimed with :meth:`register_waiter`."""
+
+    def waiter_held(self, slot: int) -> bool:
+        """True while ``slot`` is still this process's; false once it was freed under it."""
+
     def force_unlock(self) -> None:
         """Release a write lock left behind by a process that died while writing."""
 
@@ -112,6 +126,10 @@ class Segment:
     @property
     def _size(self) -> int:
         """Bytes of the segment's mapping."""
+
+    @property
+    def _waiters(self) -> int:
+        """Occupied waiter slots; for tests."""
 
     @property
     def closed(self) -> bool:

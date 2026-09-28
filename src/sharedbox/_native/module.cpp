@@ -140,6 +140,7 @@ NB_MODULE(_native, m) {
     nb::exception<sharedbox::SchemaMismatch>(m, "SchemaMismatchError", PyExc_TypeError);
     nb::exception<sharedbox::SegmentClosed>(m, "BoxClosedError", PyExc_ValueError);
     nb::exception<sharedbox::LockTimeout>(m, "LockTimeoutError", PyExc_TimeoutError);
+    nb::exception<sharedbox::NoWaiterSlot>(m, "WaiterSlotsFullError", PyExc_RuntimeError);
     nb::register_exception_translator([](const std::exception_ptr &p, void *) {
         try {
             std::rethrow_exception(p);
@@ -174,7 +175,7 @@ NB_MODULE(_native, m) {
             [](const std::string &name,
                const std::vector<std::tuple<std::uint32_t, std::uint32_t, std::uint32_t>> &fields,
                const std::vector<std::string> &names, std::uint64_t record_size, std::uint64_t schema_hash,
-               double lock_timeout, const Values &values) {
+               double lock_timeout, const Values &values, std::uint16_t waiter_slots) {
                 std::vector<sharedbox::FieldDesc> descs;
                 descs.reserve(fields.size());
                 for (const auto &[offset, capacity, kind] : fields)
@@ -186,9 +187,11 @@ NB_MODULE(_native, m) {
                     sharedbox::check_index(index, descs.size());
                     encoded.emplace_back(index, sharedbox::encode(descs[index], names[index], value.ptr()));
                 }
-                return Segment::create(name, descs, names, record_size, schema_hash, lock_timeout, encoded);
+                return Segment::create(name, descs, names, record_size, schema_hash, lock_timeout, waiter_slots,
+                                       encoded);
             },
-            "name"_a, "fields"_a, "names"_a, "record_size"_a, "schema_hash"_a, "lock_timeout"_a, "values"_a)
+            "name"_a, "fields"_a, "names"_a, "record_size"_a, "schema_hash"_a, "lock_timeout"_a, "values"_a,
+            "waiter_slots"_a = sharedbox::default_waiter_slots)
         .def_static("attach", &Segment::attach, "name"_a, "names"_a, "schema_hash"_a, "lock_timeout"_a)
         .def("get", &get, "field"_a)
         .def(
@@ -248,6 +251,9 @@ NB_MODULE(_native, m) {
             "values"_a)
         .def("version", &Segment::version, "field"_a)
         .def("generation", &Segment::generation)
+        .def("register_waiter", &Segment::register_waiter)
+        .def("release_waiter", &Segment::release_waiter, "slot"_a)
+        .def("waiter_held", &Segment::waiter_held, "slot"_a)
         .def("wait", &Segment::wait, "last_generation"_a, "timeout"_a, nb::call_guard<nb::gil_scoped_release>())
         .def("force_unlock", &Segment::force_unlock)
         .def("_hold_write_lock", &Segment::hold_write_lock)
@@ -258,6 +264,7 @@ NB_MODULE(_native, m) {
         .def("close", &Segment::close, nb::call_guard<nb::gil_scoped_release>())
         .def_static("unlink", &Segment::unlink, "name"_a)
         .def_prop_ro("_size", &Segment::size)
+        .def_prop_ro("_waiters", &Segment::waiters)
         .def_prop_ro("closed", &Segment::closed)
         .def_prop_ro("name", &Segment::name)
         .def_prop_ro("lock_timeout", &Segment::lock_timeout);

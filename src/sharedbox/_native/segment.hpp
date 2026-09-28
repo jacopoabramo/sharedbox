@@ -45,6 +45,9 @@ struct SegmentClosed : std::runtime_error {
 struct LockTimeout : std::runtime_error {
     using std::runtime_error::runtime_error;
 };
+struct NoWaiterSlot : std::runtime_error {
+    using std::runtime_error::runtime_error;
+};
 
 using WaitHook = void *(*)();
 using ResumeHook = void (*)(void *);
@@ -73,6 +76,7 @@ public:
     static std::unique_ptr<Segment> create(const std::string &name, const std::vector<FieldDesc> &fields,
                                            const std::vector<std::string> &names, std::uint64_t record_size,
                                            std::uint64_t schema_hash, double lock_timeout,
+                                           std::uint16_t waiter_slots,
                                            const std::vector<std::pair<std::uint32_t, std::string>> &values);
     static std::unique_ptr<Segment> attach(const std::string &name, const std::vector<std::string> &names,
                                            std::uint64_t schema_hash, double lock_timeout);
@@ -92,6 +96,13 @@ public:
     void write_one(std::uint32_t field, std::string_view bytes);
     std::uint64_t version(std::uint32_t field) const;
     std::uint64_t generation() const;
+    /// Claims a waiter slot for this process; free it with release_waiter.
+    std::uint16_t register_waiter();
+    void release_waiter(std::uint16_t slot);
+    /// Whether slot is still this process's; false once it was freed under it.
+    bool waiter_held(std::uint16_t slot) const;
+    /// Occupied waiter slots; for tests.
+    std::uint32_t waiters() const;
     /// Returns the generation once it differs from last_generation, or after timeout seconds.
     std::uint64_t wait(std::uint64_t last_generation, double timeout) const;
     void force_unlock();
