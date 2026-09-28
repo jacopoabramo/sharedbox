@@ -402,9 +402,13 @@ still runs, runs in another pid namespace, or has exited.
 
 The core is C++20, header-only, in namespace `sharedbox`. Its names are
 declared in the inline namespace `sharedbox::v1`, which changes when the
-C++ interface changes incompatibly, so code built against two versions of
-the header can be linked into one program. C programs use it through
-`sharedbox_c.h`, whose `sbx_*` functions are not versioned this way.
+C++ interface changes incompatibly, so code built against headers with
+different inline namespaces can be linked into one program. Names in
+`sharedbox::detail` may change without a new inline namespace, so shared
+libraries build with hidden visibility to keep their copies apart. C
+programs use it through `sharedbox_c.h`, whose `sbx_*` functions are not
+versioned this way and are declared with hidden visibility outside
+Windows.
 
 - The layout structs are plain standard-layout types with integer members.
 - Atomics: `std::atomic_ref` on those members. `static_assert`s require

@@ -73,8 +73,9 @@
 #endif
 
 namespace sharedbox {
-// Renamed when this header's C++ interface changes incompatibly, so code built against two versions
-// of the header can be linked into one program without the two definitions of a name colliding.
+// Renamed when this header's C++ interface changes incompatibly, so code built against headers with
+// different inline namespaces can be linked into one program without their names colliding. Names in
+// detail may change without a rename, so a shared library should build with hidden visibility.
 inline namespace v1 {
 
 inline constexpr std::uint16_t layout_major = 1;

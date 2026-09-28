@@ -61,10 +61,28 @@ before that include and removes them at its end.
 
 The header declares its C++ names in `sharedbox::v1`, an inline
 namespace, so code still writes `sharedbox::handle`. The inline namespace
-changes when the header's C++ interface changes incompatibly, so two
-libraries built against different versions of the header can be linked into one
-program. The C functions `sbx_*` keep their names across versions. Names
-in `sharedbox::detail` are internal and may change in any release.
+changes when the header's C++ interface changes incompatibly, so libraries
+built against headers with different inline namespaces can be linked into
+one program. The C functions `sbx_*` keep their names across versions.
+Names in `sharedbox::detail` are internal and may change in any release
+without a new inline namespace.
+
+On Linux, two shared libraries built against different releases of the
+header would otherwise share one copy of each inline function and variable
+when they are loaded into one program, even where the two copies differ. A
+shared library that uses `sharedbox::headers` or `sharedbox::c` should
+therefore keep them to itself by building with hidden visibility:
+
+```cmake
+set_target_properties(reader PROPERTIES
+    C_VISIBILITY_PRESET hidden
+    CXX_VISIBILITY_PRESET hidden
+    VISIBILITY_INLINES_HIDDEN ON)
+```
+
+`sharedbox_c.h` declares the `sbx_*` functions with hidden visibility on
+GCC and Clang outside Windows, so each library keeps its own copy of them
+whatever its target settings.
 
 ### C++
 
