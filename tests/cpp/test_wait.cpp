@@ -44,12 +44,17 @@ TEST_CASE("a write wakes a waiter, and an interrupt ends only its own slot's wai
     std::thread a([&] { interrupted = h.wait(*first, h.generation(), 5.0s); });
     std::thread b([&] { changed = h.wait(*second, h.generation(), 5.0s); });
     std::this_thread::sleep_for(100ms);
+    auto start = std::chrono::steady_clock::now();
     REQUIRE(h.interrupt(*first).has_value());
     a.join();
     CHECK((interrupted && *interrupted == wake::interrupted));
+    // A lost wake still ends the wait with the right result, but only at the 5 s timeout.
+    CHECK(std::chrono::steady_clock::now() - start < 1s);
+    start = std::chrono::steady_clock::now();
     write_zero(h);
     b.join();
     CHECK((changed && *changed == wake::changed));
+    CHECK(std::chrono::steady_clock::now() - start < 1s);
 
     h.release_waiter(*first);
     h.release_waiter(*second);

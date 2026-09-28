@@ -289,15 +289,20 @@ def test_the_longest_name_and_the_last_slot_wake(unique_name: str) -> None:
         slots = [segment.register_waiter() for _ in range(4096)]
         last = slots[-1]
         assert last == 4095
-        woke: list[int] = []
+        woke: list[tuple[int, float]] = []
         thread = threading.Thread(
-            target=lambda: woke.append(segment.wait(segment.generation(), 5.0, last))
+            target=lambda: woke.append(
+                (segment.wait(segment.generation(), 5.0, last), time.monotonic())
+            )
         )
         thread.start()
         time.sleep(0.2)
+        start = time.monotonic()
         segment._write([(0, bytes(8))])
         thread.join(5)
-        assert woke == [1]
+        assert [generation for generation, _ in woke] == [1]
+        # A lost wake still returns the new generation, but only at the timeout.
+        assert woke[0][1] - start < 1.0
         for slot in slots:
             segment.release_waiter(slot)
     finally:
@@ -305,9 +310,6 @@ def test_the_longest_name_and_the_last_slot_wake(unique_name: str) -> None:
         Segment.unlink(name)
 
 
-@pytest.mark.skipif(
-    sys.platform != "win32", reason="the 50 ms cap existed only on Windows"
-)
 def test_two_waiters_wake_without_the_old_50_ms_delay(unique_name: str) -> None:
     segment = create(unique_name)
     delays: list[float] = []

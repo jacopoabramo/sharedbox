@@ -1056,7 +1056,8 @@ public:
     // interrupted, or timeout passes (status::timeout).
     [[nodiscard]] result<wake> wait(std::uint16_t slot, std::uint64_t last_generation, seconds timeout);
     // Ends the wait in slot, of any process, with wake::interrupted; the flag stays set until that waiter
-    // sees it, so an interrupt sent before the wait starts still ends it.
+    // sees it, so an interrupt sent before the wait starts still ends it. An interrupt that arrives after the
+    // slot was released and claimed again reaches the next owner as one spurious wake::interrupted.
     [[nodiscard]] result<void> interrupt(std::uint16_t slot);
 
 private:
@@ -1737,7 +1738,8 @@ inline result<wake> handle::wait(std::uint16_t slot, std::uint64_t last_generati
         if (e == nullptr)
             return unexpected(status::os);
         const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(remaining).count();
-        WaitForSingleObject(e, static_cast<DWORD>(ms) + 1);
+        if (WaitForSingleObject(e, static_cast<DWORD>(ms) + 1) == WAIT_FAILED)
+            return unexpected(status::os);
 #else
         const auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(remaining).count();
         timespec ts{};
