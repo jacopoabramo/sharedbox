@@ -10,6 +10,8 @@
 #include <utility>
 #include <vector>
 
+struct sbx_handle;
+
 namespace sharedbox {
 
 enum class FieldKind : std::uint8_t { Bool = 0, Int = 1, Float = 2, Str = 3, Bytes = 4 };
@@ -108,6 +110,9 @@ public:
     std::uint32_t waiters() const;
     /// Random at creation; a box made again under the same name has another.
     std::uint64_t create_id() const;
+    /// A heap handle with its own mapping of the segment, for a capsule. Call its release, then
+    /// delete it.
+    sbx_handle *export_handle() const;
     /// Returns the generation once it differs from last_generation, the slot is interrupted, or
     /// timeout seconds pass. Without a slot the call claims one for its own duration.
     std::uint64_t wait(std::uint64_t last_generation, double timeout, std::optional<std::uint16_t> slot) const;

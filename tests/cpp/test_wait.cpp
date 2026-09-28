@@ -7,6 +7,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <optional>
 #include <thread>
 
 using namespace std::chrono_literals;
@@ -87,4 +88,74 @@ TEST_CASE("wait refuses a slot not held and a timeout out of range") {
     CHECK(h.interrupt(4).error() == status::range);
     h.release_waiter(*slot);
     static_cast<void>(sharedbox::unlink(name));
+}
+
+namespace {
+
+std::uint32_t waiters_at_release = 0;
+int releases = 0;
+
+void count_release(sbx_handle *capsule) {
+    waiters_at_release =
+        sharedbox::detail::atomic(static_cast<sharedbox::header *>(capsule->base)->waiters).load();
+    ++releases;
+    capsule->release = nullptr;
+}
+
+} // namespace
+
+TEST_CASE("a handle taken from a capsule frees only its own slots and events, then releases the capsule") {
+    const std::string name = unique("wait-capsule");
+    handle h = make(name);
+    const auto mine = h.register_waiter();
+    REQUIRE(mine.has_value());
+    sbx_handle producer{sharedbox::layout_major,
+                        h.minor_version(),
+                        sharedbox::handle_version,
+                        h.base(),
+                        h.size(),
+                        h.name().data(),
+                        count_release,
+                        nullptr};
+    {
+        auto foreign = handle::from_capsule(&producer);
+        REQUIRE(foreign.has_value());
+        CHECK(producer.release == nullptr);
+        CHECK(foreign->duplicate().error() == status::range);
+        const auto theirs = foreign->register_waiter();
+        REQUIRE(theirs.has_value());
+        CHECK(h.waiters() == 2);
+        REQUIRE(foreign->interrupt(*mine).has_value());
+        const auto woken = h.wait(*mine, h.generation(), 1.0s);
+        CHECK((woken && *woken == wake::interrupted));
+        CHECK(releases == 0);
+    }
+    CHECK(releases == 1);
+    CHECK(waiters_at_release == 1);
+    CHECK(h.waiter_held(*mine));
+    REQUIRE(h.interrupt(*mine).has_value());
+    const auto again = h.wait(*mine, h.generation(), 1.0s);
+    CHECK((again && *again == wake::interrupted));
+    h.release_waiter(*mine);
+    static_cast<void>(sharedbox::unlink(name));
+}
+
+TEST_CASE("a duplicate keeps its own mapping through a capsule after the original is gone") {
+    const std::string name = unique("wait-duplicate");
+    std::optional<handle> h(make(name));
+    auto copy = h->duplicate();
+    REQUIRE(copy.has_value());
+    CHECK(copy->base() != h->base());
+    sbx_handle *capsule = std::move(*copy).to_capsule();
+    REQUIRE(capsule != nullptr);
+    h.reset();
+    static_cast<void>(sharedbox::unlink(name));
+    {
+        auto taken = handle::from_capsule(capsule);
+        REQUIRE(taken.has_value());
+        write_zero(*taken);
+        CHECK(taken->version(0) == 1);
+    }
+    CHECK(capsule->release == nullptr);
+    delete capsule;
 }

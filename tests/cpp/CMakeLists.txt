@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.25)
-project(sharedbox_cpp_tests LANGUAGES CXX)
+project(sharedbox_cpp_tests LANGUAGES C CXX)
 enable_testing()
 
 set(CMAKE_CXX_STANDARD 20)
@@ -13,15 +13,16 @@ FetchContent_Declare(doctest
     SYSTEM)
 FetchContent_MakeAvailable(doctest)
 
-# The include path, libraries and warnings every test target builds with.
+# This repository, added the way a project using FetchContent adds it.
+add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../.." sharedbox)
+
+# The libraries and warnings every test target builds with.
 function(sbx_test_target target)
-    target_include_directories(${target} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../../include")
-    target_link_libraries(${target} PRIVATE doctest::doctest_with_main Threads::Threads)
+    target_link_libraries(${target} PRIVATE sharedbox::headers)
     if(MSVC)
         target_compile_options(${target} PRIVATE /W4 /WX)
     else()
         target_compile_options(${target} PRIVATE -Wall -Wextra -Werror)
-        target_link_libraries(${target} PRIVATE rt)
     endif()
 endfunction()
 
@@ -55,6 +56,16 @@ if("cxx_std_23" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
 endif()
 
 foreach(target IN LISTS sbx_tests)
+    target_link_libraries(${target} PRIVATE doctest::doctest_with_main)
+endforeach()
+
+# A plain C program with its own exit code, since doctest is C++.
+add_executable(test_c_smoke test_c_smoke.c test_c_smoke_box.cpp)
+set_target_properties(test_c_smoke PROPERTIES C_STANDARD 99 C_STANDARD_REQUIRED ON)
+target_link_libraries(test_c_smoke PRIVATE sharedbox::c)
+list(APPEND sbx_tests test_c_smoke)
+
+foreach(target IN LISTS sbx_tests)
     sbx_test_target(${target})
     add_test(NAME ${target} COMMAND ${target})
     set_tests_properties(${target} PROPERTIES TIMEOUT 60)
@@ -64,6 +75,7 @@ endforeach()
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     add_executable(test_small_shm test_small_shm.cpp)
     sbx_test_target(test_small_shm)
+    target_link_libraries(test_small_shm PRIVATE doctest::doctest_with_main)
 endif()
 
 # Each case builds compile_fail.cpp with one call that must not compile and passes on its static_assert
@@ -78,7 +90,7 @@ foreach(entry IN LISTS sbx_compile_fail)
     list(GET parts 1 message)
     add_executable(fail_${case} EXCLUDE_FROM_ALL compile_fail.cpp)
     set_target_properties(fail_${case} PROPERTIES EXCLUDE_FROM_DEFAULT_BUILD ON)
-    target_include_directories(fail_${case} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../../include")
+    target_link_libraries(fail_${case} PRIVATE sharedbox::headers)
     target_compile_definitions(fail_${case} PRIVATE SBX_FAIL_${case})
     add_test(NAME fail_${case} COMMAND ${CMAKE_COMMAND} --build ${CMAKE_BINARY_DIR} --target fail_${case} --config $<CONFIG>)
     set_tests_properties(fail_${case} PROPERTIES PASS_REGULAR_EXPRESSION "${message}" TIMEOUT 120)

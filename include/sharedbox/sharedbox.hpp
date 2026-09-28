@@ -1060,6 +1060,17 @@ public:
     // slot was released and claimed again reaches the next owner as one spurious wake::interrupted.
     [[nodiscard]] result<void> interrupt(std::uint16_t slot);
 
+    // Takes over a handle made by another build, such as the one in a "sharedbox_box" capsule: checks
+    // the segment at capsule->base as open does and, on success, clears capsule->release; destroying
+    // the new handle calls the producer's release.
+    [[nodiscard]] static result<handle> from_capsule(sbx_handle *capsule);
+    // A second handle on this segment with its own mapping, made from this handle's OS handle rather
+    // than the name, so it works after unlink. status::range for a handle made by from_capsule.
+    [[nodiscard]] result<handle> duplicate() const;
+    // A heap sbx_handle that owns this handle; its release destroys the handle, and the caller deletes
+    // the struct afterwards. nullptr when memory runs out, with this handle left as it was.
+    [[nodiscard]] sbx_handle *to_capsule() &&;
+
 private:
     explicit handle(detail::state *s) noexcept : s_(s) {}
     void swap(handle &other) noexcept { std::swap(s_, other.s_); }
@@ -1094,6 +1105,7 @@ struct state {
 #ifdef _WIN32
     std::unique_ptr<std::atomic<HANDLE>[]> events;
 #endif
+    sbx_handle foreign{};
 
     ~state();
 };
@@ -1119,6 +1131,8 @@ inline state::~state() {
             if (HANDLE e = events[i].load(std::memory_order_relaxed); e != nullptr)
                 CloseHandle(e);
 #endif
+    if (foreign.release != nullptr)
+        foreign.release(&foreign);
 }
 
 // A state for a mapping of the given shape, or nullptr when memory runs out.
@@ -1765,6 +1779,114 @@ inline result<void> handle::interrupt(std::uint16_t slot) {
     syscall(SYS_futex, &s.hdr->wake_word, detail::futex_wake, INT_MAX, nullptr, nullptr, 0);
 #endif
     return {};
+}
+
+namespace detail {
+
+inline void release_owned(sbx_handle *h) noexcept {
+    delete static_cast<handle *>(h->private_data);
+    h->release = nullptr;
+    h->private_data = nullptr;
+    h->base = nullptr;
+}
+
+// Moves h to the heap and fills out with a struct that owns it. On failure h is left as it was.
+inline status export_into(handle &&h, sbx_handle &out) noexcept {
+    auto *owner = new (std::nothrow) handle(std::move(h));
+    if (owner == nullptr)
+        return status::os;
+    out.layout_major = layout_major;
+    out.layout_minor = owner->minor_version();
+    out.handle_version = handle_version;
+    out.base = owner->base();
+    out.size = owner->size();
+    out.name = owner->name().data();
+    out.release = release_owned;
+    out.private_data = owner;
+    return status::ok;
+}
+
+} // namespace detail
+
+inline result<handle> handle::from_capsule(sbx_handle *capsule) {
+    if (capsule == nullptr || capsule->release == nullptr || capsule->base == nullptr ||
+        capsule->handle_version < 1 || capsule->name == nullptr)
+        return unexpected(status::range);
+    std::size_t length = 0;
+    while (length <= name_max && capsule->name[length] != '\0')
+        ++length;
+    const std::string_view name(capsule->name, length);
+    if (!detail::name_ok(name))
+        return unexpected(status::range);
+    auto *hdr = static_cast<header *>(capsule->base);
+    if (capsule->size < page_size || detail::atomic(hdr->magic).load(std::memory_order_acquire) != magic)
+        return unexpected(status::corrupt);
+    const header line0 = detail::copy_line0(hdr);
+    if (line0.layout_major != layout_major)
+        return unexpected(status::layout);
+    if (const status rc = detail::check_geometry(line0, capsule->size); rc != status::ok)
+        return unexpected(rc);
+    std::unique_ptr<detail::state> s = detail::make_state(name, line0.field_count, line0.waiter_slots);
+    if (s == nullptr)
+        return unexpected(status::os);
+    s->record_size = line0.record_size;
+    if (const status rc = detail::copy_fields(*s, hdr); rc != status::ok)
+        return unexpected(rc);
+    s->record_offset = line0.record;
+    s->schema_hash = line0.schema_hash;
+    s->create_id = line0.create_id;
+    s->foreign = *capsule;
+    capsule->release = nullptr;
+    detail::bind(*s, s->foreign.base, s->foreign.size, line0.layout_minor);
+    return handle(s.release());
+}
+
+inline result<handle> handle::duplicate() const {
+    const detail::state &src = *s_;
+    if (src.foreign.release != nullptr)
+        return unexpected(status::range);
+#ifdef _WIN32
+    HANDLE os = nullptr;
+    if (!DuplicateHandle(GetCurrentProcess(), src.map.os(), GetCurrentProcess(), &os, 0, FALSE,
+                         DUPLICATE_SAME_ACCESS))
+        return unexpected(status::os);
+    void *base = MapViewOfFile(os, FILE_MAP_READ | FILE_MAP_WRITE, 0, 0, 0);
+    if (base == nullptr) {
+        detail::keep_os_error keep;
+        CloseHandle(os);
+        return unexpected(status::os);
+    }
+#else
+    const int os = fcntl(src.map.os(), F_DUPFD_CLOEXEC, 0);
+    if (os < 0)
+        return unexpected(status::os);
+    void *base = mmap(nullptr, static_cast<std::size_t>(src.size), PROT_READ | PROT_WRITE, MAP_SHARED, os, 0);
+    if (base == MAP_FAILED) {
+        detail::keep_os_error keep;
+        close(os);
+        return unexpected(status::os);
+    }
+#endif
+    detail::os_mapping map = detail::os_mapping::adopt(os, base, src.size);
+    std::unique_ptr<detail::state> s = detail::make_state(src.name, src.field_count, src.waiter_slots);
+    if (s == nullptr)
+        return unexpected(status::os);
+    std::copy_n(src.fields.get(), src.field_count, s->fields.get());
+    s->record_size = src.record_size;
+    s->record_offset = src.record_offset;
+    s->schema_hash = src.schema_hash;
+    s->create_id = src.create_id;
+    s->lock_timeout = src.lock_timeout;
+    s->map = std::move(map);
+    detail::bind(*s, s->map.base(), src.size, src.layout_minor);
+    return handle(s.release());
+}
+
+inline sbx_handle *handle::to_capsule() && {
+    std::unique_ptr<sbx_handle> out(new (std::nothrow) sbx_handle{});
+    if (out == nullptr || detail::export_into(std::move(*this), *out) != status::ok)
+        return nullptr;
+    return out.release();
 }
 
 } // namespace sharedbox

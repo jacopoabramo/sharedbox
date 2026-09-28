@@ -6,13 +6,28 @@ import re
 import sys
 import weakref
 from collections.abc import Callable
-from typing import Any, ClassVar, Protocol, Self, TypeVar, dataclass_transform, overload
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    ClassVar,
+    Protocol,
+    Self,
+    TypeVar,
+    dataclass_transform,
+    overload,
+)
 
 from psygnal import SignalGroup
 
 from ._events import FieldWatch, Watcher, events_class
 from ._layout import FieldSpec, Layout, build_layout, class_identity
-from ._native import Field, SchemaMismatchError, Segment
+from ._native import LAYOUT_VERSION, Field, SchemaMismatchError, Segment
+
+if TYPE_CHECKING:
+    if sys.version_info >= (3, 13):
+        from types import CapsuleType
+    else:
+        from typing_extensions import CapsuleType
 
 NAME = re.compile(r"[A-Za-z0-9_.-]{1,128}")
 RESERVED = frozenset(
@@ -88,6 +103,14 @@ def unpickle_box(
             f"{cls.__qualname__} was pickled from a different box named {name!r}"
         )
     return box
+
+
+class SupportsSharedBox(Protocol):
+    """An object that hands its shared-memory segment to other extensions, as :class:`SharedBox` does."""
+
+    def __sharedbox_box__(
+        self, max_version: tuple[int, int] | None = None
+    ) -> CapsuleType: ...
 
 
 class _ClassUnlink(Protocol):
@@ -376,6 +399,27 @@ class SharedBox(metaclass=SharedBoxMeta):
         self._segment.force_unlock()
 
     unlink = Unlink()
+
+    def __sharedbox_box__(
+        self, max_version: tuple[int, int] | None = None, **kwargs: Any
+    ) -> CapsuleType:
+        """A ``"sharedbox_box"`` capsule holding a handle with its own mapping of the segment.
+
+        Closing or unlinking the box does not affect the handle. A
+        ``max_version`` whose major differs from the box's layout raises
+        ``BufferError``; any other keyword raises ``NotImplementedError``.
+        """
+        if kwargs:
+            raise NotImplementedError(
+                f"__sharedbox_box__ does not support {', '.join(sorted(kwargs))}"
+            )
+        major, minor = LAYOUT_VERSION
+        if max_version is not None and max_version[0] != major:
+            raise BufferError(
+                f"box {self.name!r} has layout {major}.{minor}; "
+                f"the caller supports major version {max_version[0]}"
+            )
+        return self._segment._export()
 
     def close(self) -> None:
         """Detach from the segment; other boxes keep it. Use :meth:`unlink` to remove it."""

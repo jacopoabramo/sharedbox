@@ -391,6 +391,14 @@ std::uint64_t Segment::create_id() const {
     return impl_->box.create_id();
 }
 
+sbx_handle *Segment::export_handle() const {
+    auto guard = impl_->enter();
+    sbx_handle *out = std::move(impl_->check(impl_->box.duplicate())).to_capsule();
+    if (out == nullptr)
+        throw std::bad_alloc();
+    return out;
+}
+
 void Segment::force_unlock() {
     auto guard = impl_->enter();
     impl_->check(impl_->box.force_unlock());

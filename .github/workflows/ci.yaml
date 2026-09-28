@@ -48,9 +48,20 @@ jobs:
         shell: bash
         run: |
           cmake -S tests/cpp -B build-cpp -DCMAKE_BUILD_TYPE=${{ matrix.build }} \
-            -DCMAKE_CXX_FLAGS_INIT="${{ matrix.flags }}"
+            -DCMAKE_C_FLAGS_INIT="${{ matrix.flags }}" -DCMAKE_CXX_FLAGS_INIT="${{ matrix.flags }}"
           cmake --build build-cpp --config ${{ matrix.build }}
           ctest --test-dir build-cpp -C ${{ matrix.build }} --output-on-failure
+
+      - uses: astral-sh/setup-uv@v7
+
+      - name: Build the extension and run the C consumer
+        if: matrix.build == 'Release'
+        shell: bash
+        env:
+          SHAREDBOX_REQUIRE_C_CONSUMER: "1"
+        run: |
+          uv sync --dev
+          uv run --no-sync pytest tests/test_capsule.py -q
 
       - name: Create a box larger than a 16 MiB /dev/shm
         if: runner.os == 'Linux' && matrix.build == 'Release'

@@ -1,9 +1,18 @@
+import sys
 from collections.abc import Sequence
-from typing import Any, Never, Self, overload
+from typing import Any, Final, Never, Self, overload
 
 from typing_extensions import disjoint_base
 
 from ._layout import FieldSpec
+
+if sys.version_info >= (3, 13):
+    from types import CapsuleType
+else:
+    from typing_extensions import CapsuleType
+
+LAYOUT_VERSION: Final[tuple[int, int]]
+"""``(major, minor)`` of the segment layout this module reads and writes."""
 
 class SegmentExistsError(FileExistsError):
     """A segment with that name already exists."""
@@ -113,6 +122,9 @@ class Segment:
 
     def interrupt(self, slot: int) -> None:
         """End the wait in ``slot``, in any process, or the next one if none is running."""
+
+    def _export(self) -> CapsuleType:
+        """A ``"sharedbox_box"`` capsule holding a handle with its own mapping of the segment."""
 
     def force_unlock(self) -> None:
         """Release a write lock left behind by a process that died while writing."""

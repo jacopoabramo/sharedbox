@@ -1,6 +1,6 @@
 from typing import Annotated, assert_type
 
-from sharedbox import Capacity, SharedBox
+from sharedbox import Capacity, SharedBox, SupportsSharedBox
 
 
 class Motor(SharedBox):
@@ -30,3 +30,16 @@ def fields(motor: Motor) -> None:
     assert_type(motor.label, str)
     motor.position = "3"  # type: ignore[assignment]
     motor.postion = 3  # type: ignore[attr-defined]
+
+
+class Frame(SharedBox, identity="camera/frame/1", max_waiters=8):
+    exposure: float
+
+
+def run(frame: SupportsSharedBox) -> None: ...
+
+
+def protocol(motor: Motor, frame: Frame) -> None:
+    run(motor)
+    run(frame)
+    run(object())  # type: ignore[arg-type]

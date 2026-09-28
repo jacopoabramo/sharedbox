@@ -129,6 +129,7 @@ default-groups = ["dev", "lint", "benchmarks"]
 cache-keys = [
     { file = "pyproject.toml" },
     { file = "CMakeLists.txt" },
+    { file = "cmake/*" },
     { file = "include/**/*" },
     { file = "src/sharedbox/_native/**/*" },
     { git = { commit = true } },

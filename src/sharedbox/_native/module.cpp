@@ -133,6 +133,20 @@ PyType_Slot field_slots[] = {{Py_tp_descr_get, reinterpret_cast<void *>(field_ge
                              {Py_tp_descr_set, reinterpret_cast<void *>(field_set)},
                              {0, nullptr}};
 
+// A consumer that takes the handle renames the capsule "used_sharedbox_box" and releases the
+// handle itself; the struct's memory is freed here either way. PyCapsule_IsValid sets no error,
+// so a destructor running while an exception is pending leaves it alone.
+void release_box_capsule(PyObject *capsule) {
+    const bool unused = PyCapsule_IsValid(capsule, "sharedbox_box") != 0;
+    if (!unused && PyCapsule_IsValid(capsule, "used_sharedbox_box") == 0)
+        return;
+    auto *handle =
+        static_cast<sbx_handle *>(PyCapsule_GetPointer(capsule, unused ? "sharedbox_box" : "used_sharedbox_box"));
+    if (unused && handle->release != nullptr)
+        handle->release(handle);
+    delete handle;
+}
+
 } // namespace
 
 NB_MODULE(_native, m) {
@@ -164,6 +178,7 @@ NB_MODULE(_native, m) {
         },
         "kind"_a, "capacity"_a, "name"_a, "value"_a);
 
+    m.attr("LAYOUT_VERSION") = nb::make_tuple(sharedbox::layout_major, sharedbox::layout_minor);
     m.def("_process_start", [](std::uint32_t pid) { return sharedbox::process_start(pid); }, "pid"_a);
     m.def(
         "_process_alive",
@@ -256,6 +271,17 @@ NB_MODULE(_native, m) {
         .def("release_waiter", &Segment::release_waiter, "slot"_a)
         .def("waiter_held", &Segment::waiter_held, "slot"_a)
         .def("interrupt", &Segment::interrupt, "slot"_a)
+        .def("_export",
+             [](const Segment &s) {
+                 sbx_handle *handle = s.export_handle();
+                 PyObject *capsule = PyCapsule_New(handle, "sharedbox_box", release_box_capsule);
+                 if (capsule == nullptr) {
+                     handle->release(handle);
+                     delete handle;
+                     throw nb::python_error();
+                 }
+                 return nb::steal(capsule);
+             })
         .def("wait", &Segment::wait, "last_generation"_a, "timeout"_a, "slot"_a = nb::none(),
              nb::call_guard<nb::gil_scoped_release>())
         .def("force_unlock", &Segment::force_unlock)
