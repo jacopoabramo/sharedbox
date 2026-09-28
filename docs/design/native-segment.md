@@ -362,12 +362,14 @@ The check is used in two places:
 - Naming the creator in `SegmentExistsError`. When a create finds the name
   taken, the extension reads the existing header with
   `sharedbox::inspect()` and says whether its creator still runs (with its
-  pid), runs in another pid namespace, or has exited, in which case the
-  segment is probably left over from a crash and `Box.unlink(name)`
-  removes it. A name that holds no published box gets a message saying it
-  may be left over from a crash during create. Nothing is removed
-  automatically: other processes may still use a segment whose creator
-  died.
+  pid), runs in another pid namespace, or has exited. On Linux an exited
+  creator means the segment is probably left over from a crash and
+  `Box.unlink(name)` removes it, and a name that holds no published box
+  may be left over from a crash during create. On Windows a name exists
+  only while some process holds a handle to it, so the message says
+  instead that another process still has it open and that it goes away
+  when that process closes it. Nothing is removed automatically: other
+  processes may still use a segment whose creator died.
 
 ## References
 

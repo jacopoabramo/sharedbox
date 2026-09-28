@@ -478,7 +478,12 @@ def test_exists_says_the_creator_is_gone(unique_name: str) -> None:
     with pytest.raises(SegmentExistsError, match="no longer running") as error:
         create(unique_name)
     assert f"pid {child.pid}" in str(error.value)
-    assert "unlink" in str(error.value)
+    if sys.platform == "win32":
+        assert "another process still has the box open" in str(error.value)
+        assert "unlink" not in str(error.value)
+    else:
+        assert "left over from a crash" in str(error.value)
+        assert "unlink" in str(error.value)
     other.close()
 
 
@@ -512,9 +517,14 @@ def test_exists_treats_an_unknown_namespace_as_no_information(unique_name: str) 
 
 def test_exists_says_a_name_without_a_box_may_be_left_over(unique_name: str) -> None:
     with foreign_mapping(unique_name):
-        with pytest.raises(SegmentExistsError, match="crash during create") as error:
+        with pytest.raises(SegmentExistsError, match="holds no published box") as error:
             create(unique_name)
-        assert "unlink" in str(error.value)
+        if sys.platform == "win32":
+            assert "another process still has it open" in str(error.value)
+            assert "unlink" not in str(error.value)
+        else:
+            assert "crash during create" in str(error.value)
+            assert "unlink" in str(error.value)
 
 
 def test_force_unlock_of_a_live_writer_leaves_the_box_usable(unique_name: str) -> None:

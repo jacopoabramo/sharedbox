@@ -190,10 +190,14 @@ taken. Its message says which case it is:
 
 - the box's creator is still running, with its pid;
 - the creator runs in another pid namespace, such as another container;
-- the creator is no longer running, so the box is probably left over from
-  a crash, and `Box.unlink(name)` removes it;
-- the name holds no published box, so it may be left over from a crash
-  during create, and `Box.unlink(name)` removes it.
+- the creator is no longer running. On Linux the box is then probably left
+  over from a crash, and `Box.unlink(name)` removes it. On Windows another
+  process still has the box open, and the box goes away when that process
+  closes it;
+- the name holds no published box. On Linux it may be left over from a
+  crash during create, and `Box.unlink(name)` removes it. On Windows
+  another process still has something open under that name, and the name
+  is freed when that process closes it.
 
 When none of these can be told, the message only says the name is taken.
 Nothing is removed automatically: other processes may still use a box

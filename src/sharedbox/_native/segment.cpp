@@ -45,15 +45,26 @@ ResumeHook after_wait = [](void *) {};
 // The Python layer labels fields "Class.field", so the first label names the class to unlink through.
 std::string exists_message(const std::string &name, const std::vector<std::string> &names) {
     const std::string taken = "a segment named '" + name + "' already exists";
+#ifndef _WIN32
     const std::string::size_type dot = names.empty() ? std::string::npos : names[0].rfind('.');
     const std::string unlink = dot == std::string::npos ? "unlink('" + name + "') on its class"
                                                         : names[0].substr(0, dot) + ".unlink('" + name + "')";
+#else
+    static_cast<void>(names);
+#endif
     const result<header> seen = inspect(name);
     if (!seen) {
         if (seen.error() != status::not_found)
             return taken;
+#ifdef _WIN32
+        // A Windows name exists only while some process holds a handle to it, and it may name an
+        // object of another kind, so there is nothing to remove.
+        return taken + "; it holds no published box, and another process still has it open; the name is "
+                       "freed when that process closes it";
+#else
         return taken + "; it holds no published box, so it may be left over from a crash during create, and " +
                unlink + " removes it";
+#endif
     }
     if (seen->layout_major != layout_major)
         return taken;
@@ -68,8 +79,14 @@ std::string exists_message(const std::string &name, const std::vector<std::strin
 #endif
     if (process_alive(seen->creator_pid, seen->creator_start))
         return taken + "; its creator, pid " + std::to_string(seen->creator_pid) + ", is still running";
+#ifdef _WIN32
+    return taken + "; its creator, pid " + std::to_string(seen->creator_pid) +
+           ", is no longer running, but another process still has the box open; it goes away when that "
+           "process closes it";
+#else
     return taken + "; its creator, pid " + std::to_string(seen->creator_pid) +
            ", is no longer running, so it is probably left over from a crash, and " + unlink + " removes it";
+#endif
 }
 
 // Reads the OS error first, before building the message can change it.
