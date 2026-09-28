@@ -3,6 +3,7 @@ import gc
 import multiprocessing as mp
 import os
 import pickle
+import re
 import subprocess
 import sys
 import threading
@@ -10,6 +11,7 @@ import time
 import types
 from collections.abc import Iterator
 from dataclasses import KW_ONLY
+from multiprocessing.synchronize import Event
 from typing import Annotated, cast
 
 import pytest
@@ -23,6 +25,7 @@ from sharedbox import (
     SegmentNotFoundError,
     SharedBox,
 )
+from sharedbox._box import unpickle_box
 
 
 class Point(SharedBox):
@@ -58,6 +61,13 @@ def move_in_child(results: "mp.Queue[dict[str, object]]") -> None:
     results.put(motor.snapshot())
     motor.position = 10
     motor.close()
+
+
+def create_point_and_exit(name: str, created: Event, attached: Event) -> None:
+    box = Point.create(name)
+    created.set()
+    attached.wait(20)
+    box.close()
 
 
 class Config(SharedBox, kw_only=True):
@@ -264,6 +274,22 @@ def test_a_pickle_of_a_box_made_again_is_refused(unique_name: str) -> None:
         pickle.loads(data)
 
 
+def test_unpickle_box_with_three_arguments_still_attaches(unique_name: str) -> None:
+    with (
+        Point.create(unique_name, y=3.0) as box,
+        unpickle_box(Point, unique_name, type(box).__layout__.schema_hash) as copy,
+    ):
+        assert copy.name == unique_name
+        assert copy.y == 3.0
+
+
+def test_pickling_a_closed_box_raises(unique_name: str) -> None:
+    box = Point.create(unique_name)
+    box.close()
+    with pytest.raises(BoxClosedError):
+        pickle.dumps(box)
+
+
 def test_copy_attaches_a_second_handle(unique_name: str) -> None:
     import copy
 
@@ -315,6 +341,26 @@ def test_invalid_value_leaves_field_unchanged(unique_name: str) -> None:
 def test_same_name_twice(unique_name: str) -> None:
     with Point.create(unique_name), pytest.raises(SegmentExistsError):
         Point.create(unique_name)
+
+
+def test_exists_names_the_class_to_unlink(unique_name: str) -> None:
+    context = mp.get_context("spawn")
+    created, attached = context.Event(), context.Event()
+    child = context.Process(
+        target=create_point_and_exit, args=(unique_name, created, attached)
+    )
+    child.start()
+    assert created.wait(20)
+    # Keeps the segment alive on Windows, where the OS frees it with its last handle.
+    other = Point.attach(unique_name)
+    attached.set()
+    child.join(20)
+    assert child.exitcode == 0
+    with pytest.raises(
+        SegmentExistsError, match=re.escape(f"Point.unlink('{unique_name}')")
+    ):
+        Point.create(unique_name)
+    other.close()
 
 
 def shape_class(annotations: dict[str, type]) -> type[SharedBox]:

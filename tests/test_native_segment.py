@@ -474,6 +474,7 @@ def test_exists_says_the_creator_is_gone(unique_name: str) -> None:
     other = attach(unique_name)
     attached.set()
     child.join(20)
+    assert child.exitcode == 0
     with pytest.raises(SegmentExistsError, match="no longer running") as error:
         create(unique_name)
     assert f"pid {child.pid}" in str(error.value)
@@ -490,11 +491,22 @@ def test_exists_names_a_creator_that_is_running(unique_name: str) -> None:
     segment.close()
 
 
+@pytest.mark.skipif(sys.platform == "win32", reason="no pid namespaces")
 def test_exists_says_the_creator_is_in_another_namespace(unique_name: str) -> None:
     segment = create(unique_name)
     patch_header(unique_name, 88, "<Q", own_pidns() + 1)
     with pytest.raises(SegmentExistsError, match="another pid namespace"):
         create(unique_name)
+    segment.close()
+
+
+def test_exists_treats_an_unknown_namespace_as_no_information(unique_name: str) -> None:
+    segment = create(unique_name)
+    patch_header(unique_name, 88, "<Q", 0)
+    with pytest.raises(SegmentExistsError) as error:
+        create(unique_name)
+    assert "another pid namespace" not in str(error.value)
+    assert "no longer running" not in str(error.value)
     segment.close()
 
 
