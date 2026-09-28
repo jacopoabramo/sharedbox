@@ -343,6 +343,9 @@ def test_same_name_twice(unique_name: str) -> None:
         Point.create(unique_name)
 
 
+@pytest.mark.skipif(
+    sys.platform == "win32", reason="Windows frees the name with its last handle"
+)
 def test_exists_names_the_class_to_unlink(unique_name: str) -> None:
     context = mp.get_context("spawn")
     created, attached = context.Event(), context.Event()
@@ -351,8 +354,6 @@ def test_exists_names_the_class_to_unlink(unique_name: str) -> None:
     )
     child.start()
     assert created.wait(20)
-    # Keeps the segment alive on Windows, where the OS frees it with its last handle.
-    other = Point.attach(unique_name)
     attached.set()
     child.join(20)
     assert child.exitcode == 0
@@ -360,7 +361,6 @@ def test_exists_names_the_class_to_unlink(unique_name: str) -> None:
         SegmentExistsError, match=re.escape(f"Point.unlink('{unique_name}')")
     ):
         Point.create(unique_name)
-    other.close()
 
 
 def shape_class(annotations: dict[str, type]) -> type[SharedBox]:
