@@ -610,3 +610,69 @@ def test_a_subclass_cannot_declare_its_own_segment_slot() -> None:
 
         class Shadow(Point):
             __slots__ = ("_segment",)
+
+
+RUN = f"{os.environ['SHAREDBOX_TEST_RUN']}{os.environ.get('PYTEST_XDIST_WORKER', '')}"
+
+
+def reading_class(module: str, identity: str) -> type[SharedBox]:
+    def body(namespace: dict[str, object]) -> None:
+        namespace["__annotations__"] = {"value": int}
+        namespace["__module__"] = module
+
+    return cast(
+        type[SharedBox],
+        types.new_class("Reading", (SharedBox,), {"identity": identity}, body),
+    )
+
+
+def test_default_name_and_hash_follow_the_published_vector() -> None:
+    namespace = {
+        "__annotations__": {
+            "position": int,
+            "enabled": bool,
+            "label": Annotated[str, Capacity(32)],
+        },
+        "__module__": "__main__",
+        "__qualname__": "Motor",
+    }
+    motor = cast(type[SharedBox], type("Motor", (SharedBox,), namespace))
+    assert motor._layout_name() == "5b4f7004d44277b7"
+    assert motor.__layout__.schema_hash == 0x82CE467598596A72
+
+
+def test_classes_with_one_identity_share_a_box_by_class() -> None:
+    identity = f"sbtest/reading/{RUN}"
+    first = reading_class("package_a.readings", identity)
+    second = reading_class("package_b.readings", identity)
+    try:
+        with first(5), second.attach() as other:
+            assert other.value == 5  # type: ignore[attr-defined] # value is a field added dynamically, above
+    finally:
+        first.unlink()
+
+
+def test_a_changed_identity_is_refused(unique_name: str) -> None:
+    old = reading_class(__name__, "sbtest/reading/1")
+    new = reading_class(__name__, "sbtest/reading/2")
+    with old.create(unique_name, 1), pytest.raises(SchemaMismatchError):
+        new.attach(unique_name)
+
+
+def test_identity_is_not_inherited() -> None:
+    class Base(SharedBox, identity="sbtest/base/1"):
+        value: int = 0
+
+    class Child(Base):
+        pass
+
+    assert Child.__sharedbox_identity__ == f"{__name__}.{Child.__qualname__}"
+    assert Child.__layout__.schema_hash != Base.__layout__.schema_hash
+
+
+@pytest.mark.parametrize("identity", ["", 3])
+def test_identity_must_be_a_non_empty_string(identity: object) -> None:
+    with pytest.raises(TypeError, match="identity"):
+
+        class Bad(SharedBox, identity=identity):
+            value: int = 0

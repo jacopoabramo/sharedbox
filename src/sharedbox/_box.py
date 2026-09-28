@@ -140,8 +140,10 @@ class SharedBox(metaclass=SharedBoxMeta):
     ``Annotated[str, Capacity(n)]`` or ``Annotated[bytes, Capacity(n)]``.
     Calling the subclass with the field values, as with a dataclass, creates
     the segment; :meth:`attach` opens it from any thread or process. The
-    segment is named after the class unless the ``name`` class keyword says
-    otherwise; :meth:`create` makes further boxes under explicit names.
+    segment is named after the class's identity (the ``identity`` class
+    keyword, by default ``module.qualname``) unless the ``name`` class
+    keyword says otherwise; :meth:`create` makes further boxes under
+    explicit names.
     """
 
     __slots__ = ("__weakref__", "_finalizer", "_segment", "_watcher")
@@ -151,6 +153,7 @@ class SharedBox(metaclass=SharedBoxMeta):
     __lock_timeout__: ClassVar[float] = 5.0
     __max_waiters__: ClassVar[int] = 64
     __sharedbox_name__: ClassVar[str]
+    __sharedbox_identity__: ClassVar[str]
     __events_class__: ClassVar[type[SignalGroup]]
 
     def __init_subclass__(
@@ -160,10 +163,16 @@ class SharedBox(metaclass=SharedBoxMeta):
         kw_only: bool = False,
         lock_timeout: float | None = None,
         max_waiters: int | None = None,
+        identity: str | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init_subclass__(**kwargs)
-        layout = build_layout(cls, kw_only)
+        if identity is not None and (not isinstance(identity, str) or not identity):
+            raise TypeError(f"{cls.__qualname__}: identity must be a non-empty string")
+        cls.__sharedbox_identity__ = (
+            class_identity(cls) if identity is None else identity
+        )
+        layout = build_layout(cls, kw_only, cls.__sharedbox_identity__)
         clashes = sorted(RESERVED.intersection(layout.by_name))
         if clashes:
             raise TypeError(
@@ -191,9 +200,10 @@ class SharedBox(metaclass=SharedBoxMeta):
                 )
         cls.__layout__ = layout
         cls.__sharedbox_defaults__ = defaults
-        digest = hashlib.sha256(class_identity(cls).encode()).hexdigest()[:16]
         cls.__sharedbox_name__ = (
-            f"sharedbox-{digest}" if name is None else check_name(name)
+            hashlib.sha256(cls.__sharedbox_identity__.encode()).hexdigest()[:16]
+            if name is None
+            else check_name(name)
         )
         if lock_timeout is not None:
             if not (0 < lock_timeout <= 86400):
