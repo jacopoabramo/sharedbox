@@ -1502,10 +1502,12 @@ inline bool slot_is_mine(const state &s, std::uint16_t i) noexcept {
 inline constexpr std::uint64_t start_freeing = UINT64_MAX - 1;
 
 // Frees slot i, which this process claimed and stamped. owner_start goes first, so a process killed at a
-// later step leaves no stamped slot for a freer to decrement again. Killed before the fetch_sub, it leaves an
-// unstamped slot of an exited process, which a freer frees without a decrement. Killed between the pidns and
-// pid stores, it leaves namespace 0, which on Linux counts as alive: the slot is never freed, and the count
-// stays correct. A claimer killed between its pid compare-and-swap and its pidns store leaves the same state.
+// later step leaves no stamped slot for a freer to decrement again. Killed before the pidns store, it leaves an
+// unstamped slot of an exited process, which a freer frees without a decrement (the count stays one too high
+// if the kill came before the fetch_sub). Killed between the pidns and pid stores, it leaves namespace 0,
+// which on Linux counts as alive: the slot is never freed, and the count stays correct. A claimer killed
+// between its pid compare-and-swap and its pidns store also leaves namespace 0 and a slot never freed on
+// Linux, counted once too many if it had already added itself to waiters.
 inline void free_slot(const state &s, std::uint16_t i) noexcept {
     waiter_slot &w = s.slots[i];
     atomic(w.owner_start).store(0, std::memory_order_release);
