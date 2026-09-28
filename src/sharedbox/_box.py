@@ -108,7 +108,14 @@ class SharedBoxMeta(type):
         namespace: dict[str, Any],
         **kwargs: Any,
     ) -> SharedBoxMeta:
-        namespace.setdefault("__slots__", ())
+        slots = namespace.setdefault("__slots__", ())
+        # A second _segment slot would hide the one every Field reads.
+        if any(isinstance(base, SharedBoxMeta) for base in bases) and "_segment" in (
+            (slots,) if isinstance(slots, str) else slots
+        ):
+            raise TypeError(
+                f"{cls_name}: __slots__ cannot name _segment, which SharedBox already has"
+            )
         return super().__new__(mcls, cls_name, bases, namespace, **kwargs)
 
 

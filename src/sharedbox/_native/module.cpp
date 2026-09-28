@@ -53,6 +53,15 @@ PyTypeObject *segment_type = nullptr;
 PyObject *reraise = nullptr;
 thread_local std::exception_ptr pending;
 
+// Unlike a bound method, a type slot is reached for a Field made by Field.__new__ alone, whose C++
+// object was never constructed.
+bool field_ready(PyObject *self) noexcept {
+    if (nb::inst_ready(self))
+        return true;
+    PyErr_SetString(PyExc_TypeError, "Field.__init__ was not called");
+    return false;
+}
+
 // Type slots run outside nanobind's dispatch, which is what translates C++ exceptions for bound
 // functions. Rethrowing from a bound function applies the same translators, so a field raises what
 // Segment.get and Segment.set raise.
@@ -70,10 +79,11 @@ struct Field {
 };
 
 // A new reference to the Segment in box's _segment slot, or nullptr with an exception set: the
-// AttributeError of an empty slot, as a Python descriptor reading box._segment would raise.
+// AttributeError of an empty slot, as a Python descriptor reading box._segment would raise. A Segment
+// made by Segment.__new__ alone has no C++ object behind it, so it counts as the wrong type.
 PyObject *segment_of(const Field &f, PyObject *box) {
     PyObject *segment = f.read_slot(f.segment_slot.ptr(), box, reinterpret_cast<PyObject *>(Py_TYPE(box)));
-    if (segment != nullptr && Py_TYPE(segment) != segment_type) {
+    if (segment != nullptr && (Py_TYPE(segment) != segment_type || !nb::inst_ready(segment))) {
         Py_DECREF(segment);
         PyErr_SetString(PyExc_TypeError, "_segment does not hold a Segment");
         return nullptr;
@@ -84,6 +94,8 @@ PyObject *segment_of(const Field &f, PyObject *box) {
 PyObject *field_get(PyObject *self, PyObject *box, PyObject *) noexcept {
     if (box == nullptr || box == Py_None)
         return Py_NewRef(self);
+    if (!field_ready(self))
+        return nullptr;
     const Field &f = *nb::inst_ptr<Field>(self);
     const nb::object segment = nb::steal(segment_of(f, box));
     if (!segment.is_valid())
@@ -101,6 +113,8 @@ int field_set(PyObject *self, PyObject *box, PyObject *value) noexcept {
         PyErr_SetString(PyExc_AttributeError, "a SharedBox field cannot be deleted");
         return -1;
     }
+    if (!field_ready(self))
+        return -1;
     const Field &f = *nb::inst_ptr<Field>(self);
     const nb::object segment = nb::steal(segment_of(f, box));
     if (!segment.is_valid())

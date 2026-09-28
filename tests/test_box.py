@@ -3,6 +3,7 @@ import gc
 import multiprocessing as mp
 import os
 import pickle
+import subprocess
 import sys
 import threading
 import time
@@ -463,7 +464,7 @@ def test_field_errors_match_the_segment(unique_name: str) -> None:
     box = Point.create(unique_name)
     with pytest.raises(TypeError, match=r"Point\.x expects float, got str"):
         box.x = "1"  # type: ignore[assignment]
-    with pytest.raises(AttributeError):
+    with pytest.raises(AttributeError, match="^a SharedBox field cannot be deleted$"):
         del box.x
     assert box.x == 0.0
     box.close()
@@ -499,3 +500,55 @@ def test_a_subclass_with_a_dict_still_writes_to_the_box(unique_name: str) -> Non
         box.note = "local"  # type: ignore[attr-defined] # Loose has a __dict__
         box.x = 2.0
         assert (other.x, box.note) == (2.0, "local")  # type: ignore[attr-defined] # as above
+
+
+def test_a_segment_slot_holding_something_else_raises_type_error() -> None:
+    box = Point.__new__(Point)
+    box._segment = 3  # type: ignore[assignment]
+    with pytest.raises(TypeError, match="^_segment does not hold a Segment$"):
+        _ = box.x
+    with pytest.raises(TypeError, match="^_segment does not hold a Segment$"):
+        box.x = 1.0
+
+
+UNINITIALISED = """
+from sharedbox import SharedBox
+from sharedbox._native import Field, Segment
+
+class Point(SharedBox):
+    x: float = 0.0
+
+class Plain:
+    x = Field.__new__(Field)
+
+box = Point.__new__(Point)
+box._segment = Segment.__new__(Segment)
+for action in (lambda: Plain().x, lambda: setattr(Plain(), "x", 1.0), lambda: box.x, lambda: setattr(box, "x", 1.0)):
+    try:
+        action()
+    except TypeError as e:
+        print(e)
+"""
+
+
+def test_uninitialised_native_objects_raise_type_error() -> None:
+    # In a child process, because reaching an uninitialised object would crash the interpreter.
+    done = subprocess.run(
+        [sys.executable, "-c", UNINITIALISED],
+        capture_output=True,
+        check=False,
+        text=True,
+        timeout=60,
+    )
+    assert (done.returncode, done.stdout.splitlines()) == (
+        0,
+        ["Field.__init__ was not called"] * 2
+        + ["_segment does not hold a Segment"] * 2,
+    )
+
+
+def test_a_subclass_cannot_declare_its_own_segment_slot() -> None:
+    with pytest.raises(TypeError, match="_segment"):
+
+        class Shadow(Point):
+            __slots__ = ("_segment",)
