@@ -199,11 +199,12 @@ def test_release_leaves_a_slot_that_no_longer_records_this_process(
     segment.close()
 
 
-@pytest.mark.skipif(sys.platform == "win32", reason="Windows has no fork")
 @pytest.mark.filterwarnings("ignore:This process .* is multi-threaded")
 def test_a_fork_child_closing_its_handle_leaves_the_parents_slots(
     unique_name: str,
 ) -> None:
+    if sys.platform == "win32":
+        pytest.skip("Windows has no fork")
     segment = create(unique_name)
     slots = [segment.register_waiter() for _ in range(2)]
     pid = os.fork()
