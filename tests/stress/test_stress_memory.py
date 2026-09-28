@@ -40,11 +40,13 @@ class Small(SharedBox):
 def one_cycle(name: str) -> None:
     """Create, attach, write, watch one change and close a box."""
     delivered = threading.Event()
-    with Cycle.create(name) as box, Cycle.attach(name) as other:
-        other.events.value.connect(lambda new, old: delivered.set())
-        box.update(value=1, label="cycle")
-        assert delivered.wait(10)
-    Cycle.unlink(name)
+    try:
+        with Cycle.create(name) as box, Cycle.attach(name) as other:
+            other.events.value.connect(lambda new, old: delivered.set())
+            box.update(value=1, label="cycle")
+            assert delivered.wait(10)
+    finally:
+        Cycle.unlink(name)
 
 
 def test_create_attach_watch_close_cycles_hold_memory_steady(
