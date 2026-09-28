@@ -1501,23 +1501,34 @@ inline bool slot_is_mine(const state &s, std::uint16_t i) noexcept {
 // owner_start while another process frees a dead owner's slot; no real start time has this value.
 inline constexpr std::uint64_t start_freeing = UINT64_MAX - 1;
 
-// Clears a stamped slot, which counts in waiters, that the caller alone is freeing. owner_pidns and owner_start
-// are cleared before owner_pid, so the next claimer starts from an unknown namespace and never pairs its pid with
-// the old owner's start time.
-inline void clear_slot(const state &s, waiter_slot &w) noexcept {
-    atomic(w.owner_pidns).store(0, std::memory_order_relaxed);
+// Frees slot i, which this process claimed and stamped. owner_start goes first: a process killed at any
+// later step leaves an unstamped slot of an exited process, freed without a decrement, or a free slot.
+inline void free_slot(const state &s, std::uint16_t i) noexcept {
+    waiter_slot &w = s.slots[i];
+    atomic(w.owner_start).store(0, std::memory_order_release);
     atomic(s.hdr->waiters).fetch_sub(1, std::memory_order_seq_cst);
-    atomic(w.owner_start).store(0, std::memory_order_relaxed);
+    atomic(w.owner_pidns).store(0, std::memory_order_relaxed);
     atomic(w.owner_pid).store(0, std::memory_order_release);
 }
 
-inline void free_slot(const state &s, std::uint16_t i) noexcept { clear_slot(s, s.slots[i]); }
+// Does nothing; free_dead_slot calls it after each store so a test can run other steps in between.
+struct no_pause {
+    void operator()() const noexcept {}
+};
 
-// Frees slot w of the exited process pid, seen with owner_start start. Setting owner_start to
-// start_freeing decides which of several processes freeing the slot goes on. A start of 0 is a claimer
-// that died before stamping it: it may or may not have counted itself in waiters, so the slot is freed
-// without a decrement and the count can only be too high, which costs a spurious wake-up.
-inline void free_dead_slot(const state &s, waiter_slot &w, std::uint32_t pid, std::uint64_t start) noexcept {
+// Frees slot w of the exited process pid, seen with owner_start start. Only the process whose compare-and-swap
+// sets owner_start to start_freeing goes on, and scanners skip the slot while it holds that value, which it
+// keeps until owner_pid is 0; a new claimer's stamp may replace it after that. A start of 0 is a claimer that
+// died before stamping: it may or may not have counted itself in waiters, so the slot is freed without a
+// decrement and the count can only be too high, which costs a spurious wake-up.
+//
+// Known limits: a freer killed while it holds start_freeing leaves the slot unusable, and counted once too
+// many if it was stamped, until the segment is created again. The check that owner_pid is still pid cannot
+// tell an unstamped claimer from another one with the same pid, which needs the pid to be reused within a few
+// instructions.
+template <class Pause = no_pause>
+inline void free_dead_slot(const state &s, waiter_slot &w, std::uint32_t pid, std::uint64_t start,
+                           Pause pause = {}) noexcept {
     if (!atomic(w.owner_start)
              .compare_exchange_strong(start, start_freeing, std::memory_order_acq_rel, std::memory_order_relaxed))
         return;
@@ -1530,12 +1541,18 @@ inline void free_dead_slot(const state &s, waiter_slot &w, std::uint32_t pid, st
         return;
     }
     if (start != 0) {
-        clear_slot(s, w);
-        return;
+        atomic(s.hdr->waiters).fetch_sub(1, std::memory_order_seq_cst);
+        pause();
     }
     atomic(w.owner_pidns).store(0, std::memory_order_relaxed);
-    atomic(w.owner_start).store(0, std::memory_order_relaxed);
+    pause();
     atomic(w.owner_pid).store(0, std::memory_order_release);
+    pause();
+    // Fails, harmlessly, once a new claimer has stamped its own start.
+    std::uint64_t freeing = start_freeing;
+    atomic(w.owner_start)
+        .compare_exchange_strong(freeing, 0, std::memory_order_release, std::memory_order_relaxed);
+    pause();
 }
 
 // Frees every slot whose owner has exited.

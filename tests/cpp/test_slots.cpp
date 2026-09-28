@@ -88,6 +88,41 @@ TEST_CASE("a dead owner's slot claimed again before it is freed is left to the n
     static_cast<void>(sharedbox::unlink(name));
 }
 
+TEST_CASE("a claim made while a dead owner's slot is being freed survives the rest of that free") {
+    constexpr sharedbox::field_spec fields[1] = {{0, 8, sharedbox::kind_int}};
+    // Above INT_MAX on Linux and not a multiple of 4 on Windows: no process has this pid.
+    constexpr std::uint32_t dead = 0xFFFFFFF1u;
+    const std::string name = unique("slots-free");
+    auto h = handle::create(name, fields, 8, 1, 4, {});
+    REQUIRE(h.has_value());
+    sharedbox::waiter_slot &s = slot_0(*h);
+    sharedbox::detail::state other;
+    other.hdr = static_cast<sharedbox::header *>(h->base());
+    other.slots = &s;
+    other.waiter_slots = h->waiter_slots();
+    s.owner_start = 12345;
+    s.owner_pidns = sharedbox::current_pidns();
+    s.owner_pid = dead;
+    atomic(waiters(*h)).fetch_add(1);
+
+    // After each store of the first free, a second process scans for dead slots, and a claimer takes
+    // slot 0 as soon as it is free.
+    bool claimed = false;
+    sharedbox::detail::free_dead_slot(other, s, dead, 12345, [&]() noexcept {
+        sharedbox::detail::free_dead_waiters(other);
+        if (!claimed && s.owner_pid == 0) {
+            const auto slot = h->register_waiter();
+            CHECK((slot && *slot == 0));
+            claimed = true;
+        }
+    });
+    CHECK(claimed);
+    CHECK(h->waiter_held(0));
+    CHECK(h->waiters() == 1);
+    h->release_waiter(0);
+    static_cast<void>(sharedbox::unlink(name));
+}
+
 #ifndef _WIN32
 
 TEST_CASE("a dead owner's slot is freed only when both namespaces are known and equal") {
