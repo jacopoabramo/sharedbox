@@ -71,7 +71,7 @@ def forged_open(edits: list[tuple[tuple[int, int], int, int]]) -> None:
         except (SchemaMismatchError, SegmentNotFoundError):
             return
         # A box that opens is read and written through its own checked copy of the table.
-        other.get_all()
+        other.get_dict(tuple(NAMES))
         other.set([(0, 1)])
         other.close()
     finally:

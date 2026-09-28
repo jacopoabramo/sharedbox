@@ -644,3 +644,12 @@ def test_close_waits_for_a_read_blocked_on_the_lock(unique_name: str) -> None:
     assert [type(error) for error in errors] == [LockTimeoutError]
     owner.force_unlock()
     owner.close()
+
+
+def test_get_dict_needs_one_name_per_field(unique_name: str) -> None:
+    segment = create(unique_name)
+    segment._write([(0, struct.pack("<q", 7)), (1, b"hi")])
+    assert segment.get_dict(("a", "b")) == {"a": 7, "b": b"hi"}
+    with pytest.raises(ValueError, match="1 field names for 2 fields"):
+        segment.get_dict(("a",))
+    segment.close()

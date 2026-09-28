@@ -81,8 +81,8 @@ class Segment:
     def get_versioned(self, field: int) -> tuple[int, object]:
         """The field's version and value, read together."""
 
-    def get_all(self) -> list[object]:
-        """Every field's value, read at one point in time."""
+    def get_dict(self, names: tuple[str, ...]) -> dict[str, object]:
+        """Every field's value under its name in ``names``, read at one point in time."""
 
     def set(self, values: Sequence[tuple[int, object]]) -> None:
         """Convert every value, then write them all under one lock."""

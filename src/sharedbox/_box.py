@@ -352,11 +352,7 @@ class SharedBox(metaclass=SharedBoxMeta):
 
     def snapshot(self) -> dict[str, Any]:
         """Every field's value, read at one point in time."""
-        values = self._segment.get_all()
-        return {
-            spec.name: value
-            for spec, value in zip(type(self).__layout__.fields, values)
-        }
+        return self._segment.get_dict(type(self).__layout__.names)
 
     def watch(self, field: str) -> FieldWatch[Any]:
         """Iterate over values written to ``field`` from now on."""

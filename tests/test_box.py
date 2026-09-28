@@ -695,3 +695,18 @@ def test_update_and_snapshot_on_a_closed_box_raise(unique_name: str) -> None:
         box.update(x=1.0)
     with pytest.raises(BoxClosedError):
         box.snapshot()
+
+
+class Unordered(SharedBox):
+    flag: bool = False
+    label: Annotated[str, Capacity(8)] = ""
+    count: int = 0
+
+
+def test_snapshot_keys_follow_declaration_order(unique_name: str) -> None:
+    with Unordered.create(unique_name, True, "x", 3) as box:
+        assert list(box.snapshot().items()) == [
+            ("flag", True),
+            ("label", "x"),
+            ("count", 3),
+        ]

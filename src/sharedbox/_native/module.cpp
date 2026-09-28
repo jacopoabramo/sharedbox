@@ -218,14 +218,19 @@ NB_MODULE(_native, m) {
                 return nb::make_tuple(read.version, decode_value(*read.field, read.bytes));
             },
             "field"_a)
-        .def("get_all",
-             [](const Segment &s) -> nb::list {
-                 const auto record = s.read_record();
-                 nb::list out;
-                 for (std::uint32_t i = 0; i < s.field_count(); ++i)
-                     out.append(decode_value(s.field(i), s.payload(i, record.get())));
-                 return out;
-             })
+        .def(
+            "get_dict",
+            [](const Segment &s, nb::tuple names) -> nb::dict {
+                if (names.size() != s.field_count())
+                    throw std::invalid_argument("got " + std::to_string(names.size()) + " field names for " +
+                                                std::to_string(s.field_count()) + " fields");
+                const auto record = s.read_record();
+                nb::dict out;
+                for (std::uint32_t i = 0; i < s.field_count(); ++i)
+                    out[names[i]] = decode_value(s.field(i), s.payload(i, record.get()));
+                return out;
+            },
+            "names"_a)
         .def(
             "set",
             [](Segment &s, const Values &values) {
