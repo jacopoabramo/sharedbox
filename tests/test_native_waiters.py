@@ -199,23 +199,24 @@ def test_release_leaves_a_slot_that_no_longer_records_this_process(
     segment.close()
 
 
-@pytest.mark.filterwarnings("ignore:This process .* is multi-threaded")
-def test_a_fork_child_closing_its_handle_leaves_the_parents_slots(
-    unique_name: str,
-) -> None:
-    if sys.platform == "win32":
-        pytest.skip("Windows has no fork")
-    segment = create(unique_name)
-    slots = [segment.register_waiter() for _ in range(2)]
-    pid = os.fork()
-    if pid == 0:
-        segment._after_fork()
+# Defined only where os.fork exists.
+if sys.platform != "win32":
+
+    @pytest.mark.filterwarnings("ignore:This process .* is multi-threaded")
+    def test_a_fork_child_closing_its_handle_leaves_the_parents_slots(
+        unique_name: str,
+    ) -> None:
+        segment = create(unique_name)
+        slots = [segment.register_waiter() for _ in range(2)]
+        pid = os.fork()
+        if pid == 0:
+            segment._after_fork()
+            segment.close()
+            os._exit(0)
+        _, status = os.waitpid(pid, 0)
+        assert os.waitstatus_to_exitcode(status) == 0
+        assert segment._waiters == 2
+        assert all(segment.waiter_held(slot) for slot in slots)
+        for slot in slots:
+            segment.release_waiter(slot)
         segment.close()
-        os._exit(0)
-    _, status = os.waitpid(pid, 0)
-    assert os.waitstatus_to_exitcode(status) == 0
-    assert segment._waiters == 2
-    assert all(segment.waiter_held(slot) for slot in slots)
-    for slot in slots:
-        segment.release_waiter(slot)
-    segment.close()
