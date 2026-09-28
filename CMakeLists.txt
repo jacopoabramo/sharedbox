@@ -14,6 +14,8 @@ target_compile_features(sharedbox_headers INTERFACE cxx_std_20)
 if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     find_package(Threads REQUIRED)
     target_link_libraries(sharedbox_headers INTERFACE rt Threads::Threads)
+elseif(WIN32)
+    target_link_libraries(sharedbox_headers INTERFACE bcrypt)
 endif()
 
 # The C interface: sharedbox_c.cpp is compiled into whatever links this, which needs CXX enabled.

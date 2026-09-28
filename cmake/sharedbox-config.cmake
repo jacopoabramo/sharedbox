@@ -10,6 +10,8 @@ if(NOT TARGET sharedbox::headers)
         include(CMakeFindDependencyMacro)
         find_dependency(Threads)
         set_property(TARGET sharedbox::headers APPEND PROPERTY INTERFACE_LINK_LIBRARIES rt Threads::Threads)
+    elseif(WIN32)
+        set_property(TARGET sharedbox::headers APPEND PROPERTY INTERFACE_LINK_LIBRARIES bcrypt)
     endif()
     # sharedbox_c.cpp is compiled into whatever links this, which needs CXX enabled; the included file checks.
     add_library(sharedbox::c INTERFACE IMPORTED)

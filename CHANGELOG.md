@@ -31,7 +31,8 @@ Dates are marked as `DD-MM-YYYY`
 - `get_include()`: folder holding `sharedbox/sharedbox.hpp`,
   `sharedbox/sharedbox_c.h` and `sharedbox/sharedbox_c.cpp`.
 - `sharedbox.hpp`: header-only C++20 implementation of the segment layout,
-  installed in the wheel with a CMake config (`sharedbox::headers`).
+  installed in the wheel with a CMake config (`sharedbox::headers`), which
+  links `bcrypt` on Windows and `rt` and `Threads::Threads` on Linux.
 - `sharedbox_c.h`: minimal C interface (`sbx_open`, `sbx_import`,
   `sbx_schema_hash`, `sbx_read`, `sbx_write`, `sbx_release`), built
   through `sharedbox::c`.

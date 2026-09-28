@@ -659,7 +659,8 @@ computed in Rust and checked against the test vector above.
   `sharedbox/include/`, and `cmake/sharedbox-config.cmake` under
   `sharedbox/share/cmake/sharedbox/`.
 - CMake targets: `sharedbox::headers`, an interface target that requires
-  `cxx_std_20` (and links `rt` and `Threads::Threads` on Linux), and
+  `cxx_std_20` (and links `rt` and `Threads::Threads` on Linux, `bcrypt`
+  on Windows), and
   `sharedbox::c`, which links `sharedbox::headers` and adds
   `sharedbox_c.cpp` to the sources of whatever links it. Both work through
   `FetchContent` and through `find_package(sharedbox)`. A project that
