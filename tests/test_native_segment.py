@@ -86,6 +86,13 @@ def own_pidns() -> int:
     return 0 if sys.platform == "win32" else os.stat("/proc/self/ns/pid").st_ino
 
 
+def create_and_exit(name: str, created: Event, attached: Event) -> None:
+    segment = create(name)
+    created.set()
+    attached.wait(20)
+    segment.close()
+
+
 def hold_lock_until_killed(name: str, ready: Event) -> None:
     segment = attach(name)
     segment._hold_write_lock()
@@ -453,6 +460,49 @@ def test_a_writer_killed_holding_the_lock(unique_name: str) -> None:
     segment._write([(1, b"after")])
     assert segment._read(1) == b"after"
     segment.close()
+
+
+def test_exists_says_the_creator_is_gone(unique_name: str) -> None:
+    context = mp.get_context("spawn")
+    created, attached = context.Event(), context.Event()
+    child = context.Process(
+        target=create_and_exit, args=(unique_name, created, attached)
+    )
+    child.start()
+    assert created.wait(20)
+    # Keeps the segment alive on Windows, where the OS frees it with its last handle.
+    other = attach(unique_name)
+    attached.set()
+    child.join(20)
+    with pytest.raises(SegmentExistsError, match="no longer running") as error:
+        create(unique_name)
+    assert f"pid {child.pid}" in str(error.value)
+    assert "unlink" in str(error.value)
+    other.close()
+
+
+def test_exists_names_a_creator_that_is_running(unique_name: str) -> None:
+    segment = create(unique_name)
+    with pytest.raises(
+        SegmentExistsError, match=rf"pid {os.getpid()}, is still running"
+    ):
+        create(unique_name)
+    segment.close()
+
+
+def test_exists_says_the_creator_is_in_another_namespace(unique_name: str) -> None:
+    segment = create(unique_name)
+    patch_header(unique_name, 88, "<Q", own_pidns() + 1)
+    with pytest.raises(SegmentExistsError, match="another pid namespace"):
+        create(unique_name)
+    segment.close()
+
+
+def test_exists_says_a_name_without_a_box_may_be_left_over(unique_name: str) -> None:
+    with foreign_mapping(unique_name):
+        with pytest.raises(SegmentExistsError, match="crash during create") as error:
+            create(unique_name)
+        assert "unlink" in str(error.value)
 
 
 def test_force_unlock_of_a_live_writer_leaves_the_box_usable(unique_name: str) -> None:

@@ -42,6 +42,29 @@ std::span<const std::byte> bytes_of(std::string_view s) { return std::as_bytes(s
 WaitHook before_wait = []() -> void * { return nullptr; };
 ResumeHook after_wait = [](void *) {};
 
+// The Python layer labels fields "Class.field", so the first label names the class to unlink through.
+std::string exists_message(const std::string &name, const std::vector<std::string> &names) {
+    const std::string taken = "a segment named '" + name + "' already exists";
+    const std::string::size_type dot = names.empty() ? std::string::npos : names[0].rfind('.');
+    const std::string unlink = dot == std::string::npos ? "unlink('" + name + "') on its class"
+                                                         : names[0].substr(0, dot) + ".unlink('" + name + "')";
+    const result<header> seen = inspect(name);
+    if (!seen) {
+        if (seen.error() != status::not_found)
+            return taken;
+        return taken + "; it holds no published box, so it may be left over from a crash during create, and " +
+               unlink + " removes it";
+    }
+    if (seen->layout_major != layout_major)
+        return taken;
+    if (seen->creator_pidns != current_pidns())
+        return taken + "; it was created in another pid namespace, such as another container";
+    if (process_alive(seen->creator_pid, seen->creator_start))
+        return taken + "; its creator, pid " + std::to_string(seen->creator_pid) + ", is still running";
+    return taken + "; its creator, pid " + std::to_string(seen->creator_pid) +
+           ", is no longer running, so it is probably left over from a crash, and " + unlink + " removes it";
+}
+
 // Reads the OS error first, before building the message can change it.
 [[noreturn]] void throw_status(status code, const std::string &name) {
 #ifdef _WIN32
@@ -211,6 +234,8 @@ std::unique_ptr<Segment> Segment::create(const std::string &name, const std::vec
     impl->lock_timeout = lock_timeout;
     result<handle> made =
         handle::create(name, table, static_cast<std::uint32_t>(record_size), schema_hash, waiter_slots, initial);
+    if (!made && made.error() == status::exists)
+        throw SegmentExists(exists_message(name, names));
     impl->box = impl->check(std::move(made));
     impl->bind();
     return std::unique_ptr<Segment>(new Segment(std::move(impl)));
@@ -352,6 +377,11 @@ bool Segment::waiter_held(std::uint16_t slot) const {
 std::uint32_t Segment::waiters() const {
     auto guard = impl_->enter();
     return impl_->box.waiters();
+}
+
+std::uint64_t Segment::create_id() const {
+    auto guard = impl_->enter();
+    return impl_->box.create_id();
 }
 
 void Segment::force_unlock() {

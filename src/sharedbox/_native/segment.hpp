@@ -106,6 +106,8 @@ public:
     bool waiter_held(std::uint16_t slot) const;
     /// Occupied waiter slots; for tests.
     std::uint32_t waiters() const;
+    /// Random at creation; a box made again under the same name has another.
+    std::uint64_t create_id() const;
     /// Returns the generation once it differs from last_generation, the slot is interrupted, or
     /// timeout seconds pass. Without a slot the call claims one for its own duration.
     std::uint64_t wait(std::uint64_t last_generation, double timeout, std::optional<std::uint16_t> slot) const;

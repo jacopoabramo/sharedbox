@@ -68,14 +68,26 @@ if sys.platform != "win32":
 B = TypeVar("B", bound="SharedBox")
 
 
-def unpickle_box(cls: type[B], name: str, schema_hash: int) -> B:
-    """Attach to the box a pickle refers to, if this process's class has the same fields."""
+def unpickle_box(
+    cls: type[B], name: str, schema_hash: int, create_id: int | None = None
+) -> B:
+    """Attach to the box a pickle refers to, if this process's class has the same fields.
+
+    With ``create_id``, the box under ``name`` must also be the one that was
+    pickled, not another created under the same name since.
+    """
     if cls._layout().schema_hash != schema_hash:
         raise SchemaMismatchError(
             f"{cls.__qualname__} was pickled by a process whose {cls.__qualname__} "
             "has different fields; both processes must import the same class"
         )
-    return cls.attach(name)
+    box = cls.attach(name)
+    if create_id is not None and box._segment.create_id != create_id:
+        box.close()
+        raise SchemaMismatchError(
+            f"{cls.__qualname__} was pickled from a different box named {name!r}"
+        )
+    return box
 
 
 class _ClassUnlink(Protocol):
@@ -366,10 +378,17 @@ class SharedBox(metaclass=SharedBoxMeta):
     def __exit__(self, *exc_info: object) -> None:
         self.close()
 
-    def __reduce__(self) -> tuple[Callable[..., SharedBox], tuple[type, str, int]]:
+    def __reduce__(
+        self,
+    ) -> tuple[Callable[..., SharedBox], tuple[type, str, int, int]]:
         return (
             unpickle_box,
-            (type(self), self.name, type(self).__layout__.schema_hash),
+            (
+                type(self),
+                self.name,
+                type(self).__layout__.schema_hash,
+                self._segment.create_id,
+            ),
         )
 
     def __repr__(self) -> str:

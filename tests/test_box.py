@@ -252,6 +252,18 @@ def test_pickle_carries_the_schema(
             pickle.loads(data)
 
 
+def test_a_pickle_of_a_box_made_again_is_refused(unique_name: str) -> None:
+    box = Point.create(unique_name)
+    data = pickle.dumps(box)
+    box.close()
+    Point.unlink(unique_name)
+    with (
+        Point.create(unique_name),
+        pytest.raises(SchemaMismatchError, match="pickled from a different box"),
+    ):
+        pickle.loads(data)
+
+
 def test_copy_attaches_a_second_handle(unique_name: str) -> None:
     import copy
 

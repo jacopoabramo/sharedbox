@@ -138,6 +138,10 @@ class Segment:
         """Occupied waiter slots; for tests."""
 
     @property
+    def create_id(self) -> int:
+        """Random at creation; a box made again under the same name has another."""
+
+    @property
     def closed(self) -> bool:
         """True after :meth:`close`."""
 
