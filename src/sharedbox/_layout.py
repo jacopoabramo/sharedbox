@@ -107,6 +107,7 @@ class Layout:
     schema_hash: int
     """First 8 bytes of SHA-256 over the identity and every field's name, kind and capacity, read little-endian."""
     by_name: Mapping[str, FieldSpec]
+    """Each field's spec under its name."""
     names: tuple[str, ...]
     """Field names in declaration order."""
 
