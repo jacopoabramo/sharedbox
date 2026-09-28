@@ -55,9 +55,12 @@ so the project must enable the CXX language as well as C; configure stops
 with a message if it does not. On Linux both targets link `rt` and
 `Threads::Threads`, on Windows `bcrypt`.
 
-On Windows `sharedbox.hpp` includes `windows.h` and `bcrypt.h`. Unless you
-defined them already, it defines `NOMINMAX` and `WIN32_LEAN_AND_MEAN`
-before that include and removes them at its end.
+On Windows `sharedbox.hpp` includes `windows.h` and `bcrypt.h`. It
+includes `windows.h` in its lean form and without the `min` and `max`
+macros: unless you defined them already, it defines `WIN32_LEAN_AND_MEAN`
+and `NOMINMAX` before that include and removes them at its end. Code that
+needs the full `windows.h` or the `min` and `max` macros must include
+`windows.h` before `sharedbox.hpp`.
 
 The header declares its C++ names in `sharedbox::v1`, an inline
 namespace, so code still writes `sharedbox::handle`. The inline namespace
@@ -67,11 +70,11 @@ one program. The C functions `sbx_*` keep their names across versions.
 Names in `sharedbox::detail` are internal and may change in any release
 without a new inline namespace.
 
-On Linux, two shared libraries built against different releases of the
-header would otherwise share one copy of each inline function and variable
-when they are loaded into one program, even where the two copies differ. A
-shared library that uses `sharedbox::headers` or `sharedbox::c` should
-therefore keep them to itself by building with hidden visibility:
+On Linux, when two shared libraries built against different releases of
+the header are loaded into one program, the dynamic linker uses one copy of
+each inline function and variable for both, even where the two copies
+differ. A shared library that uses `sharedbox::headers` or `sharedbox::c`
+should build with hidden visibility, so its copies stay private to it:
 
 ```cmake
 set_target_properties(reader PROPERTIES

@@ -34,8 +34,8 @@ Dates are marked as `DD-MM-YYYY`
   installed in the wheel with a CMake config (`sharedbox::headers`), which
   links `bcrypt` on Windows and `rt` and `Threads::Threads` on Linux.
 - `sharedbox-config-version.cmake`: installed next to
-  `sharedbox-config.cmake`; `find_package(sharedbox 0.3)` accepts 0.3.x
-  releases only.
+  `sharedbox-config.cmake`; `find_package(sharedbox 0.3)` accepts 0.3
+  versions only.
 - `sharedbox_c.h`: minimal C interface (`sbx_open`, `sbx_import`,
   `sbx_schema_hash`, `sbx_read`, `sbx_write`, `sbx_release`), built
   through `sharedbox::c`.
