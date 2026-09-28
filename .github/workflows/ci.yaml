@@ -192,7 +192,8 @@ jobs:
         run: |
           uv venv --python 3.12 .stress
           uv pip install --python .stress wheelhouse/*.whl pytest
-          python=$(ls .stress/bin/python .stress/Scripts/python.exe 2>/dev/null | head -n 1)
+          python=.stress/bin/python
+          [ -x "$python" ] || python=.stress/Scripts/python.exe
           "$python" -m pytest -m stress -q -p no:cacheprovider
 
       - uses: actions/upload-artifact@v4
