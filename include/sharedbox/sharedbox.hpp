@@ -1498,17 +1498,47 @@ inline bool slot_is_mine(const state &s, std::uint16_t i) noexcept {
            atomic(w.owner_pidns).load(std::memory_order_acquire) == current_pidns();
 }
 
-// owner_start is cleared before owner_pid, so a process that sees the pid of a new owner never pairs
-// it with the start time of the old one and frees a live slot.
-inline void free_slot(const state &s, std::uint16_t i) noexcept {
-    waiter_slot &w = s.slots[i];
-    atomic(w.owner_start).store(0, std::memory_order_relaxed);
+// owner_start while another process frees a dead owner's slot; no real start time has this value.
+inline constexpr std::uint64_t start_freeing = UINT64_MAX - 1;
+
+// Clears a stamped slot, which counts in waiters, that the caller alone is freeing. owner_pidns and owner_start
+// are cleared before owner_pid, so the next claimer starts from an unknown namespace and never pairs its pid with
+// the old owner's start time.
+inline void clear_slot(const state &s, waiter_slot &w) noexcept {
+    atomic(w.owner_pidns).store(0, std::memory_order_relaxed);
     atomic(s.hdr->waiters).fetch_sub(1, std::memory_order_seq_cst);
+    atomic(w.owner_start).store(0, std::memory_order_relaxed);
     atomic(w.owner_pid).store(0, std::memory_order_release);
 }
 
-// Frees every slot whose owner has exited. Clearing owner_start first decides which of several
-// processes freeing the same slot decrements waiters.
+inline void free_slot(const state &s, std::uint16_t i) noexcept { clear_slot(s, s.slots[i]); }
+
+// Frees slot w of the exited process pid, seen with owner_start start. Setting owner_start to
+// start_freeing decides which of several processes freeing the slot goes on. A start of 0 is a claimer
+// that died before stamping it: it may or may not have counted itself in waiters, so the slot is freed
+// without a decrement and the count can only be too high, which costs a spurious wake-up.
+inline void free_dead_slot(const state &s, waiter_slot &w, std::uint32_t pid, std::uint64_t start) noexcept {
+    if (!atomic(w.owner_start)
+             .compare_exchange_strong(start, start_freeing, std::memory_order_acq_rel, std::memory_order_relaxed))
+        return;
+    // Freed and claimed again since pid was read, by a process with the same start time or one that has not
+    // stamped its own yet: the slot is that process's.
+    if (atomic(w.owner_pid).load(std::memory_order_acquire) != pid) {
+        std::uint64_t freeing = start_freeing;
+        atomic(w.owner_start)
+            .compare_exchange_strong(freeing, start, std::memory_order_release, std::memory_order_relaxed);
+        return;
+    }
+    if (start != 0) {
+        clear_slot(s, w);
+        return;
+    }
+    atomic(w.owner_pidns).store(0, std::memory_order_relaxed);
+    atomic(w.owner_start).store(0, std::memory_order_relaxed);
+    atomic(w.owner_pid).store(0, std::memory_order_release);
+}
+
+// Frees every slot whose owner has exited.
 inline void free_dead_waiters(const state &s) noexcept {
     const std::uint32_t self = current_pid();
     const std::uint64_t own_pidns = current_pidns();
@@ -1527,14 +1557,11 @@ inline void free_dead_waiters(const state &s) noexcept {
         const std::uint64_t pidns = atomic(w.owner_pidns).load(std::memory_order_acquire);
         const bool checkable = pidns != 0 && own_pidns != 0 && pidns == own_pidns;
 #endif
-        // start 0: claimed a moment ago and not stamped yet.
-        if (start == 0 || !checkable || (pid == self && start == current_start()) || process_alive(pid, start))
+        // start 0: not stamped yet, so only whether the pid runs at all can be checked.
+        if (start == start_freeing || !checkable || (pid == self && (start == 0 || start == current_start())) ||
+            process_alive(pid, start == 0 ? start_unknown : start))
             continue;
-        if (!atomic(w.owner_start)
-                 .compare_exchange_strong(start, 0, std::memory_order_acq_rel, std::memory_order_relaxed))
-            continue;
-        atomic(s.hdr->waiters).fetch_sub(1, std::memory_order_seq_cst);
-        atomic(w.owner_pid).store(0, std::memory_order_release);
+        free_dead_slot(s, w, pid, start);
     }
 }
 
@@ -1552,10 +1579,12 @@ inline result<std::uint16_t> handle::register_waiter() {
         if (!detail::atomic(w.owner_pid)
                  .compare_exchange_strong(none, pid, std::memory_order_acq_rel, std::memory_order_relaxed))
             continue;
+        // Counted before owner_start is stamped: a freer decrements only for a stamped slot, so a claimer
+        // killed in between leaves waiters too high, never too low.
+        detail::atomic(s.hdr->waiters).fetch_add(1, std::memory_order_seq_cst);
         detail::atomic(w.interrupt).store(0, std::memory_order_relaxed);
         detail::atomic(w.owner_pidns).store(pidns, std::memory_order_relaxed);
         detail::atomic(w.owner_start).store(start, std::memory_order_release);
-        detail::atomic(s.hdr->waiters).fetch_add(1, std::memory_order_seq_cst);
         detail::owned_set(s, i);
         return i;
     }

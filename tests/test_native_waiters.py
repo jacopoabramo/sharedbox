@@ -3,6 +3,7 @@ import mmap
 import multiprocessing as mp
 import os
 import struct
+import subprocess
 import sys
 import time
 from collections.abc import Generator
@@ -13,7 +14,7 @@ import pytest
 
 from sharedbox import SharedBox
 from sharedbox._layout import NativeField
-from sharedbox._native import Segment
+from sharedbox._native import Segment, WaiterSlotsFullError
 
 INT = 1
 FIELDS = [NativeField(0, 8, INT)]
@@ -46,6 +47,15 @@ def raw_bytes(name: str) -> Generator[memoryview, None, None]:
             memoryview(mapping) as view,
         ):
             yield view
+
+
+WAITERS_OFFSET = 80
+
+
+def dead_pid() -> int:
+    child = subprocess.Popen([sys.executable, "-c", "pass"])
+    child.wait()
+    return child.pid
 
 
 def create(name: str, waiter_slots: int = 64) -> Segment:
@@ -98,7 +108,7 @@ def test_every_slot_can_be_used_and_one_more_raises(unique_name: str) -> None:
     segment = create(unique_name)
     slots = [segment.register_waiter() for _ in range(64)]
     assert sorted(slots) == list(range(64))
-    with pytest.raises(RuntimeError, match="all 64 waiter slots"):
+    with pytest.raises(WaiterSlotsFullError, match="all 64 waiter slots"):
         segment.register_waiter()
     for slot in slots:
         segment.release_waiter(slot)
@@ -123,7 +133,7 @@ def test_max_waiters_sets_the_slot_count(unique_name: str) -> None:
 
     with Few.create(unique_name) as box:
         slots = [box._segment.register_waiter() for _ in range(2)]
-        with pytest.raises(RuntimeError, match="all 2 waiter slots"):
+        with pytest.raises(WaiterSlotsFullError, match="all 2 waiter slots"):
             box._segment.register_waiter()
         for slot in slots:
             box._segment.release_waiter(slot)
@@ -154,4 +164,57 @@ def test_a_slot_of_another_pid_namespace_is_never_freed(unique_name: str) -> Non
     assert other._waiters == 2
     other.close()
     segment.release_waiter(slot)
+    segment.close()
+
+
+def test_a_claimer_that_died_before_stamping_its_slot_is_freed_without_a_decrement(
+    unique_name: str,
+) -> None:
+    segment = create(unique_name)
+    with raw_bytes(unique_name) as view:
+        struct.pack_into("<QQI", view, slot_offset(0), 0, own_pidns(), dead_pid())
+        (waiters,) = struct.unpack_from("<I", view, WAITERS_OFFSET)
+        struct.pack_into("<I", view, WAITERS_OFFSET, waiters + 1)
+    slot = segment.register_waiter()
+    assert slot == 0
+    assert segment._waiters == 2
+    segment.release_waiter(slot)
+    segment.close()
+
+
+def test_release_leaves_a_slot_that_no_longer_records_this_process(
+    unique_name: str,
+) -> None:
+    segment = create(unique_name)
+    slot = segment.register_waiter()
+    with raw_bytes(unique_name) as view:
+        struct.pack_into("<I", view, slot_offset(slot) + 16, os.getpid() + 1)
+    assert not segment.waiter_held(slot)
+    segment.release_waiter(slot)
+    assert segment._waiters == 1
+    with raw_bytes(unique_name) as view:
+        assert struct.unpack_from("<I", view, slot_offset(slot) + 16) == (
+            os.getpid() + 1,
+        )
+    segment.close()
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows has no fork")
+@pytest.mark.filterwarnings("ignore:This process .* is multi-threaded")
+def test_a_fork_child_closing_its_handle_leaves_the_parents_slots(
+    unique_name: str,
+) -> None:
+    segment = create(unique_name)
+    slots = [segment.register_waiter() for _ in range(2)]
+    pid = os.fork()
+    if pid == 0:
+        segment._after_fork()
+        segment.close()
+        os._exit(0)
+    _, status = os.waitpid(pid, 0)
+    assert os.waitstatus_to_exitcode(status) == 0
+    assert segment._waiters == 2
+    assert all(segment.waiter_held(slot) for slot in slots)
+    for slot in slots:
+        segment.release_waiter(slot)
     segment.close()

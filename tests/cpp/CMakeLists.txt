@@ -25,10 +25,10 @@ function(sbx_test_target target)
     endif()
 endfunction()
 
-set(sbx_tests test_result test_atomics test_mapping test_lock)
+set(sbx_tests test_result test_atomics test_mapping test_lock test_slots)
 if(NOT WIN32)
     # fork() and pid namespaces exist only on POSIX.
-    list(APPEND sbx_tests test_fork test_slots)
+    list(APPEND sbx_tests test_fork)
 endif()
 foreach(target IN LISTS sbx_tests)
     add_executable(${target} ${target}.cpp)
