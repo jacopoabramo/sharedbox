@@ -49,6 +49,7 @@ class Held5(SharedBox, lock_timeout=5.0):
 def test_a_one_millisecond_lock_timeout(
     unique_name: str, report: Callable[[dict[str, object]], None]
 ) -> None:
+    """Check that a one-millisecond lock timeout fires no earlier than requested and not much later, and the box works after release."""
     samples = scaled(200)
     waits: list[int] = []
     with Milli.create(unique_name) as holder, Milli.attach(unique_name) as other:
@@ -139,6 +140,7 @@ def test_timeout_rate_under_contention(
     unique_name: str,
     report: Callable[[dict[str, object]], None],
 ) -> None:
+    """Check that competing writer processes leave the box holding one writer's last successful write and rarely time out with two writers."""
     seconds = 3 * scale()
     context = mp.get_context("spawn")
     start = context.Barrier(writers + 1)
@@ -224,6 +226,7 @@ def test_a_writer_killed_holding_the_lock_times_out_everyone(
     unique_name: str,
     report: Callable[[dict[str, object]], None],
 ) -> None:
+    """Check that after a writer is killed holding the lock every read and write times out naming its pid, until force_unlock."""
     lock_timeout = cls.__lock_timeout__
     kinds = ["write"] * 4 + ["read"] * 4
     context = mp.get_context("spawn")
@@ -278,6 +281,8 @@ def test_a_writer_killed_holding_the_lock_times_out_everyone(
 def test_the_longest_lock_timeout_is_accepted_and_the_next_double_refused(
     unique_name: str,
 ) -> None:
+    """Check that a lock timeout of 86400 seconds is accepted and the next larger float raises ValueError."""
+
     class Day(SharedBox, lock_timeout=86400):
         value: int = 0
 

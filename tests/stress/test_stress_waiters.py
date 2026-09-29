@@ -53,6 +53,7 @@ def until(condition: Callable[[], bool], seconds: float) -> bool:
 def test_one_waiter_slot_serves_a_second_watcher_by_polling(
     unique_name: str, report: Callable[[dict[str, object]], None]
 ) -> None:
+    """Check that with one waiter slot a second watcher polls, still receives every final value and claims the slot when it is freed."""
     writes, rate = scaled(20), 5
     arrivals: dict[str, queue.Queue[tuple[int, int]]] = {
         "slotted": queue.Queue(),
@@ -188,6 +189,7 @@ def wake_round(cls: TickClass, name: str, writes: int) -> Round:
 def test_wake_latency_grows_about_linearly_with_waiters(
     unique_name: str, report: Callable[[dict[str, object]], None]
 ) -> None:
+    """Check that all writes reach 8, 64 and 256 waiters, idle CPU stays low and wake and write times grow no faster than linearly."""
     writes = scaled(200)
     classes: tuple[TickClass, ...] = (Tick8, Tick64, Tick256)
     rounds = {
@@ -244,6 +246,7 @@ def fill_slots(names: list[str], count: int, ready: Event) -> None:
 def test_a_table_of_4096_dead_waiters(
     unique_name: str, report: Callable[[dict[str, object]], None]
 ) -> None:
+    """Check that a table of 4096 dead waiter slots is cleared quickly by attach and by register_waiter."""
     processes, per_process = 16, 256
     names = [f"{unique_name}-a", f"{unique_name}-b"]
     context = mp.get_context("spawn")

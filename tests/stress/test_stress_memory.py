@@ -52,6 +52,7 @@ def one_cycle(name: str) -> None:
 def test_create_attach_watch_close_cycles_hold_memory_steady(
     report: Callable[[dict[str, object]], None],
 ) -> None:
+    """Check that repeated create, attach, watch and close cycles do not grow memory or open handles and leave no files."""
     prefix = f"sbstress-{uuid.uuid4().hex[:8]}"
     cycles, limit = scaled(10_000), 60 * scale()
     warm_up = min(500, cycles // 10 + 1)
@@ -86,6 +87,7 @@ def test_create_attach_watch_close_cycles_hold_memory_steady(
 def test_a_one_mib_field(
     unique_name: str, report: Callable[[dict[str, object]], None]
 ) -> None:
+    """Check that reading a short value from a 1 MiB field allocates little in Python and is not much slower than from a small field."""
     payload = bytes(range(256)) * 4096
     seconds = 2 * scale()
     with Blob.create(unique_name) as box:
@@ -144,6 +146,7 @@ def test_a_one_mib_field(
     reason="the file-descriptor limit this measures exists on Linux",
 )
 def test_nine_hundred_open_boxes(report: Callable[[dict[str, object]], None]) -> None:
+    """Check that 900 open boxes use one file descriptor each and all are released after close."""
     prefix = f"sbstress-{uuid.uuid4().hex[:8]}"
     count = 900
     rss_start, fds_start = rss_bytes(), open_handles()

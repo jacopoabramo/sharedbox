@@ -36,6 +36,7 @@ def open_watchers(
 def test_many_watchers_follow_a_steady_writer(
     unique_name: str, report: Callable[[dict[str, object]], None]
 ) -> None:
+    """Check that 64 watchers all receive the final value of a steady writer with low idle CPU."""
     watchers, rate, seconds = 64, 100, 5 * scale()
     with Tick.create(unique_name) as writer:
         boxes, seen = open_watchers(unique_name, watchers)
@@ -80,6 +81,7 @@ def test_many_watchers_follow_a_steady_writer(
 def test_more_watchers_than_slots_all_deliver(
     unique_name: str, report: Callable[[dict[str, object]], None]
 ) -> None:
+    """Check that watchers beyond the slot count all receive a write and pick up freed slots after others close."""
     with Tick.create(unique_name) as writer:
         slots = Tick.__max_waiters__
         count = slots + 16

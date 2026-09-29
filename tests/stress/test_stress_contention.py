@@ -68,6 +68,7 @@ def read_until(
 def test_writers_and_readers_on_one_box(
     unique_name: str, report: Callable[[dict[str, object]], None]
 ) -> None:
+    """Check that four writer and eight reader processes on one box see no torn reads and no lock timeouts."""
     writers, readers = 4, 8
     seconds = 10 * scale()
     context = mp.get_context("spawn")
