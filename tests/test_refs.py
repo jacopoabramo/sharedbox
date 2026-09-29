@@ -85,6 +85,7 @@ def names(unique_name: str) -> Iterator[Callable[[str], str]]:
 def test_an_optional_reference_without_a_default_is_required(
     names: Callable[[str], str],
 ) -> None:
+    """Check that an optional reference field without a default must be given at creation."""
     with pytest.raises(TypeError, match=r"missing value\(s\) for motor"):
         Holder.create(names("h"))
     with Holder.create(names("h"), None) as holder:
@@ -115,6 +116,7 @@ class PlainRig:
 def test_reference_fields_take_defaults_as_in_a_dataclass(
     names: Callable[[str], str],
 ) -> None:
+    """Check that reference fields take defaults, init=False and KW_ONLY as a dataclass does."""
     assert str(inspect.signature(Rig)) == str(inspect.signature(PlainRig))
     with Motor.create(names("m")) as motor:
         with pytest.raises(TypeError, match="missing value"):
@@ -130,6 +132,7 @@ def test_reference_fields_take_defaults_as_in_a_dataclass(
 def test_a_required_field_after_a_reference_default_is_refused_as_in_a_dataclass() -> (
     None
 ):
+    """Check that a required field after a reference with a default is refused, as in a dataclass."""
     with pytest.raises(TypeError, match="without a default follows a field with one"):
 
         class Late(SharedBox):
@@ -145,6 +148,8 @@ def test_a_required_field_after_a_reference_default_is_refused_as_in_a_dataclass
 
 
 def test_a_reference_without_none_is_never_empty(names: Callable[[str], str]) -> None:
+    """Check that a reference annotated without None refuses None, as a default too."""
+
     class Mount(SharedBox):
         motor: Motor
 
@@ -167,6 +172,8 @@ def test_a_reference_without_none_is_never_empty(names: Callable[[str], str]) ->
 def test_a_required_reference_and_an_optional_one_have_different_schemas(
     names: Callable[[str], str],
 ) -> None:
+    """Check that a required reference and an optional one give different schema hashes."""
+
     class Firm(SharedBox, identity="sbtest/mount"):
         motor: Motor
 
@@ -184,6 +191,7 @@ def test_a_required_reference_and_an_optional_one_have_different_schemas(
 def test_a_default_box_is_checked_when_the_class_is_created(
     names: Callable[[str], str],
 ) -> None:
+    """Check that a default box is checked when the class is defined, and a closed one raises."""
     with Motor.create(names("m"), 4) as existing, Other.create(names("o")) as other:
 
         class Preset(SharedBox):
@@ -203,6 +211,7 @@ def test_a_default_box_is_checked_when_the_class_is_created(
 
 
 def test_a_factory_box_is_checked_at_create(names: Callable[[str], str]) -> None:
+    """Check that the box a default factory returns is checked at each creation."""
     made: list[SharedBox] = []
 
     def make() -> Motor:
@@ -234,6 +243,7 @@ class Wired(SharedBox):
 def test_post_init_can_assign_a_reference_before_the_box_is_published(
     names: Callable[[str], str],
 ) -> None:
+    """Check that __post_init__ can assign a reference field before the box is published."""
     with (
         Motor.create(names("m"), 2) as motor,
         Wired.create(names("w"), source=motor.name) as wired,
@@ -244,6 +254,7 @@ def test_post_init_can_assign_a_reference_before_the_box_is_published(
 
 
 def test_a_class_can_refer_to_itself(unique_name: str) -> None:
+    """Check that a class whose field names the class itself can be created, with the field empty."""
     with Node.create(unique_name) as node, Link.create(f"{unique_name}-l") as link:
         assert node.link is None
         assert link.next is None
@@ -255,6 +266,7 @@ def test_a_class_can_refer_to_itself(unique_name: str) -> None:
 def test_an_unquoted_self_reference_works_with_lazy_annotations(
     unique_name: str,
 ) -> None:
+    """Check that an unquoted annotation naming the class itself works under lazy annotations."""
     from refs_lazy import Chain
 
     with Chain.create(unique_name) as chain:
@@ -265,6 +277,7 @@ def test_an_unquoted_self_reference_works_with_lazy_annotations(
 
 
 def test_a_reference_to_a_class_defined_later_is_refused() -> None:
+    """Check that a reference to a class not defined yet raises TypeError naming the field."""
     with pytest.raises(
         TypeError,
         match=r"Early\.later: 'Later' is not defined; a class named in a field annotation, .* must be defined first",
@@ -286,6 +299,7 @@ def test_a_reference_to_a_class_defined_later_is_refused() -> None:
 def test_a_class_defined_later_is_named_alone_inside_another_annotation(
     annotation: Any,
 ) -> None:
+    """Check that the error names only the undefined class when it is nested in Optional or Union."""
     with pytest.raises(
         TypeError,
         match=r"Early\.later: 'Later' is not defined; a class named in a field annotation, .* must be defined first",
@@ -303,6 +317,7 @@ def test_a_class_defined_later_is_named_alone_inside_another_annotation(
     sys.version_info < (3, 14), reason="annotations are evaluated lazily from 3.14"
 )
 def test_an_unquoted_class_defined_later_is_named_alone() -> None:
+    """Check that an unquoted undefined class under lazy annotations is named alone in the error."""
     message = r"Early\.later: 'Later' is not defined; a class named in a field annotation, .* must be defined first"
     with pytest.raises(TypeError, match=message):
 
@@ -323,6 +338,7 @@ def test_an_unquoted_class_defined_later_is_named_alone() -> None:
 def test_a_default_box_of_a_field_naming_its_own_class_is_checked_at_class_creation(
     names: Callable[[str], str],
 ) -> None:
+    """Check that a default box for a field naming its own class is checked against that class."""
     with Motor.create(names("m")) as motor:
         with pytest.raises(TypeError, match=r"Loop\.next expects a \S*Loop box"):
 
@@ -337,6 +353,7 @@ def test_a_default_box_of_a_field_naming_its_own_class_is_checked_at_class_creat
 
 
 def test_assign_read_reassign_and_empty(names: Callable[[str], str]) -> None:
+    """Check that a reference can be assigned, read, reassigned and emptied, and a read writes through."""
     with (
         Motor.create(names("a"), 1) as a,
         Motor.create(names("b"), 2) as b,
@@ -358,6 +375,7 @@ def test_assign_read_reassign_and_empty(names: Callable[[str], str]) -> None:
 
 
 def test_a_read_returns_the_box_it_attached_before(names: Callable[[str], str]) -> None:
+    """Check that two reads of an unchanged reference return the same box object."""
     with Motor.create(names("m")) as motor, Stage.create(names("s"), 0, motor) as stage:
         assert stage.motor is stage.motor
 
@@ -365,6 +383,7 @@ def test_a_read_returns_the_box_it_attached_before(names: Callable[[str], str]) 
 def test_a_reassignment_through_another_handle_is_seen_on_the_next_read(
     names: Callable[[str], str],
 ) -> None:
+    """Check that a reassignment through another handle is seen on the next read, which closes the old box."""
     with (
         Motor.create(names("a")) as a,
         Motor.create(names("b")) as b,
@@ -383,6 +402,7 @@ def test_a_reassignment_through_another_handle_is_seen_on_the_next_read(
 def test_a_box_that_was_removed_is_a_broken_reference(
     names: Callable[[str], str],
 ) -> None:
+    """Check that reading a reference to a removed box raises BrokenReferenceError."""
     with Stage.create(names("s")) as stage:
         motor = Motor.create(names("m"))
         stage.motor = motor
@@ -401,6 +421,7 @@ def test_a_box_that_was_removed_is_a_broken_reference(
 def test_a_box_created_again_under_its_name_is_a_broken_reference(
     names: Callable[[str], str], same_class: bool
 ) -> None:
+    """Check that a box created again under the referred name raises BrokenReferenceError on read."""
     again: type[SharedBox] = Motor if same_class else Other
     with Stage.create(names("s")) as stage:
         motor = Motor.create(names("m"))
@@ -421,6 +442,7 @@ def test_a_box_created_again_under_its_name_is_a_broken_reference(
 def test_a_box_of_other_fields_is_refused_and_nothing_is_written(
     names: Callable[[str], str],
 ) -> None:
+    """Check that assigning a box of another schema or a non-box raises TypeError and writes nothing."""
     with (
         Motor.create(names("m")) as motor,
         Other.create(names("o")) as other,
@@ -441,6 +463,7 @@ def test_a_box_of_other_fields_is_refused_and_nothing_is_written(
 def test_a_box_of_another_class_with_the_same_schema_is_accepted(
     names: Callable[[str], str],
 ) -> None:
+    """Check that a box of another class with the same schema hash is accepted and read with the first class."""
     with MotorCopy.create(names("c"), 4) as copy, Stage.create(names("s")) as stage:
         stage.motor = copy  # type: ignore[assignment]
         inner = stage.motor
@@ -450,6 +473,7 @@ def test_a_box_of_another_class_with_the_same_schema_is_accepted(
 
 
 def test_assigning_a_closed_box_raises(names: Callable[[str], str]) -> None:
+    """Check that assigning a closed box raises BoxClosedError."""
     motor = Motor.create(names("m"))
     motor.close()
     with Stage.create(names("s")) as stage, pytest.raises(BoxClosedError):
@@ -459,6 +483,7 @@ def test_assigning_a_closed_box_raises(names: Callable[[str], str]) -> None:
 def test_update_writes_references_and_scalars_together(
     names: Callable[[str], str],
 ) -> None:
+    """Check that update() writes references and scalars together, and writes nothing if one is refused."""
     with Motor.create(names("m")) as motor, Stage.create(names("s")) as stage:
         stage.update(target=5, motor=motor)
         inner = stage.motor
@@ -471,6 +496,7 @@ def test_update_writes_references_and_scalars_together(
 def test_a_reference_is_stored_as_create_id_schema_hash_and_name(
     names: Callable[[str], str],
 ) -> None:
+    """Check that a reference is stored as create id, schema hash and name, and None as zero bytes."""
     index = Stage.__layout__.by_name["motor"].index
     with Motor.create(names("m")) as motor, Stage.create(names("s"), 0, motor) as stage:
         assert stage._segment._read(index) == struct.pack(
@@ -484,6 +510,7 @@ def test_a_reference_is_stored_as_create_id_schema_hash_and_name(
 
 
 def test_close_closes_the_boxes_a_read_attached(names: Callable[[str], str]) -> None:
+    """Check that close() closes the boxes reads attached and leaves the caller's own box open."""
     with Motor.create(names("m")) as motor:
         stage = Stage.create(names("s"), 0, motor)
         inner = stage.motor
@@ -496,6 +523,7 @@ def test_close_closes_the_boxes_a_read_attached(names: Callable[[str], str]) -> 
 def test_a_read_attaches_again_after_the_caller_closed_the_box(
     names: Callable[[str], str],
 ) -> None:
+    """Check that a read attaches the box again after the caller closed the one it returned."""
     with Motor.create(names("m")) as motor, Stage.create(names("s"), 0, motor) as stage:
         first = stage.motor
         assert first is not None
@@ -507,6 +535,7 @@ def test_a_read_attaches_again_after_the_caller_closed_the_box(
 
 
 def test_a_box_can_refer_to_itself(names: Callable[[str], str]) -> None:
+    """Check that a box can refer to itself and read itself back."""
     with Node.create(names("n"), 1) as node, Link.create(names("l"), 2) as link:
         node.link = node
         link.next = link
@@ -521,6 +550,7 @@ def test_a_box_can_refer_to_itself(names: Callable[[str], str]) -> None:
 def test_a_pickled_box_whose_inner_box_was_removed_unpickles_and_raises_on_read(
     names: Callable[[str], str],
 ) -> None:
+    """Check that a pickled box unpickles after its referred box was removed and raises only on read."""
     with Stage.create(names("s")) as stage:
         motor = Motor.create(names("m"))
         stage.motor = motor
@@ -535,6 +565,7 @@ def test_a_pickled_box_whose_inner_box_was_removed_unpickles_and_raises_on_read(
 
 
 def test_a_reference_field_cannot_be_deleted(names: Callable[[str], str]) -> None:
+    """Check that deleting a reference field raises AttributeError."""
     with Stage.create(names("s")) as stage, pytest.raises(AttributeError):
         del stage.motor
 
@@ -542,6 +573,7 @@ def test_a_reference_field_cannot_be_deleted(names: Callable[[str], str]) -> Non
 def test_threads_reading_while_the_reference_moves_leave_no_box_open(
     names: Callable[[str], str],
 ) -> None:
+    """Check that threads reading while the reference moves leave every returned box closed at the end."""
     returned: dict[int, Motor] = {}
     with (
         Motor.create(names("a")) as a,
@@ -570,6 +602,7 @@ def test_threads_reading_while_the_reference_moves_leave_no_box_open(
 
 
 def test_a_class_that_refers_to_itself_is_freed_at_exit() -> None:
+    """Check that a module with a self-referring class exits without leak reports."""
     result = subprocess.run(
         [sys.executable, "-c", "import refs_future"],
         capture_output=True,
@@ -584,6 +617,7 @@ def test_a_class_that_refers_to_itself_is_freed_at_exit() -> None:
 def test_a_reference_of_a_closed_box_raises_even_with_a_kept_handle(
     names: Callable[[str], str],
 ) -> None:
+    """Check that reading a reference of a closed box raises BoxClosedError even with a cached handle."""
     with Motor.create(names("m")) as motor:
         stage = Stage.create(names("s"), 0, motor)
         assert stage.motor is not None
@@ -595,6 +629,7 @@ def test_a_reference_of_a_closed_box_raises_even_with_a_kept_handle(
 def test_a_box_of_a_subclass_is_read_back_as_the_subclass(
     names: Callable[[str], str],
 ) -> None:
+    """Check that a box of a subclass is read back as that subclass."""
     with FastMotor.create(names("f"), 6) as fast, Stage.create(names("s")) as stage:
         stage.motor = fast
         inner = stage.motor
@@ -605,6 +640,7 @@ def test_a_box_of_a_subclass_is_read_back_as_the_subclass(
 def test_a_handle_keeps_the_box_it_read_after_the_box_is_removed(
     names: Callable[[str], str],
 ) -> None:
+    """Check that a handle keeps the box it read after removal, while a new handle sees it as broken on Linux."""
     with Stage.create(names("s")) as stage:
         motor = Motor.create(names("m"), 3)
         stage.motor = motor
@@ -637,6 +673,7 @@ def assign_a_class_only_this_process_defines(stage: Stage, name: str) -> None:
 def test_a_box_of_a_class_this_process_never_defined_raises_unknown_class(
     names: Callable[[str], str],
 ) -> None:
+    """Check that a reference to a box of a class this process never defined raises UnknownBoxClassError."""
     ctx = mp.get_context("spawn")
     with Stage.create(names("s")) as stage:
         secret_name = names("secret")
@@ -829,6 +866,7 @@ def test_a_stored_reference_with_an_invalid_name_is_a_broken_reference(
     with Stage.create(names("s")) as stage:
         stage._segment._write([(index, raw)])
         with pytest.raises(
-            BrokenReferenceError, match=r"Stage\.motor refers to box .*not a valid box name"
+            BrokenReferenceError,
+            match=r"Stage\.motor refers to box .*not a valid box name",
         ):
             _ = stage.motor

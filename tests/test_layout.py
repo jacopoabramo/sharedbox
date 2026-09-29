@@ -151,6 +151,8 @@ def test_schema_hash_tracks_layout() -> None:
 def test_a_reference_field_is_packed_with_8_byte_fields_and_hashed_by_identity() -> (
     None
 ):
+    """Check that a reference field is packed with the 8-byte fields and hashed by the identity of its class."""
+
     class Motor(SharedBox, identity="motor/1"):
         position: int
 

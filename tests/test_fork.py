@@ -147,6 +147,7 @@ def test_forked_child_records_its_own_pid_in_a_raw_segment(unique_name: str) -> 
 def test_forked_child_reads_a_reference_while_the_parent_held_the_cache_lock(
     unique_name: str,
 ) -> None:
+    """Check that a forked child reads a reference although the parent held the reference cache lock at the fork."""
     out: Queue[str] = mp.get_context("fork").Queue()
     wheel_name = f"{unique_name}-w"
     with Wheel.create(wheel_name) as wheel, Cart.create(unique_name, wheel) as cart:

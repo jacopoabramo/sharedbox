@@ -693,6 +693,7 @@ def test_an_unpublished_segment_is_attached_only_after_publish(
 
 
 def test_attach_refuses_a_field_of_a_kind_it_cannot_read(unique_name: str) -> None:
+    """Check that attach refuses a segment with a field of an unknown kind, naming the kind."""
     owner = create(unique_name)
     # Field 0 becomes kind 9, which sharedbox.hpp opens as opaque bytes.
     patch_header(unique_name, 132, "<I", 8 | 9 << 24)
@@ -712,6 +713,7 @@ def ref_segment(name: str) -> Segment:
 def test_a_reference_is_stored_as_create_id_schema_hash_and_padded_name(
     unique_name: str,
 ) -> None:
+    """Check that a reference is stored as create id, schema hash and zero-padded name, and None as zero bytes."""
     segment = ref_segment(unique_name)
     assert segment.get(0) is None
     segment.set([(0, (7, 0x5EED, "m1"))])
@@ -725,6 +727,7 @@ def test_a_reference_is_stored_as_create_id_schema_hash_and_padded_name(
 
 
 def test_a_reference_name_of_128_bytes_has_no_terminating_nul(unique_name: str) -> None:
+    """Check that a box name of 128 bytes fills the name bytes and reads back whole."""
     segment = ref_segment(unique_name)
     segment.set([(0, (1, 2, "n" * 128))])
     assert segment.get(0) == (1, 2, "n" * 128)
@@ -751,6 +754,7 @@ def test_a_reference_name_of_128_bytes_has_no_terminating_nul(unique_name: str) 
 def test_a_reference_value_that_cannot_be_stored_is_refused(
     unique_name: str, value: object, error: type[Exception]
 ) -> None:
+    """Check that a reference value that cannot be stored raises, names the field and leaves the old value."""
     segment = ref_segment(unique_name)
     segment.set([(0, (7, 0x5EED, "m1"))])
     with pytest.raises(error, match="Stage.motor"):
@@ -760,6 +764,7 @@ def test_a_reference_value_that_cannot_be_stored_is_refused(
 
 
 def test_check_takes_none_for_a_reference() -> None:
+    """Check that check() accepts None for a reference field and refuses a value of another type."""
     check(REF, 144, "Stage.motor", None)
     with pytest.raises(TypeError, match="Stage.motor expects a reference, got int"):
         check(REF, 144, "Stage.motor", 3)
@@ -768,6 +773,7 @@ def test_check_takes_none_for_a_reference() -> None:
 def test_cached_ref_returns_the_entry_only_for_the_stored_create_id(
     unique_name: str,
 ) -> None:
+    """Check that cached_ref returns the cached box only for the stored create id and an open segment."""
     segment = ref_segment(unique_name)
     closed = create(f"{unique_name}-c")
     closed.close()
@@ -796,6 +802,7 @@ def test_cached_ref_returns_the_entry_only_for_the_stored_create_id(
 def test_cached_ref_refuses_an_entry_of_another_shape(
     unique_name: str, entry: Callable[[Segment], tuple[object, ...]]
 ) -> None:
+    """Check that cached_ref raises TypeError for a cache entry that is not (create_id, box, Segment)."""
     segment = ref_segment(unique_name)
     segment.set([(0, (7, 0x5EED, "m1"))])
     with pytest.raises(TypeError, match=r"not \(create_id, box, Segment\)"):
@@ -804,6 +811,7 @@ def test_cached_ref_refuses_an_entry_of_another_shape(
 
 
 def test_cached_ref_refuses_a_field_that_is_not_a_reference(unique_name: str) -> None:
+    """Check that cached_ref raises ValueError for a field that is not a reference."""
     segment = create(unique_name)
     with pytest.raises(ValueError, match="field 0 is not a reference"):
         segment.cached_ref(0, {})
