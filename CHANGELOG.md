@@ -134,6 +134,7 @@ class Stage(SharedBox):
   whose kind code they do not know and treat its bytes as opaque.
 - `SharedBox.attach()`: a segment with a field of a kind this version
   cannot read raises `SchemaMismatchError` naming the kind.
+- `SharedBox`: an annotation naming an undefined class raises `TypeError`.
 
 ### Fixed
 
