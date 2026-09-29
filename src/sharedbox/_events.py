@@ -63,7 +63,15 @@ class FieldFuture(Generic[T]):
         return self._state == CANCELLED
 
     def result(self, timeout: float | None = None) -> T:
-        """Block until the field changes and return its new value."""
+        """Block until the field changes and return its new value.
+
+        Raises
+        ------
+        TimeoutError
+            If the field did not change within `timeout` seconds.
+        concurrent.futures.CancelledError
+            If the future was cancelled.
+        """
         with self._cond:
             if not self._cond.wait_for(self.done, timeout):
                 raise TimeoutError(
@@ -75,14 +83,20 @@ class FieldFuture(Generic[T]):
         return cast(T, self._value)
 
     def cancel(self) -> bool:
-        """Stop waiting. Returns False if the future already has a value."""
+        """Stop waiting.
+
+        Returns
+        -------
+        bool
+            False if the future already has a value.
+        """
         if self._settle(CANCELLED, None, self._since):
             self._watcher.discard(self)
             return True
         return self.cancelled()
 
     def add_done_callback(self, fn: Callable[[FieldFuture[T]], object]) -> None:
-        """Call ``fn(future)`` once it is done, at once if it already is."""
+        """Call `fn(future)` once it is done, at once if it already is."""
         with self._cond:
             if self._state == PENDING:
                 self._callbacks.append(fn)
@@ -133,7 +147,7 @@ def copy_state(source: FieldFuture[T], relay: asyncio.Future[T]) -> None:
 
 
 class FieldWatch(Generic[T]):
-    """New values of one field, for ``for`` and ``async for``.
+    """New values of one field, for `for` and `async for`.
 
     Only writes made after the watch was created count. A consumer slower
     than the writers gets the latest value and skips the ones in between.
@@ -217,7 +231,7 @@ class Watcher:
         return self._stop.is_set()
 
     def future(self, field: FieldSpec, since: int | None = None) -> FieldFuture[Any]:
-        """A future for the first write to ``field`` after version ``since`` (default: now)."""
+        """A future for the first write to `field` after version `since` (default: now)."""
         current, value = self._segment.get_versioned(field.index)
         fut: FieldFuture[Any] = FieldFuture(
             self, field, current if since is None else since
@@ -274,8 +288,11 @@ class Watcher:
     def stop(self, wait: bool = True) -> None:
         """Stop the thread and cancel every pending future.
 
-        With ``wait`` true, also wait for the thread to end and deliver the
-        writes it had not seen yet.
+        Parameters
+        ----------
+        wait
+            If true, also wait for the thread to end and deliver the writes
+            it had not seen yet.
         """
         self._stop.set()
         slot = self._slot
@@ -302,9 +319,11 @@ class Watcher:
             fut._settle(CANCELLED, None, fut._since)
 
     def after_fork(self) -> None:
-        """Forget the parent's thread and futures in a child created by ``fork``.
+        """Forget the parent's thread and futures in a child created by `fork`.
 
-        The thread starts again on the next :meth:`future` or :meth:`events` call.
+        The thread starts again on the next
+        [`future`][sharedbox._events.Watcher.future] or
+        [`events`][sharedbox._events.Watcher.events] call.
         """
         stopped = self._stop.is_set()
         self._lock = threading.RLock()
@@ -393,6 +412,6 @@ class Watcher:
 
 
 def events_class(owner: type, layout: Layout) -> type[SignalGroup]:
-    """A psygnal ``SignalGroup`` subclass with one ``(new, old)`` signal per field of ``owner``."""
+    """A psygnal `SignalGroup` subclass with one `(new, old)` signal per field of `owner`."""
     signals = {spec.name: Signal(object, object) for spec in layout.fields}
     return type(f"{owner.__name__}Events", (SignalGroup,), signals)

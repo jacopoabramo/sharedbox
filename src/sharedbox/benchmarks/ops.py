@@ -1,11 +1,11 @@
 """Single-operation timings of SharedBox and the standard library's shared memory.
 
 Every contender holds the same record: an int, a float and a string of up
-to 32 bytes. ``mp.Value/Array`` takes one lock per value, so its "update two
+to 32 bytes. `mp.Value/Array` takes one lock per value, so its "update two
 fields" and "read all" rows take two or three locks one after the other.
-Rows under ``split`` isolate the native segment's typed ``set``/``get``,
+Rows under `split` isolate the native segment's typed `set`/`get`,
 which convert the Python value in the native module, against the raw
-``_write``/``_read`` calls that move already-encoded bytes.
+`_write`/`_read` calls that move already-encoded bytes.
 
     python -m sharedbox.benchmarks.ops -o ops.json
     python -m sharedbox.benchmarks.ops --fast --filter "read*"
@@ -87,7 +87,7 @@ OPENERS = {
 
 
 def resources(kind: str) -> tuple[Any, ...]:
-    """The objects a benchmark of ``kind`` uses, created once per worker process."""
+    """The objects a benchmark of `kind` uses, created once per worker process."""
     if kind not in OPEN:
         OPEN[kind] = OPENERS[kind]()
     return OPEN[kind]

@@ -63,7 +63,13 @@ def measure(
     receive: Callable[[int], bool],
     opts: Options,
 ) -> list[int]:
-    """Nanoseconds per round trip, after the warm-up; exits if an answer is late."""
+    """Nanoseconds per round trip, after the warm-up.
+
+    Raises
+    ------
+    SystemExit
+        If an answer does not arrive within `opts.timeout` seconds.
+    """
     samples = []
     for i in range(1, opts.total + 1):
         start = time.perf_counter_ns()

@@ -78,9 +78,12 @@ def check_name(name: str) -> str:
 def release(watcher: Watcher, segment: Segment, wait: bool = True) -> None:
     """Stop the box's watcher and detach from its segment.
 
-    With ``wait`` false the watcher thread is not joined and writes it has not
-    seen yet are not delivered; the thread ends on its own once the segment is
-    closed.
+    Parameters
+    ----------
+    wait
+        If false, the watcher thread is not joined and writes it has not
+        seen yet are not delivered; the thread ends on its own once the
+        segment is closed.
     """
     try:
         watcher.stop(wait)
@@ -89,7 +92,7 @@ def release(watcher: Watcher, segment: Segment, wait: bool = True) -> None:
 
 
 def reset_after_fork() -> None:
-    """Make every box inherited through ``fork`` usable in the child."""
+    """Make every box inherited through `fork` usable in the child."""
     for box in list(LIVE):
         box._segment._after_fork()
         box._watcher.after_fork()
@@ -114,7 +117,7 @@ REQUIRED = field()
 
 
 class InitVarAttribute:
-    """An ``InitVar`` on its class; a box has no attribute of that name."""
+    """An `InitVar` on its class; a box has no attribute of that name."""
 
     def __init__(self, label: str) -> None:
         self.label = label
@@ -137,7 +140,7 @@ def has_default(param: Field) -> bool:
 
 
 def signature(params: list[Field]) -> inspect.Signature:
-    """The constructor signature a dataclass with these fields and ``InitVar`` ones would have."""
+    """The constructor signature a dataclass with these fields and `InitVar` ones would have."""
     return inspect.Signature(
         [
             inspect.Parameter(
@@ -159,7 +162,16 @@ def signature(params: list[Field]) -> inspect.Signature:
 
 
 def fields(class_or_box: type[SharedBox] | SharedBox) -> tuple[Field, ...]:
-    """Every field of a ``SharedBox`` subclass or box, in declaration order, without ``InitVar`` ones."""
+    """Every field of a `SharedBox` subclass or box, in declaration order.
+
+    `InitVar` annotations are left out.
+
+    Raises
+    ------
+    TypeError
+        If the argument is neither a subclass of
+        [`SharedBox`][sharedbox.SharedBox] nor one of its boxes.
+    """
     cls = class_or_box if isinstance(class_or_box, type) else type(class_or_box)
     if not issubclass(cls, SharedBox) or cls is SharedBox:
         raise TypeError("fields() takes a SharedBox subclass or one of its boxes")
@@ -171,8 +183,17 @@ def unpickle_box(
 ) -> B:
     """Attach to the box a pickle refers to, if this process's class has the same fields.
 
-    With ``create_id``, the box under ``name`` must also be the one that was
-    pickled, not another created under the same name since.
+    Parameters
+    ----------
+    create_id
+        If given, the box under `name` must also be the one that was
+        pickled, not another created under the same name since.
+
+    Raises
+    ------
+    SchemaMismatchError
+        If this process's class has different fields, or the box under
+        `name` is not the one that was pickled.
     """
     if cls._layout().schema_hash != schema_hash:
         raise SchemaMismatchError(
@@ -189,7 +210,10 @@ def unpickle_box(
 
 
 class SupportsSharedBox(Protocol):
-    """An object that hands its shared-memory segment to other extensions, as :class:`SharedBox` does."""
+    """An object that hands its shared-memory segment to other extensions.
+
+    [`SharedBox`][sharedbox.SharedBox] is one.
+    """
 
     def __sharedbox_box__(
         self, max_version: tuple[int, int] | None = None
@@ -201,7 +225,7 @@ class _ClassUnlink(Protocol):
 
 
 class Unlink:
-    """``Box.unlink(name=None)`` on the class, ``box.unlink()`` on an instance."""
+    """`Box.unlink(name=None)` on the class, `box.unlink()` on an instance."""
 
     @overload
     def __get__(self, box: None, owner: type[SharedBox]) -> _ClassUnlink: ...
@@ -218,7 +242,7 @@ class Unlink:
 
 
 class SharedBoxMeta(type):
-    """Give every ``SharedBox`` subclass an empty ``__slots__``, so its instances have no ``__dict__``."""
+    """Give every `SharedBox` subclass an empty `__slots__`, so its instances have no `__dict__`."""
 
     def __new__(
         mcls,
@@ -242,13 +266,14 @@ class SharedBoxMeta(type):
 class SharedBox(metaclass=SharedBoxMeta):
     """A record whose annotated fields live in a named shared-memory segment.
 
-    Subclass it and annotate fields with ``bool``, ``int``, ``float``,
-    ``Annotated[str, Capacity(n)]`` or ``Annotated[bytes, Capacity(n)]``.
-    Calling the subclass with the field values, as with a dataclass, creates
-    the segment; :meth:`attach` opens it from any thread or process. The
-    segment is named after the class's identity (the ``identity`` class
-    keyword, by default ``module.qualname``) unless the ``name`` class
-    keyword says otherwise; :meth:`create` makes further boxes under
+    Subclass it and annotate fields with `bool`, `int`, `float`,
+    `Annotated[str, Capacity(n)]` or `Annotated[bytes, Capacity(n)]`.
+    Calling the subclass with the field values, as with a dataclass,
+    creates the segment; [`attach`][sharedbox.SharedBox.attach] opens it
+    from any thread or process. The segment is named after the class's
+    identity (the `identity` class keyword, by default `module.qualname`)
+    unless the `name` class keyword says otherwise;
+    [`create`][sharedbox.SharedBox.create] makes further boxes under
     explicit names.
     """
 
@@ -408,14 +433,30 @@ class SharedBox(metaclass=SharedBoxMeta):
 
     @classmethod
     def create(cls, name: str, /, *args: Any, **kwargs: Any) -> Self:
-        """Create a box under ``name`` instead of the class's name; fails if the name is taken."""
+        """Create a box under `name` instead of the class's name.
+
+        Raises
+        ------
+        SegmentExistsError
+            If the name is taken.
+        ValueError
+            If `name` does not match `[A-Za-z0-9_.-]{1,128}`.
+        """
         box = cls.__new__(cls)
         box._open(check_name(name), args, kwargs)
         return box
 
     @classmethod
     def attach(cls, name: str | None = None) -> Self:
-        """Open the box called ``name``, by default the one named after this class."""
+        """Open the box called `name`, by default the one named after this class.
+
+        Raises
+        ------
+        SegmentNotFoundError
+            If no segment has that name.
+        SchemaMismatchError
+            If the segment was created by a different class or layout.
+        """
         box = cls.__new__(cls)
         layout = cls._layout()
         box._segment = Segment.attach(
@@ -530,12 +571,12 @@ class SharedBox(metaclass=SharedBoxMeta):
 
     @property
     def name(self) -> str:
-        """Name of the segment; pass it to :meth:`attach` in another process."""
+        """Name of the segment; pass it to [`attach`][sharedbox.SharedBox.attach] in another process."""
         return self._segment.name
 
     @property
     def closed(self) -> bool:
-        """True after :meth:`close`."""
+        """True after [`close`][sharedbox.SharedBox.close]."""
         return self._segment.closed
 
     def update(self, **values: Any) -> None:
@@ -553,28 +594,28 @@ class SharedBox(metaclass=SharedBoxMeta):
         return self._segment.get_dict(type(self).__layout__.names)
 
     def watch(self, field: str) -> FieldWatch[Any]:
-        """Iterate over values written to ``field`` from now on."""
+        """Iterate over values written to `field` from now on."""
         spec = self._spec(field)
         return FieldWatch(self._watcher, spec, self._segment.version(spec.index))
 
     @property
     def events(self) -> SignalGroup:
-        """One psygnal signal per field, emitted as ``(new, old)`` when any thread or process changes it.
+        """One psygnal signal per field, emitted as `(new, old)` when any thread or process changes it.
 
         Differs from a local evented dataclass in these ways:
 
         Callbacks run on the box's watcher thread; connect with
-        ``thread="main"`` and call ``psygnal.emit_queued()`` to run them on
-        the main thread instead. Closing the box delivers writes the watcher
+        `thread="main"` and call `psygnal.emit_queued()` to run them on the
+        main thread instead. Closing the box delivers writes the watcher
         thread had not seen yet, so callbacks may run once on the thread
-        that calls :meth:`close`, or on the thread that garbage collects
-        the box.
+        that calls [`close`][sharedbox.SharedBox.close], or on the thread
+        that garbage collects the box.
 
         If several writes happen between two checks by the watcher thread,
-        only one emission happens, with the latest value; ``old`` is the
+        only one emission happens, with the latest value; `old` is the
         value from the last emission. A write that leaves the value
-        unchanged emits nothing. For the first emission of a field, ``old``
-        is the value the field held when ``events`` was first accessed.
+        unchanged emits nothing. For the first emission of a field, `old`
+        is the value the field held when `events` was first accessed.
 
         A callback that raises is logged. Callbacks connected before it on
         the same signal already ran; callbacks connected after it do not
@@ -601,12 +642,18 @@ class SharedBox(metaclass=SharedBoxMeta):
     def __sharedbox_box__(
         self, max_version: tuple[int, int] | None = None, **kwargs: Any
     ) -> CapsuleType:
-        """A ``"sharedbox_box"`` capsule holding a handle with its own mapping of the segment.
+        """A `"sharedbox_box"` capsule holding a handle with its own mapping of the segment.
 
-        Closing or unlinking the box does not affect the handle. A
-        ``max_version`` whose major differs from the box's layout raises
-        ``BufferError``, as does a call from ``__post_init__``, before the
-        box is published; any other keyword raises ``NotImplementedError``.
+        Closing or unlinking the box does not affect the handle.
+
+        Raises
+        ------
+        BufferError
+            If the major version of `max_version` differs from the box's
+            layout, or if called from `__post_init__`, before the box is
+            published.
+        NotImplementedError
+            If any other keyword is given.
         """
         if kwargs:
             raise NotImplementedError(
@@ -625,7 +672,10 @@ class SharedBox(metaclass=SharedBoxMeta):
         return self._segment._export()
 
     def close(self) -> None:
-        """Detach from the segment; other boxes keep it. Use :meth:`unlink` to remove it."""
+        """Detach from the segment; other boxes keep it.
+
+        Use [`unlink`][sharedbox.SharedBox.unlink] to remove it.
+        """
         if self._finalizer.detach() is not None:
             release(self._watcher, self._segment)
 

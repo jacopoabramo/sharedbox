@@ -29,9 +29,14 @@ __all__ = [
 
 
 def get_include() -> str:
-    """Folder holding ``sharedbox/sharedbox.hpp``, ``sharedbox_c.h`` and ``sharedbox_c.cpp``.
+    """Folder holding `sharedbox/sharedbox.hpp`, `sharedbox_c.h` and `sharedbox_c.cpp`.
 
     Add it to the include path of an extension that uses a box through its capsule.
+
+    Raises
+    ------
+    FileNotFoundError
+        If `sharedbox.hpp` is not installed with this copy of sharedbox.
     """
     for folder in __path__:
         include = Path(folder) / "include"

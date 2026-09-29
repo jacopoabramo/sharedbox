@@ -48,7 +48,13 @@ ALIGNMENT: Final[dict[Kind, int]] = {
 
 @dataclass(frozen=True)
 class Capacity:
-    """Maximum encoded size of a ``str`` or ``bytes`` field."""
+    """Maximum encoded size of a `str` or `bytes` field.
+
+    Raises
+    ------
+    ValueError
+        If `size` is not between 1 and 1 MiB.
+    """
 
     size: int
     """Bytes, not characters: UTF-8 text can need more than one per character."""
@@ -62,21 +68,21 @@ class Capacity:
 
 @dataclass(frozen=True, eq=False)
 class Field:
-    """Options of one field of a ``SharedBox`` class, as :func:`field` takes them."""
+    """Options of one field of a `SharedBox` class, as [`field`][sharedbox.field] takes them."""
 
     name: str
     type: Any
-    """The annotation, with ``Annotated`` extras kept."""
+    """The annotation, with `Annotated` extras kept."""
     default: Any
-    """``dataclasses.MISSING`` when there is none."""
+    """`dataclasses.MISSING` when there is none."""
     default_factory: Any
-    """A function of no arguments, or ``dataclasses.MISSING``."""
+    """A function of no arguments, or `dataclasses.MISSING`."""
     init: bool
     """False if the constructor takes no value for the field."""
     repr: bool
-    """False if ``repr()`` of a box leaves the field out."""
+    """False if `repr()` of a box leaves the field out."""
     kw_only: Any
-    """True if the constructor takes the value by keyword only; ``dataclasses.MISSING`` until the class is created."""
+    """True if the constructor takes the value by keyword only; `dataclasses.MISSING` until the class is created."""
     metadata: Mapping[Any, Any]
     """Read-only; never stored in the segment."""
     doc: str | None
@@ -92,10 +98,18 @@ def field(
     metadata: Mapping[Any, Any] | None = None,
     doc: str | None = None,
 ) -> Any:
-    """Options for one field of a ``SharedBox`` class, as ``dataclasses.field`` gives them.
+    """Options for one field of a `SharedBox` class, as `dataclasses.field` gives them.
 
-    ``default_factory`` is called at each creation that is given no value
-    for the field, and its result is stored like any other value.
+    Parameters
+    ----------
+    default_factory
+        Called at each creation that is given no value for the field; its
+        result is stored like any other value.
+
+    Raises
+    ------
+    ValueError
+        If both `default` and `default_factory` are given.
     """
     if default is not MISSING and default_factory is not MISSING:
         raise ValueError("cannot specify both default and default_factory")
@@ -131,20 +145,20 @@ class FieldSpec:
     index: int
     """Position in declaration order; also the field's number in the native segment."""
     kind: Kind
-    """One of ``"bool"``, ``"int"``, ``"float"``, ``"str"``, ``"bytes"``."""
+    """One of `"bool"`, `"int"`, `"float"`, `"str"`, `"bytes"`."""
     offset: int
     """Byte offset of the field from the start of the record."""
     capacity: int
-    """Encoded size in bytes; for ``str`` and ``bytes`` the most the value may take."""
+    """Encoded size in bytes; for `str` and `bytes` the most the value may take."""
     label: str = ""
-    """``"<Class>.<field>"``, used in error messages."""
+    """`"<Class>.<field>"`, used in error messages."""
 
     @property
     def native(self) -> NativeField:
         return NativeField(self.offset, self.capacity, KIND_CODES[self.kind])
 
     def check(self, value: Any) -> None:
-        """Raise what writing ``value`` to this field would raise."""
+        """Raise what writing `value` to this field would raise."""
         native_check(KIND_CODES[self.kind], self.capacity, self.label, value)
 
 
@@ -179,17 +193,17 @@ def classify(name: str, hint: object) -> tuple[Kind, int]:
 
 
 def class_identity(cls: type) -> str:
-    """``module.qualname`` of ``cls``, the same in a spawned child as in its parent."""
+    """`module.qualname` of `cls`, the same in a spawned child as in its parent."""
     # multiprocessing's spawn start method re-imports the main script as __mp_main__.
     module = "__main__" if cls.__module__ == "__mp_main__" else cls.__module__
     return f"{module}.{cls.__qualname__}"
 
 
 def declared(cls: type) -> list[tuple[str, Any]]:
-    """``(name, annotation)`` of every field and ``InitVar`` of ``cls``, base classes first.
+    """`(name, annotation)` of every field and `InitVar` of `cls`, base classes first.
 
-    ``dataclasses.KW_ONLY`` and ``ClassVar`` annotations and names starting
-    with ``_`` are left out.
+    `dataclasses.KW_ONLY` and `ClassVar` annotations and names starting
+    with `_` are left out.
     """
     return [
         (name, hint)
@@ -202,10 +216,10 @@ def declared(cls: type) -> list[tuple[str, Any]]:
 
 
 def own_kw_only(cls: type, kw_only: bool = False) -> dict[str, bool]:
-    """Keyword-only flag of each annotation ``cls`` itself declares, not those of its bases.
+    """Keyword-only flag of each annotation `cls` itself declares, not those of its bases.
 
-    An annotation is keyword-only when ``kw_only`` is true or it follows a
-    ``dataclasses.KW_ONLY`` annotation of ``cls``.
+    An annotation is keyword-only when `kw_only` is true or it follows a
+    `dataclasses.KW_ONLY` annotation of `cls`.
     """
     hints = get_type_hints(cls, include_extras=True)
     flags: dict[str, bool] = {}
@@ -218,13 +232,23 @@ def own_kw_only(cls: type, kw_only: bool = False) -> dict[str, bool]:
 
 
 def build_layout(cls: type, identity: str | None = None) -> Layout:
-    """Lay out the public annotated fields of ``cls``, base classes first.
+    """Lay out the public annotated fields of `cls`, base classes first.
 
     Fields are packed by descending alignment (8-byte fields, then
-    ``str``/``bytes``, then ``bool``), not declaration order;
-    ``Layout.fields`` keeps the declaration order. The schema hash covers
-    ``identity``, by default :func:`class_identity`. ``InitVar``
-    annotations are not fields.
+    `str`/`bytes`, then `bool`), not declaration order; `Layout.fields`
+    keeps the declaration order. `InitVar` annotations are not fields.
+
+    Parameters
+    ----------
+    identity
+        The identity the schema hash covers; by default
+        [`class_identity`][sharedbox._layout.class_identity] of `cls`.
+
+    Raises
+    ------
+    TypeError
+        If `cls` declares no fields, more than 256, or a field with an
+        unsupported annotation.
     """
     found = [
         (name, *classify(name, hint))
