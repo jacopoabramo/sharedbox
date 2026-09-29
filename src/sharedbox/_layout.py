@@ -210,7 +210,8 @@ def classify(name: str, hint: object) -> tuple[Kind, int]:
             return base.__name__, capacities[0].size
     raise TypeError(
         f"field {name!r}: unsupported annotation {hint!r}; use bool, int, float, "
-        "Annotated[str, Capacity(n)] or Annotated[bytes, Capacity(n)]"
+        "Annotated[str, Capacity(n)], Annotated[bytes, Capacity(n)], or a "
+        "SharedBox subclass, optionally with | None"
     )
 
 
