@@ -283,17 +283,19 @@ class DescribedChild(Described, kw_only=True):
     extra: int = 0
 
 
-class Overridden(Described):
-    count = 3
-
-
 def test_a_subclass_keeps_its_bases_field_options(unique_name: str) -> None:
     with DescribedChild.create(unique_name, extra=1) as box:
         assert repr(box) == "DescribedChild(count=7, extra=1)"
     assert fields(DescribedChild)[0].metadata == {"k": 1}
     assert [f.kw_only for f in fields(DescribedChild)] == [False, False, True]
-    count = fields(Overridden)[1]
-    assert (count.default, count.default_factory) == (3, MISSING)
+    # A dataclass ignores such an attribute; a box cannot, as it would hide the descriptor.
+    with pytest.raises(
+        TypeError,
+        match="Overridden.count overrides the field inherited from Described",
+    ):
+
+        class Overridden(Described):
+            count = 3
 
 
 class Hidden(SharedBox):

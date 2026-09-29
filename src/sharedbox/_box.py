@@ -285,6 +285,15 @@ class SharedBox(metaclass=SharedBoxMeta):
             if isinstance(value, Field):
                 options[attr] = value
             elif value is not MISSING and not isinstance(value, FieldDescriptor):
+                if attr not in own:
+                    base = next(
+                        b for b in cls.__mro__[1:] if attr in inspect.get_annotations(b)
+                    )
+                    raise TypeError(
+                        f"{cls.__qualname__}.{attr} overrides the field inherited from "
+                        f"{base.__qualname__} with a plain attribute; declare it with an "
+                        f"annotation ({attr}: {inspect.formatannotation(hint)} = {value!r}) or with field()"
+                    )
                 options[attr] = field(default=value)
             given = options.get(attr, REQUIRED)
             if attr not in own:
