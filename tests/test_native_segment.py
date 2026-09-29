@@ -116,6 +116,7 @@ def write_pair(name: str, count: int) -> None:
 
 
 def test_attached_segment_sees_writes(unique_name: str) -> None:
+    """Check that a segment attached by name reads back what the creating segment wrote."""
     owner = create(unique_name)
     other = attach(unique_name)
     owner._write([(0, struct.pack("<q", 42)), (1, b"hello")])
@@ -127,12 +128,14 @@ def test_attached_segment_sees_writes(unique_name: str) -> None:
 
 
 def test_new_segment_reads_zero(unique_name: str) -> None:
+    """Check that a new segment reads zero for a fixed field and empty bytes for a variable one."""
     segment = create(unique_name)
     assert segment._read_all() == [bytes(8), b""]
     segment.close()
 
 
 def test_create_refuses_existing_name(unique_name: str) -> None:
+    """Check that creating a segment under a taken name raises SegmentExistsError."""
     segment = create(unique_name)
     with pytest.raises(SegmentExistsError):
         create(unique_name)
@@ -140,11 +143,13 @@ def test_create_refuses_existing_name(unique_name: str) -> None:
 
 
 def test_attach_to_missing_name(unique_name: str) -> None:
+    """Check that attaching to an unknown name raises SegmentNotFoundError."""
     with pytest.raises(SegmentNotFoundError):
         attach(unique_name)
 
 
 def test_attach_with_other_schema(unique_name: str) -> None:
+    """Check that attaching with a different schema hash raises SchemaMismatchError."""
     segment = create(unique_name)
     with pytest.raises(SchemaMismatchError):
         Segment.attach(unique_name, NAMES, SCHEMA + 1, 1.0)
@@ -152,6 +157,7 @@ def test_attach_with_other_schema(unique_name: str) -> None:
 
 
 def test_layout_outside_record_is_rejected(unique_name: str) -> None:
+    """Check that a field placed outside the record raises ValueError at create."""
     with pytest.raises(ValueError):
         Segment.create(
             unique_name, [NativeField(32, 8, INT)], ["a"], RECORD_SIZE, SCHEMA, 1.0, []
@@ -159,6 +165,7 @@ def test_layout_outside_record_is_rejected(unique_name: str) -> None:
 
 
 def test_failed_create_leaves_the_name_free(unique_name: str) -> None:
+    """Check that a create that raises ValueError leaves the name free for a later create."""
     with pytest.raises(ValueError):
         Segment.create(
             unique_name, [NativeField(0, 8, INT)], ["a"], 2**40, SCHEMA, 1.0, []
@@ -167,6 +174,7 @@ def test_failed_create_leaves_the_name_free(unique_name: str) -> None:
 
 
 def test_oversized_write_changes_nothing(unique_name: str) -> None:
+    """Check that a write with one value over its capacity raises ValueError and changes no field or version."""
     segment = create(unique_name)
     with pytest.raises(ValueError):
         segment._write([(0, struct.pack("<q", 1)), (1, b"x" * 17)])
@@ -176,6 +184,7 @@ def test_oversized_write_changes_nothing(unique_name: str) -> None:
 
 
 def test_fixed_field_needs_exact_size(unique_name: str) -> None:
+    """Check that writing a value of the wrong size to a fixed-size field raises ValueError."""
     segment = create(unique_name)
     with pytest.raises(ValueError):
         segment._write([(0, b"abc")])
@@ -183,6 +192,7 @@ def test_fixed_field_needs_exact_size(unique_name: str) -> None:
 
 
 def test_unknown_field_index(unique_name: str) -> None:
+    """Check that reading a field index past the last field raises IndexError."""
     segment = create(unique_name)
     with pytest.raises(IndexError):
         segment._read(2)
@@ -190,6 +200,7 @@ def test_unknown_field_index(unique_name: str) -> None:
 
 
 def test_versions_and_generation_count_writes(unique_name: str) -> None:
+    """Check that field versions and the generation count each write once."""
     segment = create(unique_name)
     segment._write([(1, b"a")])
     segment._write([(0, bytes(8)), (1, b"b")])
@@ -198,6 +209,7 @@ def test_versions_and_generation_count_writes(unique_name: str) -> None:
 
 
 def test_unlink_removes_the_name_like_shared_memory(unique_name: str) -> None:
+    """Check that unlink removes the name on Linux and not on Windows while an open segment keeps working."""
     owner = create(unique_name)
     Segment.unlink(unique_name)
     if sys.platform == "win32":
@@ -213,6 +225,7 @@ def test_unlink_removes_the_name_like_shared_memory(unique_name: str) -> None:
 
 
 def test_close_keeps_the_segment_for_others(unique_name: str) -> None:
+    """Check that closing the creating segment leaves the data readable through another handle."""
     owner = create(unique_name)
     other = attach(unique_name)
     owner._write([(1, b"kept")])
@@ -222,6 +235,7 @@ def test_close_keeps_the_segment_for_others(unique_name: str) -> None:
 
 
 def test_closed_segment_refuses_use(unique_name: str) -> None:
+    """Check that close is idempotent and a read on a closed segment raises BoxClosedError."""
     segment = create(unique_name)
     segment.close()
     segment.close()
@@ -231,6 +245,7 @@ def test_closed_segment_refuses_use(unique_name: str) -> None:
 
 
 def test_held_lock_times_out_and_force_unlock_recovers(unique_name: str) -> None:
+    """Check that a held write lock makes reads and writes raise LockTimeoutError until force_unlock."""
     owner = create(unique_name)
     owner._hold_write_lock()
     other = attach(unique_name, timeout=0.2)
@@ -246,6 +261,7 @@ def test_held_lock_times_out_and_force_unlock_recovers(unique_name: str) -> None
 
 
 def test_close_while_other_threads_read_and_write(unique_name: str) -> None:
+    """Check that closing a segment while other threads read and write ends them with BoxClosedError only."""
     segment = create(unique_name)
     errors: list[BaseException] = []
 
@@ -274,6 +290,7 @@ def test_close_while_other_threads_read_and_write(unique_name: str) -> None:
 
 
 def test_reads_never_see_half_a_write(unique_name: str) -> None:
+    """Check that a reader never sees two fields from different writes of another process."""
     segment = create(unique_name)
     writer = mp.get_context("spawn").Process(
         target=write_pair, args=(unique_name, 50_000)
@@ -293,6 +310,7 @@ BAD_TIMEOUTS = [float("inf"), float("nan"), 0.0, -1.0, 86401.0]
 
 @pytest.mark.parametrize("timeout", BAD_TIMEOUTS)
 def test_bad_lock_timeout_is_refused(unique_name: str, timeout: float) -> None:
+    """Check that create and attach raise ValueError for each invalid lock timeout."""
     with pytest.raises(ValueError):
         create(unique_name, timeout)
     segment = create(unique_name)
@@ -303,6 +321,7 @@ def test_bad_lock_timeout_is_refused(unique_name: str, timeout: float) -> None:
 
 @pytest.mark.parametrize("timeout", [float("inf"), float("nan"), -1.0, 86401.0])
 def test_bad_wait_timeout_is_refused(unique_name: str, timeout: float) -> None:
+    """Check that wait raises ValueError for a non-finite, negative or over-large timeout."""
     segment = create(unique_name)
     with pytest.raises(ValueError):
         segment.wait(segment.generation(), timeout)
@@ -310,6 +329,7 @@ def test_bad_wait_timeout_is_refused(unique_name: str, timeout: float) -> None:
 
 
 def test_small_box_takes_one_page(unique_name: str) -> None:
+    """Check that a small box is mapped as a single 4096-byte page."""
     segment = Segment.create(
         unique_name,
         [*FIELDS, NativeField(32, 8, INT)],
@@ -324,6 +344,7 @@ def test_small_box_takes_one_page(unique_name: str) -> None:
 
 
 def test_raw_bytes_follow_layout_1_0(unique_name: str) -> None:
+    """Check that the mapped bytes of a segment match layout 1.0 field by field."""
     fields = [
         NativeField(0, 8, INT),
         NativeField(8, 8, FLOAT),
@@ -397,6 +418,7 @@ def test_raw_bytes_follow_layout_1_0(unique_name: str) -> None:
 def test_corrupt_header_is_refused(
     unique_name: str, offset: int, fmt: str, value: int
 ) -> None:
+    """Check that attach raises SchemaMismatchError for each corrupted header value."""
     segment = create(unique_name)
     patch_header(unique_name, offset, fmt, value)
     with pytest.raises(SchemaMismatchError, match="corrupt header"):
@@ -405,6 +427,7 @@ def test_corrupt_header_is_refused(
 
 
 def test_another_major_version_is_refused(unique_name: str) -> None:
+    """Check that attach raises SchemaMismatchError for a different major layout version."""
     segment = create(unique_name)
     patch_header(unique_name, 8, "<H", 2)
     with pytest.raises(SchemaMismatchError, match=r"uses layout 2\.0"):
@@ -413,6 +436,7 @@ def test_another_major_version_is_refused(unique_name: str) -> None:
 
 
 def test_a_higher_minor_version_opens(unique_name: str) -> None:
+    """Check that attach accepts a higher minor layout version."""
     owner = create(unique_name)
     patch_header(unique_name, 10, "<H", 7)
     other = attach(unique_name)
@@ -423,6 +447,7 @@ def test_a_higher_minor_version_opens(unique_name: str) -> None:
 
 
 def test_a_name_at_the_length_limit(unique_name: str) -> None:
+    """Check that a name of the maximum length can be created and attached."""
     name = (unique_name + "x" * 128)[:128]
     owner = create(name)
     try:
@@ -436,6 +461,7 @@ def test_a_name_at_the_length_limit(unique_name: str) -> None:
 
 
 def test_a_foreign_mapping_under_the_name_is_not_a_box(unique_name: str) -> None:
+    """Check that a mapping that is not a box makes create raise SegmentExistsError and attach raise SegmentNotFoundError."""
     with foreign_mapping(unique_name):
         with pytest.raises(SegmentExistsError):
             create(unique_name)
@@ -444,6 +470,7 @@ def test_a_foreign_mapping_under_the_name_is_not_a_box(unique_name: str) -> None
 
 
 def test_a_writer_killed_holding_the_lock(unique_name: str) -> None:
+    """Check that a lock left by a killed writer times out naming its pid and force_unlock recovers the box."""
     segment = create(unique_name, timeout=0.3)
     context = mp.get_context("spawn")
     ready = context.Event()
@@ -465,6 +492,7 @@ def test_a_writer_killed_holding_the_lock(unique_name: str) -> None:
 
 
 def test_exists_says_the_creator_is_gone(unique_name: str) -> None:
+    """Check that SegmentExistsError says the creator is no longer running when its process has exited."""
     context = mp.get_context("spawn")
     created, attached = context.Event(), context.Event()
     child = context.Process(
@@ -490,6 +518,7 @@ def test_exists_says_the_creator_is_gone(unique_name: str) -> None:
 
 
 def test_exists_names_a_creator_that_is_running(unique_name: str) -> None:
+    """Check that SegmentExistsError names the creator's pid and says it is still running."""
     segment = create(unique_name)
     with pytest.raises(
         SegmentExistsError, match=rf"pid {os.getpid()}, is still running"
@@ -500,6 +529,7 @@ def test_exists_names_a_creator_that_is_running(unique_name: str) -> None:
 
 @pytest.mark.skipif(sys.platform == "win32", reason="no pid namespaces")
 def test_exists_says_the_creator_is_in_another_namespace(unique_name: str) -> None:
+    """Check that SegmentExistsError mentions another pid namespace when the stored namespace differs."""
     segment = create(unique_name)
     patch_header(unique_name, 88, "<Q", own_pidns() + 1)
     with pytest.raises(SegmentExistsError, match="another pid namespace"):
@@ -508,6 +538,7 @@ def test_exists_says_the_creator_is_in_another_namespace(unique_name: str) -> No
 
 
 def test_exists_treats_an_unknown_namespace_as_no_information(unique_name: str) -> None:
+    """Check that a zero pid namespace produces neither the namespace nor the not-running message."""
     segment = create(unique_name)
     patch_header(unique_name, 88, "<Q", 0)
     with pytest.raises(SegmentExistsError) as error:
@@ -518,6 +549,7 @@ def test_exists_treats_an_unknown_namespace_as_no_information(unique_name: str) 
 
 
 def test_exists_says_a_name_without_a_box_may_be_left_over(unique_name: str) -> None:
+    """Check that SegmentExistsError for a mapping without a published box says it may be left over."""
     with foreign_mapping(unique_name):
         with pytest.raises(SegmentExistsError, match="holds no published box") as error:
             create(unique_name)
@@ -530,6 +562,7 @@ def test_exists_says_a_name_without_a_box_may_be_left_over(unique_name: str) -> 
 
 
 def test_force_unlock_of_a_live_writer_leaves_the_box_usable(unique_name: str) -> None:
+    """Check that a writer finishing after force_unlock leaves the box unlocked and usable."""
     writer = create(unique_name, timeout=0.3)
     other = attach(unique_name, timeout=0.3)
     writer._hold_write_lock()
@@ -550,6 +583,7 @@ def test_force_unlock_of_a_live_writer_leaves_the_box_usable(unique_name: str) -
     reason="needs a /dev/shm smaller than the largest box, as in a container's default 64 MiB",
 )
 def test_a_box_larger_than_dev_shm_fails_at_create(unique_name: str) -> None:
+    """Check that creating a box larger than /dev/shm raises OSError and leaves the name free."""
     fields = [NativeField(i * (4 + (1 << 20)), 1 << 20, BYTES) for i in range(250)]
     size = 250 * (4 + (1 << 20))
     with pytest.raises(OSError):
@@ -562,6 +596,7 @@ def test_a_box_larger_than_dev_shm_fails_at_create(unique_name: str) -> None:
 def test_attach_waits_for_a_creator_that_has_not_made_its_header(
     unique_name: str,
 ) -> None:
+    """Check that an attach racing a create raises only SegmentNotFoundError or succeeds."""
     # The header's named object is found inside the same wait as the magic word,
     # so an attach racing create sees SegmentNotFoundError or a finished segment,
     # never "not a sharedbox".
@@ -591,6 +626,7 @@ def test_attach_waits_for_a_creator_that_has_not_made_its_header(
 
 
 def test_a_blocked_read_lets_other_threads_run(unique_name: str) -> None:
+    """Check that a read blocked on the lock does not stop other Python threads."""
     segment = create(unique_name, timeout=1.0)
     other = attach(unique_name, timeout=1.0)
     segment._hold_write_lock()
@@ -617,6 +653,7 @@ def test_a_blocked_read_lets_other_threads_run(unique_name: str) -> None:
 def test_close_waits_for_a_read_blocked_on_the_lock(unique_name: str) -> None:
     # The blocked read has released the GIL and takes it back before it returns, so
     # close() must not hold the GIL while it waits for that read. If this test hangs,
+    """Check that close waits for a read blocked on the lock, and reads arriving meanwhile raise BoxClosedError."""
     # it does.
     owner = create(unique_name)
     segment = attach(unique_name, timeout=0.5)
@@ -649,6 +686,7 @@ def test_close_waits_for_a_read_blocked_on_the_lock(unique_name: str) -> None:
 
 
 def test_get_dict_needs_one_name_per_field(unique_name: str) -> None:
+    """Check that get_dict maps names to values and raises ValueError when the name count differs."""
     segment = create(unique_name)
     segment._write([(0, struct.pack("<q", 7)), (1, b"hi")])
     assert segment.get_dict(("a", "b")) == {"a": 7, "b": b"hi"}
@@ -658,6 +696,7 @@ def test_get_dict_needs_one_name_per_field(unique_name: str) -> None:
 
 
 def test_versions_lists_every_field_in_order(unique_name: str) -> None:
+    """Check that versions lists each field's write count in field order and raises BoxClosedError once closed."""
     segment = create(unique_name)
     segment._write([(1, b"a")])
     segment._write([(0, bytes(8)), (1, b"b")])
@@ -671,6 +710,7 @@ def test_versions_lists_every_field_in_order(unique_name: str) -> None:
 def test_an_unpublished_segment_is_attached_only_after_publish(
     unique_name: str,
 ) -> None:
+    """Check that an unpublished segment cannot be attached until publish, and a second publish raises ValueError."""
     segment = Segment.create(
         unique_name, FIELDS, NAMES, RECORD_SIZE, SCHEMA, 1.0, [(0, 7)], publish=False
     )

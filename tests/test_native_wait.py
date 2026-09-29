@@ -19,6 +19,7 @@ def write_after(name: str, delay: float) -> None:
 
 
 def test_wait_times_out_without_writes(unique_name: str) -> None:
+    """Check that wait returns the unchanged generation after its timeout when nothing is written."""
     segment = Segment.create(unique_name, FIELDS, NAMES, 8, SCHEMA, 1.0, [])
     start = time.monotonic()
     assert segment.wait(0, 0.2) == 0
@@ -27,6 +28,7 @@ def test_wait_times_out_without_writes(unique_name: str) -> None:
 
 
 def test_wait_returns_at_once_when_behind(unique_name: str) -> None:
+    """Check that wait returns immediately when the generation has already moved past the one given."""
     segment = Segment.create(unique_name, FIELDS, NAMES, 8, SCHEMA, 1.0, [])
     segment._write([(0, bytes(8))])
     assert segment.wait(0, 5.0) == 1
@@ -34,6 +36,7 @@ def test_wait_returns_at_once_when_behind(unique_name: str) -> None:
 
 
 def test_wait_wakes_on_write_from_other_process(unique_name: str) -> None:
+    """Check that a write from another process wakes a waiting segment well before its timeout."""
     segment = Segment.create(unique_name, FIELDS, NAMES, 8, SCHEMA, 1.0, [])
     writer = mp.get_context("spawn").Process(
         target=write_after, args=(unique_name, 0.3)
@@ -47,6 +50,7 @@ def test_wait_wakes_on_write_from_other_process(unique_name: str) -> None:
 
 
 def test_wait_wakes_every_waiter(unique_name: str) -> None:
+    """Check that one write wakes all four waiting threads with the new generation."""
     # Regression test for a Windows bug: a permit released for one waiter could be
     # taken by another, leaving the first asleep until its full timeout. If this
     # test hangs or times out on Windows, the wake-up delay bound has regressed.
@@ -70,6 +74,7 @@ def test_wait_wakes_every_waiter(unique_name: str) -> None:
 
 
 def test_wait_releases_the_gil(unique_name: str) -> None:
+    """Check that other Python threads keep running while a thread is in wait."""
     segment = Segment.create(unique_name, FIELDS, NAMES, 8, SCHEMA, 1.0, [])
     ticks: list[float] = []
     done = threading.Event()
