@@ -296,6 +296,37 @@ def test_a_subclass_keeps_its_bases_field_options(unique_name: str) -> None:
     assert (count.default, count.default_factory) == (3, MISSING)
 
 
+class Hidden(SharedBox):
+    x: int = 0
+    a: int = field(default=1, init=False, repr=False, metadata={"k": 1})
+
+
+class Redeclared(Hidden):
+    a: int = 5
+
+
+@dataclass
+class PlainHidden:
+    x: int = 0
+    a: int = dataclasses.field(default=1, init=False, repr=False, metadata={"k": 1})
+
+
+@dataclass
+class PlainRedeclared(PlainHidden):
+    a: int = 5
+
+
+def test_an_annotated_override_drops_the_bases_field_options() -> None:
+    box, plain = fields(Redeclared)[1], dataclasses.fields(PlainRedeclared)[1]
+    assert (box.default, box.init, box.repr, box.metadata) == (
+        plain.default,
+        plain.init,
+        plain.repr,
+        plain.metadata,
+    )
+    assert str(inspect.signature(Redeclared)) == str(inspect.signature(PlainRedeclared))
+
+
 class KwBase(SharedBox, kw_only=True):
     a: int
 
