@@ -11,6 +11,7 @@ from typing import TYPE_CHECKING, Any, Final, Generic, TypeVar, cast
 from psygnal import Signal, SignalGroup
 
 from ._native import BoxClosedError, LockTimeoutError, WaiterSlotsFullError
+from ._refs import shown
 
 if TYPE_CHECKING:
     from ._layout import FieldSpec, Layout
@@ -237,7 +238,7 @@ class Watcher:
             self, field, current if since is None else since
         )
         if current != fut._since:
-            fut._settle(DONE, value, current)
+            fut._settle(DONE, shown(field, value), current)
             return fut
         with self._lock:
             if self._stop.is_set():
@@ -277,7 +278,7 @@ class Watcher:
             if new == old:
                 continue
             try:
-                group[spec.name].emit(new, old)
+                group[spec.name].emit(shown(spec, new), shown(spec, old))
             except Exception:
                 logger.exception("a callback for field %r raised", spec.name)
 
@@ -402,7 +403,7 @@ class Watcher:
         values: list[tuple[FieldFuture[Any], Any, int]] = []
         for fut in ready:
             version, value = self._segment.get_versioned(fut._field.index)
-            values.append((fut, value, version))
+            values.append((fut, shown(fut._field, value), version))
         with self._lock:
             for fut in ready:
                 with contextlib.suppress(ValueError):

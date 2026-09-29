@@ -4,6 +4,7 @@ import inspect
 import multiprocessing as mp
 import os
 import pickle
+import queue
 import struct
 import subprocess
 import sys
@@ -19,6 +20,7 @@ from refs_future import Link
 
 from sharedbox import (
     BoxClosedError,
+    BoxRef,
     BrokenReferenceError,
     SchemaMismatchError,
     SharedBox,
@@ -643,3 +645,90 @@ def test_a_box_of_a_class_this_process_never_defined_raises_unknown_class(
             r"hash 0x[0-9a-f]{16}\) is not defined in this process; import",
         ):
             _ = stage.motor
+
+
+def test_snapshot_shows_a_reference_as_a_box_ref(names: Callable[[str], str]) -> None:
+    with Motor.create(names("m")) as motor, Stage.create(names("s"), 3, motor) as stage:
+        assert stage.snapshot() == {
+            "target": 3,
+            "motor": BoxRef(
+                motor.name, Motor.__layout__.schema_hash, motor._segment.create_id
+            ),
+        }
+        assert "motor=BoxRef(" in repr(stage)
+        stage.motor = None
+        assert stage.snapshot() == {"target": 3, "motor": None}
+
+
+def test_snapshot_follow_nests_the_boxes_referred_to(
+    names: Callable[[str], str],
+) -> None:
+    with (
+        Motor.create(names("m"), 7) as motor,
+        Stage.create(names("s"), 3, motor) as stage,
+    ):
+        assert stage.snapshot(follow=True) == {
+            "target": 3,
+            "motor": {"position": 7},
+        }
+
+
+def test_snapshot_follow_ends_at_a_box_it_already_read(
+    names: Callable[[str], str],
+) -> None:
+    with Node.create(names("a"), 1) as a, Node.create(names("b"), 2) as b:
+        a.link = b
+        b.link = a
+        a_ref = BoxRef(a.name, Node.__layout__.schema_hash, a._segment.create_id)
+        assert a.snapshot(follow=True) == {
+            "value": 1,
+            "link": {"value": 2, "link": a_ref},
+        }
+        a.link = a
+        assert a.snapshot(follow=True) == {"value": 1, "link": a_ref}
+
+
+def test_snapshot_follow_raises_on_a_broken_reference(
+    names: Callable[[str], str],
+) -> None:
+    with Stage.create(names("s")) as stage:
+        motor = Motor.create(names("m"))
+        stage.motor = motor
+        motor.close()
+        Motor.unlink(motor.name)
+        assert stage.snapshot()["motor"] is not None
+        with pytest.raises(BrokenReferenceError, match="no longer exists"):
+            stage.snapshot(follow=True)
+
+
+def test_events_and_watch_report_reassignments_as_box_refs(
+    names: Callable[[str], str],
+) -> None:
+    seen: queue.Queue[tuple[object, object]] = queue.Queue()
+    with (
+        Motor.create(names("a")) as a,
+        Motor.create(names("b")) as b,
+        Stage.create(names("s"), 0, a) as stage,
+    ):
+        a_ref = BoxRef(a.name, Motor.__layout__.schema_hash, a._segment.create_id)
+        b_ref = BoxRef(b.name, Motor.__layout__.schema_hash, b._segment.create_id)
+        stage.events.motor.connect(lambda new, old: seen.put((new, old)))
+        watched = iter(stage.watch("motor"))
+        stage.motor = b
+        assert seen.get(timeout=5) == (b_ref, a_ref)
+        assert next(watched) == b_ref
+        stage.motor = None
+        assert seen.get(timeout=5) == (None, b_ref)
+        assert next(watched) is None
+
+
+def test_box_class_is_the_class_this_process_has_for_the_hash(
+    names: Callable[[str], str],
+) -> None:
+    with FastMotor.create(names("f")) as fast, Stage.create(names("s")) as stage:
+        stage.motor = fast
+        ref = stage.snapshot()["motor"]
+        assert ref is not None
+        assert ref.box_class is FastMotor
+    assert BoxRef("m", Motor.__layout__.schema_hash, 1).box_class is Motor
+    assert BoxRef("m", 0x5EED, 1).box_class is None

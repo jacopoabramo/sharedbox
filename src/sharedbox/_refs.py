@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import weakref
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Self, overload
 
 from ._native import SchemaMismatchError, SegmentNotFoundError
@@ -21,6 +22,33 @@ class BrokenReferenceError(LookupError):
 
 class UnknownBoxClassError(TypeError):
     """No class defined in this process has the schema hash of the box a reference field refers to."""
+
+
+@dataclass(frozen=True)
+class BoxRef:
+    """The box a reference field refers to, as [`snapshot`][sharedbox.SharedBox.snapshot], [`events`][sharedbox.SharedBox.events] and [`watch`][sharedbox.SharedBox.watch] report it."""
+
+    name: str
+    """The box's name, which [`attach`][sharedbox.SharedBox.attach] takes."""
+    schema_hash: int
+    """Schema hash of the box's own class, which may be a subclass of the annotated one."""
+    create_id: int
+    """Tells the box apart from one created later under the same name."""
+
+    @property
+    def box_class(self) -> type[SharedBox] | None:
+        """The class defined in this process with `schema_hash`, or None if there is none."""
+        return CLASSES.get(self.schema_hash)
+
+
+def box_ref(value: tuple[int, int, str] | None) -> BoxRef | None:
+    """A reference field's native value, `(create_id, schema_hash, name)` or None, as callers see it."""
+    return None if value is None else BoxRef(value[2], value[1], value[0])
+
+
+def shown(spec: FieldSpec, value: Any) -> Any:
+    """A field's native value as callers see it: a reference field gives a [`BoxRef`][sharedbox.BoxRef] or None."""
+    return value if spec.target is None else box_ref(value)
 
 
 def stored(spec: FieldSpec, value: Any) -> tuple[int, int, str] | None:

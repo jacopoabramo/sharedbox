@@ -47,7 +47,7 @@ from ._native import (
     SegmentNotFoundError,
 )
 from ._native import Field as FieldDescriptor
-from ._refs import CLASSES, Reference, attach_reference, stored
+from ._refs import CLASSES, Reference, attach_reference, box_ref, stored
 
 if TYPE_CHECKING:
     if sys.version_info >= (3, 13):
@@ -646,9 +646,49 @@ class SharedBox(metaclass=SharedBoxMeta):
             ]
         self._segment.set(pairs)
 
-    def snapshot(self) -> dict[str, Any]:
-        """Every field's value, read at one point in time."""
-        return self._segment.get_dict(type(self).__layout__.names)
+    def snapshot(self, *, follow: bool = False) -> dict[str, Any]:
+        """Every field's value, read at one point in time.
+
+        A reference field gives a [`BoxRef`][sharedbox.BoxRef], or None when
+        it is empty.
+
+        Parameters
+        ----------
+        follow
+            Replace each reference with the snapshot of the box it refers
+            to, itself taken with `follow`. Each box is read at its own
+            moment, not together with the others. A box this call has
+            already read stays a [`BoxRef`][sharedbox.BoxRef], so a loop of
+            references ends.
+
+        Raises
+        ------
+        BrokenReferenceError
+            With `follow`, if a box referred to no longer exists or was
+            created again.
+        UnknownBoxClassError
+            With `follow`, if no class defined in this process has the
+            schema hash of a box referred to.
+        """
+        layout = type(self).__layout__
+        values = self._segment.get_dict(layout.names)
+        if layout.refs:
+            for spec in layout.refs:
+                values[spec.name] = box_ref(values[spec.name])
+            if follow:
+                self._follow(values, {(self.name, self._segment.create_id)})
+        return values
+
+    def _follow(self, values: dict[str, Any], seen: set[tuple[str, int]]) -> None:
+        for spec in type(self).__layout__.refs:
+            ref = values[spec.name]
+            if ref is None or (ref.name, ref.create_id) in seen:
+                continue
+            seen.add((ref.name, ref.create_id))
+            inner = self._inner(spec, ref.create_id, ref.schema_hash, ref.name)
+            inner_values = inner.snapshot()
+            inner._follow(inner_values, seen)
+            values[spec.name] = inner_values
 
     def watch(self, field: str) -> FieldWatch[Any]:
         """Iterate over values written to `field` from now on."""
