@@ -221,6 +221,9 @@ attacher agree on it and on the class's meaning.
   inside the record, no overlap), with no alignment asked, and its bytes are
   otherwise opaque. The Python extension, which converts every field,
   refuses such a segment with `SchemaMismatchError`.
+- For a kind a reader does not know, `capacity` is the field's whole span
+  in the record, so a future kind with a length prefix counts the prefix
+  in `capacity`.
 - A change to how existing bytes are read or written (the sequence lock,
   field encoding, the slot layout, object names) raises `layout_major`.
 - The package takes a semver major step whenever `layout_major` changes.

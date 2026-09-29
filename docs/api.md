@@ -368,7 +368,10 @@ Motor.unlink()
   `kw_only`, `KW_ONLY` and `init=False` apply as in a dataclass. A default
   box is checked like an assigned one when the class is defined; a
   factory's result is checked at each creation. `__post_init__` may assign
-  reference fields before the box is published.
+  reference fields before the box is published. The class keeps the handle
+  given as `field(default=box)` for as long as the class exists, which on
+  Windows keeps that box's segment in existence; once that handle is
+  closed, each creation that uses the default raises `BoxClosedError`.
 - `motor: Motor` is never empty: assigning `None` raises `TypeError`, and
   reading it returns a box. `motor: Motor | None` may hold `None`. The two
   give different schema hashes, so a class that declares one cannot attach
