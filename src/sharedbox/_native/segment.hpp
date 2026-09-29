@@ -103,6 +103,8 @@ public:
     /// Lets other processes attach to a segment created without publish; throws std::invalid_argument
     /// if it is already published.
     void publish();
+    /// False from create without publish until publish().
+    bool published() const;
     std::uint64_t generation() const;
     /// Claims a waiter slot for this process; free it with release_waiter.
     std::uint16_t register_waiter();

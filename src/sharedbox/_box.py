@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 import dataclasses
 import hashlib
 import inspect
@@ -8,7 +9,7 @@ import re
 import sys
 import weakref
 from collections.abc import Callable
-from dataclasses import MISSING
+from dataclasses import MISSING, InitVar
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -33,7 +34,12 @@ from ._layout import (
     field,
     own_kw_only,
 )
-from ._native import LAYOUT_VERSION, SchemaMismatchError, Segment
+from ._native import (
+    LAYOUT_VERSION,
+    SchemaMismatchError,
+    Segment,
+    SegmentNotFoundError,
+)
 from ._native import Field as FieldDescriptor
 
 if TYPE_CHECKING:
@@ -111,7 +117,7 @@ def has_default(param: Field) -> bool:
 
 
 def signature(params: list[Field]) -> inspect.Signature:
-    """The constructor signature a dataclass with these fields would have."""
+    """The constructor signature a dataclass with these fields and ``InitVar`` ones would have."""
     return inspect.Signature(
         [
             inspect.Parameter(
@@ -133,11 +139,11 @@ def signature(params: list[Field]) -> inspect.Signature:
 
 
 def fields(class_or_box: type[SharedBox] | SharedBox) -> tuple[Field, ...]:
-    """Every field of a ``SharedBox`` subclass or box, in declaration order."""
+    """Every field of a ``SharedBox`` subclass or box, in declaration order, without ``InitVar`` ones."""
     cls = class_or_box if isinstance(class_or_box, type) else type(class_or_box)
     if not issubclass(cls, SharedBox) or cls is SharedBox:
         raise TypeError("fields() takes a SharedBox subclass or one of its boxes")
-    return cls.__sharedbox_init__
+    return tuple(f for f in cls.__sharedbox_init__ if not isinstance(f.type, InitVar))
 
 
 def unpickle_box(
@@ -311,15 +317,29 @@ class SharedBox(metaclass=SharedBoxMeta):
             param = dataclasses.replace(
                 given, name=attr, type=hint, kw_only=attr_kw_only
             )
-            spec = layout.by_name[attr]
-            if param.default is not MISSING:
-                spec.check(param.default)
-            if not param.init and not has_default(param):
-                raise TypeError(
-                    f"{cls.__qualname__}: field {attr!r} has init=False and no default"
-                )
-            setattr(cls, attr, FieldDescriptor(spec, segment_slot))
+            if isinstance(hint, InitVar):
+                if param.default_factory is not MISSING or not param.init:
+                    raise TypeError(
+                        f"{cls.__qualname__}: InitVar {attr!r} takes neither default_factory nor init=False"
+                    )
+                if attr in cls.__dict__:
+                    delattr(cls, attr)
+            else:
+                spec = layout.by_name[attr]
+                if param.default is not MISSING:
+                    spec.check(param.default)
+                if not param.init and not has_default(param):
+                    raise TypeError(
+                        f"{cls.__qualname__}: field {attr!r} has init=False and no default"
+                    )
+                setattr(cls, attr, FieldDescriptor(spec, segment_slot))
             params.append(param)
+        if not hasattr(cls, "__post_init__") and any(
+            isinstance(p.type, InitVar) for p in params
+        ):
+            raise TypeError(
+                f"{cls.__qualname__} has InitVar fields but no __post_init__"
+            )
         seen_default = False
         for param in params:
             if param.kw_only or not param.init:
@@ -446,9 +466,27 @@ class SharedBox(metaclass=SharedBoxMeta):
             cls.__lock_timeout__,
             [(spec.index, values[spec.name]) for spec in layout.fields],
             cls.__max_waiters__,
+            publish=False,
         )
         self._watcher = Watcher(self._segment)
         self._track()
+        try:
+            post_init = getattr(cls, "__post_init__", None)
+            if post_init is not None:
+                post_init(
+                    self,
+                    *(
+                        values[p.name]
+                        for p in cls.__sharedbox_init__
+                        if isinstance(p.type, InitVar)
+                    ),
+                )
+            self._segment.publish()
+        except BaseException:
+            with contextlib.suppress(SegmentNotFoundError):
+                Segment.unlink(name)
+            self.close()
+            raise
 
     def _check_names(self, values: dict[str, Any]) -> None:
         unknown = sorted(values.keys() - type(self).__layout__.by_name.keys())
@@ -534,11 +572,16 @@ class SharedBox(metaclass=SharedBoxMeta):
 
         Closing or unlinking the box does not affect the handle. A
         ``max_version`` whose major differs from the box's layout raises
-        ``BufferError``; any other keyword raises ``NotImplementedError``.
+        ``BufferError``, as does a call from ``__post_init__``, before the
+        box is published; any other keyword raises ``NotImplementedError``.
         """
         if kwargs:
             raise NotImplementedError(
                 f"__sharedbox_box__ does not support {', '.join(sorted(kwargs))}"
+            )
+        if not self._segment.published:
+            raise BufferError(
+                "the box is not published yet; call __sharedbox_box__ after __post_init__ returns"
             )
         major, minor = LAYOUT_VERSION
         if max_version is not None and max_version[0] != major:
@@ -579,6 +622,6 @@ class SharedBox(metaclass=SharedBoxMeta):
         shown = ", ".join(
             f"{p.name}={values[p.name]!r}"
             for p in type(self).__sharedbox_init__
-            if p.repr
+            if p.repr and p.name in values
         )
         return f"{type(self).__qualname__}({shown})"

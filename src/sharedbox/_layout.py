@@ -3,7 +3,7 @@ from __future__ import annotations
 import hashlib
 import inspect
 from collections.abc import Callable, Mapping
-from dataclasses import KW_ONLY, MISSING, dataclass
+from dataclasses import KW_ONLY, MISSING, InitVar, dataclass
 from types import MappingProxyType
 from typing import (
     Annotated,
@@ -186,7 +186,7 @@ def class_identity(cls: type) -> str:
 
 
 def declared(cls: type) -> list[tuple[str, Any]]:
-    """``(name, annotation)`` of every field of ``cls``, base classes first.
+    """``(name, annotation)`` of every field and ``InitVar`` of ``cls``, base classes first.
 
     ``dataclasses.KW_ONLY`` and ``ClassVar`` annotations and names starting
     with ``_`` are left out.
@@ -223,9 +223,14 @@ def build_layout(cls: type, identity: str | None = None) -> Layout:
     Fields are packed by descending alignment (8-byte fields, then
     ``str``/``bytes``, then ``bool``), not declaration order;
     ``Layout.fields`` keeps the declaration order. The schema hash covers
-    ``identity``, by default :func:`class_identity`.
+    ``identity``, by default :func:`class_identity`. ``InitVar``
+    annotations are not fields.
     """
-    found = [(name, *classify(name, hint)) for name, hint in declared(cls)]
+    found = [
+        (name, *classify(name, hint))
+        for name, hint in declared(cls)
+        if not isinstance(hint, InitVar)
+    ]
     if not found:
         raise TypeError(f"{cls.__qualname__} declares no fields")
     if len(found) > MAX_FIELDS:

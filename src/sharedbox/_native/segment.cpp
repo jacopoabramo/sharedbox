@@ -6,11 +6,13 @@
 #include <atomic>
 #include <cerrno>
 #include <cmath>
+#include <cstring>
 #include <iterator>
 #include <limits>
 #include <memory>
 #include <mutex>
 #include <new>
+#include <optional>
 #include <shared_mutex>
 #include <span>
 #include <system_error>
@@ -42,6 +44,31 @@ std::span<const std::byte> bytes_of(std::string_view s) { return std::as_bytes(s
 WaitHook before_wait = []() -> void * { return nullptr; };
 ResumeHook after_wait = [](void *) {};
 
+// True if the creator recorded in h is still running, as far as its pid can be trusted here.
+bool creator_running(const header &h) {
+#ifndef _WIN32
+    // A pid means something only inside its namespace: with either namespace unknown (0), or a
+    // real mismatch, there is nothing safe to say about whether the creator is still running.
+    const std::uint64_t own_pidns = detail::current_pidns();
+    if (h.creator_pidns == 0 || own_pidns == 0 || h.creator_pidns != own_pidns)
+        return false;
+#endif
+    return h.creator_pid != 0 && detail::process_alive(h.creator_pid, h.creator_start);
+}
+
+// The header of a box whose creator has not published it yet. The creator fields are written before
+// magic, but this reads them without waiting for magic and without the lock, so a creator still
+// writing them can only make the message less precise.
+std::optional<header> unpublished_header(const std::string &name) {
+    detail::backoff no_wait(0);
+    result<detail::os_mapping> map = detail::map_open(name, no_wait);
+    if (!map)
+        return std::nullopt;
+    header copy;
+    std::memcpy(&copy, map->base(), sizeof copy);
+    return copy;
+}
+
 // The Python layer labels fields "Class.field", so the first label names the class to unlink through.
 std::string exists_message(const std::string &name, const std::vector<std::string> &names) {
     const std::string taken = "a segment named '" + name + "' already exists";
@@ -56,6 +83,10 @@ std::string exists_message(const std::string &name, const std::vector<std::strin
     if (!seen) {
         if (seen.error() != status::not_found)
             return taken;
+        if (const std::optional<header> creating = unpublished_header(name);
+            creating && creator_running(*creating))
+            return taken + "; it is being created by pid " + std::to_string(creating->creator_pid) +
+                   ", which is still running; wait for it or use another name";
 #ifdef _WIN32
         // A Windows name exists only while some process holds a handle to it, and it may name an
         // object of another kind, so there is nothing to remove.
@@ -364,6 +395,12 @@ std::vector<std::uint64_t> Segment::versions() const {
     for (std::size_t i = 0; i < out.size(); ++i)
         out[i] = impl_->box.version(static_cast<std::uint16_t>(i));
     return out;
+}
+
+bool Segment::published() const {
+    auto guard = impl_->enter();
+    return detail::atomic(static_cast<header *>(impl_->box.base())->magic).load(std::memory_order_acquire) ==
+           magic;
 }
 
 void Segment::publish() {

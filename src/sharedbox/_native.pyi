@@ -169,6 +169,10 @@ class Segment:
         """True after :meth:`close`."""
 
     @property
+    def published(self) -> bool:
+        """False between ``create(..., publish=False)`` and :meth:`publish`."""
+
+    @property
     def name(self) -> str: ...
     @property
     def lock_timeout(self) -> float:

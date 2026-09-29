@@ -1,12 +1,25 @@
 import dataclasses
 import inspect
+import multiprocessing as mp
+import os
+import pickle
+import sys
+import time
 import types
-from dataclasses import KW_ONLY, MISSING, dataclass
+from dataclasses import KW_ONLY, MISSING, InitVar, dataclass
+from multiprocessing.synchronize import Event
 from typing import Annotated, Any, ClassVar, cast
 
 import pytest
 
-from sharedbox import Capacity, SharedBox, field, fields
+from sharedbox import (
+    Capacity,
+    SegmentExistsError,
+    SegmentNotFoundError,
+    SharedBox,
+    field,
+    fields,
+)
 
 
 class Stage(SharedBox):
@@ -407,3 +420,217 @@ def test_an_unannotated_field_call_is_refused_as_in_a_dataclass(name: str) -> No
         TypeError, match=f"Loose: '{name}' is a field but has no type annotation"
     ):
         type("Loose", (Stage,), {name: field(default="x")})
+
+
+class Offsets(SharedBox, identity="sbtest/offsets"):
+    position: int
+    first: InitVar[int]
+    second: InitVar[int] = 10
+    total: int = 0
+
+    def __post_init__(self, first: int, second: int) -> None:
+        self.total = first * 100 + second
+
+
+class Stored(SharedBox, identity="sbtest/offsets"):
+    position: int
+    total: int = 0
+
+
+class Shifted(Offsets):
+    extra: int = 0
+
+
+def test_initvars_reach_post_init_in_order_and_are_not_stored(
+    unique_name: str,
+) -> None:
+    with Offsets.create(unique_name, 5, 1, 2) as box:
+        assert box.snapshot() == {"position": 5, "total": 102}
+        assert list(box.events) == ["position", "total"]
+        assert not hasattr(box, "second")
+        with Stored.attach(unique_name) as stored:
+            assert stored.total == 102
+    with Offsets.create(f"{unique_name}-2", 5, first=3) as box:
+        assert box.total == 310
+    Offsets.unlink(f"{unique_name}-2")
+    assert [f.name for f in fields(Offsets)] == ["position", "total"]
+    with Shifted.create(f"{unique_name}-3", 1, 2, extra=4) as child:
+        assert (child.total, child.extra) == (210, 4)
+    Shifted.unlink(f"{unique_name}-3")
+
+
+def test_initvar_signature_and_order_match_a_dataclass() -> None:
+    annotations = {"a": int, "offset": InitVar[int], "_": KW_ONLY, "b": int}
+    options = {"offset": {"default": 0}, "b": {"default": 1}}
+    assert str(inspect.signature(box_twin(annotations, options, False))) == str(
+        inspect.signature(dataclass_twin(annotations, options, False))
+    )
+    refused = {"a": int, "offset": InitVar[int]}
+    with pytest.raises(TypeError):
+        dataclass_twin(refused, {"a": {"default": 0}}, False)
+    with pytest.raises(TypeError, match="without a default follows"):
+        box_twin(refused, {"a": {"default": 0}}, False)
+
+
+def test_initvar_needs_post_init() -> None:
+    with pytest.raises(TypeError, match="__post_init__"):
+
+        class Bad(SharedBox):
+            value: int = 0
+            offset: InitVar[int] = 0
+
+
+def test_initvar_takes_no_factory() -> None:
+    with pytest.raises(TypeError, match="default_factory"):
+
+        class Bad(SharedBox):
+            value: int = 0
+            offset: InitVar[int] = field(default_factory=int)
+
+            def __post_init__(self, offset: int) -> None:
+                pass
+
+
+class Runs(SharedBox):
+    count: int = 0
+
+    def __post_init__(self) -> None:
+        self.count += 1
+
+
+def test_post_init_runs_only_when_a_box_is_created(unique_name: str) -> None:
+    with Runs.create(unique_name) as box, Runs.attach(unique_name) as other:
+        copy = pickle.loads(pickle.dumps(box))
+        assert (box.count, other.count, copy.count) == (1, 1, 1)
+        copy.close()
+
+
+# Keeps the box a raising __post_init__ saw alive, as user code may, so garbage
+# collection cannot free its segment for it.
+FAILED_BOXES: list[SharedBox] = []
+
+
+class Failing(SharedBox):
+    value: int = 0
+    error: InitVar[type[BaseException] | None] = None
+
+    def __post_init__(self, error: type[BaseException] | None) -> None:
+        self.value = 5
+        if error is not None:
+            FAILED_BOXES.append(self)
+            raise error("from __post_init__")
+
+
+class Stop(BaseException):
+    pass
+
+
+@pytest.mark.parametrize("error", [RuntimeError, Stop])
+def test_a_raising_post_init_leaves_no_box(
+    unique_name: str, error: type[BaseException]
+) -> None:
+    with pytest.raises(error, match="from __post_init__"):
+        Failing.create(unique_name, error=error)
+    assert FAILED_BOXES.pop().closed
+    with pytest.raises(SegmentNotFoundError):
+        Failing.attach(unique_name)
+    with Failing.create(unique_name) as box:
+        assert box.value == 5
+
+
+@pytest.mark.skipif(
+    not sys.platform.startswith("linux"), reason="/dev/shm exists on Linux only"
+)
+def test_a_raising_post_init_leaves_no_file_in_dev_shm(unique_name: str) -> None:
+    with pytest.raises(RuntimeError):
+        Failing.create(unique_name, error=RuntimeError)
+    FAILED_BOXES.clear()
+    assert not os.path.exists(f"/dev/shm/sharedbox.{unique_name}")
+
+
+class Probe(SharedBox, lock_timeout=0.2):
+    value: int = 0
+
+    def __post_init__(self) -> None:
+        with pytest.raises(SegmentExistsError):
+            Probe.create(self.name)
+        with pytest.raises(SegmentNotFoundError):
+            Probe.attach(self.name)
+
+
+def test_the_name_is_taken_but_not_attachable_during_post_init(
+    unique_name: str,
+) -> None:
+    with Probe.create(unique_name), Probe.attach(unique_name) as other:
+        assert other.value == 0
+
+
+class Slow(SharedBox):
+    value: int = 0
+    started: InitVar[Event | None] = None
+
+    def __post_init__(self, started: Event | None) -> None:
+        if started is not None:
+            started.set()
+            time.sleep(0.5)
+        self.value = 42
+
+
+def attach_while_post_init_runs(
+    name: str, started: Event, results: "mp.Queue[int]"
+) -> None:
+    started.wait(20)
+    with Slow.attach(name) as box:
+        results.put(box.value)
+
+
+def test_a_process_attaching_during_post_init_sees_its_writes(
+    unique_name: str,
+) -> None:
+    ctx = mp.get_context("spawn")
+    started = ctx.Event()
+    results: mp.Queue[int] = ctx.Queue()
+    child = ctx.Process(
+        target=attach_while_post_init_runs, args=(unique_name, started, results)
+    )
+    child.start()
+    with Slow.create(unique_name, started=started):
+        assert results.get(timeout=20) == 42
+        child.join(20)
+    assert child.exitcode == 0
+
+
+class Exported(SharedBox):
+    value: int = 0
+
+    def __post_init__(self) -> None:
+        with pytest.raises(BufferError, match="not published yet"):
+            self.__sharedbox_box__()
+
+
+def test_a_box_goes_to_other_extensions_only_after_post_init(
+    unique_name: str,
+) -> None:
+    with Exported.create(unique_name) as box:
+        assert type(box.__sharedbox_box__()).__name__ == "PyCapsule"
+
+
+def create_slowly(name: str, started: Event) -> None:
+    with Slow.create(name, started=started):
+        pass
+
+
+def test_creating_a_name_that_is_being_created_says_so(unique_name: str) -> None:
+    ctx = mp.get_context("spawn")
+    started = ctx.Event()
+    child = ctx.Process(target=create_slowly, args=(unique_name, started))
+    child.start()
+    assert started.wait(20)
+    with pytest.raises(SegmentExistsError) as error:
+        Slow.create(unique_name)
+    child.join(20)
+    assert child.exitcode == 0
+    assert f"being created by pid {child.pid}, which is still running" in str(
+        error.value
+    )
+    assert "unlink" not in str(error.value)

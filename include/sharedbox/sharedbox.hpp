@@ -1012,7 +1012,9 @@ public:
     create_unpublished(std::string_view name, std::span<const field_spec> fields, std::uint32_t record_size,
                        std::uint64_t schema_hash, std::uint16_t waiter_slots, std::span<const value> initial);
     // Lets open find a box made by create_unpublished. status::range if the box is already published,
-    // as every box a handle made by open or from_capsule reaches is.
+    // as every box a handle made by open or from_capsule reaches is. A handle from duplicate() of an
+    // unpublished creator shares its mapping and could publish it, so a creator must not hand one out
+    // before publishing.
     [[nodiscard]] result<void> publish() noexcept;
     // Opens the box called name, waiting up to timeout for a creator that has not finished. The caller
     // compares schema_hash() with its own.

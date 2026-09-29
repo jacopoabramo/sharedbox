@@ -303,6 +303,7 @@ NB_MODULE(_native, m) {
         .def_prop_ro("_waiters", &Segment::waiters)
         .def_prop_ro("create_id", &Segment::create_id)
         .def_prop_ro("closed", &Segment::closed)
+        .def_prop_ro("published", &Segment::published)
         .def_prop_ro("name", &Segment::name)
         .def_prop_ro("lock_timeout", &Segment::lock_timeout);
 

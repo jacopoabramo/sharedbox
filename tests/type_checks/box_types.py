@@ -1,3 +1,4 @@
+from dataclasses import InitVar
 from typing import Annotated, assert_type
 
 import sharedbox
@@ -51,11 +52,16 @@ class Stage(SharedBox):
     label: Annotated[str, Capacity(8)] = field(default="s")
     moves: int = field(default=0, init=False)
     speed: float = field(default_factory=float)
+    offset: InitVar[float] = 0.0
+
+    def __post_init__(self, offset: float) -> None: ...
 
 
 def field_options(stage: Stage) -> None:
     assert_type(Stage(1.0), Stage)
     Stage(1.0, "t", 2.0)
     Stage(1.0, moves=3)  # type: ignore[call-arg]
+    Stage(1.0, "t", 2.0, offset=3.0)
+    Stage(1.0, offset="far")  # type: ignore[arg-type]
     assert_type(stage.moves, int)
     assert_type(sharedbox.fields(stage), tuple[Field, ...])
