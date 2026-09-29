@@ -44,16 +44,21 @@ std::span<const std::byte> bytes_of(std::string_view s) { return std::as_bytes(s
 WaitHook before_wait = []() -> void * { return nullptr; };
 ResumeHook after_wait = [](void *) {};
 
-// True if the creator recorded in h is still running, as far as its pid can be trusted here.
-bool creator_running(const header &h) {
+// The message for a creator whose pid cannot be checked from here, or nullopt when it can.
+std::optional<std::string> foreign_creator(const header &h, const std::string &taken) {
 #ifndef _WIN32
     // A pid means something only inside its namespace: with either namespace unknown (0), or a
     // real mismatch, there is nothing safe to say about whether the creator is still running.
     const std::uint64_t own_pidns = detail::current_pidns();
-    if (h.creator_pidns == 0 || own_pidns == 0 || h.creator_pidns != own_pidns)
-        return false;
+    if (h.creator_pidns == 0 || own_pidns == 0)
+        return taken;
+    if (h.creator_pidns != own_pidns)
+        return taken + "; it was created in another pid namespace, such as another container";
+#else
+    static_cast<void>(h);
+    static_cast<void>(taken);
 #endif
-    return h.creator_pid != 0 && detail::process_alive(h.creator_pid, h.creator_start);
+    return std::nullopt;
 }
 
 // The header of a box whose creator has not published it yet. The creator fields are written before
@@ -83,10 +88,15 @@ std::string exists_message(const std::string &name, const std::vector<std::strin
     if (!seen) {
         if (seen.error() != status::not_found)
             return taken;
+        // Zero creator fields mean shared memory made by other software.
         if (const std::optional<header> creating = unpublished_header(name);
-            creating && creator_running(*creating))
-            return taken + "; it is being created by pid " + std::to_string(creating->creator_pid) +
-                   ", which is still running; wait for it or use another name";
+            creating && creating->creator_pid != 0) {
+            if (std::optional<std::string> foreign = foreign_creator(*creating, taken))
+                return *foreign;
+            if (detail::process_alive(creating->creator_pid, creating->creator_start))
+                return taken + "; it is being created by pid " + std::to_string(creating->creator_pid) +
+                       ", which is still running; wait for it or use another name";
+        }
 #ifdef _WIN32
         // A Windows name exists only while some process holds a handle to it, and it may name an
         // object of another kind, so there is nothing to remove.
@@ -99,15 +109,8 @@ std::string exists_message(const std::string &name, const std::vector<std::strin
     }
     if (seen->layout_major != layout_major)
         return taken;
-#ifndef _WIN32
-    // A pid means something only inside its namespace: with either namespace unknown (0), or a
-    // real mismatch, there is nothing safe to say about whether the creator is still running.
-    const std::uint64_t own_pidns = detail::current_pidns();
-    if (seen->creator_pidns == 0 || own_pidns == 0)
-        return taken;
-    if (seen->creator_pidns != own_pidns)
-        return taken + "; it was created in another pid namespace, such as another container";
-#endif
+    if (std::optional<std::string> foreign = foreign_creator(*seen, taken))
+        return *foreign;
     if (detail::process_alive(seen->creator_pid, seen->creator_start))
         return taken + "; its creator, pid " + std::to_string(seen->creator_pid) + ", is still running";
 #ifdef _WIN32

@@ -14,6 +14,7 @@ from typing import (
     TYPE_CHECKING,
     Any,
     ClassVar,
+    NoReturn,
     Protocol,
     Self,
     TypeVar,
@@ -110,6 +111,25 @@ class FactoryDefault:
 
 FACTORY = FactoryDefault()
 REQUIRED = field()
+
+
+class InitVarAttribute:
+    """An ``InitVar`` on its class; a box has no attribute of that name."""
+
+    def __init__(self, label: str) -> None:
+        self.label = label
+
+    def refuse(self) -> NoReturn:
+        raise AttributeError(f"{self.label} is an InitVar, which a box does not store")
+
+    def __get__(self, box: object, owner: type | None = None) -> NoReturn:
+        self.refuse()
+
+    def __set__(self, box: object, value: object) -> NoReturn:
+        self.refuse()
+
+    def __delete__(self, box: object) -> NoReturn:
+        self.refuse()
 
 
 def has_default(param: Field) -> bool:
@@ -322,8 +342,8 @@ class SharedBox(metaclass=SharedBoxMeta):
                     raise TypeError(
                         f"{cls.__qualname__}: InitVar {attr!r} takes neither default_factory nor init=False"
                     )
-                if attr in cls.__dict__:
-                    delattr(cls, attr)
+                # Also hides a descriptor inherited from a base where attr is a field.
+                setattr(cls, attr, InitVarAttribute(f"{cls.__qualname__}.{attr}"))
             else:
                 spec = layout.by_name[attr]
                 if param.default is not MISSING:
@@ -483,9 +503,11 @@ class SharedBox(metaclass=SharedBoxMeta):
                 )
             self._segment.publish()
         except BaseException:
-            with contextlib.suppress(SegmentNotFoundError):
-                Segment.unlink(name)
-            self.close()
+            try:
+                with contextlib.suppress(SegmentNotFoundError):
+                    Segment.unlink(name)
+            finally:
+                self.close()
             raise
 
     def _check_names(self, values: dict[str, Any]) -> None:

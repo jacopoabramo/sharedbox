@@ -615,22 +615,77 @@ def test_a_box_goes_to_other_extensions_only_after_post_init(
         assert type(box.__sharedbox_box__()).__name__ == "PyCapsule"
 
 
-def create_slowly(name: str, started: Event) -> None:
-    with Slow.create(name, started=started):
+class Held(SharedBox):
+    value: int = 0
+    started: InitVar[Event | None] = None
+    release: InitVar[Event | None] = None
+
+    def __post_init__(self, started: Event | None, release: Event | None) -> None:
+        if started is not None and release is not None:
+            started.set()
+            release.wait(20)
+
+
+def create_until_released(name: str, started: Event, release: Event) -> None:
+    with Held.create(name, started=started, release=release):
         pass
 
 
 def test_creating_a_name_that_is_being_created_says_so(unique_name: str) -> None:
     ctx = mp.get_context("spawn")
     started = ctx.Event()
-    child = ctx.Process(target=create_slowly, args=(unique_name, started))
+    release = ctx.Event()
+    child = ctx.Process(
+        target=create_until_released, args=(unique_name, started, release)
+    )
     child.start()
-    assert started.wait(20)
-    with pytest.raises(SegmentExistsError) as error:
-        Slow.create(unique_name)
+    try:
+        assert started.wait(20)
+        with pytest.raises(SegmentExistsError) as error:
+            Held.create(unique_name)
+    finally:
+        release.set()
     child.join(20)
     assert child.exitcode == 0
     assert f"being created by pid {child.pid}, which is still running" in str(
         error.value
     )
     assert "unlink" not in str(error.value)
+
+
+class Pair(SharedBox):
+    a: int = 1
+    b: int = 2
+
+
+class PairWithOffset(Pair):
+    a: InitVar[int] = 7
+
+    def __post_init__(self, a: int) -> None:
+        pass
+
+
+@dataclass
+class PlainPair:
+    a: int = 1
+    b: int = 2
+
+
+@dataclass
+class PlainPairWithOffset(PlainPair):
+    a: InitVar[int] = 7
+
+    def __post_init__(self, a: int) -> None:
+        pass
+
+
+def test_an_initvar_over_an_inherited_field_hides_it(unique_name: str) -> None:
+    assert [f.name for f in fields(PairWithOffset)] == [
+        f.name for f in dataclasses.fields(PlainPairWithOffset)
+    ]
+    with PairWithOffset.create(unique_name, b=5) as box:
+        with pytest.raises(AttributeError, match="InitVar"):
+            _ = box.a
+        with pytest.raises(AttributeError, match="InitVar"):
+            box.a = 3
+        assert box.b == 5
