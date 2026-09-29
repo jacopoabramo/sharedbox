@@ -7,6 +7,7 @@ import inspect
 import os
 import re
 import sys
+import threading
 import weakref
 from collections.abc import Callable
 from dataclasses import MISSING, InitVar
@@ -17,7 +18,9 @@ from typing import (
     NoReturn,
     Protocol,
     Self,
+    TypeAlias,
     TypeVar,
+    cast,
     dataclass_transform,
     overload,
 )
@@ -33,15 +36,18 @@ from ._layout import (
     class_identity,
     declared,
     field,
+    own_annotations,
     own_kw_only,
 )
 from ._native import (
     LAYOUT_VERSION,
+    BoxClosedError,
     SchemaMismatchError,
     Segment,
     SegmentNotFoundError,
 )
 from ._native import Field as FieldDescriptor
+from ._refs import CLASSES, Reference, attach_reference, stored
 
 if TYPE_CHECKING:
     if sys.version_info >= (3, 13):
@@ -66,6 +72,9 @@ RESERVED = frozenset(
     }
 )
 MAX_WAITERS = 4096
+# A reference field's cache entry: its create id, the box attached for it, and
+# that box's Segment. Segment.cached_ref in _native/module.cpp reads this shape.
+RefEntry: TypeAlias = "tuple[int, SharedBox, Segment]"
 LIVE: weakref.WeakSet[SharedBox] = weakref.WeakSet()
 
 
@@ -96,6 +105,8 @@ def reset_after_fork() -> None:
     for box in list(LIVE):
         box._segment._after_fork()
         box._watcher.after_fork()
+        # Another thread of the parent may have held it at the fork.
+        box._refs_lock = threading.Lock()
 
 
 if sys.platform != "win32":
@@ -242,7 +253,12 @@ class Unlink:
 
 
 class SharedBoxMeta(type):
-    """Give every `SharedBox` subclass an empty `__slots__`, so its instances have no `__dict__`."""
+    """Give every `SharedBox` subclass an empty `__slots__`, so its instances have no `__dict__`.
+
+    Also record each subclass by schema hash, where reference fields find the
+    class of the box they refer to; of several classes with one hash, the
+    first stays.
+    """
 
     def __new__(
         mcls,
@@ -259,7 +275,11 @@ class SharedBoxMeta(type):
             raise TypeError(
                 f"{cls_name}: __slots__ cannot name _segment, which SharedBox already has"
             )
-        return super().__new__(mcls, cls_name, bases, namespace, **kwargs)
+        cls = super().__new__(mcls, cls_name, bases, namespace, **kwargs)
+        layout = cls.__dict__.get("__layout__")
+        if layout is not None:
+            CLASSES.setdefault(layout.schema_hash, cast("type[SharedBox]", cls))
+        return cls
 
 
 @dataclass_transform(eq_default=False, field_specifiers=(field,))
@@ -267,7 +287,8 @@ class SharedBox(metaclass=SharedBoxMeta):
     """A record whose annotated fields live in a named shared-memory segment.
 
     Subclass it and annotate fields with `bool`, `int`, `float`,
-    `Annotated[str, Capacity(n)]` or `Annotated[bytes, Capacity(n)]`.
+    `Annotated[str, Capacity(n)]`, `Annotated[bytes, Capacity(n)]`, or a
+    `SharedBox` subclass `X` or `X | None` for a reference to another box.
     Calling the subclass with the field values, as with a dataclass,
     creates the segment; [`attach`][sharedbox.SharedBox.attach] opens it
     from any thread or process. The segment is named after the class's
@@ -277,7 +298,14 @@ class SharedBox(metaclass=SharedBoxMeta):
     explicit names.
     """
 
-    __slots__ = ("__weakref__", "_finalizer", "_segment", "_watcher")
+    __slots__ = (
+        "__weakref__",
+        "_finalizer",
+        "_refs",
+        "_refs_lock",
+        "_segment",
+        "_watcher",
+    )
 
     __layout__: ClassVar[Layout]
     __sharedbox_options__: ClassVar[dict[str, Field]] = {}
@@ -311,7 +339,7 @@ class SharedBox(metaclass=SharedBoxMeta):
             raise TypeError(
                 f"{cls.__qualname__}: field name(s) {', '.join(clashes)} clash with SharedBox methods"
             )
-        annotated = inspect.get_annotations(cls)
+        annotated = own_annotations(cls)
         for attr, value in cls.__dict__.items():
             if isinstance(value, Field) and attr not in annotated:
                 raise TypeError(
@@ -341,10 +369,12 @@ class SharedBox(metaclass=SharedBoxMeta):
             value = cls.__dict__.get(attr, MISSING)
             if isinstance(value, Field):
                 options[attr] = value
-            elif value is not MISSING and not isinstance(value, FieldDescriptor):
+            elif value is not MISSING and not isinstance(
+                value, (FieldDescriptor, Reference)
+            ):
                 if attr not in own:
                     base = next(
-                        b for b in cls.__mro__[1:] if attr in inspect.get_annotations(b)
+                        b for b in cls.__mro__[1:] if attr in own_annotations(b)
                     )
                     raise TypeError(
                         f"{cls.__qualname__}.{attr} overrides the field inherited from "
@@ -379,13 +409,21 @@ class SharedBox(metaclass=SharedBoxMeta):
                 setattr(cls, attr, InitVarAttribute(f"{cls.__qualname__}.{attr}"))
             else:
                 spec = layout.by_name[attr]
-                if param.default is not MISSING:
+                if param.default is not MISSING and spec.target is not None:
+                    stored(spec, param.default)
+                elif param.default is not MISSING:
                     spec.check(param.default)
                 if not param.init and not has_default(param):
                     raise TypeError(
                         f"{cls.__qualname__}: field {attr!r} has init=False and no default"
                     )
-                setattr(cls, attr, FieldDescriptor(spec, segment_slot))
+                setattr(
+                    cls,
+                    attr,
+                    FieldDescriptor(spec, segment_slot)
+                    if spec.target is None
+                    else Reference(spec),
+                )
             params.append(param)
         if not hasattr(cls, "__post_init__") and any(
             isinstance(p.type, InitVar) for p in params
@@ -481,6 +519,8 @@ class SharedBox(metaclass=SharedBoxMeta):
         return cls.__sharedbox_name__
 
     def _track(self) -> None:
+        self._refs: dict[int, RefEntry] = {}
+        self._refs_lock = threading.Lock()
         # The finalizer may run on a thread that holds the watcher's lock, which the
         # watcher thread may be waiting for, so it must not join that thread.
         self._finalizer = weakref.finalize(
@@ -533,7 +573,15 @@ class SharedBox(metaclass=SharedBoxMeta):
             layout.record_size,
             layout.schema_hash,
             cls.__lock_timeout__,
-            [(spec.index, values[spec.name]) for spec in layout.fields],
+            [
+                (
+                    spec.index,
+                    values[spec.name]
+                    if spec.target is None
+                    else stored(spec, values[spec.name]),
+                )
+                for spec in layout.fields
+            ],
             cls.__max_waiters__,
             publish=False,
         )
@@ -581,12 +629,19 @@ class SharedBox(metaclass=SharedBoxMeta):
 
     def update(self, **values: Any) -> None:
         """Write several fields at once; readers see all of them or none."""
-        by_name = type(self).__layout__.by_name
+        layout = type(self).__layout__
+        by_name = layout.by_name
         try:
             pairs = [(by_name[n].index, v) for n, v in values.items()]
         except KeyError:
             self._check_names(values)
             raise
+        if layout.refs:
+            specs = layout.fields
+            pairs = [
+                (i, v if specs[i].target is None else stored(specs[i], v))
+                for i, v in pairs
+            ]
         self._segment.set(pairs)
 
     def snapshot(self) -> dict[str, Any]:
@@ -633,6 +688,28 @@ class SharedBox(metaclass=SharedBoxMeta):
                 f"{type(self).__qualname__} has no field {field!r}"
             ) from None
 
+    def _inner(
+        self, spec: FieldSpec, create_id: int, schema_hash: int, name: str
+    ) -> SharedBox:
+        """The box a reference field refers to: the one this handle attached before, or a new one."""
+        cached = self._refs.get(spec.index)
+        # Reading a dict entry is atomic on every build, so the usual case takes no lock.
+        if cached is not None and cached[0] == create_id and not cached[2].closed:
+            return cached[1]
+        with self._refs_lock:
+            cached = self._refs.get(spec.index)
+            if cached is not None and cached[0] == create_id and not cached[2].closed:
+                return cached[1]
+            inner = attach_reference(spec, create_id, schema_hash, name)
+            # close() empties the cache after closing the segment, so nothing is cached after it.
+            if self._segment.closed:
+                inner.close()
+                raise BoxClosedError(f"box {self.name!r} is closed")
+            self._refs[spec.index] = (create_id, inner, inner._segment)
+        if cached is not None:
+            cached[1].close()
+        return inner
+
     def force_unlock(self) -> None:
         """Release a write lock left behind by a process that died while writing."""
         self._segment.force_unlock()
@@ -674,10 +751,18 @@ class SharedBox(metaclass=SharedBoxMeta):
     def close(self) -> None:
         """Detach from the segment; other boxes keep it.
 
-        Use [`unlink`][sharedbox.SharedBox.unlink] to remove it.
+        Use [`unlink`][sharedbox.SharedBox.unlink] to remove it. Also
+        closes every box this handle attached to read a reference field.
         """
-        if self._finalizer.detach() is not None:
+        if self._finalizer.detach() is None:
+            return
+        try:
             release(self._watcher, self._segment)
+        finally:
+            with self._refs_lock:
+                cached, self._refs = self._refs, {}
+            for _, inner, _ in cached.values():
+                inner.close()
 
     def __enter__(self) -> Self:
         return self

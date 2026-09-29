@@ -10,9 +10,11 @@ from ._native import (
     SegmentExistsError,
     SegmentNotFoundError,
 )
+from ._refs import BrokenReferenceError, UnknownBoxClassError
 
 __all__ = [
     "BoxClosedError",
+    "BrokenReferenceError",
     "Capacity",
     "Field",
     "FieldWatch",
@@ -22,6 +24,7 @@ __all__ = [
     "SegmentNotFoundError",
     "SharedBox",
     "SupportsSharedBox",
+    "UnknownBoxClassError",
     "field",
     "fields",
     "get_include",

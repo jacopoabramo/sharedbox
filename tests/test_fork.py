@@ -30,6 +30,21 @@ class Counter(SharedBox):
     value: int = 0
 
 
+class Wheel(SharedBox):
+    turns: int = 0
+
+
+class Cart(SharedBox):
+    wheel: Wheel | None = None
+
+
+def read_wheel(cart: Cart, out: "Queue[str]") -> None:
+    wheel = cart.wheel
+    assert wheel is not None
+    out.put(wheel.name)
+    cart.close()
+
+
 def close_box(box: Counter) -> None:
     box.close()
 
@@ -127,3 +142,17 @@ def test_forked_child_records_its_own_pid_in_a_raw_segment(unique_name: str) -> 
         segment._write([(0, bytes(8))])
     segment.force_unlock()
     segment.close()
+
+
+def test_forked_child_reads_a_reference_while_the_parent_held_the_cache_lock(
+    unique_name: str,
+) -> None:
+    out: Queue[str] = mp.get_context("fork").Queue()
+    wheel_name = f"{unique_name}-w"
+    with Wheel.create(wheel_name) as wheel, Cart.create(unique_name, wheel) as cart:
+        # Stands for another thread of the parent attaching a box at the moment of the fork.
+        with cart._refs_lock:
+            child = fork(read_wheel, cart, out)
+        assert out.get(timeout=10) == wheel_name
+        assert finish(child) == 0
+    Wheel.unlink(wheel_name)

@@ -2,16 +2,23 @@ from __future__ import annotations
 
 import hashlib
 import inspect
+import re
+import sys
+import types
 from collections.abc import Callable, Mapping
 from dataclasses import KW_ONLY, MISSING, InitVar, dataclass
 from types import MappingProxyType
 from typing import (
+    TYPE_CHECKING,
     Annotated,
     Any,
     ClassVar,
     Final,
+    ForwardRef,
     Literal,
     NamedTuple,
+    TypeGuard,
+    Union,
     get_args,
     get_origin,
     get_type_hints,
@@ -19,11 +26,18 @@ from typing import (
 
 from ._native import check as native_check
 
-Kind = Literal["bool", "int", "float", "str", "bytes"]
+if sys.version_info >= (3, 14):
+    from annotationlib import Format
+
+if TYPE_CHECKING:
+    from ._box import SharedBox
+
+Kind = Literal["bool", "int", "float", "str", "bytes", "ref"]
 
 MAX_CAPACITY: Final[int] = 1 << 20
 MAX_FIELDS: Final[int] = 256
 ALIGN: Final[int] = 8
+REF_SIZE: Final[int] = 144
 SCALARS: Final[dict[type, tuple[Kind, int]]] = {
     bool: ("bool", 1),
     int: ("int", 8),
@@ -36,12 +50,14 @@ KIND_CODES: Final[dict[Kind, int]] = {
     "float": 2,
     "str": 3,
     "bytes": 4,
+    "ref": 5,
 }
 ALIGNMENT: Final[dict[Kind, int]] = {
     "int": 8,
     "float": 8,
     "str": 4,
     "bytes": 4,
+    "ref": 8,
     "bool": 1,
 }
 
@@ -134,7 +150,7 @@ class NativeField(NamedTuple):
     capacity: int
     """Bytes reserved for the value, not counting the length prefix."""
     kind: int
-    """0 bool, 1 int, 2 float, 3 str, 4 bytes."""
+    """0 bool, 1 int, 2 float, 3 str, 4 bytes, 5 ref."""
 
 
 @dataclass(frozen=True)
@@ -145,13 +161,17 @@ class FieldSpec:
     index: int
     """Position in declaration order; also the field's number in the native segment."""
     kind: Kind
-    """One of `"bool"`, `"int"`, `"float"`, `"str"`, `"bytes"`."""
+    """One of `"bool"`, `"int"`, `"float"`, `"str"`, `"bytes"`, `"ref"`."""
     offset: int
     """Byte offset of the field from the start of the record."""
     capacity: int
     """Encoded size in bytes; for `str` and `bytes` the most the value may take."""
     label: str = ""
     """`"<Class>.<field>"`, used in error messages."""
+    target: type[SharedBox] | None = None
+    """The box class a reference field is annotated with; None for every other kind."""
+    optional: bool = False
+    """True for a reference field annotated `X | None`, which may be empty."""
 
     @property
     def native(self) -> NativeField:
@@ -176,6 +196,8 @@ class Layout:
     """Each field's spec under its name."""
     names: tuple[str, ...]
     """Field names in declaration order."""
+    refs: tuple[FieldSpec, ...]
+    """The reference fields, in declaration order."""
 
 
 def classify(name: str, hint: object) -> tuple[Kind, int]:
@@ -199,6 +221,75 @@ def class_identity(cls: type) -> str:
     return f"{module}.{cls.__qualname__}"
 
 
+def is_box_class(hint: object) -> TypeGuard[type[SharedBox]]:
+    # A SharedBox subclass has its identity before its layout is built, so a class
+    # that refers to itself passes too.
+    return isinstance(hint, type) and hasattr(hint, "__sharedbox_identity__")
+
+
+def reference(hint: object) -> tuple[type[SharedBox], bool] | None:
+    """The box class of a reference field annotated `X` or `X | None`, and whether it may be None."""
+    if is_box_class(hint):
+        return hint, False
+    if get_origin(hint) in (Union, types.UnionType):
+        args = get_args(hint)
+        boxes = [arg for arg in args if is_box_class(arg)]
+        if len(args) == 2 and type(None) in args and len(boxes) == 1:
+            return boxes[0], True
+    return None
+
+
+def undefined(cls: type, field: str | None, name: str) -> str:
+    where = cls.__qualname__ if field is None else f"{cls.__qualname__}.{field}"
+    return (
+        f"{where}: {name!r} is not defined; a box class that a field refers to "
+        "must be defined before the class that refers to it"
+    )
+
+
+def type_hints(cls: type) -> dict[str, Any]:
+    """The resolved annotations of `cls` and its bases, in which `cls` may name itself.
+
+    Raises
+    ------
+    TypeError
+        If an annotation names something that is not defined.
+    """
+    try:
+        return get_type_hints(cls, include_extras=True)
+    except NameError:
+        pass
+    # The class's own name is bound in its module only after __init_subclass__ returns.
+    localns = {cls.__name__: cls}
+    if sys.version_info >= (3, 14):
+        # A name still undefined comes back as a ForwardRef, which build_layout reports.
+        return get_type_hints(
+            cls, include_extras=True, localns=localns, format=Format.FORWARDREF
+        )
+    try:
+        return get_type_hints(cls, include_extras=True, localns=localns)
+    except NameError as error:
+        missing = error.name or str(error)
+        own = vars(cls).get("__annotations__", {})
+        field = next(
+            (
+                field
+                for field, hint in own.items()
+                if isinstance(hint, str) and missing in re.findall(r"\w+", hint)
+            ),
+            None,
+        )
+        raise TypeError(undefined(cls, field, missing)) from None
+
+
+def own_annotations(cls: type) -> dict[str, Any]:
+    """The annotations `cls` itself declares, in declaration order, without failing on a name not bound yet."""
+    if sys.version_info >= (3, 14):
+        # Evaluating would fail for a class that names itself, which is not bound yet.
+        return inspect.get_annotations(cls, format=Format.FORWARDREF)
+    return inspect.get_annotations(cls)
+
+
 def declared(cls: type) -> list[tuple[str, Any]]:
     """`(name, annotation)` of every field and `InitVar` of `cls`, base classes first.
 
@@ -207,7 +298,7 @@ def declared(cls: type) -> list[tuple[str, Any]]:
     """
     return [
         (name, hint)
-        for name, hint in get_type_hints(cls, include_extras=True).items()
+        for name, hint in type_hints(cls).items()
         if hint is not KW_ONLY
         and not name.startswith("_")
         and hint is not ClassVar
@@ -221,9 +312,9 @@ def own_kw_only(cls: type, kw_only: bool = False) -> dict[str, bool]:
     An annotation is keyword-only when `kw_only` is true or it follows a
     `dataclasses.KW_ONLY` annotation of `cls`.
     """
-    hints = get_type_hints(cls, include_extras=True)
+    hints = type_hints(cls)
     flags: dict[str, bool] = {}
-    for name in inspect.get_annotations(cls):
+    for name in own_annotations(cls):
         if hints.get(name) is KW_ONLY:
             kw_only = True
             continue
@@ -234,9 +325,11 @@ def own_kw_only(cls: type, kw_only: bool = False) -> dict[str, bool]:
 def build_layout(cls: type, identity: str | None = None) -> Layout:
     """Lay out the public annotated fields of `cls`, base classes first.
 
-    Fields are packed by descending alignment (8-byte fields, then
-    `str`/`bytes`, then `bool`), not declaration order; `Layout.fields`
-    keeps the declaration order. `InitVar` annotations are not fields.
+    Fields are packed by descending alignment (8-byte fields and
+    references, then `str`/`bytes`, then `bool`), not declaration order;
+    `Layout.fields` keeps the declaration order. `InitVar` annotations are
+    not fields. A field annotated with a `SharedBox` subclass `X`, or
+    `X | None`, refers to a box of `X`.
 
     Parameters
     ----------
@@ -247,14 +340,20 @@ def build_layout(cls: type, identity: str | None = None) -> Layout:
     Raises
     ------
     TypeError
-        If `cls` declares no fields, more than 256, or a field with an
-        unsupported annotation.
+        If `cls` declares no fields, more than 256, a field with an
+        unsupported annotation, or one naming a class that is not defined.
     """
-    found = [
-        (name, *classify(name, hint))
-        for name, hint in declared(cls)
-        if not isinstance(hint, InitVar)
-    ]
+    found: list[tuple[str, Kind, int, tuple[type[SharedBox], bool] | None]] = []
+    for name, hint in declared(cls):
+        if isinstance(hint, InitVar):
+            continue
+        if isinstance(hint, ForwardRef):
+            raise TypeError(undefined(cls, name, hint.__forward_arg__))
+        ref = reference(hint)
+        if ref is None:
+            found.append((name, *classify(name, hint), None))
+        else:
+            found.append((name, "ref", REF_SIZE, ref))
     if not found:
         raise TypeError(f"{cls.__qualname__} declares no fields")
     if len(found) > MAX_FIELDS:
@@ -279,13 +378,19 @@ def build_layout(cls: type, identity: str | None = None) -> Layout:
             offsets[i],
             capacity,
             f"{cls.__qualname__}.{name}",
+            *(ref or (None, False)),
         )
-        for i, (name, kind, capacity) in enumerate(found)
+        for i, (name, kind, capacity, ref) in enumerate(found)
     )
     text = "|".join(
         [
             class_identity(cls) if identity is None else identity,
-            *(f"{s.name}:{s.kind}:{s.capacity}" for s in specs),
+            *(
+                f"{s.name}:{s.kind}:{s.capacity}"
+                if s.target is None
+                else f"{s.name}:ref{'?' if s.optional else ''}:{s.target.__sharedbox_identity__}"
+                for s in specs
+            ),
         ]
     )
     schema_hash = int.from_bytes(hashlib.sha256(text.encode()).digest()[:8], "little")
@@ -295,4 +400,5 @@ def build_layout(cls: type, identity: str | None = None) -> Layout:
         schema_hash,
         {s.name: s for s in specs},
         tuple(s.name for s in specs),
+        tuple(s for s in specs if s.target is not None),
     )
