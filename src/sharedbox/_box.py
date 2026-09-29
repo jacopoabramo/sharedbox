@@ -260,6 +260,12 @@ class SharedBox(metaclass=SharedBoxMeta):
             raise TypeError(
                 f"{cls.__qualname__}: field name(s) {', '.join(clashes)} clash with SharedBox methods"
             )
+        annotated = inspect.get_annotations(cls)
+        for attr, value in cls.__dict__.items():
+            if isinstance(value, Field) and attr not in annotated:
+                raise TypeError(
+                    f"{cls.__qualname__}: {attr!r} is a field but has no type annotation"
+                )
         found = declared(cls)
         known = {attr for attr, _ in found}
         stray = sorted(

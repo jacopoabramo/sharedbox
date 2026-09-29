@@ -253,7 +253,6 @@ def test_fields_describe_a_class_and_its_boxes(unique_name: str) -> None:
 @pytest.mark.parametrize(
     "namespace",
     [
-        {"__annotations__": {"value": int}, "extra": field(default=0)},
         {
             "__annotations__": {"value": int, "_hidden": int},
             "_hidden": field(default=0),
@@ -263,7 +262,7 @@ def test_fields_describe_a_class_and_its_boxes(unique_name: str) -> None:
             "shared": field(default=0),
         },
     ],
-    ids=["no annotation", "underscore name", "ClassVar"],
+    ids=["underscore name", "ClassVar"],
 )
 def test_field_on_a_name_that_is_not_a_field_is_refused(
     namespace: dict[str, Any],
@@ -396,3 +395,15 @@ def test_kw_only_is_inherited_as_in_a_dataclass(name: str) -> None:
     # Classes held by parametrize outlive the extension at exit, which nanobind reports as leaks.
     box, plain = globals()[name], globals()[f"Plain{name}"]
     assert str(inspect.signature(box)) == str(inspect.signature(plain))
+
+
+@pytest.mark.parametrize("name", ["label", "extra"], ids=["inherited", "new name"])
+def test_an_unannotated_field_call_is_refused_as_in_a_dataclass(name: str) -> None:
+    with pytest.raises(
+        TypeError, match=f"'{name}' is a field but has no type annotation"
+    ):
+        dataclass(type("Plain", (PlainStage,), {name: dataclasses.field(default="x")}))
+    with pytest.raises(
+        TypeError, match=f"Loose: '{name}' is a field but has no type annotation"
+    ):
+        type("Loose", (Stage,), {name: field(default="x")})
