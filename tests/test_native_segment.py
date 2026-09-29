@@ -10,9 +10,11 @@ import time
 from collections.abc import Callable, Generator
 from multiprocessing.shared_memory import SharedMemory
 from multiprocessing.synchronize import Event
+from typing import cast
 
 import pytest
 
+from sharedbox import SharedBox
 from sharedbox._layout import NativeField
 from sharedbox._native import (
     BoxClosedError,
@@ -770,7 +772,7 @@ def test_cached_ref_returns_the_entry_only_for_the_stored_create_id(
     closed = create(f"{unique_name}-c")
     closed.close()
     Segment.unlink(f"{unique_name}-c")
-    box = object()
+    box = cast(SharedBox, object())
     assert segment.cached_ref(0, {0: (7, box, segment)}) is None
     segment.set([(0, (7, 0x5EED, "m1"))])
     assert segment.cached_ref(0, {}) is False

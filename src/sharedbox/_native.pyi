@@ -4,6 +4,7 @@ from typing import Any, Final, Never, Self, overload
 
 from typing_extensions import disjoint_base
 
+from ._box import RefEntry
 from ._layout import FieldSpec
 
 if sys.version_info >= (3, 13):
@@ -89,7 +90,7 @@ class Segment:
         """The field's value; `(create_id, schema_hash, name)`, or None when empty, for a reference field."""
 
     def cached_ref(
-        self, field: int, cache: dict[int, tuple[int, Any, Segment]]
+        self, field: int, cache: dict[int, RefEntry]
     ) -> object:
         """`cache[field][1]` if the reference field holds `cache[field][0]` and `cache[field][2]` is open.
 
