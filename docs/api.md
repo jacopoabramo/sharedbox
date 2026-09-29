@@ -392,7 +392,7 @@ Motor.unlink()
   hash among the `SharedBox` classes this process has defined, so the
   process that reads must import the module that defines the box's class;
   otherwise the read raises `UnknownBoxClassError`. Of several classes with
-  one schema hash, the first one defined is used.
+  one schema hash, the first one defined that is still alive is used.
 - After another thread or process assigns another box, the next read
   attaches that one and closes the handle it kept. `close()` on the outer
   box closes the handles its reads attached. Closing a returned box

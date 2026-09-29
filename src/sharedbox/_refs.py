@@ -11,9 +11,23 @@ if TYPE_CHECKING:
     from ._layout import FieldSpec
 
 # Weak, so that a class nothing else uses, such as one defined inside a function, can be freed.
-CLASSES: weakref.WeakValueDictionary[int, type[SharedBox]] = (
-    weakref.WeakValueDictionary()
-)
+CLASSES: dict[int, list[weakref.ref[type[SharedBox]]]] = {}
+
+
+def register(cls: type[SharedBox]) -> None:
+    """Record `cls` under its schema hash, after any class already recorded there."""
+    classes = CLASSES.setdefault(cls.__layout__.schema_hash, [])
+    classes.append(weakref.ref(cls, classes.remove))
+
+
+def box_class(schema_hash: int) -> type[SharedBox] | None:
+    """The first class defined with `schema_hash` that is still alive, or None if there is none."""
+    # A copy, since a class freed during the loop removes its entry from the list.
+    for ref in tuple(CLASSES.get(schema_hash, ())):
+        cls = ref()
+        if cls is not None:
+            return cls
+    return None
 
 
 class BrokenReferenceError(LookupError):
@@ -38,7 +52,7 @@ class BoxRef:
     @property
     def box_class(self) -> type[SharedBox] | None:
         """The class defined in this process with `schema_hash`, or None if there is none."""
-        return CLASSES.get(self.schema_hash)
+        return box_class(self.schema_hash)
 
 
 def box_ref(value: Any) -> BoxRef | None:
@@ -96,7 +110,7 @@ def attach_reference(
         If no box has that name, or the box under it was created after the
         reference was stored.
     """
-    cls = CLASSES.get(schema_hash)
+    cls = box_class(schema_hash)
     if cls is None:
         raise UnknownBoxClassError(
             f"{spec.label} refers to box {name!r}, whose class (schema hash "

@@ -1,5 +1,6 @@
 import contextlib
 import dataclasses
+import gc
 import inspect
 import multiprocessing as mp
 import os
@@ -10,6 +11,7 @@ import subprocess
 import sys
 import threading
 import types
+import weakref
 from collections.abc import Callable, Iterator
 from dataclasses import KW_ONLY, InitVar, dataclass
 from pathlib import Path
@@ -789,3 +791,31 @@ def test_a_reassignment_in_another_process_is_seen_on_the_next_read(
         assert (new.name, new.position) == (b.name, 5)
         assert old is not None
         assert old.closed
+
+
+def define_a_motor_class_with_the_identity_of(identity: str) -> type[SharedBox]:
+    class Gone(SharedBox, identity=identity):
+        position: int = 0
+
+    return Gone
+
+
+def test_a_later_class_with_the_same_hash_reads_after_the_first_is_freed(
+    names: Callable[[str], str],
+) -> None:
+    """Check that freeing the first class with a schema hash leaves a later one to read boxes."""
+    gone = weakref.ref(define_a_motor_class_with_the_identity_of("sbtest/kept"))
+
+    class Kept(SharedBox, identity="sbtest/kept"):
+        position: int = 0
+
+    class Mount(SharedBox):
+        motor: Kept | None = None
+
+    gc.collect()
+    assert gone() is None
+    with Kept.create(names("k"), 8) as kept, Mount.create(names("m"), kept) as mount:
+        inner = mount.motor
+        assert type(inner) is Kept
+        assert inner.position == 8
+

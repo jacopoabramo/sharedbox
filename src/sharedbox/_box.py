@@ -47,7 +47,7 @@ from ._native import (
     SegmentNotFoundError,
 )
 from ._native import Field as FieldDescriptor
-from ._refs import CLASSES, Reference, attach_reference, box_ref, stored
+from ._refs import Reference, attach_reference, box_ref, register, stored
 
 if TYPE_CHECKING:
     if sys.version_info >= (3, 13):
@@ -257,7 +257,7 @@ class SharedBoxMeta(type):
 
     Also record each subclass by schema hash, where reference fields find the
     class of the box they refer to; of several classes with one hash, the
-    first stays.
+    first one defined that is still alive is used.
     """
 
     def __new__(
@@ -278,7 +278,7 @@ class SharedBoxMeta(type):
         cls = super().__new__(mcls, cls_name, bases, namespace, **kwargs)
         layout = cls.__dict__.get("__layout__")
         if layout is not None:
-            CLASSES.setdefault(layout.schema_hash, cast("type[SharedBox]", cls))
+            register(cast("type[SharedBox]", cls))
         return cls
 
 
