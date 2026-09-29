@@ -647,7 +647,7 @@ class SharedBox(metaclass=SharedBoxMeta):
         self._segment.set(pairs)
 
     def snapshot(self, *, follow: bool = False) -> dict[str, Any]:
-        """Every field's value, read at one point in time.
+        """Every field's value; this box is read at one point in time.
 
         A reference field gives a [`BoxRef`][sharedbox.BoxRef], or None when
         it is empty.
@@ -658,8 +658,8 @@ class SharedBox(metaclass=SharedBoxMeta):
             Replace each reference with the snapshot of the box it refers
             to, itself taken with `follow`. Each box is read at its own
             moment, not together with the others. A box this call has
-            already read stays a [`BoxRef`][sharedbox.BoxRef], so a loop of
-            references ends.
+            already read stays a [`BoxRef`][sharedbox.BoxRef], also when a
+            second field refers to it, so a loop of references ends.
 
         Raises
         ------

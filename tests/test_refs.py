@@ -59,6 +59,11 @@ class FastMotor(Motor):
     pass
 
 
+class Pair(SharedBox):
+    first: Motor | None = None
+    second: Motor | None = None
+
+
 @pytest.fixture
 def names(unique_name: str) -> Iterator[Callable[[str], str]]:
     """Box names made from `unique_name`; on Linux each one is removed afterwards."""
@@ -648,6 +653,7 @@ def test_a_box_of_a_class_this_process_never_defined_raises_unknown_class(
 
 
 def test_snapshot_shows_a_reference_as_a_box_ref(names: Callable[[str], str]) -> None:
+    """Check that snapshot() and repr show a reference as a BoxRef and an empty one as None."""
     with Motor.create(names("m")) as motor, Stage.create(names("s"), 3, motor) as stage:
         assert stage.snapshot() == {
             "target": 3,
@@ -663,6 +669,7 @@ def test_snapshot_shows_a_reference_as_a_box_ref(names: Callable[[str], str]) ->
 def test_snapshot_follow_nests_the_boxes_referred_to(
     names: Callable[[str], str],
 ) -> None:
+    """Check that follow=True nests each referred box's snapshot and takes follow only by keyword."""
     with (
         Motor.create(names("m"), 7) as motor,
         Stage.create(names("s"), 3, motor) as stage,
@@ -672,12 +679,26 @@ def test_snapshot_follow_nests_the_boxes_referred_to(
             "motor": {"position": 7},
         }
         assert motor.snapshot(follow=True) == {"position": 7}
+        with pytest.raises(TypeError):
+            stage.snapshot(True)  # type: ignore[call-arg]
 
 
 def test_snapshot_follow_ends_at_a_box_it_already_read(
     names: Callable[[str], str],
 ) -> None:
-    with Node.create(names("a"), 1) as a, Node.create(names("b"), 2) as b:
+    """Check that follow=True leaves a box it already read as a BoxRef, so loops and repeats end."""
+    with (
+        Node.create(names("a"), 1) as a,
+        Node.create(names("b"), 2) as b,
+        Motor.create(names("m"), 5) as motor,
+        Pair.create(names("p"), motor, motor) as pair,
+    ):
+        assert pair.snapshot(follow=True) == {
+            "first": {"position": 5},
+            "second": BoxRef(
+                motor.name, Motor.__layout__.schema_hash, motor._segment.create_id
+            ),
+        }
         a.link = b
         b.link = a
         a_ref = BoxRef(a.name, Node.__layout__.schema_hash, a._segment.create_id)
@@ -692,6 +713,7 @@ def test_snapshot_follow_ends_at_a_box_it_already_read(
 def test_snapshot_follow_raises_on_a_broken_reference(
     names: Callable[[str], str],
 ) -> None:
+    """Check that snapshot() leaves a broken reference alone and follow=True raises on it."""
     with Stage.create(names("s")) as stage:
         motor = Motor.create(names("m"))
         stage.motor = motor
@@ -705,6 +727,7 @@ def test_snapshot_follow_raises_on_a_broken_reference(
 def test_events_and_watch_report_reassignments_as_box_refs(
     names: Callable[[str], str],
 ) -> None:
+    """Check that events and watch() report a reassigned or emptied reference as BoxRef or None."""
     seen: queue.Queue[tuple[object, object]] = queue.Queue()
     with (
         Motor.create(names("a")) as a,
@@ -726,6 +749,7 @@ def test_events_and_watch_report_reassignments_as_box_refs(
 def test_box_class_is_the_class_this_process_has_for_the_hash(
     names: Callable[[str], str],
 ) -> None:
+    """Check that box_class and equality follow the box's own class and create id."""
     with FastMotor.create(names("f")) as fast, Stage.create(names("s")) as stage:
         stage.motor = fast
         ref = stage.snapshot()["motor"]
@@ -733,3 +757,4 @@ def test_box_class_is_the_class_this_process_has_for_the_hash(
         assert ref.box_class is FastMotor
     assert BoxRef("m", Motor.__layout__.schema_hash, 1).box_class is Motor
     assert BoxRef("m", 0x5EED, 1).box_class is None
+    assert BoxRef("m", 0x5EED, 1) != BoxRef("m", 0x5EED, 2)
