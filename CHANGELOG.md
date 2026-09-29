@@ -46,6 +46,29 @@ class Frame(SharedBox, identity="camera/frame/1", max_waiters=16):
     count: int = 0
 ```
 
+- `field()`: per-field `default`, `default_factory`, `init`, `repr`,
+  `kw_only`, `metadata` and `doc` for `SharedBox` fields.
+- `fields()`: the `Field` of each field of a `SharedBox` subclass or box.
+- `Field`: read-only description of one `SharedBox` field.
+- `SharedBox`: `dataclasses.InitVar` annotations, passed to
+  `__post_init__` and not stored.
+- `SharedBox.__post_init__()`: runs after a box is created and before
+  other processes can attach to it.
+- `SharedBox`: `inspect.signature()` of a subclass gives its constructor
+  parameters.
+- `sharedbox.hpp`: `handle::create_unpublished()` and
+  `handle::publish()`.
+
+```python
+class Motor(SharedBox):
+    position: int
+    limit: int = field(default=100, kw_only=True, metadata={"unit": "mm"})
+    offset: InitVar[int] = 0
+
+    def __post_init__(self, offset: int) -> None:
+        self.position += offset
+```
+
 ### Changed
 
 - Building the extension requires nanobind 3.1.0 or newer and a C++20
@@ -80,6 +103,15 @@ class Frame(SharedBox, identity="camera/frame/1", max_waiters=16):
 - `SharedBox.update()`: takes about half the time; field names are checked
   only when one is unknown.
 - `SharedBox.snapshot()`: builds its dict in the native module.
+- `SharedBox`: the `kw_only` class keyword and a `KW_ONLY` annotation
+  apply only to the fields of the class that declares them; a subclass
+  keeps each inherited field's keyword-only setting.
+- `SharedBox`: a subclass that sets an unannotated class attribute on the
+  name of an inherited field raises `TypeError`.
+- `SegmentExistsError`: for a box whose creator is still running
+  `__post_init__`, says the box is being created by that pid.
+- `SharedBox.__sharedbox_box__()`: raises `BufferError` before the box
+  is published.
 
 ### Fixed
 
