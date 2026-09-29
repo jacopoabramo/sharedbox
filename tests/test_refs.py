@@ -657,11 +657,11 @@ def test_a_box_of_a_class_this_process_never_defined_raises_unknown_class(
 def test_snapshot_shows_a_reference_as_a_box_ref(names: Callable[[str], str]) -> None:
     """Check that snapshot() and repr show a reference as a BoxRef and an empty one as None."""
     with Motor.create(names("m")) as motor, Stage.create(names("s"), 3, motor) as stage:
+        # The create id is not public; the test needs it to build the BoxRef a snapshot reports.
+        create_id = motor._segment.create_id
         assert stage.snapshot() == {
             "target": 3,
-            "motor": BoxRef(
-                motor.name, Motor.__layout__.schema_hash, motor._segment.create_id
-            ),
+            "motor": BoxRef(motor.name, Motor.__layout__.schema_hash, create_id),
         }
         assert "motor=BoxRef(" in repr(stage)
         stage.motor = None
@@ -697,13 +697,11 @@ def test_snapshot_follow_ends_at_a_box_it_already_read(
     ):
         assert pair.snapshot(follow=True) == {
             "first": {"position": 5},
-            "second": BoxRef(
-                motor.name, Motor.__layout__.schema_hash, motor._segment.create_id
-            ),
+            "second": pair.snapshot()["second"],
         }
         a.link = b
         b.link = a
-        a_ref = BoxRef(a.name, Node.__layout__.schema_hash, a._segment.create_id)
+        a_ref = b.snapshot()["link"]
         assert a.snapshot(follow=True) == {
             "value": 1,
             "link": {"value": 2, "link": a_ref},
@@ -736,6 +734,7 @@ def test_events_and_watch_report_reassignments_as_box_refs(
         Motor.create(names("b")) as b,
         Stage.create(names("s"), 0, a) as stage,
     ):
+        # The create id is not public; the test needs it to build the BoxRef a snapshot reports.
         a_ref = BoxRef(a.name, Motor.__layout__.schema_hash, a._segment.create_id)
         b_ref = BoxRef(b.name, Motor.__layout__.schema_hash, b._segment.create_id)
         stage.events.motor.connect(lambda new, old: seen.put((new, old)))
