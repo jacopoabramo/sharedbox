@@ -327,6 +327,14 @@ class SharedBox(metaclass=SharedBoxMeta):
                         f"annotation ({attr}: {inspect.formatannotation(hint)} = {value!r}) or with field()"
                     )
                 options[attr] = field(default=value)
+            elif value is MISSING and attr in own and attr in options:
+                # As in dataclasses, a bare redeclaration keeps only a plain inherited default.
+                inherited_default = options[attr].default
+                options[attr] = (
+                    REQUIRED
+                    if inherited_default is MISSING
+                    else field(default=inherited_default)
+                )
             given = options.get(attr, REQUIRED)
             if attr not in own:
                 attr_kw_only = inherited.get(attr, False)
@@ -488,9 +496,9 @@ class SharedBox(metaclass=SharedBoxMeta):
             cls.__max_waiters__,
             publish=False,
         )
-        self._watcher = Watcher(self._segment)
-        self._track()
         try:
+            self._watcher = Watcher(self._segment)
+            self._track()
             post_init = getattr(cls, "__post_init__", None)
             if post_init is not None:
                 post_init(
@@ -507,7 +515,10 @@ class SharedBox(metaclass=SharedBoxMeta):
                 with contextlib.suppress(SegmentNotFoundError):
                     Segment.unlink(name)
             finally:
-                self.close()
+                if hasattr(self, "_finalizer"):
+                    self.close()
+                else:
+                    self._segment.close()
             raise
 
     def _check_names(self, values: dict[str, Any]) -> None:

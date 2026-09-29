@@ -689,3 +689,80 @@ def test_an_initvar_over_an_inherited_field_hides_it(unique_name: str) -> None:
         with pytest.raises(AttributeError, match="InitVar"):
             box.a = 3
         assert box.b == 5
+
+
+BASE_OPTIONS: dict[str, Any] = {
+    "default": 1,
+    "factory": {"default_factory": int},
+    "options": {
+        "default": 1,
+        "repr": False,
+        "kw_only": True,
+        "metadata": {"unit": "mm"},
+    },
+    "init_false": {"default": 1, "init": False},
+}
+
+
+def described(
+    found: tuple[Any, ...],
+) -> list[tuple[str, Any, bool, bool, bool, Any, dict[Any, Any]]]:
+    return [
+        (
+            f.name,
+            f.default,
+            f.default_factory is MISSING,
+            f.init,
+            f.repr,
+            f.kw_only,
+            dict(f.metadata),
+        )
+        for f in found
+    ]
+
+
+@pytest.mark.parametrize("child_hint", [int, InitVar[int]], ids=["field", "initvar"])
+@pytest.mark.parametrize("base", BASE_OPTIONS.values(), ids=BASE_OPTIONS.keys())
+def test_a_bare_redeclaration_keeps_only_a_plain_inherited_default(
+    base: Any, child_hint: Any
+) -> None:
+    def base_value(make: Any) -> Any:
+        return make(**base) if isinstance(base, dict) else base
+
+    def box_base(namespace: dict[str, Any]) -> None:
+        namespace.update(__annotations__={"x": int, "y": int}, x=base_value(field), y=2)
+
+    def child_body(namespace: dict[str, Any]) -> None:
+        namespace.update(__annotations__={"x": child_hint}, __post_init__=post_init)
+
+    box = types.new_class(
+        "Child", (types.new_class("Base", (SharedBox,), {}, box_base),), {}, child_body
+    )
+    plain_base = dataclass(
+        type(
+            "Base",
+            (),
+            {
+                "__annotations__": {"x": int, "y": int},
+                "x": base_value(dataclasses.field),
+                "y": 2,
+            },
+        )
+    )
+    plain = dataclass(
+        type(
+            "Child",
+            (plain_base,),
+            {"__annotations__": {"x": child_hint}, "__post_init__": post_init},
+        )
+    )
+    assert str(inspect.signature(box)) == str(inspect.signature(plain))
+    assert described(fields(cast(type[SharedBox], box))) == described(
+        dataclasses.fields(plain)
+    )
+
+
+def test_field_objects_compare_and_hash_by_identity() -> None:
+    first, second = field(default=1), field(default=1)
+    assert first != second
+    assert len({first, second}) == 2

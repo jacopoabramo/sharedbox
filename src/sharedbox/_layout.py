@@ -60,7 +60,7 @@ class Capacity:
             )
 
 
-@dataclass(frozen=True)
+@dataclass(frozen=True, eq=False)
 class Field:
     """Options of one field of a ``SharedBox`` class, as :func:`field` takes them."""
 

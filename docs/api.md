@@ -638,7 +638,10 @@ class Field:
   defined. `dataclasses` ignores such an attribute; a box cannot,
   because the attribute would hide the field. Declare the field again
   with an annotation, which gives it default options, as in
-  `dataclasses`.
+  `dataclasses`. An annotation without a value keeps only a plain
+  inherited `default`: the other options go back to their defaults, and
+  a field whose base gave it a `default_factory` becomes required. The
+  same holds for an `InitVar` declared over an inherited field.
 - Values are copied into the segment, and only the stored types exist:
   no lists, dicts or other objects. `Capacity` stays in `Annotated`,
   because it belongs to the stored type, not to the field's options.
@@ -654,7 +657,8 @@ subclass or box, in declaration order, without `InitVar` ones; anything
 else raises `TypeError`. `Field` is read-only; `type` is the evaluated
 annotation, `kw_only` is always a `bool`, and `default` and
 `default_factory` are `MISSING` when not given. It is how `metadata`
-and `doc` are read.
+and `doc` are read. Two `Field` objects are equal only if they are the
+same object, as with `dataclasses.Field`.
 
 `inspect.signature()` of a subclass gives its constructor's parameters,
 as for a dataclass:
