@@ -46,6 +46,7 @@ def create(name: str, values: list[tuple[int, object]] | None = None) -> Segment
     ],
 )
 def test_values_round_trip(unique_name: str, index: int, value: object) -> None:
+    """Check that values of each field kind read back as written, including bit-exact floats."""
     segment = create(unique_name)
     segment.set([(index, value)])
     got = segment.get(index)
@@ -59,6 +60,7 @@ def test_values_round_trip(unique_name: str, index: int, value: object) -> None:
 
 
 def test_nan_round_trips_bit_for_bit(unique_name: str) -> None:
+    """Check that a NaN with a nonstandard payload is stored bit for bit."""
     segment = create(unique_name)
     nan = struct.unpack("<d", struct.pack("<Q", 0x7FF8_0000_0000_0001))[0]
     segment.set([(1, nan)])
@@ -67,6 +69,7 @@ def test_nan_round_trips_bit_for_bit(unique_name: str) -> None:
 
 
 def test_strided_memoryview_is_stored_in_order(unique_name: str) -> None:
+    """Check that a strided memoryview is stored as its elements in order."""
     segment = create(unique_name)
     segment.set([(3, memoryview(b"abcdef")[::2])])
     assert segment.get(3) == b"ace"
@@ -74,6 +77,7 @@ def test_strided_memoryview_is_stored_in_order(unique_name: str) -> None:
 
 
 def test_float_field_accepts_int(unique_name: str) -> None:
+    """Check that a float field accepts an int and reads back a float."""
     segment = create(unique_name)
     segment.set([(1, 3)])
     got = segment.get(1)
@@ -106,6 +110,7 @@ def test_float_field_accepts_int(unique_name: str) -> None:
 def test_bad_values_are_refused_and_change_nothing(
     unique_name: str, index: int, value: object, error: type[Exception], text: str
 ) -> None:
+    """Check that each invalid value raises the expected error and leaves the other values in the same set unchanged."""
     segment = create(unique_name, [(0, 7), (2, "kept")])
     with pytest.raises(error, match=text or None):
         segment.set([(2, "new"), (index, value)])
@@ -115,6 +120,7 @@ def test_bad_values_are_refused_and_change_nothing(
 
 
 def test_check_matches_set() -> None:
+    """Check that check raises the same errors as set for an invalid value."""
     check(INT, 8, "count", 5)
     with pytest.raises(TypeError, match="count expects int, got str"):
         check(INT, 8, "count", "5")
@@ -123,6 +129,7 @@ def test_check_matches_set() -> None:
 
 
 def test_initial_values_are_visible_on_attach(unique_name: str) -> None:
+    """Check that values given at create can be read through an attached segment."""
     segment = create(unique_name, [(0, 42), (2, "ready")])
     other = Segment.attach(unique_name, NAMES, SCHEMA, 1.0)
     assert list(other.get_dict(tuple(NAMES)).values()) == [42, 0.0, "ready", b"", False]
@@ -131,6 +138,7 @@ def test_initial_values_are_visible_on_attach(unique_name: str) -> None:
 
 
 def test_get_versioned_pairs_value_and_version(unique_name: str) -> None:
+    """Check that get_versioned returns the write count with the value."""
     segment = create(unique_name)
     assert segment.get_versioned(0) == (0, 0)
     segment.set([(0, 9)])
@@ -139,6 +147,7 @@ def test_get_versioned_pairs_value_and_version(unique_name: str) -> None:
 
 
 def test_invalid_utf8_reads_with_replacement(unique_name: str) -> None:
+    """Check that invalid UTF-8 in a str field reads back with replacement characters."""
     segment = create(unique_name)
     segment._write([(2, b"\xff\xfe")])
     assert segment.get(2) == "\ufffd\ufffd"

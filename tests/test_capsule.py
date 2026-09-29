@@ -95,12 +95,14 @@ def consumer(tmp_path_factory: pytest.TempPathFactory) -> ctypes.CDLL:
 
 
 def test_get_include_holds_the_headers() -> None:
+    """Check that get_include points to a folder with the three sharedbox sources."""
     folder = Path(sharedbox.get_include()) / "sharedbox"
     for name in ("sharedbox.hpp", "sharedbox_c.h", "sharedbox_c.cpp"):
         assert (folder / name).is_file()
 
 
 def test_the_capsule_holds_a_handle_on_the_box(unique_name: str) -> None:
+    """Check that the capsule's handle reports the layout version, size, name and segment start of the box."""
     with Frame.create(unique_name, 0.5, 3) as box:
         capsule = box.__sharedbox_box__()
         handle = handle_of(capsule)
@@ -115,6 +117,7 @@ def test_the_capsule_holds_a_handle_on_the_box(unique_name: str) -> None:
 
 
 def test_an_unused_capsule_outlives_close_and_unlink(unique_name: str) -> None:
+    """Check that the memory behind a capsule stays readable after the box is closed and unlinked."""
     box = Frame.create(unique_name, 0.5, 3)
     capsule = box.__sharedbox_box__(max_version=(1, 0))
     handle = handle_of(capsule)
@@ -126,6 +129,7 @@ def test_an_unused_capsule_outlives_close_and_unlink(unique_name: str) -> None:
 
 
 def test_requests_the_box_cannot_meet_are_refused(unique_name: str) -> None:
+    """Check that the capsule request refuses a newer major version and a stream, and a closed box raises BoxClosedError."""
     with Frame.create(unique_name) as box:
         with pytest.raises(BufferError, match="major version 2"):
             box.__sharedbox_box__(max_version=(2, 0))
@@ -138,6 +142,7 @@ def test_requests_the_box_cannot_meet_are_refused(unique_name: str) -> None:
 def test_a_c_library_keeps_the_box_after_close_and_unlink(
     unique_name: str, consumer: ctypes.CDLL
 ) -> None:
+    """Check that a C library can read and write a box it took from the capsule, refuses a wrong schema hash and keeps working after close and unlink."""
     count = Frame.__layout__.by_name["count"].index
     value = ctypes.c_int64()
     box = Frame.create(unique_name, 0.5, 3)

@@ -36,6 +36,7 @@ def collect(values: Iterable[int]) -> "queue.Queue[int]":
 
 
 def test_watch_sees_write_from_other_process(unique_name: str) -> None:
+    """Check that a watch yields a value written by another process."""
     with Counter.create(unique_name) as box:
         seen = collect(box.watch("value"))
         writer = mp.get_context("spawn").Process(
@@ -47,6 +48,7 @@ def test_watch_sees_write_from_other_process(unique_name: str) -> None:
 
 
 def test_watch_ignores_other_fields(unique_name: str) -> None:
+    """Check that a watch yields nothing for writes to other fields."""
     with Counter.create(unique_name) as box:
         seen = collect(box.watch("value"))
         box.other = 1
@@ -57,6 +59,7 @@ def test_watch_ignores_other_fields(unique_name: str) -> None:
 
 
 def test_write_before_watch_is_not_seen(unique_name: str) -> None:
+    """Check that a write made before the watch starts is not yielded."""
     with Counter.create(unique_name) as box:
         box.value = 1
         seen = collect(box.watch("value"))
@@ -65,6 +68,7 @@ def test_write_before_watch_is_not_seen(unique_name: str) -> None:
 
 
 def test_watch_skips_to_the_latest_value(unique_name: str) -> None:
+    """Check that a watch yields only the latest value after several writes."""
     with Counter.create(unique_name) as box:
         values = iter(box.watch("value"))
         box.value = 1
@@ -75,6 +79,7 @@ def test_watch_skips_to_the_latest_value(unique_name: str) -> None:
 
 
 def test_two_watches_both_see_a_write(unique_name: str) -> None:
+    """Check that two watches on one field both yield the same write."""
     with Counter.create(unique_name) as box:
         first, second = collect(box.watch("value")), collect(box.watch("value"))
         box.value = 5
@@ -82,6 +87,7 @@ def test_two_watches_both_see_a_write(unique_name: str) -> None:
 
 
 def test_close_ends_a_blocked_iteration(unique_name: str) -> None:
+    """Check that closing the box ends an iteration blocked in a consumer thread."""
     box = Counter.create(unique_name)
     seen: list[int] = []
     finished = threading.Event()
@@ -103,6 +109,7 @@ def test_close_ends_a_blocked_iteration(unique_name: str) -> None:
 
 
 def test_close_ends_iteration_between_values(unique_name: str) -> None:
+    """Check that closing the box makes the next step of the iteration raise StopIteration."""
     with Counter.create(unique_name) as box:
         it = iter(box.watch("value"))
         box.value = 1
@@ -113,6 +120,7 @@ def test_close_ends_iteration_between_values(unique_name: str) -> None:
 
 
 def test_dropping_a_watched_box_stops_its_thread(unique_name: str) -> None:
+    """Check that dropping the last reference to a watched box stops its watcher and consumer threads."""
     box = Counter.create(unique_name)
     watch = box.watch("value")
     seen: queue.Queue[int] = queue.Queue()
@@ -138,11 +146,13 @@ def test_dropping_a_watched_box_stops_its_thread(unique_name: str) -> None:
 
 
 def test_unknown_field(unique_name: str) -> None:
+    """Check that watching an unknown field raises ValueError."""
     with Counter.create(unique_name) as box, pytest.raises(ValueError, match="missing"):
         box.watch("missing")
 
 
 def test_watch_never_yields_a_value_twice(unique_name: str) -> None:
+    """Check that under rapid writes a watch yields strictly increasing values with no repeats."""
     with Counter.create(unique_name) as box:
         changes = box.watch("value")
         seen: list[int] = []
@@ -173,6 +183,7 @@ def watch_in_child(name: str, ready: "Event", out: "Queue[int]") -> None:
 
 
 def test_close_returns_promptly_while_the_watcher_waits(unique_name: str) -> None:
+    """Check that close returns within half a second while the watcher thread is waiting."""
     box = Counter.create(unique_name)
     box.events.value.connect(lambda new: None)
     thread_name = f"sharedbox-watch-{unique_name}"
@@ -189,6 +200,7 @@ def test_close_returns_promptly_while_the_watcher_waits(unique_name: str) -> Non
 def test_closing_one_process_box_leaves_another_process_watch_working(
     unique_name: str,
 ) -> None:
+    """Check that closing one handle in a process does not stop a watch in another process."""
     context = mp.get_context("spawn")
     ready = context.Event()
     out: Queue[int] = context.Queue()

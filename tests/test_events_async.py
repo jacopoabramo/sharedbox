@@ -27,6 +27,8 @@ async def first(watch: FieldWatch[int]) -> int:
 
 
 def test_async_watch_sees_write_from_other_process(unique_name: str) -> None:
+    """Check that an async watch yields a value written by another process."""
+
     async def main() -> int:
         with Counter.create(unique_name) as box:
             watch = box.watch("value")
@@ -42,6 +44,8 @@ def test_async_watch_sees_write_from_other_process(unique_name: str) -> None:
 
 
 def test_async_watch_skips_to_the_latest_value(unique_name: str) -> None:
+    """Check that an async watch yields only the latest value after several writes."""
+
     async def main() -> int:
         with Counter.create(unique_name) as box:
             watch = box.watch("value")
@@ -53,6 +57,8 @@ def test_async_watch_skips_to_the_latest_value(unique_name: str) -> None:
 
 
 def test_async_watch_follows_writes(unique_name: str) -> None:
+    """Check that an async watch yields successive writes in order up to the last."""
+
     async def main() -> list[int]:
         with Counter.create(unique_name) as box:
             watch = box.watch("value")
@@ -77,6 +83,8 @@ def test_async_watch_follows_writes(unique_name: str) -> None:
 
 
 def test_cancelled_consumer_leaves_the_box_usable(unique_name: str) -> None:
+    """Check that cancelling an async consumer leaves the box able to start a new watch."""
+
     async def main() -> int:
         with Counter.create(unique_name) as box:
             consumer = asyncio.create_task(first(box.watch("value")))
@@ -92,6 +100,8 @@ def test_cancelled_consumer_leaves_the_box_usable(unique_name: str) -> None:
 
 
 def test_async_watch_ends_on_close(unique_name: str) -> None:
+    """Check that closing the box ends async iteration after the values already written."""
+
     async def main() -> list[int]:
         box = Counter.create(unique_name)
         loop = asyncio.get_running_loop()
@@ -110,6 +120,7 @@ class Guarded(SharedBox, lock_timeout=0.2):
 def test_watcher_recovers_after_a_lock_timeout(
     unique_name: str, caplog: pytest.LogCaptureFixture
 ) -> None:
+    """Check that the watcher recovers from a lock timeout, logs it once and still delivers the value."""
     seen: queue.Queue[int] = queue.Queue()
     entered, release = threading.Event(), threading.Event()
 
@@ -138,6 +149,8 @@ def test_watcher_recovers_after_a_lock_timeout(
 
 
 def test_cancelling_the_consumer_while_the_box_closes_raises(unique_name: str) -> None:
+    """Check that cancelling an async consumer after the box closes raises CancelledError."""
+
     async def main() -> None:
         box = Counter.create(unique_name)
         consumer = asyncio.ensure_future(first(box.watch("value")))
@@ -153,6 +166,8 @@ def test_cancelling_the_consumer_while_the_box_closes_raises(unique_name: str) -
 
 
 def test_close_from_another_thread_ends_async_iteration(unique_name: str) -> None:
+    """Check that closing the box from another thread ends async iteration."""
+
     async def main() -> list[int]:
         box = Counter.create(unique_name)
         threading.Timer(0.2, box.close).start()
@@ -162,6 +177,7 @@ def test_close_from_another_thread_ends_async_iteration(unique_name: str) -> Non
 
 
 def test_write_just_before_close_is_delivered(unique_name: str) -> None:
+    """Check that a write made just before close reaches both the async watch and the signal."""
     seen: queue.Queue[int] = queue.Queue()
 
     async def main() -> int:

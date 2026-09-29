@@ -52,6 +52,7 @@ class BoxMachine(RuleBasedStateMachine):
 
     @initialize()
     def create(self) -> None:
+        """Create the box with a first handle and an empty model."""
         self.name = f"sbtest-{uuid.uuid4().hex[:16]}"
         self.handles = [Model.create(self.name)]
         self.model = {"a": 0, "b": 0.0, "s": "", "flag": False}
@@ -60,10 +61,12 @@ class BoxMachine(RuleBasedStateMachine):
     @precondition(lambda self: len(self.handles) < 4)
     @rule()
     def attach(self) -> None:
+        """Attach a further handle to the box."""
         self.handles.append(Model.attach(self.name))
 
     @rule(data=st.data())
     def set_field(self, data: st.DataObject) -> None:
+        """Write one field through a random handle and update the model."""
         handle = data.draw(st.sampled_from(self.handles))
         field = data.draw(st.sampled_from(FIELDS))
         value = data.draw(VALUES[field])
@@ -73,6 +76,7 @@ class BoxMachine(RuleBasedStateMachine):
 
     @rule(data=st.data())
     def update_several(self, data: st.DataObject) -> None:
+        """Update several fields at once through a random handle and update the model."""
         handle = data.draw(st.sampled_from(self.handles))
         fields = data.draw(st.lists(st.sampled_from(FIELDS), min_size=1, unique=True))
         values = {field: data.draw(VALUES[field]) for field in fields}
@@ -84,12 +88,14 @@ class BoxMachine(RuleBasedStateMachine):
     @precondition(lambda self: len(self.handles) < 4)
     @rule(data=st.data())
     def pickle_round_trip(self, data: st.DataObject) -> None:
+        """Add a handle made by pickling and unpickling a random handle."""
         handle = data.draw(st.sampled_from(self.handles))
         self.handles.append(pickle.loads(pickle.dumps(handle)))
 
     @precondition(lambda self: len(self.handles) > 1)
     @rule(data=st.data())
     def close_handle(self, data: st.DataObject) -> None:
+        """Close a random handle while at least one other stays open."""
         handle = data.draw(st.sampled_from(self.handles))
         self.handles.remove(handle)
         handle.close()
@@ -97,10 +103,12 @@ class BoxMachine(RuleBasedStateMachine):
 
     @rule(data=st.data())
     def force_unlock_when_not_locked(self, data: st.DataObject) -> None:
+        """Call force_unlock on a random handle while no lock is held."""
         data.draw(st.sampled_from(self.handles)).force_unlock()
 
     @invariant()
     def every_handle_reads_the_model(self) -> None:
+        """Check that every open handle reads the model through snapshot and through each field."""
         for handle in self.handles:
             assert handle.snapshot() == self.model
             for field in FIELDS:
@@ -108,12 +116,14 @@ class BoxMachine(RuleBasedStateMachine):
 
     @invariant()
     def versions_count_the_writes_of_each_field(self) -> None:
+        """Check that every open handle reports the number of writes each field has had."""
         for handle in self.handles:
             for field in FIELDS:
                 assert handle._segment.version(INDEX[field]) == self.versions[field]
 
     @invariant()
     def closed_handles_refuse_use(self) -> None:
+        """Check that every closed handle raises BoxClosedError."""
         for handle in self.closed:
             with pytest.raises(BoxClosedError):
                 handle.snapshot()

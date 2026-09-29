@@ -18,6 +18,7 @@ class Sample:
 
 
 def test_fields_are_packed_by_alignment() -> None:
+    """Check that fields are packed by descending alignment with the expected offsets, capacities and record size."""
     layout = build_layout(Sample)
     assert [(f.name, f.kind, f.offset, f.capacity) for f in layout.fields] == [
         ("flag", "bool", 39, 1),
@@ -32,6 +33,7 @@ def test_fields_are_packed_by_alignment() -> None:
 
 
 def test_check_refuses_what_a_write_would() -> None:
+    """Check that a field spec's check accepts a valid value and raises TypeError for a wrong type."""
     spec = build_layout(Sample).by_name["count"]
     spec.check(3)
     with pytest.raises(TypeError, match="Sample.count expects int, got str"):
@@ -39,6 +41,8 @@ def test_check_refuses_what_a_write_would() -> None:
 
 
 def test_kw_only_leaves_the_schema_hash_unchanged() -> None:
+    """Check that the KW_ONLY marker and the kw_only keyword give the same schema hash."""
+
     class Mixed(SharedBox, identity="tests.Mixed"):
         a: int
         _: KW_ONLY
@@ -52,6 +56,7 @@ def test_kw_only_leaves_the_schema_hash_unchanged() -> None:
 
 
 def test_float_field_accepts_int() -> None:
+    """Check that a float field spec accepts an int."""
     build_layout(Sample).by_name["ratio"].check(2)
 
 
@@ -68,11 +73,14 @@ def test_float_field_accepts_int() -> None:
     ],
 )
 def test_encode_rejects(name: str, value: object, error: type[Exception]) -> None:
+    """Check that each invalid value for a field spec raises the expected error."""
     with pytest.raises(error):
         build_layout(Sample).by_name[name].check(value)
 
 
 def test_unsupported_annotation() -> None:
+    """Check that a field annotated with an unsupported type raises TypeError naming the field."""
+
     class Bad:
         items: list[int]
 
@@ -81,6 +89,8 @@ def test_unsupported_annotation() -> None:
 
 
 def test_str_without_capacity() -> None:
+    """Check that a str field without a Capacity raises TypeError naming the field."""
+
     class Bad:
         text: str
 
@@ -89,6 +99,8 @@ def test_str_without_capacity() -> None:
 
 
 def test_class_without_fields() -> None:
+    """Check that a class with no fields raises TypeError."""
+
     class Empty:
         pass
 
@@ -97,6 +109,7 @@ def test_class_without_fields() -> None:
 
 
 def test_capacity_bounds() -> None:
+    """Check that Capacity raises ValueError for zero and for more than 1 MiB."""
     with pytest.raises(ValueError):
         Capacity(0)
     with pytest.raises(ValueError):
@@ -104,6 +117,7 @@ def test_capacity_bounds() -> None:
 
 
 def test_spawned_main_module_has_the_same_identity() -> None:
+    """Check that classes in __main__ and __mp_main__ share an identity and a schema hash."""
     parent = type("Box", (), {"__annotations__": {"x": int}, "__module__": "__main__"})
     child = type(
         "Box", (), {"__annotations__": {"x": int}, "__module__": "__mp_main__"}
@@ -113,6 +127,7 @@ def test_spawned_main_module_has_the_same_identity() -> None:
 
 
 def test_schema_hash_matches_the_published_vector() -> None:
+    """Check that the schema hash of a known class matches the published value and changes with the identity."""
     motor = type(
         "Motor",
         (),
@@ -133,6 +148,8 @@ def test_schema_hash_matches_the_published_vector() -> None:
 
 
 def test_schema_hash_tracks_layout() -> None:
+    """Check that the schema hash is stable for one class and differs across class names and field types."""
+
     class A:
         x: int
 

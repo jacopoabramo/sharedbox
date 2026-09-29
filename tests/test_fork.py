@@ -102,12 +102,14 @@ def finish(process: BaseProcess) -> int | None:
 
 
 def test_forked_child_closes_an_inherited_box(unique_name: str) -> None:
+    """Check that a forked child can close a box inherited from its parent."""
     with busy_box(unique_name) as box:
         child = fork(close_box, box)
         assert finish(child) == 0
 
 
 def test_forked_child_watches_an_inherited_box(unique_name: str) -> None:
+    """Check that a forked child watching an inherited box sees a write made by the parent."""
     ctx = mp.get_context("fork")
     ready = ctx.Event()
     out: Queue[int] = ctx.Queue()
@@ -121,6 +123,7 @@ def test_forked_child_watches_an_inherited_box(unique_name: str) -> None:
 
 @pytest.mark.skipif(not ROOT, reason="needs root to switch to another user")
 def test_unlink_reports_a_refused_unlink_as_oserror(unique_name: str) -> None:
+    """Check that unlink by a user without permission raises PermissionError with EACCES or EPERM."""
     out: Queue[object] = mp.get_context("fork").Queue()
     with Counter.create(unique_name):
         child = fork(unlink_as_another_user, unique_name, out)
@@ -133,6 +136,7 @@ def test_unlink_reports_a_refused_unlink_as_oserror(unique_name: str) -> None:
 
 
 def test_forked_child_records_its_own_pid_in_a_raw_segment(unique_name: str) -> None:
+    """Check that a lock held by a forked child names the child's pid in the timeout error."""
     segment = Segment.create(
         unique_name, [NativeField(0, 8, INT)], ["a"], 8, 1, 0.3, []
     )

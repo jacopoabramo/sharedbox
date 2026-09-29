@@ -35,6 +35,7 @@ def write_and_watch(name: str, ready: Event) -> None:
 def test_processes_killed_mid_write_leave_nothing_behind(
     unique_name: str, report: Callable[[dict[str, object]], None]
 ) -> None:
+    """Check that after processes are killed mid-write, the box can be written again, dead waiter slots are freed and no files remain."""
     rounds = scaled(200)
     context = mp.get_context("spawn")
     forced = recovered_slots = 0

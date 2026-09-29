@@ -55,6 +55,7 @@ def box() -> Iterator[Codec]:
 @example(field="s4096", value="a" * 4097)
 @example(field="s1", value="é")
 def test_str_round_trips_or_is_refused(box: Codec, field: str, value: str) -> None:
+    """Check that any text either round-trips through a str field or raises the matching error and leaves the field unchanged."""
     before = getattr(box, field)
     try:
         size = len(value.encode("utf-8"))
@@ -86,6 +87,7 @@ BYTES_LIKE = st.one_of(
 def test_bytes_round_trip_or_are_refused(
     box: Codec, field: str, value: bytes | bytearray | memoryview
 ) -> None:
+    """Check that any bytes-like value either round-trips through a bytes field or raises ValueError and leaves the field unchanged."""
     before = getattr(box, field)
     expected = bytes(value)
     if len(expected) > CAPACITY[field]:
@@ -105,6 +107,7 @@ def test_bytes_round_trip_or_are_refused(
 @example(value=INT64_MIN - 1)
 @example(value=INT64_MAX + 1)
 def test_int_round_trips_within_int64(box: Codec, value: int) -> None:
+    """Check that an int round-trips within the signed 64-bit range and raises OverflowError outside it."""
     if INT64_MIN <= value <= INT64_MAX:
         box.count = value
         assert box.count == value
@@ -124,18 +127,21 @@ def test_int_round_trips_within_int64(box: Codec, value: int) -> None:
 @example(value=float("nan"))
 @example(value=sys.float_info.min / 2)
 def test_float_round_trips_bit_for_bit(box: Codec, value: float) -> None:
+    """Check that any float, including NaN and infinities, is stored bit for bit."""
     box.ratio = value
     assert struct.pack("<d", box.ratio) == struct.pack("<d", value)
 
 
 @given(value=st.booleans())
 def test_bool_round_trips(box: Codec, value: bool) -> None:
+    """Check that a bool round-trips as a bool."""
     box.flag = value
     assert box.flag is value
 
 
 @given(value=st.sampled_from([0, 1]))
 def test_bool_refuses_0_and_1(box: Codec, value: int) -> None:
+    """Check that 0 and 1 are refused for a bool field and the field is unchanged."""
     before = box.flag
     with pytest.raises(TypeError, match="Codec.flag expects bool, got int"):
         box.flag = value  # type: ignore[assignment] # the int is the point

@@ -22,6 +22,7 @@ def set_value_later(name: str, value: int, delay: float) -> None:
 
 
 def test_field_signal_fires_for_write_in_other_process(unique_name: str) -> None:
+    """Check that a field signal fires with the new and old value for a write from another process."""
     seen: queue.Queue[tuple[int, int]] = queue.Queue()
     with Counter.create(unique_name) as box:
         box.events.value.connect(lambda new, old: seen.put((new, old)))
@@ -34,6 +35,7 @@ def test_field_signal_fires_for_write_in_other_process(unique_name: str) -> None
 
 
 def test_callback_may_take_only_the_new_value(unique_name: str) -> None:
+    """Check that a signal callback taking only the new value is called with it."""
     seen: queue.Queue[int] = queue.Queue()
     with Counter.create(unique_name) as box:
         box.events.value.connect(seen.put)
@@ -42,6 +44,7 @@ def test_callback_may_take_only_the_new_value(unique_name: str) -> None:
 
 
 def test_other_field_and_same_value_do_not_fire(unique_name: str) -> None:
+    """Check that writing another field or the same value does not fire a field signal."""
     seen: queue.Queue[int] = queue.Queue()
     with Counter.create(unique_name) as box:
         box.events.value.connect(seen.put)
@@ -52,6 +55,7 @@ def test_other_field_and_same_value_do_not_fire(unique_name: str) -> None:
 
 
 def test_group_signal_reports_any_field(unique_name: str) -> None:
+    """Check that the group signal reports the field name and value of any write."""
     seen: queue.Queue[tuple[str, object]] = queue.Queue()
     with Counter.create(unique_name) as box:
         box.events.connect(lambda info: seen.put((info.signal.name, info.args[0])))
@@ -60,6 +64,7 @@ def test_group_signal_reports_any_field(unique_name: str) -> None:
 
 
 def test_callback_on_main_thread(unique_name: str) -> None:
+    """Check that a callback connected with thread=main runs on the main thread."""
     seen: list[str] = []
     with Counter.create(unique_name) as box:
         box.events.value.connect(
@@ -78,6 +83,7 @@ def test_callback_on_main_thread(unique_name: str) -> None:
 
 
 def test_watcher_keeps_emitting_after_a_callback_raises(unique_name: str) -> None:
+    """Check that the watcher keeps emitting to other callbacks after one callback raises."""
     seen: queue.Queue[int] = queue.Queue()
 
     def fail(new: int) -> None:
@@ -93,6 +99,7 @@ def test_watcher_keeps_emitting_after_a_callback_raises(unique_name: str) -> Non
 
 
 def test_closing_from_a_callback_does_not_deadlock(unique_name: str) -> None:
+    """Check that a callback can close its own box without deadlock."""
     box = Counter.create(unique_name)
     box.events.value.connect(lambda new: box.close())
     box.value = 1
@@ -103,6 +110,7 @@ def test_closing_from_a_callback_does_not_deadlock(unique_name: str) -> None:
 
 
 def test_no_emission_after_close(unique_name: str) -> None:
+    """Check that a closed box emits nothing for later writes by another handle."""
     seen: queue.Queue[int] = queue.Queue()
     box = Counter.create(unique_name)
     other = Counter.attach(unique_name)
@@ -115,6 +123,7 @@ def test_no_emission_after_close(unique_name: str) -> None:
 
 
 def test_writes_between_two_checks_give_one_emission(unique_name: str) -> None:
+    """Check that several writes made while a callback blocks the watcher give one emission with the first old value."""
     seen: queue.Queue[tuple[int, int]] = queue.Queue()
     entered, release = threading.Event(), threading.Event()
 
@@ -138,6 +147,7 @@ def test_writes_between_two_checks_give_one_emission(unique_name: str) -> None:
 def test_old_is_the_last_emitted_value_after_a_same_value_write(
     unique_name: str,
 ) -> None:
+    """Check that a write of an unchanged value emits nothing and the next change reports the last emitted value as old."""
     seen: queue.Queue[tuple[int, int]] = queue.Queue()
     with Counter.create(unique_name) as box:
         box.events.value.connect(lambda new, old: seen.put((new, old)))
@@ -151,6 +161,7 @@ def test_old_is_the_last_emitted_value_after_a_same_value_write(
 
 
 def test_one_update_emits_every_changed_field(unique_name: str) -> None:
+    """Check that one update call emits a signal for each field it changed."""
     seen: queue.Queue[tuple[str, int, int]] = queue.Queue()
     with Counter.create(unique_name) as box:
         box.events.value.connect(lambda new, old: seen.put(("value", new, old)))

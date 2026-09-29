@@ -15,17 +15,20 @@ def wait_for(release: Event) -> None:
 
 
 def test_this_process_is_alive() -> None:
+    """Check that the current process has a nonzero start time and counts as alive."""
     start = _process_start(os.getpid())
     assert start != 0
     assert _process_alive(os.getpid(), start)
 
 
 def test_a_different_start_time_means_another_process() -> None:
+    """Check that a pid with a different start time does not count as alive."""
     start = _process_start(os.getpid())
     assert not _process_alive(os.getpid(), start + 1)
 
 
 def test_an_exited_process_is_dead() -> None:
+    """Check that a process that has exited no longer counts as alive."""
     context = mp.get_context("spawn")
     release = context.Event()
     child = context.Process(target=wait_for, args=(release,))
@@ -45,6 +48,7 @@ def test_an_exited_process_is_dead() -> None:
 )
 @pytest.mark.filterwarnings("ignore:This process .* is multi-threaded")
 def test_a_zombie_is_dead() -> None:
+    """Check that a zombie process has no start time."""
     if sys.platform != "linux":
         raise NotImplementedError("zombie processes are checked through /proc")
     else:

@@ -52,6 +52,7 @@ def plain_class(fields: list[tuple[str, str, int]]) -> type:
 def test_random_classes_lay_out_without_overlap(
     fields: list[tuple[str, str, int]],
 ) -> None:
+    """Check that random field lists give aligned, non-overlapping fields inside the record with a stable schema hash."""
     layout = build_layout(plain_class(fields))
     assert [(s.name, s.kind, s.capacity) for s in layout.fields] == fields
     spans = []
@@ -71,6 +72,8 @@ def test_random_classes_lay_out_without_overlap(
 def test_an_identity_names_the_box(
     fields: list[tuple[str, str, int]], identity: str
 ) -> None:
+    """Check that the box name is derived from the identity and equal identities give the same schema hash."""
+
     def body(namespace: dict[str, object]) -> None:
         namespace["__annotations__"] = annotations(fields)
 

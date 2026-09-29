@@ -140,6 +140,7 @@ REFUSED = [
 def test_constructor_signature_matches_a_dataclass(
     annotations: dict[str, Any], options: dict[str, dict[str, Any]], kw_only: bool
 ) -> None:
+    """Check that for each accepted field set a box constructor has the same signature as the equivalent dataclass."""
     box = box_twin(annotations, options, kw_only)
     plain = dataclass_twin(annotations, options, kw_only)
     assert str(inspect.signature(box)) == str(inspect.signature(plain))
@@ -149,6 +150,7 @@ def test_constructor_signature_matches_a_dataclass(
 def test_field_order_is_refused_where_a_dataclass_refuses_it(
     annotations: dict[str, Any], options: dict[str, dict[str, Any]], kw_only: bool
 ) -> None:
+    """Check that for each refused field order the box raises TypeError where the equivalent dataclass does."""
     with pytest.raises(TypeError):
         dataclass_twin(annotations, options, kw_only)
     with pytest.raises(TypeError, match="without a default follows"):
@@ -156,6 +158,7 @@ def test_field_order_is_refused_where_a_dataclass_refuses_it(
 
 
 def test_field_options_behave_as_in_a_dataclass(unique_name: str) -> None:
+    """Check that field options give a box the same signature, values, repr and field metadata as a dataclass."""
     assert str(inspect.signature(Stage)) == str(inspect.signature(PlainStage))
     plain = PlainStage(1.0, "t", z=2.0, limit=3)
     with Stage.create(unique_name, 1.0, "t", z=2.0, limit=3) as box:
@@ -167,6 +170,7 @@ def test_field_options_behave_as_in_a_dataclass(unique_name: str) -> None:
 
 
 def test_an_init_false_field_takes_no_value(unique_name: str) -> None:
+    """Check that an init=False field is rejected by the constructor but can be assigned later."""
     with pytest.raises(TypeError):
         PlainStage(1.0, moves=1)  # type: ignore[call-arg]
     with pytest.raises(TypeError, match="moves"):
@@ -177,6 +181,7 @@ def test_an_init_false_field_takes_no_value(unique_name: str) -> None:
 
 
 def test_init_false_needs_a_default() -> None:
+    """Check that an init=False field without a default raises TypeError."""
     with pytest.raises(TypeError, match="init=False"):
 
         class Bad(SharedBox):
@@ -184,18 +189,21 @@ def test_init_false_needs_a_default() -> None:
 
 
 def test_default_and_factory_together_are_refused() -> None:
+    """Check that field raises ValueError when given both a default and a factory."""
     with pytest.raises(ValueError, match="both"):
         field(default=0, default_factory=int)
 
 
 @pytest.mark.parametrize("option", ["compare", "hash"])
 def test_field_has_no_compare_or_hash(option: str) -> None:
+    """Check that field raises TypeError for the compare and hash options."""
     options: dict[str, Any] = {option: False}
     with pytest.raises(TypeError, match=option):
         field(**options)
 
 
 def test_a_bad_default_fails_at_class_definition() -> None:
+    """Check that a field default that does not fit its capacity raises ValueError at class definition."""
     with pytest.raises(ValueError):
 
         class Bad(SharedBox):
@@ -203,6 +211,7 @@ def test_a_bad_default_fails_at_class_definition() -> None:
 
 
 def test_factory_runs_once_per_create_and_never_on_attach(unique_name: str) -> None:
+    """Check that a default factory runs once per create, not when a value is given or on attach."""
     calls: list[int] = []
 
     def make() -> int:
@@ -223,6 +232,8 @@ def test_factory_runs_once_per_create_and_never_on_attach(unique_name: str) -> N
 def test_a_factory_value_that_does_not_fit_is_refused_at_create(
     unique_name: str,
 ) -> None:
+    """Check that a factory value exceeding the capacity raises ValueError at create."""
+
     class Labelled(SharedBox):
         label: Annotated[str, Capacity(4)] = field(default_factory=lambda: "too long")
 
@@ -233,6 +244,7 @@ def test_a_factory_value_that_does_not_fit_is_refused_at_create(
 
 
 def test_fields_describe_a_class_and_its_boxes(unique_name: str) -> None:
+    """Check that fields returns the same read-only field descriptions for a class and its instances."""
     described = fields(Stage)
     assert [f.name for f in described] == [
         "x",
@@ -280,6 +292,7 @@ def test_fields_describe_a_class_and_its_boxes(unique_name: str) -> None:
 def test_field_on_a_name_that_is_not_a_field_is_refused(
     namespace: dict[str, Any],
 ) -> None:
+    """Check that field() on an underscore name or a ClassVar raises TypeError."""
     with pytest.raises(TypeError, match="not fields"):
         types.new_class("Stray", (SharedBox,), {}, lambda ns: ns.update(namespace))
 
@@ -296,6 +309,7 @@ class DescribedChild(Described, kw_only=True):
 
 
 def test_a_subclass_keeps_its_bases_field_options(unique_name: str) -> None:
+    """Check that a subclass keeps the field options of its base and rejects a plain attribute that overrides a field."""
     with DescribedChild.create(unique_name, extra=1) as box:
         assert repr(box) == "DescribedChild(count=7, extra=1)"
     assert fields(DescribedChild)[0].metadata == {"k": 1}
@@ -331,6 +345,7 @@ class PlainRedeclared(PlainHidden):
 
 
 def test_an_annotated_override_drops_the_bases_field_options() -> None:
+    """Check that redeclaring an annotated field drops the base's options as a dataclass does."""
     box, plain = fields(Redeclared)[1], dataclasses.fields(PlainRedeclared)[1]
     assert (box.default, box.init, box.repr, box.metadata) == (
         plain.default,
@@ -405,6 +420,7 @@ class PlainMarkerChild(PlainMarkerBase):
     ids=["kw_only base", "kw_only child", "KW_ONLY in the base"],
 )
 def test_kw_only_is_inherited_as_in_a_dataclass(name: str) -> None:
+    """Check that keyword-only settings are inherited into the constructor signature as they are for a dataclass."""
     # Classes held by parametrize outlive the extension at exit, which nanobind reports as leaks.
     box, plain = globals()[name], globals()[f"Plain{name}"]
     assert str(inspect.signature(box)) == str(inspect.signature(plain))
@@ -412,6 +428,7 @@ def test_kw_only_is_inherited_as_in_a_dataclass(name: str) -> None:
 
 @pytest.mark.parametrize("name", ["label", "extra"], ids=["inherited", "new name"])
 def test_an_unannotated_field_call_is_refused_as_in_a_dataclass(name: str) -> None:
+    """Check that a field() value without an annotation raises the same TypeError as a dataclass."""
     with pytest.raises(
         TypeError, match=f"'{name}' is a field but has no type annotation"
     ):
@@ -444,6 +461,7 @@ class Shifted(Offsets):
 def test_initvars_reach_post_init_in_order_and_are_not_stored(
     unique_name: str,
 ) -> None:
+    """Check that InitVar values reach __post_init__ in order and are not stored as fields."""
     with Offsets.create(unique_name, 5, 1, 2) as box:
         assert box.snapshot() == {"position": 5, "total": 102}
         assert list(box.events) == ["position", "total"]
@@ -460,6 +478,7 @@ def test_initvars_reach_post_init_in_order_and_are_not_stored(
 
 
 def test_initvar_signature_and_order_match_a_dataclass() -> None:
+    """Check that InitVar fields give the same signature and ordering errors as in a dataclass."""
     annotations = {"a": int, "offset": InitVar[int], "_": KW_ONLY, "b": int}
     options = {"offset": {"default": 0}, "b": {"default": 1}}
     assert str(inspect.signature(box_twin(annotations, options, False))) == str(
@@ -473,6 +492,7 @@ def test_initvar_signature_and_order_match_a_dataclass() -> None:
 
 
 def test_initvar_needs_post_init() -> None:
+    """Check that an InitVar without a __post_init__ raises TypeError."""
     with pytest.raises(TypeError, match="__post_init__"):
 
         class Bad(SharedBox):
@@ -481,6 +501,7 @@ def test_initvar_needs_post_init() -> None:
 
 
 def test_initvar_takes_no_factory() -> None:
+    """Check that an InitVar with a default factory raises TypeError."""
     with pytest.raises(TypeError, match="default_factory"):
 
         class Bad(SharedBox):
@@ -499,6 +520,7 @@ class Runs(SharedBox):
 
 
 def test_post_init_runs_only_when_a_box_is_created(unique_name: str) -> None:
+    """Check that __post_init__ runs on create only, not on attach or unpickle."""
     with Runs.create(unique_name) as box, Runs.attach(unique_name) as other:
         copy = pickle.loads(pickle.dumps(box))
         assert (box.count, other.count, copy.count) == (1, 1, 1)
@@ -529,6 +551,7 @@ class Stop(BaseException):
 def test_a_raising_post_init_leaves_no_box(
     unique_name: str, error: type[BaseException]
 ) -> None:
+    """Check that an exception from __post_init__ closes the box, frees the name and propagates."""
     with pytest.raises(error, match="from __post_init__"):
         Failing.create(unique_name, error=error)
     assert FAILED_BOXES.pop().closed
@@ -542,6 +565,7 @@ def test_a_raising_post_init_leaves_no_box(
     not sys.platform.startswith("linux"), reason="/dev/shm exists on Linux only"
 )
 def test_a_raising_post_init_leaves_no_file_in_dev_shm(unique_name: str) -> None:
+    """Check that an exception from __post_init__ leaves no file in /dev/shm."""
     with pytest.raises(RuntimeError):
         Failing.create(unique_name, error=RuntimeError)
     FAILED_BOXES.clear()
@@ -561,6 +585,7 @@ class Probe(SharedBox, lock_timeout=0.2):
 def test_the_name_is_taken_but_not_attachable_during_post_init(
     unique_name: str,
 ) -> None:
+    """Check that a box being created can be attached inside its own __post_init__."""
     with Probe.create(unique_name), Probe.attach(unique_name) as other:
         assert other.value == 0
 
@@ -587,6 +612,7 @@ def attach_while_post_init_runs(
 def test_a_process_attaching_during_post_init_sees_its_writes(
     unique_name: str,
 ) -> None:
+    """Check that another process attaching during __post_init__ sees the values already written."""
     ctx = mp.get_context("spawn")
     started = ctx.Event()
     results: mp.Queue[int] = ctx.Queue()
@@ -611,6 +637,7 @@ class Exported(SharedBox):
 def test_a_box_goes_to_other_extensions_only_after_post_init(
     unique_name: str,
 ) -> None:
+    """Check that the box capsule is available once creation has finished."""
     with Exported.create(unique_name) as box:
         assert type(box.__sharedbox_box__()).__name__ == "PyCapsule"
 
@@ -632,6 +659,7 @@ def create_until_released(name: str, started: Event, release: Event) -> None:
 
 
 def test_creating_a_name_that_is_being_created_says_so(unique_name: str) -> None:
+    """Check that creating a name another process is still creating raises SegmentExistsError naming that process."""
     ctx = mp.get_context("spawn")
     started = ctx.Event()
     release = ctx.Event()
@@ -680,6 +708,7 @@ class PlainPairWithOffset(PlainPair):
 
 
 def test_an_initvar_over_an_inherited_field_hides_it(unique_name: str) -> None:
+    """Check that an InitVar redeclaring an inherited field removes it from fields and raises AttributeError on access."""
     assert [f.name for f in fields(PairWithOffset)] == [
         f.name for f in dataclasses.fields(PlainPairWithOffset)
     ]
@@ -726,6 +755,8 @@ def described(
 def test_a_bare_redeclaration_keeps_only_a_plain_inherited_default(
     base: Any, child_hint: Any
 ) -> None:
+    """Check that redeclaring a field without a value keeps a plain inherited default and drops other options, as a dataclass does."""
+
     def base_value(make: Any) -> Any:
         return make(**base) if isinstance(base, dict) else base
 
@@ -763,6 +794,7 @@ def test_a_bare_redeclaration_keeps_only_a_plain_inherited_default(
 
 
 def test_field_objects_compare_and_hash_by_identity() -> None:
+    """Check that two field() results with equal options are different objects."""
     first, second = field(default=1), field(default=1)
     assert first != second
     assert len({first, second}) == 2
