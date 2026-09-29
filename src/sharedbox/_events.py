@@ -32,6 +32,13 @@ STEP: Final = 1.0
 logger = logging.getLogger("sharedbox")
 # Receives each change of a field as native values: the field, the new value, the old one.
 Sink: TypeAlias = "Callable[[FieldSpec, Any, Any], None]"
+# Marks watcher threads: one must not join another, since that one may be joining it.
+WATCHER_THREAD = threading.local()
+
+
+def on_watcher_thread() -> bool:
+    """Whether the calling thread is the watcher thread of some box."""
+    return getattr(WATCHER_THREAD, "active", False)
 
 
 class FieldFuture(Generic[T]):
@@ -395,6 +402,7 @@ class Watcher:
         return self._slot
 
     def _run(self) -> None:
+        WATCHER_THREAD.active = True
         with contextlib.suppress(BoxClosedError):
             try:
                 generation = self._segment.generation()
@@ -468,6 +476,10 @@ class BoxEvents(SignalGroup):
 
     def unfollow(self, field: str | None = None) -> None:
         """Stop forwarding for `field`, or all forwarding started through this group.
+
+        Unfollowing `field` forgets its group: callbacks connected to it
+        receive nothing more, and a later
+        [`follow`][sharedbox.BoxEvents.follow] returns a new group.
 
         Raises
         ------

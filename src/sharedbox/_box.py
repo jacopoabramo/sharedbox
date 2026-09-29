@@ -26,7 +26,7 @@ from typing import (
     overload,
 )
 
-from ._events import BoxEvents, FieldWatch, Watcher, events_class
+from ._events import BoxEvents, FieldWatch, Watcher, events_class, on_watcher_thread
 from ._follow import box_events
 from ._layout import (
     Field,
@@ -820,7 +820,14 @@ class SharedBox(metaclass=SharedBoxMeta):
         closes every box this handle attached to read a reference field,
         and stops forwarding started through its
         [`events`][sharedbox.SharedBox.events].
+
+        Called on a box's watcher thread, from an event callback, it does
+        not wait for the watcher threads of the boxes it closes, and drops
+        the writes those threads had not seen yet.
         """
+        self._close(not on_watcher_thread())
+
+    def _close(self, wait: bool) -> None:
         # A list instead of recursion, so a chain of boxes can be longer than the recursion limit.
         boxes = [self]
         error: BaseException | None = None
@@ -829,7 +836,7 @@ class SharedBox(metaclass=SharedBoxMeta):
             if box._finalizer.detach() is None:
                 continue
             try:
-                release(box._watcher, box._segment)
+                release(box._watcher, box._segment, wait)
             except BaseException as exc:  # noqa: BLE001
                 # Keep closing the rest; the first failure is raised once every box is closed.
                 error = error or exc

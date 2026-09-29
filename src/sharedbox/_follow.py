@@ -6,6 +6,7 @@ import weakref
 from functools import partial
 from typing import TYPE_CHECKING, Any
 
+from ._events import on_watcher_thread
 from ._native import BoxClosedError
 from ._refs import attach_reference, shown
 
@@ -90,7 +91,7 @@ class Follower:
                 link = self.links.pop(field, None)
                 followers = [] if link is None else [link]
             boxes = [box for follower in followers for box in follower.detach()]
-        close_all(boxes)
+        close_all(boxes, wait=not on_watcher_thread())
 
     def moved(self, spec: FieldSpec, value: Any, segment: Segment) -> None:
         """Follow the box that the field `spec` of `segment`, this follower's source, now refers to."""
@@ -100,7 +101,8 @@ class Follower:
                 return
             boxes = link.detach()
         # Outside the lock: closing joins each box's watcher thread, which may be waiting for it.
-        close_all(boxes)
+        # Joined even on a watcher thread, so the old box forwards nothing after the move.
+        close_all(boxes, wait=True)
         with self.top.lock:
             if self.serves(segment) and self.links.get(spec.name) is link:
                 self.expand([(link, value)])
@@ -194,12 +196,18 @@ def relay(
         follower.moved(spec, new, segment)
 
 
-def close_all(boxes: list[SharedBox]) -> None:
-    """Close every box, then raise the first error any of them raised."""
+def close_all(boxes: list[SharedBox], wait: bool) -> None:
+    """Close every box, then raise the first error any of them raised.
+
+    Parameters
+    ----------
+    wait
+        If false, do not join the boxes' watcher threads.
+    """
     error: BaseException | None = None
     for box in boxes:
         try:
-            box.close()
+            box._close(wait)
         except BaseException as exc:  # noqa: BLE001
             error = error or exc
     if error is not None:

@@ -200,10 +200,9 @@ def test_follow_refuses_a_field_that_is_not_a_reference(
 
 def test_a_field_cannot_take_a_name_of_the_events_group() -> None:
     """Check that a field named follow, unfollow or nested is refused when the class is defined."""
-    with pytest.raises(TypeError, match="nested clash with the events group"):
-
-        class Bad(SharedBox):
-            nested: int = 0
+    for name in ("follow", "unfollow", "nested"):
+        with pytest.raises(TypeError, match=f"{name} clash with the events group"):
+            type("Bad", (SharedBox,), {"__annotations__": {name: int}, name: 0})
 
 
 def test_unfollow_and_close_release_the_threads_and_waiter_slots(
@@ -215,25 +214,49 @@ def test_unfollow_and_close_release_the_threads_and_waiter_slots(
         Motor.create(names("m"), 0, encoder) as motor,
     ):
         stage = Stage.create(names("s"), 0, motor)
-        read = stage.motor
-        assert read is not None
-        assert (threads(motor, encoder), waiters(motor, encoder)) == ([0, 0], [0, 0])
-        group = stage.events.follow("motor")
-        assert until(lambda: waiters(motor, encoder) == [1, 0])
-        assert threads(motor, encoder) == [1, 0]
-        stage.events.unfollow("motor")
-        assert (threads(motor, encoder), waiters(motor, encoder)) == ([0, 0], [0, 0])
-        assert stage.events.follow("motor") is not group
-        stage.events.follow("motor").follow("encoder")
-        assert until(lambda: waiters(motor, encoder) == [1, 1])
-        assert threads(motor, encoder) == [1, 1]
-        stage.events.unfollow()
-        assert (threads(motor, encoder), waiters(motor, encoder)) == ([0, 0], [0, 0])
-        assert not read.closed
-        stage.events.follow("motor").follow("encoder")
-        assert until(lambda: waiters(motor, encoder) == [1, 1])
-        stage.close()
-        assert (threads(motor, encoder), waiters(motor, encoder)) == ([0, 0], [0, 0])
+        try:
+            read = stage.motor
+            assert read is not None
+            assert (threads(motor, encoder), waiters(motor, encoder)) == (
+                [0, 0],
+                [0, 0],
+            )
+            seen: queue.Queue[int] = queue.Queue()
+            group = stage.events.follow("motor")
+            group.position.connect(lambda new: seen.put(new))
+            # The handle forwarding holds is not public; the test checks that unfollow closes it.
+            held = group._sharedbox_follower.box
+            assert held is not None
+            assert until(lambda: waiters(motor, encoder) == [1, 0])
+            assert threads(motor, encoder) == [1, 0]
+            stage.events.unfollow("motor")
+            assert held.closed
+            assert (threads(motor, encoder), waiters(motor, encoder)) == (
+                [0, 0],
+                [0, 0],
+            )
+            motor.position = 1
+            with pytest.raises(queue.Empty):
+                seen.get(timeout=0.3)
+            assert stage.events.follow("motor") is not group
+            stage.events.follow("motor").follow("encoder")
+            assert until(lambda: waiters(motor, encoder) == [1, 1])
+            assert threads(motor, encoder) == [1, 1]
+            stage.events.unfollow()
+            assert (threads(motor, encoder), waiters(motor, encoder)) == (
+                [0, 0],
+                [0, 0],
+            )
+            assert not read.closed
+            stage.events.follow("motor").follow("encoder")
+            assert until(lambda: waiters(motor, encoder) == [1, 1])
+            stage.close()
+            assert (threads(motor, encoder), waiters(motor, encoder)) == (
+                [0, 0],
+                [0, 0],
+            )
+        finally:
+            stage.close()
 
 
 class GearMotor(Motor):
@@ -287,11 +310,77 @@ def test_closing_the_box_from_a_forwarded_callback_releases_everything(
     """Check that a forwarded callback can close the outer box without deadlock, and the forwarding thread and slot are released."""
     with Motor.create(names("m")) as motor:
         stage = Stage.create(names("s"), 0, motor)
-        stage.events.follow("motor").position.connect(lambda new: stage.close())
-        motor.position = 1
-        assert until(lambda: stage.closed)
-        assert until(lambda: threads(motor) == [0])
-        assert waiters(motor) == [0]
+        try:
+            stage.events.follow("motor").position.connect(lambda new: stage.close())
+            motor.position = 1
+            assert until(lambda: stage.closed)
+            assert until(lambda: threads(motor) == [0])
+            assert waiters(motor) == [0]
+        finally:
+            stage.close()
+
+
+def act_during_a_move(level: int, action: str, box_names: tuple[str, ...]) -> None:
+    """Close the stage or unfollow from a forwarded callback while forwarding moves off its box.
+
+    The callback runs on the forwarding thread of the box being left, and
+    acts once the move is joining that thread.
+    """
+    started, moving, acted = threading.Event(), threading.Event(), threading.Event()
+    e1_name, e2_name, a_name, b_name, stage_name = box_names
+
+    def act(new: int, old: int) -> None:
+        started.set()
+        assert moving.wait(10)
+        # Long enough for the move to reach its join of this thread.
+        time.sleep(0.3)
+        if action == "close":
+            stage.close()
+        else:
+            stage.events.unfollow()
+        acted.set()
+
+    with (
+        Encoder.create(e1_name) as e1,
+        Encoder.create(e2_name) as e2,
+        Motor.create(a_name, 0, e1) as a,
+        Motor.create(b_name, 0, e2) as b,
+        Stage.create(stage_name, 0, a) as stage,
+    ):
+        motor_events = stage.events.follow("motor")
+        if level == 1:
+            stage.events.motor.connect(lambda new, old: moving.set())
+            motor_events.position.connect(act)
+            a.position = 1
+            assert started.wait(10)
+            stage.motor = b
+        else:
+            motor_events.encoder.connect(lambda new, old: moving.set())
+            motor_events.follow("encoder").count.connect(act)
+            e1.count = 1
+            assert started.wait(10)
+            a.encoder = e2
+        assert acted.wait(10)
+        assert until(lambda: threads(e1, e2, a, b) == [0, 0, 0, 0])
+        assert waiters(e1, e2, a, b) == [0, 0, 0, 0]
+
+
+@pytest.mark.parametrize(
+    ("level", "action"), [(1, "close"), (2, "close"), (2, "unfollow")]
+)
+def test_closing_or_unfollowing_from_a_forwarded_callback_during_a_move_does_not_deadlock(
+    names: Callable[[str], str], level: int, action: str
+) -> None:
+    """Check that a forwarded callback can close the outer box or unfollow while a move joins its thread, at the first or second level."""
+    ctx = mp.get_context("spawn")
+    box_names = tuple(names(suffix) for suffix in ("e1", "e2", "a", "b", "s"))
+    child = ctx.Process(target=act_during_a_move, args=(level, action, box_names))
+    child.start()
+    child.join(30)
+    if child.is_alive():
+        child.kill()
+        child.join(10)
+    assert child.exitcode == 0
 
 
 class Narrow(SharedBox, max_waiters=1):
