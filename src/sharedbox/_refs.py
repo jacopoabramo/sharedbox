@@ -41,7 +41,7 @@ class BoxRef:
         return CLASSES.get(self.schema_hash)
 
 
-def box_ref(value: tuple[int, int, str] | None) -> BoxRef | None:
+def box_ref(value: Any) -> BoxRef | None:
     """A reference field's native value, `(create_id, schema_hash, name)` or None, as callers see it."""
     return None if value is None else BoxRef(value[2], value[1], value[0])
 
