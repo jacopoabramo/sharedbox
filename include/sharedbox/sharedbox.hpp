@@ -101,6 +101,7 @@ inline constexpr std::uint8_t kind_int = 1;
 inline constexpr std::uint8_t kind_float = 2;
 inline constexpr std::uint8_t kind_str = 3;
 inline constexpr std::uint8_t kind_bytes = 4;
+inline constexpr std::uint8_t kind_ref = 5;
 
 enum class status : int {
     ok = 0,
@@ -175,9 +176,18 @@ struct waiter_slot {
     std::uint32_t interrupt;
 };
 
+// The stored value of a kind_ref field: which box it refers to. All zero when empty; create never gives
+// a create_id of 0. name is NUL-padded and ends at the first NUL or after name_max bytes.
+struct box_ref {
+    std::uint64_t create_id;
+    std::uint64_t schema_hash;
+    char name[name_max];
+};
+
 static_assert(std::is_standard_layout_v<header> && std::is_trivially_copyable_v<header>);
 static_assert(std::is_standard_layout_v<stored_field> && std::is_trivially_copyable_v<stored_field>);
 static_assert(std::is_standard_layout_v<waiter_slot> && std::is_trivially_copyable_v<waiter_slot>);
+static_assert(std::is_standard_layout_v<box_ref> && std::is_trivially_copyable_v<box_ref>);
 static_assert(std::is_standard_layout_v<sbx_handle> && std::is_trivially_copyable_v<sbx_handle>);
 static_assert(sizeof(header) == 128 && alignof(header) == 8);
 static_assert(offsetof(header, magic) == 0);
@@ -209,6 +219,10 @@ static_assert(offsetof(waiter_slot, owner_start) == 0);
 static_assert(offsetof(waiter_slot, owner_pidns) == 8);
 static_assert(offsetof(waiter_slot, owner_pid) == 16);
 static_assert(offsetof(waiter_slot, interrupt) == 20);
+static_assert(sizeof(box_ref) == 144 && alignof(box_ref) == 8);
+static_assert(offsetof(box_ref, create_id) == 0);
+static_assert(offsetof(box_ref, schema_hash) == 8);
+static_assert(offsetof(box_ref, name) == 16);
 static_assert(sizeof(sbx_handle) == 48 && alignof(sbx_handle) == 8);
 static_assert(offsetof(sbx_handle, layout_major) == 0);
 static_assert(offsetof(sbx_handle, layout_minor) == 2);
@@ -655,9 +669,29 @@ inline bool timeout_ok(seconds t, bool zero_allowed) noexcept {
 
 inline bool prefixed(std::uint32_t kind) noexcept { return kind == kind_str || kind == kind_bytes; }
 
-// Alignment of a field of this kind within the record: 1, 8, 8, 4, 4.
+inline bool kind_known(std::uint32_t kind) noexcept { return kind <= kind_ref; }
+
+// Alignment of a field of this kind within the record: 1, 8, 8, 4, 4, 8; 1 for a kind this header does
+// not know, whose alignment it cannot check.
 inline std::uint32_t kind_alignment(std::uint32_t kind) noexcept {
-    return kind == kind_bool ? 1u : prefixed(kind) ? 4u : 8u;
+    if (kind == kind_bool || !kind_known(kind))
+        return 1u;
+    return prefixed(kind) ? 4u : 8u;
+}
+
+// The capacity every field of a fixed-size kind has; 0 for str and bytes and for unknown kinds.
+inline std::uint32_t fixed_capacity(std::uint32_t kind) noexcept {
+    switch (kind) {
+    case kind_bool:
+        return 1u;
+    case kind_int:
+    case kind_float:
+        return 8u;
+    case kind_ref:
+        return sizeof(box_ref);
+    default:
+        return 0u;
+    }
 }
 
 // Bytes the field occupies in the record, the length prefix of str and bytes included.
@@ -665,12 +699,15 @@ inline std::uint64_t field_span(const field_spec &f) noexcept {
     return (prefixed(f.kind) ? 4u : 0u) + std::uint64_t{f.capacity};
 }
 
-inline bool field_fits(const field_spec &f, std::uint32_t record_size) noexcept {
-    if (f.kind > kind_bytes || f.capacity == 0 || f.capacity > max_capacity)
+// open takes a field of a kind it does not know as opaque bytes, still inside the record; create
+// refuses it.
+inline bool field_fits(const field_spec &f, std::uint32_t record_size, bool unknown_kind_ok) noexcept {
+    if ((!kind_known(f.kind) && !unknown_kind_ok) || f.capacity == 0 || f.capacity > max_capacity)
         return false;
     if (f.offset % kind_alignment(f.kind) != 0 || f.offset > record_size)
         return false;
-    if (!prefixed(f.kind) && f.capacity != (f.kind == kind_bool ? 1u : 8u))
+    const std::uint32_t fixed = fixed_capacity(f.kind);
+    if (fixed != 0 && f.capacity != fixed)
         return false;
     return field_span(f) <= std::uint64_t{record_size} - f.offset;
 }
@@ -1195,7 +1232,7 @@ inline status copy_fields(state &s, const void *base) noexcept {
                     sizeof stored);
         const field_spec f{stored.offset, stored.capacity_and_kind & capacity_mask,
                            static_cast<std::uint8_t>(stored.capacity_and_kind >> kind_shift)};
-        if (!field_fits(f, s.record_size))
+        if (!field_fits(f, s.record_size, true))
             return status::corrupt;
         s.fields[i] = f;
     }
@@ -1255,7 +1292,7 @@ inline result<handle> handle::create_unpublished(std::string_view name, std::spa
         waiter_slots > max_waiter_slots || record_size > detail::max_record_size)
         return unexpected(status::range);
     for (const field_spec &f : fields)
-        if (!detail::field_fits(f, record_size))
+        if (!detail::field_fits(f, record_size, false))
             return unexpected(status::range);
     if (detail::fields_overlap(fields) || !detail::values_ok(fields, initial))
         return unexpected(status::range);

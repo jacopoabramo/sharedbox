@@ -389,7 +389,6 @@ def test_raw_bytes_follow_layout_1_0(unique_name: str) -> None:
         pytest.param(32, "<I", 136, id="tail-moved"),
         pytest.param(36, "<I", 8192, id="size-differs"),
         pytest.param(128, "<I", 32, id="field-past-the-record"),
-        pytest.param(132, "<I", 8 | 9 << 24, id="unknown-kind"),
     ],
 )
 def test_corrupt_header_is_refused(
@@ -688,3 +687,14 @@ def test_an_unpublished_segment_is_attached_only_after_publish(
     segment.close()
     with pytest.raises(BoxClosedError):
         segment.publish()
+
+
+def test_attach_refuses_a_field_of_a_kind_it_cannot_read(unique_name: str) -> None:
+    owner = create(unique_name)
+    # Field 0 becomes kind 9, which sharedbox.hpp opens as opaque bytes.
+    patch_header(unique_name, 132, "<I", 8 | 9 << 24)
+    with pytest.raises(
+        SchemaMismatchError, match="kind 9, which this version cannot read"
+    ):
+        attach(unique_name)
+    owner.close()
