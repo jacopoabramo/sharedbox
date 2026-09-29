@@ -132,6 +132,8 @@ class Stage(SharedBox):
   is published.
 - `sharedbox.hpp`: `handle::open` and `handle::from_capsule` accept a field
   whose kind code they do not know and treat its bytes as opaque.
+- `sharedbox.hpp`: `handle::write` returns `status::range` for a field whose
+  kind code it does not know, and `sbx_write` returns `SBX_E_RANGE`.
 - `SharedBox.attach()`: a segment with a field of a kind this version
   cannot read raises `SchemaMismatchError` naming the kind.
 - `SharedBox`: an annotation naming an undefined class raises `TypeError`.

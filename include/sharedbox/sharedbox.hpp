@@ -699,8 +699,8 @@ inline std::uint64_t field_span(const field_spec &f) noexcept {
     return (prefixed(f.kind) ? 4u : 0u) + std::uint64_t{f.capacity};
 }
 
-// open takes a field of a kind it does not know as opaque bytes, still inside the record; create
-// refuses it.
+// open takes a field of a kind it does not know as opaque bytes, still inside the record, which read
+// returns and write refuses; create refuses it.
 inline bool field_fits(const field_spec &f, std::uint32_t record_size, bool unknown_kind_ok) noexcept {
     if ((!kind_known(f.kind) && !unknown_kind_ok) || f.capacity == 0 || f.capacity > max_capacity)
         return false;
@@ -1086,6 +1086,7 @@ public:
     // The stored bytes of field inside a copy made by read_record.
     std::span<const std::byte> payload(std::uint16_t field, std::span<const std::byte> record) const noexcept;
     // Writes every value under one lock, so readers see all of them or none, then wakes waiters.
+    // status::range for a field of a kind this header does not know.
     [[nodiscard]] result<void> write(std::span<const value> values, seconds lock_timeout);
     // Writes since creation, seq >> 1: every write adds 2 to seq, and a force_unlock counts as one.
     std::uint64_t generation() const noexcept;
@@ -1244,7 +1245,7 @@ inline bool values_ok(std::span<const field_spec> fields, std::span<const value>
         if (v.field >= fields.size())
             return false;
         const field_spec &f = fields[v.field];
-        if (prefixed(f.kind) ? v.bytes.size() > f.capacity : v.bytes.size() != f.capacity)
+        if (!kind_known(f.kind) || (prefixed(f.kind) ? v.bytes.size() > f.capacity : v.bytes.size() != f.capacity))
             return false;
     }
     return true;

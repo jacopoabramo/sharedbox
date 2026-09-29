@@ -203,7 +203,7 @@ TEST_CASE("an unsized mapping is waited for") {
 #endif
 
 // A newer minor version may add kinds: open takes such a field as opaque bytes but still checks where
-// it lies.
+// it lies, read returns its bytes and write refuses it.
 TEST_CASE("open accepts a kind it does not know") {
     const std::string name = unique("unknown-kind");
     auto owner = create(name);
@@ -216,7 +216,10 @@ TEST_CASE("open accepts a kind it does not know") {
     CHECK((opened->field(1).kind == 9 && opened->field(1).offset == 9 && opened->field(1).capacity == 16));
     const char text[16] = "opaque bytes";
     const sharedbox::value value{1, std::as_bytes(std::span(text))};
-    CHECK(opened->write({&value, 1}, seconds(1.0)).has_value());
+    const auto written = opened->write({&value, 1}, seconds(1.0));
+    CHECK((!written && written.error() == status::range));
+    // Stands for a newer writer that knows kind 9.
+    std::memcpy(static_cast<std::byte *>(owner->base()) + header_of(*owner).record + 9, text, 16);
     char back[16] = {};
     const auto got = opened->read(1, std::as_writable_bytes(std::span(back)));
     CHECK((got && got->len == 16 && std::memcmp(back, text, 16) == 0));

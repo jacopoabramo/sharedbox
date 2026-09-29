@@ -219,8 +219,10 @@ attacher agree on it and on the class's meaning.
   accept a field whose kind code they do not know. Its offset and capacity
   are still checked against the record (capacity 1 byte to 1 MiB, the field
   inside the record, no overlap), with no alignment asked, and its bytes are
-  otherwise opaque. The Python extension, which converts every field,
-  refuses such a segment with `SchemaMismatchError`.
+  otherwise opaque. A reader opens and reads a field of a kind it does not
+  know; it never writes one, and `write` returns `status::range` for it.
+  The Python extension, which converts every field, refuses such a segment
+  with `SchemaMismatchError`.
 - For a kind a reader does not know, `capacity` is the field's whole span
   in the record, so a future kind with a length prefix counts the prefix
   in `capacity`.
@@ -659,7 +661,8 @@ void     sbx_release(sbx_handle *h);
   capsule's handle through `handle::from_capsule`.
 - `sbx_read`, `sbx_write` and `sbx_schema_hash` accept only handles made
   by `sbx_open` or `sbx_import`; for any other, `sbx_read` and `sbx_write`
-  return `SBX_E_RANGE` and `sbx_schema_hash` returns 0. When the stored
+  return `SBX_E_RANGE` and `sbx_schema_hash` returns 0. `sbx_write` also
+  returns `SBX_E_RANGE` for a field of a kind the header does not know. When the stored
   value is longer than `cap`, `sbx_read` copies nothing, sets `*len` and
   returns `SBX_E_RANGE`. `sbx_release` releases any handle.
 - The implementation, `include/sharedbox/sharedbox_c.cpp`, needs a C++20
