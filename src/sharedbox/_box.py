@@ -808,16 +808,21 @@ class SharedBox(metaclass=SharedBoxMeta):
         """
         # A list instead of recursion, so a chain of boxes can be longer than the recursion limit.
         boxes = [self]
+        error: BaseException | None = None
         while boxes:
             box = boxes.pop()
             if box._finalizer.detach() is None:
                 continue
             try:
                 release(box._watcher, box._segment)
-            finally:
-                with box._refs_lock:
-                    cached, box._refs = box._refs, {}
-                boxes.extend(inner for _, inner, _ in cached.values())
+            except BaseException as exc:  # noqa: BLE001
+                # Keep closing the rest; the first failure is raised once every box is closed.
+                error = error or exc
+            with box._refs_lock:
+                cached, box._refs = box._refs, {}
+            boxes.extend(inner for _, inner, _ in cached.values())
+        if error is not None:
+            raise error
 
     def __enter__(self) -> Self:
         return self
