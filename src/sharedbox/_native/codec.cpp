@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cstring>
+#include <string_view>
 
 namespace nb = nanobind;
 
@@ -29,10 +30,19 @@ const char *kind_name(FieldKind kind) {
     return "?";
 }
 
-std::uint64_t to_u64(PyObject *number) {
+[[noreturn]] void raise(PyObject *type, const std::string &message) {
+    PyErr_SetString(type, message.c_str());
+    throw nb::python_error();
+}
+
+std::uint64_t to_u64(PyObject *number, const std::string &name, const char *what) {
     const unsigned long long value = PyLong_AsUnsignedLongLong(number);
-    if (value == static_cast<unsigned long long>(-1) && PyErr_Occurred())
-        throw nb::python_error();
+    if (value == static_cast<unsigned long long>(-1) && PyErr_Occurred()) {
+        if (!PyErr_ExceptionMatches(PyExc_OverflowError))
+            throw nb::python_error();
+        PyErr_Clear();
+        raise(PyExc_ValueError, name + " needs a " + what + " of 0 to 2**64 - 1");
+    }
     return value;
 }
 
@@ -49,11 +59,6 @@ public:
 
     Py_buffer view;
 };
-
-[[noreturn]] void raise(PyObject *type, const std::string &message) {
-    PyErr_SetString(type, message.c_str());
-    throw nb::python_error();
-}
 
 } // namespace
 
@@ -121,17 +126,21 @@ std::string encode(const FieldDesc &field, const std::string &name, PyObject *va
         box_ref ref{};
         if (value != Py_None) {
             // The Python layer passes (create_id, schema_hash, name) of the box assigned.
-            if (!PyTuple_Check(value) || PyTuple_Size(value) != 3)
+            if (!PyTuple_Check(value) || PyTuple_Size(value) != 3 || !PyLong_Check(PyTuple_GetItem(value, 0)) ||
+                !PyLong_Check(PyTuple_GetItem(value, 1)) || !PyUnicode_Check(PyTuple_GetItem(value, 2)))
                 goto wrong_type;
-            ref.create_id = to_u64(PyTuple_GetItem(value, 0));
-            ref.schema_hash = to_u64(PyTuple_GetItem(value, 1));
+            ref.create_id = to_u64(PyTuple_GetItem(value, 0), name, "create id");
+            ref.schema_hash = to_u64(PyTuple_GetItem(value, 1), name, "schema hash");
+            if (ref.create_id == 0)
+                raise(PyExc_ValueError, name + " needs a nonzero create id");
             Py_ssize_t length = 0;
             const char *text = PyUnicode_AsUTF8AndSize(PyTuple_GetItem(value, 2), &length);
             if (text == nullptr)
                 throw nb::python_error();
-            if (ref.create_id == 0 || length == 0 || static_cast<std::size_t>(length) > sizeof ref.name)
-                raise(PyExc_ValueError, name + " needs a nonzero create id and a box name of 1 to 128 bytes");
-            std::memcpy(ref.name, text, static_cast<std::size_t>(length));
+            const std::string_view box_name(text, static_cast<std::size_t>(length));
+            if (!detail::name_ok(box_name))
+                raise(PyExc_ValueError, name + " needs a box name matching [A-Za-z0-9_.-]{1,128}");
+            std::memcpy(ref.name, box_name.data(), box_name.size());
         }
         std::string out(sizeof ref, '\0');
         std::memcpy(out.data(), &ref, sizeof ref);

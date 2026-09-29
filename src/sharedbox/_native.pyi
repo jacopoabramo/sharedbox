@@ -85,9 +85,9 @@ class Segment:
     ) -> object:
         """``cache[field][1]`` if the reference field holds ``cache[field][0]`` and ``cache[field][2]`` is open.
 
-        None when the field is empty, False otherwise. Reads the stored create id
-        only, not the name. ValueError for a field of another kind; TypeError for
-        an entry that is not ``(create_id, box, Segment)``.
+        None when the field is empty, False otherwise. Decodes only the create id,
+        not the name. ValueError for a field of another kind; TypeError for an
+        entry that is not ``(create_id, box, Segment)``.
         """
 
     def get_versioned(self, field: int) -> tuple[int, object]:

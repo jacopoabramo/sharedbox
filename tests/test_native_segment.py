@@ -735,6 +735,13 @@ def test_a_reference_name_of_128_bytes_has_no_terminating_nul(unique_name: str) 
         ((0, 1, "m1"), ValueError),
         ((1, 1, ""), ValueError),
         ((1, 1, "n" * 129), ValueError),
+        ((1, 1, "a\x00b"), ValueError),
+        ((1, 1, "m\u00f6tor"), ValueError),
+        ((1, 1, "bad/name"), ValueError),
+        ((-1, 1, "m1"), ValueError),
+        ((1, 2**64, "m1"), ValueError),
+        (("1", 1, "m1"), TypeError),
+        ((1, 1, b"m1"), TypeError),
         ((1, 1), TypeError),
         ("m1", TypeError),
     ],
@@ -776,19 +783,21 @@ def test_cached_ref_returns_the_entry_only_for_the_stored_create_id(
 @pytest.mark.parametrize(
     "entry",
     [
-        pytest.param((7, "box"), id="two items"),
-        pytest.param((7, "box", "segment", 0), id="four items"),
-        pytest.param(("7", "box", None), id="id not an int"),
-        pytest.param((7, "box", None), id="no segment"),
+        pytest.param(lambda s: (7, "box"), id="two items"),
+        pytest.param(lambda s: (7, "box", s, 0), id="four items"),
+        pytest.param(lambda s: ("7", "box", s), id="id not an int"),
+        pytest.param(lambda s: (True, "box", s), id="id a bool"),
+        pytest.param(lambda s: (-1, "box", s), id="id negative"),
+        pytest.param(lambda s: (7, "box", None), id="no segment"),
     ],
 )
 def test_cached_ref_refuses_an_entry_of_another_shape(
-    unique_name: str, entry: tuple[object, ...]
+    unique_name: str, entry: Callable[[Segment], tuple[object, ...]]
 ) -> None:
     segment = ref_segment(unique_name)
     segment.set([(0, (7, 0x5EED, "m1"))])
     with pytest.raises(TypeError, match=r"not \(create_id, box, Segment\)"):
-        segment.cached_ref(0, {0: entry})  # type: ignore[dict-item]
+        segment.cached_ref(0, {0: entry(segment)})  # type: ignore[dict-item]
     segment.close()
 
 

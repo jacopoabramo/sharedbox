@@ -46,7 +46,7 @@ nb::object get(const Segment &s, std::uint32_t index) {
     return decode_value(*read.field, read.bytes);
 }
 
-// Reads only the create id of a reference field, not its name.
+// Decodes only the create id of a reference field, not its name.
 std::uint64_t stored_ref_id(const Segment &s, std::uint32_t index) {
     sharedbox::FieldRead read;
     s.read(index, read);
@@ -245,13 +245,21 @@ NB_MODULE(_native, m) {
                     return nb::bool_(false);
                 }
                 // The entry shape is RefEntry in _box.py: (create_id, box, the box's Segment).
-                if (!PyTuple_Check(entry.ptr()) || PyTuple_Size(entry.ptr()) != 3 ||
-                    !PyLong_Check(PyTuple_GetItem(entry.ptr(), 0)) ||
-                    !nb::isinstance<Segment>(PyTuple_GetItem(entry.ptr(), 2)))
-                    throw nb::type_error("a reference cache entry is not (create_id, box, Segment)");
-                const nb::handle id = PyTuple_GetItem(entry.ptr(), 0);
+                const auto bad_entry = [] {
+                    return nb::type_error("a reference cache entry is not (create_id, box, Segment)");
+                };
+                if (!PyTuple_Check(entry.ptr()) || PyTuple_Size(entry.ptr()) != 3)
+                    throw bad_entry();
+                PyObject *id = PyTuple_GetItem(entry.ptr(), 0);
                 const nb::handle segment = PyTuple_GetItem(entry.ptr(), 2);
-                if (nb::cast<std::uint64_t>(id) != create_id || nb::cast<const Segment &>(segment).closed())
+                if (!PyLong_Check(id) || PyBool_Check(id) || !nb::isinstance<Segment>(segment))
+                    throw bad_entry();
+                const unsigned long long cached_id = PyLong_AsUnsignedLongLong(id);
+                if (cached_id == static_cast<unsigned long long>(-1) && PyErr_Occurred()) {
+                    PyErr_Clear();
+                    throw bad_entry();
+                }
+                if (cached_id != create_id || nb::cast<const Segment &>(segment).closed())
                     return nb::bool_(false);
                 return nb::borrow(PyTuple_GetItem(entry.ptr(), 1));
             },
