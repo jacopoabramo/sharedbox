@@ -738,7 +738,7 @@ def test_a_bare_redeclaration_keeps_only_a_plain_inherited_default(
     box = types.new_class(
         "Child", (types.new_class("Base", (SharedBox,), {}, box_base),), {}, child_body
     )
-    plain_base = dataclass(
+    plain_base: type = dataclass(
         type(
             "Base",
             (),
@@ -749,7 +749,7 @@ def test_a_bare_redeclaration_keeps_only_a_plain_inherited_default(
             },
         )
     )
-    plain = dataclass(
+    plain: type = dataclass(
         type(
             "Child",
             (plain_base,),
