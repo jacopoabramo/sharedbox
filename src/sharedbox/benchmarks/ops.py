@@ -38,6 +38,10 @@ class Record(SharedBox):
     s: Annotated[str, Capacity(32)]
 
 
+class Holder(SharedBox):
+    record: Record | None = None
+
+
 OPEN: dict[str, tuple[Any, ...]] = {}
 
 
@@ -47,6 +51,19 @@ def open_box() -> tuple[Any, ...]:
     atexit.register(Record.unlink, name)
     atexit.register(box.close)
     return box, box._segment, INT.pack(1)
+
+
+def open_ref() -> tuple[Any, ...]:
+    name = f"bench-ops-ref-{os.getpid()}"
+    record = Record.create(f"{name}-record", 0, 0.0, "")
+    holder = Holder.create(name, record)
+    # The row times a read that finds the box it attached before.
+    _ = holder.record
+    atexit.register(Record.unlink, record.name)
+    atexit.register(Holder.unlink, name)
+    atexit.register(record.close)
+    atexit.register(holder.close)
+    return (holder,)
 
 
 def open_shm() -> tuple[Any, ...]:
@@ -79,6 +96,7 @@ def open_namespace() -> tuple[Any, ...]:
 
 OPENERS = {
     "box": open_box,
+    "ref": open_ref,
     "shm": open_shm,
     "values": open_values,
     "list": open_list,
@@ -94,6 +112,7 @@ def resources(kind: str) -> tuple[Any, ...]:
 
 
 BOX = "box, seg, raw_a = resources('box')"
+REF = "holder, = resources('ref')"
 SHM = "buf, lock = resources('shm')"
 VALUES = "a, b, s = resources('values')"
 LIST = "shared, = resources('list')"
@@ -201,6 +220,7 @@ BENCHMARKS: list[tuple[str, str, str, list[str]]] = [
         ["ns.a = 1", "ns.b = 1.5"],
     ),
     ("read all", "SharedBox", BOX, ["box.snapshot()"]),
+    ("read ref", "SharedBox", REF, ["holder.record"]),
     (
         "read all",
         "SharedMemory+struct",

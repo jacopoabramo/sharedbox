@@ -758,3 +758,34 @@ def test_box_class_is_the_class_this_process_has_for_the_hash(
     assert BoxRef("m", Motor.__layout__.schema_hash, 1).box_class is Motor
     assert BoxRef("m", 0x5EED, 1).box_class is None
     assert BoxRef("m", 0x5EED, 1) != BoxRef("m", 0x5EED, 2)
+
+
+def point_stage_at(stage: Stage, motor_name: str) -> None:
+    with stage, Motor.attach(motor_name) as motor:
+        before = stage.motor
+        assert before is not None
+        before.position = 1
+        stage.motor = motor
+
+
+def test_a_reassignment_in_another_process_is_seen_on_the_next_read(
+    names: Callable[[str], str],
+) -> None:
+    """Check that a child given the pickled box writes through its reference and reassigns it."""
+    ctx = mp.get_context("spawn")
+    with (
+        Motor.create(names("a")) as a,
+        Motor.create(names("b"), 5) as b,
+        Stage.create(names("s"), 0, a) as stage,
+    ):
+        old = stage.motor
+        child = ctx.Process(target=point_stage_at, args=(stage, b.name))
+        child.start()
+        child.join(20)
+        assert child.exitcode == 0
+        assert a.position == 1
+        new = stage.motor
+        assert new is not None
+        assert (new.name, new.position) == (b.name, 5)
+        assert old is not None
+        assert old.closed
