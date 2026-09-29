@@ -55,7 +55,7 @@ class SharedBox:
     closed: bool                 # read-only
     events: SignalGroup          # read-only
     def update(self, **values) -> None: ...
-    def snapshot(self) -> dict[str, Any]: ...
+    def snapshot(self, *, follow: bool = False) -> dict[str, Any]: ...
     def watch(self, field: str) -> FieldWatch: ...
     def force_unlock(self) -> None: ...
     def close(self) -> None: ...
@@ -101,6 +101,7 @@ A field is a public annotation with one of these types:
 | `float` | 64-bit float; an `int` is accepted and converted |
 | `Annotated[str, Capacity(n)]` | UTF-8, at most `n` bytes |
 | `Annotated[bytes, Capacity(n)]` | at most `n` bytes; `bytearray` and `memoryview` are accepted |
+| `X` or `X \| None`, where `X` is a `SharedBox` subclass | which box of `X` the field refers to; see [Reference fields](#reference-fields) |
 
 Names starting with `_` and `ClassVar` annotations are not fields. Any other
 annotation raises `TypeError` when the class is defined, as does a class
@@ -274,7 +275,8 @@ after the class. It raises `SegmentNotFoundError` if there is none, or if
 the shared memory under that name does not become a box within 1 s (the
 lock timeout, if shorter). It raises `SchemaMismatchError` if the segment
 was made by a different class or a different version of this class, or
-uses another major version of the segment layout.
+uses another major version of the segment layout, or has a field of a kind
+this version cannot read.
 
 ```python
 from sharedbox import SharedBox
@@ -302,7 +304,18 @@ Counter.unlink("counter-2")
 `update(**values)` writes several fields under one lock: a reader sees all
 of the new values or none of them. It checks every value before it writes
 anything. `snapshot()` returns every field's value, read at one point in
-time.
+time. A reference field appears in it as a [`BoxRef`](#boxref), or `None`
+when it is empty.
+
+`snapshot(follow=True)` replaces each reference with the snapshot of the
+box it refers to, itself taken with `follow=True`. Each box is read at its
+own moment, not together with the others. A box that the same call has
+already read stays a `BoxRef`: a second field that refers to the same box
+gives a `BoxRef`, and a loop of references (a box that refers to itself,
+or A to B and B to A) ends. A reference to a box that was removed or
+created again raises `BrokenReferenceError`, and one whose class this
+process has not defined raises `UnknownBoxClassError`. `follow` is
+keyword-only.
 
 ```python
 from sharedbox import SharedBox
@@ -319,6 +332,81 @@ print(point.snapshot())  # {'x': 3, 'y': 4}
 point.close()
 Point.unlink()
 ```
+
+### Reference fields
+
+A field annotated with a `SharedBox` subclass `X`, or with `X | None` (or
+`Optional[X]`), refers to another box, which keeps its own segment, lock
+and lifetime. The field stores the box's name, schema hash and create id.
+
+```python
+from sharedbox import SharedBox
+
+
+class Motor(SharedBox, identity="motor/1"):
+    position: int = 0
+
+
+class Stage(SharedBox):
+    target: int = 0
+    motor: Motor | None = None
+
+
+with Motor() as motor, Stage() as stage:
+    stage.motor = motor
+    stage.motor.position = 100
+    print(motor.position)  # 100
+    print(stage.snapshot(follow=True))  # {'target': 0, 'motor': {'position': 100}}
+    stage.motor = None
+Stage.unlink()
+Motor.unlink()
+```
+
+- Defaults work as for any field. `motor: Motor` and `motor: Motor | None`
+  without a default are required; `= None`, `field(default=box)` and
+  `field(default_factory=...)` give defaults, and the ordering rule,
+  `kw_only`, `KW_ONLY` and `init=False` apply as in a dataclass. A default
+  box is checked like an assigned one when the class is defined; a
+  factory's result is checked at each creation. `__post_init__` may assign
+  reference fields before the box is published.
+- `motor: Motor` is never empty: assigning `None` raises `TypeError`, and
+  reading it returns a box. `motor: Motor | None` may hold `None`. The two
+  give different schema hashes, so a class that declares one cannot attach
+  a box created by a class that declares the other.
+- `X` is either the class being defined or a class defined before it. Any
+  other name raises `TypeError` when the class is defined. A class that
+  refers to itself through a required field cannot be created without an
+  existing box of it, as with a dataclass, so a chain is declared
+  `next: "Node | None" = None` (unquoted under
+  `from __future__ import annotations`, or on Python 3.14).
+- Assigning stores which box it is, under the outer box's lock. A box of
+  `X`, of any subclass of `X`, or of any class with `X`'s schema hash (the
+  same identity and fields) is accepted; any other value raises
+  `TypeError`, and a closed box raises `BoxClosedError`. `update()` and the
+  constructor take reference values with the same checks. Type checkers
+  accept a box of `X` or of a subclass; a box of another class with `X`'s
+  schema hash needs a `cast`.
+- Reading attaches the box with its own class, which may be a subclass of
+  `X`, and keeps that handle: later reads return the same object while the
+  field refers to the same box. The class is found by the stored schema
+  hash among the `SharedBox` classes this process has defined, so the
+  process that reads must import the module that defines the box's class;
+  otherwise the read raises `UnknownBoxClassError`. Of several classes with
+  one schema hash, the first one defined is used.
+- After another thread or process assigns another box, the next read
+  attaches that one and closes the handle it kept. `close()` on the outer
+  box closes the handles its reads attached. Closing a returned box
+  yourself makes the next read attach it again.
+- A read raises `BrokenReferenceError` when the box was removed, or removed
+  and created again under the same name (also under another class), since
+  it was assigned. A handle that already read the field keeps its own
+  mapping of the box and goes on returning it; on Windows that mapping
+  keeps the box, and its name, in existence, so other handles can still
+  attach it.
+- The outer box only points at the other box: closing or unlinking the
+  outer box leaves it alone, and no write covers both boxes at once.
+- A pickled outer box carries no reference of its own; the unpickled box
+  reads the field from the segment like any other handle.
 
 ### `events`
 
@@ -417,11 +505,16 @@ pump.close()
 Pump.unlink()
 ```
 
+A reference field's signal is emitted when the field is assigned another
+box or emptied, with `BoxRef` or `None` as `new` and `old`. Changes inside
+the box it refers to are emitted by that box's own `events`, for example
+`stage.motor.events.position`.
+
 ### `watch`
 
 `watch(field)` returns a `FieldWatch` over the values written to `field`
 from now on. See [`FieldWatch`](#fieldwatch). An unknown field raises
-`ValueError`.
+`ValueError`. A reference field yields `BoxRef` or `None`.
 
 ### `close` and the context manager
 
@@ -757,15 +850,35 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
+## `BoxRef`
+
+```python
+@dataclass(frozen=True)
+class BoxRef:
+    name: str
+    schema_hash: int
+    create_id: int
+    box_class: type[SharedBox] | None   # read-only property
+```
+
+Which box a reference field refers to, as `snapshot()`, `events` and
+`watch()` report it. `name` is the box's name, `schema_hash` that of the
+box's own class, and `create_id` the random number drawn when the box was
+created, which tells it from a box created later under the same name.
+`box_class` is the class of this process with that schema hash, or `None`
+when no such class is defined here.
+
 ## Errors
 
 | Class | Base | Raised when |
 | --- | --- | --- |
 | `SegmentExistsError` | `FileExistsError` | creating a box under a name that is already taken; the message says whether the creator still runs (see [Creating and attaching](#creating-and-attaching)) |
 | `SegmentNotFoundError` | `FileNotFoundError` | attaching to, or unlinking on Linux, a name with no segment; attaching to shared memory that does not become a box within 1 s |
-| `SchemaMismatchError` | `TypeError` | attaching, or unpickling a box, with a class whose identity or fields differ from the creator's; a segment of another layout major version (the message names it); unpickling after the box was created again |
+| `SchemaMismatchError` | `TypeError` | attaching, or unpickling a box, with a class whose identity or fields differ from the creator's; a segment of another layout major version (the message names it); a segment with a field of a kind this version cannot read (the message names the kind); unpickling after the box was created again |
 | `BoxClosedError` | `ValueError` | using a box after `close()` |
 | `LockTimeoutError` | `TimeoutError` | a read or write waits for a write in progress for longer than `lock_timeout` |
+| `BrokenReferenceError` | `LookupError` | reading a reference field, or `snapshot(follow=True)`, when the box it refers to was removed or created again since it was assigned; the message names the field, the box and which of the two happened |
+| `UnknownBoxClassError` | `TypeError` | reading a reference field, or `snapshot(follow=True)`, when no class this process has defined has the stored box's schema hash; the message names the field, the box and the hash, and says to import the module that defines the class |
 
 ## Platform notes
 
