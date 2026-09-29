@@ -156,7 +156,7 @@ class Reference:
     ) -> Self | SharedBox | None:
         if box is None:
             return self
-        # The usual read: the box this handle attached before, found by create id alone.
+        # One native call and no lock, so the usual read, of a box this handle already attached, stays cheap.
         hit = box._segment.cached_ref(self.index, box._refs)
         if hit is not False:
             return hit  # type: ignore[return-value]
