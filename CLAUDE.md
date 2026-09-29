@@ -262,3 +262,5 @@ name; see `docs/library-authors.md`.
   through prek: `uv run prek run --all-files`, `uv run tox -e lint`.
 - Change dependencies with `uv add` / `uv remove`, never by editing
   `pyproject.toml`.
+- Docstrings in `.py` and `.pyi` use the numpydoc format; cross-references
+  are mkdocs-style Markdown (``[`name`][path]``), never reStructuredText roles.
