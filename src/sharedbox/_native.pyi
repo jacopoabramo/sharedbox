@@ -89,9 +89,7 @@ class Segment:
     def get(self, field: int) -> object:
         """The field's value; `(create_id, schema_hash, name)`, or None when empty, for a reference field."""
 
-    def cached_ref(
-        self, field: int, cache: dict[int, RefEntry]
-    ) -> object:
+    def cached_ref(self, field: int, cache: dict[int, RefEntry]) -> object:
         """`cache[field][1]` if the reference field holds `cache[field][0]` and `cache[field][2]` is open.
 
         None when the field is empty, False otherwise. Decodes only the
