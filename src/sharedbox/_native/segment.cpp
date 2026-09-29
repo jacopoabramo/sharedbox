@@ -151,7 +151,7 @@ std::string exists_message(const std::string &name, const std::vector<std::strin
 
 } // namespace
 
-bool kind_is_valid(std::uint32_t code) { return code <= kind_bytes; }
+bool kind_is_valid(std::uint32_t code) { return code <= kind_ref; }
 
 void check_index(std::uint32_t index, std::size_t count) {
     if (index >= count)

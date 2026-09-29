@@ -78,7 +78,17 @@ class Segment:
         """Remove the name, as ``shm_unlink`` does; a no-op on Windows."""
 
     def get(self, field: int) -> object:
-        """The field's value."""
+        """The field's value; ``(create_id, schema_hash, name)``, or None when empty, for a reference field."""
+
+    def cached_ref(
+        self, field: int, cache: dict[int, tuple[int, Any, Segment]]
+    ) -> object:
+        """``cache[field][1]`` if the reference field holds ``cache[field][0]`` and ``cache[field][2]`` is open.
+
+        None when the field is empty, False otherwise. Reads the stored create id
+        only, not the name. ValueError for a field of another kind; TypeError for
+        an entry that is not ``(create_id, box, Segment)``.
+        """
 
     def get_versioned(self, field: int) -> tuple[int, object]:
         """The field's version and value, read together."""
@@ -87,7 +97,10 @@ class Segment:
         """Every field's value under its name in ``names``, read at one point in time."""
 
     def set(self, values: Sequence[tuple[int, object]]) -> None:
-        """Convert every value, then write them all under one lock."""
+        """Convert every value, then write them all under one lock.
+
+        A reference field takes ``(create_id, schema_hash, name)``, or None to empty it.
+        """
 
     def _read(self, field: int) -> bytes:
         """The field's bytes, read consistently with concurrent writes; for tests."""

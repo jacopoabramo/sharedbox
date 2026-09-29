@@ -1,7 +1,9 @@
 #include "codec.hpp"
 
 #include <nanobind/nanobind.h>
+#include <sharedbox/sharedbox.hpp>
 
+#include <algorithm>
 #include <cstring>
 
 namespace nb = nanobind;
@@ -21,8 +23,17 @@ const char *kind_name(FieldKind kind) {
         return "str";
     case FieldKind::Bytes:
         return "bytes";
+    case FieldKind::Ref:
+        return "a reference";
     }
     return "?";
+}
+
+std::uint64_t to_u64(PyObject *number) {
+    const unsigned long long value = PyLong_AsUnsignedLongLong(number);
+    if (value == static_cast<unsigned long long>(-1) && PyErr_Occurred())
+        throw nb::python_error();
+    return value;
 }
 
 // Releases the buffer on every way out of encode(), exceptions included.
@@ -106,6 +117,26 @@ std::string encode(const FieldDesc &field, const std::string &name, PyObject *va
             throw nb::python_error();
         return out;
     }
+    case FieldKind::Ref: {
+        box_ref ref{};
+        if (value != Py_None) {
+            // The Python layer passes (create_id, schema_hash, name) of the box assigned.
+            if (!PyTuple_Check(value) || PyTuple_Size(value) != 3)
+                goto wrong_type;
+            ref.create_id = to_u64(PyTuple_GetItem(value, 0));
+            ref.schema_hash = to_u64(PyTuple_GetItem(value, 1));
+            Py_ssize_t length = 0;
+            const char *text = PyUnicode_AsUTF8AndSize(PyTuple_GetItem(value, 2), &length);
+            if (text == nullptr)
+                throw nb::python_error();
+            if (ref.create_id == 0 || length == 0 || static_cast<std::size_t>(length) > sizeof ref.name)
+                raise(PyExc_ValueError, name + " needs a nonzero create id and a box name of 1 to 128 bytes");
+            std::memcpy(ref.name, text, static_cast<std::size_t>(length));
+        }
+        std::string out(sizeof ref, '\0');
+        std::memcpy(out.data(), &ref, sizeof ref);
+        return out;
+    }
     }
     raise(PyExc_SystemError, "unknown field kind");
 too_long:
@@ -135,6 +166,18 @@ PyObject *decode(const FieldDesc &field, const char *data, std::size_t size) {
         return PyUnicode_DecodeUTF8(data, static_cast<Py_ssize_t>(size), "replace");
     case FieldKind::Bytes:
         return PyBytes_FromStringAndSize(data, static_cast<Py_ssize_t>(size));
+    case FieldKind::Ref: {
+        box_ref ref;
+        std::memcpy(&ref, data, sizeof ref);
+        if (ref.create_id == 0)
+            return Py_NewRef(Py_None);
+        const char *end = std::find(ref.name, ref.name + sizeof ref.name, '\0');
+        PyObject *text = PyUnicode_DecodeUTF8(ref.name, end - ref.name, "replace");
+        if (text == nullptr)
+            return nullptr;
+        return Py_BuildValue("(KKN)", static_cast<unsigned long long>(ref.create_id),
+                             static_cast<unsigned long long>(ref.schema_hash), text);
+    }
     }
     return nullptr;
 }

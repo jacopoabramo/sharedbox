@@ -258,6 +258,8 @@ TEST_CASE("a reference field holds a box_ref") {
     static_cast<void>(sharedbox::unlink(name));
     constexpr sharedbox::field_spec short_ref[1] = {{0, 143, sharedbox::kind_ref}};
     CHECK(handle::create(name, short_ref, 144, 1, 1, {}).error() == status::range);
+    constexpr sharedbox::field_spec unaligned_ref[1] = {{12, 144, sharedbox::kind_ref}};
+    CHECK(handle::create(name, unaligned_ref, 156, 1, 1, {}).error() == status::range);
     constexpr sharedbox::field_spec unknown[1] = {{0, 8, 9}};
     CHECK(handle::create(name, unknown, 8, 1, 1, {}).error() == status::range);
 }

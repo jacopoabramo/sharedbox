@@ -14,7 +14,7 @@ struct sbx_handle;
 
 namespace sharedbox {
 
-enum class FieldKind : std::uint8_t { Bool = 0, Int = 1, Float = 2, Str = 3, Bytes = 4 };
+enum class FieldKind : std::uint8_t { Bool = 0, Int = 1, Float = 2, Str = 3, Bytes = 4, Ref = 5 };
 
 struct FieldDesc {
     std::uint32_t offset;
