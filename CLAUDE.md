@@ -13,7 +13,7 @@ the layout and the native module converts values.
 ```text
 sharedbox/
 |-- include/sharedbox/
-|   |-- sharedbox.hpp          layout 1.0 and its protocols: create, open, lock, read, write, waiter slots, capsule handle
+|   |-- sharedbox.hpp          layout 1.0 and its protocols: create, publish, open, lock, read, write, waiter slots, capsule handle
 |   |-- sharedbox_c.h          minimal C interface: sbx_open, sbx_import, sbx_read, sbx_write, sbx_schema_hash, sbx_release
 |   `-- sharedbox_c.cpp        its implementation, compiled by the consumer (CMake target sharedbox::c)
 |-- cmake/
@@ -22,8 +22,8 @@ sharedbox/
 |   `-- sharedbox-require-cxx.cmake  stops configure when sharedbox::c is linked without CXX
 |-- src/sharedbox/
 |   |-- __init__.py            re-exports the public API, get_include()
-|   |-- _box.py                SharedBox: class keywords, fields, create/attach, update, snapshot, unlink, __sharedbox_box__
-|   |-- _layout.py             Capacity, field offsets and kind codes, schema hash
+|   |-- _box.py                SharedBox: class keywords, fields, fields(), create/attach, __post_init__, update, snapshot, unlink, __sharedbox_box__
+|   |-- _layout.py             Capacity, field() and Field, field offsets and kind codes, schema hash
 |   |-- _events.py             FieldWatch, the watcher thread, psygnal events
 |   |-- _native.pyi            hand-written stub for the extension
 |   |-- py.typed

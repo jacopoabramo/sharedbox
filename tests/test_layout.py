@@ -3,6 +3,7 @@ from typing import Annotated, ClassVar
 
 import pytest
 
+from sharedbox import SharedBox
 from sharedbox._layout import Capacity, build_layout, class_identity
 
 
@@ -37,17 +38,17 @@ def test_check_refuses_what_a_write_would() -> None:
         spec.check("3")
 
 
-def test_keyword_only_fields() -> None:
-    class Mixed:
+def test_kw_only_leaves_the_schema_hash_unchanged() -> None:
+    class Mixed(SharedBox, identity="tests.Mixed"):
         a: int
         _: KW_ONLY
         b: int
 
-    assert [f.kw_only for f in build_layout(Mixed).fields] == [False, True]
-    assert [f.kw_only for f in build_layout(Mixed, kw_only=True).fields] == [True, True]
-    assert (
-        build_layout(Mixed).schema_hash == build_layout(Mixed, kw_only=True).schema_hash
-    )
+    class KwMixed(SharedBox, identity="tests.Mixed", kw_only=True):
+        a: int
+        b: int
+
+    assert Mixed.__layout__.schema_hash == KwMixed.__layout__.schema_hash
 
 
 def test_float_field_accepts_int() -> None:

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import hashlib
-from collections.abc import Mapping
-from dataclasses import KW_ONLY, dataclass
+import inspect
+from collections.abc import Callable, Mapping
+from dataclasses import KW_ONLY, MISSING, InitVar, dataclass
+from types import MappingProxyType
 from typing import (
     Annotated,
     Any,
@@ -58,6 +60,58 @@ class Capacity:
             )
 
 
+@dataclass(frozen=True, eq=False)
+class Field:
+    """Options of one field of a ``SharedBox`` class, as :func:`field` takes them."""
+
+    name: str
+    type: Any
+    """The annotation, with ``Annotated`` extras kept."""
+    default: Any
+    """``dataclasses.MISSING`` when there is none."""
+    default_factory: Any
+    """A function of no arguments, or ``dataclasses.MISSING``."""
+    init: bool
+    """False if the constructor takes no value for the field."""
+    repr: bool
+    """False if ``repr()`` of a box leaves the field out."""
+    kw_only: Any
+    """True if the constructor takes the value by keyword only; ``dataclasses.MISSING`` until the class is created."""
+    metadata: Mapping[Any, Any]
+    """Read-only; never stored in the segment."""
+    doc: str | None
+
+
+def field(
+    *,
+    default: Any = MISSING,
+    default_factory: Callable[[], Any] | Any = MISSING,
+    init: bool = True,
+    repr: bool = True,
+    kw_only: bool | Any = MISSING,
+    metadata: Mapping[Any, Any] | None = None,
+    doc: str | None = None,
+) -> Any:
+    """Options for one field of a ``SharedBox`` class, as ``dataclasses.field`` gives them.
+
+    ``default_factory`` is called at each creation that is given no value
+    for the field, and its result is stored like any other value.
+    """
+    if default is not MISSING and default_factory is not MISSING:
+        raise ValueError("cannot specify both default and default_factory")
+    return Field(
+        name="",
+        type=None,
+        default=default,
+        default_factory=default_factory,
+        init=init,
+        repr=repr,
+        kw_only=kw_only,
+        metadata=MappingProxyType(dict(metadata or {})),
+        doc=doc,
+    )
+
+
 class NativeField(NamedTuple):
     """A field's place in the record, in the form the native segment takes."""
 
@@ -82,8 +136,6 @@ class FieldSpec:
     """Byte offset of the field from the start of the record."""
     capacity: int
     """Encoded size in bytes; for ``str`` and ``bytes`` the most the value may take."""
-    kw_only: bool = False
-    """True after a ``KW_ONLY`` annotation or in a ``kw_only=True`` class."""
     label: str = ""
     """``"<Class>.<field>"``, used in error messages."""
 
@@ -133,26 +185,52 @@ def class_identity(cls: type) -> str:
     return f"{module}.{cls.__qualname__}"
 
 
-def build_layout(
-    cls: type, kw_only: bool = False, identity: str | None = None
-) -> Layout:
-    """Lay out the public annotated fields of ``cls``, base classes first.
+def declared(cls: type) -> list[tuple[str, Any]]:
+    """``(name, annotation)`` of every field and ``InitVar`` of ``cls``, base classes first.
 
-    Fields after a ``dataclasses.KW_ONLY`` annotation, or every field when
-    ``kw_only`` is true, are keyword-only. Fields are packed by descending
-    alignment (8-byte fields, then ``str``/``bytes``, then ``bool``), not
-    declaration order; ``Layout.fields`` keeps the declaration order. The
-    schema hash covers ``identity``, by default :func:`class_identity`.
+    ``dataclasses.KW_ONLY`` and ``ClassVar`` annotations and names starting
+    with ``_`` are left out.
     """
-    found: list[tuple[str, Kind, int, bool]] = []
-    for name, hint in get_type_hints(cls, include_extras=True).items():
-        if hint is KW_ONLY:
+    return [
+        (name, hint)
+        for name, hint in get_type_hints(cls, include_extras=True).items()
+        if hint is not KW_ONLY
+        and not name.startswith("_")
+        and hint is not ClassVar
+        and get_origin(hint) is not ClassVar
+    ]
+
+
+def own_kw_only(cls: type, kw_only: bool = False) -> dict[str, bool]:
+    """Keyword-only flag of each annotation ``cls`` itself declares, not those of its bases.
+
+    An annotation is keyword-only when ``kw_only`` is true or it follows a
+    ``dataclasses.KW_ONLY`` annotation of ``cls``.
+    """
+    hints = get_type_hints(cls, include_extras=True)
+    flags: dict[str, bool] = {}
+    for name in inspect.get_annotations(cls):
+        if hints.get(name) is KW_ONLY:
             kw_only = True
             continue
-        if name.startswith("_") or hint is ClassVar or get_origin(hint) is ClassVar:
-            continue
-        kind, capacity = classify(name, hint)
-        found.append((name, kind, capacity, kw_only))
+        flags[name] = kw_only
+    return flags
+
+
+def build_layout(cls: type, identity: str | None = None) -> Layout:
+    """Lay out the public annotated fields of ``cls``, base classes first.
+
+    Fields are packed by descending alignment (8-byte fields, then
+    ``str``/``bytes``, then ``bool``), not declaration order;
+    ``Layout.fields`` keeps the declaration order. The schema hash covers
+    ``identity``, by default :func:`class_identity`. ``InitVar``
+    annotations are not fields.
+    """
+    found = [
+        (name, *classify(name, hint))
+        for name, hint in declared(cls)
+        if not isinstance(hint, InitVar)
+    ]
     if not found:
         raise TypeError(f"{cls.__qualname__} declares no fields")
     if len(found) > MAX_FIELDS:
@@ -176,10 +254,9 @@ def build_layout(
             kind,
             offsets[i],
             capacity,
-            field_kw_only,
             f"{cls.__qualname__}.{name}",
         )
-        for i, (name, kind, capacity, field_kw_only) in enumerate(found)
+        for i, (name, kind, capacity) in enumerate(found)
     )
     text = "|".join(
         [

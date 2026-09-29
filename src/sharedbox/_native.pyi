@@ -58,11 +58,13 @@ class Segment:
         lock_timeout: float,
         values: Sequence[tuple[int, object]],
         waiter_slots: int = 64,
+        publish: bool = True,
     ) -> Segment:
         """Create the segment with ``values`` written before any other process can see it.
 
         ``fields`` are ``(offset, capacity, kind)``; ``names`` are used in error messages.
         ``waiter_slots`` is how many threads, across processes, can wait at once.
+        With ``publish`` false, no other process can attach until :meth:`publish`.
         """
 
     @staticmethod
@@ -101,6 +103,12 @@ class Segment:
 
     def versions(self) -> list[int]:
         """:meth:`version` of every field, in field order."""
+
+    def publish(self) -> None:
+        """Let other processes attach to a segment created with ``publish=False``.
+
+        Raises ``ValueError`` if the segment is already published.
+        """
 
     def generation(self) -> int:
         """How many writes the segment has had."""
@@ -159,6 +167,10 @@ class Segment:
     @property
     def closed(self) -> bool:
         """True after :meth:`close`."""
+
+    @property
+    def published(self) -> bool:
+        """False between ``create(..., publish=False)`` and :meth:`publish`."""
 
     @property
     def name(self) -> str: ...

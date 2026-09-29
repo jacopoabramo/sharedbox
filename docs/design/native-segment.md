@@ -364,12 +364,16 @@ The check is used in two places:
   `sharedbox::inspect()` and says whether its creator still runs (with its
   pid), runs in another pid namespace, or has exited. On Linux an exited
   creator means the segment is probably left over from a crash and
-  `Box.unlink(name)` removes it, and a name that holds no published box
-  may be left over from a crash during create. On Windows a name exists
-  only while some process holds a handle to it, so the message says
-  instead that a process, possibly this one, still has it open and that
-  the name is freed when every handle to it is closed. Nothing is removed automatically: other
-  processes may still use a segment whose creator died.
+  `Box.unlink(name)` removes it. A name that holds no published box is
+  checked the same way from its header, which the creator writes before
+  publishing: a creator that still runs is reported as creating the box
+  (for example while its `__post_init__` runs), and one that has exited
+  means the name may be left over from a crash during create. On Windows
+  a name exists only while some process holds a handle to it, so the
+  message says instead that a process, possibly this one, still has it
+  open and that the name is freed when every handle to it is closed.
+  Nothing is removed automatically: other processes may still use a
+  segment whose creator died.
 
 ## References
 

@@ -111,9 +111,9 @@ A field named like a `SharedBox` member (`name`, `closed`, `close`,
 `attach`) raises `TypeError` when the class is defined.
 
 Fields are positional by default, in declaration order, as in a dataclass.
-Fields after a `dataclasses.KW_ONLY` annotation are keyword-only. A default
-is checked when the class is defined, and a positional field without a
-default cannot follow one with a default.
+Fields declared after a `dataclasses.KW_ONLY` annotation in the same class
+are keyword-only. A default is checked when the class is defined, and a
+positional field without a default cannot follow one with a default.
 
 Assigning a value of the wrong type raises `TypeError`, and a `str` or
 `bytes` value longer than its capacity raises `ValueError`. Either way the
@@ -126,6 +126,68 @@ declares its own. A subclass's `__slots__` may not name `_segment`, which
 `SharedBox` uses; that raises `TypeError` when the class is defined.
 
 Two boxes compare equal only if they are the same object.
+
+### `field()`, `InitVar` and `__post_init__`
+
+```python
+from dataclasses import InitVar
+from typing import Annotated
+
+from sharedbox import Capacity, SharedBox, field, fields
+
+
+class Motor(SharedBox):
+    position: int
+    label: Annotated[str, Capacity(32)] = field(default="", repr=False)
+    limit: int = field(default=100, kw_only=True, metadata={"unit": "mm"})
+    offset: InitVar[int] = 0
+
+    def __post_init__(self, offset: int) -> None:
+        self.position += offset
+
+
+motor = Motor(10, "x-axis", offset=5)
+print(motor)  # Motor(position=15, limit=100)
+print(fields(Motor)[2].metadata["unit"])  # mm
+motor.close()
+Motor.unlink()
+```
+
+`field()` sets the options of one field, as `dataclasses.field` does;
+[`field` and `fields`](#field-and-fields) lists them. A plain class
+attribute is still the field's default.
+
+A `dataclasses.InitVar[T]` annotation declares a constructor argument
+that is not stored. It takes a position like a field and may have a
+default, given as a class attribute or with `field(default=...)`; it
+takes no `default_factory` and no `init=False`. It is not in the
+layout, the schema hash, `fields()`, `snapshot()` or `events`. A class
+with an `InitVar` and no `__post_init__` raises `TypeError` when it is
+defined. An `InitVar` with the name of an inherited field removes that
+field from the subclass, as in `dataclasses`; reading or assigning the
+name on a box raises `AttributeError`.
+
+`__post_init__(self, *initvars)` runs when the class is called and when
+`create()` is used, after the values are written, with each `InitVar`
+value in declaration order. It may read and assign fields; its writes
+go into the segment. It does not run for `attach()` or unpickling,
+which open a box that already exists.
+
+No other process sees the box before `__post_init__` returns: the box
+is published after it. Until then its name is taken: creating another
+box under it raises `SegmentExistsError`, whose message says the box is
+being created by a pid that is still running. `attach()` waits at most
+1 s (the lock timeout, if shorter) and then raises
+`SegmentNotFoundError`, so a `__post_init__` that takes longer makes
+those attaches fail, including an `attach()` made from `__post_init__`
+itself. If `__post_init__` raises, the box is closed and
+its name removed without ever being published, and the exception
+propagates.
+
+A box cannot be handed to other extensions until `__post_init__`
+returns: `__sharedbox_box__()` raises `BufferError` before then.
+Pickling the box inside `__post_init__` works, but the pickle can only
+be loaded once the box is published.
 
 ### Class keywords
 
@@ -148,7 +210,8 @@ Settings.unlink()
   it is 16 hex digits of SHA-256 over the class's identity (see
   `identity`), so every process that imports the class uses the same name.
   A name matches `[A-Za-z0-9_.-]{1,128}`; any other raises `ValueError`.
-- `kw_only`: make every field keyword-only.
+- `kw_only`: make every field this class declares keyword-only. Inherited
+  fields keep the setting of the class that declares them.
 - `lock_timeout`: seconds a read or write waits for a write in progress
   before `LockTimeoutError`, 5.0 by default. Must be finite and in
   `(0, 86400]`; any other value raises `ValueError`. On Windows a wait
@@ -189,6 +252,9 @@ class can describe several boxes. Both raise `SegmentExistsError` if the name is
 taken. Its message says which case it is:
 
 - the box's creator is still running, with its pid;
+- the box is still being created: its creator is running and has not
+  returned from `__post_init__` yet. The message gives its pid and says to
+  wait for it or use another name;
 - the creator runs in another pid namespace, such as another container;
 - the creator is no longer running. On Linux the box is then probably left
   over from a crash, and `Box.unlink(name)` removes it. On Windows a
@@ -520,6 +586,99 @@ PyCapsule Interface. Python code does not call it; a consuming library does.
 
 [library-authors.md](library-authors.md) shows how to build an extension
 that accepts a box.
+
+## `field` and `fields`
+
+```python
+def field(*, default=MISSING, default_factory=MISSING, init=True, repr=True,
+          kw_only=MISSING, metadata=None, doc=None) -> Any: ...
+def fields(class_or_box) -> tuple[Field, ...]: ...
+
+@dataclass(frozen=True)
+class Field:
+    name: str
+    type: Any
+    default: Any
+    default_factory: Any
+    init: bool
+    repr: bool
+    kw_only: bool
+    metadata: Mapping[Any, Any]
+    doc: str | None
+```
+
+`MISSING` is `dataclasses.MISSING`. The options of `field()`, against
+`dataclasses.field`:
+
+| Parameter | Supported | Behaviour |
+| --- | --- | --- |
+| `default` | yes | the field's value at creation when none is given |
+| `default_factory` | yes | called once per creation that is given no value for the field; the result is converted into the segment like any value, so the box never keeps the object the factory returned |
+| `init` | yes | `init=False` leaves the field out of the constructor; it needs `default` or `default_factory`, else `TypeError` when the class is defined |
+| `repr` | yes | `repr=False` leaves the field out of `repr()` |
+| `kw_only` | yes | per field, overriding the `kw_only` class keyword and `KW_ONLY` for that field |
+| `metadata` | yes | a read-only mapping kept in Python, never stored in the segment |
+| `doc` | yes | a string kept in Python |
+| `compare`, `hash` | no | `field()` has no such parameters. Two boxes are equal only if they are the same object: two handles to one box share one record, so comparing boxes by their values is not defined |
+
+- `default` and `default_factory` together raise `ValueError`.
+- A field with neither is required. The rule that a positional field
+  without a default cannot follow one with a default counts a field
+  with either as having a default. `init=False` fields do not take a
+  position and are not counted.
+- A default is checked against the field's type and capacity when the
+  class is defined, a factory's result when the box is created; both
+  raise what assigning the value raises.
+- `field()` on a name that is not a field (a name starting with `_`, a
+  `ClassVar`) raises `TypeError` when the class is defined, and so does
+  `field()` without an annotation, as in `dataclasses`
+  (`TypeError: Job: 'retries' is a field but has no type annotation`).
+- A subclass that sets a plain class attribute, without an annotation,
+  on the name of an inherited field raises `TypeError` when it is
+  defined. `dataclasses` ignores such an attribute; a box cannot,
+  because the attribute would hide the field. Declare the field again
+  with an annotation, which gives it default options, as in
+  `dataclasses`. An annotation without a value keeps only a plain
+  inherited `default`: the other options go back to their defaults, and
+  a field whose base gave it a `default_factory` becomes required. The
+  same holds for an `InitVar` declared over an inherited field.
+- Values are copied into the segment, and only the stored types exist:
+  no lists, dicts or other objects. `Capacity` stays in `Annotated`,
+  because it belongs to the stored type, not to the field's options.
+- Whether a field is keyword-only is fixed by the class that declares
+  it, through its `kw_only` class keyword, a `KW_ONLY` among its own
+  annotations, or `field(kw_only=...)`. A subclass keeps each inherited
+  field's setting: its own `kw_only=True` affects only its own fields,
+  and the fields of a `kw_only` base stay keyword-only in a subclass
+  without the keyword, as in `dataclasses`.
+
+`fields(class_or_box)` returns one `Field` per field of a `SharedBox`
+subclass or box, in declaration order, without `InitVar` ones; anything
+else raises `TypeError`. `Field` is read-only; `type` is the evaluated
+annotation, `kw_only` is always a `bool`, and `default` and
+`default_factory` are `MISSING` when not given. It is how `metadata`
+and `doc` are read. Two `Field` objects are equal only if they are the
+same object, as with `dataclasses.Field`.
+
+`inspect.signature()` of a subclass gives its constructor's parameters,
+as for a dataclass:
+
+```python
+import inspect
+
+from sharedbox import SharedBox, field
+
+
+class Job(SharedBox):
+    attempts: int = field(default=0, init=False)
+    retries: int = field(default_factory=lambda: 3)
+
+
+print(inspect.signature(Job))  # (retries: int = <factory>) -> None
+with Job() as job:
+    print(job)  # Job(attempts=0, retries=3)
+Job.unlink()
+```
 
 ## `Capacity`
 

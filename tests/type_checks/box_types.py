@@ -1,6 +1,8 @@
+from dataclasses import InitVar
 from typing import Annotated, assert_type
 
-from sharedbox import Capacity, SharedBox, SupportsSharedBox
+import sharedbox
+from sharedbox import Capacity, Field, SharedBox, SupportsSharedBox, field
 
 
 class Motor(SharedBox):
@@ -43,3 +45,23 @@ def protocol(motor: Motor, frame: Frame) -> None:
     run(motor)
     run(frame)
     run(object())  # type: ignore[arg-type]
+
+
+class Stage(SharedBox):
+    x: float
+    label: Annotated[str, Capacity(8)] = field(default="s")
+    moves: int = field(default=0, init=False)
+    speed: float = field(default_factory=float)
+    offset: InitVar[float] = 0.0
+
+    def __post_init__(self, offset: float) -> None: ...
+
+
+def field_options(stage: Stage) -> None:
+    assert_type(Stage(1.0), Stage)
+    Stage(1.0, "t", 2.0)
+    Stage(1.0, moves=3)  # type: ignore[call-arg]
+    Stage(1.0, "t", 2.0, offset=3.0)
+    Stage(1.0, offset="far")  # type: ignore[arg-type]
+    assert_type(stage.moves, int)
+    assert_type(sharedbox.fields(stage), tuple[Field, ...])

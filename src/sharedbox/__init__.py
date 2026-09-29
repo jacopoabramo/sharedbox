@@ -1,8 +1,8 @@
 from pathlib import Path
 
-from ._box import SharedBox, SupportsSharedBox
+from ._box import SharedBox, SupportsSharedBox, fields
 from ._events import FieldWatch
-from ._layout import Capacity
+from ._layout import Capacity, Field, field
 from ._native import (
     BoxClosedError,
     LockTimeoutError,
@@ -14,6 +14,7 @@ from ._native import (
 __all__ = [
     "BoxClosedError",
     "Capacity",
+    "Field",
     "FieldWatch",
     "LockTimeoutError",
     "SchemaMismatchError",
@@ -21,6 +22,8 @@ __all__ = [
     "SegmentNotFoundError",
     "SharedBox",
     "SupportsSharedBox",
+    "field",
+    "fields",
     "get_include",
 ]
 

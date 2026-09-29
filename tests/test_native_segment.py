@@ -664,3 +664,27 @@ def test_versions_lists_every_field_in_order(unique_name: str) -> None:
     segment.close()
     with pytest.raises(BoxClosedError):
         segment.versions()
+
+
+def test_an_unpublished_segment_is_attached_only_after_publish(
+    unique_name: str,
+) -> None:
+    segment = Segment.create(
+        unique_name, FIELDS, NAMES, RECORD_SIZE, SCHEMA, 1.0, [(0, 7)], publish=False
+    )
+    with pytest.raises(SegmentNotFoundError):
+        attach(unique_name, timeout=0.1)
+    with pytest.raises(SegmentExistsError):
+        create(unique_name)
+    segment.set([(0, 8)])
+    segment.publish()
+    other = attach(unique_name)
+    assert other.get(0) == 8
+    with pytest.raises(ValueError, match="already published"):
+        segment.publish()
+    with pytest.raises(ValueError, match="already published"):
+        other.publish()
+    other.close()
+    segment.close()
+    with pytest.raises(BoxClosedError):
+        segment.publish()

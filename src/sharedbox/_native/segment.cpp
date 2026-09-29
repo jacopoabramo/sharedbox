@@ -6,11 +6,13 @@
 #include <atomic>
 #include <cerrno>
 #include <cmath>
+#include <cstring>
 #include <iterator>
 #include <limits>
 #include <memory>
 #include <mutex>
 #include <new>
+#include <optional>
 #include <shared_mutex>
 #include <span>
 #include <system_error>
@@ -42,6 +44,36 @@ std::span<const std::byte> bytes_of(std::string_view s) { return std::as_bytes(s
 WaitHook before_wait = []() -> void * { return nullptr; };
 ResumeHook after_wait = [](void *) {};
 
+// The message for a creator whose pid cannot be checked from here, or nullopt when it can.
+std::optional<std::string> foreign_creator(const header &h, const std::string &taken) {
+#ifndef _WIN32
+    // A pid means something only inside its namespace: with either namespace unknown (0), or a
+    // real mismatch, there is nothing safe to say about whether the creator is still running.
+    const std::uint64_t own_pidns = detail::current_pidns();
+    if (h.creator_pidns == 0 || own_pidns == 0)
+        return taken;
+    if (h.creator_pidns != own_pidns)
+        return taken + "; it was created in another pid namespace, such as another container";
+#else
+    static_cast<void>(h);
+    static_cast<void>(taken);
+#endif
+    return std::nullopt;
+}
+
+// The header of a box whose creator has not published it yet. The creator fields are written before
+// magic, but this reads them without waiting for magic and without the lock, so a creator still
+// writing them can only make the message less precise.
+std::optional<header> unpublished_header(const std::string &name) {
+    detail::backoff no_wait(0);
+    result<detail::os_mapping> map = detail::map_open(name, no_wait);
+    if (!map)
+        return std::nullopt;
+    header copy;
+    std::memcpy(&copy, map->base(), sizeof copy);
+    return copy;
+}
+
 // The Python layer labels fields "Class.field", so the first label names the class to unlink through.
 std::string exists_message(const std::string &name, const std::vector<std::string> &names) {
     const std::string taken = "a segment named '" + name + "' already exists";
@@ -56,6 +88,15 @@ std::string exists_message(const std::string &name, const std::vector<std::strin
     if (!seen) {
         if (seen.error() != status::not_found)
             return taken;
+        // Zero creator fields mean shared memory made by other software.
+        if (const std::optional<header> creating = unpublished_header(name);
+            creating && creating->creator_pid != 0) {
+            if (std::optional<std::string> foreign = foreign_creator(*creating, taken))
+                return *foreign;
+            if (detail::process_alive(creating->creator_pid, creating->creator_start))
+                return taken + "; it is being created by pid " + std::to_string(creating->creator_pid) +
+                       ", which is still running; wait for it or use another name";
+        }
 #ifdef _WIN32
         // A Windows name exists only while some process holds a handle to it, and it may name an
         // object of another kind, so there is nothing to remove.
@@ -68,15 +109,8 @@ std::string exists_message(const std::string &name, const std::vector<std::strin
     }
     if (seen->layout_major != layout_major)
         return taken;
-#ifndef _WIN32
-    // A pid means something only inside its namespace: with either namespace unknown (0), or a
-    // real mismatch, there is nothing safe to say about whether the creator is still running.
-    const std::uint64_t own_pidns = detail::current_pidns();
-    if (seen->creator_pidns == 0 || own_pidns == 0)
-        return taken;
-    if (seen->creator_pidns != own_pidns)
-        return taken + "; it was created in another pid namespace, such as another container";
-#endif
+    if (std::optional<std::string> foreign = foreign_creator(*seen, taken))
+        return *foreign;
     if (detail::process_alive(seen->creator_pid, seen->creator_start))
         return taken + "; its creator, pid " + std::to_string(seen->creator_pid) + ", is still running";
 #ifdef _WIN32
@@ -232,7 +266,8 @@ std::unique_ptr<Segment> Segment::create(const std::string &name, const std::vec
                                          const std::vector<std::string> &names, std::uint64_t record_size,
                                          std::uint64_t schema_hash, double lock_timeout,
                                          std::uint16_t waiter_slots,
-                                         const std::vector<std::pair<std::uint32_t, std::string>> &values) {
+                                         const std::vector<std::pair<std::uint32_t, std::string>> &values,
+                                         bool publish) {
     check_lock_timeout(lock_timeout);
     if (fields.empty() || fields.size() > max_fields)
         throw std::invalid_argument("a box needs between 1 and 256 fields");
@@ -256,8 +291,10 @@ std::unique_ptr<Segment> Segment::create(const std::string &name, const std::vec
     impl->name = name;
     impl->names = names;
     impl->lock_timeout = lock_timeout;
-    result<handle> made =
-        handle::create(name, table, static_cast<std::uint32_t>(record_size), schema_hash, waiter_slots, initial);
+    const auto size = static_cast<std::uint32_t>(record_size);
+    result<handle> made = publish
+                              ? handle::create(name, table, size, schema_hash, waiter_slots, initial)
+                              : handle::create_unpublished(name, table, size, schema_hash, waiter_slots, initial);
     if (!made && made.error() == status::exists)
         throw SegmentExists(exists_message(name, names));
     impl->box = impl->check(std::move(made));
@@ -361,6 +398,18 @@ std::vector<std::uint64_t> Segment::versions() const {
     for (std::size_t i = 0; i < out.size(); ++i)
         out[i] = impl_->box.version(static_cast<std::uint16_t>(i));
     return out;
+}
+
+bool Segment::published() const {
+    auto guard = impl_->enter();
+    return detail::atomic(static_cast<header *>(impl_->box.base())->magic).load(std::memory_order_acquire) ==
+           magic;
+}
+
+void Segment::publish() {
+    auto guard = impl_->enter();
+    if (!impl_->box.publish())
+        throw std::invalid_argument("box '" + impl_->name + "' is already published");
 }
 
 std::uint64_t Segment::generation() const {

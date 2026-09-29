@@ -217,6 +217,13 @@ Every shared word is a plain integer in the mapping, accessed through
    waiter slot is free because the pages are zero.
 3. Write the initial field values into the record.
 4. Store `magic` with release ordering. Until then no attach succeeds.
+   `handle::create` does this at once. `handle::create_unpublished`
+   stops before it, so the creator can write through its handle first
+   (the Python layer runs `__post_init__` there), and
+   `handle::publish()` stores `magic` later, with a compare-exchange
+   from 0; it returns `status::range` when `magic` is already stored,
+   which is always the case for a handle made by `open` or
+   `from_capsule`.
 5. On a failure after step 1, remove the name (Linux) and close.
 
 ### Attach
@@ -389,7 +396,9 @@ A process is named by its pid and its start time.
 
 The Python extension uses the same rules for the creator fields: when a
 create finds the name taken, `SegmentExistsError` says whether the creator
-still runs, runs in another pid namespace, or has exited.
+still runs, runs in another pid namespace, or has exited. For a box not
+published yet it reads the creator fields without waiting for `magic`,
+and a creator that still runs is reported as still creating the box.
 
 ### Close and unlink
 
@@ -463,6 +472,10 @@ public:
     static result<handle> create(std::string_view name, std::span<const field_spec> fields,
                                  std::uint32_t record_size, std::uint64_t schema_hash,
                                  std::uint16_t waiter_slots, std::span<const value> initial);
+    static result<handle> create_unpublished(std::string_view name, std::span<const field_spec> fields,
+                                             std::uint32_t record_size, std::uint64_t schema_hash,
+                                             std::uint16_t waiter_slots, std::span<const value> initial);
+    result<void> publish() noexcept;
     static result<handle> open(std::string_view name, seconds timeout);
     static result<handle> from_capsule(sbx_handle *capsule);
     result<handle> duplicate() const;
