@@ -339,6 +339,9 @@ class SharedBox(metaclass=SharedBoxMeta):
             raise TypeError(
                 f"{cls.__qualname__}: field name(s) {', '.join(clashes)} clash with SharedBox methods"
             )
+        # Set before the fields are checked, so a default box of a field that names
+        # cls is compared with the layout of cls rather than that of a base.
+        cls.__layout__ = layout
         annotated = own_annotations(cls)
         for attr, value in cls.__dict__.items():
             if isinstance(value, Field) and attr not in annotated:
@@ -441,7 +444,6 @@ class SharedBox(metaclass=SharedBoxMeta):
                 raise TypeError(
                     f"{cls.__qualname__}: field {param.name!r} without a default follows a field with one"
                 )
-        cls.__layout__ = layout
         cls.__sharedbox_options__ = options
         cls.__sharedbox_init__ = tuple(params)
         cls.__signature__ = signature(params)

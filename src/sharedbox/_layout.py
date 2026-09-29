@@ -247,6 +247,13 @@ def undefined(cls: type, field: str | None, name: str) -> str:
     )
 
 
+def forward_refs(hint: object) -> list[ForwardRef]:
+    """Every `ForwardRef` in `hint`, at any depth."""
+    if isinstance(hint, ForwardRef):
+        return [hint]
+    return [ref for arg in get_args(hint) for ref in forward_refs(arg)]
+
+
 def type_hints(cls: type) -> dict[str, Any]:
     """The resolved annotations of `cls` and its bases, in which `cls` may name itself.
 
@@ -262,10 +269,19 @@ def type_hints(cls: type) -> dict[str, Any]:
     # The class's own name is bound in its module only after __init_subclass__ returns.
     localns = {cls.__name__: cls}
     if sys.version_info >= (3, 14):
-        # A name still undefined comes back as a ForwardRef, which build_layout reports.
-        return get_type_hints(
+        hints = get_type_hints(
             cls, include_extras=True, localns=localns, format=Format.FORWARDREF
         )
+        for field, hint in hints.items():
+            for ref in forward_refs(hint):
+                # A ForwardRef can hold a whole expression, such as "Later | None";
+                # evaluating it names the part that is undefined.
+                try:
+                    ref.evaluate(locals=localns)
+                except NameError as error:
+                    missing = error.name or ref.__forward_arg__
+                    raise TypeError(undefined(cls, field, missing)) from None
+        return hints
     try:
         return get_type_hints(cls, include_extras=True, localns=localns)
     except NameError as error:
@@ -275,7 +291,13 @@ def type_hints(cls: type) -> dict[str, Any]:
             (
                 field
                 for field, hint in own.items()
-                if isinstance(hint, str) and missing in re.findall(r"\w+", hint)
+                if missing
+                in re.findall(
+                    r"\w+",
+                    hint
+                    if isinstance(hint, str)
+                    else " ".join(ref.__forward_arg__ for ref in forward_refs(hint)),
+                )
             ),
             None,
         )
@@ -347,8 +369,6 @@ def build_layout(cls: type, identity: str | None = None) -> Layout:
     for name, hint in declared(cls):
         if isinstance(hint, InitVar):
             continue
-        if isinstance(hint, ForwardRef):
-            raise TypeError(undefined(cls, name, hint.__forward_arg__))
         ref = reference(hint)
         if ref is None:
             found.append((name, *classify(name, hint), None))

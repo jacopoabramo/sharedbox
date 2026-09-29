@@ -8,10 +8,11 @@ import struct
 import subprocess
 import sys
 import threading
+import types
 from collections.abc import Callable, Iterator
 from dataclasses import KW_ONLY, InitVar, dataclass
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional, Union
 
 import pytest
 from refs_future import Link
@@ -256,11 +257,74 @@ def test_an_unquoted_self_reference_works_with_lazy_annotations(
 
 def test_a_reference_to_a_class_defined_later_is_refused() -> None:
     with pytest.raises(
-        TypeError, match=r"Early\.later: .* is not defined; .* must be defined before"
+        TypeError,
+        match=r"Early\.later: 'Later' is not defined; .* must be defined before",
     ):
 
         class Early(SharedBox):
             later: "Later | None" = None  # type: ignore[name-defined]  # noqa: F821
+
+
+@pytest.mark.parametrize(
+    "annotation",
+    [
+        "Optional[Later]",
+        Optional["Later"],  # noqa: F821
+        Union["Later", None],  # noqa: F821
+    ],
+    ids=["string", "optional", "union"],
+)
+def test_a_class_defined_later_is_named_alone_inside_another_annotation(
+    annotation: Any,
+) -> None:
+    with pytest.raises(
+        TypeError,
+        match=r"Early\.later: 'Later' is not defined; .* must be defined before",
+    ):
+        types.new_class(
+            "Early",
+            (SharedBox,),
+            exec_body=lambda ns: ns.update(
+                __annotations__={"later": annotation}, __module__=__name__
+            ),
+        )
+
+
+@pytest.mark.skipif(
+    sys.version_info < (3, 14), reason="annotations are evaluated lazily from 3.14"
+)
+def test_an_unquoted_class_defined_later_is_named_alone() -> None:
+    message = r"Early\.later: 'Later' is not defined; .* must be defined before"
+    with pytest.raises(TypeError, match=message):
+
+        class Early(SharedBox):
+            later: Optional[Later] = None  # type: ignore[name-defined]  # noqa: F821, UP045
+
+    with pytest.raises(TypeError, match=message):
+
+        class Early(SharedBox):  # type: ignore[no-redef]
+            later: Union[Later, None] = None  # type: ignore[name-defined]  # noqa: F821, UP007
+
+    with pytest.raises(TypeError, match=message):
+
+        class Early(SharedBox):  # type: ignore[no-redef]
+            later: Later | None = None  # type: ignore[name-defined]  # noqa: F821
+
+
+def test_a_default_box_of_a_field_naming_its_own_class_is_checked_at_class_creation(
+    names: Callable[[str], str],
+) -> None:
+    with Motor.create(names("m")) as motor:
+        with pytest.raises(TypeError, match=r"Loop\.next expects a \S*Loop box"):
+
+            class Loop(SharedBox):
+                next: "Loop" = field(default=motor)
+
+        # Before its own layout is set, Faster would be checked with Motor's.
+        with pytest.raises(TypeError, match=r"Faster\.twin expects a \S*Faster box"):
+
+            class Faster(Motor):
+                twin: "Faster | None" = field(default=motor)
 
 
 def test_assign_read_reassign_and_empty(names: Callable[[str], str]) -> None:
