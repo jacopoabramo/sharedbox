@@ -107,9 +107,14 @@ def attach_reference(
     UnknownBoxClassError
         If no class defined in this process has `schema_hash`.
     BrokenReferenceError
-        If no box has that name, or the box under it was created after the
-        reference was stored.
+        If `name` is not a valid box name, no box has that name, or the box
+        under it was created after the reference was stored.
     """
+    from ._box import NAME
+
+    where = f"{spec.label} refers to box {name!r}, which"
+    if not NAME.fullmatch(name):
+        raise BrokenReferenceError(f"{where} is not a valid box name")
     cls = box_class(schema_hash)
     if cls is None:
         raise UnknownBoxClassError(
@@ -117,7 +122,6 @@ def attach_reference(
             f"{schema_hash:#018x}) is not defined in this process; import the module "
             "that defines it"
         )
-    where = f"{spec.label} refers to box {name!r}, which"
     try:
         box = cls.attach(name)
     except SegmentNotFoundError:

@@ -819,3 +819,17 @@ def test_a_later_class_with_the_same_hash_reads_after_the_first_is_freed(
         assert type(inner) is Kept
         assert inner.position == 8
 
+
+@pytest.mark.parametrize("name", [b"", b"bad/name"], ids=["empty", "invalid"])
+def test_a_stored_reference_with_an_invalid_name_is_a_broken_reference(
+    names: Callable[[str], str], name: bytes
+) -> None:
+    """Check that a reference another writer stored with an invalid name raises BrokenReferenceError."""
+    index = Stage.__layout__.by_name["motor"].index
+    raw = struct.pack("<QQ128s", 7, Motor.__layout__.schema_hash, name)
+    with Stage.create(names("s")) as stage:
+        stage._segment._write([(index, raw)])
+        with pytest.raises(
+            BrokenReferenceError, match=r"Stage\.motor refers to box .*not a valid box name"
+        ):
+            _ = stage.motor
