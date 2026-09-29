@@ -136,8 +136,6 @@ class FieldSpec:
     """Byte offset of the field from the start of the record."""
     capacity: int
     """Encoded size in bytes; for ``str`` and ``bytes`` the most the value may take."""
-    kw_only: bool = False
-    """True after a ``KW_ONLY`` annotation or in a ``kw_only=True`` class."""
     label: str = ""
     """``"<Class>.<field>"``, used in error messages."""
 
@@ -187,22 +185,20 @@ def class_identity(cls: type) -> str:
     return f"{module}.{cls.__qualname__}"
 
 
-def declared(cls: type, kw_only: bool = False) -> list[tuple[str, Any, bool]]:
-    """``(name, annotation, keyword-only)`` of every field of ``cls``, base classes first.
+def declared(cls: type) -> list[tuple[str, Any]]:
+    """``(name, annotation)`` of every field of ``cls``, base classes first.
 
-    Annotations after a ``dataclasses.KW_ONLY`` one, or all of them when
-    ``kw_only`` is true, are keyword-only. Names starting with ``_`` and
-    ``ClassVar`` annotations are left out.
+    ``dataclasses.KW_ONLY`` and ``ClassVar`` annotations and names starting
+    with ``_`` are left out.
     """
-    found: list[tuple[str, Any, bool]] = []
-    for name, hint in get_type_hints(cls, include_extras=True).items():
-        if hint is KW_ONLY:
-            kw_only = True
-            continue
-        if name.startswith("_") or hint is ClassVar or get_origin(hint) is ClassVar:
-            continue
-        found.append((name, hint, kw_only))
-    return found
+    return [
+        (name, hint)
+        for name, hint in get_type_hints(cls, include_extras=True).items()
+        if hint is not KW_ONLY
+        and not name.startswith("_")
+        and hint is not ClassVar
+        and get_origin(hint) is not ClassVar
+    ]
 
 
 def own_kw_only(cls: type, kw_only: bool = False) -> dict[str, bool]:
@@ -221,21 +217,15 @@ def own_kw_only(cls: type, kw_only: bool = False) -> dict[str, bool]:
     return flags
 
 
-def build_layout(
-    cls: type, kw_only: bool = False, identity: str | None = None
-) -> Layout:
+def build_layout(cls: type, identity: str | None = None) -> Layout:
     """Lay out the public annotated fields of ``cls``, base classes first.
 
-    Fields after a ``dataclasses.KW_ONLY`` annotation, or every field when
-    ``kw_only`` is true, are keyword-only. Fields are packed by descending
-    alignment (8-byte fields, then ``str``/``bytes``, then ``bool``), not
-    declaration order; ``Layout.fields`` keeps the declaration order. The
-    schema hash covers ``identity``, by default :func:`class_identity`.
+    Fields are packed by descending alignment (8-byte fields, then
+    ``str``/``bytes``, then ``bool``), not declaration order;
+    ``Layout.fields`` keeps the declaration order. The schema hash covers
+    ``identity``, by default :func:`class_identity`.
     """
-    found = [
-        (name, *classify(name, hint), field_kw_only)
-        for name, hint, field_kw_only in declared(cls, kw_only)
-    ]
+    found = [(name, *classify(name, hint)) for name, hint in declared(cls)]
     if not found:
         raise TypeError(f"{cls.__qualname__} declares no fields")
     if len(found) > MAX_FIELDS:
@@ -259,10 +249,9 @@ def build_layout(
             kind,
             offsets[i],
             capacity,
-            field_kw_only,
             f"{cls.__qualname__}.{name}",
         )
-        for i, (name, kind, capacity, field_kw_only) in enumerate(found)
+        for i, (name, kind, capacity) in enumerate(found)
     )
     text = "|".join(
         [

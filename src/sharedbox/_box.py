@@ -254,14 +254,14 @@ class SharedBox(metaclass=SharedBoxMeta):
         cls.__sharedbox_identity__ = (
             class_identity(cls) if identity is None else identity
         )
-        layout = build_layout(cls, kw_only, cls.__sharedbox_identity__)
+        layout = build_layout(cls, cls.__sharedbox_identity__)
         clashes = sorted(RESERVED.intersection(layout.by_name))
         if clashes:
             raise TypeError(
                 f"{cls.__qualname__}: field name(s) {', '.join(clashes)} clash with SharedBox methods"
             )
         found = declared(cls)
-        known = {attr for attr, _, _ in found}
+        known = {attr for attr, _ in found}
         stray = sorted(
             attr
             for attr, value in cls.__dict__.items()
@@ -280,7 +280,7 @@ class SharedBox(metaclass=SharedBoxMeta):
             )
         segment_slot = SharedBox.__dict__["_segment"]
         params: list[Field] = []
-        for attr, hint, _ in found:
+        for attr, hint in found:
             value = cls.__dict__.get(attr, MISSING)
             if isinstance(value, Field):
                 options[attr] = value
