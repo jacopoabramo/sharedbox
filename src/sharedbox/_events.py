@@ -84,13 +84,7 @@ class FieldFuture(Generic[T]):
         return cast(T, self._value)
 
     def cancel(self) -> bool:
-        """Stop waiting.
-
-        Returns
-        -------
-        bool
-            False if the future already has a value.
-        """
+        """Stop waiting; False if the future already has a value, True otherwise."""
         if self._settle(CANCELLED, None, self._since):
             self._watcher.discard(self)
             return True

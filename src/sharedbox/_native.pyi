@@ -148,15 +148,12 @@ class Segment:
     ) -> int:
         """Block until the generation differs from `last_generation`, `slot` is interrupted, or `timeout` seconds pass.
 
+        Returns the current generation.
+
         Parameters
         ----------
         slot
             If not given, the call claims a slot for its own duration.
-
-        Returns
-        -------
-        int
-            The generation.
 
         Raises
         ------
