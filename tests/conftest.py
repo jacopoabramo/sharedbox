@@ -40,6 +40,22 @@ def unique_name() -> Iterator[str]:
             os.unlink(f"/dev/shm/sharedbox.{name}")
 
 
+@pytest.fixture
+def names(unique_name: str) -> Iterator[Callable[[str], str]]:
+    """Box names made from `unique_name`; on Linux each one is removed afterwards."""
+    made: list[str] = []
+
+    def name(suffix: str) -> str:
+        made.append(f"{unique_name}-{suffix}")
+        return made[-1]
+
+    yield name
+    if sys.platform.startswith("linux"):
+        for each in made:
+            with contextlib.suppress(FileNotFoundError):
+                os.unlink(f"/dev/shm/sharedbox.{each}")
+
+
 STRESS_OUT = Path(__file__).resolve().parent.parent / "build" / "stress"
 STRESS_TABLES: list[tuple[str, dict[str, object]]] = []
 

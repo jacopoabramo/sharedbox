@@ -11,6 +11,7 @@ import threading
 import weakref
 from collections.abc import Callable, Iterator
 from dataclasses import MISSING, InitVar
+from functools import partial
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -25,9 +26,8 @@ from typing import (
     overload,
 )
 
-from psygnal import SignalGroup
-
-from ._events import FieldWatch, Watcher, events_class
+from ._events import BoxEvents, FieldWatch, Watcher, events_class
+from ._follow import box_events
 from ._layout import (
     Field,
     FieldSpec,
@@ -71,6 +71,8 @@ RESERVED = frozenset(
         "attach",
     }
 )
+# The events group has these as its own names, so no field can take them.
+EVENTS_RESERVED = frozenset({"follow", "unfollow", "nested"})
 MAX_WAITERS = 4096
 # A reference field's cache entry: its create id, the box attached for it, and
 # that box's Segment. Segment.cached_ref in _native/module.cpp reads this shape.
@@ -315,7 +317,7 @@ class SharedBox(metaclass=SharedBoxMeta):
     __max_waiters__: ClassVar[int] = 64
     __sharedbox_name__: ClassVar[str]
     __sharedbox_identity__: ClassVar[str]
-    __events_class__: ClassVar[type[SignalGroup]]
+    __events_class__: ClassVar[type[BoxEvents]]
 
     def __init_subclass__(
         cls,
@@ -338,6 +340,12 @@ class SharedBox(metaclass=SharedBoxMeta):
         if clashes:
             raise TypeError(
                 f"{cls.__qualname__}: field name(s) {', '.join(clashes)} clash with SharedBox methods"
+            )
+        taken = sorted(EVENTS_RESERVED.intersection(layout.by_name))
+        if taken:
+            raise TypeError(
+                f"{cls.__qualname__}: field name(s) {', '.join(taken)} clash with "
+                "the events group's follow, unfollow and nested"
             )
         # Set before the fields are checked, so a default box of a field that names
         # cls is compared with the layout of cls rather than that of a base.
@@ -706,7 +714,7 @@ class SharedBox(metaclass=SharedBoxMeta):
         return FieldWatch(self._watcher, spec, self._segment.version(spec.index))
 
     @property
-    def events(self) -> SignalGroup:
+    def events(self) -> BoxEvents:
         """One psygnal signal per field, emitted as `(new, old)` when any thread or process changes it.
 
         Differs from a local evented dataclass in these ways:
@@ -727,9 +735,14 @@ class SharedBox(metaclass=SharedBoxMeta):
         A callback that raises is logged. Callbacks connected before it on
         the same signal already ran; callbacks connected after it do not
         run for that write. Other fields still emit normally.
+
+        [`follow`][sharedbox.BoxEvents.follow] forwards changes made inside
+        the boxes that reference fields refer to.
         """
+        cls = type(self)
         return self._watcher.events(
-            type(self).__events_class__, type(self).__layout__.fields
+            partial(box_events, cls, self._segment, self._watcher),
+            cls.__layout__.fields,
         )
 
     def _spec(self, field: str) -> FieldSpec:
@@ -804,7 +817,9 @@ class SharedBox(metaclass=SharedBoxMeta):
         """Detach from the segment; other boxes keep it.
 
         Use [`unlink`][sharedbox.SharedBox.unlink] to remove it. Also
-        closes every box this handle attached to read a reference field.
+        closes every box this handle attached to read a reference field,
+        and stops forwarding started through its
+        [`events`][sharedbox.SharedBox.events].
         """
         # A list instead of recursion, so a chain of boxes can be longer than the recursion limit.
         boxes = [self]
@@ -821,6 +836,8 @@ class SharedBox(metaclass=SharedBoxMeta):
             with box._refs_lock:
                 cached, box._refs = box._refs, {}
             boxes.extend(inner for _, inner, _ in cached.values())
+            if box._watcher.follower is not None:
+                boxes.extend(box._watcher.follower.release())
         if error is not None:
             raise error
 

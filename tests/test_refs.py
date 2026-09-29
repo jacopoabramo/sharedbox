@@ -3,7 +3,6 @@ import dataclasses
 import gc
 import inspect
 import multiprocessing as mp
-import os
 import pickle
 import queue
 import struct
@@ -12,7 +11,7 @@ import sys
 import threading
 import types
 import weakref
-from collections.abc import Callable, Iterator
+from collections.abc import Callable
 from dataclasses import KW_ONLY, InitVar, dataclass
 from pathlib import Path
 from typing import Any, Optional, Union
@@ -64,22 +63,6 @@ class FastMotor(Motor):
 class Pair(SharedBox):
     first: Motor | None = None
     second: Motor | None = None
-
-
-@pytest.fixture
-def names(unique_name: str) -> Iterator[Callable[[str], str]]:
-    """Box names made from `unique_name`; on Linux each one is removed afterwards."""
-    made: list[str] = []
-
-    def name(suffix: str) -> str:
-        made.append(f"{unique_name}-{suffix}")
-        return made[-1]
-
-    yield name
-    if sys.platform.startswith("linux"):
-        for each in made:
-            with contextlib.suppress(FileNotFoundError):
-                os.unlink(f"/dev/shm/sharedbox.{each}")
 
 
 def test_an_optional_reference_without_a_default_is_required(

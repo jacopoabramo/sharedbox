@@ -1,7 +1,7 @@
 from pathlib import Path
 
 from ._box import SharedBox, SupportsSharedBox, fields
-from ._events import FieldWatch
+from ._events import BoxEvents, FieldWatch
 from ._layout import Capacity, Field, field
 from ._native import (
     BoxClosedError,
@@ -14,6 +14,7 @@ from ._refs import BoxRef, BrokenReferenceError, UnknownBoxClassError
 
 __all__ = [
     "BoxClosedError",
+    "BoxEvents",
     "BoxRef",
     "BrokenReferenceError",
     "Capacity",
