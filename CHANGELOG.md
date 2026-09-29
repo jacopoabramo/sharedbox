@@ -58,6 +58,20 @@ class Frame(SharedBox, identity="camera/frame/1", max_waiters=16):
   parameters.
 - `sharedbox.hpp`: `handle::create_unpublished()` and
   `handle::publish()`.
+- `SharedBox`: reference fields, annotated with a `SharedBox` subclass `X`
+  or `X | None`; reading one attaches the box it refers to, with that
+  box's own class.
+- `BoxRef`: frozen dataclass (`name`, `schema_hash`, `create_id`, and the
+  `box_class` property) that `snapshot()`, `events` and `watch()` report
+  for a reference field.
+- `BrokenReferenceError`: raised when the box a reference field refers to
+  was removed or created again since it was assigned.
+- `UnknownBoxClassError`: raised when the box a reference field refers to
+  has a class this process has not defined.
+- `SharedBox.snapshot()`: `follow` keyword; `follow=True` replaces each
+  reference with the snapshot of the box it refers to.
+- `sharedbox.hpp`: `kind_ref` and `box_ref`, the kind code and stored value
+  of a reference field.
 
 ```python
 class Motor(SharedBox):
@@ -67,6 +81,10 @@ class Motor(SharedBox):
 
     def __post_init__(self, offset: int) -> None:
         self.position += offset
+
+
+class Stage(SharedBox):
+    motor: Motor | None = None
 ```
 
 ### Changed
@@ -112,6 +130,13 @@ class Motor(SharedBox):
   `__post_init__`, says the box is being created by that pid.
 - `SharedBox.__sharedbox_box__()`: raises `BufferError` before the box
   is published.
+- `sharedbox.hpp`: `handle::open` and `handle::from_capsule` accept a field
+  whose kind code they do not know and treat its bytes as opaque.
+- `sharedbox.hpp`: `handle::write` returns `status::range` for a field whose
+  kind code it does not know, and `sbx_write` returns `SBX_E_RANGE`.
+- `SharedBox.attach()`: a segment with a field of a kind this version
+  cannot read raises `SchemaMismatchError` naming the kind.
+- `SharedBox`: an annotation naming an undefined class raises `TypeError`.
 
 ### Fixed
 

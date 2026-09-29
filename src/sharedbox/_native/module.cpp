@@ -6,6 +6,7 @@
 #include <nanobind/stl/unique_ptr.h>
 #include <nanobind/stl/vector.h>
 
+#include <cstring>
 #include <exception>
 #include <new>
 #include <string_view>
@@ -43,6 +44,17 @@ nb::object get(const Segment &s, std::uint32_t index) {
     sharedbox::FieldRead read;
     s.read(index, read);
     return decode_value(*read.field, read.bytes);
+}
+
+// Decodes only the create id of a reference field, not its name.
+std::uint64_t stored_ref_id(const Segment &s, std::uint32_t index) {
+    sharedbox::FieldRead read;
+    s.read(index, read);
+    if (read.field->kind != sharedbox::FieldKind::Ref)
+        throw std::invalid_argument("field " + std::to_string(index) + " is not a reference");
+    std::uint64_t create_id = 0;
+    std::memcpy(&create_id, read.bytes.data(), sizeof create_id);
+    return create_id;
 }
 
 void set_one(Segment &s, std::uint32_t index, nb::handle value) {
@@ -176,7 +188,7 @@ NB_MODULE(_native, m) {
         [](std::uint32_t kind, std::uint32_t capacity, const std::string &name, nb::handle value) {
             sharedbox::encode({0, capacity, to_kind(kind)}, name, value.ptr());
         },
-        "kind"_a, "capacity"_a, "name"_a, "value"_a);
+        "kind"_a, "capacity"_a, "name"_a, "value"_a.none());
 
     m.attr("LAYOUT_VERSION") = nb::make_tuple(sharedbox::layout_major, sharedbox::layout_minor);
     m.def("_process_start", [](std::uint32_t pid) { return sharedbox::detail::process_start(pid); }, "pid"_a);
@@ -218,6 +230,40 @@ NB_MODULE(_native, m) {
                 return nb::make_tuple(read.version, decode_value(*read.field, read.bytes));
             },
             "field"_a)
+        .def(
+            "cached_ref",
+            [](const Segment &s, std::uint32_t index, nb::dict cache) -> nb::object {
+                const std::uint64_t create_id = stored_ref_id(s, index);
+                if (create_id == 0)
+                    return nb::none();
+                const nb::object key = nb::int_(index);
+                const nb::object entry = nb::steal(PyObject_GetItem(cache.ptr(), key.ptr()));
+                if (!entry.is_valid()) {
+                    if (!PyErr_ExceptionMatches(PyExc_KeyError))
+                        throw nb::python_error();
+                    PyErr_Clear();
+                    return nb::bool_(false);
+                }
+                // The entry shape is RefEntry in _box.py: (create_id, box, the box's Segment).
+                const auto bad_entry = [] {
+                    return nb::type_error("a reference cache entry is not (create_id, box, Segment)");
+                };
+                if (!PyTuple_Check(entry.ptr()) || PyTuple_Size(entry.ptr()) != 3)
+                    throw bad_entry();
+                PyObject *id = PyTuple_GetItem(entry.ptr(), 0);
+                const nb::handle segment = PyTuple_GetItem(entry.ptr(), 2);
+                if (!PyLong_Check(id) || PyBool_Check(id) || !nb::isinstance<Segment>(segment))
+                    throw bad_entry();
+                const unsigned long long cached_id = PyLong_AsUnsignedLongLong(id);
+                if (cached_id == static_cast<unsigned long long>(-1) && PyErr_Occurred()) {
+                    PyErr_Clear();
+                    throw bad_entry();
+                }
+                if (cached_id != create_id || nb::cast<const Segment &>(segment).closed())
+                    return nb::bool_(false);
+                return nb::borrow(PyTuple_GetItem(entry.ptr(), 1));
+            },
+            "field"_a, "cache"_a)
         .def(
             "get_dict",
             [](const Segment &s, nb::tuple names) -> nb::dict {

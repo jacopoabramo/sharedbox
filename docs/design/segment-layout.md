@@ -123,7 +123,7 @@ record.
   is not tied to the package version.
 - Field table entry, 8 bytes: `u32 offset`, `u32 capacity_and_kind` (low
   24 bits the capacity, top 8 bits the kind code: `bool` 0, `int` 1,
-  `float` 2, `str` 3, `bytes` 4).
+  `float` 2, `str` 3, `bytes` 4, `ref` 5).
 - Offsets are the creator's choice. The Python side packs fields by
   descending alignment; another creator may pack differently. Attachers
   read offsets from the field table and never compute them, so a box
@@ -144,9 +144,25 @@ record.
 
 - Record encoding, little-endian: `bool` 1 byte, `0x00` or `0x01`; `int`
   8 bytes signed; `float` 8 bytes IEEE 754 double; `str` and `bytes` a
-  `u32` length, then up to `capacity` bytes (UTF-8 for `str`). Alignment
-  within the record: 8 for `int` and `float`, 4 for `str` and `bytes`, 1
-  for `bool`.
+  `u32` length, then up to `capacity` bytes (UTF-8 for `str`); `ref`
+  144 bytes, below. Alignment within the record: 8 for `int`, `float` and
+  `ref`, 4 for `str` and `bytes`, 1 for `bool`.
+- A `ref` field refers to another box, which keeps its own segment. Its
+  capacity is always 144:
+
+  ```cpp
+  struct box_ref {                  // sharedbox::box_ref
+      uint64_t create_id;           // 0   the box's create_id; 0 = empty
+      uint64_t schema_hash;         // 8   the box's schema_hash
+      char     name[128];           // 16  its name, NUL-padded; ends at the first NUL or at 128
+  };
+  ```
+
+  An empty reference is 144 zero bytes. A non-empty one always has a
+  nonzero `create_id`, since create never draws 0. It is written under the
+  referring box's sequence lock like any other field. A reader that
+  attaches the named box compares its `create_id` with the stored one to
+  tell it from a box created again under the same name.
 
 ## Schema identity
 
@@ -158,7 +174,9 @@ attacher agree on it and on the class's meaning.
   declaration order (base class fields first), joined with `|`, encoded as
   UTF-8. Kinds are the words `bool`, `int`, `float`, `str`, `bytes`;
   capacity is the payload size in bytes (8 for `int` and `float`, 1 for
-  `bool`).
+  `bool`). A `ref` field enters as `name:ref:<identity>`, or
+  `name:ref?:<identity>` when it may be empty (annotated `X | None`), with
+  the identity of the class it refers to in place of the capacity.
 - `schema_hash`: the first 8 bytes of SHA-256 over that text, read as a
   little-endian `u64`.
 - Identity: the `identity=` class keyword, a non-empty string; without it,
@@ -180,6 +198,12 @@ attacher agree on it and on the class's meaning.
   __main__.Motor|position:int:8|enabled:bool:1|label:str:32
   schema_hash  = 0x82ce467598596a72
   default name = 5b4f7004d44277b7    (16 hex digits of SHA-256 over "__main__.Motor")
+
+  __main__.Stage|label:str:4|motor:ref:motor/1
+  schema_hash  = 0xe33ffd91e10fab6d
+
+  __main__.Stage|label:str:4|motor:ref?:motor/1
+  schema_hash  = 0xe58153f79aa6fdf6
   ```
 
 ## Versioning rules
@@ -191,6 +215,17 @@ attacher agree on it and on the class's meaning.
 - A minor version may only add: fields in bytes that are reserved and zero
   in older minors, or features that stay off unless the segment says they
   are on and the reader knows them.
+- That includes field kinds: `handle::open` and `handle::from_capsule`
+  accept a field whose kind code they do not know. Its offset and capacity
+  are still checked against the record (capacity 1 byte to 1 MiB, the field
+  inside the record, no overlap), with no alignment asked, and its bytes are
+  otherwise opaque. A reader opens and reads a field of a kind it does not
+  know; it never writes one, and `write` returns `status::range` for it.
+  The Python extension, which converts every field, refuses such a segment
+  with `SchemaMismatchError`.
+- For a kind a reader does not know, `capacity` is the field's whole span
+  in the record, so a future kind with a length prefix counts the prefix
+  in `capacity`.
 - A change to how existing bytes are read or written (the sequence lock,
   field encoding, the slot layout, object names) raises `layout_major`.
 - The package takes a semver major step whenever `layout_major` changes.
@@ -240,9 +275,10 @@ Every shared word is a plain integer in the mapping, accessed through
    through it: `field_count` and `waiter_slots` in range, `tail == 128`,
    the record 64-byte aligned, after the waiter slots and inside the
    mapping, `size` equal to the mapping size, and each field table entry
-   (kind known, capacity 1 byte to 1 MiB and 1 or 8 bytes for the fixed
-   kinds, alignment, the field inside the record, no two fields
-   overlapping). A failed check is `status::corrupt`.
+   (capacity 1 byte to 1 MiB, and 1, 8 or 144 bytes for the fixed kinds,
+   alignment for the known kinds, the field inside the record, no two
+   fields overlapping). A field of an unknown kind is opaque (Versioning
+   rules). A failed check is `status::corrupt`.
 5. Copy the field table and use only the copy afterwards.
 6. Free the waiter slots of dead processes (see Waiter slots).
 
@@ -454,8 +490,8 @@ inline constexpr std::uint16_t layout_major = 1, layout_minor = 0;
 // Also: the layout constants handle_version, magic, header_size, name_max, max_fields,
 // max_capacity, max_waiter_slots, default_waiter_slots, record_alignment, page_size,
 // max_timeout, default_lock_timeout, kind_shift, capacity_mask and kind_bool, kind_int,
-// kind_float, kind_str, kind_bytes; the structs header, stored_field and waiter_slot
-// (see Layout); result<T> and unexpected (see Implementation language).
+// kind_float, kind_str, kind_bytes, kind_ref; the structs header, stored_field, waiter_slot
+// and box_ref (see Layout); result<T> and unexpected (see Implementation language).
 
 enum class status : int { ok = 0, exists = -1, not_found = -2, layout = -3, schema = -4,
                           corrupt = -5, lock_timeout = -6, timeout = -7, no_slot = -8,
@@ -625,7 +661,8 @@ void     sbx_release(sbx_handle *h);
   capsule's handle through `handle::from_capsule`.
 - `sbx_read`, `sbx_write` and `sbx_schema_hash` accept only handles made
   by `sbx_open` or `sbx_import`; for any other, `sbx_read` and `sbx_write`
-  return `SBX_E_RANGE` and `sbx_schema_hash` returns 0. When the stored
+  return `SBX_E_RANGE` and `sbx_schema_hash` returns 0. `sbx_write` also
+  returns `SBX_E_RANGE` for a field of a kind the header does not know. When the stored
   value is longer than `cap`, `sbx_read` copies nothing, sets `*len` and
   returns `SBX_E_RANGE`. `sbx_release` releases any handle.
 - The implementation, `include/sharedbox/sharedbox_c.cpp`, needs a C++20

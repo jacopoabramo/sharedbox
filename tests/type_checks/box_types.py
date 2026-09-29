@@ -1,8 +1,8 @@
 from dataclasses import InitVar
-from typing import Annotated, assert_type
+from typing import Annotated, Any, assert_type, cast
 
 import sharedbox
-from sharedbox import Capacity, Field, SharedBox, SupportsSharedBox, field
+from sharedbox import BoxRef, Capacity, Field, SharedBox, SupportsSharedBox, field
 
 
 class Motor(SharedBox):
@@ -65,3 +65,32 @@ def field_options(stage: Stage) -> None:
     Stage(1.0, offset="far")  # type: ignore[arg-type]
     assert_type(stage.moves, int)
     assert_type(sharedbox.fields(stage), tuple[Field, ...])
+
+
+class Wheel(SharedBox, identity="wheel/1"):
+    turns: int = 0
+
+
+class FastWheel(Wheel):
+    pass
+
+
+class WheelCopy(SharedBox, identity="wheel/1"):
+    turns: int = 0
+
+
+class Cart(SharedBox):
+    wheel: Wheel | None = None
+
+
+def references(cart: Cart, fast: FastWheel, copy: WheelCopy) -> None:
+    assert_type(cart.wheel, Wheel | None)
+    assert_type(cart.snapshot(follow=True), dict[str, Any])
+    ref = BoxRef("w", 1, 2)
+    assert_type(ref.name, str)
+    assert_type(ref.box_class, type[SharedBox] | None)
+    Cart(fast)
+    cart.wheel = fast
+    Cart(copy)  # type: ignore[arg-type]
+    cart.wheel = copy  # type: ignore[assignment]
+    cart.wheel = cast(Wheel, copy)

@@ -10,9 +10,11 @@ import time
 from collections.abc import Callable, Generator
 from multiprocessing.shared_memory import SharedMemory
 from multiprocessing.synchronize import Event
+from typing import cast
 
 import pytest
 
+from sharedbox import SharedBox
 from sharedbox._layout import NativeField
 from sharedbox._native import (
     BoxClosedError,
@@ -21,9 +23,10 @@ from sharedbox._native import (
     Segment,
     SegmentExistsError,
     SegmentNotFoundError,
+    check,
 )
 
-BOOL, INT, FLOAT, STR, BYTES = range(5)
+BOOL, INT, FLOAT, STR, BYTES, REF = range(6)
 FIELDS = [NativeField(0, 8, INT), NativeField(8, 16, BYTES)]
 NAMES = ["a", "b"]
 RECORD_SIZE = 32
@@ -389,7 +392,6 @@ def test_raw_bytes_follow_layout_1_0(unique_name: str) -> None:
         pytest.param(32, "<I", 136, id="tail-moved"),
         pytest.param(36, "<I", 8192, id="size-differs"),
         pytest.param(128, "<I", 32, id="field-past-the-record"),
-        pytest.param(132, "<I", 8 | 9 << 24, id="unknown-kind"),
     ],
 )
 def test_corrupt_header_is_refused(
@@ -688,3 +690,129 @@ def test_an_unpublished_segment_is_attached_only_after_publish(
     segment.close()
     with pytest.raises(BoxClosedError):
         segment.publish()
+
+
+def test_attach_refuses_a_field_of_a_kind_it_cannot_read(unique_name: str) -> None:
+    """Check that attach refuses a segment with a field of an unknown kind, naming the kind."""
+    owner = create(unique_name)
+    # Field 0 becomes kind 9, which sharedbox.hpp opens as opaque bytes.
+    patch_header(unique_name, 132, "<I", 8 | 9 << 24)
+    with pytest.raises(
+        SchemaMismatchError, match="kind 9, which this version cannot read"
+    ):
+        attach(unique_name)
+    owner.close()
+
+
+def ref_segment(name: str) -> Segment:
+    return Segment.create(
+        name, [NativeField(0, 144, REF)], ["Stage.motor"], 144, SCHEMA, 1.0, []
+    )
+
+
+def test_a_reference_is_stored_as_create_id_schema_hash_and_padded_name(
+    unique_name: str,
+) -> None:
+    """Check that a reference is stored as create id, schema hash and zero-padded name, and None as zero bytes."""
+    segment = ref_segment(unique_name)
+    assert segment.get(0) is None
+    segment.set([(0, (7, 0x5EED, "m1"))])
+    assert segment._read(0) == struct.pack("<QQ128s", 7, 0x5EED, b"m1")
+    assert segment.get(0) == (7, 0x5EED, "m1")
+    assert segment.get_dict(("motor",)) == {"motor": (7, 0x5EED, "m1")}
+    segment.set([(0, None)])
+    assert segment._read(0) == bytes(144)
+    assert segment.get(0) is None
+    segment.close()
+
+
+def test_a_reference_name_of_128_bytes_has_no_terminating_nul(unique_name: str) -> None:
+    """Check that a box name of 128 bytes fills the name bytes and reads back whole."""
+    segment = ref_segment(unique_name)
+    segment.set([(0, (1, 2, "n" * 128))])
+    assert segment.get(0) == (1, 2, "n" * 128)
+    segment.close()
+
+
+@pytest.mark.parametrize(
+    ("value", "error"),
+    [
+        ((0, 1, "m1"), ValueError),
+        ((1, 1, ""), ValueError),
+        ((1, 1, "n" * 129), ValueError),
+        ((1, 1, "a\x00b"), ValueError),
+        ((1, 1, "m\u00f6tor"), ValueError),
+        ((1, 1, "bad/name"), ValueError),
+        ((-1, 1, "m1"), ValueError),
+        ((1, 2**64, "m1"), ValueError),
+        (("1", 1, "m1"), TypeError),
+        ((1, 1, b"m1"), TypeError),
+        ((1, 1), TypeError),
+        ("m1", TypeError),
+    ],
+)
+def test_a_reference_value_that_cannot_be_stored_is_refused(
+    unique_name: str, value: object, error: type[Exception]
+) -> None:
+    """Check that a reference value that cannot be stored raises, names the field and leaves the old value."""
+    segment = ref_segment(unique_name)
+    segment.set([(0, (7, 0x5EED, "m1"))])
+    with pytest.raises(error, match="Stage.motor"):
+        segment.set([(0, value)])
+    assert segment.get(0) == (7, 0x5EED, "m1")
+    segment.close()
+
+
+def test_check_takes_none_for_a_reference() -> None:
+    """Check that check() accepts None for a reference field and refuses a value of another type."""
+    check(REF, 144, "Stage.motor", None)
+    with pytest.raises(TypeError, match="Stage.motor expects a reference, got int"):
+        check(REF, 144, "Stage.motor", 3)
+
+
+def test_cached_ref_returns_the_entry_only_for_the_stored_create_id(
+    unique_name: str,
+) -> None:
+    """Check that cached_ref returns the cached box only for the stored create id and an open segment."""
+    segment = ref_segment(unique_name)
+    closed = create(f"{unique_name}-c")
+    closed.close()
+    Segment.unlink(f"{unique_name}-c")
+    box = cast(SharedBox, object())
+    assert segment.cached_ref(0, {0: (7, box, segment)}) is None
+    segment.set([(0, (7, 0x5EED, "m1"))])
+    assert segment.cached_ref(0, {}) is False
+    assert segment.cached_ref(0, {0: (7, box, segment)}) is box
+    assert segment.cached_ref(0, {0: (8, box, segment)}) is False
+    assert segment.cached_ref(0, {0: (7, box, closed)}) is False
+    segment.close()
+
+
+@pytest.mark.parametrize(
+    "entry",
+    [
+        pytest.param(lambda s: (7, "box"), id="two items"),
+        pytest.param(lambda s: (7, "box", s, 0), id="four items"),
+        pytest.param(lambda s: ("7", "box", s), id="id not an int"),
+        pytest.param(lambda s: (True, "box", s), id="id a bool"),
+        pytest.param(lambda s: (-1, "box", s), id="id negative"),
+        pytest.param(lambda s: (7, "box", None), id="no segment"),
+    ],
+)
+def test_cached_ref_refuses_an_entry_of_another_shape(
+    unique_name: str, entry: Callable[[Segment], tuple[object, ...]]
+) -> None:
+    """Check that cached_ref raises TypeError for a cache entry that is not (create_id, box, Segment)."""
+    segment = ref_segment(unique_name)
+    segment.set([(0, (7, 0x5EED, "m1"))])
+    with pytest.raises(TypeError, match=r"not \(create_id, box, Segment\)"):
+        segment.cached_ref(0, {0: entry(segment)})  # type: ignore[dict-item]
+    segment.close()
+
+
+def test_cached_ref_refuses_a_field_that_is_not_a_reference(unique_name: str) -> None:
+    """Check that cached_ref raises ValueError for a field that is not a reference."""
+    segment = create(unique_name)
+    with pytest.raises(ValueError, match="field 0 is not a reference"):
+        segment.cached_ref(0, {})
+    segment.close()

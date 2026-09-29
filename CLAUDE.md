@@ -25,6 +25,7 @@ sharedbox/
 |   |-- _box.py                SharedBox: class keywords, fields, fields(), create/attach, __post_init__, update, snapshot, unlink, __sharedbox_box__
 |   |-- _layout.py             Capacity, field() and Field, field offsets and kind codes, schema hash
 |   |-- _events.py             FieldWatch, the watcher thread, psygnal events
+|   |-- _refs.py               reference fields: BoxRef, the class registry, BrokenReferenceError, UnknownBoxClassError
 |   |-- _native.pyi            hand-written stub for the extension
 |   |-- py.typed
 |   |-- benchmarks/            the benchbox command (extra: benchmarks)
@@ -103,8 +104,8 @@ copies the field table and uses only the copy. `static_assert`s in
 
 ### Record encoding
 
-Fields are packed by descending alignment (`int` and `float` first, then
-`str`/`bytes`, then `bool`), not declaration order, each starting at a
+Fields are packed by descending alignment (`int`, `float` and `ref` first,
+then `str`/`bytes`, then `bool`), not declaration order, each starting at a
 multiple of its own alignment. The native module converts values to and
 from these bytes; nothing is pickled. Everything is little-endian.
 
@@ -112,6 +113,8 @@ from these bytes; nothing is pickled. Everything is little-endian.
 - `int`: 8 bytes, signed.
 - `float`: 8 bytes, IEEE 754 double.
 - `str`, `bytes`: `u32` length, then up to `capacity` bytes (UTF-8 for `str`).
+- `ref` (kind 5): 144 bytes, `u64 create_id` (0 = empty), `u64 schema_hash`,
+  then the box name NUL-padded to 128 bytes.
 
 At most 256 fields; a capacity is 1 byte to 1 MiB.
 
@@ -262,3 +265,5 @@ name; see `docs/library-authors.md`.
   through prek: `uv run prek run --all-files`, `uv run tox -e lint`.
 - Change dependencies with `uv add` / `uv remove`, never by editing
   `pyproject.toml`.
+- Docstrings in `.py` and `.pyi` use the numpydoc format; cross-references
+  are mkdocs-style Markdown (``[`name`][path]``), never reStructuredText roles.

@@ -105,7 +105,7 @@ TEST_CASE("checks on open") {
     CHECK(forged(table[1].offset, 16u) == status::corrupt);
     // Moved to 4: aligned for bytes, but it overlaps the int field.
     CHECK(forged(table[1].offset, 4u) == status::corrupt);
-    // Kind 5 is unknown; a capacity of 0 is refused.
+    // Kind 5 is a reference, which holds 144 bytes; a capacity of 0 is refused.
     CHECK(forged(table[1].capacity_and_kind, 16u | 5u << 24) == status::corrupt);
     CHECK(forged(table[1].capacity_and_kind, 0u | 4u << 24) == status::corrupt);
     CHECK(open_status(name) == status::ok);
@@ -201,6 +201,71 @@ TEST_CASE("an unsized mapping is waited for") {
     shm_unlink(path.data());
 }
 #endif
+
+// A newer minor version may add kinds: open takes such a field as opaque bytes but still checks where
+// it lies, read returns its bytes and write refuses it.
+TEST_CASE("open accepts a kind it does not know") {
+    const std::string name = unique("unknown-kind");
+    auto owner = create(name);
+    REQUIRE(owner.has_value());
+    auto *table = reinterpret_cast<sharedbox::stored_field *>(static_cast<std::byte *>(owner->base()) + 128);
+    // Kind 9 at offset 9: open asks no alignment of a kind it does not know.
+    table[1] = {9u, 16u | 9u << 24};
+    auto opened = handle::open(name, seconds(1.0));
+    REQUIRE(opened.has_value());
+    CHECK((opened->field(1).kind == 9 && opened->field(1).offset == 9 && opened->field(1).capacity == 16));
+    const char text[16] = "opaque bytes";
+    const sharedbox::value value{1, std::as_bytes(std::span(text))};
+    const auto written = opened->write({&value, 1}, seconds(1.0));
+    CHECK((!written && written.error() == status::range));
+    // Stands for a newer writer that knows kind 9.
+    std::memcpy(static_cast<std::byte *>(owner->base()) + header_of(*owner).record + 9, text, 16);
+    char back[16] = {};
+    const auto got = opened->read(1, std::as_writable_bytes(std::span(back)));
+    CHECK((got && got->len == 16 && std::memcmp(back, text, 16) == 0));
+    // from_capsule checks the table as open does.
+    auto copy = opened->duplicate();
+    REQUIRE(copy.has_value());
+    sbx_handle *capsule = std::move(*copy).to_capsule();
+    REQUIRE(capsule != nullptr);
+    {
+        auto taken = handle::from_capsule(capsule);
+        CHECK((taken && taken->field(1).kind == 9));
+        if (!taken)
+            capsule->release(capsule);
+    }
+    delete capsule;
+    // 17 bytes from offset 16 end past the 32-byte record.
+    table[1] = {16u, 17u | 9u << 24};
+    CHECK(open_status(name) == status::corrupt);
+    static_cast<void>(sharedbox::unlink(name));
+}
+
+TEST_CASE("a reference field holds a box_ref") {
+    const std::string name = unique("ref");
+    constexpr sharedbox::field_spec with_ref[2] = {{0, 8, sharedbox::kind_int}, {8, 144, sharedbox::kind_ref}};
+    auto h = handle::create(name, with_ref, 152, 1, 1, {});
+    REQUIRE(h.has_value());
+    sharedbox::box_ref ref{};
+    ref.create_id = 7;
+    ref.schema_hash = 0x5EED;
+    std::memcpy(ref.name, "motor", 5);
+    const sharedbox::value value{1, std::as_bytes(std::span(&ref, 1))};
+    CHECK(h->write({&value, 1}, seconds(1.0)).has_value());
+    auto other = handle::open(name, seconds(1.0));
+    REQUIRE(other.has_value());
+    sharedbox::box_ref back{};
+    const auto got = other->read(1, std::as_writable_bytes(std::span(&back, 1)));
+    CHECK((got && got->len == 144 && back.create_id == 7 && back.schema_hash == 0x5EED));
+    CHECK(std::string(back.name) == "motor");
+    static_cast<void>(sharedbox::unlink(name));
+    constexpr sharedbox::field_spec short_ref[1] = {{0, 143, sharedbox::kind_ref}};
+    CHECK(handle::create(name, short_ref, 144, 1, 1, {}).error() == status::range);
+    constexpr sharedbox::field_spec unaligned_ref[1] = {{12, 144, sharedbox::kind_ref}};
+    CHECK(handle::create(name, unaligned_ref, 156, 1, 1, {}).error() == status::range);
+    constexpr sharedbox::field_spec unknown[1] = {{0, 8, 9}};
+    CHECK(handle::create(name, unknown, 8, 1, 1, {}).error() == status::range);
+}
 
 TEST_CASE("create refuses bad fields") {
     const std::string name = unique("fields");

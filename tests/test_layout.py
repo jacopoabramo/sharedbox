@@ -146,3 +146,38 @@ def test_schema_hash_tracks_layout() -> None:
     assert build_layout(A).schema_hash == build_layout(A).schema_hash
     assert build_layout(A).schema_hash != build_layout(B).schema_hash
     assert build_layout(A).schema_hash != build_layout(A2).schema_hash
+
+
+def test_a_reference_field_is_packed_with_8_byte_fields_and_hashed_by_identity() -> (
+    None
+):
+    """Check that a reference field is packed with the 8-byte fields and hashed by the identity of its class."""
+
+    class Motor(SharedBox, identity="motor/1"):
+        position: int
+
+    stage = type(
+        "Stage",
+        (),
+        {
+            "__annotations__": {
+                "label": Annotated[str, Capacity(4)],
+                "motor": Motor | None,
+            },
+            "__module__": "__main__",
+        },
+    )
+    layout = build_layout(stage)
+    assert layout.by_name["motor"].native == (0, 144, 5)
+    assert layout.by_name["label"].offset == 144
+    assert layout.refs == (layout.by_name["motor"],)
+    assert layout.schema_hash == 0xE58153F79AA6FDF6
+    required = type(
+        "Stage",
+        (),
+        {
+            "__annotations__": {"label": Annotated[str, Capacity(4)], "motor": Motor},
+            "__module__": "__main__",
+        },
+    )
+    assert build_layout(required).schema_hash == 0xE33FFD91E10FAB6D

@@ -1,6 +1,6 @@
 """Markdown table of wheel size changes against a baseline.
 
-Reads ``sharedbox.benchmarks.size --json`` output (one or more files, searched
+Reads `sharedbox.benchmarks.size --json` output (one or more files, searched
 recursively) from two directories and prints a Markdown table comparing
 wheel sizes by tag. With no baseline directory, or an empty one, prints a
 one-line note instead.

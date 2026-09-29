@@ -151,7 +151,7 @@ std::string exists_message(const std::string &name, const std::vector<std::strin
 
 } // namespace
 
-bool kind_is_valid(std::uint32_t code) { return code <= kind_bytes; }
+bool kind_is_valid(std::uint32_t code) { return code <= kind_ref; }
 
 void check_index(std::uint32_t index, std::size_t count) {
     if (index >= count)
@@ -322,6 +322,12 @@ std::unique_ptr<Segment> Segment::attach(const std::string &name, const std::vec
     if (impl->box.schema_hash() != schema_hash)
         throw SchemaMismatch("segment '" + name + "' was created by a different class");
     check_names(names, impl->box.field_count());
+    // The header opens a field of a kind it does not know; this module can neither convert nor
+    // check its value.
+    for (std::uint16_t i = 0; i < impl->box.field_count(); ++i)
+        if (!kind_is_valid(impl->box.field(i).kind))
+            throw SchemaMismatch("segment '" + name + "' has a field of kind " +
+                                 std::to_string(impl->box.field(i).kind) + ", which this version cannot read");
     impl->bind();
     return std::unique_ptr<Segment>(new Segment(std::move(impl)));
 }

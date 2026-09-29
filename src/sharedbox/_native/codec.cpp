@@ -1,8 +1,11 @@
 #include "codec.hpp"
 
 #include <nanobind/nanobind.h>
+#include <sharedbox/sharedbox.hpp>
 
+#include <algorithm>
 #include <cstring>
+#include <string_view>
 
 namespace nb = nanobind;
 
@@ -21,8 +24,26 @@ const char *kind_name(FieldKind kind) {
         return "str";
     case FieldKind::Bytes:
         return "bytes";
+    case FieldKind::Ref:
+        return "a reference";
     }
     return "?";
+}
+
+[[noreturn]] void raise(PyObject *type, const std::string &message) {
+    PyErr_SetString(type, message.c_str());
+    throw nb::python_error();
+}
+
+std::uint64_t to_u64(PyObject *number, const std::string &name, const char *what) {
+    const unsigned long long value = PyLong_AsUnsignedLongLong(number);
+    if (value == static_cast<unsigned long long>(-1) && PyErr_Occurred()) {
+        if (!PyErr_ExceptionMatches(PyExc_OverflowError))
+            throw nb::python_error();
+        PyErr_Clear();
+        raise(PyExc_ValueError, name + " needs a " + what + " of 0 to 2**64 - 1");
+    }
+    return value;
 }
 
 // Releases the buffer on every way out of encode(), exceptions included.
@@ -38,11 +59,6 @@ public:
 
     Py_buffer view;
 };
-
-[[noreturn]] void raise(PyObject *type, const std::string &message) {
-    PyErr_SetString(type, message.c_str());
-    throw nb::python_error();
-}
 
 } // namespace
 
@@ -106,6 +122,30 @@ std::string encode(const FieldDesc &field, const std::string &name, PyObject *va
             throw nb::python_error();
         return out;
     }
+    case FieldKind::Ref: {
+        box_ref ref{};
+        if (value != Py_None) {
+            // The Python layer passes (create_id, schema_hash, name) of the box assigned.
+            if (!PyTuple_Check(value) || PyTuple_Size(value) != 3 || !PyLong_Check(PyTuple_GetItem(value, 0)) ||
+                !PyLong_Check(PyTuple_GetItem(value, 1)) || !PyUnicode_Check(PyTuple_GetItem(value, 2)))
+                goto wrong_type;
+            ref.create_id = to_u64(PyTuple_GetItem(value, 0), name, "create id");
+            ref.schema_hash = to_u64(PyTuple_GetItem(value, 1), name, "schema hash");
+            if (ref.create_id == 0)
+                raise(PyExc_ValueError, name + " needs a nonzero create id");
+            Py_ssize_t length = 0;
+            const char *text = PyUnicode_AsUTF8AndSize(PyTuple_GetItem(value, 2), &length);
+            if (text == nullptr)
+                throw nb::python_error();
+            const std::string_view box_name(text, static_cast<std::size_t>(length));
+            if (!detail::name_ok(box_name))
+                raise(PyExc_ValueError, name + " needs a box name matching [A-Za-z0-9_.-]{1,128}");
+            std::memcpy(ref.name, box_name.data(), box_name.size());
+        }
+        std::string out(sizeof ref, '\0');
+        std::memcpy(out.data(), &ref, sizeof ref);
+        return out;
+    }
     }
     raise(PyExc_SystemError, "unknown field kind");
 too_long:
@@ -135,6 +175,18 @@ PyObject *decode(const FieldDesc &field, const char *data, std::size_t size) {
         return PyUnicode_DecodeUTF8(data, static_cast<Py_ssize_t>(size), "replace");
     case FieldKind::Bytes:
         return PyBytes_FromStringAndSize(data, static_cast<Py_ssize_t>(size));
+    case FieldKind::Ref: {
+        box_ref ref;
+        std::memcpy(&ref, data, sizeof ref);
+        if (ref.create_id == 0)
+            return Py_NewRef(Py_None);
+        const char *end = std::find(ref.name, ref.name + sizeof ref.name, '\0');
+        PyObject *text = PyUnicode_DecodeUTF8(ref.name, end - ref.name, "replace");
+        if (text == nullptr)
+            return nullptr;
+        return Py_BuildValue("(KKN)", static_cast<unsigned long long>(ref.create_id),
+                             static_cast<unsigned long long>(ref.schema_hash), text);
+    }
     }
     return nullptr;
 }
