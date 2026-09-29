@@ -243,8 +243,8 @@ def reference(hint: object) -> tuple[type[SharedBox], bool] | None:
 def undefined(cls: type, field: str | None, name: str) -> str:
     where = cls.__qualname__ if field is None else f"{cls.__qualname__}.{field}"
     return (
-        f"{where}: {name!r} is not defined; a box class that a field refers to "
-        "must be defined before the class that refers to it"
+        f"{where}: {name!r} is not defined; a class named in a field annotation, "
+        "such as a box class a field refers to, must be defined first"
     )
 
 

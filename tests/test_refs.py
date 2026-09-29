@@ -267,7 +267,7 @@ def test_an_unquoted_self_reference_works_with_lazy_annotations(
 def test_a_reference_to_a_class_defined_later_is_refused() -> None:
     with pytest.raises(
         TypeError,
-        match=r"Early\.later: 'Later' is not defined; .* must be defined before",
+        match=r"Early\.later: 'Later' is not defined; a class named in a field annotation, .* must be defined first",
     ):
 
         class Early(SharedBox):
@@ -288,7 +288,7 @@ def test_a_class_defined_later_is_named_alone_inside_another_annotation(
 ) -> None:
     with pytest.raises(
         TypeError,
-        match=r"Early\.later: 'Later' is not defined; .* must be defined before",
+        match=r"Early\.later: 'Later' is not defined; a class named in a field annotation, .* must be defined first",
     ):
         types.new_class(
             "Early",
@@ -303,7 +303,7 @@ def test_a_class_defined_later_is_named_alone_inside_another_annotation(
     sys.version_info < (3, 14), reason="annotations are evaluated lazily from 3.14"
 )
 def test_an_unquoted_class_defined_later_is_named_alone() -> None:
-    message = r"Early\.later: 'Later' is not defined; .* must be defined before"
+    message = r"Early\.later: 'Later' is not defined; a class named in a field annotation, .* must be defined first"
     with pytest.raises(TypeError, match=message):
 
         class Early(SharedBox):
