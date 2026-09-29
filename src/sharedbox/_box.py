@@ -9,7 +9,7 @@ import re
 import sys
 import threading
 import weakref
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from dataclasses import MISSING, InitVar
 from typing import (
     TYPE_CHECKING,
@@ -676,19 +676,29 @@ class SharedBox(metaclass=SharedBoxMeta):
             for spec in layout.refs:
                 values[spec.name] = box_ref(values[spec.name])
             if follow:
-                self._follow(values, {(self.name, self._segment.create_id)})
+                self._follow(values)
         return values
 
-    def _follow(self, values: dict[str, Any], seen: set[tuple[str, int]]) -> None:
-        for spec in type(self).__layout__.refs:
-            ref = values[spec.name]
-            if ref is None or (ref.name, ref.create_id) in seen:
-                continue
-            seen.add((ref.name, ref.create_id))
-            inner = self._inner(spec, ref.create_id, ref.schema_hash, ref.name)
-            inner_values = inner.snapshot()
-            inner._follow(inner_values, seen)
-            values[spec.name] = inner_values
+    def _follow(self, values: dict[str, Any]) -> None:
+        """Replace the references in `values`, read from this box, with nested snapshots, depth first."""
+        seen = {(self.name, self._segment.create_id)}
+        # A stack instead of recursion, so a chain of boxes can be longer than the recursion limit.
+        stack: list[tuple[SharedBox, dict[str, Any], Iterator[FieldSpec]]] = [
+            (self, values, iter(type(self).__layout__.refs))
+        ]
+        while stack:
+            box, box_values, specs = stack[-1]
+            for spec in specs:
+                ref = box_values[spec.name]
+                if ref is None or (ref.name, ref.create_id) in seen:
+                    continue
+                seen.add((ref.name, ref.create_id))
+                inner = box._inner(spec, ref.create_id, ref.schema_hash, ref.name)
+                box_values[spec.name] = inner_values = inner.snapshot()
+                stack.append((inner, inner_values, iter(type(inner).__layout__.refs)))
+                break
+            else:
+                stack.pop()
 
     def watch(self, field: str) -> FieldWatch[Any]:
         """Iterate over values written to `field` from now on."""
@@ -796,15 +806,23 @@ class SharedBox(metaclass=SharedBoxMeta):
         Use [`unlink`][sharedbox.SharedBox.unlink] to remove it. Also
         closes every box this handle attached to read a reference field.
         """
-        if self._finalizer.detach() is None:
-            return
-        try:
-            release(self._watcher, self._segment)
-        finally:
-            with self._refs_lock:
-                cached, self._refs = self._refs, {}
-            for _, inner, _ in cached.values():
-                inner.close()
+        # A list instead of recursion, so a chain of boxes can be longer than the recursion limit.
+        boxes = [self]
+        error: BaseException | None = None
+        while boxes:
+            box = boxes.pop()
+            if box._finalizer.detach() is None:
+                continue
+            try:
+                release(box._watcher, box._segment)
+            except BaseException as exc:  # noqa: BLE001
+                # Keep closing the rest; the first failure is raised once every box is closed.
+                error = error or exc
+            with box._refs_lock:
+                cached, box._refs = box._refs, {}
+            boxes.extend(inner for _, inner, _ in cached.values())
+        if error is not None:
+            raise error
 
     def __enter__(self) -> Self:
         return self

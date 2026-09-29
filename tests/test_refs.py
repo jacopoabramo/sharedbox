@@ -747,6 +747,34 @@ def test_snapshot_follow_ends_at_a_box_it_already_read(
         assert a.snapshot(follow=True) == {"value": 1, "link": a_ref}
 
 
+def test_snapshot_follow_reads_a_chain_longer_than_the_recursion_limit(
+    names: Callable[[str], str],
+) -> None:
+    """Check that follow=True nests a chain of 2000 boxes and that closing the chain afterwards succeeds."""
+    length = 2000
+    with contextlib.ExitStack() as stack:
+        if sys.platform.startswith("linux"):
+            import resource
+
+            soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
+            # Every box holds a descriptor, and so does the handle its parent attaches to follow it.
+            needed = 2 * length + 256
+            if hard != resource.RLIM_INFINITY and hard < needed:
+                pytest.skip(f"needs {needed} open files, the hard limit is {hard}")
+            if soft != resource.RLIM_INFINITY and soft < needed:
+                resource.setrlimit(resource.RLIMIT_NOFILE, (needed, hard))
+                stack.callback(resource.setrlimit, resource.RLIMIT_NOFILE, (soft, hard))
+        head = None
+        for value in reversed(range(length)):
+            head = stack.enter_context(Node.create(names(str(value)), value, head))
+        assert head is not None
+        level: Any = head.snapshot(follow=True)
+        for value in range(length):
+            assert level["value"] == value
+            level = level["link"]
+        assert level is None
+
+
 def test_snapshot_follow_raises_on_a_broken_reference(
     names: Callable[[str], str],
 ) -> None:
