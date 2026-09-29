@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import contextlib
 import dataclasses
+import functools
 import hashlib
 import inspect
 import os
@@ -447,6 +448,9 @@ class SharedBox(metaclass=SharedBoxMeta):
         cls.__sharedbox_options__ = options
         cls.__sharedbox_init__ = tuple(params)
         cls.__signature__ = signature(params)
+        if not layout.refs and cls.snapshot is SharedBox.snapshot:
+            # The keyword-only parameter and the reference check add about 10 ns each to a call.
+            cls.snapshot = plain_snapshot  # type: ignore[method-assign]
         cls.__sharedbox_name__ = (
             hashlib.sha256(cls.__sharedbox_identity__.encode()).hexdigest()[:16]
             if name is None
@@ -835,3 +839,8 @@ class SharedBox(metaclass=SharedBoxMeta):
             if p.repr and p.name in values
         )
         return f"{type(self).__qualname__}({shown})"
+
+
+@functools.wraps(SharedBox.snapshot)
+def plain_snapshot(self: SharedBox, follow: bool = False) -> dict[str, Any]:
+    return self._segment.get_dict(type(self).__layout__.names)

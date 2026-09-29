@@ -671,6 +671,7 @@ def test_snapshot_follow_nests_the_boxes_referred_to(
             "target": 3,
             "motor": {"position": 7},
         }
+        assert motor.snapshot(follow=True) == {"position": 7}
 
 
 def test_snapshot_follow_ends_at_a_box_it_already_read(
