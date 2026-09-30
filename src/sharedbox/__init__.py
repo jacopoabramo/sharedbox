@@ -11,6 +11,7 @@ from ._native import (
     SegmentNotFoundError,
 )
 from ._refs import BoxRef, BrokenReferenceError, UnknownBoxClassError
+from ._version import __version__
 
 __all__ = [
     "BoxClosedError",
@@ -27,6 +28,7 @@ __all__ = [
     "SharedBox",
     "SupportsSharedBox",
     "UnknownBoxClassError",
+    "__version__",
     "field",
     "fields",
     "get_include",
