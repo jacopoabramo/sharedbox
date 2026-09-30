@@ -849,3 +849,137 @@ def test_a_reassignment_moves_follow_with_and_without_a_field_together(
         b.position = 5
         assert grouped.get(timeout=5) == 5
         assert nested.get(timeout=5) == (("motor", "position"), 5)
+
+
+def test_a_removed_box_logs_one_warning_and_forwarding_resumes_on_assignment(
+    names: Callable[[str], str], caplog: pytest.LogCaptureFixture
+) -> None:
+    """Check that following a removed box logs one warning and forwards nothing, and forwards again once another box is assigned."""
+    seen: queue.Queue[tuple[int, int]] = queue.Queue()
+    with Motor.create(names("m")) as other, Stage.create(names("s")) as stage:
+        gone = Motor.create(names("gone"))
+        stage.motor = gone
+        gone.close()
+        Motor.unlink(gone.name)
+        with caplog.at_level(logging.WARNING, logger="sharedbox"):
+            stage.events.follow("motor").position.connect(
+                lambda new, old: seen.put((new, old))
+            )
+            stage.motor = other
+            settle(lambda value: setattr(other, "position", value), seen)
+        messages = [record.getMessage() for record in caplog.records]
+        assert len(messages) == 1
+        assert messages[0].endswith(
+            "no longer exists; forwarding nothing until it is assigned again"
+        )
+
+
+def assign_a_class_only_this_process_defines(stage: Stage, name: str) -> None:
+    class Secret(Motor):
+        pass
+
+    with stage, Secret.create(name) as secret:
+        stage.motor = secret
+    Secret.unlink(name)
+
+
+def test_a_box_of_an_unknown_class_logs_a_warning(
+    names: Callable[[str], str], caplog: pytest.LogCaptureFixture
+) -> None:
+    """Check that another process assigning a box of a class this process never defined logs a warning instead of raising."""
+    ctx = mp.get_context("spawn")
+    with (
+        Stage.create(names("s")) as stage,
+        caplog.at_level(logging.WARNING, logger="sharedbox"),
+    ):
+        stage.events.follow("motor")
+        child = ctx.Process(
+            target=assign_a_class_only_this_process_defines, args=(stage, names("x"))
+        )
+        child.start()
+        child.join(20)
+        assert child.exitcode == 0
+        assert until(lambda: bool(caplog.records))
+        assert "is not defined in this process" in caplog.records[0].getMessage()
+
+
+def test_a_move_whose_attach_raises_still_follows_a_box_another_path_reaches(
+    names: Callable[[str], str],
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Check that a move whose attach raises on the watcher thread is logged, still follows a box that only another path now reaches, and follows the new box once the field is assigned again."""
+    seen: queue.Queue[tuple[tuple[str, ...], object]] = queue.Queue()
+    assigned: queue.Queue[object] = queue.Queue()
+    with (
+        Motor.create(names("m")) as motor,
+        Motor.create(names("n")) as other,
+        Pair.create(names("p"), motor, motor) as pair,
+        caplog.at_level(logging.ERROR, logger="sharedbox"),
+    ):
+
+        def fail_other(spec: Any, create_id: int, schema_hash: int, name: str) -> Any:
+            if name == other.name:
+                raise OSError("too many open files")
+            return attach_reference(spec, create_id, schema_hash, name)
+
+        pair.events.follow()
+        pair.events.nested.connect(lambda path, new, old: seen.put((path, new)))
+        pair.events.first.connect(lambda new, old: assigned.put(new))
+        pair.events.second.connect(lambda new, old: assigned.put(new))
+        motor.position = 1
+        held = seen.get(timeout=5)[0][0]
+        kept = "second" if held == "first" else "first"
+        # No public input makes attaching a box fail with an error other than a broken reference.
+        monkeypatch.setattr("sharedbox._follow.attach_reference", fail_other)
+        setattr(pair, held, other)
+        assert until(
+            lambda: any(
+                "too many open files" in str(r.exc_info) for r in caplog.records
+            )
+        )
+        settle(lambda value: setattr(motor, "position", value), seen)
+        motor.position = 100
+        assert seen.get(timeout=5) == ((kept, "position"), 100)
+        assert (threads(motor, other), waiters(motor, other)) == ([1, 0], [1, 0])
+        monkeypatch.undo()
+        assigned.get(timeout=5)
+        setattr(pair, held, None)
+        assert assigned.get(timeout=5) is None
+        setattr(pair, held, other)
+        assert until(lambda: waiters(motor, other) == [1, 1])
+        other.position = 7
+        assert seen.get(timeout=5) == ((held, "position"), 7)
+        assert threads(motor, other) == [1, 1]
+
+
+def test_a_move_whose_attach_raises_for_one_group_still_moves_the_other(
+    names: Callable[[str], str],
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Check that when attaching the new box fails for follow(field) during a move, follow() still moves to it."""
+    seen: queue.Queue[tuple[tuple[str, ...], object]] = queue.Queue()
+    failed = threading.Event()
+    with (
+        Motor.create(names("a")) as a,
+        Motor.create(names("b")) as b,
+        Stage.create(names("s"), 0, a) as stage,
+        caplog.at_level(logging.ERROR, logger="sharedbox"),
+    ):
+
+        def fail_once(spec: Any, create_id: int, schema_hash: int, name: str) -> Any:
+            if name == b.name and not failed.is_set():
+                failed.set()
+                raise OSError("too many open files")
+            return attach_reference(spec, create_id, schema_hash, name)
+
+        stage.events.follow("motor")
+        stage.events.follow()
+        stage.events.nested.connect(lambda path, new, old: seen.put((path, new)))
+        # No public input makes attaching a box fail with an error other than a broken reference.
+        monkeypatch.setattr("sharedbox._follow.attach_reference", fail_once)
+        stage.motor = b
+        assert until(lambda: bool(caplog.records))
+        settle(lambda value: setattr(b, "position", value), seen)
+        assert (threads(a, b), waiters(a, b)) == ([0, 1], [0, 1])

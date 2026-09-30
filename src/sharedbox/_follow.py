@@ -8,7 +8,12 @@ from typing import TYPE_CHECKING, Any
 
 from ._events import on_watcher_thread
 from ._native import BoxClosedError
-from ._refs import attach_reference, shown
+from ._refs import (
+    BrokenReferenceError,
+    UnknownBoxClassError,
+    attach_reference,
+    shown,
+)
 
 if TYPE_CHECKING:
     from psygnal import SignalInstance
@@ -152,19 +157,23 @@ class Follower:
         # Joined even on a watcher thread, so the old box forwards nothing after the move.
         close_all(boxes, wait=True)
         with self.top.lock:
-            if self.serves(segment):
-                self.expand(
-                    [
-                        (child, value)
-                        for child in children
-                        if child is self.links.get(spec.name)
-                        or child is (self.tree or {}).get(spec.name)
-                    ]
-                )
+            starts = (
+                [
+                    (child, value)
+                    for child in children
+                    if child is self.links.get(spec.name)
+                    or child is (self.tree or {}).get(spec.name)
+                ]
+                if self.serves(segment)
+                else []
+            )
             # Even if this follower's source moved meanwhile, since these nodes are elsewhere in the tree.
-            for node in waiting:
-                if node.box is None and node.ref is not None:
-                    self.expand([(node, node.ref)])
+            starts += [
+                (node, node.ref)
+                for node in waiting
+                if node.box is None and node.ref is not None
+            ]
+            self.expand(starts)
 
     def release(self) -> list[SharedBox]:
         """Stop all forwarding below this follower; the boxes it held are returned for closing."""
@@ -224,13 +233,23 @@ class Follower:
         return children
 
     def expand(self, starts: list[tuple[Follower, Any]]) -> None:
-        """Attach the box each follower's value refers to, then the boxes below it, depth first."""
+        """Attach the box each follower's value refers to, then the boxes below it, depth first.
+
+        If attaching a box raises, this goes on with the others and raises
+        the first error at the end. The follower that failed keeps its
+        value and follows nothing until that value changes.
+        """
+        error: Exception | None = None
         # Reversed, so fields are followed in declaration order, as snapshot(follow=True) reads them.
         stack = starts[::-1]
         while stack:
             follower, value = stack.pop()
             follower.ref = value
-            box = follower.box = follower.open(value)
+            try:
+                box = follower.box = follower.open(value)
+            except Exception as exc:  # noqa: BLE001
+                error = error or exc
+                continue
             if box is None:
                 continue
             segment, cls = box._segment, type(box)
@@ -242,6 +261,8 @@ class Follower:
             if follower.tree is not None:
                 children += follower.tree_children(segment, cls)
             stack.extend(reversed(children))
+        if error is not None:
+            raise error
 
     def open(self, value: Any) -> SharedBox | None:
         """A new handle on the box `value` refers to, or None if there is none to follow."""
@@ -255,7 +276,11 @@ class Follower:
                     waiting.append(self)
                 return None
         assert self.spec is not None
-        box = attach_reference(self.spec, create_id, schema_hash, name)
+        try:
+            box = attach_reference(self.spec, create_id, schema_hash, name)
+        except (BrokenReferenceError, UnknownBoxClassError) as error:
+            logger.warning("%s; forwarding nothing until it is assigned again", error)
+            return None
         if self.nested is not None:
             self.seen[name, create_id] = []
         return box
