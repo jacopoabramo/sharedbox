@@ -7,7 +7,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Dates are marked as `DD-MM-YYYY`
 
-## [0.3.0] - Unreleased
+## [0.3.0] - 01-10-2026
 
 ### Added
 
@@ -206,5 +206,6 @@ stage.events.nested.connect(lambda path, new, old: print(path, new))
 
 - Initial release
 
-[0.2.4]: (https://github.com/jacopoabramo/sharedbox/compare/0.1.0...0.2.4)
-[0.1.0]: (https://github.com/jacopoabramo/sharedbox/commits/0.1.0)
+[0.3.0]: https://github.com/jacopoabramo/sharedbox/compare/0.2.4...v0.3.0
+[0.2.4]: https://github.com/jacopoabramo/sharedbox/compare/0.1.0...0.2.4
+[0.1.0]: https://github.com/jacopoabramo/sharedbox/commits/0.1.0
