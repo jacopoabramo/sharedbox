@@ -104,7 +104,7 @@ stage.events.follow()
 stage.events.nested.connect(lambda path, new, old: print(path, new))
 ```
 
-- Documentation site at https://jacopoabramo.github.io/sharedbox:
+- Documentation site at <https://jacopoabramo.github.io/sharedbox>:
   tutorial, how-to guides, explanations and the API reference.
 
 ### Changed
