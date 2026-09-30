@@ -1,0 +1,4273 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Python records that live in shared memory, readable and writable from every process">
+      
+      
+        <meta name="author" content="Jacopo Abramo">
+      
+      
+        <link rel="canonical" href="https://jacopoabramo.github.io/sharedbox/reference/segment-layout/">
+      
+      
+        <link rel="prev" href="../api/library-authors/">
+      
+      
+        <link rel="next" href="../cpp-and-c-api/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="zensical-0.0.67">
+    
+    
+      
+        <title>Segment layout 1.0 - sharedbox</title>
+      
+    
+    
+      
+        
+      
+      <link rel="stylesheet" href="../../assets/stylesheets/modern/main.4ae390e2.min.css">
+      
+        
+          
+        
+        <link rel="stylesheet" href="../../assets/stylesheets/modern/palette.96d1a7e4.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Inter:300,300i,400,400i,500,500i,700,700i%7CFira+Code:400,400i,700,700i&amp;display=fallback">
+        <style>:root{--md-text-font:"Inter";--md-code-font:"Fira Code"}</style>
+      
+    
+    
+    <script>__md_scope=new URL("../..",location),__md_scope.pathname.endsWith("/")||(__md_scope=new URL(__md_scope.pathname+"/",location)),__md_hash=e=>[...e].reduce(((e,t)=>(e<<5)-e+t.charCodeAt(0)),0),__md_get=(e,t=localStorage,_=__md_scope)=>JSON.parse(t.getItem(_.pathname+"."+e)),__md_set=(e,t,_=localStorage,a=__md_scope)=>{try{_.setItem(a.pathname+"."+e,JSON.stringify(t))}catch(e){}},document.documentElement.setAttribute("data-platform",navigator.platform)</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    
+    
+      
+    
+    
+    
+    
+    <body dir="ltr" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer" aria-label="Navigation"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#segment-layout-10" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+<header class="md-header" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="sharedbox" class="md-header__button md-logo" aria-label="sharedbox" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-box" viewBox="0 0 24 24"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5M12 22V12"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer" aria-label="Navigation">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-menu" viewBox="0 0 24 24"><path d="M4 5h16M4 12h16M4 19h16"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            sharedbox
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Segment layout 1.0
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+      
+        <form class="md-header__option" data-md-component="palette">
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="none" data-md-color-scheme="default" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to dark mode"  type="radio" name="__palette" id="__palette_0">
+    
+      <label class="md-header__button md-icon" title="Switch to dark mode" for="__palette_1" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.93 4.93l1.41 1.41M17.66 17.66l1.41 1.41M2 12h2M20 12h2M6.34 17.66l-1.41 1.41M19.07 4.93l-1.41 1.41"/></svg>
+      </label>
+    
+  
+    
+    
+    
+    <input class="md-option" data-md-color-media="none" data-md-color-scheme="slate" data-md-color-primary="indigo" data-md-color-accent="indigo"  aria-label="Switch to light mode"  type="radio" name="__palette" id="__palette_1">
+    
+      <label class="md-header__button md-icon" title="Switch to light mode" for="__palette_0" hidden>
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-moon" viewBox="0 0 24 24"><path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401"/></svg>
+      </label>
+    
+  
+</form>
+      
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search" aria-label="Search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-search" viewBox="0 0 24 24"><path d="m21 21-4.34-4.34"/><circle cx="11" cy="11" r="8"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog" aria-label="Search">
+  <button type="button" class="md-search__button">
+    Search
+  </button>
+</div>
+      
+    
+    <div class="md-header__source">
+      
+        <a href="https://github.com/jacopoabramo/sharedbox" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M216.5 362.5c-66-8-112.5-55.5-112.5-117 0-25 9-52 24-70-6.5-16.5-5.5-51.5 2-66 20-2.5 47 8 63 22.5 19-6 39-9 63.5-9s44.5 3 62.5 8.5c15.5-14 43-24.5 63-22 7 13.5 8 48.5 1.5 65.5 16 19 24.5 44.5 24.5 70.5 0 61.5-46.5 108-113.5 116.5 17 11 28.5 35 28.5 62.5v52c0 15 12.5 23.5 27.5 17.5C441 459.5 512 369 512 257 512 115.5 397 0 255.5 0S0 115.5 0 257c0 111 70.5 203 165.5 237.5 13.5 5 26.5-4 26.5-17.5v-40c-7 3-16 5-24 5-33 0-52.5-18-66.5-51.5-5.5-13.5-11.5-21.5-23-23-6-.5-8-3-8-6 0-6 10-10.5 20-10.5 14.5 0 27 9 40 27.5 10 14.5 20.5 21 33 21s20.5-4.5 32-16c8.5-8.5 15-16 21-21"/></svg>
+  </div>
+  <div class="md-source__repository">
+    jacopoabramo/sharedbox
+  </div>
+</a>
+      
+    </div>
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+            
+<nav class="md-tabs" aria-label="Tabs" data-md-component="tabs">
+  <div class="md-grid">
+    <ul class="md-tabs__list">
+      
+        
+  
+  
+  
+  
+    <li class="md-tabs__item">
+      <a href="../.." class="md-tabs__link">
+        
+  
+  sharedbox
+
+      </a>
+    </li>
+  
+
+      
+        
+  
+  
+  
+  
+    
+      
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../tutorials/" class="md-tabs__link">
+          
+  
+  Tutorials
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+      
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../how-to/" class="md-tabs__link">
+          
+  
+  How-to Guides
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+      
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../explanation/" class="md-tabs__link">
+          
+  
+  Explanations
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+    
+  
+  
+    
+      
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+      <li class="md-tabs__item md-tabs__item--active">
+        <a href="../" class="md-tabs__link">
+          
+  
+  Reference
+
+        </a>
+      </li>
+    
+  
+
+      
+        
+  
+  
+  
+  
+    
+      
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+      <li class="md-tabs__item">
+        <a href="../../how-to/contribute/" class="md-tabs__link">
+          
+  
+  Contributing
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ul>
+  </div>
+</nav>
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+  
+
+
+<nav class="md-nav md-nav--primary md-nav--lifted" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="sharedbox" class="md-nav__button md-logo" aria-label="sharedbox" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-box" viewBox="0 0 24 24"><path d="M21 8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16Z"/><path d="m3.3 7 8.7 5 8.7-5M12 22V12"/></svg>
+
+    </a>
+    sharedbox
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/jacopoabramo/sharedbox" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M216.5 362.5c-66-8-112.5-55.5-112.5-117 0-25 9-52 24-70-6.5-16.5-5.5-51.5 2-66 20-2.5 47 8 63 22.5 19-6 39-9 63.5-9s44.5 3 62.5 8.5c15.5-14 43-24.5 63-22 7 13.5 8 48.5 1.5 65.5 16 19 24.5 44.5 24.5 70.5 0 61.5-46.5 108-113.5 116.5 17 11 28.5 35 28.5 62.5v52c0 15 12.5 23.5 27.5 17.5C441 459.5 512 369 512 257 512 115.5 397 0 255.5 0S0 115.5 0 257c0 111 70.5 203 165.5 237.5 13.5 5 26.5-4 26.5-17.5v-40c-7 3-16 5-24 5-33 0-52.5-18-66.5-51.5-5.5-13.5-11.5-21.5-23-23-6-.5-8-3-8-6 0-6 10-10.5 20-10.5 14.5 0 27 9 40 27.5 10 14.5 20.5 21 33 21s20.5-4.5 32-16c8.5-8.5 15-16 21-21"/></svg>
+  </div>
+  <div class="md-source__repository">
+    jacopoabramo/sharedbox
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-house" viewBox="0 0 24 24"><path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  sharedbox
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_2" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../tutorials/" class="md-nav__link ">
+              
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-graduation-cap" viewBox="0 0 24 24"><path d="M21.42 10.922a1 1 0 0 0-.019-1.838L12.83 5.18a2 2 0 0 0-1.66 0L2.6 9.08a1 1 0 0 0 0 1.832l8.57 3.908a2 2 0 0 0 1.66 0zM22 10v6"/><path d="M6 12.5V16a6 3 0 0 0 12 0v-3.5"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  Tutorials
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_2" id="__nav_2_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_2_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_2">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Tutorials
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/share-a-record/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-play" viewBox="0 0 24 24"><path d="M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  Sharing a record between processes
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/react-to-changes/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-play" viewBox="0 0 24 24"><path d="M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  Reacting to changes
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/refer-to-another-box/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-play" viewBox="0 0 24 24"><path d="M5 5a2 2 0 0 1 3.008-1.728l11.997 6.998a2 2 0 0 1 .003 3.458l-12 7A2 2 0 0 1 5 19z"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  Referring to another box
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../how-to/" class="md-nav__link ">
+              
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-compass" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m16.24 7.76-1.804 5.411a2 2 0 0 1-1.265 1.265L7.76 16.24l1.804-5.411a2 2 0 0 1 1.265-1.265z"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  How-to Guides
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_3" id="__nav_3_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_3">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  How-to Guides
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_2" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_2" id="__nav_3_2_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Install
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_2_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_3_2">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Install
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../how-to/install-sharedbox/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-wrench" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  How to install sharedbox
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_3" id="__nav_3_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Use a box
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_3_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_3_3">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Use a box
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../how-to/name-a-box/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-wrench" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  How to name a box
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../how-to/store-text-and-bytes/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-wrench" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  How to store text and bytes
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../how-to/set-defaults-and-check-values/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-wrench" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  How to set defaults and check values
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../how-to/change-several-fields-at-once/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-wrench" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  How to change several fields at once
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../how-to/send-a-box-to-another-process/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-wrench" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  How to send a box to another process
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../how-to/clean-up-segments/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-wrench" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  How to clean up segments
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../how-to/follow-a-whole-reference-graph/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-wrench" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  How to follow a whole reference graph
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_4" id="__nav_3_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  C and C++
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_4_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_3_4">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  C and C++
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../how-to/accept-a-box-in-cpp/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-wrench" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  How to accept a box in a C++ extension
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../how-to/accept-a-box-in-c/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-wrench" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  How to accept a box in a C extension
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../how-to/open-a-box-from-a-program/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-wrench" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  How to open a box from a program
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_3_5" id="__nav_3_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Measure
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_3_5_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_3_5">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Measure
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../how-to/run-benchmarks/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-wrench" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  How to run the benchmarks
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../../explanation/" class="md-nav__link ">
+              
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-lightbulb" viewBox="0 0 24 24"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5M9 18h6M10 22h4"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  Explanations
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_4" id="__nav_4_label" tabindex="0">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_4">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Explanations
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../explanation/when-to-use-sharedbox/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-lightbulb" viewBox="0 0 24 24"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5M9 18h6M10 22h4"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  When to use sharedbox
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../explanation/how-a-box-is-stored/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-lightbulb" viewBox="0 0 24 24"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5M9 18h6M10 22h4"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  How a box is stored
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../explanation/reading-and-writing/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-lightbulb" viewBox="0 0 24 24"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5M9 18h6M10 22h4"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  Reading and writing
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../explanation/waiting-for-changes/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-lightbulb" viewBox="0 0 24 24"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5M9 18h6M10 22h4"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  Waiting for changes
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../explanation/references/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-lightbulb" viewBox="0 0 24 24"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5M9 18h6M10 22h4"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  Reference fields
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../explanation/closing-and-lifetime/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-lightbulb" viewBox="0 0 24 24"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5M9 18h6M10 22h4"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  Closing and lifetime
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../explanation/checking-a-process-is-alive/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-lightbulb" viewBox="0 0 24 24"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5M9 18h6M10 22h4"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  Checking a process is alive
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../explanation/how-the-module-is-built/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-lightbulb" viewBox="0 0 24 24"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5M9 18h6M10 22h4"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  How the module is built
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../explanation/limits/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-lightbulb" viewBox="0 0 24 24"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5M9 18h6M10 22h4"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  Limits
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+        
+        
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" checked>
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../" class="md-nav__link ">
+              
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-book-open" viewBox="0 0 24 24"><path d="M12 5v16M20.001 19A2 2 0 0 0 22 17V5a2 2 0 0 0-1.999-2L16 3.002A5 5 0 0 0 12 5a5 5 0 0 0-4-2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 1.999 2H8a5 5 0 0 1 4 2 5 5 0 0 1 4-2z"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  Reference
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_5" id="__nav_5_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="true">
+            <label class="md-nav__title" for="__nav_5">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Reference
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../explanation/glossary/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-book-a" viewBox="0 0 24 24"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5a1 1 0 0 1 0-5H20"/><path d="m8 13 4-7 4 7M9.1 11h5.7"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  Glossary
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+          
+          
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--section md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_3" >
+        
+          
+          <div class="md-nav__link md-nav__container">
+            <a href="../api/" class="md-nav__link ">
+              
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-code" viewBox="0 0 24 24"><path d="m16 18 6-6-6-6M8 6l-6 6 6 6"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  API
+
+    
+  </span>
+  
+  
+
+            </a>
+            
+              
+              <label class="md-nav__link " for="__nav_5_3" id="__nav_5_3_label" tabindex="">
+                <span class="md-nav__icon md-icon"></span>
+              </label>
+            
+          </div>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_3_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_5_3">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  API
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/box/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-code" viewBox="0 0 24 24"><path d="m16 18 6-6-6-6M8 6l-6 6 6 6"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  Boxes
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/events/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-code" viewBox="0 0 24 24"><path d="m16 18 6-6-6-6M8 6l-6 6 6 6"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  Events
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/references/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-code" viewBox="0 0 24 24"><path d="m16 18 6-6-6-6M8 6l-6 6 6 6"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  References
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/errors/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-code" viewBox="0 0 24 24"><path d="m16 18 6-6-6-6M8 6l-6 6 6 6"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  Errors
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/library-authors/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-code" viewBox="0 0 24 24"><path d="m16 18 6-6-6-6M8 6l-6 6 6 6"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  Library authors
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-file-text" viewBox="0 0 24 24"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/><path d="M14 2v5a1 1 0 0 0 1 1h5M10 9H8M16 13H8M16 17H8"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  Segment layout 1.0
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="././" class="md-nav__link md-nav__link--active">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-file-text" viewBox="0 0 24 24"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/><path d="M14 2v5a1 1 0 0 0 1 1h5M10 9H8M16 13H8M16 17H8"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  Segment layout 1.0
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#goal" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Goal
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#decisions" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Decisions
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#names" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Names
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#layout" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Layout
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#schema-identity" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Schema identity
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#versioning-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Versioning rules
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#protocols" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Protocols
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Protocols">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#create" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Create
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#attach" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Attach
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sequence-lock" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Sequence lock
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#waiter-slots" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Waiter slots
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#wait-and-wake" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Wait and wake
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#liveness" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Liveness
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#close-and-unlink" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Close and unlink
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#implementation-language" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Implementation language
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sharedboxhpp" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>sharedbox.hpp</code>
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="sharedbox.hpp">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#capsule-handle" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Capsule handle
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sharedbox_ch" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>sharedbox_c.h</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-pycapsule-interface" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        The PyCapsule interface
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#rust-crate-deferred" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Rust crate (deferred)
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#build-and-packaging" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Build and packaging
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#out-of-scope" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Out of scope
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#references" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        References
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../cpp-and-c-api/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-file-code" viewBox="0 0 24 24"><path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z"/><path d="M14 2v5a1 1 0 0 0 1 1h5M10 12.5 8 15l2 2.5M14 12.5l2 2.5-2 2.5"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  C and C++ interface
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../changelog/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-history" viewBox="0 0 24 24"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5M12 7v5l4 2"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  Changelog
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Contributing
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_6">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Contributing
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../how-to/contribute/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-heart-handshake" viewBox="0 0 24 24"><path d="M19.414 14.414C21 12.828 22 11.5 22 9.5a5.5 5.5 0 0 0-9.591-3.676.6.6 0 0 1-.818.001A5.5 5.5 0 0 0 2 9.5c0 2.3 1.5 4 3 5.5l5.535 5.362a2 2 0 0 0 2.879.052 2.12 2.12 0 0 0-.004-3 2.124 2.124 0 1 0 3-3 2.124 2.124 0 0 0 3.004 0 2 2 0 0 0 0-2.828l-1.881-1.882a2.41 2.41 0 0 0-3.409 0l-1.71 1.71a2 2 0 0 1-2.828 0 2 2 0 0 1 0-2.828l2.823-2.762"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  How to contribute
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../how-to/ai-contribution-policy/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-bot" viewBox="0 0 24 24"><path d="M12 8V4H8"/><rect width="16" height="12" x="4" y="8" rx="2"/><path d="M2 14h2M20 14h2M15 13v2M9 13v2"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  AI contribution policy
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_6_3" id="__nav_6_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Change the code
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_6_3_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_6_3">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Change the code
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../how-to/set-up-development/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-wrench" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  How to set up a development environment
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../how-to/run-tests/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-flask-conical" viewBox="0 0 24 24"><path d="M14 2v6a2 2 0 0 0 .245.96l5.51 10.08A2 2 0 0 1 18 22H6a2 2 0 0 1-1.755-2.96l5.51-10.08A2 2 0 0 0 10 8V2M6.453 15h11.094M8.5 2h7"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  How to run the tests
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../how-to/run-commit-checks/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-check-check" viewBox="0 0 24 24"><path d="M18 6 7 17l-5-5M22 10l-7.5 7.5L13 16"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  How to run the commit checks
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../how-to/commits-and-prs/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-git-pull-request" viewBox="0 0 24 24"><circle cx="18" cy="18" r="3"/><circle cx="6" cy="6" r="3"/><path d="M13 6h3a2 2 0 0 1 2 2v7M6 9v12"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  How to write commits and pull requests
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../how-to/make-a-release/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-package" viewBox="0 0 24 24"><path d="M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73zM12 22V12"/><path d="M3.29 7 12 12l8.71-5M7.5 4.27l9 5.15"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  How to make a release
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    
+    
+      
+        
+      
+        
+      
+    
+    
+    
+      
+      
+        
+      
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_6_4" id="__nav_6_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+  Change the documentation
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        
+          <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_6_4_label" aria-expanded="false">
+            <label class="md-nav__title" for="__nav_6_4">
+              <span class="md-nav__icon md-icon"></span>
+              
+  
+  Change the documentation
+
+            </label>
+            <ul class="md-nav__list" data-md-scrollfix>
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../how-to/write-docs/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-pen-line" viewBox="0 0 24 24"><path d="M13 21h8M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  How to write documentation
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../how-to/build-docs/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-book" viewBox="0 0 24 24"><path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H19a1 1 0 0 1 1 1v18a1 1 0 0 1-1 1H6.5a1 1 0 0 1 0-5H20"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  How to build the docs
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+                
+              
+            </ul>
+          </nav>
+        
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  
+                    
+                    
+                    
+                      
+                    
+                    
+                      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+                      <div class="md-sidebar-button__wrapper">
+                        <label class="md-sidebar-button" for="__toc"></label>
+                      </div>
+                    
+                  
+                  <div class="md-sidebar__inner">
+                    
+
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#goal" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Goal
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#decisions" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Decisions
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#names" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Names
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#layout" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Layout
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#schema-identity" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Schema identity
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#versioning-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Versioning rules
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#protocols" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Protocols
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Protocols">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#create" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Create
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#attach" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Attach
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sequence-lock" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Sequence lock
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#waiter-slots" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Waiter slots
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#wait-and-wake" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Wait and wake
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#liveness" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Liveness
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#close-and-unlink" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Close and unlink
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#implementation-language" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Implementation language
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sharedboxhpp" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>sharedbox.hpp</code>
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="sharedbox.hpp">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#capsule-handle" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Capsule handle
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sharedbox_ch" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code>sharedbox_c.h</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#the-pycapsule-interface" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        The PyCapsule interface
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#rust-crate-deferred" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Rust crate (deferred)
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#build-and-packaging" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Build and packaging
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#out-of-scope" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Out of scope
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#references" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        References
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+                
+
+
+
+  
+
+
+  <nav class="md-path" aria-label="Navigation" >
+    <ol class="md-path__list">
+      
+        
+  
+  
+    <li class="md-path__item">
+      <a href="../.." class="md-path__link">
+        
+  
+  <span class="md-ellipsis">
+    sharedbox
+  </span>
+
+      </a>
+    </li>
+  
+
+      
+      
+        
+  
+  
+    
+    
+      
+        
+          
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+        
+      
+    
+    
+    
+    
+      <li class="md-path__item">
+        <a href="../" class="md-path__link">
+          
+  
+  <span class="md-ellipsis">
+    Reference
+  </span>
+
+        </a>
+      </li>
+    
+  
+
+      
+    </ol>
+  </nav>
+
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+  
+  
+
+
+<h1 id="segment-layout-10">Segment layout 1.0<a class="headerlink" href="#segment-layout-10" title="Permanent link">&para;</a></h1>
+<p>This page describes how a box is stored in shared memory: the object names,
+the bytes of the mapping, and the protocols every process follows to read,
+write and wait. It is the contract between sharedbox and any other code that
+opens a box. <code>include/sharedbox/sharedbox.hpp</code> implements it, and the Python
+extension runs on that header.</p>
+<h2 id="goal">Goal<a class="headerlink" href="#goal" title="Permanent link">&para;</a></h2>
+<p>C++ and C code can use a sharedbox box, both as an extension loaded in a
+Python process and as a standalone program with no Python, without linking
+a library that sharedbox ships. The layout and protocols below are
+versioned, and one header-only C++20 library implements them.</p>
+<h2 id="decisions">Decisions<a class="headerlink" href="#decisions" title="Permanent link">&para;</a></h2>
+<table>
+<thead>
+<tr>
+<th>Topic</th>
+<th>Decision</th>
+<th>Not taken</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>Model</td>
+<td>the Arrow PyCapsule Interface; the closest analogue is <code>ArrowArrayStream</code>, a live handle rather than a one-shot transfer</td>
+<td>numpy's <code>__array_struct__</code></td>
+</tr>
+<tr>
+<td>Scope</td>
+<td>boxes only; the handle struct is versioned so that queues and streams can get their own dunders later</td>
+<td>queues and streams in the same step</td>
+</tr>
+<tr>
+<td>Contract</td>
+<td>a documented memory layout plus a header-only reference implementation</td>
+<td>a compiled C library; definitions only</td>
+</tr>
+<tr>
+<td>Language</td>
+<td>the C++20 header <code>sharedbox.hpp</code>, namespace <code>sharedbox</code></td>
+<td>a C99 header with <code>static inline</code> functions</td>
+</tr>
+<tr>
+<td>Atomics</td>
+<td><code>std::atomic_ref</code> on plain integer fields</td>
+<td>wrappers over compiler intrinsics; C11 <code>&lt;stdatomic.h&gt;</code></td>
+</tr>
+<tr>
+<td>C interface</td>
+<td>a minimal <code>sharedbox_c.h</code>, whose functions call <code>sharedbox.hpp</code>, in one <code>.cpp</code> file the consumer compiles</td>
+<td>a static library in the wheel; a C implementation of the protocols</td>
+</tr>
+<tr>
+<td>Dunder and capsule</td>
+<td><code>__sharedbox_box__</code>, capsule <code>"sharedbox_box"</code></td>
+<td><code>_c_</code> in the name, which reads as "implemented in C"</td>
+</tr>
+<tr>
+<td>Negotiation</td>
+<td>DLPack's <code>max_version</code>; the consumer renames the capsule <code>"used_sharedbox_box"</code>; other keywords raise <code>NotImplementedError</code>, as in Arrow</td>
+<td>none</td>
+</tr>
+<tr>
+<td>Object names</td>
+<td><code>sharedbox.</code> + box name + suffix, for every object</td>
+<td>the bare box name; names stored in the header</td>
+</tr>
+<tr>
+<td>Windows scope</td>
+<td><code>Local\</code> only</td>
+<td><code>Global\</code> (see Out of scope)</td>
+</tr>
+<tr>
+<td>Versioning</td>
+<td><code>layout_major</code> refuses, <code>layout_minor</code> opens and ignores what it does not know</td>
+<td>exact match; flag masks</td>
+</tr>
+<tr>
+<td>Capsule lifetime</td>
+<td>the handle maps the segment again from the box's <abbr title="Operating system.">OS</abbr> handle</td>
+<td>sharing the box's mapping and keeping the box alive</td>
+</tr>
+<tr>
+<td>Schema identity</td>
+<td><code>identity=</code> class keyword, default <code>module.qualname</code>; it enters the schema hash and names the box; <code>handle::create</code> is available to other languages</td>
+<td>the Python module path written into other languages; open-only for other languages</td>
+</tr>
+<tr>
+<td>Distribution</td>
+<td>headers in the wheel, <code>sharedbox.get_include()</code> and a CMake config</td>
+<td>a vcpkg port or a headers-only wheel</td>
+</tr>
+</tbody>
+</table>
+<h2 id="names">Names<a class="headerlink" href="#names" title="Permanent link">&para;</a></h2>
+<p>Every <abbr title="Operating system.">OS</abbr> object of a box is named from the box name:</p>
+<table>
+<thead>
+<tr>
+<th>Object</th>
+<th>Linux</th>
+<th>Windows</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>mapping</td>
+<td><code>shm_open("/sharedbox.&lt;name&gt;")</code>, seen as <code>/dev/shm/sharedbox.&lt;name&gt;</code></td>
+<td><code>CreateFileMappingW(INVALID_HANDLE_VALUE, ..., L"Local\\sharedbox.&lt;name&gt;")</code></td>
+</tr>
+<tr>
+<td>wake word</td>
+<td>inside the mapping, no name</td>
+<td>not used</td>
+</tr>
+<tr>
+<td>waiter slot <code>i</code></td>
+<td>inside the mapping, no name</td>
+<td>auto-reset event <code>Local\sharedbox.&lt;name&gt;.w&lt;i&gt;</code></td>
+</tr>
+</tbody>
+</table>
+<ul>
+<li>A box name matches <code>[A-Za-z0-9_.-]{1,128}</code>.</li>
+<li>The default name of a class is 16 hex digits of SHA-256 over its identity
+  (see Schema identity). Without an <code>identity=</code> keyword the identity is
+  <code>module.qualname</code>, with <code>__mp_main__</code> counted as <code>__main__</code>.</li>
+<li>Linux: the mapping is created with <code>O_CREAT | O_EXCL | O_RDWR</code> and mode
+  <code>0600</code>; a name that exists gives <code>status::exists</code>. <code>unlink()</code> calls
+  <code>shm_unlink</code>.</li>
+<li>Windows: the mapping is backed by the page file. <code>CreateFileMappingW</code>
+  reporting <code>ERROR_ALREADY_EXISTS</code> means the name is taken: the creator
+  closes its handle and gives <code>status::exists</code>. <code>ERROR_INVALID_HANDLE</code>, an
+  object of another kind under the name, gives <code>status::exists</code> too.
+  <code>unlink()</code> does nothing; the <abbr title="Operating system.">OS</abbr> frees the mapping with its last handle.</li>
+</ul>
+<h2 id="layout">Layout<a class="headerlink" href="#layout" title="Permanent link">&para;</a></h2>
+<p>The mapping holds, from offset 0:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>offset 0     header            128 bytes, two cache lines
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>offset 128   field table       field_count x 8 bytes
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>             write counts      field_count x 8 bytes
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>             waiter slots      waiter_slots x 24 bytes
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>             (zero padding up to a multiple of 64)
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>record       record            record_size bytes, 64-byte aligned
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>             (zero padding up to a multiple of 4096)
+</span></code></pre></div>
+<p>No structure has implicit padding: gaps are explicit <code>pad</code> and <code>reserved</code>
+members, and <code>static_assert</code>s in <code>sharedbox.hpp</code> pin each structure's
+<code>sizeof</code>, <code>alignof</code> and every <code>offsetof</code>, and that it is standard-layout
+and trivially copyable.</p>
+<div class="language-cpp highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="k">struct</span><span class="w"> </span><span class="nc">header</span><span class="w"> </span><span class="p">{</span><span class="w">                     </span><span class="c1">// sharedbox::header, 128 bytes</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">    </span><span class="c1">// line 0: written once at creation</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">    </span><span class="kt">uint64_t</span><span class="w"> </span><span class="n">magic</span><span class="p">;</span><span class="w">                 </span><span class="c1">//  0  "SHREDBX1"; written last, with release ordering</span>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">    </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">layout_major</span><span class="p">;</span><span class="w">          </span><span class="c1">//  8</span>
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">    </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">layout_minor</span><span class="p">;</span><span class="w">          </span><span class="c1">// 10</span>
+</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">    </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">field_count</span><span class="p">;</span><span class="w">           </span><span class="c1">// 12  1 to 256</span>
+</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">    </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">waiter_slots</span><span class="p">;</span><span class="w">          </span><span class="c1">// 14  1 to 4096</span>
+</span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="w">    </span><span class="kt">uint64_t</span><span class="w"> </span><span class="n">schema_hash</span><span class="p">;</span><span class="w">           </span><span class="c1">// 16</span>
+</span><span id="__span-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">record_size</span><span class="p">;</span><span class="w">           </span><span class="c1">// 24</span>
+</span><span id="__span-1-10"><a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">record</span><span class="p">;</span><span class="w">                </span><span class="c1">// 28  offset of the record</span>
+</span><span id="__span-1-11"><a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">tail</span><span class="p">;</span><span class="w">                  </span><span class="c1">// 32  offset of the field table, always 128</span>
+</span><span id="__span-1-12"><a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">size</span><span class="p">;</span><span class="w">                  </span><span class="c1">// 36  mapping size in bytes</span>
+</span><span id="__span-1-13"><a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="w">    </span><span class="kt">uint64_t</span><span class="w"> </span><span class="n">create_id</span><span class="p">;</span><span class="w">             </span><span class="c1">// 40  random at create, never 0</span>
+</span><span id="__span-1-14"><a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a><span class="w">    </span><span class="kt">uint64_t</span><span class="w"> </span><span class="n">creator_start</span><span class="p">;</span><span class="w">         </span><span class="c1">// 48  creator's start time, see Liveness</span>
+</span><span id="__span-1-15"><a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a><span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">creator_pid</span><span class="p">;</span><span class="w">           </span><span class="c1">// 56</span>
+</span><span id="__span-1-16"><a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a><span class="w">    </span><span class="kt">uint8_t</span><span class="w">  </span><span class="n">reserved0</span><span class="p">[</span><span class="mi">4</span><span class="p">];</span><span class="w">          </span><span class="c1">// 60  zero; minor versions may use it</span>
+</span><span id="__span-1-17"><a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a><span class="w">    </span><span class="c1">// line 1: changed by writes and waits</span>
+</span><span id="__span-1-18"><a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a><span class="w">    </span><span class="kt">uint64_t</span><span class="w"> </span><span class="n">seq</span><span class="p">;</span><span class="w">                   </span><span class="c1">// 64  sequence lock: even when free, odd while writing</span>
+</span><span id="__span-1-19"><a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a><span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">writer_pid</span><span class="p">;</span><span class="w">            </span><span class="c1">// 72  holder of the write lock, 0 if none</span>
+</span><span id="__span-1-20"><a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a><span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">wake_word</span><span class="p">;</span><span class="w">             </span><span class="c1">// 76  futex word (Linux)</span>
+</span><span id="__span-1-21"><a id="__codelineno-1-21" name="__codelineno-1-21" href="#__codelineno-1-21"></a><span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">waiters</span><span class="p">;</span><span class="w">               </span><span class="c1">// 80  occupied waiter slots</span>
+</span><span id="__span-1-22"><a id="__codelineno-1-22" name="__codelineno-1-22" href="#__codelineno-1-22"></a><span class="w">    </span><span class="kt">uint8_t</span><span class="w">  </span><span class="n">pad0</span><span class="p">[</span><span class="mi">4</span><span class="p">];</span><span class="w">               </span><span class="c1">// 84  zero</span>
+</span><span id="__span-1-23"><a id="__codelineno-1-23" name="__codelineno-1-23" href="#__codelineno-1-23"></a><span class="w">    </span><span class="kt">uint64_t</span><span class="w"> </span><span class="n">creator_pidns</span><span class="p">;</span><span class="w">         </span><span class="c1">// 88  creator's pid namespace; 0 on Windows</span>
+</span><span id="__span-1-24"><a id="__codelineno-1-24" name="__codelineno-1-24" href="#__codelineno-1-24"></a><span class="w">    </span><span class="kt">uint8_t</span><span class="w">  </span><span class="n">reserved1</span><span class="p">[</span><span class="mi">32</span><span class="p">];</span><span class="w">         </span><span class="c1">// 96  zero; minor versions may use it</span>
+</span><span id="__span-1-25"><a id="__codelineno-1-25" name="__codelineno-1-25" href="#__codelineno-1-25"></a><span class="p">};</span>
+</span></code></pre></div>
+<p>Line 0 is written once at creation and read once by attach, which copies
+it. Line 1 holds what writes change, so a write touches one header line.
+<code>creator_pidns</code> sits in line 1 only because line 0 has no room left; it is
+written once at creation like the other creator fields.</p>
+<p>The header is 128 bytes so that minor versions can add fields: a 64-byte
+header has no spare byte, and every addition would move the fields after
+it. There is one header per box, and readers and writers touch only line 1.
+The waiter slots, not the header, are the large part of the tail, and
+<code>max_waiters</code> sizes them. Worked example, a box with an <code>int</code>, a <code>float</code>
+and a <code>bool</code> and the default 64 waiter slots: header 128, field table 24,
+write counts 24, waiter slots 1536, padding 16, record 24 (the Python side
+rounds a record up to a multiple of 8): 1752 bytes used, one 4 KiB page. A
+box with three fields and 64 slots stays in one page up to about 2.3 KB of
+record.</p>
+<ul>
+<li>This is layout <code>1.0</code>: bytes 8 to 11 are <code>01 00 00 00</code> (<code>layout_major</code>
+  1, <code>layout_minor</code> 0). The layout version counts the segment format and
+  is not tied to the package version.</li>
+<li>Field table entry, 8 bytes: <code>u32 offset</code>, <code>u32 capacity_and_kind</code> (low
+  24 bits the capacity, top 8 bits the kind code: <code>bool</code> 0, <code>int</code> 1,
+  <code>float</code> 2, <code>str</code> 3, <code>bytes</code> 4, <code>ref</code> 5).</li>
+<li>Offsets are the creator's choice. The Python side packs fields by
+  descending alignment; another creator may pack differently. Attachers
+  read offsets from the field table and never compute them, so a box
+  created elsewhere with its own packing reads correctly from Python as
+  long as the field order, names, kinds and capacities match, which the
+  schema hash checks.</li>
+<li>Write counts: one <code>u64</code> per field, incremented under the write lock.</li>
+<li>Waiter slot, 24 bytes:</li>
+</ul>
+<div class="language-cpp highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="k">struct</span><span class="w"> </span><span class="nc">waiter_slot</span><span class="w"> </span><span class="p">{</span><span class="w">              </span><span class="c1">// sharedbox::waiter_slot</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">    </span><span class="kt">uint64_t</span><span class="w"> </span><span class="n">owner_start</span><span class="p">;</span><span class="w">         </span><span class="c1">// process start time, see Liveness</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">    </span><span class="kt">uint64_t</span><span class="w"> </span><span class="n">owner_pidns</span><span class="p">;</span><span class="w">         </span><span class="c1">// pid namespace, see Liveness; 0 on Windows</span>
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">owner_pid</span><span class="p">;</span><span class="w">           </span><span class="c1">// 0 = free</span>
+</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">interrupt</span><span class="p">;</span><span class="w">           </span><span class="c1">// set by interrupt(), cleared by the waiter</span>
+</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="p">};</span>
+</span></code></pre></div>
+<ul>
+<li>Record encoding, little-endian: <code>bool</code> 1 byte, <code>0x00</code> or <code>0x01</code>; <code>int</code>
+  8 bytes signed; <code>float</code> 8 bytes IEEE 754 double; <code>str</code> and <code>bytes</code> a
+  <code>u32</code> length, then up to <code>capacity</code> bytes (UTF-8 for <code>str</code>); <code>ref</code>
+  144 bytes, below. Alignment within the record: 8 for <code>int</code>, <code>float</code> and
+  <code>ref</code>, 4 for <code>str</code> and <code>bytes</code>, 1 for <code>bool</code>.</li>
+<li>A <code>ref</code> field refers to another box, which keeps its own segment. Its
+  capacity is always 144:</li>
+</ul>
+<div class="language-cpp highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="k">struct</span><span class="w"> </span><span class="nc">box_ref</span><span class="w"> </span><span class="p">{</span><span class="w">                  </span><span class="c1">// sharedbox::box_ref</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">    </span><span class="kt">uint64_t</span><span class="w"> </span><span class="n">create_id</span><span class="p">;</span><span class="w">           </span><span class="c1">// 0   the box's create_id; 0 = empty</span>
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">    </span><span class="kt">uint64_t</span><span class="w"> </span><span class="n">schema_hash</span><span class="p">;</span><span class="w">         </span><span class="c1">// 8   the box's schema_hash</span>
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">    </span><span class="kt">char</span><span class="w">     </span><span class="n">name</span><span class="p">[</span><span class="mi">128</span><span class="p">];</span><span class="w">           </span><span class="c1">// 16  its name, NUL-padded; ends at the first NUL or at 128</span>
+</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="p">};</span>
+</span></code></pre></div>
+<p>An empty reference is 144 zero bytes. A non-empty one always has a
+  nonzero <code>create_id</code>, since create never draws 0. It is written under the
+  referring box's sequence lock like any other field. A reader that
+  attaches the named box compares its <code>create_id</code> with the stored one to
+  tell it from a box created again under the same name.</p>
+<h2 id="schema-identity">Schema identity<a class="headerlink" href="#schema-identity" title="Permanent link">&para;</a></h2>
+<p>The schema is the list of fields that fixes a record's shape: names, kinds,
+capacities and their order. The schema hash shows that a creator and an
+attacher agree on it and on the class's meaning.</p>
+<ul>
+<li>Hash text: the identity, then one <code>name:kind:capacity</code> per field in
+  declaration order (base class fields first), joined with <code>|</code>, encoded as
+  UTF-8. Kinds are the words <code>bool</code>, <code>int</code>, <code>float</code>, <code>str</code>, <code>bytes</code>;
+  capacity is the payload size in bytes (8 for <code>int</code> and <code>float</code>, 1 for
+  <code>bool</code>). A <code>ref</code> field enters as <code>name:ref:&lt;identity&gt;</code>, or
+  <code>name:ref?:&lt;identity&gt;</code> when it may be empty (annotated <code>X | None</code>), with
+  the identity of the class it refers to in place of the capacity.</li>
+<li><code>schema_hash</code>: the first 8 bytes of SHA-256 over that text, read as a
+  little-endian <code>u64</code>.</li>
+<li>Identity: the <code>identity=</code> class keyword, a non-empty string; without it,
+  <code>module.qualname</code>. A subclass does not inherit its base's identity.</li>
+<li>The default box name is 16 hex digits of SHA-256 over the identity, so a
+  class that sets <code>identity=</code> is found by that identity from any package or
+  language, with no explicit name.</li>
+<li>A set identity lets another language agree with Python on a string both
+  sides write down, rather than on a Python module path. Moving or renaming
+  the Python class then keeps the hash, two packages can each declare a
+  matching class and share a box, and changing the identity (<code>"motor/2"</code>)
+  refuses processes of the old meaning when no field changed (a change of
+  units, for instance).</li>
+<li><code>sharedbox.hpp</code> does not carry SHA-256; C and C++ callers compute the
+  hash with their own library.</li>
+<li>Test vector:</li>
+</ul>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>__main__.Motor|position:int:8|enabled:bool:1|label:str:32
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>schema_hash  = 0x82ce467598596a72
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>default name = 5b4f7004d44277b7    (16 hex digits of SHA-256 over "__main__.Motor")
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>
+</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>__main__.Stage|label:str:4|motor:ref:motor/1
+</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>schema_hash  = 0xe33ffd91e10fab6d
+</span><span id="__span-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>
+</span><span id="__span-4-8"><a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>__main__.Stage|label:str:4|motor:ref?:motor/1
+</span><span id="__span-4-9"><a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>schema_hash  = 0xe58153f79aa6fdf6
+</span></code></pre></div>
+<h2 id="versioning-rules">Versioning rules<a class="headerlink" href="#versioning-rules" title="Permanent link">&para;</a></h2>
+<ul>
+<li>A reader refuses a segment whose <code>layout_major</code> differs from its own.</li>
+<li>A reader opens a segment whose <code>layout_minor</code> is higher than its own, and
+  ignores what it does not know. A handle reports the lower of the
+  segment's minor and its own.</li>
+<li>A minor version may only add: fields in bytes that are reserved and zero
+  in older minors, or features that stay off unless the segment says they
+  are on and the reader knows them.</li>
+<li>That includes field kinds: <code>handle::open</code> and <code>handle::from_capsule</code>
+  accept a field whose kind code they do not know. Its offset and capacity
+  are still checked against the record (capacity 1 byte to 1 MiB, the field
+  inside the record, no overlap), with no alignment asked, and its bytes are
+  otherwise opaque. A reader opens and reads a field of a kind it does not
+  know; it never writes one, and <code>write</code> returns <code>status::range</code> for it.
+  The Python extension, which converts every field, refuses such a segment
+  with <code>SchemaMismatchError</code>.</li>
+<li>For a kind a reader does not know, <code>capacity</code> is the field's whole span
+  in the record, so a future kind with a length prefix counts the prefix
+  in <code>capacity</code>.</li>
+<li>A change to how existing bytes are read or written (the sequence lock,
+  field encoding, the slot layout, object names) raises <code>layout_major</code>.</li>
+<li>The package takes a semver major step whenever <code>layout_major</code> changes.</li>
+</ul>
+<h2 id="protocols">Protocols<a class="headerlink" href="#protocols" title="Permanent link">&para;</a></h2>
+<p>Every shared word is a plain integer in the mapping, accessed through
+<code>std::atomic_ref</code> with the orderings given here.</p>
+<h3 id="create">Create<a class="headerlink" href="#create" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Create the mapping (see Names) at its full size, rounded up to 4096.
+   On Linux the size is reserved with <code>posix_fallocate</code>, retried on
+   <code>EINTR</code>, so a <code>/dev/shm</code> too small for the box fails here with an <abbr title="Operating system.">OS</abbr>
+   error instead of a later <code>SIGBUS</code>; <code>ftruncate</code> is the fallback where
+   the file system does not support it. New pages read as zero on both
+   platforms.</li>
+<li>Write the field table, the creator fields and the rest of line 0
+   except <code>magic</code>.
+   <code>create_id</code> comes from the <abbr title="Operating system.">OS</abbr> random source (<code>getrandom</code> on Linux,
+   falling back to <code>/dev/urandom</code> where it is missing or refused;
+   <code>BCryptGenRandom</code> on Windows) and is drawn again if 0. The creator
+   fields are this process's pid, start time and pid namespace. Every
+   waiter slot is free because the pages are zero.</li>
+<li>Write the initial field values into the record.</li>
+<li>Store <code>magic</code> with release ordering. Until then no attach succeeds.
+   <code>handle::create</code> does this at once. <code>handle::create_unpublished</code>
+   stops before it, so the creator can write through its handle first
+   (the Python layer runs <code>__post_init__</code> there), and
+   <code>handle::publish()</code> stores <code>magic</code> later, with a compare-exchange
+   from 0; it returns <code>status::range</code> when <code>magic</code> is already stored,
+   which is always the case for a handle made by <code>open</code> or
+   <code>from_capsule</code>.</li>
+<li>On a failure after step 1, remove the name (Linux) and close.</li>
+</ol>
+<h3 id="attach">Attach<a class="headerlink" href="#attach" title="Permanent link">&para;</a></h3>
+<ol>
+<li>Open the mapping by name and map all of it. Linux: <code>fstat</code> gives the
+   size, and a mapping smaller than one page is waited for, since its
+   creator sizes it right after making the name. Windows: <code>VirtualQuery</code>
+   on the view gives the size.</li>
+<li>Wait for <code>magic</code> with acquire ordering, with backoff (spin, yield, then
+   sleeps doubling up to 1 ms), up to the timeout. A mapping that never
+   gets <code>magic</code> is <code>status::not_found</code>.</li>
+<li>Check <code>layout_major</code> (Versioning rules).</li>
+<li>Check every geometry field against the mapping size before reading
+   through it: <code>field_count</code> and <code>waiter_slots</code> in range, <code>tail == 128</code>,
+   the record 64-byte aligned, after the waiter slots and inside the
+   mapping, <code>size</code> equal to the mapping size, and each field table entry
+   (capacity 1 byte to 1 MiB, and 1, 8 or 144 bytes for the fixed kinds,
+   alignment for the known kinds, the field inside the record, no two
+   fields overlapping). A field of an unknown kind is opaque (Versioning
+   rules). A failed check is <code>status::corrupt</code>.</li>
+<li>Copy the field table and use only the copy afterwards.</li>
+<li>Free the waiter slots of dead processes (see Waiter slots).</li>
+</ol>
+<p><code>handle::open</code> does not compare schema hashes: the caller compares
+<code>schema_hash()</code> with its own.</p>
+<h3 id="sequence-lock">Sequence lock<a class="headerlink" href="#sequence-lock" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Read: load <code>seq</code> with acquire; if odd, back off and retry; copy the
+  field and load its write count; an acquire fence; load <code>seq</code> again and
+  retry if it moved. The count is read inside the same window, so a value
+  and its version always match.</li>
+<li>Write: compare-and-swap <code>seq</code> from even <code>s</code> to <code>s + 1</code> (acquire), then a
+  release fence; store <code>writer_pid</code>; write the values; increment each
+  written field's count; unlock; wake.</li>
+<li>Unlock: if <code>seq</code> still equals <code>s + 1</code>, clear <code>writer_pid</code>; then
+  compare-and-swap <code>seq</code> from <code>s + 1</code> to <code>s + 2</code> (release), and do nothing
+  if the swap fails. A failed swap means a <code>force_unlock()</code> released this
+  writer's lock while it was still running, and <code>seq</code> may now belong to a
+  later writer's lock. A plain store of <code>s + 2</code> would release that later
+  writer's lock and move <code>seq</code> backwards. The check and the clear are two
+  operations, so a <code>force_unlock()</code> and a new writer's lock that both land
+  between them leave the new writer's <code>writer_pid</code> at 0; the lock is not
+  affected, and only a later <code>LockTimeoutError</code> names pid 0 instead of
+  the holder.</li>
+<li>Generation: there is no separate counter. Every write adds exactly 2 to
+  <code>seq</code>, so the generation is <code>seq &gt;&gt; 1</code> (<code>generation()</code> returns it). A
+  <code>force_unlock()</code> that stores <code>seq + 1</code> counts as one generation, since
+  the dead writer may have changed data.</li>
+<li>A reader or writer gives up after the lock timeout with
+  <code>status::lock_timeout</code>.</li>
+<li><code>force_unlock()</code>: if <code>seq</code> is odd, compare-and-swap it to <code>seq + 1</code>;
+  <code>writer_pid</code> stays as it was, as a record of who held the lock.</li>
+</ul>
+<h3 id="waiter-slots">Waiter slots<a class="headerlink" href="#waiter-slots" title="Permanent link">&para;</a></h3>
+<ul>
+<li><code>waiter_slots</code> is set at creation: the <code>max_waiters</code> class keyword,
+  default 64, 1 to 4096.</li>
+<li>Register: first free every slot whose owner is dead (Liveness). Claim a
+  slot with a compare-and-swap of <code>owner_pid</code> from 0 to this process's
+  pid, then increment <code>waiters</code>, clear <code>interrupt</code>, store <code>owner_pidns</code> and
+  last <code>owner_start</code> (release). A slot with a nonzero <code>owner_start</code> has
+  always been counted, so freeing it may decrement <code>waiters</code>. A slot whose
+  <code>owner_start</code> is still 0 belongs to a claim in progress; if its pid is no
+  longer running, the claimer died mid-claim and the slot is freed without
+  a decrement. A claimer killed between its compare-and-swap and its
+  increment therefore cannot push <code>waiters</code> below the true count; one
+  killed after the increment leaves it one too high, which costs a system
+  call on each wake and never loses one. No slot free gives
+  <code>status::no_slot</code>.</li>
+<li>Free a dead owner's slot: change <code>owner_start</code> with a compare-and-swap
+  from the value read to <code>UINT64_MAX - 1</code> (the <code>start_freeing</code> marker),
+  which is never a start time on Linux (clock ticks since boot) or Windows
+  (FILETIME). Only the process whose compare-and-swap succeeds goes on,
+  and every scan skips a slot holding the marker. It then checks that
+  <code>owner_pid</code> still holds the pid it read; if not, it puts the old
+  <code>owner_start</code> back and leaves the slot to its new owner. Otherwise it
+  decrements <code>waiters</code> if the value it read was nonzero, stores
+  <code>owner_pidns = 0</code>, then <code>owner_pid = 0</code> (release), and last changes
+  <code>owner_start</code> from the marker to 0 with a compare-and-swap, which fails
+  harmlessly once a new claimer has stored its own.</li>
+<li>A scan reads <code>owner_pid</code>, then <code>owner_start</code> and <code>owner_pidns</code>, then
+  <code>owner_pid</code> again, and skips the slot if the pid changed: otherwise a
+  slot freed and claimed between the first two reads would pair the dead
+  pid with the new owner's start, and the compare-and-swap would mark a
+  live slot.</li>
+<li>Release: store <code>owner_start = 0</code> (release), decrement <code>waiters</code>, store
+  <code>owner_pidns = 0</code>, then <code>owner_pid = 0</code> (release). A handle frees only a
+  slot it claimed that still records its own <code>(pid, start, pidns)</code>; a
+  child created by <code>fork</code> inherits its parent's claims but leaves them to
+  the parent.</li>
+<li>A thread waits in a slot it holds. The Python watcher registers one slot
+  for its lifetime, and a one-off <code>Segment.wait()</code> without a slot claims
+  one for the call.</li>
+</ul>
+<p>Known limits, each after a process is killed at one specific step:</p>
+<ul>
+<li>A freer killed while holding the marker, before it clears <code>owner_pid</code>,
+  leaves the slot unusable until the segment is created again, and
+  <code>waiters</code> one too high if it was killed before its decrement.</li>
+<li>An owner killed partway through a release leaves a slot with no start,
+  which is freed without a decrement, so <code>waiters</code> stays one too high if
+  the kill came before the decrement. On Linux, a kill after
+  <code>owner_pidns = 0</code> leaves a namespace of 0, which is never freed (see
+  Liveness); the count stays correct.</li>
+<li>A claimer killed on Linux before it stores <code>owner_pidns</code> leaves the slot
+  stuck the same way, and counted once too many if it had already
+  incremented <code>waiters</code>.</li>
+<li>The check that <code>owner_pid</code> still holds the pid cannot tell an unstamped
+  claimer from another one with the same pid, which needs the pid to be
+  reused within a few instructions.</li>
+</ul>
+<p>A count that is too high costs a system call on each write; it never loses
+a wake-up.</p>
+<h3 id="wait-and-wake">Wait and wake<a class="headerlink" href="#wait-and-wake" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Wait (slot <code>i</code>, last seen generation <code>g</code>, timeout):</li>
+<li>Load <code>wake_word</code>, then return at once if <code>seq &gt;&gt; 1 != g</code> or slot <code>i</code>'s
+    <code>interrupt</code> is set (clearing it with a compare-and-swap).</li>
+<li>Linux: <code>FUTEX_WAIT</code> (shared, not private) on <code>wake_word</code> with the value
+    loaded before the check, so a write in between makes the call return
+    at once.</li>
+<li>Windows: wait on event <code>i</code>, which the waiter's process opens on first
+    use and keeps.</li>
+<li>Check again after waking; a wake may be spurious. Past the timeout the
+    result is <code>status::timeout</code>.</li>
+<li>Wake, after every write:</li>
+<li>Increment <code>wake_word</code> with sequentially consistent ordering, so the
+    following load of <code>waiters</code> cannot move before it or before the swap
+    of <code>seq</code>; a waiter that registered just before would otherwise be
+    missed.</li>
+<li>If <code>waiters</code> is 0, stop: no system call on the normal path.</li>
+<li>Linux: one <code>FUTEX_WAKE</code> with <code>INT_MAX</code> waiters.</li>
+<li>Windows: <code>SetEvent</code> on the event of every occupied slot.</li>
+<li><code>interrupt(slot)</code>: set the slot's <code>interrupt</code>, then wake that slot. On
+  Linux it increments <code>wake_word</code> and calls <code>FUTEX_WAKE</code>, and the other
+  waiters check their own flag and sleep again; on Windows it sets that
+  slot's event only. The flag stays set until the waiter sees it, so an
+  interrupt sent before the wait starts still ends it.</li>
+<li>The Python watcher waits in steps of at most 1 s. Writes and <code>interrupt</code>
+  wake it at once; after each step it checks that its slot still records
+  its own <code>(pid, start, pidns)</code> and claims a new slot if not. While every
+  slot is taken it checks for changes once a second instead of waiting.</li>
+</ul>
+<h3 id="liveness">Liveness<a class="headerlink" href="#liveness" title="Permanent link">&para;</a></h3>
+<p>A process is named by its pid and its start time.</p>
+<ul>
+<li>Start time: Windows, the creation time from <code>GetProcessTimes</code>; Linux,
+  field 22 of <code>/proc/&lt;pid&gt;/stat</code>, parsed after the last <code>)</code>. A real value
+  of 0 counts as 1.</li>
+<li>Dead: no process has the pid; or one does and its start time differs
+  (the pid was reused); or, on Linux, its state is <code>Z</code> or <code>X</code>. On Windows
+  a process whose handle is signalled has exited.</li>
+<li>Alive: the process exists but its start time cannot be read (another
+  user, <code>/proc</code> mounted with <code>hidepid</code>, access denied on Windows), or the
+  recorded start time was the unreadable marker. A slot is never freed on
+  a guess.</li>
+<li>Pid namespaces (Linux): a slot records its owner's pid namespace, the
+  inode number of <code>/proc/self/ns/pid</code>. A slot whose <code>owner_pidns</code> differs
+  from the checking process's own counts as alive, because its pid cannot
+  be checked from there; only its owner, or creating the segment again,
+  frees it. This covers containers that share <code>/dev/shm</code> but not a pid
+  namespace. A process that cannot read its own namespace records 0, which
+  means unknown: a slot whose namespace is 0, or a checker whose own is 0,
+  is never freed. Windows has no pid namespaces and records 0.</li>
+<li>The current pid is cached, and a <code>pthread_atfork</code> handler resets the
+  cache in the child after <code>fork</code>; the start time and namespace are read
+  on first use.</li>
+</ul>
+<p>The Python extension uses the same rules for the creator fields: when a
+create finds the name taken, <code>SegmentExistsError</code> says whether the creator
+still runs, runs in another pid namespace, or has exited. For a box not
+published yet it reads the creator fields without waiting for <code>magic</code>,
+and a creator that still runs is reported as still creating the box.</p>
+<h3 id="close-and-unlink">Close and unlink<a class="headerlink" href="#close-and-unlink" title="Permanent link">&para;</a></h3>
+<ul>
+<li>Destroying a handle releases any waiter slot it holds, then unmaps its
+  view and closes its <abbr title="Operating system.">OS</abbr> handles, including the events it opened.</li>
+<li><code>unlink(name)</code>: Linux <code>shm_unlink("/sharedbox.&lt;name&gt;")</code>; Windows does
+  nothing.</li>
+</ul>
+<h2 id="implementation-language">Implementation language<a class="headerlink" href="#implementation-language" title="Permanent link">&para;</a></h2>
+<p>The core is C++20, header-only, in namespace <code>sharedbox</code>. Its names are
+declared in the inline namespace <code>sharedbox::v1</code>, which changes when the
+C++ interface changes incompatibly, so code built against headers with
+different inline namespaces can be linked into one program. Names in
+<code>sharedbox::detail</code> may change without a new inline namespace, so shared
+libraries build with hidden visibility to keep their copies apart. C
+programs use it through <code>sharedbox_c.h</code>, whose <code>sbx_*</code> functions are not
+versioned this way and are declared with hidden visibility outside
+Windows.</p>
+<ul>
+<li>The layout structs are plain standard-layout types with integer members.</li>
+<li>Atomics: <code>std::atomic_ref</code> on those members. <code>static_assert</code>s require
+  <code>std::atomic_ref&lt;std::uint32_t&gt;</code> and <code>std::atomic_ref&lt;std::uint64_t&gt;</code> to
+  be always lock-free, because only lock-free atomics work on memory shared
+  between processes; a fallback that takes a lock would keep that lock in
+  one process. <code>std::atomic_ref::wait</code> and <code>notify_*</code> are not used, since
+  implementations do not promise they work across processes, and
+  <code>std::atomic</code> members are not used because the standard does not fix
+  their size or layout. With <code>std::atomic_ref</code> the compiler emits the
+  barriers each <abbr title="Central processing unit. The processor that runs a program.">CPU</abbr> needs, with one code path for every compiler.</li>
+<li>64-bit little-endian targets only; the header refuses a big-endian
+  target at compile time.</li>
+<li>No allocation on the read and write paths. No exceptions: every function
+  that can fail returns <code>result&lt;T&gt;</code>, a value or a <code>status</code>. On C++20
+  <code>result&lt;T&gt;</code> is the header's own type with the part of the interface of
+  <code>std::expected&lt;T, status&gt;</code> it needs (<code>has_value</code>, <code>operator bool</code>,
+  <code>operator*</code>, <code>-&gt;</code>, <code>value</code>, <code>error</code>, <code>and_then</code>, <code>transform</code>, <code>or_else</code>,
+  <code>value_or</code>); <code>value()</code> on an error calls <code>std::terminate</code>. Where the
+  standard library has <code>std::expected</code> with <code>__cpp_lib_expected &gt;=
+  202211L</code> (C++23), <code>result&lt;T&gt;</code> is an alias for <code>std::expected&lt;T,
+  status&gt;</code>. Every function returning it is <code>[[nodiscard]]</code>, and the header
+  builds with <code>-fno-exceptions</code>.</li>
+<li>Every translation unit of a program must see the same <code>result</code>: build
+  them all as C++20 or all as C++23.</li>
+</ul>
+<h2 id="sharedboxhpp"><code>sharedbox.hpp</code><a class="headerlink" href="#sharedboxhpp" title="Permanent link">&para;</a></h2>
+<div class="language-cpp highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="k">namespace</span><span class="w"> </span><span class="nn">sharedbox</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="kr">inline</span><span class="w"> </span><span class="k">namespace</span><span class="w"> </span><span class="nn">v1</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>
+</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="kr">inline</span><span class="w"> </span><span class="k">constexpr</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">layout_major</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="n">layout_minor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span>
+</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="c1">// Also: the layout constants handle_version, magic, header_size, name_max, max_fields,</span>
+</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="c1">// max_capacity, max_waiter_slots, default_waiter_slots, record_alignment, page_size,</span>
+</span><span id="__span-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="c1">// max_timeout, default_lock_timeout, kind_shift, capacity_mask and kind_bool, kind_int,</span>
+</span><span id="__span-5-8"><a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="c1">// kind_float, kind_str, kind_bytes, kind_ref; the structs header, stored_field, waiter_slot</span>
+</span><span id="__span-5-9"><a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="c1">// and box_ref (see Layout); result&lt;T&gt; and unexpected (see Implementation language).</span>
+</span><span id="__span-5-10"><a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a>
+</span><span id="__span-5-11"><a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a><span class="k">enum</span><span class="w"> </span><span class="k">class</span><span class="w"> </span><span class="nc">status</span><span class="w"> </span><span class="o">:</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">ok</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="n">exists</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">-1</span><span class="p">,</span><span class="w"> </span><span class="n">not_found</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">-2</span><span class="p">,</span><span class="w"> </span><span class="n">layout</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">-3</span><span class="p">,</span><span class="w"> </span><span class="n">schema</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">-4</span><span class="p">,</span>
+</span><span id="__span-5-12"><a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a><span class="w">                          </span><span class="n">corrupt</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">-5</span><span class="p">,</span><span class="w"> </span><span class="n">lock_timeout</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">-6</span><span class="p">,</span><span class="w"> </span><span class="n">timeout</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">-7</span><span class="p">,</span><span class="w"> </span><span class="n">no_slot</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">-8</span><span class="p">,</span>
+</span><span id="__span-5-13"><a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a><span class="w">                          </span><span class="n">range</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">-9</span><span class="p">,</span><span class="w"> </span><span class="n">os</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">-10</span><span class="w"> </span><span class="p">};</span>
+</span><span id="__span-5-14"><a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a>
+</span><span id="__span-5-15"><a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a><span class="k">struct</span><span class="w"> </span><span class="nc">field_spec</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">offset</span><span class="p">;</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">capacity</span><span class="p">;</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">kind</span><span class="p">;</span><span class="w"> </span><span class="p">};</span>
+</span><span id="__span-5-16"><a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a><span class="k">struct</span><span class="w"> </span><span class="nc">value</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">field</span><span class="p">;</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">span</span><span class="o">&lt;</span><span class="k">const</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">byte</span><span class="o">&gt;</span><span class="w"> </span><span class="n">bytes</span><span class="p">;</span><span class="w"> </span><span class="p">};</span>
+</span><span id="__span-5-17"><a id="__codelineno-5-17" name="__codelineno-5-17" href="#__codelineno-5-17"></a><span class="k">using</span><span class="w"> </span><span class="n">seconds</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">chrono</span><span class="o">::</span><span class="n">duration</span><span class="o">&lt;</span><span class="kt">double</span><span class="o">&gt;</span><span class="p">;</span>
+</span><span id="__span-5-18"><a id="__codelineno-5-18" name="__codelineno-5-18" href="#__codelineno-5-18"></a><span class="k">struct</span><span class="w"> </span><span class="nc">read_value</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">size_t</span><span class="w"> </span><span class="n">len</span><span class="p">;</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">uint64_t</span><span class="w"> </span><span class="n">version</span><span class="p">;</span><span class="w"> </span><span class="p">};</span>
+</span><span id="__span-5-19"><a id="__codelineno-5-19" name="__codelineno-5-19" href="#__codelineno-5-19"></a><span class="k">enum</span><span class="w"> </span><span class="k">class</span><span class="w"> </span><span class="nc">wake</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">changed</span><span class="p">,</span><span class="w"> </span><span class="n">interrupted</span><span class="w"> </span><span class="p">};</span><span class="w">      </span><span class="c1">// a timeout is status::timeout</span>
+</span><span id="__span-5-20"><a id="__codelineno-5-20" name="__codelineno-5-20" href="#__codelineno-5-20"></a>
+</span><span id="__span-5-21"><a id="__codelineno-5-21" name="__codelineno-5-21" href="#__codelineno-5-21"></a><span class="k">class</span><span class="w"> </span><span class="nc">handle</span><span class="w"> </span><span class="p">{</span><span class="w">                                  </span><span class="c1">// move-only; the destructor releases it</span>
+</span><span id="__span-5-22"><a id="__codelineno-5-22" name="__codelineno-5-22" href="#__codelineno-5-22"></a><span class="k">public</span><span class="o">:</span>
+</span><span id="__span-5-23"><a id="__codelineno-5-23" name="__codelineno-5-23" href="#__codelineno-5-23"></a><span class="w">    </span><span class="k">static</span><span class="w"> </span><span class="n">result</span><span class="o">&lt;</span><span class="n">handle</span><span class="o">&gt;</span><span class="w"> </span><span class="n">create</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="n">string_view</span><span class="w"> </span><span class="n">name</span><span class="p">,</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">span</span><span class="o">&lt;</span><span class="k">const</span><span class="w"> </span><span class="n">field_spec</span><span class="o">&gt;</span><span class="w"> </span><span class="n">fields</span><span class="p">,</span>
+</span><span id="__span-5-24"><a id="__codelineno-5-24" name="__codelineno-5-24" href="#__codelineno-5-24"></a><span class="w">                                 </span><span class="n">std</span><span class="o">::</span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">record_size</span><span class="p">,</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">uint64_t</span><span class="w"> </span><span class="n">schema_hash</span><span class="p">,</span>
+</span><span id="__span-5-25"><a id="__codelineno-5-25" name="__codelineno-5-25" href="#__codelineno-5-25"></a><span class="w">                                 </span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">waiter_slots</span><span class="p">,</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">span</span><span class="o">&lt;</span><span class="k">const</span><span class="w"> </span><span class="n">value</span><span class="o">&gt;</span><span class="w"> </span><span class="n">initial</span><span class="p">);</span>
+</span><span id="__span-5-26"><a id="__codelineno-5-26" name="__codelineno-5-26" href="#__codelineno-5-26"></a><span class="w">    </span><span class="k">static</span><span class="w"> </span><span class="n">result</span><span class="o">&lt;</span><span class="n">handle</span><span class="o">&gt;</span><span class="w"> </span><span class="n">create_unpublished</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="n">string_view</span><span class="w"> </span><span class="n">name</span><span class="p">,</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">span</span><span class="o">&lt;</span><span class="k">const</span><span class="w"> </span><span class="n">field_spec</span><span class="o">&gt;</span><span class="w"> </span><span class="n">fields</span><span class="p">,</span>
+</span><span id="__span-5-27"><a id="__codelineno-5-27" name="__codelineno-5-27" href="#__codelineno-5-27"></a><span class="w">                                             </span><span class="n">std</span><span class="o">::</span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">record_size</span><span class="p">,</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">uint64_t</span><span class="w"> </span><span class="n">schema_hash</span><span class="p">,</span>
+</span><span id="__span-5-28"><a id="__codelineno-5-28" name="__codelineno-5-28" href="#__codelineno-5-28"></a><span class="w">                                             </span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">waiter_slots</span><span class="p">,</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">span</span><span class="o">&lt;</span><span class="k">const</span><span class="w"> </span><span class="n">value</span><span class="o">&gt;</span><span class="w"> </span><span class="n">initial</span><span class="p">);</span>
+</span><span id="__span-5-29"><a id="__codelineno-5-29" name="__codelineno-5-29" href="#__codelineno-5-29"></a><span class="w">    </span><span class="n">result</span><span class="o">&lt;</span><span class="kt">void</span><span class="o">&gt;</span><span class="w"> </span><span class="n">publish</span><span class="p">()</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
+</span><span id="__span-5-30"><a id="__codelineno-5-30" name="__codelineno-5-30" href="#__codelineno-5-30"></a><span class="w">    </span><span class="k">static</span><span class="w"> </span><span class="n">result</span><span class="o">&lt;</span><span class="n">handle</span><span class="o">&gt;</span><span class="w"> </span><span class="n">open</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="n">string_view</span><span class="w"> </span><span class="n">name</span><span class="p">,</span><span class="w"> </span><span class="n">seconds</span><span class="w"> </span><span class="n">timeout</span><span class="p">);</span>
+</span><span id="__span-5-31"><a id="__codelineno-5-31" name="__codelineno-5-31" href="#__codelineno-5-31"></a><span class="w">    </span><span class="k">static</span><span class="w"> </span><span class="n">result</span><span class="o">&lt;</span><span class="n">handle</span><span class="o">&gt;</span><span class="w"> </span><span class="n">from_capsule</span><span class="p">(</span><span class="n">sbx_handle</span><span class="w"> </span><span class="o">*</span><span class="n">capsule</span><span class="p">);</span>
+</span><span id="__span-5-32"><a id="__codelineno-5-32" name="__codelineno-5-32" href="#__codelineno-5-32"></a><span class="w">    </span><span class="n">result</span><span class="o">&lt;</span><span class="n">handle</span><span class="o">&gt;</span><span class="w"> </span><span class="n">duplicate</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="p">;</span>
+</span><span id="__span-5-33"><a id="__codelineno-5-33" name="__codelineno-5-33" href="#__codelineno-5-33"></a><span class="w">    </span><span class="n">sbx_handle</span><span class="w"> </span><span class="o">*</span><span class="nf">to_capsule</span><span class="p">()</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="p">;</span>
+</span><span id="__span-5-34"><a id="__codelineno-5-34" name="__codelineno-5-34" href="#__codelineno-5-34"></a>
+</span><span id="__span-5-35"><a id="__codelineno-5-35" name="__codelineno-5-35" href="#__codelineno-5-35"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="n">string_view</span><span class="w"> </span><span class="nf">name</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
+</span><span id="__span-5-36"><a id="__codelineno-5-36" name="__codelineno-5-36" href="#__codelineno-5-36"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="w"> </span><span class="nf">field_count</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
+</span><span id="__span-5-37"><a id="__codelineno-5-37" name="__codelineno-5-37" href="#__codelineno-5-37"></a><span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="n">field_spec</span><span class="w"> </span><span class="o">&amp;</span><span class="nf">field</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">index</span><span class="p">)</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
+</span><span id="__span-5-38"><a id="__codelineno-5-38" name="__codelineno-5-38" href="#__codelineno-5-38"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="kt">uint32_t</span><span class="w"> </span><span class="nf">record_size</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
+</span><span id="__span-5-39"><a id="__codelineno-5-39" name="__codelineno-5-39" href="#__codelineno-5-39"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="kt">uint64_t</span><span class="w"> </span><span class="nf">schema_hash</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
+</span><span id="__span-5-40"><a id="__codelineno-5-40" name="__codelineno-5-40" href="#__codelineno-5-40"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="kt">uint64_t</span><span class="w"> </span><span class="nf">create_id</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
+</span><span id="__span-5-41"><a id="__codelineno-5-41" name="__codelineno-5-41" href="#__codelineno-5-41"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="w"> </span><span class="nf">waiter_slots</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
+</span><span id="__span-5-42"><a id="__codelineno-5-42" name="__codelineno-5-42" href="#__codelineno-5-42"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="w"> </span><span class="nf">minor_version</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
+</span><span id="__span-5-43"><a id="__codelineno-5-43" name="__codelineno-5-43" href="#__codelineno-5-43"></a><span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="nf">base</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
+</span><span id="__span-5-44"><a id="__codelineno-5-44" name="__codelineno-5-44" href="#__codelineno-5-44"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="kt">uint64_t</span><span class="w"> </span><span class="nf">size</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
+</span><span id="__span-5-45"><a id="__codelineno-5-45" name="__codelineno-5-45" href="#__codelineno-5-45"></a>
+</span><span id="__span-5-46"><a id="__codelineno-5-46" name="__codelineno-5-46" href="#__codelineno-5-46"></a><span class="w">    </span><span class="n">result</span><span class="o">&lt;</span><span class="kt">void</span><span class="o">&gt;</span><span class="w"> </span><span class="n">set_lock_timeout</span><span class="p">(</span><span class="n">seconds</span><span class="w"> </span><span class="n">timeout</span><span class="p">)</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
+</span><span id="__span-5-47"><a id="__codelineno-5-47" name="__codelineno-5-47" href="#__codelineno-5-47"></a><span class="w">    </span><span class="n">result</span><span class="o">&lt;</span><span class="n">read_value</span><span class="o">&gt;</span><span class="w"> </span><span class="n">read</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">field</span><span class="p">,</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">span</span><span class="o">&lt;</span><span class="n">std</span><span class="o">::</span><span class="kt">byte</span><span class="o">&gt;</span><span class="w"> </span><span class="n">buf</span><span class="p">)</span><span class="w"> </span><span class="k">const</span><span class="p">;</span>
+</span><span id="__span-5-48"><a id="__codelineno-5-48" name="__codelineno-5-48" href="#__codelineno-5-48"></a><span class="w">    </span><span class="n">result</span><span class="o">&lt;</span><span class="n">std</span><span class="o">::</span><span class="kt">uint64_t</span><span class="o">&gt;</span><span class="w"> </span><span class="n">read_record</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="n">span</span><span class="o">&lt;</span><span class="n">std</span><span class="o">::</span><span class="kt">byte</span><span class="o">&gt;</span><span class="w"> </span><span class="n">buf</span><span class="p">)</span><span class="w"> </span><span class="k">const</span><span class="p">;</span>
+</span><span id="__span-5-49"><a id="__codelineno-5-49" name="__codelineno-5-49" href="#__codelineno-5-49"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="n">span</span><span class="o">&lt;</span><span class="k">const</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">byte</span><span class="o">&gt;</span><span class="w"> </span><span class="n">payload</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">field</span><span class="p">,</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">span</span><span class="o">&lt;</span><span class="k">const</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">byte</span><span class="o">&gt;</span><span class="w"> </span><span class="n">record</span><span class="p">)</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
+</span><span id="__span-5-50"><a id="__codelineno-5-50" name="__codelineno-5-50" href="#__codelineno-5-50"></a><span class="w">    </span><span class="n">result</span><span class="o">&lt;</span><span class="kt">void</span><span class="o">&gt;</span><span class="w"> </span><span class="n">write</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="n">span</span><span class="o">&lt;</span><span class="k">const</span><span class="w"> </span><span class="n">value</span><span class="o">&gt;</span><span class="w"> </span><span class="n">values</span><span class="p">,</span><span class="w"> </span><span class="n">seconds</span><span class="w"> </span><span class="n">lock_timeout</span><span class="p">);</span>
+</span><span id="__span-5-51"><a id="__codelineno-5-51" name="__codelineno-5-51" href="#__codelineno-5-51"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="kt">uint64_t</span><span class="w"> </span><span class="nf">generation</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
+</span><span id="__span-5-52"><a id="__codelineno-5-52" name="__codelineno-5-52" href="#__codelineno-5-52"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="kt">uint64_t</span><span class="w"> </span><span class="nf">version</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">field</span><span class="p">)</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
+</span><span id="__span-5-53"><a id="__codelineno-5-53" name="__codelineno-5-53" href="#__codelineno-5-53"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="kt">uint32_t</span><span class="w"> </span><span class="nf">writer_pid</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
+</span><span id="__span-5-54"><a id="__codelineno-5-54" name="__codelineno-5-54" href="#__codelineno-5-54"></a><span class="w">    </span><span class="n">result</span><span class="o">&lt;</span><span class="kt">void</span><span class="o">&gt;</span><span class="w"> </span><span class="n">force_unlock</span><span class="p">()</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
+</span><span id="__span-5-55"><a id="__codelineno-5-55" name="__codelineno-5-55" href="#__codelineno-5-55"></a>
+</span><span id="__span-5-56"><a id="__codelineno-5-56" name="__codelineno-5-56" href="#__codelineno-5-56"></a><span class="w">    </span><span class="n">result</span><span class="o">&lt;</span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="o">&gt;</span><span class="w"> </span><span class="n">register_waiter</span><span class="p">();</span>
+</span><span id="__span-5-57"><a id="__codelineno-5-57" name="__codelineno-5-57" href="#__codelineno-5-57"></a><span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="nf">release_waiter</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">slot</span><span class="p">)</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
+</span><span id="__span-5-58"><a id="__codelineno-5-58" name="__codelineno-5-58" href="#__codelineno-5-58"></a><span class="w">    </span><span class="kt">bool</span><span class="w"> </span><span class="nf">waiter_held</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">slot</span><span class="p">)</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
+</span><span id="__span-5-59"><a id="__codelineno-5-59" name="__codelineno-5-59" href="#__codelineno-5-59"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="kt">uint32_t</span><span class="w"> </span><span class="nf">waiters</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
+</span><span id="__span-5-60"><a id="__codelineno-5-60" name="__codelineno-5-60" href="#__codelineno-5-60"></a><span class="w">    </span><span class="n">result</span><span class="o">&lt;</span><span class="n">wake</span><span class="o">&gt;</span><span class="w"> </span><span class="n">wait</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">slot</span><span class="p">,</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">uint64_t</span><span class="w"> </span><span class="n">last_generation</span><span class="p">,</span><span class="w"> </span><span class="n">seconds</span><span class="w"> </span><span class="n">timeout</span><span class="p">);</span>
+</span><span id="__span-5-61"><a id="__codelineno-5-61" name="__codelineno-5-61" href="#__codelineno-5-61"></a><span class="w">    </span><span class="n">result</span><span class="o">&lt;</span><span class="kt">void</span><span class="o">&gt;</span><span class="w"> </span><span class="n">interrupt</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">slot</span><span class="p">);</span>
+</span><span id="__span-5-62"><a id="__codelineno-5-62" name="__codelineno-5-62" href="#__codelineno-5-62"></a><span class="p">};</span>
+</span><span id="__span-5-63"><a id="__codelineno-5-63" name="__codelineno-5-63" href="#__codelineno-5-63"></a>
+</span><span id="__span-5-64"><a id="__codelineno-5-64" name="__codelineno-5-64" href="#__codelineno-5-64"></a><span class="n">result</span><span class="o">&lt;</span><span class="kt">void</span><span class="o">&gt;</span><span class="w"> </span><span class="n">unlink</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="n">string_view</span><span class="w"> </span><span class="n">name</span><span class="p">)</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
+</span><span id="__span-5-65"><a id="__codelineno-5-65" name="__codelineno-5-65" href="#__codelineno-5-65"></a><span class="n">result</span><span class="o">&lt;</span><span class="n">header</span><span class="o">&gt;</span><span class="w"> </span><span class="n">inspect</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="n">string_view</span><span class="w"> </span><span class="n">name</span><span class="p">)</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
+</span><span id="__span-5-66"><a id="__codelineno-5-66" name="__codelineno-5-66" href="#__codelineno-5-66"></a>
+</span><span id="__span-5-67"><a id="__codelineno-5-67" name="__codelineno-5-67" href="#__codelineno-5-67"></a><span class="p">}</span><span class="w">  </span><span class="c1">// namespace v1</span>
+</span><span id="__span-5-68"><a id="__codelineno-5-68" name="__codelineno-5-68" href="#__codelineno-5-68"></a><span class="p">}</span><span class="w">  </span><span class="c1">// namespace sharedbox</span>
+</span></code></pre></div>
+<p>Every function returning <code>result</code> is <code>[[nodiscard]]</code>. <code>handle</code> also has
+<code>lock</code>, <code>unlock</code> and <code>set_wait_hooks</code>, which the tests and the Python
+extension use.</p>
+<ul>
+<li><code>status</code>: <code>ok</code>, and one code per error the Python side raises, so the
+  extension maps each to its exception class. <code>exists</code>: the name is taken.
+  <code>not_found</code>: no mapping under the name, or one that never becomes a box
+  within the timeout. <code>layout</code>: another <code>layout_major</code>. <code>schema</code> is kept
+  for callers that compare schema hashes. <code>corrupt</code>: a header or field
+  table that fails the attach checks. <code>lock_timeout</code>, <code>timeout</code>, <code>no_slot</code>:
+  see Protocols. <code>range</code>: an argument out of range. <code>os</code>: an <abbr title="Operating system.">OS</abbr> call
+  failed, with <code>errno</code> or <code>GetLastError()</code> left as the call set it.</li>
+<li><code>create</code> and <code>write</code> take raw bytes in the record encoding, without the
+  length prefix of <code>str</code> and <code>bytes</code>; converting language values stays in
+  each binding.</li>
+<li><code>open</code> takes no schema hash; callers compare <code>schema_hash()</code> with their
+  own. Its <code>timeout</code>, in <code>(0, 86400]</code>, only bounds the wait for a creator
+  (the Python extension passes at most 1 s). Reads use a lock timeout of
+  5 s until <code>set_lock_timeout</code> changes it; <code>write</code> takes its own.</li>
+<li><code>read</code> returns <code>read_value</code>. When the stored value is longer than <code>buf</code>,
+  nothing is copied and <code>len</code> says how long it is; a buffer of the field's
+  capacity always fits. <code>read_record</code> copies every field from one moment
+  and returns the generation of that moment; <code>payload</code> finds a field in
+  such a copy.</li>
+<li><code>inspect(name)</code> copies a published header without waiting and without
+  the checks of <code>open</code>. The Python extension uses it to name the layout of
+  a segment it refuses and the creator in <code>SegmentExistsError</code>.</li>
+<li><code>duplicate()</code> makes a second handle with its own mapping from this
+  handle's <abbr title="Operating system.">OS</abbr> handle (<code>dup</code> and <code>mmap</code> on Linux, <code>DuplicateHandle</code> and
+  <code>MapViewOfFile</code> on Windows), not from the name, so it works after
+  <code>unlink()</code>.</li>
+<li><code>minor_version()</code> is the lower of the segment's <code>layout_minor</code> and the
+  <code>layout_minor</code> of the <code>sharedbox.hpp</code> the caller was compiled with.</li>
+<li>Shared memory that never becomes a box within the timeout is
+  <code>status::not_found</code>.</li>
+<li>Thread safety: every member function may be called from several threads
+  on one handle. Destroying or moving a handle must not overlap another
+  call on it.</li>
+<li>Known limit: on Linux every open handle keeps the mapping's file
+  descriptor, so about 1000 open boxes reach the default <code>ulimit -n</code> of
+  1024.</li>
+</ul>
+<h3 id="capsule-handle">Capsule handle<a class="headerlink" href="#capsule-handle" title="Permanent link">&para;</a></h3>
+<p><code>sbx_handle</code> is the struct a capsule holds. It is plain C data with function
+pointers, declared in <code>sharedbox_c.h</code> and included by <code>sharedbox.hpp</code>,
+because it passes between extensions compiled separately, possibly with
+different compilers and standard libraries. No C++ standard-library type
+crosses the capsule.</p>
+<div class="language-c highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="nc">sbx_handle</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="w">    </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">layout_major</span><span class="p">,</span><span class="w"> </span><span class="n">layout_minor</span><span class="p">;</span>
+</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">handle_version</span><span class="p">;</span><span class="w">              </span><span class="cm">/* 1; grows by appending fields */</span>
+</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="w">    </span><span class="kt">void</span><span class="w">    </span><span class="o">*</span><span class="n">base</span><span class="p">;</span><span class="w">                        </span><span class="cm">/* this handle's own mapping */</span>
+</span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a><span class="w">    </span><span class="kt">uint64_t</span><span class="w"> </span><span class="n">size</span><span class="p">;</span>
+</span><span id="__span-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">name</span><span class="p">;</span><span class="w">                     </span><span class="cm">/* the box name, for slot events */</span>
+</span><span id="__span-6-7"><a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a><span class="w">    </span><span class="kt">void</span><span class="w">   </span><span class="p">(</span><span class="o">*</span><span class="n">release</span><span class="p">)(</span><span class="k">struct</span><span class="w"> </span><span class="nc">sbx_handle</span><span class="w"> </span><span class="o">*</span><span class="p">);</span>
+</span><span id="__span-6-8"><a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a><span class="w">    </span><span class="kt">void</span><span class="w">    </span><span class="o">*</span><span class="n">private_data</span><span class="p">;</span><span class="w">                </span><span class="cm">/* owned by the build that made the handle */</span>
+</span><span id="__span-6-9"><a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a><span class="p">}</span><span class="w"> </span><span class="n">sbx_handle</span><span class="p">;</span>
+</span></code></pre></div>
+<ul>
+<li><code>private_data</code> belongs to the build that made the handle, and only that
+  build's <code>release</code> reads it.</li>
+<li>A consumer never reads another build's <code>private_data</code>. It takes the
+  handle with <code>handle::from_capsule</code> (or <code>sbx_import</code>). It does not wait
+  for <code>magic</code>: it loads it once and returns <code>status::corrupt</code> if it is not
+  set or <code>size</code> is below 4096, then runs steps 3 to 5 of Attach on the
+  segment at <code>base</code>. It keeps its own copy of the struct and of the field table, and
+  checks no schema: the consumer compares <code>schema_hash()</code>. On success it
+  clears the capsule struct's <code>release</code>, and destroying the new handle
+  calls the producer's <code>release</code>. The consumer's handle opens slot events
+  by <code>name</code> when it first waits.</li>
+<li><code>to_capsule()</code> moves a handle to the heap and returns a new <code>sbx_handle</code>
+  whose <code>release</code> destroys it; the caller deletes the struct afterwards.</li>
+<li>The Python extension's capsule destructor deletes the struct while the
+  capsule is named <code>"sharedbox_box"</code> or <code>"used_sharedbox_box"</code>, and calls
+  <code>release</code> only under the first name.</li>
+</ul>
+<h2 id="sharedbox_ch"><code>sharedbox_c.h</code><a class="headerlink" href="#sharedbox_ch" title="Permanent link">&para;</a></h2>
+<p><code>include/sharedbox/sharedbox_c.h</code> is a minimal C99 interface, documented as
+"minimal, may be removed in a future major version". Removing it would only
+delete code: a semver major step for the headers, with no change to the
+layout.</p>
+<div class="language-c highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a><span class="cp">#define SBX_OK 0                 </span><span class="cm">/* SBX_E_* have the values of sharedbox::status */</span>
+</span><span id="__span-7-2"><a id="__codelineno-7-2" name="__codelineno-7-2" href="#__codelineno-7-2"></a><span class="k">typedef</span><span class="w"> </span><span class="k">struct</span><span class="w"> </span><span class="nc">sbx_value</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">field</span><span class="p">;</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">data</span><span class="p">;</span><span class="w"> </span><span class="kt">size_t</span><span class="w"> </span><span class="n">len</span><span class="p">;</span><span class="w"> </span><span class="p">}</span><span class="w"> </span><span class="n">sbx_value</span><span class="p">;</span>
+</span><span id="__span-7-3"><a id="__codelineno-7-3" name="__codelineno-7-3" href="#__codelineno-7-3"></a>
+</span><span id="__span-7-4"><a id="__codelineno-7-4" name="__codelineno-7-4" href="#__codelineno-7-4"></a><span class="kt">int</span><span class="w">      </span><span class="nf">sbx_open</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">name</span><span class="p">,</span><span class="w"> </span><span class="kt">double</span><span class="w"> </span><span class="n">timeout</span><span class="p">,</span><span class="w"> </span><span class="n">sbx_handle</span><span class="w"> </span><span class="o">*</span><span class="n">out</span><span class="p">);</span>
+</span><span id="__span-7-5"><a id="__codelineno-7-5" name="__codelineno-7-5" href="#__codelineno-7-5"></a><span class="kt">int</span><span class="w">      </span><span class="nf">sbx_import</span><span class="p">(</span><span class="n">sbx_handle</span><span class="w"> </span><span class="o">*</span><span class="n">capsule</span><span class="p">,</span><span class="w"> </span><span class="n">sbx_handle</span><span class="w"> </span><span class="o">*</span><span class="n">out</span><span class="p">);</span>
+</span><span id="__span-7-6"><a id="__codelineno-7-6" name="__codelineno-7-6" href="#__codelineno-7-6"></a><span class="kt">int</span><span class="w">      </span><span class="nf">sbx_read</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">sbx_handle</span><span class="w"> </span><span class="o">*</span><span class="n">h</span><span class="p">,</span><span class="w"> </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">field</span><span class="p">,</span><span class="w"> </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="n">buf</span><span class="p">,</span><span class="w"> </span><span class="kt">size_t</span><span class="w"> </span><span class="n">cap</span><span class="p">,</span>
+</span><span id="__span-7-7"><a id="__codelineno-7-7" name="__codelineno-7-7" href="#__codelineno-7-7"></a><span class="w">                  </span><span class="kt">size_t</span><span class="w"> </span><span class="o">*</span><span class="n">len</span><span class="p">,</span><span class="w"> </span><span class="kt">uint64_t</span><span class="w"> </span><span class="o">*</span><span class="n">version</span><span class="p">);</span>
+</span><span id="__span-7-8"><a id="__codelineno-7-8" name="__codelineno-7-8" href="#__codelineno-7-8"></a><span class="kt">int</span><span class="w">      </span><span class="nf">sbx_write</span><span class="p">(</span><span class="n">sbx_handle</span><span class="w"> </span><span class="o">*</span><span class="n">h</span><span class="p">,</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="n">sbx_value</span><span class="w"> </span><span class="o">*</span><span class="n">values</span><span class="p">,</span><span class="w"> </span><span class="kt">size_t</span><span class="w"> </span><span class="n">n</span><span class="p">,</span><span class="w"> </span><span class="kt">double</span><span class="w"> </span><span class="n">lock_timeout</span><span class="p">);</span>
+</span><span id="__span-7-9"><a id="__codelineno-7-9" name="__codelineno-7-9" href="#__codelineno-7-9"></a><span class="kt">uint64_t</span><span class="w"> </span><span class="nf">sbx_schema_hash</span><span class="p">(</span><span class="k">const</span><span class="w"> </span><span class="n">sbx_handle</span><span class="w"> </span><span class="o">*</span><span class="n">h</span><span class="p">);</span>
+</span><span id="__span-7-10"><a id="__codelineno-7-10" name="__codelineno-7-10" href="#__codelineno-7-10"></a><span class="kt">void</span><span class="w">     </span><span class="nf">sbx_release</span><span class="p">(</span><span class="n">sbx_handle</span><span class="w"> </span><span class="o">*</span><span class="n">h</span><span class="p">);</span>
+</span></code></pre></div>
+<ul>
+<li>It holds only <code>sbx_handle</code>, <code>sbx_value</code>, the status codes and these six
+  functions. Creating, waiting, <code>interrupt</code>, <code>force_unlock</code> and <code>unlink</code>
+  are in the C++ <abbr title="Application programming interface. The functions and classes a library offers to code that uses it.">API</abbr> only.</li>
+<li>Each function converts its arguments and calls <code>sharedbox.hpp</code>.
+  <code>sbx_open</code> fills <code>out</code> with a handle whose <code>private_data</code> holds a
+  <code>sharedbox::handle</code> and whose <code>release</code> deletes it. <code>sbx_import</code> wraps a
+  capsule's handle through <code>handle::from_capsule</code>.</li>
+<li><code>sbx_read</code>, <code>sbx_write</code> and <code>sbx_schema_hash</code> accept only handles made
+  by <code>sbx_open</code> or <code>sbx_import</code>; for any other, <code>sbx_read</code> and <code>sbx_write</code>
+  return <code>SBX_E_RANGE</code> and <code>sbx_schema_hash</code> returns 0. <code>sbx_write</code> also
+  returns <code>SBX_E_RANGE</code> for a field of a kind the header does not know. When the stored
+  value is longer than <code>cap</code>, <code>sbx_read</code> copies nothing, sets <code>*len</code> and
+  returns <code>SBX_E_RANGE</code>. <code>sbx_release</code> releases any handle.</li>
+<li>The implementation, <code>include/sharedbox/sharedbox_c.cpp</code>, needs a C++20
+  compiler: a C program compiles that one file with its C++ compiler next
+  to its own sources, and the CMake target <code>sharedbox::c</code> adds it for
+  them. One source file rather than a static library in the wheel,
+  because a static library is tied to the compiler and C runtime that
+  built it.</li>
+</ul>
+<h2 id="the-pycapsule-interface">The PyCapsule interface<a class="headerlink" href="#the-pycapsule-interface" title="Permanent link">&para;</a></h2>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a><span class="k">class</span><span class="w"> </span><span class="nc">Frame</span><span class="p">(</span><span class="n">SharedBox</span><span class="p">,</span> <span class="n">identity</span><span class="o">=</span><span class="s2">"camera/frame/1"</span><span class="p">,</span> <span class="n">max_waiters</span><span class="o">=</span><span class="mi">64</span><span class="p">):</span>
+</span><span id="__span-8-2"><a id="__codelineno-8-2" name="__codelineno-8-2" href="#__codelineno-8-2"></a>    <span class="n">exposure</span><span class="p">:</span> <span class="nb">float</span>
+</span><span id="__span-8-3"><a id="__codelineno-8-3" name="__codelineno-8-3" href="#__codelineno-8-3"></a>    <span class="n">count</span><span class="p">:</span> <span class="nb">int</span>
+</span><span id="__span-8-4"><a id="__codelineno-8-4" name="__codelineno-8-4" href="#__codelineno-8-4"></a>
+</span><span id="__span-8-5"><a id="__codelineno-8-5" name="__codelineno-8-5" href="#__codelineno-8-5"></a>
+</span><span id="__span-8-6"><a id="__codelineno-8-6" name="__codelineno-8-6" href="#__codelineno-8-6"></a><span class="k">with</span> <span class="n">Frame</span><span class="p">(</span><span class="mf">0.01</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="k">as</span> <span class="n">frame</span><span class="p">:</span>
+</span><span id="__span-8-7"><a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a>    <span class="n">camera</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">frame</span><span class="p">)</span>          <span class="c1"># an extension that supports sharedbox</span>
+</span></code></pre></div>
+<p>The dunder is a protocol for library authors, as <code>__arrow_c_array__</code> and
+<code>__dlpack__</code> are: Python users pass the box to a consuming library, which
+calls it. A capsule is an opaque pointer Python code cannot use, so there is
+no Python-level export method.</p>
+<ul>
+<li><code>SharedBox.__sharedbox_box__(self, max_version=None, **kwargs)</code> returns
+  a PyCapsule named <code>"sharedbox_box"</code> holding a heap-allocated
+  <code>sbx_handle</code> made by <code>duplicate()</code> and <code>to_capsule()</code>, so it works after
+  <code>unlink()</code>.</li>
+<li><code>max_version</code> is <code>(major, minor)</code>; a major the box does not have raises
+  <code>BufferError</code>, and <code>None</code> means the current version. Any other keyword
+  raises <code>NotImplementedError</code>.</li>
+<li>A consumer that takes the handle renames the capsule
+  <code>"used_sharedbox_box"</code> and releases the handle itself.</li>
+<li><code>release</code> unmaps and closes <abbr title="Operating system.">OS</abbr> handles only: no Python objects, no <abbr title="Global interpreter lock. The lock that lets only one thread of a CPython process run Python code at a time.">GIL</abbr>,
+  so it may run on any thread and after interpreter shutdown. <code>box.close()</code>
+  and the handle never affect each other. On Windows the segment stays
+  alive while a handle is held.</li>
+<li><code>sharedbox.get_include()</code> returns the folder holding
+  <code>sharedbox/sharedbox.hpp</code>, <code>sharedbox/sharedbox_c.h</code> and
+  <code>sharedbox/sharedbox_c.cpp</code> in the installed package.</li>
+<li><code>sharedbox.SupportsSharedBox</code> is a <code>typing.Protocol</code> with
+  <code>__sharedbox_box__</code>, for annotations in consuming libraries.</li>
+<li><code>sharedbox._native.LAYOUT_VERSION</code> is <code>(1, 0)</code>.</li>
+</ul>
+<h2 id="rust-crate-deferred">Rust crate (deferred)<a class="headerlink" href="#rust-crate-deferred" title="Permanent link">&para;</a></h2>
+<p>A Rust crate is not part of this release. It will be a safe layer over
+<code>sharedbox.hpp</code> through cxx, so Python, C++ and Rust share one
+implementation of the protocols, with <code>schema_hash</code> and the default name
+computed in Rust and checked against the test vector above.</p>
+<h2 id="build-and-packaging">Build and packaging<a class="headerlink" href="#build-and-packaging" title="Permanent link">&para;</a></h2>
+<ul>
+<li><code>include/sharedbox/sharedbox.hpp</code>, <code>sharedbox_c.h</code> and <code>sharedbox_c.cpp</code>
+  are in the repository; the build installs them into the wheel under
+  <code>sharedbox/include/</code>, and <code>cmake/sharedbox-config.cmake</code> under
+  <code>sharedbox/share/cmake/sharedbox/</code>, next to a
+  <code>sharedbox-config-version.cmake</code> the build writes from the package
+  version. Before 1.0 it accepts a request for the same minor version
+  only (<code>SameMinorVersion</code>), from 1.0 on the same major version.</li>
+<li>CMake targets: <code>sharedbox::headers</code>, an interface target that requires
+  <code>cxx_std_20</code> (and links <code>rt</code> and <code>Threads::Threads</code> on Linux, <code>bcrypt</code>
+  on Windows), and
+  <code>sharedbox::c</code>, which links <code>sharedbox::headers</code> and adds
+  <code>sharedbox_c.cpp</code> to the sources of whatever links it. Both work through
+  <code>FetchContent</code> and through <code>find_package(sharedbox)</code>. A project that
+  links <code>sharedbox::c</code> without the CXX language enabled stops at configure
+  time with a message saying so.</li>
+<li>A Python extension that uses the header adds <code>sharedbox</code> to its
+  <code>[build-system] requires</code>, calls <code>sharedbox.get_include()</code> and builds as
+  C++20. The sharedbox extension itself builds as C++20.</li>
+</ul>
+<h2 id="out-of-scope">Out of scope<a class="headerlink" href="#out-of-scope" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Queues and streams; they would get <code>__sharedbox_queue__</code> and
+  <code>__sharedbox_stream__</code>.</li>
+<li><code>Global\</code> names on Windows. They would let a service in session 0 share
+  a box with a desktop application, but creating a file mapping there
+  needs <code>SeCreateGlobalPrivilege</code> and a security descriptor that lets the
+  other session's user open it.</li>
+<li>A vcpkg port and a headers-only wheel.</li>
+<li>macOS. Every platform detail lives in <code>sharedbox.hpp</code>, so macOS would be
+  a third platform there. Known obstacles: <abbr title="Portable Operating System Interface. The standard that Linux and other Unix-like systems follow.">POSIX</abbr> shared memory names are
+  limited to 31 characters, which <code>sharedbox.&lt;name&gt;</code> with 128-character
+  box names does not fit; there is no futex; there is no
+  <code>posix_fallocate</code>; leftover segments cannot be listed.</li>
+<li>A read-only open mode.</li>
+<li>Big-endian hosts.</li>
+</ul>
+<h2 id="references">References<a class="headerlink" href="#references" title="Permanent link">&para;</a></h2>
+<ul>
+<li>Arrow PyCapsule Interface:
+  https://arrow.apache.org/docs/format/CDataInterface/PyCapsuleInterface.html</li>
+<li>DLPack Python specification (<code>__dlpack__</code>, <code>max_version</code>, capsule
+  renaming): https://dmlc.github.io/dlpack/latest/python_spec.html</li>
+<li>Ulrich Drepper, "Futexes Are Tricky":
+  https://www.akkadia.org/drepper/futex.pdf</li>
+<li>psutil, process start time as identity:
+  https://github.com/giampaolo/psutil</li>
+<li>Microsoft, kernel object namespaces (<code>Local\</code>, <code>Global\</code>):
+  https://learn.microsoft.com/en-us/windows/win32/termserv/kernel-object-namespaces</li>
+</ul>
+
+
+
+
+
+
+
+
+
+  
+  
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+  <script>var tabs=__md_get("__tabs");if(Array.isArray(tabs))e:for(var set of document.querySelectorAll(".tabbed-set")){var labels=set.querySelector(".tabbed-labels");for(var tab of tabs)for(var label of labels.getElementsByTagName("label"))if(label.innerText.trim()===tab){var input=document.getElementById(label.htmlFor);input.checked=!0;continue e}}</script>
+
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+          <button type="button" class="md-top md-icon" data-md-component="top" hidden>
+  
+  <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-circle-arrow-up" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m16 12-4-4-4 4M12 16V8"/></svg>
+  Back to top
+</button>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+    
+      
+      <nav class="md-footer__inner md-grid" aria-label="Footer" >
+        
+          
+          <a href="../api/library-authors/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Library authors">
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-arrow-left" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7M19 12H5"/></svg>
+            </div>
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Previous
+              </span>
+              <div class="md-ellipsis">
+                Library authors
+              </div>
+            </div>
+          </a>
+        
+        
+          
+          <a href="../cpp-and-c-api/" class="md-footer__link md-footer__link--next" aria-label="Next: C and C++ interface">
+            <div class="md-footer__title">
+              <span class="md-footer__direction">
+                Next
+              </span>
+              <div class="md-ellipsis">
+                C and C++ interface
+              </div>
+            </div>
+            <div class="md-footer__button md-icon">
+              
+              <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-arrow-right" viewBox="0 0 24 24"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
+            </div>
+          </a>
+        
+      </nav>
+    
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://zensical.org/" target="_blank" rel="noopener">
+      Zensical
+    </a>
+  
+</div>
+      
+        
+<div class="md-social">
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://github.com/jacopoabramo/sharedbox" target="_blank" rel="noopener" title="github.com" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><!--! Font Awesome Free 7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M216.5 362.5c-66-8-112.5-55.5-112.5-117 0-25 9-52 24-70-6.5-16.5-5.5-51.5 2-66 20-2.5 47 8 63 22.5 19-6 39-9 63.5-9s44.5 3 62.5 8.5c15.5-14 43-24.5 63-22 7 13.5 8 48.5 1.5 65.5 16 19 24.5 44.5 24.5 70.5 0 61.5-46.5 108-113.5 116.5 17 11 28.5 35 28.5 62.5v52c0 15 12.5 23.5 27.5 17.5C441 459.5 512 369 512 257 512 115.5 397 0 255.5 0S0 115.5 0 257c0 111 70.5 203 165.5 237.5 13.5 5 26.5-4 26.5-17.5v-40c-7 3-16 5-24 5-33 0-52.5-18-66.5-51.5-5.5-13.5-11.5-21.5-23-23-6-.5-8-3-8-6 0-6 10-10.5 20-10.5 14.5 0 27 9 40 27.5 10 14.5 20.5 21 33 21s20.5-4.5 32-16c8.5-8.5 15-16 21-21"/></svg>
+    </a>
+  
+    
+    
+    
+    
+      
+      
+    
+    <a href="https://pypi.org/project/sharedbox/" target="_blank" rel="noopener" title="pypi.org" class="md-social__link">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.3.1 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2026 Fonticons, Inc.--><path fill="currentColor" d="M439.8 200.5c-7.7-30.9-22.3-54.2-53.4-54.2h-40.1v47.4c0 36.8-31.2 67.8-66.8 67.8H172.7c-29.2 0-53.4 25-53.4 54.3v101.8c0 29 25.2 46 53.4 54.3 33.8 9.9 66.3 11.7 106.8 0 26.9-7.8 53.4-23.5 53.4-54.3v-40.7H226.2v-13.6h160.2c31.1 0 42.6-21.7 53.4-54.2 11.2-33.5 10.7-65.7 0-108.6M286.2 444.7a20.4 20.4 0 1 1 0-40.7 20.4 20.4 0 1 1 0 40.7M167.8 248.1h106.8c29.7 0 53.4-24.5 53.4-54.3V91.9c0-29-24.4-50.7-53.4-55.6-35.8-5.9-74.7-5.6-106.8.1-45.2 8-53.4 24.7-53.4 55.6v40.7h106.9v13.6h-147c-31.1 0-58.3 18.7-66.8 54.2-9.8 40.7-10.2 66.1 0 108.6 7.6 31.6 25.7 54.2 56.8 54.2H101v-48.8c0-35.3 30.5-66.4 66.8-66.4m-6.6-183.4a20.4 20.4 0 1 1 0 40.8 20.4 20.4 0 1 1 0-40.8"/></svg>
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog" role="status" aria-atomic="true">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      
+      
+        
+        
+      <script id="__config" type="application/json">{"annotate":null,"base":"../..","features":["navigation.tabs","navigation.sections","navigation.indexes","navigation.path","navigation.top","navigation.footer","search.suggest","search.highlight","content.code.annotate","content.code.copy","content.code.select","content.footnote.tooltips","content.tabs.link","content.tooltips","toc.follow"],"redirect":null,"search":"../../assets/javascripts/workers/search.7d14d953.min.js","tags":null,"translations":{"clipboard.copied":"Copied to clipboard","clipboard.copy":"Copy to clipboard","clipboard.error":"Could not copy to clipboard","search.result.more.one":"1 more on this page","search.result.more.other":"# more on this page","search.result.none":"No matching documents","search.result.one":"1 matching document","search.result.other":"# matching documents","search.result.placeholder":"Type to start searching","search.result.term.missing":"Missing","select.version":"Select version"},"version":null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.67a597eb.min.js"></script>
+      
+    
+  </body>
+</html>
