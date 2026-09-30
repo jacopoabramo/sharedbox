@@ -23,6 +23,8 @@ from ._native import BoxClosedError, LockTimeoutError, WaiterSlotsFullError
 from ._refs import shown
 
 if TYPE_CHECKING:
+    from psygnal import SignalInstance
+
     from ._follow import Follower
     from ._layout import FieldSpec, Layout
     from ._native import Segment
@@ -38,7 +40,7 @@ WATCHER_THREAD = threading.local()
 
 
 def on_watcher_thread() -> bool:
-    """Whether the calling thread is the watcher thread of some box."""
+    """Return whether the calling thread is the watcher thread of some box."""
     return getattr(WATCHER_THREAD, "active", False)
 
 
@@ -163,8 +165,11 @@ def copy_state(source: FieldFuture[T], relay: asyncio.Future[T]) -> None:
 class FieldWatch(Generic[T]):
     """New values of one field, for `for` and `async for`.
 
-    Only writes made after the watch was created count. A consumer slower
-    than the writers gets the latest value and skips the ones in between.
+    [`SharedBox.watch`][sharedbox.SharedBox.watch] returns it. Only writes
+    made after the watch was created count. Iterating with `for` blocks
+    until the field is written and yields the new value; `async for` waits
+    the same way without blocking the event loop. A consumer slower than
+    the writers gets the latest value and skips the ones in between.
     Iteration ends when the box is closed.
     """
 
@@ -250,7 +255,7 @@ class Watcher:
         return self._stop.is_set()
 
     def future(self, field: FieldSpec, since: int | None = None) -> FieldFuture[Any]:
-        """A future for the first write to `field` after version `since` (default: now)."""
+        """Return a future for the first write to `field` after version `since` (default: now)."""
         current, value = self._segment.get_versioned(field.index)
         fut: FieldFuture[Any] = FieldFuture(
             self, field, current if since is None else since
@@ -269,7 +274,7 @@ class Watcher:
     def events(
         self, factory: Callable[[], BoxEvents], fields: tuple[FieldSpec, ...]
     ) -> BoxEvents:
-        """The box's signal group, created on first use; the watcher emits into it while running."""
+        """Return the box's signal group, created on first use; the watcher emits into it while running."""
         with self._lock:
             if self._group is None:
                 self._group = factory()
@@ -291,7 +296,7 @@ class Watcher:
                 self._start_locked()
 
     def last(self, spec: FieldSpec) -> Any:
-        """The value of `spec` the watcher last saw, which it compares the next change with."""
+        """Return the value of `spec` the watcher last saw, which it compares the next change with."""
         return self._seen[spec.index][1]
 
     def _listen_locked(self, sink: Sink, fields: tuple[FieldSpec, ...]) -> None:
@@ -395,7 +400,7 @@ class Watcher:
             self._thread.start()
 
     def _claim(self) -> int | None:
-        """A waiter slot that still records this process, or None while every slot is taken."""
+        """Return a waiter slot that still records this process, or None while every slot is taken."""
         slot = self._slot
         if slot is not None and self._segment.waiter_held(slot):
             return slot
@@ -466,12 +471,23 @@ class Watcher:
 class BoxEvents(SignalGroup):
     """The psygnal signal group of a box: one `(new, old)` signal per field.
 
-    The group of a class with reference fields also has the signal
-    `nested`, emitted as `(path, new, old)` once
-    [`follow`][sharedbox.BoxEvents.follow] is called without a field.
+    It is the type of [`SharedBox.events`][sharedbox.SharedBox.events] and
+    of the groups [`follow`][sharedbox.BoxEvents.follow] returns. The
+    group of a class with reference fields also has the signal
+    [`nested`][sharedbox.BoxEvents.nested].
     """
 
     _sharedbox_follower: Follower
+    nested: SignalInstance
+    """Emitted as `(path, new, old)` for each change inside the boxes that `follow()` without a field follows.
+
+    `path` is the tuple of field names from this group's box to the
+    changed field. It reports every field of each box's own class, and
+    not changes of this box's own fields, which keep their own signals.
+    `box.events.connect(cb)` receives it too. Only the group of a class
+    with reference fields has it, and it emits only after
+    [`follow`][sharedbox.BoxEvents.follow] is called without a field.
+    """
 
     @overload
     def follow(self, field: str) -> BoxEvents: ...
@@ -484,14 +500,54 @@ class BoxEvents(SignalGroup):
         is annotated with, emitted for whichever box the field refers to
         when the change happens; a later call returns the same group.
         Without `field`, emit every change inside every box the reference
-        fields reach, down the whole graph, on `nested` as
-        `(path, new, old)`, where `path` is the tuple of field names from
-        this group's box to the changed field. That call follows each box
-        once: a box that several paths reach is reported under one of them,
-        and after a reference changes that may be a different one.
+        fields reach, down the whole graph, on
+        [`nested`][sharedbox.BoxEvents.nested].
 
-        A call that raises follows nothing new, and the next call tries
-        again.
+        The group `follow(field)` returns has `follow` and `unfollow` too,
+        so `stage.events.follow("motor").follow("encoder")` reaches one
+        level further. Its signals are those of the annotated class: a
+        field that only a subclass has is left out.
+
+        Forwarding follows each box once. A box it already follows, this
+        group's box included, is not followed again where another
+        reference leads to it, so a loop of references ends. A box that
+        several paths reach is reported under one of them, and after a
+        reference changes that may be a different one; it is forwarded as
+        long as any path reaches it. An empty reference forwards nothing
+        until a box is assigned.
+
+        When a reference changes, in any process, the watcher emits the
+        reference's own signal first, then moves forwarding to the new
+        box. Values the new box already held are not emitted, and a change
+        made to the old box just before the move may not be. Moving
+        forwarding away from a box waits for that box's callbacks to
+        return.
+
+        A reference to a box that was removed or created again, or whose
+        class this process has not defined, logs a warning to the
+        `sharedbox` logger and forwards nothing until the field is assigned
+        another box; `follow` does not raise for it. Any other error from
+        attaching a box is raised by the `follow` call that attached it;
+        that call then follows nothing new, and the next call tries again.
+        When a reference change starts the attach instead, the error is
+        logged, and that box is tried again the next time any reference
+        field followed through this group changes.
+
+        Forwarding attaches its own handle to each box it follows and waits
+        with that handle's watcher thread, so forwarded callbacks run on
+        several threads, one per followed box, possibly at the same time.
+        Connect with `thread="main"` and call `psygnal.emit_queued()` to
+        run them on the main thread. The handle that reading the field
+        returns is a different one.
+
+        A child process created with `fork` inherits the forwarding without
+        its threads, and forwards nothing until it calls `follow` on this
+        group, or on a group `follow` returned, with any field or none.
+        That call follows the boxes the reference fields refer to at that
+        moment, through the same groups, so callbacks connected before the
+        fork keep receiving. Changes made before that call are not emitted.
+        An error from attaching a box in that call is logged, and the box
+        is tried again as after a reference change.
 
         Raises
         ------
@@ -511,7 +567,9 @@ class BoxEvents(SignalGroup):
         leave running what `follow()` without a field started. The group is
         forgotten: callbacks connected to it receive nothing more, and a
         later [`follow`][sharedbox.BoxEvents.follow] returns a new group.
-        Without `field`, stop both.
+        Without `field`, stop both. The handles that reading the fields
+        returned stay open. [`close`][sharedbox.SharedBox.close] on the box
+        stops all its forwarding.
 
         Raises
         ------
@@ -524,7 +582,7 @@ class BoxEvents(SignalGroup):
 
 
 def events_class(owner: type, layout: Layout) -> type[BoxEvents]:
-    """A [`BoxEvents`][sharedbox.BoxEvents] subclass with one `(new, old)` signal per field of `owner`.
+    """Create a [`BoxEvents`][sharedbox.BoxEvents] subclass with one `(new, old)` signal per field of `owner`.
 
     A class with reference fields also gets the signal `nested`.
     """

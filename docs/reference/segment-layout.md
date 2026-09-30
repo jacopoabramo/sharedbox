@@ -1,3 +1,7 @@
+---
+icon: lucide/file-text
+---
+
 # Segment layout 1.0
 
 This page describes how a box is stored in shared memory: the object names,

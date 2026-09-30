@@ -42,6 +42,8 @@ sharedbox/
 |       `-- segment.{hpp,cpp}  Segment: a sharedbox::handle plus error messages and the lifetime lock
 |-- tests/                     pytest; many tests spawn processes
 |   |-- test_capsule.py        __sharedbox_box__, and the C consumer in tests/cpp/consumer/
+|   |-- test_doc_examples.py   runs each docs/examples/*.py script
+|   |-- test_doc_tutorials.py  runs docs/tutorials/motor.py and checks the output its pages show
 |   |-- test_follow.py         BoxEvents.follow, unfollow and nested
 |   |-- test_native_waiters.py waiter slots, dead owners, interrupt
 |   |-- test_properties_*.py   Hypothesis property tests
@@ -51,12 +53,19 @@ sharedbox/
 |   `-- type_checks/           checked by mypy, never imported at run time
 |-- benchmarks/                not collected by the default pytest run
 |   `-- test_bench_box.py      pytest-codspeed benchmarks, run by codspeed.yml
-|-- scripts/vscode_setup.py    points VS Code's C/C++ extension at the build headers
-|-- docs/api.md                API reference
-|-- docs/library-authors.md    accepting a box in C++ or C code
-|-- docs/design/segment-layout.md  layout 1.0, names and protocols
-|-- docs/design/native-segment.md  why the segment is built the way it is
-|-- .github/workflows/ci.yaml  C++ tests, cibuildwheel wheels, tests, stress, PyPI publish
+|-- scripts/
+|   |-- vscode_setup.py        points VS Code's C/C++ extension at the build headers
+|   `-- check_xrefs.py         reports unresolved cross-references, unread snippets and broken links in site/
+|-- docs/                      Diataxis site built by Zensical: tutorials/, how-to/, explanation/, reference/
+|   |-- tutorials/motor.py     the script the three tutorials build and include
+|   |-- examples/              one script per how-to guide, included by the guide
+|   `-- reference/segment-layout.md  layout 1.0, names and protocols
+|-- includes/abbreviations.md  acronym tooltips appended to every page
+|-- zensical.toml              site configuration and navigation
+|-- .github/workflows/ci.yaml  lint, docs check, C++ tests, cibuildwheel wheels, tests, stress,
+|                              PyPI publish, site publish
+|-- .github/workflows/check-docs.yaml    builds the site and runs check_xrefs.py
+|-- .github/workflows/publish-docs.yaml  deploys the checked site to GitHub Pages
 |-- .github/workflows/codspeed.yml  benchmarks on CodSpeed
 |-- CMakeLists.txt             sharedbox::headers, sharedbox::c, extension build
 |-- stubtest-allowlist.txt     stubtest exceptions for nanobind types
@@ -71,8 +80,8 @@ sharedbox/
 
 ## Memory layout
 
-The specification is `docs/design/segment-layout.md`; the reasons are in
-`docs/design/native-segment.md`.
+The specification is `docs/reference/segment-layout.md`; the reasons are in
+the pages of `docs/explanation/`.
 
 One mapping per box, named `sharedbox.<name>`: `/dev/shm/sharedbox.<name>`
 on Linux (mode `0600`), `Local\sharedbox.<name>` on Windows (page-file
@@ -167,7 +176,7 @@ produces all three.
 uv run pytest                          # current interpreter
 uv run pytest tests/test_box.py -k pickle
 uv run pytest -n auto --dist loadfile  # same suite, split across files
-uv run tox                             # py311 to py314, py314t, mypy
+uv run tox                             # py311 to py314, py314t, mypy, lint, docs
 uv run tox -e py314t                   # one env
 uv run tox -p auto                     # same environments, in parallel
 ```
@@ -220,11 +229,14 @@ the cp312 wheel, and also runs the property tests with the `thorough`
 profile.
 
 CI (`.github/workflows/ci.yaml`) builds the wheels above with cibuildwheel,
-runs pytest against each wheel, and publishes to PyPI. Publishing runs only
-from a GitHub release tagged `vX.Y.Z` and marked as a release, or
-`vX.Y.ZrcN` and marked as a pre-release; any other tag or mismatch between
-the tag and the pre-release flag fails the build before it uploads. Docker
-runs with `--shm-size=1g`, so keep test segments under that.
+runs pytest against each wheel, and publishes to PyPI. Its `docs` job runs
+`check-docs.yaml` (build the site, then `check_xrefs.py`), and
+`publish_docs` publishes the site from `main` and from final releases.
+Publishing to PyPI runs only from a GitHub release tagged `vX.Y.Z` and
+marked as a release, or `vX.Y.ZrcN` and marked as a pre-release; any other
+tag or mismatch between the tag and the pre-release flag fails the build
+before it uploads. Docker runs with `--shm-size=1g`, so keep test
+segments under that.
 
 ## Usage
 
@@ -259,7 +271,16 @@ if __name__ == "__main__":
 Every read decodes a fresh value from the segment. `update(**values)` writes
 several fields at once; `watch(field)` and `events` report changes from any
 process. C++ and C code take a box through `__sharedbox_box__` or open it by
-name; see `docs/library-authors.md`.
+name; see `docs/how-to/accept-a-box-in-cpp.md`,
+`docs/how-to/accept-a-box-in-c.md` and
+`docs/how-to/open-a-box-from-a-program.md`.
+
+## Docs
+
+Build and check the site with `uv run tox -e docs`. The rules for pages,
+docstrings, and tutorial and example scripts are in
+`docs/how-to/write-docs.md`; the contributing guides are the other pages of
+the Contributing section in `zensical.toml`.
 
 ## Conventions
 

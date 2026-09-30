@@ -23,6 +23,27 @@ jobs:
         with:
           prek-version: "0.5.3"
 
+  docs:
+    name: Check documentation
+    uses: ./.github/workflows/check-docs.yaml
+
+  publish_docs:
+    name: Publish documentation
+    needs: [lint, docs]
+    # main and final releases only: a pre-release publishes a package and
+    # leaves the site describing the last final release
+    if: >-
+      (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
+      (github.event_name == 'release' && github.event.action == 'published' &&
+       !github.event.release.prerelease &&
+       !contains(github.event.release.tag_name, 'rc'))
+    uses: ./.github/workflows/publish-docs.yaml
+    permissions:
+      contents: write
+    concurrency:
+      group: pages
+      cancel-in-progress: false
+
   cpp_header:
     name: C++ header on ${{ matrix.os }} (${{ matrix.build }})
     runs-on: ${{ matrix.os }}
@@ -242,7 +263,7 @@ jobs:
 
   upload_pypi:
     name: Upload to PyPI
-    needs: [lint, cpp_header, build_wheels, make_sdist]
+    needs: [lint, docs, cpp_header, build_wheels, make_sdist]
     runs-on: ubuntu-latest
     environment:
       name: pypi

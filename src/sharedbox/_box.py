@@ -153,7 +153,7 @@ def has_default(param: Field) -> bool:
 
 
 def signature(params: list[Field]) -> inspect.Signature:
-    """The constructor signature a dataclass with these fields and `InitVar` ones would have."""
+    """Return the constructor signature a dataclass with these fields and `InitVar` ones would have."""
     return inspect.Signature(
         [
             inspect.Parameter(
@@ -175,9 +175,10 @@ def signature(params: list[Field]) -> inspect.Signature:
 
 
 def fields(class_or_box: type[SharedBox] | SharedBox) -> tuple[Field, ...]:
-    """Every field of a `SharedBox` subclass or box, in declaration order.
+    """Return one [`Field`][sharedbox.Field] per field of a `SharedBox` subclass or box, in declaration order.
 
-    `InitVar` annotations are left out.
+    `InitVar` annotations are left out. This is how a field's `metadata`
+    and `doc` are read.
 
     Raises
     ------
@@ -225,7 +226,8 @@ def unpickle_box(
 class SupportsSharedBox(Protocol):
     """An object that hands its shared-memory segment to other extensions.
 
-    [`SharedBox`][sharedbox.SharedBox] is one.
+    [`SharedBox`][sharedbox.SharedBox] is one. Annotate a parameter with it
+    in a function that accepts a box.
     """
 
     def __sharedbox_box__(
@@ -288,16 +290,190 @@ class SharedBoxMeta(type):
 class SharedBox(metaclass=SharedBoxMeta):
     """A record whose annotated fields live in a named shared-memory segment.
 
-    Subclass it and annotate fields with `bool`, `int`, `float`,
-    `Annotated[str, Capacity(n)]`, `Annotated[bytes, Capacity(n)]`, or a
-    `SharedBox` subclass `X` or `X | None` for a reference to another box.
-    Calling the subclass with the field values, as with a dataclass,
-    creates the segment; [`attach`][sharedbox.SharedBox.attach] opens it
-    from any thread or process. The segment is named after the class's
-    identity (the `identity` class keyword, by default `module.qualname`)
-    unless the `name` class keyword says otherwise;
-    [`create`][sharedbox.SharedBox.create] makes further boxes under
-    explicit names.
+    Subclass it and annotate the fields. Calling the subclass with the
+    field values, as with a dataclass, creates the segment under the
+    class's name and writes the values;
+    [`create`][sharedbox.SharedBox.create] does the same under another
+    name, so one class can describe several boxes, and
+    [`attach`][sharedbox.SharedBox.attach] opens an existing box from any
+    thread or process. Every process that opens the segment reads and
+    writes the same values.
+
+    A field is a public annotation with one of these types:
+
+    | Annotation | Stored as |
+    | --- | --- |
+    | `bool` | 1 byte |
+    | `int` | signed 64-bit integer; a larger value raises `OverflowError` |
+    | `float` | 64-bit float; an `int` is accepted and converted |
+    | `Annotated[str, Capacity(n)]` | UTF-8, at most `n` bytes |
+    | `Annotated[bytes, Capacity(n)]` | at most `n` bytes; `bytearray` and `memoryview` are accepted |
+
+    A `SharedBox` subclass `X`, or `X | None`, makes a reference field,
+    described below. [`Capacity`][sharedbox.Capacity] sets `n`. Names
+    starting with `_` and `ClassVar` annotations are not fields. Fields of
+    a base class come first.
+
+    Fields are positional by default, in declaration order, as in a
+    dataclass. Fields declared after a `dataclasses.KW_ONLY` annotation in
+    the same class are keyword-only. A default is a plain class attribute
+    or given with [`field`][sharedbox.field], and is checked against the
+    field's type and capacity when the class is defined.
+    `inspect.signature` of the class gives its constructor's parameters; a
+    `default_factory` default shows as `<factory>`.
+
+    Assigning a value of the wrong type raises `TypeError`, and a `str` or
+    `bytes` value longer than its capacity raises `ValueError`; either way
+    the stored value does not change. Assigning to a name that is not a
+    field raises `AttributeError`, and so does deleting a field. A box has
+    no `__dict__`: every subclass gets empty `__slots__` unless it
+    declares its own. Two boxes are equal only if they are the same
+    object.
+
+    A `dataclasses.InitVar[T]` annotation declares a constructor argument
+    that is not stored. It takes a position like a field and may have a
+    default, as a class attribute or with `field(default=...)`, but no
+    `default_factory` and no `init=False`. It is not in the layout, the
+    schema hash, [`fields`][sharedbox.fields],
+    [`snapshot`][sharedbox.SharedBox.snapshot] or
+    [`events`][sharedbox.SharedBox.events]. An `InitVar` named like an
+    inherited field removes that field from the subclass, as in
+    `dataclasses`; reading or assigning that name on a box raises
+    `AttributeError`.
+
+    `__post_init__(self, *initvars)` runs when the class is called and in
+    [`create`][sharedbox.SharedBox.create], after the values are written,
+    with each `InitVar` value in declaration order. It may read and assign
+    fields, reference fields included, and its writes go into the segment.
+    It does not run for [`attach`][sharedbox.SharedBox.attach] or
+    unpickling. The box is published when `__post_init__` returns, so no
+    other process sees it before then. Until then its name is taken:
+    creating another box under it raises
+    [`SegmentExistsError`][sharedbox.SegmentExistsError], and
+    [`attach`][sharedbox.SharedBox.attach], from any process or from
+    `__post_init__` itself, waits at most 1 s (the lock timeout, if
+    shorter) and then raises
+    [`SegmentNotFoundError`][sharedbox.SegmentNotFoundError].
+    [`__sharedbox_box__`][sharedbox.SharedBox.__sharedbox_box__] raises
+    `BufferError` until then too. If `__post_init__` raises, the box is
+    closed and its name removed without ever being published, and the
+    exception propagates.
+
+    The class statement takes these keywords:
+
+    - `name`: the segment name of boxes made by calling the class. By
+      default it is 16 hex digits of SHA-256 over the class's identity, so
+      every process that imports the class uses the same name. It must
+      match `[A-Za-z0-9_.-]{1,128}`.
+    - `kw_only`: make every field this class declares keyword-only.
+      Inherited fields keep the setting of the class that declares them.
+    - `lock_timeout`: seconds a read or write waits for a write in
+      progress before it raises
+      [`LockTimeoutError`][sharedbox.LockTimeoutError]; 5.0 by default,
+      finite and in `(0, 86400]`.
+    - `identity`: a non-empty string, by default the class's
+      `module.qualname`, with `__mp_main__` read as `__main__`. It enters
+      the schema hash, and names the box when `name` is not given. A
+      subclass does not inherit it. Two classes with the same identity and
+      fields share a box, even when they live in different modules; a
+      process whose class has another identity cannot attach it.
+    - `max_waiters`: how many waiter slots the box has, 1 to 4096, 64 by
+      default. Each box handle whose [`watch`][sharedbox.SharedBox.watch]
+      or [`events`][sharedbox.SharedBox.events] is in use holds one slot,
+      counted across every process. A watcher that finds every slot taken
+      logs a warning to the `sharedbox` logger and checks for changes once
+      a second until a slot is free.
+
+    A field annotated with a `SharedBox` subclass `X`, or with `X | None`
+    (or `Optional[X]`), refers to another box, which keeps its own
+    segment, lock and lifetime. The field stores the box's name, schema
+    hash and create id. `X` is the class being defined or a class defined
+    before it. A field `X` is never empty: assigning `None` raises
+    `TypeError`, and reading it returns a box. A field `X | None` may hold
+    `None`. The two give different schema hashes, so a class that declares
+    one cannot attach a box created by a class that declares the other.
+    Defaults work as for any field: `= None`, `field(default=box)` and
+    `field(default_factory=...)`. A default box is checked like an
+    assigned one when the class is defined, a factory's result at each
+    creation. The class keeps the handle given as `field(default=box)` for
+    as long as the class exists; once that handle is closed, each creation
+    that uses the default raises
+    [`BoxClosedError`][sharedbox.BoxClosedError].
+
+    Assigning a box to a reference field stores which box it is, under the
+    outer box's lock. A box of `X`, of a subclass of `X`, or of any class
+    with `X`'s schema hash (the same identity and fields) is accepted; any
+    other value raises `TypeError`, and a closed box raises
+    [`BoxClosedError`][sharedbox.BoxClosedError]. The constructor and
+    [`update`][sharedbox.SharedBox.update] check reference values the same
+    way. Type checkers accept a box of `X` or of a subclass; a box of
+    another class with `X`'s schema hash needs a `cast`.
+
+    Reading a reference field attaches the box with its own class, which
+    may be a subclass of `X`, and keeps that handle: later reads return
+    the same object while the field refers to the same box. The class is
+    found by the stored schema hash among the `SharedBox` classes this
+    process has defined; of several with one hash, the first one defined
+    that is still alive is used. After another thread or process assigns
+    another box, the next read attaches that one and closes the handle it
+    kept. [`close`][sharedbox.SharedBox.close] on the outer box closes the
+    handles its reads attached, and closing a returned box makes the next
+    read attach it again. A read raises
+    [`UnknownBoxClassError`][sharedbox.UnknownBoxClassError] when this
+    process has not imported the module that defines the box's class, and
+    [`BrokenReferenceError`][sharedbox.BrokenReferenceError] when the box
+    was removed, or removed and created again under the same name (also by
+    another class), since it was assigned. A handle that already read the
+    field keeps its own mapping of the box and goes on returning it. The
+    outer box only points at the other box: closing or unlinking the outer
+    box leaves it alone, and no write covers both boxes at once.
+
+    A box can be pickled, and `copy.copy` and `copy.deepcopy` do the same
+    as a pickle round trip. The pickle holds the class, the segment name,
+    the schema hash and the box's create id, a random number drawn when
+    the box was created. Unpickling attaches a new handle: an independent
+    box on the same data, which the receiving process closes. It reads
+    reference fields from the segment like any other handle. A box pickled
+    inside `__post_init__` can be unpickled only once it is published. A
+    child process started with `fork` uses the parent's box object, which
+    keeps working after the fork.
+
+    Raises
+    ------
+    TypeError
+        When the class is defined, for an annotation of another type, no
+        fields or more than 256, a field named like a `SharedBox` member
+        (`name`, `closed`, `close`, `unlink`, `update`, `snapshot`,
+        `watch`, `events`, `force_unlock`, `create`, `attach`) or like
+        `follow`, `unfollow` or `nested`, a default of the wrong type, a
+        positional field without a default after one with a default, an
+        `InitVar` in a class without `__post_init__`, a reference to a
+        class that is not defined yet, `__slots__` that name `_segment`, or
+        an `identity` that is not a non-empty string. When the class is
+        called, for a missing, unknown or repeated value, or a value of
+        the wrong type.
+    ValueError
+        When the class is defined, for a `name` that does not match
+        `[A-Za-z0-9_.-]{1,128}`, a `lock_timeout` or `max_waiters` out of
+        range, or a default longer than its capacity. When the class is
+        called, for a `str` or `bytes` value longer than its capacity.
+    SegmentExistsError
+        When the class is called and the name is taken.
+    SchemaMismatchError
+        When a pickled box is loaded by a process whose class has
+        different fields, or the box under that name was unlinked and
+        created again since the pickle was made.
+    SegmentNotFoundError
+        When a pickled box is loaded after its segment is gone.
+
+    Notes
+    -----
+    On Windows a lock wait ends on a timer tick, so `lock_timeout` can
+    expire up to one tick late, 15.6 ms at the default timer resolution.
+    The handle a class keeps for a `field(default=box)` default keeps that
+    box's segment in existence on Windows, and so does the mapping a
+    handle keeps of a box it read through a reference field: other handles
+    can still attach it.
     """
 
     __slots__ = (
@@ -483,6 +659,9 @@ class SharedBox(metaclass=SharedBoxMeta):
     def create(cls, name: str, /, *args: Any, **kwargs: Any) -> Self:
         """Create a box under `name` instead of the class's name.
 
+        Takes the field values and runs `__post_init__` as calling the
+        class does.
+
         Raises
         ------
         SegmentExistsError
@@ -498,12 +677,20 @@ class SharedBox(metaclass=SharedBoxMeta):
     def attach(cls, name: str | None = None) -> Self:
         """Open the box called `name`, by default the one named after this class.
 
+        `__post_init__` does not run.
+
         Raises
         ------
         SegmentNotFoundError
-            If no segment has that name.
+            If no segment has that name, or the shared memory under it does
+            not become a box within 1 s (the lock timeout, if shorter).
         SchemaMismatchError
-            If the segment was created by a different class or layout.
+            If the segment was created by a different class or a different
+            version of this class, uses another major version of the
+            segment layout, or has a field of a kind this version cannot
+            read.
+        ValueError
+            If `name` does not match `[A-Za-z0-9_.-]{1,128}`.
         """
         box = cls.__new__(cls)
         layout = cls._layout()
@@ -634,11 +821,23 @@ class SharedBox(metaclass=SharedBoxMeta):
 
     @property
     def closed(self) -> bool:
-        """True after [`close`][sharedbox.SharedBox.close]."""
+        """True once [`close`][sharedbox.SharedBox.close] was called on this box."""
         return self._segment.closed
 
     def update(self, **values: Any) -> None:
-        """Write several fields at once; readers see all of them or none."""
+        """Write several fields under one lock; a reader sees all of the new values or none.
+
+        Every value is checked before any is written, so an update that
+        raises changes nothing. A reference field takes a box or None,
+        checked as when it is assigned.
+
+        Raises
+        ------
+        TypeError
+            If a name is not a field or a value has the wrong type.
+        ValueError
+            If a `str` or `bytes` value is longer than its capacity.
+        """
         layout = type(self).__layout__
         by_name = layout.by_name
         try:
@@ -655,7 +854,7 @@ class SharedBox(metaclass=SharedBoxMeta):
         self._segment.set(pairs)
 
     def snapshot(self, *, follow: bool = False) -> dict[str, Any]:
-        """Every field's value; this box is read at one point in time.
+        """Return every field's value, with this box read at one point in time.
 
         A reference field gives a [`BoxRef`][sharedbox.BoxRef], or None when
         it is empty.
@@ -667,7 +866,8 @@ class SharedBox(metaclass=SharedBoxMeta):
             to, itself taken with `follow`. Each box is read at its own
             moment, not together with the others. A box this call has
             already read stays a [`BoxRef`][sharedbox.BoxRef], also when a
-            second field refers to it, so a loop of references ends.
+            second field refers to it, so a loop of references (a box that
+            refers to itself, or A to B and B to A) ends.
 
         Raises
         ------
@@ -709,7 +909,15 @@ class SharedBox(metaclass=SharedBoxMeta):
                 stack.pop()
 
     def watch(self, field: str) -> FieldWatch[Any]:
-        """Iterate over values written to `field` from now on."""
+        """Return a [`FieldWatch`][sharedbox.FieldWatch] over the values written to `field` from now on.
+
+        A reference field yields a [`BoxRef`][sharedbox.BoxRef] or None.
+
+        Raises
+        ------
+        ValueError
+            If the class has no field `field`.
+        """
         spec = self._spec(field)
         return FieldWatch(self._watcher, spec, self._segment.version(spec.index))
 
@@ -717,11 +925,13 @@ class SharedBox(metaclass=SharedBoxMeta):
     def events(self) -> BoxEvents:
         """One psygnal signal per field, emitted as `(new, old)` when any thread or process changes it.
 
-        Differs from a local evented dataclass in these ways:
+        A [`BoxEvents`][sharedbox.BoxEvents] group:
+        `box.events.<field>.connect(cb)` listens to one field and
+        `box.events.connect(cb)` to all of them.
 
-        Callbacks run on the box's watcher thread; connect with
-        `thread="main"` and call `psygnal.emit_queued()` to run them on the
-        main thread instead. Closing the box delivers writes the watcher
+        Unlike the callbacks of a local evented dataclass, these run on the
+        box's watcher thread; connect with `thread="main"` and call
+        `psygnal.emit_queued()` to run them on the main thread instead. Closing the box delivers writes the watcher
         thread had not seen yet, so callbacks may run once on the thread
         that calls [`close`][sharedbox.SharedBox.close]. A box that is
         garbage collected drops them.
@@ -732,12 +942,35 @@ class SharedBox(metaclass=SharedBoxMeta):
         unchanged emits nothing. For the first emission of a field, `old`
         is the value the field held when `events` was first accessed.
 
-        A callback that raises is logged. Callbacks connected before it on
-        the same signal already ran; callbacks connected after it do not
-        run for that write. Other fields still emit normally.
+        A callback that raises is logged to the `sharedbox` logger.
+        Callbacks connected before it on the same signal already ran;
+        callbacks connected after it do not run for that write. Other
+        fields still emit. The watcher thread also serves this
+        box's [`watch`][sharedbox.SharedBox.watch] iterators, so a slow
+        callback delays them. A callback that refers to the box, such as a
+        lambda that reads a field, keeps the box alive until
+        [`close`][sharedbox.SharedBox.close].
 
-        [`follow`][sharedbox.BoxEvents.follow] forwards changes made inside
-        the boxes that reference fields refer to.
+        A field named like an attribute of psygnal's `SignalGroup`
+        (`connect`, `disconnect`, `all`, `signals`, `block` and others)
+        makes psygnal warn when the class is defined, and
+        `box.events.<name>` then returns that attribute;
+        `box.events["<name>"]` returns the field's signal.
+
+        psygnal's `blocked`, `paused`, `throttled`, `debounced` and
+        `psygnal.qt.start_emitting_from_queue` work on these signals. A
+        signal that is blocked drops its emissions in this process, and
+        changes made while it is blocked are not emitted later.
+
+        A reference field's signal is emitted when the field is assigned
+        another box or emptied, with a [`BoxRef`][sharedbox.BoxRef] or None
+        as `new` and `old`. Changes inside the box it refers to are emitted
+        by that box's own `events`, and by this group once
+        [`follow`][sharedbox.BoxEvents.follow] forwards them.
+
+        A child process created with `fork` while a callback is running
+        inherits that signal's lock as held, and hangs the first time it
+        connects to, disconnects from or emits that signal.
         """
         cls = type(self)
         return self._watcher.events(
@@ -756,7 +989,7 @@ class SharedBox(metaclass=SharedBoxMeta):
     def _inner(
         self, spec: FieldSpec, create_id: int, schema_hash: int, name: str
     ) -> SharedBox:
-        """The box a reference field refers to: the one this handle attached before, or a new one."""
+        """Return the box a reference field refers to: the one this handle attached before, or a new one."""
         cached = self._refs.get(spec.index)
         # Reading a dict entry is atomic on every build, so the usual case takes no lock.
         if cached is not None and cached[0] == create_id and not cached[2].closed:
@@ -776,17 +1009,57 @@ class SharedBox(metaclass=SharedBoxMeta):
         return inner
 
     def force_unlock(self) -> None:
-        """Release a write lock left behind by a process that died while writing."""
+        """Release a write lock left behind by a process that died while writing.
+
+        Reads and writes that wait on such a lock raise
+        [`LockTimeoutError`][sharedbox.LockTimeoutError], whose message
+        names the process that holds it. This does not check whether the
+        process that held the lock is still running: releasing the lock of
+        a writer that is still running lets other reads and writes run
+        while its write is half done.
+        """
         self._segment.force_unlock()
 
     unlink = Unlink()
+    """Remove the segment's name, so no later process can attach to it.
+
+    `Motor.unlink(name=None)` on the class removes `name`, by default the
+    class's name; `box.unlink()` on a box removes the name of its segment.
+    Boxes already open keep working. On Linux, later
+    [`attach`][sharedbox.SharedBox.attach] calls fail. On Windows this does
+    nothing; the segment goes away with its last handle.
+
+    Raises
+    ------
+    ValueError
+        If `name` does not match `[A-Za-z0-9_.-]{1,128}`.
+    SegmentNotFoundError
+        On Linux, if no segment has that name.
+    """
 
     def __sharedbox_box__(
         self, max_version: tuple[int, int] | None = None, **kwargs: Any
     ) -> CapsuleType:
-        """A `"sharedbox_box"` capsule holding a handle with its own mapping of the segment.
+        """Return a `"sharedbox_box"` capsule holding a handle with its own mapping of the segment.
 
-        Closing or unlinking the box does not affect the handle.
+        Python code does not call it; an extension that accepts a box does.
+        The capsule holds a pointer to an `sbx_handle`, declared in
+        `sharedbox/sharedbox_c.h`. The handle's mapping is made from the
+        box's OS handle, so closing or unlinking the box does not affect
+        it. A consumer takes the handle with
+        `sharedbox::handle::from_capsule` (C++) or `sbx_import` (C),
+        renames the capsule `"used_sharedbox_box"`, compares the box's
+        schema hash with the one it expects, and destroys (C++) or releases
+        (C) the handle itself. A capsule that is never taken releases the
+        handle when it is garbage collected. Releasing touches no Python
+        objects and does not need the GIL, so it may run on any thread and
+        after interpreter shutdown.
+
+        Parameters
+        ----------
+        max_version
+            The `(major, minor)` layout version the caller supports; None
+            means the box's own.
 
         Raises
         ------
@@ -796,6 +1069,10 @@ class SharedBox(metaclass=SharedBoxMeta):
             published.
         NotImplementedError
             If any other keyword is given.
+
+        Notes
+        -----
+        On Windows the segment stays in existence while a handle is held.
         """
         if kwargs:
             raise NotImplementedError(
@@ -814,16 +1091,24 @@ class SharedBox(metaclass=SharedBoxMeta):
         return self._segment._export()
 
     def close(self) -> None:
-        """Detach from the segment; other boxes keep it.
+        """Detach from the segment; other boxes on it keep working and the data stays.
 
         Use [`unlink`][sharedbox.SharedBox.unlink] to remove it. Also
-        closes every box this handle attached to read a reference field,
-        and stops forwarding started through its
-        [`events`][sharedbox.SharedBox.events].
+        stops this box's watcher thread, closes every box this handle
+        attached to read a reference field, and stops all forwarding
+        started through its [`events`][sharedbox.SharedBox.events]. Later
+        reads and writes raise
+        [`BoxClosedError`][sharedbox.BoxClosedError]. Calling it again does
+        nothing. Leaving a `with` block calls it.
 
         Called on a box's watcher thread, from an event callback, it does
         not wait for the watcher threads of the boxes it closes, and drops
         the writes those threads had not seen yet.
+
+        A box that is garbage collected is closed. Forwarding it started
+        keeps running until its events group and every group
+        [`follow`][sharedbox.BoxEvents.follow] returned are garbage
+        collected too, which happens only when the cycle collector runs.
         """
         self._close(not on_watcher_thread())
 

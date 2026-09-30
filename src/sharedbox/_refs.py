@@ -24,7 +24,7 @@ def register(cls: type[SharedBox]) -> None:
 
 
 def box_class(schema_hash: int) -> type[SharedBox] | None:
-    """The first class defined with `schema_hash` that is still alive, or None if there is none."""
+    """Return the first class defined with `schema_hash` that is still alive, or None if there is none."""
     # A copy, since a class freed during the loop removes its entry from the list.
     for ref in tuple(CLASSES.get(schema_hash, ())):
         cls = ref()
@@ -34,11 +34,23 @@ def box_class(schema_hash: int) -> type[SharedBox] | None:
 
 
 class BrokenReferenceError(LookupError):
-    """The box a reference field refers to no longer exists, or was created again."""
+    """The box a reference field refers to no longer exists, or was created again.
+
+    Raised by reading a reference field, or by
+    [`snapshot(follow=True)`][sharedbox.SharedBox.snapshot], when the box
+    was removed, or removed and created again, since it was assigned. The
+    message names the field, the box and which of the two happened.
+    """
 
 
 class UnknownBoxClassError(TypeError):
-    """No class defined in this process has the schema hash of the box a reference field refers to."""
+    """No class defined in this process has the schema hash of the box a reference field refers to.
+
+    Raised by reading a reference field, or by
+    [`snapshot(follow=True)`][sharedbox.SharedBox.snapshot]. The message
+    names the field, the box and the hash, and says to import the module
+    that defines the class.
+    """
 
 
 @dataclass(frozen=True)
@@ -50,7 +62,7 @@ class BoxRef:
     schema_hash: int
     """Schema hash of the box's own class, which may be a subclass of the annotated one."""
     create_id: int
-    """Tells the box apart from one created later under the same name."""
+    """Random number drawn when the box was created; tells it apart from one created later under the same name."""
 
     @property
     def box_class(self) -> type[SharedBox] | None:
@@ -59,17 +71,17 @@ class BoxRef:
 
 
 def box_ref(value: Any) -> BoxRef | None:
-    """A reference field's native value, `(create_id, schema_hash, name)` or None, as callers see it."""
+    """Return a reference field's native value, `(create_id, schema_hash, name)` or None, as callers see it."""
     return None if value is None else BoxRef(value[2], value[1], value[0])
 
 
 def shown(spec: FieldSpec, value: Any) -> Any:
-    """A field's native value as callers see it: a reference field gives a [`BoxRef`][sharedbox.BoxRef] or None."""
+    """Return a field's native value as callers see it: a reference field gives a [`BoxRef`][sharedbox.BoxRef] or None."""
     return value if spec.target is None else box_ref(value)
 
 
 def stored(spec: FieldSpec, value: Any) -> tuple[int, int, str] | None:
-    """What a reference field stores for `value`: None, or the box's create id, schema hash and name.
+    """Return what a reference field stores for `value`: None, or the box's create id, schema hash and name.
 
     Raises
     ------

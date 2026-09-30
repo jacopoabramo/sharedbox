@@ -1,0 +1,36 @@
+---
+icon: lucide/file-code
+---
+
+# C and C++ interface
+
+sharedbox installs two headers with its wheel, in the folder that
+[`get_include`][sharedbox.get_include] returns:
+
+| Header | What it declares | Specified in |
+| --- | --- | --- |
+| [`sharedbox/sharedbox.hpp`](https://github.com/jacopoabramo/sharedbox/blob/main/include/sharedbox/sharedbox.hpp) | the C++20 API: `sharedbox::handle`, `sharedbox::result`, `sharedbox::status` | [`sharedbox.hpp`](segment-layout.md#sharedboxhpp) |
+| [`sharedbox/sharedbox_c.h`](https://github.com/jacopoabramo/sharedbox/blob/main/include/sharedbox/sharedbox_c.h) | the six `sbx_*` C functions and the status codes | [`sharedbox_c.h`](segment-layout.md#sharedbox_ch) |
+| both | `sbx_handle`, the struct a capsule holds | [Capsule handle](segment-layout.md#capsule-handle) |
+
+The Python side of the exchange, `__sharedbox_box__` and the capsule it
+returns, is specified in
+[The PyCapsule interface](segment-layout.md#the-pycapsule-interface). The
+CMake targets are in [Build and packaging](segment-layout.md#build-and-packaging).
+
+## Thread safety
+
+Calls from several threads on one [handle](../explanation/glossary.md#handle)
+follow the same rules for an `sbx_handle` and the C functions as for
+`sharedbox::handle`. The rules are listed in
+[`sharedbox.hpp`](segment-layout.md#sharedboxhpp).
+
+## Errors
+
+- [Implementation language](segment-layout.md#implementation-language):
+  `sharedbox::result<T>`, which every C++ call that can fail returns, and
+  the C++20 and C++23 build rules that come with it
+- [`sharedbox.hpp`](segment-layout.md#sharedboxhpp): what each
+  `sharedbox::status` means, including `status::os`
+- [`sharedbox_c.h`](segment-layout.md#sharedbox_ch): the `SBX_OK` and
+  `SBX_E_*` codes the C functions return

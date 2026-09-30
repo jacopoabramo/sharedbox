@@ -34,7 +34,7 @@ __all__ = [
 
 
 def get_include() -> str:
-    """Folder holding `sharedbox/sharedbox.hpp`, `sharedbox_c.h` and `sharedbox_c.cpp`.
+    """Return the folder holding `sharedbox/sharedbox.hpp`, `sharedbox/sharedbox_c.h` and `sharedbox/sharedbox_c.cpp`.
 
     Add it to the include path of an extension that uses a box through its capsule.
 
