@@ -120,7 +120,7 @@ commands = [
 [tool.tox.env.docs]
 runner = "uv-venv-lock-runner"
 # mkdocstrings reads the sources without importing them, so the extension is not built
-skip_install = true
+package = "skip"
 dependency_groups = ["docs"]
 commands = [
     ["zensical", "build", "--clean"],
