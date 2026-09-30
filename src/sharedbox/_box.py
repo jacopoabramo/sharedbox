@@ -423,10 +423,10 @@ class SharedBox(metaclass=SharedBoxMeta):
     process has not imported the module that defines the box's class, and
     [`BrokenReferenceError`][sharedbox.BrokenReferenceError] when the box
     was removed, or removed and created again under the same name (also by
-    another class), since it was assigned. A handle that already read the field keeps its own
-    mapping of the box and goes on returning it. The outer box only points
-    at the other box: closing or unlinking the outer box leaves it alone,
-    and no write covers both boxes at once.
+    another class), since it was assigned. A handle that already read the
+    field keeps its own mapping of the box and goes on returning it. The
+    outer box only points at the other box: closing or unlinking the outer
+    box leaves it alone, and no write covers both boxes at once.
 
     A box can be pickled, and `copy.copy` and `copy.deepcopy` do the same
     as a pickle round trip. The pickle holds the class, the segment name,
@@ -930,8 +930,8 @@ class SharedBox(metaclass=SharedBoxMeta):
         `box.events.connect(cb)` to all of them.
 
         Unlike the callbacks of a local evented dataclass, these run on the
-        box's watcher thread; connect with `thread="main"` and call `psygnal.emit_queued()` to run them on the
-        main thread instead. Closing the box delivers writes the watcher
+        box's watcher thread; connect with `thread="main"` and call
+        `psygnal.emit_queued()` to run them on the main thread instead. Closing the box delivers writes the watcher
         thread had not seen yet, so callbacks may run once on the thread
         that calls [`close`][sharedbox.SharedBox.close]. A box that is
         garbage collected drops them.
