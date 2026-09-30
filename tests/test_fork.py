@@ -1,3 +1,4 @@
+import contextlib
 import errno
 import multiprocessing as mp
 import os
@@ -8,12 +9,15 @@ from collections.abc import Callable
 from multiprocessing.process import BaseProcess
 from multiprocessing.queues import Queue
 from multiprocessing.synchronize import Event
+from typing import Any
 
 import pytest
 
-from sharedbox import LockTimeoutError, SharedBox
-from sharedbox._layout import NativeField
+from sharedbox import BoxEvents, LockTimeoutError, SharedBox
+from sharedbox._events import Watcher
+from sharedbox._layout import FieldSpec, NativeField
 from sharedbox._native import Segment
+from sharedbox._refs import attach_reference
 
 pytestmark = [
     pytest.mark.skipif(sys.platform == "win32", reason="Windows has no fork"),
@@ -42,6 +46,30 @@ def read_wheel(cart: Cart, out: "Queue[str]") -> None:
     wheel = cart.wheel
     assert wheel is not None
     out.put(wheel.name)
+    cart.close()
+
+
+def forward_in_child(cart: Cart, ready: Event, out: "Queue[int]") -> None:
+    seen: queue.Queue[int] = queue.Queue()
+    cart.events.follow("wheel").turns.connect(lambda new, old: seen.put(new))
+    ready.set()
+    out.put(seen.get(timeout=10))
+    cart.close()
+
+
+def forward_after_a_failed_follow(cart: Cart, ready: Event, out: "Queue[int]") -> None:
+    with contextlib.suppress(LockTimeoutError):
+        cart.events.follow("wheel")
+    forward_in_child(cart, ready, out)
+
+
+def follow_kept_group(
+    cart: Cart, group: BoxEvents, ready: Event, out: "Queue[int]"
+) -> None:
+    seen: queue.Queue[int] = queue.Queue()
+    group.follow("wheel").turns.connect(lambda new, old: seen.put(new))
+    ready.set()
+    out.put(seen.get(timeout=10))
     cart.close()
 
 
@@ -149,15 +177,172 @@ def test_forked_child_records_its_own_pid_in_a_raw_segment(unique_name: str) -> 
 
 
 def test_forked_child_reads_a_reference_while_the_parent_held_the_cache_lock(
-    unique_name: str,
+    unique_name: str, names: Callable[[str], str]
 ) -> None:
     """Check that a forked child reads a reference although the parent held the reference cache lock at the fork."""
     out: Queue[str] = mp.get_context("fork").Queue()
-    wheel_name = f"{unique_name}-w"
+    wheel_name = names("w")
     with Wheel.create(wheel_name) as wheel, Cart.create(unique_name, wheel) as cart:
         # Stands for another thread of the parent attaching a box at the moment of the fork.
         with cart._refs_lock:
             child = fork(read_wheel, cart, out)
-        assert out.get(timeout=10) == wheel_name
-        assert finish(child) == 0
-    Wheel.unlink(wheel_name)
+        try:
+            assert out.get(timeout=10) == wheel_name
+        finally:
+            code = finish(child)
+        assert code == 0
+
+
+def test_forked_child_forwards_after_calling_follow(
+    unique_name: str, names: Callable[[str], str]
+) -> None:
+    """Check that a forked child forwards changes once it calls follow, although the parent held the forwarding lock at the fork."""
+    ctx = mp.get_context("fork")
+    ready = ctx.Event()
+    out: Queue[int] = ctx.Queue()
+    with Wheel.create(names("w")) as wheel, Cart.create(unique_name, wheel) as cart:
+        cart.events.follow("wheel")
+        # Stands for another thread of the parent holding the forwarding lock at the moment of the fork.
+        with cart.events._sharedbox_follower.lock:
+            child = fork(forward_in_child, cart, ready, out)
+        try:
+            assert ready.wait(10)
+            wheel.turns = 4
+            assert out.get(timeout=10) == 4
+        finally:
+            code = finish(child)
+        assert code == 0
+
+
+def test_forked_child_follows_the_new_box_of_a_move_the_parent_had_begun(
+    unique_name: str, names: Callable[[str], str]
+) -> None:
+    """Check that a forked child forwards from the box a reference moved to when the parent's move had not finished at the fork."""
+    ctx = mp.get_context("fork")
+    ready = ctx.Event()
+    out: Queue[int] = ctx.Queue()
+    moving = threading.Event()
+    with (
+        Wheel.create(names("w")) as wheel,
+        Wheel.create(names("v")) as moved,
+        Cart.create(unique_name, wheel) as cart,
+    ):
+        cart.events.follow("wheel")
+        cart.events.wheel.connect(lambda new, old: moving.set())
+        # Holding the lock keeps the parent's move from changing forwarding, while the
+        # watcher has already recorded the new reference by the time the signal fires.
+        with cart.events._sharedbox_follower.lock:
+            cart.wheel = moved
+            assert moving.wait(10)
+            child = fork(forward_in_child, cart, ready, out)
+        try:
+            assert ready.wait(10)
+            moved.turns = 4
+            assert out.get(timeout=10) == 4
+        finally:
+            code = finish(child)
+        assert code == 0
+
+
+def test_forked_child_follows_a_move_through_a_group_kept_from_before_the_fork(
+    unique_name: str, names: Callable[[str], str]
+) -> None:
+    """Check that a forked child calling follow on a group kept from before the fork forwards from the box its reference moves to."""
+    ctx = mp.get_context("fork")
+    ready = ctx.Event()
+    out: Queue[int] = ctx.Queue()
+    with Wheel.create(names("w")) as wheel, Cart.create(unique_name, wheel) as cart:
+        group = cart.events
+        group.follow("wheel")
+        child = fork(follow_kept_group, cart, group, ready, out)
+        try:
+            assert ready.wait(10)
+            with Wheel.create(names("v")) as moved:
+                cart.wheel = moved
+                # The child follows the new box some time after the move and misses writes made before that.
+                got = None
+                for turns in range(1, 101):
+                    moved.turns = turns
+                    try:
+                        got = out.get(timeout=0.1)
+                    except queue.Empty:
+                        continue
+                    break
+                assert got is not None
+        finally:
+            code = finish(child)
+        assert code == 0
+
+
+def test_forked_child_forwards_after_a_follow_whose_rebuild_failed_to_read(
+    unique_name: str, names: Callable[[str], str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Check that a forked child forwards once it calls follow again after the first rebuild failed to read a reference."""
+    ctx = mp.get_context("fork")
+    ready = ctx.Event()
+    out: Queue[int] = ctx.Queue()
+    last = Watcher.last
+    failed: list[FieldSpec] = []
+
+    def fail_once(watcher: Watcher, spec: FieldSpec) -> Any:
+        if not failed:
+            failed.append(spec)
+            raise LockTimeoutError("stands for a writer that died holding the lock")
+        return last(watcher, spec)
+
+    with Wheel.create(names("w")) as wheel, Cart.create(unique_name, wheel) as cart:
+        cart.events.follow("wheel")
+        # Patched only while forking, so only the child fails.
+        monkeypatch.setattr(Watcher, "last", fail_once)
+        child = fork(forward_after_a_failed_follow, cart, ready, out)
+        monkeypatch.undo()
+        try:
+            assert ready.wait(10)
+            wheel.turns = 4
+            assert out.get(timeout=10) == 4
+        finally:
+            code = finish(child)
+        assert code == 0
+
+
+def test_forked_child_follows_a_box_whose_attach_failed_in_follow_after_a_move(
+    unique_name: str, names: Callable[[str], str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Check that a forked child whose follow failed to attach a box does not raise, and forwards from the box the reference moves to."""
+    ctx = mp.get_context("fork")
+    ready = ctx.Event()
+    out: Queue[int] = ctx.Queue()
+    real = attach_reference
+    failed: list[str] = []
+
+    def fail_once(
+        spec: FieldSpec, create_id: int, schema_hash: int, name: str
+    ) -> SharedBox:
+        if not failed:
+            failed.append(name)
+            raise RuntimeError("attach failed")
+        return real(spec, create_id, schema_hash, name)
+
+    with Wheel.create(names("w")) as wheel, Cart.create(unique_name, wheel) as cart:
+        cart.events.follow("wheel")
+        # Patched only while forking, so only the child fails.
+        monkeypatch.setattr("sharedbox._follow.attach_reference", fail_once)
+        child = fork(forward_in_child, cart, ready, out)
+        monkeypatch.undo()
+        try:
+            assert ready.wait(10)
+            with Wheel.create(names("v")) as moved:
+                cart.wheel = moved
+                # The child follows the new box some time after the move and misses writes made before that.
+                got = None
+                for turns in range(1, 101):
+                    moved.turns = turns
+                    try:
+                        got = out.get(timeout=0.1)
+                    except queue.Empty:
+                        continue
+                    break
+                assert got is not None
+        finally:
+            code = finish(child)
+        assert code == 0

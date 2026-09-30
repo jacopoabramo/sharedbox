@@ -56,7 +56,10 @@ if __name__ == "__main__":
 
 `box.events` is a psygnal `SignalGroup`: `box.events.position.connect(cb)`
 calls `cb(new, old)` when any thread or process changes `position`, and
-`box.events.connect(cb)` reports every field. Callbacks run on a background
+`box.events.connect(cb)` reports every field. `box.events.follow("motor")`
+returns a group with the signals of the box that the reference field
+`motor` refers to, and keeps emitting them after the field is assigned
+another box. Callbacks run on a background
 thread; pass `thread="main"` to `connect` and call `psygnal.emit_queued()`
 from your event loop to run them on the main thread.
 

@@ -87,6 +87,23 @@ class Stage(SharedBox):
     motor: Motor | None = None
 ```
 
+- `BoxEvents`: psygnal `SignalGroup` subclass that `SharedBox.events`
+  returns.
+- `BoxEvents.follow()`: given a reference field, returns a group whose
+  signals are emitted for changes inside the box the field refers to,
+  whichever box that is; given no field, emits on `nested` every change
+  inside the boxes the reference fields reach.
+- `BoxEvents.unfollow()`: stops forwarding started with `follow()`.
+- `BoxEvents.nested`: `(path, new, old)` signal of a class with reference
+  fields.
+
+```python
+motor_events = stage.events.follow("motor")
+motor_events.position.connect(lambda new, old: print(new))
+stage.events.follow()
+stage.events.nested.connect(lambda path, new, old: print(path, new))
+```
+
 ### Changed
 
 - Building the extension requires nanobind 3.1.0 or newer and a C++20
@@ -137,6 +154,11 @@ class Stage(SharedBox):
 - `SharedBox.attach()`: a segment with a field of a kind this version
   cannot read raises `SchemaMismatchError` naming the kind.
 - `SharedBox`: an annotation naming an undefined class raises `TypeError`.
+- `SharedBox`: a field named `follow`, `unfollow` or `nested` raises
+  `TypeError`.
+- `SharedBox.close()`: called from an event callback, on a watcher thread,
+  does not wait for the watcher threads of the boxes it closes, and drops
+  the writes they had not delivered.
 
 ### Fixed
 

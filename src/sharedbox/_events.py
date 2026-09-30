@@ -6,7 +6,16 @@ import logging
 import threading
 from collections.abc import AsyncIterator, Callable, Generator, Iterator
 from concurrent.futures import CancelledError
-from typing import TYPE_CHECKING, Any, Final, Generic, TypeVar, cast
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Final,
+    Generic,
+    TypeAlias,
+    TypeVar,
+    cast,
+    overload,
+)
 
 from psygnal import Signal, SignalGroup
 
@@ -14,6 +23,7 @@ from ._native import BoxClosedError, LockTimeoutError, WaiterSlotsFullError
 from ._refs import shown
 
 if TYPE_CHECKING:
+    from ._follow import Follower
     from ._layout import FieldSpec, Layout
     from ._native import Segment
 
@@ -21,6 +31,15 @@ T = TypeVar("T")
 PENDING, DONE, CANCELLED = "pending", "done", "cancelled"
 STEP: Final = 1.0
 logger = logging.getLogger("sharedbox")
+# Receives each change of a field as native values: the field, the new value, the old one.
+Sink: TypeAlias = "Callable[[FieldSpec, Any, Any], None]"
+# Marks watcher threads: one must not join another, since that one may be joining it.
+WATCHER_THREAD = threading.local()
+
+
+def on_watcher_thread() -> bool:
+    """Whether the calling thread is the watcher thread of some box."""
+    return getattr(WATCHER_THREAD, "active", False)
 
 
 class FieldFuture(Generic[T]):
@@ -203,10 +222,12 @@ class Watcher:
         "_pending",
         "_seen",
         "_segment",
+        "_sink",
         "_slot",
         "_slots_full",
         "_stop",
         "_thread",
+        "follower",
     )
 
     def __init__(self, segment: Segment) -> None:
@@ -215,7 +236,10 @@ class Watcher:
         self._lock = threading.RLock()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
-        self._group: SignalGroup | None = None
+        self._group: BoxEvents | None = None
+        self._sink: Sink | None = None
+        # Moves forwarding when a reference field changes; set by the box's events group.
+        self.follower: Follower | None = None
         self._fields: tuple[FieldSpec, ...] = ()
         self._seen: dict[int, tuple[int, Any]] = {}
         self._slot: int | None = None
@@ -243,24 +267,55 @@ class Watcher:
         return fut
 
     def events(
-        self, factory: Callable[[], SignalGroup], fields: tuple[FieldSpec, ...]
-    ) -> SignalGroup:
+        self, factory: Callable[[], BoxEvents], fields: tuple[FieldSpec, ...]
+    ) -> BoxEvents:
         """The box's signal group, created on first use; the watcher emits into it while running."""
         with self._lock:
             if self._group is None:
-                self._seen = {
-                    spec.index: self._segment.get_versioned(spec.index)
-                    for spec in fields
-                }
-                self._fields = fields
                 self._group = factory()
+                self._listen_locked(self._to_group, fields)
             self._start_locked()
             return self._group
 
+    def listen(self, sink: Sink, fields: tuple[FieldSpec, ...]) -> None:
+        """Pass every later change of `fields` to `sink`, on the watcher thread."""
+        with self._lock:
+            if self._sink is None:
+                self._listen_locked(sink, fields)
+            self._start_locked()
+
+    def resume(self) -> None:
+        """Start the thread again in a child created by `fork`, if changes have a sink."""
+        with self._lock:
+            if self._sink is not None:
+                self._start_locked()
+
+    def last(self, spec: FieldSpec) -> Any:
+        """The value of `spec` the watcher last saw, which it compares the next change with."""
+        return self._seen[spec.index][1]
+
+    def _listen_locked(self, sink: Sink, fields: tuple[FieldSpec, ...]) -> None:
+        self._seen = {
+            spec.index: self._segment.get_versioned(spec.index) for spec in fields
+        }
+        self._fields = fields
+        self._sink = sink
+
+    def _to_group(self, spec: FieldSpec, new: Any, old: Any) -> None:
+        group = self._group
+        assert group is not None
+        try:
+            group[spec.name].emit(shown(spec, new), shown(spec, old))
+        except Exception:
+            logger.exception("a callback for field %r raised", spec.name)
+        # After the emission, so the reference signal's callbacks run before forwarding moves.
+        if spec.target is not None and self.follower is not None:
+            self.follower.moved(spec, new, self._segment)
+
     def _emit_changes(self) -> None:
         with self._lock:
-            group, fields = self._group, self._fields
-        if group is None:
+            sink, fields = self._sink, self._fields
+        if sink is None:
             return
         versions = self._segment.versions()
         for spec in fields:
@@ -272,9 +327,9 @@ class Watcher:
             if new == old:
                 continue
             try:
-                group[spec.name].emit(shown(spec, new), shown(spec, old))
+                sink(spec, new, old)
             except Exception:
-                logger.exception("a callback for field %r raised", spec.name)
+                logger.exception("forwarding a change of field %r failed", spec.name)
 
     def discard(self, fut: FieldFuture[Any]) -> None:
         with self._lock, contextlib.suppress(ValueError):
@@ -318,7 +373,8 @@ class Watcher:
 
         The thread starts again on the next
         [`future`][sharedbox._events.Watcher.future] or
-        [`events`][sharedbox._events.Watcher.events] call.
+        [`events`][sharedbox._events.Watcher.events] call, or on
+        [`resume`][sharedbox._events.Watcher.resume].
         """
         stopped = self._stop.is_set()
         self._lock = threading.RLock()
@@ -358,6 +414,7 @@ class Watcher:
         return self._slot
 
     def _run(self) -> None:
+        WATCHER_THREAD.active = True
         with contextlib.suppress(BoxClosedError):
             try:
                 generation = self._segment.generation()
@@ -406,7 +463,72 @@ class Watcher:
             fut._settle(DONE, value, version)
 
 
-def events_class(owner: type, layout: Layout) -> type[SignalGroup]:
-    """A psygnal `SignalGroup` subclass with one `(new, old)` signal per field of `owner`."""
+class BoxEvents(SignalGroup):
+    """The psygnal signal group of a box: one `(new, old)` signal per field.
+
+    The group of a class with reference fields also has the signal
+    `nested`, emitted as `(path, new, old)` once
+    [`follow`][sharedbox.BoxEvents.follow] is called without a field.
+    """
+
+    _sharedbox_follower: Follower
+
+    @overload
+    def follow(self, field: str) -> BoxEvents: ...
+    @overload
+    def follow(self, field: None = None) -> None: ...
+    def follow(self, field: str | None = None) -> BoxEvents | None:
+        """Forward changes made inside the boxes that reference fields refer to.
+
+        With `field`, return a group with the signals of the class `field`
+        is annotated with, emitted for whichever box the field refers to
+        when the change happens; a later call returns the same group.
+        Without `field`, emit every change inside every box the reference
+        fields reach, down the whole graph, on `nested` as
+        `(path, new, old)`, where `path` is the tuple of field names from
+        this group's box to the changed field. That call follows each box
+        once: a box that several paths reach is reported under one of them,
+        and after a reference changes that may be a different one.
+
+        A call that raises follows nothing new, and the next call tries
+        again.
+
+        Raises
+        ------
+        ValueError
+            If the class has no field `field`.
+        TypeError
+            If `field` is not a reference field.
+        BoxClosedError
+            If the box is closed.
+        """
+        return self._sharedbox_follower.follow(field)
+
+    def unfollow(self, field: str | None = None) -> None:
+        """Stop forwarding for `field`, or all forwarding started through this group.
+
+        With `field`, stop only the group that `follow(field)` returned, and
+        leave running what `follow()` without a field started. The group is
+        forgotten: callbacks connected to it receive nothing more, and a
+        later [`follow`][sharedbox.BoxEvents.follow] returns a new group.
+        Without `field`, stop both.
+
+        Raises
+        ------
+        ValueError
+            If the class has no field `field`.
+        TypeError
+            If `field` is not a reference field.
+        """
+        self._sharedbox_follower.unfollow(field)
+
+
+def events_class(owner: type, layout: Layout) -> type[BoxEvents]:
+    """A [`BoxEvents`][sharedbox.BoxEvents] subclass with one `(new, old)` signal per field of `owner`.
+
+    A class with reference fields also gets the signal `nested`.
+    """
     signals = {spec.name: Signal(object, object) for spec in layout.fields}
-    return type(f"{owner.__name__}Events", (SignalGroup,), signals)
+    if layout.refs:
+        signals["nested"] = Signal(tuple, object, object)
+    return type(f"{owner.__name__}Events", (BoxEvents,), signals)
