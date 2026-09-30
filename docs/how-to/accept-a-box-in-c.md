@@ -15,9 +15,9 @@ the same `Frame` class and constants as
 
 !!! note "What you need"
 
-    A C compiler and a C++20 compiler on Windows or Linux. The functions
-    of `sharedbox_c.h` are written in C++, in `sharedbox_c.cpp`, which
-    your build compiles next to your own sources.
+    A C compiler and a C++20 compiler on Windows or Linux.
+    [Build against the header](accept-a-box-in-cpp.md#build-against-the-header)
+    says why C code needs the C++ compiler too.
 
 ## Build against the header
 
@@ -26,7 +26,8 @@ in the C++ guide, and with CMake link `sharedbox::c`.
 
 ## Take the box from the capsule
 
-`sbx_import` takes the capsule's handle into `own`, and `sbx_release`
+`sbx_import` takes the capsule's
+[handle](../explanation/glossary.md#handle) into `own`, and `sbx_release`
 releases it:
 
 ```c

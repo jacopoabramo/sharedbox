@@ -21,7 +21,10 @@ shows. In a checkout of the repository, `uv sync` installs the
 benchbox ops
 ```
 
-`ops` times reads and writes of a box against the standard library:
+`ops` times reads and writes of a [box](../explanation/glossary.md#box),
+and a read of a
+[reference field](../explanation/glossary.md#reference-field), against
+the standard library:
 `mp.Value` and `mp.Array`, `ShareableList`, `SharedMemory` with `struct`,
 and a `Manager().Namespace()`. It runs on
 [pyperf](https://pyperf.readthedocs.io). It prints the mean and standard

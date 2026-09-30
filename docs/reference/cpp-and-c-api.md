@@ -20,22 +20,17 @@ CMake targets are in [Build and packaging](segment-layout.md#build-and-packaging
 
 ## Thread safety
 
-Every member function of `sharedbox::handle` may run on several threads at
-once with one handle. Destroying or moving a handle must not overlap
-another call on it. The same holds for an `sbx_handle` and the C
-functions.
+Calls from several threads on one [handle](../explanation/glossary.md#handle)
+follow the same rules for an `sbx_handle` and the C functions as for
+`sharedbox::handle`. The rules are listed in
+[`sharedbox.hpp`](segment-layout.md#sharedboxhpp).
 
 ## Errors
 
-Every call that can fail returns `sharedbox::result<T>`: a value, or a
-`sharedbox::status` from `error()`. On C++20 `result` is the header's own
-type with the interface of `std::expected<T, status>` (`has_value`,
-`operator bool`, `operator*`, `->`, `value`, `error`, `and_then`,
-`transform`, `or_else`, `value_or`); on C++23 with `std::expected`, it is
-`std::expected<T, status>`. Build every translation unit of a program as
-C++20 or every one as C++23, so they all see the same `result`. Nothing
-throws, so the header builds with `-fno-exceptions`. The C functions
-return the same codes as `int` (`SBX_OK`, `SBX_E_*`).
-
-`status::os` means an OS call failed; `errno` (Linux) or `GetLastError()`
-(Windows) still holds its code when the call returns.
+- [Implementation language](segment-layout.md#implementation-language):
+  `sharedbox::result<T>`, which every C++ call that can fail returns, and
+  the C++20 and C++23 build rules that come with it
+- [`sharedbox.hpp`](segment-layout.md#sharedboxhpp): what each
+  `sharedbox::status` means, including `status::os`
+- [`sharedbox_c.h`](segment-layout.md#sharedbox_ch): the `SBX_OK` and
+  `SBX_E_*` codes the C functions return

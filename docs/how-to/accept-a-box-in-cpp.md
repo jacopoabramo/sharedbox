@@ -164,8 +164,7 @@ static PyObject *run(PyObject *, PyObject *frame) {
 `from_capsule` checks the segment the handle points to, as an attach does.
 On success it takes over the capsule's handle, and destroying `box`
 releases it. When it fails, the capsule keeps its handle and releases it
-when the capsule is garbage collected. The handle has its own mapping, so
-it stays valid after the Python box is closed or unlinked.
+when the capsule is garbage collected.
 
 ## Next steps
 

@@ -71,8 +71,8 @@ int main() {
 ```
 
 A C program does the same with `sbx_open`, `sbx_schema_hash`, `sbx_read`,
-`sbx_write` and `sbx_release`. It cannot wait for changes, which only the
-C++ API offers.
+`sbx_write` and `sbx_release`, except for waiting, which
+[the C interface leaves out](accept-a-box-in-c.md#what-the-c-interface-leaves-out).
 
 ## Create the box from C++
 
