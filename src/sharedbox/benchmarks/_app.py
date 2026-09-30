@@ -13,8 +13,12 @@ from typing import Annotated
 
 import typer
 
-from sharedbox.benchmarks import roundtrip, size
-from sharedbox.benchmarks.cli import INSTALL_HINT
+from sharedbox.benchmarks import INSTALL_HINT, roundtrip, size
+
+if sys.platform == "win32":
+    import winreg
+if find_spec("pyperf") is not None:
+    import pyperf
 
 app = typer.Typer(
     help="Measure sharedbox on this machine.",
@@ -109,8 +113,6 @@ def size_command(
 
 def cpu_name() -> str:
     if sys.platform == "win32":
-        import winreg
-
         key = r"HARDWARE\DESCRIPTION\System\CentralProcessor\0"
         with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, key) as handle:
             return str(winreg.QueryValueEx(handle, "ProcessorNameString")[0]).strip()
@@ -138,8 +140,6 @@ def machine() -> str:
 
 
 def ops_markdown(path: Path) -> str:
-    import pyperf
-
     lines = ["| benchmark | mean | std dev |", "| --- | --- | --- |"]
     for bench in pyperf.BenchmarkSuite.load(str(path)).get_benchmarks():
         mean, stdev = bench.format_values([bench.mean(), bench.stdev()])

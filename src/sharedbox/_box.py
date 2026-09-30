@@ -5,7 +5,6 @@ import dataclasses
 import hashlib
 import inspect
 import os
-import re
 import sys
 import threading
 import weakref
@@ -47,7 +46,7 @@ from ._native import (
     SegmentNotFoundError,
 )
 from ._native import Field as FieldDescriptor
-from ._refs import Reference, attach_reference, box_ref, register, stored
+from ._refs import NAME, Reference, attach_reference, box_ref, register, stored
 
 if TYPE_CHECKING:
     if sys.version_info >= (3, 13):
@@ -55,7 +54,6 @@ if TYPE_CHECKING:
     else:
         from typing_extensions import CapsuleType
 
-NAME = re.compile(r"[A-Za-z0-9_.-]{1,128}")
 RESERVED = frozenset(
     {
         "name",

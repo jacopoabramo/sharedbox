@@ -1,4 +1,5 @@
 import contextlib
+import copy
 import gc
 import multiprocessing as mp
 import os
@@ -310,8 +311,6 @@ def test_pickling_a_closed_box_raises(unique_name: str) -> None:
 
 def test_copy_attaches_a_second_handle(unique_name: str) -> None:
     """Check that copy.copy gives a second handle to the same segment that closes independently."""
-    import copy
-
     with Point.create(unique_name) as box:
         other = copy.copy(box)
         assert other is not box

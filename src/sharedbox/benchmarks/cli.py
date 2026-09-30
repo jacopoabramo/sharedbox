@@ -2,7 +2,10 @@
 
 from importlib.util import find_spec
 
-INSTALL_HINT = "benchbox needs Typer and pyperf: install sharedbox[benchmarks]"
+from sharedbox.benchmarks import INSTALL_HINT
+
+if find_spec("typer") is not None:
+    from sharedbox.benchmarks._app import app
 
 
 def main() -> None:
@@ -15,6 +18,4 @@ def main() -> None:
     """
     if find_spec("typer") is None:
         raise SystemExit(INSTALL_HINT)
-    from sharedbox.benchmarks._app import app
-
     app(prog_name="benchbox")

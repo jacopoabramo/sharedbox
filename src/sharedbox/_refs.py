@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 import weakref
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, Self, overload
@@ -9,6 +10,8 @@ from ._native import SchemaMismatchError, SegmentNotFoundError
 if TYPE_CHECKING:
     from ._box import SharedBox
     from ._layout import FieldSpec
+
+NAME = re.compile(r"[A-Za-z0-9_.-]{1,128}")
 
 # Weak, so that a class nothing else uses, such as one defined inside a function, can be freed.
 CLASSES: dict[int, list[weakref.ref[type[SharedBox]]]] = {}
@@ -110,8 +113,6 @@ def attach_reference(
         If `name` is not a valid box name, no box has that name, or the box
         under it was created after the reference was stored.
     """
-    from ._box import NAME
-
     where = f"{spec.label} refers to box {name!r}, which"
     if not NAME.fullmatch(name):
         raise BrokenReferenceError(f"{where} is not a valid box name")
