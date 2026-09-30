@@ -35,7 +35,8 @@ jobs:
     if: >-
       (github.event_name == 'push' && github.ref == 'refs/heads/main') ||
       (github.event_name == 'release' && github.event.action == 'published' &&
-       !github.event.release.prerelease)
+       !github.event.release.prerelease &&
+       !contains(github.event.release.tag_name, 'rc'))
     uses: ./.github/workflows/publish-docs.yaml
     permissions:
       contents: write
