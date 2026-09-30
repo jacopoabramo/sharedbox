@@ -1,13 +1,12 @@
 import contextlib
 import queue
-import threading
 import time
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from functools import partial
 from typing import Any, cast
 
 import pytest
-from stress_helpers import percentiles, scaled
+from stress_helpers import percentiles, scaled, watcher_threads
 
 from sharedbox import SharedBox
 
@@ -62,12 +61,6 @@ def slots(boxes: list[Link]) -> int:
     return sum(box._segment._waiters for box in boxes)
 
 
-def watchers(boxes: Sequence[SharedBox]) -> int:
-    """Watcher threads of this process for `boxes`."""
-    names = {f"sharedbox-watch-{box.name}" for box in boxes}
-    return sum(thread.name in names for thread in threading.enumerate())
-
-
 def moved_to(new: list[Link], old: list[Link]) -> bool:
     """Whether forwarding holds a slot in every box of `new` and none in `old`."""
     return slots(new) == len(new) and slots(old) == 0
@@ -97,7 +90,7 @@ def follow_round(
         )
         outer.events.follow()
         registered = until(lambda: slots(followed) == width * depth, 30)
-        threads = watchers(followed)
+        threads = sum(watcher_threads(box.name) for box in followed)
         slots_in_use = slots(followed)
         idle_start = time.process_time()
         time.sleep(IDLE)
@@ -125,7 +118,9 @@ def follow_round(
                 move.append(time.perf_counter_ns() - start)
         outer.close()
         slots_after_close = slots(followed + spare)
-        threads_after_close = watchers([*followed, *spare, outer])
+        threads_after_close = sum(
+            watcher_threads(box.name) for box in [*followed, *spare, outer]
+        )
     return {
         "followed_boxes": width * depth,
         "registered": registered,
