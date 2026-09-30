@@ -10,6 +10,12 @@ repo_name = "jacopoabramo/sharedbox"
 
 nav = [
     "index.md",
+    { "Tutorials" = [
+        "tutorials/index.md",
+        "tutorials/share-a-record.md",
+        "tutorials/react-to-changes.md",
+        "tutorials/refer-to-another-box.md",
+    ]},
     { "Explanations" = [
         "explanation/index.md",
         "explanation/when-to-use-sharedbox.md",
