@@ -6,11 +6,11 @@ icon: lucide/code
 
 | Name | What it does |
 | --- | --- |
-| [`SharedBox`][sharedbox.SharedBox] | base class of a record stored in shared memory |
-| [`field`][sharedbox.field] | gives a field a default, a default factory or keyword-only status |
-| [`fields`][sharedbox.fields] | lists the fields of a box class or box |
-| [`Field`][sharedbox.Field] | describes one field, as `fields` returns it |
-| [`Capacity`][sharedbox.Capacity] | sets how many bytes a `str` or `bytes` field can hold |
+| [`SharedBox`][sharedbox.SharedBox] | a record whose annotated fields live in a named shared-memory segment |
+| [`field`][sharedbox.field] | sets the options of one field of a `SharedBox` class, as `dataclasses.field` does |
+| [`fields`][sharedbox.fields] | returns one `Field` per field of a `SharedBox` subclass or box, in declaration order |
+| [`Field`][sharedbox.Field] | options of one field of a `SharedBox` class, as `field` takes them |
+| [`Capacity`][sharedbox.Capacity] | maximum encoded size of a `str` or `bytes` field |
 
 ::: sharedbox.SharedBox
     options:

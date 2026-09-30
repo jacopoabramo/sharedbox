@@ -66,6 +66,9 @@ ALIGNMENT: Final[dict[Kind, int]] = {
 class Capacity:
     """Maximum encoded size of a `str` or `bytes` field.
 
+    It goes in the annotation, as in `Annotated[str, Capacity(32)]`, and
+    allows 1 to 1048576 bytes (1 MiB).
+
     Raises
     ------
     ValueError
@@ -73,7 +76,7 @@ class Capacity:
     """
 
     size: int
-    """Bytes, not characters: UTF-8 text can need more than one per character."""
+    """Bytes, not characters: a UTF-8 character can take up to 4 bytes."""
 
     def __post_init__(self) -> None:
         if not 0 < self.size <= MAX_CAPACITY:
@@ -84,11 +87,16 @@ class Capacity:
 
 @dataclass(frozen=True, eq=False)
 class Field:
-    """Options of one field of a `SharedBox` class, as [`field`][sharedbox.field] takes them."""
+    """Options of one field of a `SharedBox` class, as [`field`][sharedbox.field] takes them.
+
+    [`fields`][sharedbox.fields] returns them. A `Field` is read-only, and
+    two are equal only if they are the same object, as with
+    `dataclasses.Field`.
+    """
 
     name: str
     type: Any
-    """The annotation, with `Annotated` extras kept."""
+    """The evaluated annotation, with `Annotated` extras kept."""
     default: Any
     """`dataclasses.MISSING` when there is none."""
     default_factory: Any
@@ -100,8 +108,9 @@ class Field:
     kw_only: Any
     """True if the constructor takes the value by keyword only; `dataclasses.MISSING` until the class is created."""
     metadata: Mapping[Any, Any]
-    """Read-only; never stored in the segment."""
+    """Read-only; kept in Python, never stored in the segment."""
     doc: str | None
+    """Kept in Python, never stored in the segment."""
 
 
 def field(
@@ -114,18 +123,66 @@ def field(
     metadata: Mapping[Any, Any] | None = None,
     doc: str | None = None,
 ) -> Any:
-    """Options for one field of a `SharedBox` class, as `dataclasses.field` gives them.
+    """Set the options of one field of a `SharedBox` class, as `dataclasses.field` does.
+
+    A plain class attribute is still the field's default. There is no
+    `compare` or `hash` option: two boxes are equal only if they are the
+    same object. A field with neither `default` nor `default_factory` is
+    required. A default is checked against the field's type and capacity
+    when the class is defined, and a factory's result when a box is
+    created; both raise what assigning the value raises. Values are copied
+    into the segment, and only the stored types exist: no lists, dicts or
+    other objects. [`Capacity`][sharedbox.Capacity] goes in the
+    annotation, not here.
+
+    A positional field without a default cannot follow one with a default;
+    a field with `default` or `default_factory` counts as having one, and
+    `init=False` fields take no position and are not counted.
+
+    Whether a field is keyword-only is fixed by the class that declares
+    it, through its `kw_only` class keyword, a `dataclasses.KW_ONLY` among
+    its own annotations, or `kw_only` here. A subclass keeps each
+    inherited field's setting: its own `kw_only=True` affects only its own
+    fields, and the fields of a `kw_only` base stay keyword-only in a
+    subclass without the keyword.
+
+    A subclass that declares an inherited field again, with an annotation,
+    gives it default options, as in `dataclasses`. An annotation without a
+    value keeps only a plain inherited `default`: the other options go
+    back to their defaults, and a field whose base gave it a
+    `default_factory` becomes required. The same holds for an `InitVar`
+    declared over an inherited field.
 
     Parameters
     ----------
     default_factory
-        Called at each creation that is given no value for the field; its
-        result is stored like any other value.
+        Called once per creation that is given no value for the field. The
+        result is stored like any other value, so the box never keeps the
+        object the factory returned.
+    init
+        False leaves the field out of the constructor; the field then
+        needs `default` or `default_factory`.
+    repr
+        False leaves the field out of `repr()` of a box.
+    kw_only
+        Make this field keyword-only or not, whatever the `kw_only` class
+        keyword and `KW_ONLY` say.
+    metadata
+        Kept in Python as a read-only mapping, never stored in the
+        segment.
+    doc
+        Kept in Python, never stored in the segment.
 
     Raises
     ------
     ValueError
         If both `default` and `default_factory` are given.
+    TypeError
+        When the class is defined, for `field()` on a name that is not a
+        field (a name starting with `_`, a `ClassVar`), `field()` without
+        an annotation, `init=False` without a default, or a subclass that
+        sets a plain class attribute, without an annotation, on the name
+        of an inherited field.
     """
     if default is not MISSING and default_factory is not MISSING:
         raise ValueError("cannot specify both default and default_factory")
@@ -216,7 +273,7 @@ def classify(name: str, hint: object) -> tuple[Kind, int]:
 
 
 def class_identity(cls: type) -> str:
-    """`module.qualname` of `cls`, the same in a spawned child as in its parent."""
+    """Return `module.qualname` of `cls`, the same in a spawned child as in its parent."""
     # multiprocessing's spawn start method re-imports the main script as __mp_main__.
     module = "__main__" if cls.__module__ == "__mp_main__" else cls.__module__
     return f"{module}.{cls.__qualname__}"
@@ -249,7 +306,7 @@ def undefined(cls: type, field: str | None, name: str) -> str:
 
 
 def forward_refs(hint: object) -> list[ForwardRef]:
-    """Every `ForwardRef` in `hint`, at any depth."""
+    """Return every `ForwardRef` in `hint`, at any depth."""
     if isinstance(hint, ForwardRef):
         return [hint]
     return [ref for arg in get_args(hint) for ref in forward_refs(arg)]
@@ -314,7 +371,7 @@ def own_annotations(cls: type) -> dict[str, Any]:
 
 
 def declared(cls: type) -> list[tuple[str, Any]]:
-    """`(name, annotation)` of every field and `InitVar` of `cls`, base classes first.
+    """Return `(name, annotation)` of every field and `InitVar` of `cls`, base classes first.
 
     `dataclasses.KW_ONLY` and `ClassVar` annotations and names starting
     with `_` are left out.
@@ -330,7 +387,7 @@ def declared(cls: type) -> list[tuple[str, Any]]:
 
 
 def own_kw_only(cls: type, kw_only: bool = False) -> dict[str, bool]:
-    """Keyword-only flag of each annotation `cls` itself declares, not those of its bases.
+    """Return the keyword-only flag of each annotation `cls` itself declares, not those of its bases.
 
     An annotation is keyword-only when `kw_only` is true or it follows a
     `dataclasses.KW_ONLY` annotation of `cls`.
