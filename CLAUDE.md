@@ -24,7 +24,8 @@ sharedbox/
 |   |-- __init__.py            re-exports the public API, get_include()
 |   |-- _box.py                SharedBox: class keywords, fields, fields(), create/attach, __post_init__, update, snapshot, unlink, __sharedbox_box__
 |   |-- _layout.py             Capacity, field() and Field, field offsets and kind codes, schema hash
-|   |-- _events.py             FieldWatch, the watcher thread, psygnal events
+|   |-- _events.py             BoxEvents, FieldWatch, the watcher thread
+|   |-- _follow.py             BoxEvents.follow and unfollow: forwarding the events of boxes that references reach
 |   |-- _refs.py               reference fields: BoxRef, the class registry, BrokenReferenceError, UnknownBoxClassError
 |   |-- _native.pyi            hand-written stub for the extension
 |   |-- py.typed
@@ -41,6 +42,7 @@ sharedbox/
 |       `-- segment.{hpp,cpp}  Segment: a sharedbox::handle plus error messages and the lifetime lock
 |-- tests/                     pytest; many tests spawn processes
 |   |-- test_capsule.py        __sharedbox_box__, and the C consumer in tests/cpp/consumer/
+|   |-- test_follow.py         BoxEvents.follow, unfollow and nested
 |   |-- test_native_waiters.py waiter slots, dead owners, interrupt
 |   |-- test_properties_*.py   Hypothesis property tests
 |   |-- stress/                stress tests, marker stress, deselected by default
@@ -120,9 +122,9 @@ At most 256 fields; a capacity is 1 byte to 1 MiB.
 
 ### Lifecycle
 
-- `close()` interrupts and stops the watcher thread and detaches this box.
-  Later reads and writes raise `BoxClosedError`. Garbage collection closes
-  a box too.
+- `close()` interrupts and stops the watcher thread, stops forwarding
+  started with `events.follow`, and detaches this box. Later reads and
+  writes raise `BoxClosedError`. Garbage collection closes a box too.
 - `__sharedbox_box__()` returns a capsule whose handle has its own mapping
   of the segment; `close()` and `unlink()` do not affect it.
 - `unlink()` removes the name on Linux and does nothing on Windows, where the

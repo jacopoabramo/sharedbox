@@ -53,7 +53,7 @@ class SharedBox:
     def attach(cls, name: str | None = None) -> Self: ...
     name: str                    # read-only
     closed: bool                 # read-only
-    events: SignalGroup          # read-only
+    events: BoxEvents            # read-only
     def update(self, **values) -> None: ...
     def snapshot(self, *, follow: bool = False) -> dict[str, Any]: ...
     def watch(self, field: str) -> FieldWatch: ...
@@ -109,7 +109,8 @@ with no fields or more than 256. Fields of a base class come first.
 
 A field named like a `SharedBox` member (`name`, `closed`, `close`,
 `unlink`, `update`, `snapshot`, `watch`, `events`, `force_unlock`, `create`,
-`attach`) raises `TypeError` when the class is defined.
+`attach`) raises `TypeError` when the class is defined, and so does a field
+named `follow`, `unfollow` or `nested`, which the events group uses.
 
 Fields are positional by default, in declaration order, as in a dataclass.
 Fields declared after a `dataclasses.KW_ONLY` annotation in the same class
@@ -413,8 +414,9 @@ Motor.unlink()
 
 ### `events`
 
-A psygnal `SignalGroup` with one signal per field. Each signal is emitted as
-`(new, old)` when any thread or process changes the field.
+A [`BoxEvents`](#boxevents), the psygnal `SignalGroup` subclass with one
+signal per field. Each signal is emitted as `(new, old)` when any thread or
+process changes the field.
 `box.events.<field>.connect(cb)` listens to one field and
 `box.events.connect(cb)` to all of them.
 
@@ -462,10 +464,10 @@ Signals differ from those of a local evented dataclass:
   `disconnect`, `all`, `signals`, `block` and others) makes psygnal warn when
   the class is defined, and `box.events.<name>` then returns that attribute.
   `box.events["<name>"]` returns the field's signal.
-- A child process created with `fork` while a callback is running can hang
-  the first time that signal emits in the child, because the child inherits
-  the signal's lock as held. Start child processes with `spawn` or
-  `forkserver`, or fork while no callback runs.
+- A child process created with `fork` while a callback is running inherits
+  that signal's lock as held, so the child hangs the first time it
+  connects to, disconnects from or emits that signal. Start child
+  processes with `spawn` or `forkserver`, or fork while no callback runs.
 
 `events` is an ordinary psygnal `SignalGroup`, so psygnal's own tools for
 controlling emissions apply to it:
@@ -511,7 +513,153 @@ Pump.unlink()
 A reference field's signal is emitted when the field is assigned another
 box or emptied, with `BoxRef` or `None` as `new` and `old`. Changes inside
 the box it refers to are emitted by that box's own `events`, for example
-`stage.motor.events.position`.
+`stage.motor.events.position`, and through the outer box's `events` once it
+follows the field; see [Following reference fields](#following-reference-fields).
+
+### Following reference fields
+
+`events.follow(field)` returns a group with the signals of the class that
+the reference field `field` is annotated with. Each signal is emitted as
+`(new, old)` for a change inside whichever box the field refers to when
+the change happens, so a callback connected once keeps receiving changes
+after any process assigns another box. Calling `follow(field)` again
+returns the same group.
+
+```python
+import time
+
+from sharedbox import SharedBox
+
+
+class Motor(SharedBox, identity="motor/2"):
+    position: int = 0
+
+
+class Stage(SharedBox):
+    motor: Motor | None = None
+
+
+with (
+    Motor.create("x-motor") as x,
+    Motor.create("y-motor") as y,
+    Stage(x) as stage,
+):
+    motor_events = stage.events.follow("motor")
+    motor_events.position.connect(lambda new, old: print("position", new))
+    x.position = 5
+    time.sleep(0.2)  # prints: position 5
+    stage.motor = y
+    time.sleep(0.2)
+    y.position = 7
+    time.sleep(0.2)  # prints: position 7
+Stage.unlink()
+Motor.unlink("x-motor")
+Motor.unlink("y-motor")
+```
+
+`events.follow()` without a field follows every reference field and, below
+each, every reference field of the boxes it reaches, down the whole graph.
+Each change inside those boxes is emitted on the signal `nested` as
+`(path, new, old)`, where `path` is the tuple of field names from the box
+to the changed field:
+
+```python
+import time
+
+from sharedbox import SharedBox
+
+
+class Encoder(SharedBox):
+    count: int = 0
+
+
+class Motor(SharedBox):
+    position: int = 0
+    encoder: Encoder | None = None
+
+
+class Stage(SharedBox):
+    motor: Motor | None = None
+
+
+with Encoder() as encoder, Motor(0, encoder) as motor, Stage(motor) as stage:
+    stage.events.follow()
+    stage.events.nested.connect(lambda path, new, old: print(path, new))
+    encoder.count = 3
+    time.sleep(0.2)  # prints: ('motor', 'encoder', 'count') 3
+Stage.unlink()
+Motor.unlink()
+Encoder.unlink()
+```
+
+- The group `follow(field)` returns has `follow` and `unfollow` too, so
+  `stage.events.follow("motor").follow("encoder")` reaches one level
+  further. Its signals are those of the annotated class: a field that only
+  a subclass has is left out. `nested` reports every field of each box's
+  own class.
+- `nested` exists on the events group of every class with reference
+  fields and emits only after `follow()`. It reports changes inside the
+  boxes followed, not changes of the box's own fields, which keep their own
+  signals. `box.events.connect(cb)` receives `nested` emissions too.
+- `follow()` follows each box once. A box it already follows, the box
+  itself included, is not followed again where another reference leads to
+  it, so a loop of references ends, as in `snapshot(follow=True)`. A box
+  that several paths reach is reported under one of them, and after a
+  reference changes it may be reported under another. It is forwarded as
+  long as any path reaches it.
+- An empty reference forwards nothing until a box is assigned.
+- When a reference changes, in any process, the watcher emits the
+  reference's own signal (for example `stage.events.motor`) first, then
+  moves forwarding to the new box. Values the new box already held are not
+  emitted, and a change made to the old box just before the move may not
+  be.
+- A reference to a box that was removed or created again, or whose class
+  this process has not defined, logs a warning to the `sharedbox` logger
+  and forwards nothing until the field is assigned another box. `follow`
+  does not raise for these, since they can also arise later, from another
+  process.
+- Any other error from attaching a box is raised by the `follow` call that
+  attached it; that call then follows nothing new, and the next call tries
+  again. When a reference change starts the attach instead, the error is
+  logged to the `sharedbox` logger, and that box is tried again the next
+  time any reference field followed through the same events group changes.
+- `follow` and `unfollow` with a name that is not a reference field raise
+  `TypeError`, and with an unknown name `ValueError`. `follow` on a closed
+  box raises `BoxClosedError`.
+- `unfollow(field)` stops only the group `follow(field)` returned and
+  leaves running what `follow()` started; `unfollow()` stops both.
+  Callbacks connected to a stopped group receive nothing more, and a later
+  `follow(field)` returns a new group. `close()` stops all forwarding of
+  the box.
+- Forwarding attaches its own handle to each box it follows and waits with
+  that handle's watcher thread, so forwarded callbacks run on several
+  threads, one per followed box, possibly at the same time. As with any
+  signal of `events`, connect with `thread="main"` and call
+  `psygnal.emit_queued()` to run them on the main thread. Moving forwarding
+  away from a box waits for that box's callbacks to return.
+- The handle that reading the field returns is a different one, so
+  `unfollow` leaves it open.
+- A child created with `fork` inherits the parent's forwarding without its
+  threads and forwards nothing until it calls `follow` on that events
+  group, or on a group `follow` returned, with any field or none. That
+  call follows the boxes the reference fields refer to at that moment,
+  through the same groups, so callbacks connected before the fork keep
+  receiving. Changes made before that call are not emitted. An error from
+  attaching a box in that call is logged, and the box is tried again as
+  after a reference change.
+
+Each followed box costs one waiter slot in that box, counted against its
+`max_waiters`, and one handle and one watcher thread in the following
+process, at every level of a chain. On Linux each handle also takes a file
+descriptor. `follow()` over a wide graph can take every waiter slot of a
+box; a watcher that finds none checks for changes once a second (see
+[Class keywords](#class-keywords)). One `follow()` over 64 chains of 3
+boxes, on Windows with CPython 3.11, took 192 threads and 192 waiter slots
+and used 0.031 s of CPU in 2 s with nothing written. A write reached its
+callback in 10.3 us at the median and 72.9 us at the 99th percentile, and
+moving to a new chain of 3 boxes took 1.10 ms at the median and 1.58 ms at
+the 99th percentile. [Forwarding
+costs](design/native-segment.md#forwarding-costs) has the whole table.
 
 ### `watch`
 
@@ -521,11 +669,14 @@ from now on. See [`FieldWatch`](#fieldwatch). An unknown field raises
 
 ### `close` and the context manager
 
-`close()` detaches this box from the segment and stops its watcher thread.
-Other boxes on the same segment keep working, and the data stays. Reading
-or writing a closed box raises `BoxClosedError`; `closed` tells whether
-`close()` was called. Calling `close()` again does nothing. A box that is
-garbage collected is closed.
+`close()` detaches this box from the segment and stops its watcher thread
+and all forwarding started with `events.follow`. Other boxes on the same
+segment keep working, and the data stays. Reading or writing a closed box
+raises `BoxClosedError`; `closed` tells whether `close()` was called.
+Calling `close()` again does nothing. A box that is garbage collected is
+closed. Forwarding it started keeps running until its events group and
+every group `follow` returned are garbage collected too, which happens
+only when the cycle collector runs.
 
 A box is a context manager: leaving the `with` block calls `close()`.
 
@@ -852,6 +1003,22 @@ async def main() -> None:
 
 asyncio.run(main())
 ```
+
+## `BoxEvents`
+
+```python
+class BoxEvents(SignalGroup):
+    @overload
+    def follow(self, field: str) -> BoxEvents: ...
+    @overload
+    def follow(self, field: None = None) -> None: ...
+    def unfollow(self, field: str | None = None) -> None: ...
+    nested: SignalInstance       # classes with reference fields only
+```
+
+The type of `box.events` and of the groups `follow(field)` returns: a
+psygnal `SignalGroup` with one `(new, old)` signal per field. See
+[`events`](#events) and [Following reference fields](#following-reference-fields).
 
 ## `BoxRef`
 
