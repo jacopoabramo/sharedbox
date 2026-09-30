@@ -81,7 +81,7 @@ class Follower:
         self.nested: SignalInstance | None = None
         self.path: tuple[str, ...] = ()
         self.lock = threading.Lock()
-        # Set in a child created by `fork`, whose watcher threads start again on the next `follow`.
+        # Set in a child created by `fork`, where the next `follow` rebuilds forwarding.
         self.forked = False
         # On the top follower: the watcher of the box that owns its events group.
         self.watcher: Watcher | None = None
@@ -92,13 +92,15 @@ class Follower:
         if top.outer.closed:
             raise BoxClosedError(f"box {top.outer.name!r} is closed")
         spec = None if field is None else self.ref_spec(field)
+        if top.forked:
+            with top.lock:
+                stale = top.rebuild() if top.forked else []
+            # Not joined: their threads do not exist in a child created by `fork`.
+            close_all(stale, wait=False)
         boxes: list[SharedBox] = []
         group: BoxEvents | None = None
         try:
             with top.lock:
-                if top.forked:
-                    top.forked = False
-                    top.resume()
                 source = self.source()
                 starts: list[tuple[Follower, Any]] = []
                 try:
@@ -153,7 +155,8 @@ class Follower:
     def moved(self, spec: FieldSpec, value: Any, segment: Segment) -> None:
         """Follow the box that the field `spec` of `segment`, this follower's source, now refers to."""
         with self.top.lock:
-            if not self.serves(segment):
+            # Skipped in a forked child: its next `follow` rebuilds from the current values.
+            if self.top.forked or not self.serves(segment):
                 return
             children = [
                 child
@@ -195,9 +198,33 @@ class Follower:
             return self.detach()
 
     def after_fork(self) -> None:
-        """Replace the lock, which another thread of the parent may have held, and make the next `follow` start the watcher threads again."""
+        """Replace the lock, which another thread of the parent may have held, and make the next `follow` rebuild forwarding."""
         self.lock = threading.Lock()
         self.forked = True
+
+    def rebuild(self) -> list[SharedBox]:
+        """Follow again, from the current values of the reference fields, everything forwarded through this box's events group.
+
+        In a child created by `fork`, a move that another thread of the
+        parent had begun can leave forwarding half changed. Afterwards it
+        follows what a new [`follow`][sharedbox.BoxEvents.follow] would,
+        through the same groups, so callbacks connected before stay
+        connected. An error in following a box is logged. The boxes
+        forwarding held before are returned for closing.
+        """
+        assert self.outer is not None and self.watcher is not None
+        self.forked = False
+        boxes = self.detach()
+        self.failed.clear()
+        starts = self.link_children(self.outer, self.cls)
+        if self.tree is not None:
+            starts += self.tree_children(self.outer, self.cls)
+        try:
+            self.expand(starts)
+        except Exception:
+            logger.exception("following the referenced boxes again after fork failed")
+        self.watcher.resume()
+        return boxes
 
     def ref_spec(self, field: str) -> FieldSpec:
         spec = self.cls.__layout__.by_name.get(field)
@@ -346,18 +373,6 @@ class Follower:
                 stack.extend(follower.tree.values())
                 follower.tree = {}
         return boxes
-
-    def resume(self) -> None:
-        """Start the watcher thread of every box followed at and below this follower, and of the box that owns its events group."""
-        if self.watcher is not None:
-            self.watcher.resume()
-        stack = [self]
-        while stack:
-            follower = stack.pop()
-            if follower.box is not None:
-                follower.box._watcher.resume()
-            stack.extend(follower.links.values())
-            stack.extend((follower.tree or {}).values())
 
 
 def read(segment: Segment, cls: type[SharedBox], name: str) -> Any:

@@ -167,63 +167,98 @@ def test_forked_child_records_its_own_pid_in_a_raw_segment(unique_name: str) -> 
 
 
 def test_forked_child_reads_a_reference_while_the_parent_held_the_cache_lock(
-    unique_name: str,
+    unique_name: str, names: Callable[[str], str]
 ) -> None:
     """Check that a forked child reads a reference although the parent held the reference cache lock at the fork."""
     out: Queue[str] = mp.get_context("fork").Queue()
-    wheel_name = f"{unique_name}-w"
+    wheel_name = names("w")
     with Wheel.create(wheel_name) as wheel, Cart.create(unique_name, wheel) as cart:
         # Stands for another thread of the parent attaching a box at the moment of the fork.
         with cart._refs_lock:
             child = fork(read_wheel, cart, out)
-        assert out.get(timeout=10) == wheel_name
-        assert finish(child) == 0
-    Wheel.unlink(wheel_name)
+        try:
+            assert out.get(timeout=10) == wheel_name
+        finally:
+            code = finish(child)
+        assert code == 0
 
 
-def test_forked_child_forwards_after_calling_follow(unique_name: str) -> None:
+def test_forked_child_forwards_after_calling_follow(
+    unique_name: str, names: Callable[[str], str]
+) -> None:
     """Check that a forked child forwards changes once it calls follow, although the parent held the forwarding lock at the fork."""
     ctx = mp.get_context("fork")
     ready = ctx.Event()
     out: Queue[int] = ctx.Queue()
-    wheel_name = f"{unique_name}-w"
-    with Wheel.create(wheel_name) as wheel, Cart.create(unique_name, wheel) as cart:
+    with Wheel.create(names("w")) as wheel, Cart.create(unique_name, wheel) as cart:
         cart.events.follow("wheel")
-        # Stands for another thread of the parent moving forwarding at the moment of the fork.
+        # Stands for another thread of the parent holding the forwarding lock at the moment of the fork.
         with cart.events._sharedbox_follower.lock:
             child = fork(forward_in_child, cart, ready, out)
-        assert ready.wait(10)
-        wheel.turns = 4
-        assert out.get(timeout=10) == 4
-        assert finish(child) == 0
-    Wheel.unlink(wheel_name)
+        try:
+            assert ready.wait(10)
+            wheel.turns = 4
+            assert out.get(timeout=10) == 4
+        finally:
+            code = finish(child)
+        assert code == 0
+
+
+def test_forked_child_follows_the_new_box_of_a_move_the_parent_had_begun(
+    unique_name: str, names: Callable[[str], str]
+) -> None:
+    """Check that a forked child forwards from the box a reference moved to when the parent's move had not finished at the fork."""
+    ctx = mp.get_context("fork")
+    ready = ctx.Event()
+    out: Queue[int] = ctx.Queue()
+    moving = threading.Event()
+    with (
+        Wheel.create(names("w")) as wheel,
+        Wheel.create(names("v")) as moved,
+        Cart.create(unique_name, wheel) as cart,
+    ):
+        cart.events.follow("wheel")
+        cart.events.wheel.connect(lambda new, old: moving.set())
+        # Holding the lock keeps the parent's move from changing forwarding, while the
+        # watcher has already recorded the new reference by the time the signal fires.
+        with cart.events._sharedbox_follower.lock:
+            cart.wheel = moved
+            assert moving.wait(10)
+            child = fork(forward_in_child, cart, ready, out)
+        try:
+            assert ready.wait(10)
+            moved.turns = 4
+            assert out.get(timeout=10) == 4
+        finally:
+            code = finish(child)
+        assert code == 0
 
 
 def test_forked_child_follows_a_move_through_a_group_kept_from_before_the_fork(
-    unique_name: str,
+    unique_name: str, names: Callable[[str], str]
 ) -> None:
     """Check that a forked child calling follow on a group kept from before the fork forwards from the box its reference moves to."""
     ctx = mp.get_context("fork")
     ready = ctx.Event()
     out: Queue[int] = ctx.Queue()
-    first, second = f"{unique_name}-w", f"{unique_name}-v"
-    with Wheel.create(first) as wheel, Cart.create(unique_name, wheel) as cart:
+    with Wheel.create(names("w")) as wheel, Cart.create(unique_name, wheel) as cart:
         group = cart.events
         group.follow("wheel")
         child = fork(follow_kept_group, cart, group, ready, out)
-        assert ready.wait(10)
-        with Wheel.create(second) as moved:
-            cart.wheel = moved
-            # The child follows the new box some time after the move and misses writes made before that.
-            got = None
-            for turns in range(1, 101):
-                moved.turns = turns
-                try:
-                    got = out.get(timeout=0.1)
-                except queue.Empty:
-                    continue
-                break
-            assert got is not None
-        assert finish(child) == 0
-    Wheel.unlink(first)
-    Wheel.unlink(second)
+        try:
+            assert ready.wait(10)
+            with Wheel.create(names("v")) as moved:
+                cart.wheel = moved
+                # The child follows the new box some time after the move and misses writes made before that.
+                got = None
+                for turns in range(1, 101):
+                    moved.turns = turns
+                    try:
+                        got = out.get(timeout=0.1)
+                    except queue.Empty:
+                        continue
+                    break
+                assert got is not None
+        finally:
+            code = finish(child)
+        assert code == 0
