@@ -444,10 +444,10 @@ Signals differ from those of a local evented dataclass:
   and call `psygnal.emit_queued()` from the main thread to run them there
   instead.
 - Closing the box delivers writes the watcher thread had not seen yet, so
-  callbacks may run once on the thread that calls `close()`, or on the
-  thread that garbage collects the box. A `close()` called from a callback,
-  on a watcher thread, does not wait for the watcher threads of the boxes
-  it closes, and drops the writes they had not delivered.
+  callbacks may run once on the thread that calls `close()`. A `close()`
+  called from a callback, on a watcher thread, does not wait for the
+  watcher threads of the boxes it closes, and drops the writes they had
+  not delivered. A box that is garbage collected drops them too.
 - If several writes happen between two checks by the watcher thread, only
   one emission happens, with the latest value, and `old` is the value from
   the previous emission.
