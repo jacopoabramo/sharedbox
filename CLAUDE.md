@@ -124,7 +124,9 @@ At most 256 fields; a capacity is 1 byte to 1 MiB.
 
 - `close()` interrupts and stops the watcher thread, stops forwarding
   started with `events.follow`, and detaches this box. Later reads and
-  writes raise `BoxClosedError`. Garbage collection closes a box too.
+  writes raise `BoxClosedError`. Garbage collection closes a box too, but
+  forwarding it started keeps running until the cycle collector frees its
+  events groups.
 - `__sharedbox_box__()` returns a capsule whose handle has its own mapping
   of the segment; `close()` and `unlink()` do not affect it.
 - `unlink()` removes the name on Linux and does nothing on Windows, where the
