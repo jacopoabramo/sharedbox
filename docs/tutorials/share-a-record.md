@@ -74,6 +74,8 @@ name it is given, and takes field values as calling the class does;
 `position` and `enabled` keep their defaults. The `with` block closes the
 box at its end, and [`unlink`][sharedbox.SharedBox.unlink] removes the
 name, so the next run can create it again.
+[How to name a box](../how-to/name-a-box.md) shows the other ways to
+choose the name.
 
 The second process runs `move(10)`. After `join`, reading `motor.position`
 reads the segment again and finds the value that process wrote.

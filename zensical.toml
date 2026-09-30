@@ -16,6 +16,21 @@ nav = [
         "tutorials/react-to-changes.md",
         "tutorials/refer-to-another-box.md",
     ]},
+    { "How-to Guides" = [
+        "how-to/index.md",
+        { "Install" = [
+            "how-to/install-sharedbox.md",
+        ]},
+        { "Use a box" = [
+            "how-to/name-a-box.md",
+            "how-to/store-text-and-bytes.md",
+            "how-to/set-defaults-and-check-values.md",
+            "how-to/change-several-fields-at-once.md",
+            "how-to/send-a-box-to-another-process.md",
+            "how-to/clean-up-segments.md",
+            "how-to/follow-a-whole-reference-graph.md",
+        ]},
+    ]},
     { "Explanations" = [
         "explanation/index.md",
         "explanation/when-to-use-sharedbox.md",

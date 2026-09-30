@@ -77,7 +77,8 @@ whichever motor it refers to, before and after the reference changes.
 
 ## Next steps
 
-- [`follow`][sharedbox.BoxEvents.follow] called without a field follows
+- [How to follow a whole reference graph](../how-to/follow-a-whole-reference-graph.md):
+  [`follow`][sharedbox.BoxEvents.follow] called without a field follows
   every box the stage reaches through its reference fields.
 - [References](../explanation/references.md) explains what a reference
   stores and why it can break.

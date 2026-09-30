@@ -56,5 +56,6 @@ Expected output:
 ## Where to go next
 
 - [Tutorials](tutorials/index.md): build a first script, one step at a time
+- [How-to Guides](how-to/index.md): install sharedbox and get one task done with a box
 - [API reference](reference/api/index.md): every name `sharedbox` exports
 - [Changelog](reference/changelog.md): what changed in each release

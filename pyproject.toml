@@ -81,7 +81,7 @@ convention = "numpy"
 [tool.mypy]
 strict = true
 warn_unreachable = true
-files = ["src", "tests", "docs/tutorials"]
+files = ["src", "tests", "docs/tutorials", "docs/examples"]
 
 [[tool.mypy.overrides]]
 module = ["pyperf"]
