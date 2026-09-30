@@ -217,17 +217,19 @@ class Follower:
         forwarding held before are returned for closing.
         """
         assert self.outer is not None and self.watcher is not None
-        self.forked = False
         boxes = self.detach()
         self.failed.clear()
-        starts = self.link_children(self.cls, self.watcher)
-        if self.tree is not None:
-            starts += self.tree_children(self.outer, self.cls, self.watcher)
         try:
+            starts = self.link_children(self.cls, self.watcher)
+            if self.tree is not None:
+                starts += self.tree_children(self.outer, self.cls, self.watcher)
+            # Only once the values are read, so that a failed read leaves the next `follow` to rebuild again.
+            self.forked = False
             self.expand(starts)
         except Exception:
             logger.exception("following the referenced boxes again after fork failed")
-        self.watcher.resume()
+        finally:
+            self.watcher.resume()
         return boxes
 
     def ref_spec(self, field: str) -> FieldSpec:

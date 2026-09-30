@@ -1,3 +1,4 @@
+import contextlib
 import errno
 import multiprocessing as mp
 import os
@@ -8,11 +9,13 @@ from collections.abc import Callable
 from multiprocessing.process import BaseProcess
 from multiprocessing.queues import Queue
 from multiprocessing.synchronize import Event
+from typing import Any
 
 import pytest
 
 from sharedbox import BoxEvents, LockTimeoutError, SharedBox
-from sharedbox._layout import NativeField
+from sharedbox._events import Watcher
+from sharedbox._layout import FieldSpec, NativeField
 from sharedbox._native import Segment
 
 pytestmark = [
@@ -51,6 +54,12 @@ def forward_in_child(cart: Cart, ready: Event, out: "Queue[int]") -> None:
     ready.set()
     out.put(seen.get(timeout=10))
     cart.close()
+
+
+def forward_after_a_failed_follow(cart: Cart, ready: Event, out: "Queue[int]") -> None:
+    with contextlib.suppress(LockTimeoutError):
+        cart.events.follow("wheel")
+    forward_in_child(cart, ready, out)
 
 
 def follow_kept_group(
@@ -259,6 +268,37 @@ def test_forked_child_follows_a_move_through_a_group_kept_from_before_the_fork(
                         continue
                     break
                 assert got is not None
+        finally:
+            code = finish(child)
+        assert code == 0
+
+
+def test_forked_child_forwards_after_a_follow_whose_rebuild_failed_to_read(
+    unique_name: str, names: Callable[[str], str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Check that a forked child forwards once it calls follow again after the first rebuild failed to read a reference."""
+    ctx = mp.get_context("fork")
+    ready = ctx.Event()
+    out: Queue[int] = ctx.Queue()
+    last = Watcher.last
+    failed: list[FieldSpec] = []
+
+    def fail_once(watcher: Watcher, spec: FieldSpec) -> Any:
+        if not failed:
+            failed.append(spec)
+            raise LockTimeoutError("stands for a writer that died holding the lock")
+        return last(watcher, spec)
+
+    with Wheel.create(names("w")) as wheel, Cart.create(unique_name, wheel) as cart:
+        cart.events.follow("wheel")
+        # Patched only while forking, so only the child fails.
+        monkeypatch.setattr(Watcher, "last", fail_once)
+        child = fork(forward_after_a_failed_follow, cart, ready, out)
+        monkeypatch.undo()
+        try:
+            assert ready.wait(10)
+            wheel.turns = 4
+            assert out.get(timeout=10) == 4
         finally:
             code = finish(child)
         assert code == 0
