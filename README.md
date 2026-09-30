@@ -52,138 +52,14 @@ if __name__ == "__main__":
     Motor.unlink()
 ```
 
-## Reacting to changes
+## Documentation
 
-`box.events` is a psygnal `SignalGroup`: `box.events.position.connect(cb)`
-calls `cb(new, old)` when any thread or process changes `position`, and
-`box.events.connect(cb)` reports every field. `box.events.follow("motor")`
-returns a group with the signals of the box that the reference field
-`motor` refers to, and keeps emitting them after the field is assigned
-another box. Callbacks run on a background
-thread; pass `thread="main"` to `connect` and call `psygnal.emit_queued()`
-from your event loop to run them on the main thread.
+The [documentation site](https://jacopoabramo.github.io/sharedbox) has a
+tutorial, how-to guides, explanations of how a box works, and the API
+reference.
 
-To wait instead of reacting, `box.watch(field)` iterates over new values
-with `for` or `async for`, skipping values written while the consumer was
-busy.
-
-## Lifetime
-
-As with `multiprocessing.shared_memory.SharedMemory`: `close()` (or leaving
-the `with` block) detaches one box and never destroys the data, and
-`unlink()` removes the segment's name. Call `Motor.unlink()` once, usually
-from the process that created the box. On Linux a segment that is never
-unlinked stays in `/dev/shm` until reboot, and the next `Motor(...)` then
-raises `SegmentExistsError`; on Windows the OS frees it when the last box
-closes and `unlink()` does nothing. sharedbox does not unlink anything at
-exit, like `SharedMemory(track=False)`.
-
-## Limitations
-
-- Field types: `bool`, `int` (64-bit), `float`, and `str` or `bytes` with a
-  `Capacity` in bytes. Nested boxes and arrays are not supported yet.
-- Writers take one lock per box. Readers never block writers.
-- macOS is not supported.
-
-The full API is described in [docs/api.md](./docs/api.md).
-
-## C++ and C
-
-The segment layout is implemented by a header-only C++20 library,
-`sharedbox.hpp`, installed with the wheel together with a minimal C
-interface, `sharedbox_c.h`. C++ and C code can use a box through them,
-either as an extension that takes a box from Python or as a standalone
-program; [docs/library-authors.md](./docs/library-authors.md) shows how.
-
-## Wheels
-
-Each platform gets one wheel for CPython 3.11, one `abi3` wheel for CPython
-3.12 and newer, and one for free-threaded CPython 3.14. Wheels are built for
-Windows x64 and Linux x86_64 (glibc and musl).
-
-## Building locally
-
-### Requirements
-
-- [`git`](https://git-scm.com/downloads)
-- [`uv`](https://docs.astral.sh/uv/getting-started/installation/)
-- Python >= 3.11
-- [`CMake`](https://cmake.org/download/) >= 3.30
-- A C++20 compiler (MSVC on Windows, GCC on Linux)
-
-### Build the package
-
-```bash
-git clone https://github.com/jacopoabramo/sharedbox.git
-cd sharedbox
-uv sync --dev
-```
-
-`uv sync --dev` creates `.venv`, builds the extension and installs it.
-
-### Development setup
-
-After `uv sync --dev`, run this once to point VS Code's C/C++ extension at
-the CPython, nanobind and sharedbox headers the build uses:
-
-```bash
-uv run python scripts/vscode_setup.py
-```
-
-Run it again after changing the Python version or deleting `build/`.
-
-Run `uv run prek install` once to lint and format each commit; `uv run tox
--e lint` runs the same checks on demand.
-
-### Running tests
-
-```bash
-uv run pytest               # current interpreter
-uv run tox                  # every supported Python version, plus mypy
-uv run tox -e py314t        # one version
-uv run pytest -m stress     # stress tests, deselected by default (about 3 minutes)
-```
-
-The C++ tests of the header build with CMake:
-
-```bash
-cmake -S tests/cpp -B build-cpp -DCMAKE_BUILD_TYPE=Release
-cmake --build build-cpp --config Release
-ctest --test-dir build-cpp -C Release --output-on-failure
-```
-
-### Running benchmarks
-
-The `benchmarks` extra installs a `benchbox` command that measures
-`sharedbox` on your own machine:
-
-```bash
-pip install "sharedbox[benchmarks]"
-
-benchbox ops               # single operations, against the standard library
-benchbox ops --fast --filter "read*" --json ops.json
-benchbox roundtrip         # change notification between two processes
-benchbox size dist/*.whl   # wheel and extension module size
-benchbox all --out results # all of the above, plus results/summary.md
-```
-
-`ops` runs on [pyperf](https://pyperf.readthedocs.io); arguments after `--`
-are passed to it unchanged. `all` writes each command's JSON output and a
-Markdown summary with the OS, CPU, Python version and build, and the
-`sharedbox` version. It measures wheel sizes only when it finds wheels in
-`dist/` or `wheelhouse/`, and then measures every wheel there, older builds
-included. `python -m sharedbox.benchmarks` runs the same command.
-
-In a checkout, `uv sync` installs the `benchmarks` dependency group, which
-has the same packages as the extra, so
-`uv run benchbox` works there too. The pytest benchmarks are separate
-and live only in the repository:
-
-```bash
-uv run pytest benchmarks --codspeed
-```
-
-CI runs them on CodSpeed for every push and pull request to `main`.
+C++ and C code can take a box from Python or open one by name; see the
+[C and C++ guides](https://jacopoabramo.github.io/sharedbox/how-to/accept-a-box-in-cpp/).
 
 ## License
 

@@ -104,6 +104,9 @@ stage.events.follow()
 stage.events.nested.connect(lambda path, new, old: print(path, new))
 ```
 
+- Documentation site at https://jacopoabramo.github.io/sharedbox:
+  tutorial, how-to guides, explanations and the API reference.
+
 ### Changed
 
 - Building the extension requires nanobind 3.1.0 or newer and a C++20
@@ -183,6 +186,8 @@ stage.events.nested.connect(lambda path, new, old: print(path, new))
 - Python 3.10 support.
 - `SharedDict` and `sharedbox.utils`.
 - Boost and vcpkg: the build no longer needs `VCPKG_ROOT`.
+- `docs/api.md`, `docs/library-authors.md` and `docs/design/`: their
+  content is on the documentation site.
 
 ## [0.2.4] - 05-10-2025
 
