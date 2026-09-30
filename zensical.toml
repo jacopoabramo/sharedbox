@@ -10,8 +10,21 @@ repo_name = "jacopoabramo/sharedbox"
 
 nav = [
     "index.md",
+    { "Explanations" = [
+        "explanation/index.md",
+        "explanation/when-to-use-sharedbox.md",
+        "explanation/how-a-box-is-stored.md",
+        "explanation/reading-and-writing.md",
+        "explanation/waiting-for-changes.md",
+        "explanation/references.md",
+        "explanation/closing-and-lifetime.md",
+        "explanation/checking-a-process-is-alive.md",
+        "explanation/how-the-module-is-built.md",
+        "explanation/limits.md",
+    ]},
     { "Reference" = [
         "reference/index.md",
+        "explanation/glossary.md",
         { "API" = [
             "reference/api/index.md",
             "reference/api/box.md",
