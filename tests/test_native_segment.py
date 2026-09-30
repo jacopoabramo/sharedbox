@@ -271,7 +271,7 @@ def test_close_while_other_threads_read_and_write(unique_name: str) -> None:
                 call()
         except BoxClosedError:
             pass
-        except BaseException as error:  # noqa: BLE001 (record any unexpected error from the thread)
+        except BaseException as error:
             errors.append(error)
 
     def write() -> None:
@@ -610,7 +610,7 @@ def test_attach_waits_for_a_creator_that_has_not_made_its_header(
                 attach(unique_name).close()
             except SegmentNotFoundError:
                 continue
-            except BaseException as error:  # noqa: BLE001
+            except BaseException as error:
                 errors.append(error)
                 return
             attached.set()
@@ -663,7 +663,7 @@ def test_close_waits_for_a_read_blocked_on_the_lock(unique_name: str) -> None:
     def read() -> None:
         try:
             segment._read(0)
-        except BaseException as error:  # noqa: BLE001
+        except BaseException as error:
             errors.append(error)
 
     reader = threading.Thread(target=read, daemon=True)

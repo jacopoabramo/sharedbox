@@ -247,7 +247,7 @@ class Follower:
             follower.ref = value
             try:
                 box = follower.box = follower.open(value)
-            except Exception as exc:  # noqa: BLE001
+            except Exception as exc:
                 error = error or exc
                 continue
             if box is None:
@@ -354,7 +354,7 @@ def close_all(boxes: list[SharedBox], wait: bool) -> None:
     for box in boxes:
         try:
             box._close(wait)
-        except BaseException as exc:  # noqa: BLE001
+        except BaseException as exc:
             error = error or exc
     if error is not None:
         raise error

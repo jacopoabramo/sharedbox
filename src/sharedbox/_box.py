@@ -837,7 +837,7 @@ class SharedBox(metaclass=SharedBoxMeta):
                 continue
             try:
                 release(box._watcher, box._segment, wait)
-            except BaseException as exc:  # noqa: BLE001
+            except BaseException as exc:
                 # Keep closing the rest; the first failure is raised once every box is closed.
                 error = error or exc
             with box._refs_lock:
