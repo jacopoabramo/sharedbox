@@ -19,3 +19,5 @@ def follow(stage: Stage) -> None:
     assert_type(stage.events.follow("motor").position, SignalInstance)
     assert_type(stage.events.unfollow("motor"), None)
     assert_type(stage.events.unfollow(), None)
+    assert_type(stage.events.follow(), None)
+    assert_type(stage.events.nested, SignalInstance)

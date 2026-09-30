@@ -14,6 +14,7 @@ from typing import (
     TypeAlias,
     TypeVar,
     cast,
+    overload,
 )
 
 from psygnal import Signal, SignalGroup
@@ -452,16 +453,33 @@ class Watcher:
 
 
 class BoxEvents(SignalGroup):
-    """The psygnal signal group of a box: one `(new, old)` signal per field."""
+    """The psygnal signal group of a box: one `(new, old)` signal per field.
+
+    The group of a class with reference fields also has the signal
+    `nested`, emitted as `(path, new, old)` once
+    [`follow`][sharedbox.BoxEvents.follow] is called without a field.
+    """
 
     _sharedbox_follower: Follower
 
-    def follow(self, field: str) -> BoxEvents:
-        """Forward changes made inside the box that the reference field `field` refers to.
+    @overload
+    def follow(self, field: str) -> BoxEvents: ...
+    @overload
+    def follow(self, field: None = None) -> None: ...
+    def follow(self, field: str | None = None) -> BoxEvents | None:
+        """Forward changes made inside the boxes that reference fields refer to.
 
-        Return a group with the signals of the class `field` is annotated
-        with, emitted for whichever box the field refers to when the change
-        happens; a later call returns the same group.
+        With `field`, return a group with the signals of the class `field`
+        is annotated with, emitted for whichever box the field refers to
+        when the change happens; a later call returns the same group.
+        Without `field`, emit every change inside every box the reference
+        fields reach, down the whole graph, on `nested` as
+        `(path, new, old)`, where `path` is the tuple of field names from
+        this group's box to the changed field. A box that call already
+        follows is not followed a second time.
+
+        A call that raises follows nothing new, and the next call tries
+        again.
 
         Raises
         ------
@@ -492,6 +510,11 @@ class BoxEvents(SignalGroup):
 
 
 def events_class(owner: type, layout: Layout) -> type[BoxEvents]:
-    """A [`BoxEvents`][sharedbox.BoxEvents] subclass with one `(new, old)` signal per field of `owner`."""
+    """A [`BoxEvents`][sharedbox.BoxEvents] subclass with one `(new, old)` signal per field of `owner`.
+
+    A class with reference fields also gets the signal `nested`.
+    """
     signals = {spec.name: Signal(object, object) for spec in layout.fields}
+    if layout.refs:
+        signals["nested"] = Signal(tuple, object, object)
     return type(f"{owner.__name__}Events", (BoxEvents,), signals)

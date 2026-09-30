@@ -4,12 +4,14 @@ import queue
 import threading
 import time
 from collections.abc import Callable
+from multiprocessing.queues import Queue
 from multiprocessing.synchronize import Event
 from typing import Any
 
 import pytest
 
-from sharedbox import BoxClosedError, SharedBox
+from sharedbox import BoxClosedError, BoxRef, SharedBox
+from sharedbox._refs import attach_reference
 
 
 class Encoder(SharedBox):
@@ -454,3 +456,261 @@ def test_reassigning_while_both_boxes_change_leaves_one_forwarding_handle(
         with pytest.raises(queue.Empty):
             seen.get(timeout=0.3)
     assert not caplog.records
+
+
+class Node(SharedBox):
+    value: int = 0
+    link: "Node | None" = None
+
+
+class Pair(SharedBox):
+    first: Motor | None = None
+    second: Motor | None = None
+
+
+def ref_of(box: SharedBox) -> BoxRef:
+    # The create id is not public; the test needs it to build the BoxRef an event reports.
+    return BoxRef(box.name, type(box).__layout__.schema_hash, box._segment.create_id)
+
+
+def test_follow_without_a_field_reports_changes_down_a_chain_with_their_path(
+    names: Callable[[str], str],
+) -> None:
+    """Check that follow() emits each change inside the boxes down a chain on nested with its path, and moves when a reference below the outer box changes."""
+    seen: queue.Queue[tuple[tuple[str, ...], object, object]] = queue.Queue()
+    with (
+        Encoder.create(names("e1")) as e1,
+        Encoder.create(names("e2")) as e2,
+        Motor.create(names("m"), 0, e1) as motor,
+        Stage.create(names("s"), 0, motor) as stage,
+    ):
+        assert stage.events.follow() is None
+        stage.events.nested.connect(lambda path, new, old: seen.put((path, new, old)))
+        e1.count = 3
+        assert seen.get(timeout=5) == (("motor", "encoder", "count"), 3, 0)
+        motor.position = 7
+        assert seen.get(timeout=5) == (("motor", "position"), 7, 0)
+        stage.target = 1
+        with pytest.raises(queue.Empty):
+            seen.get(timeout=0.3)
+        motor.encoder = e2
+        assert seen.get(timeout=5) == (("motor", "encoder"), ref_of(e2), ref_of(e1))
+        settle(lambda value: setattr(e2, "count", value), seen)
+        e1.count = -1
+        e2.count = 200
+        path, new, _ = seen.get(timeout=5)
+        assert (path, new) == (("motor", "encoder", "count"), 200)
+        with pytest.raises(queue.Empty):
+            seen.get(timeout=0.3)
+
+
+def follow_loops(a: Node, b: Node, c: Node, out: "Queue[object]") -> None:
+    seen: queue.Queue[tuple[tuple[str, ...], object]] = queue.Queue()
+    with a, b, c:
+        for box in (a, c):
+            box.events.follow()
+            box.events.nested.connect(lambda path, new, old: seen.put((path, new)))
+        b.value = 20
+        out.put(seen.get(timeout=5))
+        a.value = 10
+        c.value = 30
+        time.sleep(0.3)
+        out.put(seen.qsize())
+        out.put(threads(a, b, c))
+
+
+def test_follow_without_a_field_ends_at_a_box_it_already_follows(
+    names: Callable[[str], str],
+) -> None:
+    """Check that follow() follows no box twice, so a loop of two boxes and a box that refers to itself end."""
+    ctx = mp.get_context("spawn")
+    out: Queue[object] = ctx.Queue()
+    with (
+        Node.create(names("a"), 1) as a,
+        Node.create(names("b"), 2) as b,
+        Node.create(names("c"), 3) as c,
+    ):
+        a.link = b
+        b.link = a
+        c.link = c
+        # In a child, so a follow() that never ends is killed instead of hanging the run.
+        child = ctx.Process(target=follow_loops, args=(a, b, c, out))
+        child.start()
+        child.join(30)
+        if child.is_alive():
+            child.kill()
+            child.join()
+        assert child.exitcode == 0
+        assert out.get(timeout=5) == (("link", "value"), 20)
+        assert out.get(timeout=5) == 0
+        # One watcher each for the events of a and c, and one forwarding handle on b.
+        assert out.get(timeout=5) == [1, 1, 1]
+
+
+def test_follow_without_a_field_reports_a_box_two_fields_share_under_the_first(
+    names: Callable[[str], str],
+) -> None:
+    """Check that a box two reference fields share is followed once, under the first field, as snapshot(follow=True) reads it."""
+    seen: queue.Queue[tuple[tuple[str, ...], object]] = queue.Queue()
+    with (
+        Motor.create(names("m")) as motor,
+        Pair.create(names("p"), motor, motor) as pair,
+    ):
+        pair.events.follow()
+        pair.events.nested.connect(lambda path, new, old: seen.put((path, new)))
+        motor.position = 4
+        assert seen.get(timeout=5) == (("first", "position"), 4)
+        with pytest.raises(queue.Empty):
+            seen.get(timeout=0.3)
+        assert threads(motor) == [1]
+
+
+def test_follow_without_a_field_reports_every_field_of_a_subclass_box(
+    names: Callable[[str], str],
+) -> None:
+    """Check that follow() reports the fields only a subclass box has, which follow(field) leaves out."""
+    seen: queue.Queue[tuple[tuple[str, ...], object]] = queue.Queue()
+    with (
+        GearMotor.create(names("g")) as geared,
+        Stage.create(names("s"), 0, geared) as stage,
+    ):
+        stage.events.follow()
+        stage.events.nested.connect(lambda path, new, old: seen.put((path, new)))
+        geared.gear = 3
+        assert seen.get(timeout=5) == (("motor", "gear"), 3)
+
+
+def test_unfollow_and_close_release_what_follow_without_a_field_took(
+    names: Callable[[str], str],
+) -> None:
+    """Check that unfollow() and close() give back the threads and waiter slots follow() took down a chain."""
+    with (
+        Encoder.create(names("e")) as encoder,
+        Motor.create(names("m"), 0, encoder) as motor,
+    ):
+        stage = Stage.create(names("s"), 0, motor)
+        try:
+            stage.events.follow()
+            assert until(lambda: waiters(motor, encoder) == [1, 1])
+            assert threads(motor, encoder) == [1, 1]
+            stage.events.unfollow()
+            assert (threads(motor, encoder), waiters(motor, encoder)) == (
+                [0, 0],
+                [0, 0],
+            )
+            stage.events.follow()
+            stage.events.follow("motor")
+            assert until(lambda: waiters(motor, encoder) == [2, 1])
+            stage.close()
+            assert (threads(motor, encoder), waiters(motor, encoder)) == (
+                [0, 0],
+                [0, 0],
+            )
+        finally:
+            stage.close()
+
+
+def test_following_and_unfollowing_while_the_reference_moves_leaves_nothing(
+    names: Callable[[str], str], caplog: pytest.LogCaptureFixture
+) -> None:
+    """Check that follow and unfollow racing with reassignments from another thread leave no forwarding thread or waiter slot behind, and log no error."""
+    stop = threading.Event()
+    with (
+        Motor.create(names("a")) as a,
+        Motor.create(names("b")) as b,
+        Stage.create(names("s"), 0, a) as stage,
+        caplog.at_level(logging.ERROR, logger="sharedbox"),
+    ):
+
+        def reassign() -> None:
+            turn = 0
+            while not stop.is_set():
+                turn += 1
+                stage.motor = b if turn % 2 else a
+                time.sleep(0.001)
+
+        mover = threading.Thread(target=reassign)
+        mover.start()
+        try:
+            for _ in range(100):
+                stage.events.follow("motor")
+                stage.events.follow()
+                stage.events.unfollow()
+        finally:
+            stop.set()
+            mover.join(10)
+        assert until(lambda: threads(a, b) == [0, 0])
+        assert until(lambda: waiters(a, b) == [0, 0])
+    assert not caplog.records
+
+
+def test_a_move_while_follow_attaches_the_boxes_below_waits_and_follows_the_new_chain(
+    names: Callable[[str], str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Check that a move made while follow() is between attaching a box and the box below it waits for follow(), then follows the new chain and nothing of the old one."""
+    seen: queue.Queue[tuple[tuple[str, ...], object]] = queue.Queue()
+    signalled = threading.Event()
+    with (
+        Encoder.create(names("e")) as encoder,
+        Motor.create(names("a"), 0, encoder) as a,
+        Motor.create(names("b"), 0, encoder) as b,
+        Stage.create(names("s"), 0, a) as stage,
+    ):
+
+        def move_first(spec: Any, create_id: int, schema_hash: int, name: str) -> Any:
+            if name == encoder.name and not signalled.is_set():
+                stage.motor = b
+                assert signalled.wait(5)
+                # Time for a move that does not wait for follow() to close the handle on a.
+                until(lambda: threads(a) == [0], seconds=1)
+            return attach_reference(spec, create_id, schema_hash, name)
+
+        stage.events.motor.connect(lambda new, old: signalled.set())
+        stage.events.nested.connect(lambda path, new, old: seen.put((path, new)))
+        # No public call pauses follow() after it attached a and before the encoder below a.
+        monkeypatch.setattr("sharedbox._follow.attach_reference", move_first)
+        stage.events.follow()
+        assert signalled.is_set()
+        assert until(lambda: threads(a, b, encoder) == [0, 1, 1])
+        assert until(lambda: waiters(a, b, encoder) == [0, 1, 1])
+        encoder.count = 3
+        assert seen.get(timeout=5) == (("motor", "encoder", "count"), 3)
+        a.position = 5
+        b.position = 6
+        assert seen.get(timeout=5) == (("motor", "position"), 6)
+        with pytest.raises(queue.Empty):
+            seen.get(timeout=0.3)
+
+
+def test_a_follow_that_raises_gives_back_what_it_took_and_is_tried_again(
+    names: Callable[[str], str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Check that follow() and follow(field) that fail to attach a box keep no thread or waiter slot, and a later call follows the box."""
+    seen: queue.Queue[object] = queue.Queue()
+    with (
+        Encoder.create(names("e")) as encoder,
+        Motor.create(names("m"), 0, encoder) as motor,
+        Stage.create(names("s"), 0, motor) as stage,
+    ):
+
+        def fail_below(spec: Any, create_id: int, schema_hash: int, name: str) -> Any:
+            if name == encoder.name:
+                raise OSError("too many open files")
+            return attach_reference(spec, create_id, schema_hash, name)
+
+        # No public input makes attaching the encoder fail with an error follow() raises.
+        monkeypatch.setattr("sharedbox._follow.attach_reference", fail_below)
+        with pytest.raises(OSError, match="too many open files"):
+            stage.events.follow()
+        assert (threads(motor, encoder), waiters(motor, encoder)) == ([0, 0], [0, 0])
+        motor_events = stage.events.follow("motor")
+        with pytest.raises(OSError, match="too many open files"):
+            motor_events.follow("encoder")
+        monkeypatch.undo()
+        stage.events.follow()
+        stage.events.nested.connect(lambda path, new, old: seen.put((path, new)))
+        motor_events.follow("encoder").count.connect(lambda new, old: seen.put(new))
+        assert until(lambda: waiters(motor, encoder) == [2, 2])
+        encoder.count = 1
+        got = {seen.get(timeout=5), seen.get(timeout=5)}
+        assert got == {(("motor", "encoder", "count"), 1), 1}
