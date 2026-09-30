@@ -62,7 +62,8 @@ sharedbox/
 |   `-- reference/segment-layout.md  layout 1.0, names and protocols
 |-- includes/abbreviations.md  acronym tooltips appended to every page
 |-- zensical.toml              site configuration and navigation
-|-- .github/workflows/ci.yaml  C++ tests, cibuildwheel wheels, tests, stress, PyPI publish
+|-- .github/workflows/ci.yaml  lint, docs check, C++ tests, cibuildwheel wheels, tests, stress,
+|                              PyPI publish, site publish
 |-- .github/workflows/check-docs.yaml    builds the site and runs check_xrefs.py
 |-- .github/workflows/publish-docs.yaml  deploys the checked site to GitHub Pages
 |-- .github/workflows/codspeed.yml  benchmarks on CodSpeed
@@ -175,7 +176,7 @@ produces all three.
 uv run pytest                          # current interpreter
 uv run pytest tests/test_box.py -k pickle
 uv run pytest -n auto --dist loadfile  # same suite, split across files
-uv run tox                             # py311 to py314, py314t, mypy
+uv run tox                             # py311 to py314, py314t, mypy, lint, docs
 uv run tox -e py314t                   # one env
 uv run tox -p auto                     # same environments, in parallel
 ```
@@ -228,7 +229,9 @@ the cp312 wheel, and also runs the property tests with the `thorough`
 profile.
 
 CI (`.github/workflows/ci.yaml`) builds the wheels above with cibuildwheel,
-runs pytest against each wheel, and publishes to PyPI. Publishing runs only
+runs pytest against each wheel, and publishes to PyPI. Its `docs` job runs
+`check-docs.yaml` (build the site, then `check_xrefs.py`); the site is
+published from `main` and from final releases. Publishing to PyPI runs only
 from a GitHub release tagged `vX.Y.Z` and marked as a release, or
 `vX.Y.ZrcN` and marked as a pre-release; any other tag or mismatch between
 the tag and the pre-release flag fails the build before it uploads. Docker
