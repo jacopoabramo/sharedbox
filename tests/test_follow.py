@@ -4,7 +4,7 @@ import queue
 import random
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from functools import partial
 from multiprocessing.queues import Queue
 from multiprocessing.synchronize import Event
@@ -13,6 +13,7 @@ from typing import Any
 import pytest
 
 from sharedbox import BoxClosedError, BoxRef, SharedBox
+from sharedbox._events import Watcher
 from sharedbox._refs import attach_reference
 
 
@@ -775,7 +776,7 @@ def reachable(edges: dict[int, dict[str, int | None]]) -> set[int]:
     return found
 
 
-def holds(boxes: list[Fork], expected: list[int]) -> bool:
+def holds(boxes: Sequence[SharedBox], expected: list[int]) -> bool:
     return waiters(*boxes) == expected and threads(*boxes) == expected
 
 
@@ -983,3 +984,151 @@ def test_a_move_whose_attach_raises_for_one_group_still_moves_the_other(
         assert until(lambda: bool(caplog.records))
         settle(lambda value: setattr(b, "position", value), seen)
         assert (threads(a, b), waiters(a, b)) == ([0, 1], [0, 1])
+
+
+def test_a_move_whose_listen_raises_closes_the_new_box_and_still_follows_the_old_one(
+    names: Callable[[str], str],
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Check that a move that fails after attaching the new box closes it, still follows a box another path reaches, and leaves the new box free for the next path to follow."""
+    seen: queue.Queue[tuple[tuple[str, ...], object]] = queue.Queue()
+    listen = Watcher.listen
+    with (
+        Motor.create(names("m")) as motor,
+        Motor.create(names("n")) as other,
+        Pair.create(names("p"), motor, motor) as pair,
+        caplog.at_level(logging.ERROR, logger="sharedbox"),
+    ):
+
+        def fail_other(watcher: Watcher, sink: Any, fields: Any) -> None:
+            listen(watcher, sink, fields)
+            # The segment is not public; it tells which box is being listened to.
+            if watcher._segment.name == other.name:
+                raise RuntimeError("can't start new thread")
+
+        pair.events.follow()
+        pair.events.nested.connect(lambda path, new, old: seen.put((path, new)))
+        motor.position = 1
+        held = seen.get(timeout=5)[0][0]
+        kept = "second" if held == "first" else "first"
+        # No public input makes listening to a box fail.
+        monkeypatch.setattr(Watcher, "listen", fail_other)
+        setattr(pair, held, other)
+        assert until(
+            lambda: any(
+                "can't start new thread" in str(r.exc_info) for r in caplog.records
+            )
+        )
+        settle(lambda value: setattr(motor, "position", value), seen)
+        motor.position = 100
+        assert seen.get(timeout=5) == ((kept, "position"), 100)
+        assert until(lambda: holds([motor, other], [1, 0]))
+        monkeypatch.undo()
+        setattr(pair, kept, other)
+        assert until(lambda: holds([motor, other], [0, 1]))
+        other.position = 7
+        assert seen.get(timeout=5) in {((kept, "position"), 7), ((held, "position"), 7)}
+
+
+def test_a_node_whose_attach_failed_follows_its_box_once_another_path_lets_go(
+    names: Callable[[str], str],
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Check that a field whose attach failed follows its box after another field that followed the same box is cleared."""
+    seen: queue.Queue[tuple[tuple[str, ...], object]] = queue.Queue()
+    with (
+        Motor.create(names("x")) as x,
+        Pair.create(names("p")) as pair,
+        caplog.at_level(logging.ERROR, logger="sharedbox"),
+    ):
+
+        def fail_x(spec: Any, create_id: int, schema_hash: int, name: str) -> Any:
+            if name == x.name:
+                raise OSError("too many open files")
+            return attach_reference(spec, create_id, schema_hash, name)
+
+        pair.events.follow()
+        pair.events.nested.connect(lambda path, new, old: seen.put((path, new)))
+        # No public input makes attaching a box fail with an error other than a broken reference.
+        monkeypatch.setattr("sharedbox._follow.attach_reference", fail_x)
+        pair.first = x
+        assert until(lambda: bool(caplog.records))
+        monkeypatch.undo()
+        pair.second = x
+        assert until(lambda: holds([x], [1]))
+        pair.second = None
+        settle(lambda value: setattr(x, "position", value), seen)
+        x.position = 100
+        assert seen.get(timeout=5) == (("first", "position"), 100)
+        assert holds([x], [1])
+
+
+def test_follow_without_a_field_follows_what_a_fresh_follow_would_once_attaches_stop_failing(
+    names: Callable[[str], str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Check that after random reassignments during which attaches fail at random, the next reassignment leaves follow() holding one handle on every box a fresh follow() reaches."""
+    failing = threading.Event()
+    flaky = random.Random(100)
+
+    def fail_at_random(spec: Any, create_id: int, schema_hash: int, name: str) -> Any:
+        if failing.is_set() and flaky.random() < 0.3:
+            raise OSError("too many open files")
+        return attach_reference(spec, create_id, schema_hash, name)
+
+    for seed in range(3):
+        rng = random.Random(seed)
+        boxes = [Fork.create(names(f"{seed}-{i}")) for i in range(5)]
+        try:
+            edges: dict[int, dict[str, int | None]] = {
+                i: {"left": None, "right": None} for i in range(5)
+            }
+            boxes[0].events.follow()
+            # No public input makes attaching a box fail with an error other than a broken reference.
+            monkeypatch.setattr("sharedbox._follow.attach_reference", fail_at_random)
+            failing.set()
+            for _ in range(40):
+                source = rng.randrange(5)
+                field = rng.choice(("left", "right"))
+                target = rng.choice([None, *range(5)])
+                setattr(boxes[source], field, None if target is None else boxes[target])
+                edges[source][field] = target
+                # Spreads the writes over many moves, so failures land in many of them.
+                time.sleep(0.01)
+            failing.clear()
+            # Any move tries the failed nodes again; box 0 pointing at itself adds no box.
+            target = None if edges[0]["left"] is not None else 0
+            boxes[0].left = None if target is None else boxes[0]
+            edges[0]["left"] = target
+            expected = [int(i in reachable(edges)) for i in range(5)]
+            assert until(partial(holds, boxes, expected)), (seed, edges)
+            monkeypatch.undo()
+        finally:
+            for box in boxes:
+                box.close()
+
+
+def test_every_attach_that_fails_in_one_follow_is_reported(
+    names: Callable[[str], str],
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """Check that when attaching two boxes fails in one follow(), the first error is raised and the second is logged."""
+    with (
+        Motor.create(names("a")) as a,
+        Motor.create(names("b")) as b,
+        Pair.create(names("p"), a, b) as pair,
+        caplog.at_level(logging.ERROR, logger="sharedbox"),
+    ):
+
+        def fail(spec: Any, create_id: int, schema_hash: int, name: str) -> Any:
+            raise OSError(f"cannot attach {name}")
+
+        # No public input makes attaching a box fail with an error other than a broken reference.
+        monkeypatch.setattr("sharedbox._follow.attach_reference", fail)
+        with pytest.raises(OSError, match=f"cannot attach {a.name}"):
+            pair.events.follow()
+        assert [str(r.exc_info[1]) for r in caplog.records if r.exc_info] == [
+            f"cannot attach {b.name}"
+        ]

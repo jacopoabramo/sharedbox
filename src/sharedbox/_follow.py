@@ -41,6 +41,7 @@ class Follower:
         "__weakref__",
         "box",
         "cls",
+        "failed",
         "group",
         "links",
         "lock",
@@ -73,6 +74,8 @@ class Follower:
         self.tree: dict[str, Follower] | None = None
         # Each box the tree follows, with the nodes that skipped it as already followed.
         self.seen: dict[tuple[str, int], list[Follower]] = {}
+        # On the top follower: the nodes whose last attach raised, tried again on every move.
+        self.failed: dict[Follower, None] = {}
         self.nested: SignalInstance | None = None
         self.path: tuple[str, ...] = ()
         self.lock = threading.Lock()
@@ -168,9 +171,11 @@ class Follower:
                 else []
             )
             # Even if this follower's source moved meanwhile, since these nodes are elsewhere in the tree.
+            retry = [*waiting, *self.top.failed]
+            self.top.failed.clear()
             starts += [
                 (node, node.ref)
-                for node in waiting
+                for node in retry
                 if node.box is None and node.ref is not None
             ]
             self.expand(starts)
@@ -235,9 +240,11 @@ class Follower:
     def expand(self, starts: list[tuple[Follower, Any]]) -> None:
         """Attach the box each follower's value refers to, then the boxes below it, depth first.
 
-        If attaching a box raises, this goes on with the others and raises
-        the first error at the end. The follower that failed keeps its
-        value and follows nothing until that value changes.
+        If following a box raises, this closes that box, goes on with the
+        others, logs every later error and raises the first at the end. The
+        follower that failed keeps its value and follows nothing until that
+        value changes, or until any reference field below the same events
+        group changes, when it is tried again.
         """
         error: Exception | None = None
         # Reversed, so fields are followed in declaration order, as snapshot(follow=True) reads them.
@@ -247,19 +254,28 @@ class Follower:
             follower.ref = value
             try:
                 box = follower.box = follower.open(value)
+                if box is None:
+                    continue
+                segment, cls = box._segment, type(box)
+                # Listening before the values below are read, so a later change is still delivered.
+                box._watcher.listen(
+                    partial(relay, weakref.ref(follower), segment),
+                    cls.__layout__.fields,
+                )
+                children = follower.link_children(segment, cls)
+                if follower.tree is not None:
+                    children += follower.tree_children(segment, cls)
             except Exception as exc:
-                error = error or exc
+                # Not joined: the box's watcher thread may be waiting for the lock held here.
+                # No node waits on the box yet, since nothing else ran since it was opened.
+                close_all(follower.detach(), wait=False)
+                follower.ref = value
+                self.top.failed[follower] = None
+                if error is None:
+                    error = exc
+                else:
+                    logger.exception("following box %r failed", value[2])
                 continue
-            if box is None:
-                continue
-            segment, cls = box._segment, type(box)
-            # Listening before the values below are read, so a later change is still delivered.
-            box._watcher.listen(
-                partial(relay, weakref.ref(follower), segment), cls.__layout__.fields
-            )
-            children = follower.link_children(segment, cls)
-            if follower.tree is not None:
-                children += follower.tree_children(segment, cls)
             stack.extend(reversed(children))
         if error is not None:
             raise error
@@ -300,6 +316,7 @@ class Follower:
             follower = stack.pop()
             box, ref = follower.box, follower.ref
             follower.box = follower.ref = None
+            follower.top.failed.pop(follower, None)
             if box is not None:
                 boxes.append(box)
                 if follower.nested is not None:
