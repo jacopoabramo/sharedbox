@@ -138,6 +138,50 @@ def test_the_reference_signal_runs_before_forwarding_moves(
         assert 99 not in forwarded
 
 
+@pytest.mark.parametrize("field", ["motor", None])
+def test_follow_during_a_change_the_watcher_has_not_seen_follows_the_field_after_it_reverts(
+    names: Callable[[str], str], field: str | None
+) -> None:
+    """Check that follow, called while the watcher is busy after the reference changed, follows the reference's value once it changes back."""
+    seen: queue.Queue[int] = queue.Queue()
+    busy, release = threading.Event(), threading.Event()
+
+    def hold(new: int) -> None:
+        busy.set()
+        assert release.wait(10)
+
+    def record(path: tuple[str, ...], new: object, old: object) -> None:
+        if path == ("motor", "position"):
+            seen.put(new)
+
+    with (
+        Motor.create(names("a")) as a,
+        Motor.create(names("b")) as b,
+        Stage.create(names("s"), 0, a) as stage,
+    ):
+        stage.events.target.connect(hold)
+        stage.target = 1
+        assert busy.wait(10)
+        try:
+            stage.motor = b
+            if field is None:
+                stage.events.follow()
+                stage.events.nested.connect(record)
+            else:
+                stage.events.follow(field).position.connect(
+                    lambda new, old: seen.put(new)
+                )
+            stage.motor = a
+        finally:
+            release.set()
+        settle(lambda value: setattr(a, "position", value), seen)
+        b.position = -1
+        a.position = 1000
+        assert seen.get(timeout=5) == 1000
+        with pytest.raises(queue.Empty):
+            seen.get(timeout=0.3)
+
+
 def test_an_empty_reference_forwards_nothing_until_a_box_is_assigned(
     names: Callable[[str], str],
 ) -> None:

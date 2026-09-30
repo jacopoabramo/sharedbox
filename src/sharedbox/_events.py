@@ -290,6 +290,10 @@ class Watcher:
             if self._sink is not None:
                 self._start_locked()
 
+    def last(self, spec: FieldSpec) -> Any:
+        """The value of `spec` the watcher last saw, which it compares the next change with."""
+        return self._seen[spec.index][1]
+
     def _listen_locked(self, sink: Sink, fields: tuple[FieldSpec, ...]) -> None:
         self._seen = {
             spec.index: self._segment.get_versioned(spec.index) for spec in fields

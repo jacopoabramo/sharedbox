@@ -120,7 +120,11 @@ class Follower:
                         )
                         assert link.group is not None
                         link.group._sharedbox_follower = link
-                        value = None if source is None else read(*source, spec.name)
+                        value = (
+                            None
+                            if source is None
+                            else read(source[1], source[2], spec.name)
+                        )
                         self.links[spec.name] = link
                         starts = [(link, value)]
                         group = link.group
@@ -155,7 +159,7 @@ class Follower:
     def moved(self, spec: FieldSpec, value: Any, segment: Segment) -> None:
         """Follow the box that the field `spec` of `segment`, this follower's source, now refers to."""
         with self.top.lock:
-            # Skipped in a forked child: its next `follow` rebuilds from the current values.
+            # Skipped in a forked child: its next `follow` rebuilds from the values the watcher saw.
             if self.top.forked or not self.serves(segment):
                 return
             children = [
@@ -203,7 +207,7 @@ class Follower:
         self.forked = True
 
     def rebuild(self) -> list[SharedBox]:
-        """Follow again, from the current values of the reference fields, everything forwarded through this box's events group.
+        """Follow again, from the values of the reference fields the box's watcher last saw, everything forwarded through this box's events group.
 
         In a child created by `fork`, a move that another thread of the
         parent had begun can leave forwarding half changed. Afterwards it
@@ -216,9 +220,9 @@ class Follower:
         self.forked = False
         boxes = self.detach()
         self.failed.clear()
-        starts = self.link_children(self.outer, self.cls)
+        starts = self.link_children(self.cls, self.watcher)
         if self.tree is not None:
-            starts += self.tree_children(self.outer, self.cls)
+            starts += self.tree_children(self.outer, self.cls, self.watcher)
         try:
             self.expand(starts)
         except Exception:
@@ -234,12 +238,13 @@ class Follower:
             raise TypeError(f"{spec.label} is not a reference field")
         return spec
 
-    def source(self) -> tuple[Segment, type[SharedBox]] | None:
-        """The segment and class whose reference fields this follower's links and tree follow."""
+    def source(self) -> tuple[Segment, type[SharedBox], Watcher] | None:
+        """The segment, class and watcher of the box whose reference fields this follower's links and tree follow."""
         if self.box is not None:
-            return self.box._segment, type(self.box)
+            return self.box._segment, type(self.box), self.box._watcher
         if self.outer is not None:
-            return self.outer, self.cls
+            assert self.watcher is not None
+            return self.outer, self.cls, self.watcher
         return None
 
     def serves(self, segment: Segment) -> bool:
@@ -247,14 +252,14 @@ class Follower:
         return source is not None and source[0] is segment and not segment.closed
 
     def link_children(
-        self, segment: Segment, cls: type[SharedBox]
+        self, cls: type[SharedBox], watcher: Watcher
     ) -> list[tuple[Follower, Any]]:
-        return [(link, read(segment, cls, name)) for name, link in self.links.items()]
+        return [(link, read(cls, watcher, name)) for name, link in self.links.items()]
 
     def tree_children(
-        self, segment: Segment, cls: type[SharedBox]
+        self, segment: Segment, cls: type[SharedBox], watcher: Watcher
     ) -> list[tuple[Follower, Any]]:
-        """A new node for each reference field of the source, with the value it holds."""
+        """A new node for each reference field of the source, with the value its watcher last saw."""
         if self.nested is None:
             # This follower starts the tree: its own box counts as followed.
             self.seen = {(segment.name, segment.create_id): []}
@@ -275,7 +280,7 @@ class Follower:
             node.seen = self.seen
             node.tree = {}
             self.tree[spec.name] = node
-            children.append((node, read(segment, cls, spec.name)))
+            children.append((node, read(cls, watcher, spec.name)))
         return children
 
     def expand(self, starts: list[tuple[Follower, Any]]) -> None:
@@ -298,14 +303,14 @@ class Follower:
                 if box is None:
                     continue
                 segment, cls = box._segment, type(box)
-                # Listening before the values below are read, so a later change is still delivered.
+                # Listening first, so the values below are the ones the watcher compares later changes with.
                 box._watcher.listen(
                     partial(relay, weakref.ref(follower), segment),
                     cls.__layout__.fields,
                 )
-                children = follower.link_children(segment, cls)
+                children = follower.link_children(cls, box._watcher)
                 if follower.tree is not None:
-                    children += follower.tree_children(segment, cls)
+                    children += follower.tree_children(segment, cls, box._watcher)
             except Exception as exc:
                 # Not joined: the box's watcher thread may be waiting for the lock held here.
                 # No node waits on the box yet, since nothing else ran since it was opened.
@@ -375,8 +380,9 @@ class Follower:
         return boxes
 
 
-def read(segment: Segment, cls: type[SharedBox], name: str) -> Any:
-    return segment.get(cls.__layout__.by_name[name].index)
+def read(cls: type[SharedBox], watcher: Watcher, name: str) -> Any:
+    # Not from the segment: a value the watcher has not seen yet may change back unreported.
+    return watcher.last(cls.__layout__.by_name[name])
 
 
 def relay(
