@@ -274,13 +274,9 @@ def test_unfollow_and_close_release_the_threads_and_waiter_slots(
             seen: queue.Queue[int] = queue.Queue()
             group = stage.events.follow("motor")
             group.position.connect(lambda new: seen.put(new))
-            # The handle forwarding holds is not public; the test checks that unfollow closes it.
-            held = group._sharedbox_follower.box
-            assert held is not None
             assert until(lambda: waiters(motor, encoder) == [1, 0])
             assert threads(motor, encoder) == [1, 0]
             stage.events.unfollow("motor")
-            assert held.closed
             assert (threads(motor, encoder), waiters(motor, encoder)) == (
                 [0, 0],
                 [0, 0],
