@@ -65,6 +65,7 @@ build-verbosity = 1
 line-length = 88
 
 [tool.ruff.lint]
+extend-select = ["E402", "PLC0415"]
 ignore = ["BLE001"]
 
 [tool.mypy]
