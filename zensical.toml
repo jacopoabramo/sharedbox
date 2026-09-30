@@ -30,6 +30,14 @@ nav = [
             "how-to/clean-up-segments.md",
             "how-to/follow-a-whole-reference-graph.md",
         ]},
+        { "C and C++" = [
+            "how-to/accept-a-box-in-cpp.md",
+            "how-to/accept-a-box-in-c.md",
+            "how-to/open-a-box-from-a-program.md",
+        ]},
+        { "Measure" = [
+            "how-to/run-benchmarks.md",
+        ]},
     ]},
     { "Explanations" = [
         "explanation/index.md",
@@ -54,6 +62,8 @@ nav = [
             "reference/api/errors.md",
             "reference/api/library-authors.md",
         ]},
+        "reference/segment-layout.md",
+        "reference/cpp-and-c-api.md",
         "reference/changelog.md",
     ]},
 ]

@@ -58,4 +58,4 @@ or, with pip:
 pip install "sharedbox[benchmarks]"
 ```
 
-`benchbox --help` lists its commands.
+[How to run the benchmarks](run-benchmarks.md) shows its commands.

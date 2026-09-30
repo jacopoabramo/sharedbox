@@ -41,7 +41,7 @@ its copy away and tries again.[^seqlock] A reader can therefore never
 return a mix of old and new bytes, and writes to several fields
 ([`update(a=..., b=...)`][sharedbox.SharedBox.update]) are seen all at
 once or not at all. [Sequence
-lock](../design/segment-layout.md#sequence-lock) gives the exact steps and
+lock](../reference/segment-layout.md#sequence-lock) gives the exact steps and
 orderings, including why the unlock is a compare-and-swap rather than a
 plain store.
 

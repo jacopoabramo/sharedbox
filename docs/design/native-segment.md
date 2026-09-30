@@ -2,7 +2,7 @@
 
 This page explains how the C++ part of sharedbox stores a box in shared
 memory, and why it is built that way. The byte layout and the protocols
-themselves are specified in [segment-layout.md](segment-layout.md); this
+themselves are specified in [segment-layout.md](../reference/segment-layout.md); this
 page gives the reasons behind them and describes how the Python extension
 (`src/sharedbox/_native/`) uses `include/sharedbox/sharedbox.hpp`. Numbers
 in brackets, such as [1], point to the sources in the
@@ -25,14 +25,14 @@ which Windows deletes when the last process closes it [22]; the standard
 library's `multiprocessing.shared_memory` creates the same kind of object
 on Windows [2]. Creation always asks for a new name, so a box never
 attaches to a block that another program created first.
-[segment-layout.md](segment-layout.md#names) lists every object name.
+[segment-layout.md](../reference/segment-layout.md#names) lists every object name.
 
 ## 2. A fixed layout: header, field table, record
 
 The mapping starts with a 128-byte header, then a table with one entry per
 field, one write count per field, the waiter slots, and the record that
 holds the field values, 64-byte aligned.
-[segment-layout.md](segment-layout.md#layout) gives every offset.
+[segment-layout.md](../reference/segment-layout.md#layout) gives every offset.
 
 Each field has a fixed place and a fixed size in the record. Fields are
 packed by descending alignment (the 8-byte `int` and `float` fields first,
@@ -71,7 +71,7 @@ wrong values with no error.
 
 The fingerprint is the first 8 bytes of SHA-256 over the class's identity
 and each field's `name:kind:capacity`
-([segment-layout.md](segment-layout.md#schema-identity) has the exact text
+([segment-layout.md](../reference/segment-layout.md#schema-identity) has the exact text
 and a test vector). The identity is `module.qualname` unless the class sets
 `identity=`. The attaching process compares the header's fingerprint with
 its own class's after the layout checks and before it reads any field.
@@ -126,7 +126,7 @@ move. If a write happened while the reader was copying, the reader throws
 its copy away and tries again [5]. A reader can therefore never return a
 mix of old and new bytes, and writes to several fields
 (`update(a=..., b=...)`) are seen all at once or not at all.
-[segment-layout.md](segment-layout.md#sequence-lock) gives the exact steps
+[segment-layout.md](../reference/segment-layout.md#sequence-lock) gives the exact steps
 and orderings, including why the unlock is a compare-and-swap rather than
 a plain store.
 
@@ -194,7 +194,7 @@ segment, and a write wakes the slots that are occupied.
   system call to wake anyone: the writer reads `waiters` and stops at 0.
 - A slot held by a process that was killed is freed by the next register
   or attach, except in the cases listed under
-  [Known limits](segment-layout.md#waiter-slots). That process checks each
+  [Known limits](../reference/segment-layout.md#waiter-slots). That process checks each
   occupied slot's owner with the liveness rules of section 9; a slot
   recorded in another pid namespace is never freed, because its pid cannot
   be checked from here.
@@ -215,7 +215,7 @@ no longer matches and the wait returns at once [9]. On Windows each event
 belongs to one slot, so one waiter cannot take the wake-up meant for
 another.
 
-[segment-layout.md](segment-layout.md#waiter-slots) gives the order of the
+[segment-layout.md](../reference/segment-layout.md#waiter-slots) gives the order of the
 stores that claim, free and release a slot, and the few steps at which a
 killed process leaves a slot stuck or the count one too high.
 

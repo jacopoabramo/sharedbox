@@ -30,3 +30,19 @@ Learn how to name, fill, share and remove a
   recover after a crash
 - [How to follow a whole reference graph](follow-a-whole-reference-graph.md):
   one callback for changes in every box a box refers to
+
+### C and C++
+
+Read and write a box from compiled code.
+
+- [How to accept a box in a C++ extension](accept-a-box-in-cpp.md): take
+  the box a Python caller passes, through `sharedbox.hpp`
+- [How to accept a box in a C extension](accept-a-box-in-c.md): the same
+  through `sharedbox_c.h`
+- [How to open a box from a program](open-a-box-from-a-program.md): open
+  a box by name from a program with no Python
+
+### Measure
+
+- [How to run the benchmarks](run-benchmarks.md): time sharedbox on your
+  own machine with `benchbox`

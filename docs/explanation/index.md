@@ -6,7 +6,7 @@ icon: lucide/lightbulb
 
 These pages explain how sharedbox stores a [box](glossary.md#box) in shared
 memory, and why it is built that way. The byte layout and the protocols
-themselves are specified in [Segment layout](../design/segment-layout.md);
+themselves are specified in [Segment layout](../reference/segment-layout.md);
 these pages give the reasons behind them and describe how the Python
 extension uses
 [`sharedbox.hpp`](https://github.com/jacopoabramo/sharedbox/blob/main/include/sharedbox/sharedbox.hpp).

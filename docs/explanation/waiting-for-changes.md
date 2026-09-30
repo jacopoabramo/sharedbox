@@ -31,7 +31,7 @@ callbacks the way they do, and what following
   and stops at 0.
 - A slot held by a process that was killed is freed by the next register
   or attach, except in the cases listed under [Waiter
-  slots](../design/segment-layout.md#waiter-slots). That process checks
+  slots](../reference/segment-layout.md#waiter-slots). That process checks
   each occupied slot's owner as [Checking a process is
   alive](checking-a-process-is-alive.md) describes. A slot recorded in
   another pid namespace is never freed, because its pid cannot be checked
@@ -53,7 +53,7 @@ no longer matches and the wait returns at once.[^futex] On Windows each
 event belongs to one slot, so one waiter cannot take the wake-up meant for
 another.
 
-[Waiter slots](../design/segment-layout.md#waiter-slots) gives the order of
+[Waiter slots](../reference/segment-layout.md#waiter-slots) gives the order of
 the stores that claim, free and release a slot, and the few steps at which
 a killed process leaves a slot stuck or the count one too high.
 

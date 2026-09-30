@@ -6,7 +6,7 @@ icon: lucide/lightbulb
 
 This page describes where a [box](glossary.md#box) lives in memory, how its
 values are stored, and how two processes check that they agree on what the
-bytes mean. [Segment layout](../design/segment-layout.md) gives every
+bytes mean. [Segment layout](../reference/segment-layout.md) gives every
 offset and protocol.
 
 ## One named mapping per box
@@ -24,14 +24,14 @@ it.[^create-file-mapping] The standard library's
 `multiprocessing.shared_memory` creates the same kind of object on
 Windows.[^shared-memory] Creation always asks for a new name, so a box
 never attaches to a block that another program created first.
-[Names](../design/segment-layout.md#names) lists every object name.
+[Names](../reference/segment-layout.md#names) lists every object name.
 
 ## A fixed layout: header, field table, record
 
 The mapping starts with a 128-byte header. Then come a table with one entry
 per [field](glossary.md#field), one write count per field, the
 [waiter slots](glossary.md#waiter-slot), and the record that holds the
-field values, 64-byte aligned. [Layout](../design/segment-layout.md#layout)
+field values, 64-byte aligned. [Layout](../reference/segment-layout.md#layout)
 gives every offset.
 
 Each field has a fixed place and a fixed size in the record. Fields are
@@ -63,7 +63,7 @@ because each process maps the block at a different address.
 Values are stored as fixed-size bytes: numbers packed the way `struct`
 packs them, text as UTF-8. Stored bytes are never unpickled or executed.
 The table in [`SharedBox`][sharedbox.SharedBox] lists the stored size of
-each field type, and [Layout](../design/segment-layout.md#layout) the
+each field type, and [Layout](../reference/segment-layout.md#layout) the
 bytes of each kind.
 
 Because a value is copied into the record, a box holds only the stored
@@ -94,7 +94,7 @@ wrong values with no error.
 
 The schema hash is the first 8 bytes of SHA-256 over the class's
 [identity](glossary.md#identity) and each field's `name:kind:capacity`.
-[Schema identity](../design/segment-layout.md#schema-identity) has the
+[Schema identity](../reference/segment-layout.md#schema-identity) has the
 exact text and a test vector. The identity is `module.qualname` unless the
 class sets `identity=`. The attaching process compares the header's hash
 with its own class's after the layout checks and before it reads any field.

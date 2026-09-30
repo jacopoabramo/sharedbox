@@ -6,7 +6,7 @@ program with no Python. Both use the header-only C++20 library
 `sharedbox/sharedbox.hpp` that sharedbox installs with its wheel, or its
 minimal C interface `sharedbox/sharedbox_c.h`. Nothing is linked from
 sharedbox itself. The layout and protocols the header implements are in
-[design/segment-layout.md](design/segment-layout.md).
+[design/segment-layout.md](reference/segment-layout.md).
 
 The examples use this class:
 

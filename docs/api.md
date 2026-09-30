@@ -779,7 +779,7 @@ if __name__ == "__main__":
 Values are stored as fixed-size bytes: `struct` encoding for numbers, UTF-8
 for text. Stored bytes are never unpickled or executed. The layout of the
 segment is specified in
-[design/segment-layout.md](design/segment-layout.md).
+[design/segment-layout.md](reference/segment-layout.md).
 
 ### Passing a box to other libraries
 
