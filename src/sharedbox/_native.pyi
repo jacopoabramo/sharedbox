@@ -16,19 +16,61 @@ LAYOUT_VERSION: Final[tuple[int, int]]
 """`(major, minor)` of the segment layout this module reads and writes."""
 
 class SegmentExistsError(FileExistsError):
-    """A segment with that name already exists."""
+    """A segment with that name already exists.
+
+    Raised by creating a box under a name that is taken. The message says
+    which case it is:
+
+    - the box's creator is still running, with its pid;
+    - the box is still being created: its creator is running and has not
+      returned from `__post_init__` yet. The message gives its pid and
+      says to wait for it or use another name;
+    - the creator runs in another pid namespace, such as another
+      container;
+    - the creator is no longer running. On Linux the box is then probably
+      left over from a crash, and `unlink(name)` on its class removes it.
+      On Windows a process, possibly this one, still has the box open, and
+      the name is freed when every handle to it is closed;
+    - the name holds no published box. On Linux it may be left over from a
+      crash during creation, and `unlink(name)` on its class removes it. On
+      Windows a process, possibly this one, still has something open under
+      that name, and the name is freed when every handle to it is closed.
+
+    When none of these can be told, the message only says the name is
+    taken. Nothing is removed automatically.
+    """
 
 class SegmentNotFoundError(FileNotFoundError):
-    """No segment has that name."""
+    """No segment has that name.
+
+    Raised by attaching to, or unlinking on Linux, a name with no segment,
+    and by attaching to shared memory that does not become a box within
+    1 s.
+    """
 
 class SchemaMismatchError(TypeError):
-    """The segment was created by a different class or layout."""
+    """The segment was created by a different class or layout.
+
+    Raised by attaching, or unpickling a box, with a class whose identity
+    or fields differ from the creator's; by a segment of another layout
+    major version or with a field of a kind this version cannot read,
+    which the message names; and by unpickling after the box was created
+    again.
+    """
 
 class BoxClosedError(ValueError):
-    """The segment handle has been closed."""
+    """The segment handle has been closed.
+
+    Raised by using a box after [`close`][sharedbox.SharedBox.close].
+    """
 
 class LockTimeoutError(TimeoutError):
-    """The write lock stayed taken for longer than the lock timeout."""
+    """The write lock stayed taken for longer than the lock timeout.
+
+    Raised by a read or write that waits for a write in progress for
+    longer than the class's `lock_timeout`. The message names the process
+    that holds the lock.
+    """
 
 class WaiterSlotsFullError(RuntimeError):
     """Every waiter slot of the box is taken."""
@@ -90,7 +132,7 @@ class Segment:
         """Return the field's value; `(create_id, schema_hash, name)`, or None when empty, for a reference field."""
 
     def cached_ref(self, field: int, cache: dict[int, RefEntry]) -> object:
-        """`cache[field][1]` if the reference field holds `cache[field][0]` and `cache[field][2]` is open.
+        """Return `cache[field][1]` if the reference field holds `cache[field][0]` and `cache[field][2]` is open.
 
         None when the field is empty, False otherwise. Decodes only the
         create id, not the name.
@@ -107,7 +149,7 @@ class Segment:
         """Return the field's version and value, read together."""
 
     def get_dict(self, names: tuple[str, ...]) -> dict[str, object]:
-        """Every field's value under its name in `names`, read at one point in time."""
+        """Return every field's value under its name in `names`, read at one point in time."""
 
     def set(self, values: Sequence[tuple[int, object]]) -> None:
         """Convert every value, then write them all under one lock.
@@ -119,16 +161,16 @@ class Segment:
         """Return the field's bytes, read consistently with concurrent writes; for tests."""
 
     def _read_all(self) -> list[bytes]:
-        """Every field's bytes, read at one point in time; for tests."""
+        """Return every field's bytes, read at one point in time; for tests."""
 
     def _write(self, values: Sequence[tuple[int, bytes]]) -> None:
         """Write several fields' bytes under one lock; for tests."""
 
     def version(self, field: int) -> int:
-        """How many writes the field has had."""
+        """Return how many writes the field has had."""
 
     def versions(self) -> list[int]:
-        """[`version`][sharedbox._native.Segment.version] of every field, in field order."""
+        """Return the [`version`][sharedbox._native.Segment.version] of every field, in field order."""
 
     def publish(self) -> None:
         """Let other processes attach to a segment created with `publish=False`.
@@ -140,7 +182,7 @@ class Segment:
         """
 
     def generation(self) -> int:
-        """How many writes the segment has had."""
+        """Return how many writes the segment has had."""
 
     def wait(
         self, last_generation: int, timeout: float, slot: int | None = None
@@ -167,7 +209,7 @@ class Segment:
         """Free a slot claimed with [`register_waiter`][sharedbox._native.Segment.register_waiter]."""
 
     def waiter_held(self, slot: int) -> bool:
-        """Return True while `slot` is still this process's; false once it was freed under it."""
+        """Return True while `slot` is still this process's, and False once it was freed under it."""
 
     def interrupt(self, slot: int) -> None:
         """End the wait in `slot`, in any process, or the next one if none is running."""

@@ -34,11 +34,23 @@ def box_class(schema_hash: int) -> type[SharedBox] | None:
 
 
 class BrokenReferenceError(LookupError):
-    """The box a reference field refers to no longer exists, or was created again."""
+    """The box a reference field refers to no longer exists, or was created again.
+
+    Raised by reading a reference field, or by
+    [`snapshot(follow=True)`][sharedbox.SharedBox.snapshot], when the box
+    was removed, or removed and created again, since it was assigned. The
+    message names the field, the box and which of the two happened.
+    """
 
 
 class UnknownBoxClassError(TypeError):
-    """No class defined in this process has the schema hash of the box a reference field refers to."""
+    """No class defined in this process has the schema hash of the box a reference field refers to.
+
+    Raised by reading a reference field, or by
+    [`snapshot(follow=True)`][sharedbox.SharedBox.snapshot]. The message
+    names the field, the box and the hash, and says to import the module
+    that defines the class.
+    """
 
 
 @dataclass(frozen=True)
@@ -50,7 +62,7 @@ class BoxRef:
     schema_hash: int
     """Schema hash of the box's own class, which may be a subclass of the annotated one."""
     create_id: int
-    """Tells the box apart from one created later under the same name."""
+    """Random number drawn when the box was created; tells it apart from one created later under the same name."""
 
     @property
     def box_class(self) -> type[SharedBox] | None:

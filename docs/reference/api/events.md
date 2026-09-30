@@ -6,8 +6,8 @@ icon: lucide/code
 
 | Name | What it does |
 | --- | --- |
-| [`BoxEvents`][sharedbox.BoxEvents] | the signal group of a box: one signal per field, plus `follow`, `unfollow` and `nested` |
-| [`FieldWatch`][sharedbox.FieldWatch] | iterates over the values written to one field |
+| [`BoxEvents`][sharedbox.BoxEvents] | the psygnal signal group of a box: one `(new, old)` signal per field |
+| [`FieldWatch`][sharedbox.FieldWatch] | new values of one field, for `for` and `async for` |
 
 ::: sharedbox.BoxEvents
     options:

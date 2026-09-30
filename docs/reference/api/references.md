@@ -6,7 +6,7 @@ icon: lucide/code
 
 | Name | What it does |
 | --- | --- |
-| [`BoxRef`][sharedbox.BoxRef] | what reading a reference field gives when the box is not needed: name, schema hash and create id |
+| [`BoxRef`][sharedbox.BoxRef] | the box a reference field refers to, as `snapshot`, `events` and `watch` report it |
 
 ::: sharedbox.BoxRef
     options:

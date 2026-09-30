@@ -6,8 +6,8 @@ icon: lucide/code
 
 | Name | What it does |
 | --- | --- |
-| [`SupportsSharedBox`][sharedbox.SupportsSharedBox] | protocol for code that accepts a box through its capsule |
-| [`get_include`][sharedbox.get_include] | folder holding the C and C++ headers |
+| [`SupportsSharedBox`][sharedbox.SupportsSharedBox] | an object that hands its shared-memory segment to other extensions |
+| [`get_include`][sharedbox.get_include] | returns the folder holding `sharedbox/sharedbox.hpp`, `sharedbox/sharedbox_c.h` and `sharedbox/sharedbox_c.cpp` |
 
 ::: sharedbox.SupportsSharedBox
     options:
