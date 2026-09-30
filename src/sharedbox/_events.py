@@ -284,6 +284,12 @@ class Watcher:
                 self._listen_locked(sink, fields)
             self._start_locked()
 
+    def resume(self) -> None:
+        """Start the thread again in a child created by `fork`, if changes have a sink."""
+        with self._lock:
+            if self._sink is not None:
+                self._start_locked()
+
     def _listen_locked(self, sink: Sink, fields: tuple[FieldSpec, ...]) -> None:
         self._seen = {
             spec.index: self._segment.get_versioned(spec.index) for spec in fields
@@ -363,7 +369,8 @@ class Watcher:
 
         The thread starts again on the next
         [`future`][sharedbox._events.Watcher.future] or
-        [`events`][sharedbox._events.Watcher.events] call.
+        [`events`][sharedbox._events.Watcher.events] call, or on
+        [`resume`][sharedbox._events.Watcher.resume].
         """
         stopped = self._stop.is_set()
         self._lock = threading.RLock()

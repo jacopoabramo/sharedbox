@@ -109,6 +109,8 @@ def reset_after_fork() -> None:
         box._watcher.after_fork()
         # Another thread of the parent may have held it at the fork.
         box._refs_lock = threading.Lock()
+        if box._watcher.follower is not None:
+            box._watcher.follower.after_fork()
 
 
 if sys.platform != "win32":

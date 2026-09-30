@@ -42,6 +42,7 @@ class Follower:
         "box",
         "cls",
         "failed",
+        "forked",
         "group",
         "links",
         "lock",
@@ -79,6 +80,8 @@ class Follower:
         self.nested: SignalInstance | None = None
         self.path: tuple[str, ...] = ()
         self.lock = threading.Lock()
+        # Set in a child created by `fork`, whose watcher threads start again on the next `follow`.
+        self.forked = False
 
     def follow(self, field: str | None) -> BoxEvents | None:
         top = self.top
@@ -90,6 +93,9 @@ class Follower:
         group: BoxEvents | None = None
         try:
             with top.lock:
+                if top.forked:
+                    top.forked = False
+                    top.resume()
                 source = self.source()
                 starts: list[tuple[Follower, Any]] = []
                 try:
@@ -184,6 +190,11 @@ class Follower:
         """Stop all forwarding below this follower; the boxes it held are returned for closing."""
         with self.lock:
             return self.detach()
+
+    def after_fork(self) -> None:
+        """Replace the lock, which another thread of the parent may have held, and make the next `follow` start the watcher threads again."""
+        self.lock = threading.Lock()
+        self.forked = True
 
     def ref_spec(self, field: str) -> FieldSpec:
         spec = self.cls.__layout__.by_name.get(field)
@@ -332,6 +343,16 @@ class Follower:
                 stack.extend(follower.tree.values())
                 follower.tree = {}
         return boxes
+
+    def resume(self) -> None:
+        """Start the watcher thread of every box followed at and below this follower."""
+        stack = [self]
+        while stack:
+            follower = stack.pop()
+            if follower.box is not None:
+                follower.box._watcher.resume()
+            stack.extend(follower.links.values())
+            stack.extend((follower.tree or {}).values())
 
 
 def read(segment: Segment, cls: type[SharedBox], name: str) -> Any:

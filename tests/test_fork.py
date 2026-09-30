@@ -45,6 +45,14 @@ def read_wheel(cart: Cart, out: "Queue[str]") -> None:
     cart.close()
 
 
+def forward_in_child(cart: Cart, ready: Event, out: "Queue[int]") -> None:
+    seen: queue.Queue[int] = queue.Queue()
+    cart.events.follow("wheel").turns.connect(lambda new, old: seen.put(new))
+    ready.set()
+    out.put(seen.get(timeout=10))
+    cart.close()
+
+
 def close_box(box: Counter) -> None:
     box.close()
 
@@ -159,5 +167,23 @@ def test_forked_child_reads_a_reference_while_the_parent_held_the_cache_lock(
         with cart._refs_lock:
             child = fork(read_wheel, cart, out)
         assert out.get(timeout=10) == wheel_name
+        assert finish(child) == 0
+    Wheel.unlink(wheel_name)
+
+
+def test_forked_child_forwards_after_calling_follow(unique_name: str) -> None:
+    """Check that a forked child forwards changes once it calls follow, although the parent held the forwarding lock at the fork."""
+    ctx = mp.get_context("fork")
+    ready = ctx.Event()
+    out: Queue[int] = ctx.Queue()
+    wheel_name = f"{unique_name}-w"
+    with Wheel.create(wheel_name) as wheel, Cart.create(unique_name, wheel) as cart:
+        cart.events.follow("wheel")
+        # Stands for another thread of the parent moving forwarding at the moment of the fork.
+        with cart.events._sharedbox_follower.lock:
+            child = fork(forward_in_child, cart, ready, out)
+        assert ready.wait(10)
+        wheel.turns = 4
+        assert out.get(timeout=10) == 4
         assert finish(child) == 0
     Wheel.unlink(wheel_name)
