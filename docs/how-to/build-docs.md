@@ -48,7 +48,8 @@ page wrong, so `check_xrefs.py` looks for them in the built site:
   read, usually because the part's name or the script's path is misspelt.
   The page shows the line in place of the code.
 - `no #... in ...`, `names a page that does not exist`, `leaves the site`:
-  a link names a part of a page, or a page, that is not there.
+  a link that names a part of a page (`page.md#part`) leads to a part or a
+  page that is not there. Links without `#` are not checked.
 
 The script prints each problem with the page it is on and exits with an
 error, which fails the `tox` environment and CI. When it finds nothing it

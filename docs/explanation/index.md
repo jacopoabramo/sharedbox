@@ -27,7 +27,7 @@ half-finished write.
 - [Waiting for changes](waiting-for-changes.md):
   [waiter slots](glossary.md#waiter-slot), how changes reach callbacks,
   and what following costs
-- [References](references.md): what a
+- [Reference fields](references.md): what a
   [reference field](glossary.md#reference-field) stores and why it can
   break
 - [Closing and lifetime](closing-and-lifetime.md): closing a box other

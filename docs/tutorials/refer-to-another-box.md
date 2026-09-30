@@ -26,7 +26,7 @@ Add this class below `react`:
 `motor` is a [reference field](../explanation/glossary.md#reference-field):
 it stores which `Motor` the stage refers to, not the motor's values. The
 motor keeps its own shared memory. `| None` lets the field be empty, which
-is its default here. [References](../explanation/references.md) explains
+is its default here. [Reference fields](../explanation/references.md) explains
 what the field stores.
 
 ## 2. Follow the motor
@@ -80,7 +80,7 @@ whichever motor it refers to, before and after the reference changes.
 - [How to follow a whole reference graph](../how-to/follow-a-whole-reference-graph.md):
   [`follow`][sharedbox.BoxEvents.follow] called without a field follows
   every box the stage reaches through its reference fields.
-- [References](../explanation/references.md) explains what a reference
+- [Reference fields](../explanation/references.md) explains what a reference
   stores and why it can break.
 - [Limits](../explanation/limits.md#following-boxes) says what following
   costs: one thread per followed box.

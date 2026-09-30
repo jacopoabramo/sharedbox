@@ -15,7 +15,7 @@ hide:
 
 # `sharedbox`
 
-`sharedbox` keeps records in shared memory. Each box is one named segment, and every process that opens it reads and writes the same fields.
+`sharedbox` keeps records in shared memory. Each [box](explanation/glossary.md#box) is one named [segment](explanation/glossary.md#segment), and every process that opens it reads and writes the same [fields](explanation/glossary.md#field).
 
 ## Quick start
 
@@ -57,5 +57,8 @@ Expected output:
 
 - [Tutorials](tutorials/index.md): build a first script, one step at a time
 - [How-to Guides](how-to/index.md): install sharedbox and get one task done with a box
+- [Explanations](explanation/index.md): how a box works and why it is built that way
+- [Reference](reference/index.md): the API, the segment layout and the C and C++ interface
 - [API reference](reference/api/index.md): every name `sharedbox` exports
 - [Changelog](reference/changelog.md): what changed in each release
+- [Contributing](how-to/contribute.md): set up a clone, run the tests and send a change

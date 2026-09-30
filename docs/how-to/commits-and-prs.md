@@ -14,9 +14,9 @@ body:
 type(scope): summary
 ```
 
-- `type` is one of `feat`, `fix`, `docs`, `refactor`, `test`, `ci`,
-  `chore`. Add `!` after it for a change that breaks existing code:
-  `feat!: ...`.
+- `type` is one of `feat`, `fix`, `docs`, `refactor`, `perf`, `test`,
+  `build`, `ci`, `style`, `chore`. Add `!` after it for a change that
+  breaks existing code: `feat!: ...`.
 - `scope` is optional and names the part changed: `events`, `refs`,
   `benchmarks`, `stress`.
 - The summary is in the imperative ("add", "fix", "move"), with no full

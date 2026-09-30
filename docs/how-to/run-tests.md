@@ -53,7 +53,9 @@ memory, so keep the segments a test creates well under that.
 
 ## Run every environment with tox
 
-`tox` builds each environment from `uv.lock`, so your result matches CI's:
+`tox` builds each environment from `uv.lock`, so every run uses the same
+tool versions. CI does not run the tests through `tox`: it runs them
+against each wheel it builds.
 
 ```bash
 uv run tox          # every environment, one after the other
@@ -98,7 +100,8 @@ AddressSanitizer and UndefinedBehaviorSanitizer.
 ### The C consumer
 
 `tests/test_capsule.py` builds the C library in `tests/cpp/consumer/`
-against the installed wheel with CMake, then loads it and passes it a box.
+against the installed wheel with CMake, then loads it and passes it a
+[box](../explanation/glossary.md#box).
 The tests that need it are skipped when CMake is not on `PATH`. Set
 `SHAREDBOX_REQUIRE_C_CONSUMER=1` to make it fail instead, as CI does:
 

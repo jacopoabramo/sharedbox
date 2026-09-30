@@ -2,7 +2,7 @@
 icon: lucide/lightbulb
 ---
 
-# References
+# Reference fields
 
 A [reference field](glossary.md#reference-field) lets one
 [box](glossary.md#box) point at another. This page explains what the field
@@ -45,10 +45,12 @@ why the lookup takes the first class defined "that is still alive".
 A reference stays in the segment while the box it names can change under
 it: another process may unlink that box, or unlink it and create a new one
 under the same name. The name alone cannot show this, which is why the
-create id is stored. Reading the field compares it with the create id of
-the box under that name now and raises
+create id is stored. The first read of the field on a handle compares it
+with the create id of the box under that name now and raises
 [`BrokenReferenceError`][sharedbox.BrokenReferenceError] when the box is
-gone or is a different one.
+gone or is a different one. After that the handle keeps its own mapping of
+the box and returns it without checking again; see
+[`SharedBox`][sharedbox.SharedBox].
 
 These cases can arise at any time, from another process, long after
 [`follow`][sharedbox.BoxEvents.follow] was called. So `follow` does not

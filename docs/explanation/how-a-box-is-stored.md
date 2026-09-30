@@ -35,11 +35,12 @@ field values, 64-byte aligned. [Layout](../reference/segment-layout.md#layout)
 gives every offset.
 
 Each field has a fixed place and a fixed size in the record. Fields are
-packed by descending alignment (the 8-byte `int` and `float` fields first,
-then `str` and `bytes`, then `bool`), not declaration order. The values
-passed to [`create`][sharedbox.SharedBox.create] are written into the
-record before the header's `magic` word is set, so an attaching process
-never sees a record before every field holds its starting value.
+packed by descending alignment (the 8-byte `int` and `float` fields and
+reference fields first, then `str` and `bytes`, then `bool`), not
+declaration order. The values passed to
+[`create`][sharedbox.SharedBox.create] are written into the record before
+the header's `magic` word is set, so an attaching process never sees a
+record before every field holds its starting value.
 
 sharedbox uses fixed places instead of something more flexible, such as a
 dictionary stored in shared memory, for three reasons:

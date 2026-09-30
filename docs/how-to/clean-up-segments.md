@@ -71,10 +71,9 @@ same segment, then write again:
 ```
 
 The write that timed out did not happen, so the field still holds its old
-value until you write it again. `force_unlock` does not check the process
-itself. Releasing the lock of a
-writer that is still running lets other reads and writes run while its
-write is half done.
+value until you write it again. Check that the writer has stopped first;
+[`force_unlock`][sharedbox.SharedBox.force_unlock] says what happens if it
+has not.
 
 ??? example "The whole script"
 

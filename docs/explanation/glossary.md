@@ -32,7 +32,7 @@ room in the record whatever it holds.
 A create id is a random number drawn when a [box](#box) is created and kept
 in its header; it is never 0. A [reference field](#reference-field) and a
 pickled box store it, so a process can tell the box from one created later
-under the same name. See [References](references.md#broken-references).
+under the same name. See [Reference fields](references.md#broken-references).
 
 ### Field
 
@@ -63,7 +63,7 @@ A reference field is a [field](#field) annotated with another `SharedBox`
 subclass, or with that class `| None`. It stores which box it refers to:
 the box's name, [schema hash](#schema-hash) and [create id](#create-id).
 The other box keeps its own segment, lock and lifetime. See
-[References](references.md).
+[Reference fields](references.md).
 
 ### Schema hash
 
@@ -90,11 +90,11 @@ lock: it copies and tries again if the counter moved. See
 
 ### Waiter slot
 
-A waiter slot is an entry in a [segment](#segment) that a waiting
-[watcher](#watcher) holds, so a write knows whom to wake. It records its
-owner's pid, start time and pid namespace. A box has a fixed number of
-slots, shared by every process. See
-[Waiting for changes](waiting-for-changes.md).
+A waiter slot is an entry in a [segment](#segment) that a waiting thread
+holds, so a write knows whom to wake: a box's [watcher](#watcher), or a C++
+program that called `register_waiter`. It records its owner's pid, start
+time and pid namespace. A box has a fixed number of slots, shared by every
+process. See [Waiting for changes](waiting-for-changes.md).
 
 ### Watcher
 

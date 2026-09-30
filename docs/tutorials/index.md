@@ -13,5 +13,4 @@ in order: each adds to the script of the one before.
 | [Reacting to changes](react-to-changes.md) | a callback and a loop that see each change as it happens |
 | [Referring to another box](refer-to-another-box.md) | a box that refers to another, and a callback that follows the reference |
 
-You need Python 3.11 or newer on Windows or Linux, and
-[`uv`](https://docs.astral.sh/uv/).
+The first tutorial lists [what you need](share-a-record.md#before-you-start).

@@ -53,6 +53,6 @@ The same rules apply to documentation. sharedbox has rules of its own that
 AI tools often get wrong: the byte layout of a
 [segment](../explanation/glossary.md#segment), what a
 [sequence lock](../explanation/glossary.md#sequence-lock) guarantees to a
-reader, when a box's name is removed, and what differs between Linux and
-Windows. Do not submit documentation you have not read carefully and
-checked against the code.
+reader, when a [box](../explanation/glossary.md#box)'s name is removed,
+and what differs between Linux and Windows. Do not submit documentation
+you have not read carefully and checked against the code.

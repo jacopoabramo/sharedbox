@@ -46,3 +46,5 @@ Read and write a box from compiled code.
 
 - [How to run the benchmarks](run-benchmarks.md): time sharedbox on your
   own machine with `benchbox`
+
+To change sharedbox itself, see [Contributing](contribute.md).
