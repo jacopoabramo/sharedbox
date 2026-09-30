@@ -151,7 +151,7 @@ def test_follow_during_a_change_the_watcher_has_not_seen_follows_the_field_after
         busy.set()
         assert release.wait(10)
 
-    def record(path: tuple[str, ...], new: object, old: object) -> None:
+    def record(path: tuple[str, ...], new: int, old: int) -> None:
         if path == ("motor", "position"):
             seen.put(new)
 
