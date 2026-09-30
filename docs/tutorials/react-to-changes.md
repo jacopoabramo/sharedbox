@@ -24,14 +24,15 @@ Add this function below `share`:
 --8<-- "docs/tutorials/motor.py:react"
 ```
 
-[`events`][sharedbox.SharedBox.events] has one psygnal signal per field.
+[`events`][sharedbox.SharedBox.events] has one psygnal signal per
+[field](../explanation/glossary.md#field).
 The lambda connected to `events.position` runs each time any process
 changes `position`, with the new and the old value.
 [`watch`][sharedbox.SharedBox.watch] returns an iterator over the values
-written to `position` from now on. The `for` loop waits for the next one,
-and `break` stops it after the first.
+written to `position` from now on, and `next` waits for the first of them.
 
-The box's [watcher](../explanation/glossary.md#watcher) serves both: a
+The [box](../explanation/glossary.md#box)'s
+[watcher](../explanation/glossary.md#watcher) serves both: a
 background thread that waits for writes from any process. While it
 waits, it holds one of the box's
 [waiter slots](../explanation/glossary.md#waiter-slot).
@@ -60,8 +61,10 @@ position 0 -> 20
 watched 20
 ```
 
-The last two lines can come in either order: the callback runs on the
-watcher thread, and the loop on the main thread.
+The callback runs on the watcher thread and `next` returns on the main
+thread, so both could print at the same moment. The script prints the
+watched value after the `with` block instead: closing the box waits for the
+watcher thread, so the callback has printed by then.
 
 A program that must handle a change on its main thread, such as one with a
 window, connects the callback with `thread="main"`. psygnal then queues each

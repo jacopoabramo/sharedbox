@@ -4,8 +4,9 @@ icon: lucide/play
 
 # Sharing a record between processes
 
-In this tutorial you define a record with three fields, create it in shared
-memory, and change one field from a second process. Such a record is a
+In this tutorial you define a record with three
+[fields](../explanation/glossary.md#field), create it in shared memory, and
+change one field from a second process. Such a record is a
 [box](../explanation/glossary.md#box).
 
 ## Before you start
@@ -40,10 +41,9 @@ Add a class below the imports:
 ```
 
 `Motor` is a subclass of [`SharedBox`][sharedbox.SharedBox]. Each annotated
-attribute is a [field](../explanation/glossary.md#field), and the value
-after `=` is its default. A `str` field needs a
-[capacity](../explanation/glossary.md#capacity): the most bytes it can
-hold, here 32. [How a box is stored](../explanation/how-a-box-is-stored.md)
+attribute is a field, and the value after `=` is its default. A `str`
+field needs a [capacity](../explanation/glossary.md#capacity): the most
+bytes it can hold, here 32. [How a box is stored](../explanation/how-a-box-is-stored.md)
 explains why every field has a fixed size.
 
 ## 2. Change it from another process

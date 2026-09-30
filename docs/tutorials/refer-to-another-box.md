@@ -4,9 +4,10 @@ icon: lucide/play
 
 # Referring to another box
 
-A box can refer to another box. In this tutorial a `Stage` refers to one
-`Motor`, a callback follows changes inside whichever motor the stage refers
-to, and the stage then switches to a second motor.
+A [box](../explanation/glossary.md#box) can refer to another box. In this
+tutorial a `Stage` refers to one `Motor`, a callback follows changes inside
+whichever motor the stage refers to, and the stage then switches to a
+second motor.
 
 ## Before you start
 
@@ -69,14 +70,6 @@ motor position 1
 motor position 7
 ```
 
-As before, the second and third lines can come in either order.
-
-??? example "The whole script"
-
-    ```{.python}
-    --8<-- "docs/tutorials/motor.py"
-    ```
-
 ## What you built
 
 A stage that refers to a motor, and a callback that follows the stage to
@@ -90,3 +83,9 @@ whichever motor it refers to, before and after the reference changes.
   stores and why it can break.
 - [Limits](../explanation/limits.md#following-boxes) says what following
   costs: one thread per followed box.
+
+??? example "The whole script"
+
+    ```{.python}
+    --8<-- "docs/tutorials/motor.py"
+    ```

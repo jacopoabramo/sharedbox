@@ -53,10 +53,9 @@ def react() -> None:
         positions = motor.watch("position")
         other = mp.Process(target=move, args=(20,))
         other.start()
-        for position in positions:
-            print("watched", position)
-            break
+        watched = next(iter(positions))
         other.join()
+    print("watched", watched)
     Motor.unlink("tutorial-motor")
 
 
@@ -79,9 +78,7 @@ def follow() -> None:
         Stage.create("tutorial-stage", x) as stage,
     ):
         seen: queue.Queue[int] = queue.Queue()
-        stage.events.follow("motor").position.connect(
-            lambda new, old: seen.put(new)
-        )
+        stage.events.follow("motor").position.connect(lambda new, old: seen.put(new))
         x.position = 1
         print("motor position", seen.get(timeout=5))
         stage.motor = y
