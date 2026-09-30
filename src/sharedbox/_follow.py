@@ -66,7 +66,8 @@ class Follower:
         self.outer: Segment | None = None
         self.links: dict[str, Follower] = {}
         self.tree: dict[str, Follower] | None = None
-        self.seen: set[tuple[str, int]] = set()
+        # Each box the tree follows, with the nodes that skipped it as already followed.
+        self.seen: dict[tuple[str, int], list[Follower]] = {}
         self.nested: SignalInstance | None = None
         self.path: tuple[str, ...] = ()
         self.lock = threading.Lock()
@@ -145,7 +146,8 @@ class Follower:
                 )
                 if child is not None and child.ref != value
             ]
-            boxes = [box for child in children for box in child.detach()]
+            waiting: list[Follower] = []
+            boxes = [box for child in children for box in child.detach(waiting)]
         # Outside the lock: closing joins each box's watcher thread, which may be waiting for it.
         # Joined even on a watcher thread, so the old box forwards nothing after the move.
         close_all(boxes, wait=True)
@@ -159,6 +161,10 @@ class Follower:
                         or child is (self.tree or {}).get(spec.name)
                     ]
                 )
+            # Even if this follower's source moved meanwhile, since these nodes are elsewhere in the tree.
+            for node in waiting:
+                if node.box is None and node.ref is not None:
+                    self.expand([(node, node.ref)])
 
     def release(self) -> list[SharedBox]:
         """Stop all forwarding below this follower; the boxes it held are returned for closing."""
@@ -196,7 +202,7 @@ class Follower:
         """A new node for each reference field of the source, with the value it holds."""
         if self.nested is None:
             # This follower starts the tree: its own box counts as followed.
-            self.seen = {(segment.name, segment.create_id)}
+            self.seen = {(segment.name, segment.create_id): []}
             specs = self.cls.__layout__.refs
         else:
             specs = cls.__layout__.refs
@@ -242,25 +248,43 @@ class Follower:
         if value is None:
             return None
         create_id, schema_hash, name = value
-        if self.nested is not None and (name, create_id) in self.seen:
-            return None
+        if self.nested is not None:
+            waiting = self.seen.get((name, create_id))
+            if waiting is not None:
+                if self not in waiting:
+                    waiting.append(self)
+                return None
         assert self.spec is not None
         box = attach_reference(self.spec, create_id, schema_hash, name)
         if self.nested is not None:
-            self.seen.add((name, create_id))
+            self.seen[name, create_id] = []
         return box
 
-    def detach(self) -> list[SharedBox]:
-        """Stop following at and below this follower; the boxes it held are returned for closing."""
+    def detach(self, waiting: list[Follower] | None = None) -> list[SharedBox]:
+        """Stop following at and below this follower; the boxes it held are returned for closing.
+
+        Parameters
+        ----------
+        waiting
+            Receives the nodes elsewhere in the tree that skipped a box
+            released here because it was already followed.
+        """
         boxes: list[SharedBox] = []
         stack = [self]
         while stack:
             follower = stack.pop()
-            box, follower.box, follower.ref = follower.box, None, None
+            box, ref = follower.box, follower.ref
+            follower.box = follower.ref = None
             if box is not None:
                 boxes.append(box)
                 if follower.nested is not None:
-                    follower.seen.discard((box.name, box._segment.create_id))
+                    skipped = follower.seen.pop((box.name, box._segment.create_id), [])
+                    if waiting is not None:
+                        waiting += skipped
+            elif follower.nested is not None and ref is not None:
+                skipped = follower.seen.get((ref[2], ref[0]), [])
+                if follower in skipped:
+                    skipped.remove(follower)
             stack.extend(follower.links.values())
             if follower.tree:
                 stack.extend(follower.tree.values())

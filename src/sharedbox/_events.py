@@ -476,7 +476,8 @@ class BoxEvents(SignalGroup):
         fields reach, down the whole graph, on `nested` as
         `(path, new, old)`, where `path` is the tuple of field names from
         this group's box to the changed field. That call follows each box
-        once, however many fields lead to it.
+        once: a box that several paths reach is reported under one of them,
+        and after a reference changes that may be a different one.
 
         A call that raises follows nothing new, and the next call tries
         again.
@@ -495,9 +496,11 @@ class BoxEvents(SignalGroup):
     def unfollow(self, field: str | None = None) -> None:
         """Stop forwarding for `field`, or all forwarding started through this group.
 
-        Unfollowing `field` forgets its group: callbacks connected to it
-        receive nothing more, and a later
-        [`follow`][sharedbox.BoxEvents.follow] returns a new group.
+        With `field`, stop only the group that `follow(field)` returned, and
+        leave running what `follow()` without a field started. The group is
+        forgotten: callbacks connected to it receive nothing more, and a
+        later [`follow`][sharedbox.BoxEvents.follow] returns a new group.
+        Without `field`, stop both.
 
         Raises
         ------

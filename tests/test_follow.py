@@ -1,9 +1,11 @@
 import logging
 import multiprocessing as mp
 import queue
+import random
 import threading
 import time
 from collections.abc import Callable
+from functools import partial
 from multiprocessing.queues import Queue
 from multiprocessing.synchronize import Event
 from typing import Any
@@ -547,22 +549,36 @@ def test_follow_without_a_field_ends_at_a_box_it_already_follows(
         assert out.get(timeout=5) == [1, 1, 1]
 
 
-def test_follow_without_a_field_reports_a_box_two_fields_share_under_the_first(
+def test_follow_without_a_field_follows_a_box_two_fields_share_once_until_both_let_go(
     names: Callable[[str], str],
 ) -> None:
-    """Check that a box two reference fields share is followed once, under the first field, as snapshot(follow=True) reads it."""
+    """Check that a box two reference fields share is followed once under either field, and stays followed under the other when one is cleared."""
     seen: queue.Queue[tuple[tuple[str, ...], object]] = queue.Queue()
+    cleared = threading.Event()
     with (
         Motor.create(names("m")) as motor,
         Pair.create(names("p"), motor, motor) as pair,
     ):
         pair.events.follow()
         pair.events.nested.connect(lambda path, new, old: seen.put((path, new)))
+        pair.events.first.connect(lambda new, old: cleared.set())
         motor.position = 4
-        assert seen.get(timeout=5) == (("first", "position"), 4)
+        assert seen.get(timeout=5) in {
+            (("first", "position"), 4),
+            (("second", "position"), 4),
+        }
         with pytest.raises(queue.Empty):
             seen.get(timeout=0.3)
         assert threads(motor) == [1]
+        pair.first = None
+        assert cleared.wait(5)
+        settle(lambda value: setattr(motor, "position", value), seen)
+        motor.position = 100
+        assert seen.get(timeout=5) == (("second", "position"), 100)
+        assert (threads(motor), waiters(motor)) == ([1], [1])
+        pair.second = None
+        assert until(lambda: waiters(motor) == [0])
+        assert threads(motor) == [0]
 
 
 def test_follow_without_a_field_reports_every_field_of_a_subclass_box(
@@ -662,7 +678,7 @@ def test_a_move_while_follow_attaches_the_boxes_below_waits_and_follows_the_new_
                 stage.motor = b
                 assert signalled.wait(5)
                 # Time for a move that does not wait for follow() to close the handle on a.
-                until(lambda: threads(a) == [0], seconds=1)
+                until(lambda: threads(a) == [0], seconds=0.5)
             return attach_reference(spec, create_id, schema_hash, name)
 
         stage.events.motor.connect(lambda new, old: signalled.set())
@@ -714,3 +730,122 @@ def test_a_follow_that_raises_gives_back_what_it_took_and_is_tried_again(
         encoder.count = 1
         got = {seen.get(timeout=5), seen.get(timeout=5)}
         assert got == {(("motor", "encoder", "count"), 1), 1}
+
+
+class Two(SharedBox):
+    first: Node | None = None
+    second: Node | None = None
+
+
+def test_follow_without_a_field_keeps_a_box_whose_first_path_is_cleared(
+    names: Callable[[str], str],
+) -> None:
+    """Check that clearing the reference a box was followed through keeps it followed through another path that still reaches it."""
+    seen: queue.Queue[tuple[tuple[str, ...], object]] = queue.Queue()
+    with (
+        Node.create(names("b")) as b,
+        Node.create(names("a"), 0, b) as a,
+        Two.create(names("t"), a, b) as two,
+    ):
+        two.events.follow()
+        two.events.nested.connect(lambda path, new, old: seen.put((path, new)))
+        assert until(lambda: waiters(a, b) == [1, 1])
+        a.link = None
+        assert seen.get(timeout=5) == (("first", "link"), None)
+        settle(lambda value: setattr(b, "value", value), seen)
+        b.value = 100
+        assert seen.get(timeout=5) == (("second", "value"), 100)
+        assert (threads(a, b), waiters(a, b)) == ([1, 1], [1, 1])
+
+
+class Fork(SharedBox):
+    value: int = 0
+    left: "Fork | None" = None
+    right: "Fork | None" = None
+
+
+def reachable(edges: dict[int, dict[str, int | None]]) -> set[int]:
+    """The boxes reachable from box 0 through `edges`, box 0 included."""
+    found, stack = {0}, [0]
+    while stack:
+        for target in edges[stack.pop()].values():
+            if target is not None and target not in found:
+                found.add(target)
+                stack.append(target)
+    return found
+
+
+def holds(boxes: list[Fork], expected: list[int]) -> bool:
+    return waiters(*boxes) == expected and threads(*boxes) == expected
+
+
+def test_follow_without_a_field_follows_what_a_fresh_follow_would_after_random_moves(
+    names: Callable[[str], str],
+) -> None:
+    """Check that after each random reassignment follow() holds one handle on every box a fresh follow() reaches and none on any other."""
+    for seed in range(3):
+        rng = random.Random(seed)
+        boxes = [Fork.create(names(f"{seed}-{i}")) for i in range(5)]
+        try:
+            edges: dict[int, dict[str, int | None]] = {
+                i: {"left": None, "right": None} for i in range(5)
+            }
+            boxes[0].events.follow()
+            for _ in range(40):
+                source = rng.randrange(5)
+                field = rng.choice(("left", "right"))
+                target = rng.choice([None, *range(5)])
+                setattr(boxes[source], field, None if target is None else boxes[target])
+                edges[source][field] = target
+                # Box 0 counts its own events watcher; every other box one forwarding handle.
+                expected = [int(i in reachable(edges)) for i in range(5)]
+                assert until(partial(holds, boxes, expected)), (seed, edges)
+            with Fork.attach(boxes[0].name) as fresh:
+                fresh.events.follow()
+                doubled = [2 * count for count in expected]
+                assert until(partial(holds, boxes, doubled)), (seed, edges)
+        finally:
+            for box in boxes:
+                box.close()
+
+
+def test_unfollow_with_a_field_leaves_follow_without_a_field_running(
+    names: Callable[[str], str],
+) -> None:
+    """Check that unfollow(field) stops only the group follow(field) returned, and unfollow() also stops what follow() started."""
+    seen: queue.Queue[tuple[tuple[str, ...], object]] = queue.Queue()
+    with (
+        Motor.create(names("m")) as motor,
+        Stage.create(names("s"), 0, motor) as stage,
+    ):
+        stage.events.follow("motor")
+        stage.events.follow()
+        stage.events.nested.connect(lambda path, new, old: seen.put((path, new)))
+        assert until(lambda: waiters(motor) == [2])
+        stage.events.unfollow("motor")
+        assert (threads(motor), waiters(motor)) == ([1], [1])
+        motor.position = 1
+        assert seen.get(timeout=5) == (("motor", "position"), 1)
+        stage.events.unfollow()
+        assert (threads(motor), waiters(motor)) == ([0], [0])
+
+
+def test_a_reassignment_moves_follow_with_and_without_a_field_together(
+    names: Callable[[str], str],
+) -> None:
+    """Check that after one reassignment both the group follow(field) returned and nested forward a write to the new box."""
+    grouped: queue.Queue[object] = queue.Queue()
+    nested: queue.Queue[tuple[tuple[str, ...], object]] = queue.Queue()
+    with (
+        Motor.create(names("a")) as a,
+        Motor.create(names("b")) as b,
+        Stage.create(names("s"), 0, a) as stage,
+    ):
+        stage.events.follow("motor").position.connect(lambda new: grouped.put(new))
+        stage.events.follow()
+        stage.events.nested.connect(lambda path, new, old: nested.put((path, new)))
+        stage.motor = b
+        assert until(lambda: waiters(a, b) == [0, 2])
+        b.position = 5
+        assert grouped.get(timeout=5) == 5
+        assert nested.get(timeout=5) == (("motor", "position"), 5)
