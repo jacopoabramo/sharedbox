@@ -28,6 +28,9 @@ def pytest_ignore_collect(collection_path: Path, config: pytest.Config) -> bool 
         and config.getoption("markexpr") == "not stress"
     ):
         return True
+    # Its class names itself in an unquoted annotation, which fails to evaluate before 3.14.
+    if collection_path.name == "test_refs_lazy.py" and sys.version_info < (3, 14):
+        return True
     return None
 
 

@@ -29,6 +29,9 @@ from sharedbox import (
     field,
 )
 
+if sys.platform.startswith("linux"):
+    import resource
+
 
 class Motor(SharedBox, identity="sbtest/motor"):
     position: int = 0
@@ -241,22 +244,6 @@ def test_a_class_can_refer_to_itself(unique_name: str) -> None:
     with Node.create(unique_name) as node, Link.create(f"{unique_name}-l") as link:
         assert node.link is None
         assert link.next is None
-
-
-@pytest.mark.skipif(
-    sys.version_info < (3, 14), reason="annotations are evaluated lazily from 3.14"
-)
-def test_an_unquoted_self_reference_works_with_lazy_annotations(
-    unique_name: str,
-) -> None:
-    """Check that an unquoted annotation naming the class itself works under lazy annotations."""
-    from refs_lazy import Chain
-
-    with Chain.create(unique_name) as chain:
-        chain.next = chain
-        inner = chain.next
-        assert inner is not None
-        assert inner.name == chain.name
 
 
 def test_a_reference_to_a_class_defined_later_is_refused() -> None:
@@ -737,8 +724,6 @@ def test_snapshot_follow_reads_a_chain_longer_than_the_recursion_limit(
     length = 2000
     with contextlib.ExitStack() as stack:
         if sys.platform.startswith("linux"):
-            import resource
-
             soft, hard = resource.getrlimit(resource.RLIMIT_NOFILE)
             # Every box holds a descriptor, and so does the handle its parent attaches to follow it.
             needed = 2 * length + 256
