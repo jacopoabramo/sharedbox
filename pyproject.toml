@@ -79,7 +79,7 @@ ignore_missing_imports = true
 
 [tool.tox]
 requires = ["tox>=4.64.1", "tox-uv-bare>=1.36"]
-env_list = ["py311", "py312", "py313", "py314", "py314t", "mypy", "lint"]
+env_list = ["py311", "py312", "py313", "py314", "py314t", "mypy", "lint", "docs"]
 
 [tool.tox.env_run_base]
 runner = "uv-venv-lock-runner"
@@ -107,6 +107,16 @@ commands = [
     ],
 ]
 
+[tool.tox.env.docs]
+runner = "uv-venv-lock-runner"
+# mkdocstrings reads the sources without importing them, so the extension is not built
+skip_install = true
+dependency_groups = ["docs"]
+commands = [
+    ["zensical", "build", "--clean"],
+    ["python", "scripts/check_xrefs.py"],
+]
+
 [dependency-groups]
 benchmarks = [
     "pyperf>=2.10.0",
@@ -122,10 +132,18 @@ dev = [
     "tox>=4.64.1",
     "tox-uv-bare>=1.36",
 ]
+docs = [
+    "mkdocstrings-python>=2.0.9",
+    "zensical>=0.0.67",
+]
 lint = [
     "clang-format>=23.1.1",
     "prek>=0.5.3",
     "ruff>=0.16.8",
+]
+tox = [
+    "tox>=4.64.1",
+    "tox-uv-bare>=1.36.0",
 ]
 
 # uv rebuilds an installed project only

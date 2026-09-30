@@ -780,6 +780,12 @@ class SharedBox(metaclass=SharedBoxMeta):
         self._segment.force_unlock()
 
     unlink = Unlink()
+    """Remove the segment's name, so no later process can attach to it.
+
+    Call `Motor.unlink()` on the class, optionally with a name, or `box.unlink()`
+    on an instance. Processes that already have the box open keep their mapping.
+    On Windows this does nothing; the segment goes away with its last handle.
+    """
 
     def __sharedbox_box__(
         self, max_version: tuple[int, int] | None = None, **kwargs: Any

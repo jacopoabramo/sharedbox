@@ -1,0 +1,151 @@
+[project]
+site_name = "sharedbox"
+site_url = "https://jacopoabramo.github.io/sharedbox"
+site_description = "Python records that live in shared memory, readable and writable from every process"
+site_author = "Jacopo Abramo"
+docs_dir = "docs"
+site_dir = "site"
+repo_url = "https://github.com/jacopoabramo/sharedbox"
+repo_name = "jacopoabramo/sharedbox"
+
+nav = [
+    "index.md",
+    { "Reference" = [
+        "reference/index.md",
+        { "API" = [
+            "reference/api/index.md",
+            "reference/api/box.md",
+            "reference/api/events.md",
+            "reference/api/references.md",
+            "reference/api/errors.md",
+            "reference/api/library-authors.md",
+        ]},
+        "reference/changelog.md",
+    ]},
+]
+
+[project.theme]
+variant = "modern"
+font.text = "Inter"
+font.code = "Fira Code"
+features = [
+    "navigation.tabs",
+    "navigation.sections",
+    "navigation.indexes",
+    "navigation.path",
+    "navigation.top",
+    "navigation.footer",
+    "search.suggest",
+    "search.highlight",
+    "content.code.annotate",
+    "content.code.copy",
+    "content.code.select",
+    "content.footnote.tooltips",
+    "content.tabs.link",
+    "content.tooltips",
+    "toc.follow",
+]
+
+[project.theme.icon]
+logo = "lucide/box"
+repo = "fontawesome/brands/github"
+
+[[project.theme.palette]]
+scheme = "default"
+primary = "indigo"
+accent = "indigo"
+toggle = { icon = "lucide/sun", name = "Switch to dark mode" }
+
+[[project.theme.palette]]
+scheme = "slate"
+primary = "indigo"
+accent = "indigo"
+toggle = { icon = "lucide/moon", name = "Switch to light mode" }
+
+[project.plugins.search]
+[project.plugins.autorefs]
+[project.plugins.mkdocstrings]
+[project.plugins.mkdocstrings.handlers.python]
+paths = ["src"]
+inventories = [
+    "https://docs.python.org/3/objects.inv",
+    "https://psygnal.readthedocs.io/en/latest/objects.inv",
+]
+
+[project.plugins.mkdocstrings.handlers.python.options]
+docstring_style = "numpy"
+show_source = false
+docstring_section_style = "table"
+merge_init_into_class = true
+show_root_heading = false
+show_root_full_path = false
+show_signature_annotations = true
+separate_signature = true
+members_order = "source"
+group_by_category = true
+show_symbol_type_heading = true
+show_symbol_type_toc = true
+inherited_members = false
+filters = ["!^_", "^__call__$", "^__sharedbox_box__$"]
+
+[project.markdown_extensions]
+abbr = {}
+admonition = {}
+attr_list = {}
+def_list = {}
+footnotes = {}
+md_in_html = {}
+tables = {}
+
+[project.markdown_extensions.toc]
+permalink = true
+toc_depth = 3
+
+[project.markdown_extensions.pymdownx.betterem]
+smart_enable = "all"
+
+[project.markdown_extensions.pymdownx.caret]
+[project.markdown_extensions.pymdownx.details]
+
+[project.markdown_extensions.pymdownx.emoji]
+emoji_index = "zensical.extensions.emoji.twemoji"
+emoji_generator = "zensical.extensions.emoji.to_svg"
+
+[project.markdown_extensions.pymdownx.highlight]
+anchor_linenums = true
+line_spans = "__span"
+pygments_lang_class = true
+
+[project.markdown_extensions.pymdownx.inlinehilite]
+[project.markdown_extensions.pymdownx.keys]
+[project.markdown_extensions.pymdownx.mark]
+[project.markdown_extensions.pymdownx.smartsymbols]
+
+# includes/abbreviations.md is appended to every page, so each entry underlines
+# every occurrence of its term site-wide. Keep it to acronyms and terms that are
+# rare in prose; a common word belongs in docs/explanation/glossary.md alone.
+[project.markdown_extensions.pymdownx.snippets]
+auto_append = ["includes/abbreviations.md"]
+dedent_subsections = true
+check_paths = true
+
+[project.markdown_extensions.pymdownx.superfences]
+custom_fences = [
+    { name = "mermaid", class = "mermaid" }
+]
+
+[project.markdown_extensions.pymdownx.tabbed]
+alternate_style = true
+
+[project.markdown_extensions.pymdownx.tasklist]
+custom_checkbox = true
+
+[project.markdown_extensions.pymdownx.tilde]
+
+[[project.extra.social]]
+icon = "fontawesome/brands/github"
+link = "https://github.com/jacopoabramo/sharedbox"
+
+[[project.extra.social]]
+icon = "fontawesome/brands/python"
+link = "https://pypi.org/project/sharedbox/"

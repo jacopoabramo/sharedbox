@@ -24,3 +24,5 @@ build-cpp/
 
 .hypothesis/
 .claude/settings.local.json
+
+site/

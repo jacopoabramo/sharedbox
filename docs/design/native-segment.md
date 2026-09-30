@@ -362,7 +362,7 @@ without recompiling; nanobind supports this from Python 3.12 [16], so one
 wheel covers 3.12, 3.13, 3.14 and later. `FREE_THREADED` asks for a module
 that runs without the GIL; it only takes effect on free-threaded Python
 [18]. nanobind ignores whichever option does not fit the interpreter doing
-the build [16] [18], which is why one line produces all three wheels:
+the build [16], [18], which is why one line produces all three wheels:
 
 | Wheel | Built on | Runs on |
 | --- | --- | --- |
