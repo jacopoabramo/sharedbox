@@ -2,7 +2,7 @@ import contextlib
 import queue
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from functools import partial
 from typing import Any, cast
 
@@ -62,6 +62,12 @@ def slots(boxes: list[Link]) -> int:
     return sum(box._segment._waiters for box in boxes)
 
 
+def watchers(boxes: Sequence[SharedBox]) -> int:
+    """Watcher threads of this process for `boxes`."""
+    names = {f"sharedbox-watch-{box.name}" for box in boxes}
+    return sum(thread.name in names for thread in threading.enumerate())
+
+
 def moved_to(new: list[Link], old: list[Link]) -> bool:
     """Whether forwarding holds a slot in every box of `new` and none in `old`."""
     return slots(new) == len(new) and slots(old) == 0
@@ -89,10 +95,9 @@ def follow_round(
         outer.events.nested.connect(
             lambda path, new, old: seen.put((new, time.perf_counter_ns()))
         )
-        threads_before = threading.active_count()
         outer.events.follow()
         registered = until(lambda: slots(followed) == width * depth, 30)
-        threads = threading.active_count() - threads_before
+        threads = watchers(followed)
         slots_in_use = slots(followed)
         idle_start = time.process_time()
         time.sleep(IDLE)
@@ -120,7 +125,7 @@ def follow_round(
                 move.append(time.perf_counter_ns() - start)
         outer.close()
         slots_after_close = slots(followed + spare)
-        threads_after_close = threading.active_count() - threads_before
+        threads_after_close = watchers([*followed, *spare, outer])
     return {
         "followed_boxes": width * depth,
         "registered": registered,
@@ -162,5 +167,4 @@ def test_following_costs_one_thread_and_one_slot_per_box(
         # An idle watcher wakes once a second; a busy loop would take a whole core.
         assert r["idle_cpu_s"] < 0.01 * boxes * IDLE + 0.1, key
         assert r["waiter_slots_after_close"] == 0, key
-        # The outer box's own watcher stops too, so one thread fewer than before.
-        assert r["threads_after_close"] == -1, key
+        assert r["threads_after_close"] == 0, key
