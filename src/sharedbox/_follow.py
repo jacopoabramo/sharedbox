@@ -54,6 +54,7 @@ class Follower:
         "spec",
         "top",
         "tree",
+        "watcher",
     )
 
     def __init__(
@@ -82,6 +83,8 @@ class Follower:
         self.lock = threading.Lock()
         # Set in a child created by `fork`, whose watcher threads start again on the next `follow`.
         self.forked = False
+        # On the top follower: the watcher of the box that owns its events group.
+        self.watcher: Watcher | None = None
 
     def follow(self, field: str | None) -> BoxEvents | None:
         top = self.top
@@ -345,7 +348,9 @@ class Follower:
         return boxes
 
     def resume(self) -> None:
-        """Start the watcher thread of every box followed at and below this follower."""
+        """Start the watcher thread of every box followed at and below this follower, and of the box that owns its events group."""
+        if self.watcher is not None:
+            self.watcher.resume()
         stack = [self]
         while stack:
             follower = stack.pop()
@@ -403,6 +408,7 @@ def box_events(cls: type[SharedBox], segment: Segment, watcher: Watcher) -> BoxE
     group = cls.__events_class__()
     top = Follower(None, None, cls, group)
     top.outer = segment
+    top.watcher = watcher
     group._sharedbox_follower = top
     watcher.follower = top
     return group

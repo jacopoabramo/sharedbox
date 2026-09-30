@@ -11,7 +11,7 @@ from multiprocessing.synchronize import Event
 
 import pytest
 
-from sharedbox import LockTimeoutError, SharedBox
+from sharedbox import BoxEvents, LockTimeoutError, SharedBox
 from sharedbox._layout import NativeField
 from sharedbox._native import Segment
 
@@ -48,6 +48,16 @@ def read_wheel(cart: Cart, out: "Queue[str]") -> None:
 def forward_in_child(cart: Cart, ready: Event, out: "Queue[int]") -> None:
     seen: queue.Queue[int] = queue.Queue()
     cart.events.follow("wheel").turns.connect(lambda new, old: seen.put(new))
+    ready.set()
+    out.put(seen.get(timeout=10))
+    cart.close()
+
+
+def follow_kept_group(
+    cart: Cart, group: BoxEvents, ready: Event, out: "Queue[int]"
+) -> None:
+    seen: queue.Queue[int] = queue.Queue()
+    group.follow("wheel").turns.connect(lambda new, old: seen.put(new))
     ready.set()
     out.put(seen.get(timeout=10))
     cart.close()
@@ -187,3 +197,33 @@ def test_forked_child_forwards_after_calling_follow(unique_name: str) -> None:
         assert out.get(timeout=10) == 4
         assert finish(child) == 0
     Wheel.unlink(wheel_name)
+
+
+def test_forked_child_follows_a_move_through_a_group_kept_from_before_the_fork(
+    unique_name: str,
+) -> None:
+    """Check that a forked child calling follow on a group kept from before the fork forwards from the box its reference moves to."""
+    ctx = mp.get_context("fork")
+    ready = ctx.Event()
+    out: Queue[int] = ctx.Queue()
+    first, second = f"{unique_name}-w", f"{unique_name}-v"
+    with Wheel.create(first) as wheel, Cart.create(unique_name, wheel) as cart:
+        group = cart.events
+        group.follow("wheel")
+        child = fork(follow_kept_group, cart, group, ready, out)
+        assert ready.wait(10)
+        with Wheel.create(second) as moved:
+            cart.wheel = moved
+            # The child follows the new box some time after the move and misses writes made before that.
+            got = None
+            for turns in range(1, 101):
+                moved.turns = turns
+                try:
+                    got = out.get(timeout=0.1)
+                except queue.Empty:
+                    continue
+                break
+            assert got is not None
+        assert finish(child) == 0
+    Wheel.unlink(first)
+    Wheel.unlink(second)
