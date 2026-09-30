@@ -475,8 +475,8 @@ class BoxEvents(SignalGroup):
         Without `field`, emit every change inside every box the reference
         fields reach, down the whole graph, on `nested` as
         `(path, new, old)`, where `path` is the tuple of field names from
-        this group's box to the changed field. A box that call already
-        follows is not followed a second time.
+        this group's box to the changed field. That call follows each box
+        once, however many fields lead to it.
 
         A call that raises follows nothing new, and the next call tries
         again.

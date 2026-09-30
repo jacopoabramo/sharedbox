@@ -106,7 +106,7 @@ class Follower:
                         group = link.group
                     self.expand(starts)
                 except BaseException:
-                    # Forgotten, so that the next call starts again instead of keeping a part.
+                    # Forget what this call started, so that the next call starts it again.
                     if spec is None:
                         self.tree = None
                     else:
