@@ -445,7 +445,9 @@ Signals differ from those of a local evented dataclass:
   instead.
 - Closing the box delivers writes the watcher thread had not seen yet, so
   callbacks may run once on the thread that calls `close()`, or on the
-  thread that garbage collects the box.
+  thread that garbage collects the box. A `close()` called from a callback,
+  on a watcher thread, does not wait for the watcher threads of the boxes
+  it closes, and drops the writes they had not delivered.
 - If several writes happen between two checks by the watcher thread, only
   one emission happens, with the latest value, and `old` is the value from
   the previous emission.

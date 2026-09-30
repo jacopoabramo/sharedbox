@@ -156,6 +156,9 @@ stage.events.nested.connect(lambda path, new, old: print(path, new))
 - `SharedBox`: an annotation naming an undefined class raises `TypeError`.
 - `SharedBox`: a field named `follow`, `unfollow` or `nested` raises
   `TypeError`.
+- `SharedBox.close()`: called from an event callback, on a watcher thread,
+  does not wait for the watcher threads of the boxes it closes, and drops
+  the writes they had not delivered.
 
 ### Fixed
 
