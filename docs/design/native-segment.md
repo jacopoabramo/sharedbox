@@ -219,6 +219,37 @@ another.
 stores that claim, free and release a slot, and the few steps at which a
 killed process leaves a slot stuck or the count one too high.
 
+### Forwarding costs
+
+`events.follow` (see [the API reference](../api.md#following-reference-fields))
+waits for changes in each followed box the same way `events` does: it
+attaches its own handle to the box, and that handle's watcher takes one
+waiter slot in the box and one thread in the following process. One
+thread waiting on several boxes at once (`futex_waitv` on Linux,
+`WaitForMultipleObjects` on Windows) would need new native code, and is
+left until numbers like the ones below show that the thread count
+matters.
+
+`tests/stress/test_stress_follow.py` runs one `follow()` over W chains of
+D boxes, W x D followed boxes in all, with the writer in the same process.
+Idle CPU is the process time over 2 s with nothing written; on Windows
+`time.process_time()` advances in steps of 15.6 ms. A move is the time from
+assigning a new chain to the first field until forwarding holds a slot in
+every box of the new chain and none in the old one. Windows 11, CPython
+3.11, Release build, 200 writes and 20 moves per row:
+
+| W x D | Threads | Waiter slots | Idle CPU over 2 s | Write to callback, p50 / p99 | Move, p50 / p99 |
+| --- | --- | --- | --- | --- | --- |
+| 1 x 1 | 1 | 1 | 0 s | 7.9 / 51.0 us | 0.52 / 0.92 ms |
+| 1 x 2 | 2 | 2 | 0 s | 7.7 / 63.7 us | 0.54 / 1.21 ms |
+| 1 x 3 | 3 | 3 | 0 s | 7.3 / 108.4 us | 1.14 / 1.27 ms |
+| 16 x 1 | 16 | 16 | 0 s | 7.6 / 65.3 us | 0.54 / 0.56 ms |
+| 16 x 2 | 32 | 32 | 0 s | 8.5 / 106.5 us | 0.54 / 1.17 ms |
+| 16 x 3 | 48 | 48 | 0 s | 9.1 / 66.3 us | 1.12 / 1.66 ms |
+| 64 x 1 | 64 | 64 | 0 s | 14.2 / 56.7 us | 0.55 / 0.96 ms |
+| 64 x 2 | 128 | 128 | 0 s | 8.9 / 78.9 us | 0.54 / 1.11 ms |
+| 64 x 3 | 192 | 192 | 0.031 s | 10.3 / 72.9 us | 1.10 / 1.58 ms |
+
 ## 6. Closing a box while other threads still use it
 
 One thread can call `close()` and unmap the memory while another thread of
