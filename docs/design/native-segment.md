@@ -250,6 +250,21 @@ every box of the new chain and none in the old one. Windows 11, CPython
 | 64 x 2 | 128 | 128 | 0 s | 8.9 / 78.9 us | 0.54 / 1.11 ms |
 | 64 x 3 | 192 | 192 | 0.031 s | 10.3 / 72.9 us | 1.10 / 1.58 ms |
 
+Linux, GitHub Actions `ubuntu-latest`, CPython 3.12 wheel (CI run
+36752927114), 200 writes and 20 moves per row:
+
+| W x D | Threads | Waiter slots | Idle CPU over 2 s | Write to callback, p50 / p99 | Move, p50 / p99 |
+| --- | --- | --- | --- | --- | --- |
+| 1 x 1 | 1 | 1 | 0.000 s | 22.4 / 35.7 us | 0.30 / 0.79 ms |
+| 1 x 2 | 2 | 2 | 0.000 s | 20.8 / 33.5 us | 0.68 / 1.18 ms |
+| 1 x 3 | 3 | 3 | 0.000 s | 22.1 / 36.3 us | 1.03 / 1.22 ms |
+| 16 x 1 | 16 | 16 | 0.001 s | 32.5 / 80.9 us | 0.29 / 0.60 ms |
+| 16 x 2 | 32 | 32 | 0.002 s | 25.1 / 63.8 us | 0.72 / 0.93 ms |
+| 16 x 3 | 48 | 48 | 0.003 s | 28.6 / 50.6 us | 1.02 / 1.24 ms |
+| 64 x 1 | 64 | 64 | 0.004 s | 28.7 / 62.5 us | 0.30 / 0.74 ms |
+| 64 x 2 | 128 | 128 | 0.007 s | 30.4 / 64.3 us | 0.72 / 0.81 ms |
+| 64 x 3 | 192 | 192 | 0.009 s | 28.8 / 51.0 us | 1.00 / 1.35 ms |
+
 ## 6. Closing a box while other threads still use it
 
 One thread can call `close()` and unmap the memory while another thread of
