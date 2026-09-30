@@ -230,12 +230,12 @@ profile.
 
 CI (`.github/workflows/ci.yaml`) builds the wheels above with cibuildwheel,
 runs pytest against each wheel, and publishes to PyPI. Its `docs` job runs
-`check-docs.yaml` (build the site, then `check_xrefs.py`); the site is
-published from `main` and from final releases. Publishing to PyPI runs only
-from a GitHub release tagged `vX.Y.Z` and marked as a release, or
-`vX.Y.ZrcN` and marked as a pre-release; any other tag or mismatch between
-the tag and the pre-release flag fails the build before it uploads. Docker
-runs with `--shm-size=1g`, so keep test segments under that.
+`check-docs.yaml` (build the site, then `check_xrefs.py`), and
+`publish_docs` publishes the site from `main` and from final releases.
+Publishing to PyPI runs only from a GitHub release tagged `vX.Y.Z` and
+marked as a release, or `vX.Y.ZrcN` and marked as a pre-release; any other
+tag or mismatch between the tag and the pre-release flag fails the build
+before it uploads. Docker runs with `--shm-size=1g`, so keep test segments under that.
 
 ## Usage
 
