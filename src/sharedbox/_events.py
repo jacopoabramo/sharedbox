@@ -500,9 +500,8 @@ class BoxEvents(SignalGroup):
         is annotated with, emitted for whichever box the field refers to
         when the change happens; a later call returns the same group.
         Without `field`, emit every change inside every box the reference
-        fields reach, down the whole graph, on `nested` as
-        `(path, new, old)`, where `path` is the tuple of field names from
-        this group's box to the changed field.
+        fields reach, down the whole graph, on
+        [`nested`][sharedbox.BoxEvents.nested].
 
         The group `follow(field)` returns has `follow` and `unfollow` too,
         so `stage.events.follow("motor").follow("encoder")` reaches one

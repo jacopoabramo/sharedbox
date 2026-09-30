@@ -319,7 +319,8 @@ class SharedBox(metaclass=SharedBoxMeta):
     the same class are keyword-only. A default is a plain class attribute
     or given with [`field`][sharedbox.field], and is checked against the
     field's type and capacity when the class is defined.
-    `inspect.signature` of the class gives its constructor's parameters.
+    `inspect.signature` of the class gives its constructor's parameters; a
+    `default_factory` default shows as `<factory>`.
 
     Assigning a value of the wrong type raises `TypeError`, and a `str` or
     `bytes` value longer than its capacity raises `ValueError`; either way
@@ -421,8 +422,8 @@ class SharedBox(metaclass=SharedBoxMeta):
     [`UnknownBoxClassError`][sharedbox.UnknownBoxClassError] when this
     process has not imported the module that defines the box's class, and
     [`BrokenReferenceError`][sharedbox.BrokenReferenceError] when the box
-    was removed, or removed and created again under the same name, since
-    it was assigned. A handle that already read the field keeps its own
+    was removed, or removed and created again under the same name (also by
+    another class), since it was assigned. A handle that already read the field keeps its own
     mapping of the box and goes on returning it. The outer box only points
     at the other box: closing or unlinking the outer box leaves it alone,
     and no write covers both boxes at once.
@@ -928,9 +929,8 @@ class SharedBox(metaclass=SharedBoxMeta):
         `box.events.<field>.connect(cb)` listens to one field and
         `box.events.connect(cb)` to all of them.
 
-        Unlike those of a local evented dataclass, callbacks run on the
-        box's watcher thread; connect with
-        `thread="main"` and call `psygnal.emit_queued()` to run them on the
+        Unlike the callbacks of a local evented dataclass, these run on the
+        box's watcher thread; connect with `thread="main"` and call `psygnal.emit_queued()` to run them on the
         main thread instead. Closing the box delivers writes the watcher
         thread had not seen yet, so callbacks may run once on the thread
         that calls [`close`][sharedbox.SharedBox.close]. A box that is
@@ -1013,7 +1013,10 @@ class SharedBox(metaclass=SharedBoxMeta):
 
         Reads and writes that wait on such a lock raise
         [`LockTimeoutError`][sharedbox.LockTimeoutError], whose message
-        names the process that holds it.
+        names the process that holds it. This does not check whether the
+        process that held the lock is still running: releasing the lock of
+        a writer that is still running lets other reads and writes run
+        while its write is half done.
         """
         self._segment.force_unlock()
 
@@ -1023,10 +1026,15 @@ class SharedBox(metaclass=SharedBoxMeta):
     `Motor.unlink(name=None)` on the class removes `name`, by default the
     class's name; `box.unlink()` on a box removes the name of its segment.
     Boxes already open keep working. On Linux, later
-    [`attach`][sharedbox.SharedBox.attach] calls fail, and unlinking a name
-    with no segment raises
-    [`SegmentNotFoundError`][sharedbox.SegmentNotFoundError]. On Windows
-    this does nothing; the segment goes away with its last handle.
+    [`attach`][sharedbox.SharedBox.attach] calls fail. On Windows this does
+    nothing; the segment goes away with its last handle.
+
+    Raises
+    ------
+    ValueError
+        If `name` does not match `[A-Za-z0-9_.-]{1,128}`.
+    SegmentNotFoundError
+        On Linux, if no segment has that name.
     """
 
     def __sharedbox_box__(
