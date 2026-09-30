@@ -250,7 +250,7 @@ class Watcher:
         return self._stop.is_set()
 
     def future(self, field: FieldSpec, since: int | None = None) -> FieldFuture[Any]:
-        """A future for the first write to `field` after version `since` (default: now)."""
+        """Return a future for the first write to `field` after version `since` (default: now)."""
         current, value = self._segment.get_versioned(field.index)
         fut: FieldFuture[Any] = FieldFuture(
             self, field, current if since is None else since
@@ -269,7 +269,7 @@ class Watcher:
     def events(
         self, factory: Callable[[], BoxEvents], fields: tuple[FieldSpec, ...]
     ) -> BoxEvents:
-        """The box's signal group, created on first use; the watcher emits into it while running."""
+        """Return the box's signal group, created on first use; the watcher emits into it while running."""
         with self._lock:
             if self._group is None:
                 self._group = factory()
@@ -291,7 +291,7 @@ class Watcher:
                 self._start_locked()
 
     def last(self, spec: FieldSpec) -> Any:
-        """The value of `spec` the watcher last saw, which it compares the next change with."""
+        """Return the value of `spec` the watcher last saw, which it compares the next change with."""
         return self._seen[spec.index][1]
 
     def _listen_locked(self, sink: Sink, fields: tuple[FieldSpec, ...]) -> None:
@@ -395,7 +395,7 @@ class Watcher:
             self._thread.start()
 
     def _claim(self) -> int | None:
-        """A waiter slot that still records this process, or None while every slot is taken."""
+        """Return a waiter slot that still records this process, or None while every slot is taken."""
         slot = self._slot
         if slot is not None and self._segment.waiter_held(slot):
             return slot
@@ -524,7 +524,7 @@ class BoxEvents(SignalGroup):
 
 
 def events_class(owner: type, layout: Layout) -> type[BoxEvents]:
-    """A [`BoxEvents`][sharedbox.BoxEvents] subclass with one `(new, old)` signal per field of `owner`.
+    """Create a [`BoxEvents`][sharedbox.BoxEvents] subclass with one `(new, old)` signal per field of `owner`.
 
     A class with reference fields also gets the signal `nested`.
     """

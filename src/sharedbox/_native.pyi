@@ -37,10 +37,10 @@ def check(kind: int, capacity: int, name: str, value: object) -> None:
     """Raise what writing `value` to a field of this kind and capacity would raise."""
 
 def _process_start(pid: int) -> int:
-    """The process's start time, 0 if no such process exists; for tests."""
+    """Return the process's start time, 0 if no such process exists; for tests."""
 
 def _process_alive(pid: int, start: int) -> bool:
-    """True if a process with this pid and start time is running; for tests."""
+    """Return True if a process with this pid and start time is running; for tests."""
 
 @disjoint_base
 class Segment:
@@ -87,7 +87,7 @@ class Segment:
         """Remove the name, as `shm_unlink` does; a no-op on Windows."""
 
     def get(self, field: int) -> object:
-        """The field's value; `(create_id, schema_hash, name)`, or None when empty, for a reference field."""
+        """Return the field's value; `(create_id, schema_hash, name)`, or None when empty, for a reference field."""
 
     def cached_ref(self, field: int, cache: dict[int, RefEntry]) -> object:
         """`cache[field][1]` if the reference field holds `cache[field][0]` and `cache[field][2]` is open.
@@ -104,7 +104,7 @@ class Segment:
         """
 
     def get_versioned(self, field: int) -> tuple[int, object]:
-        """The field's version and value, read together."""
+        """Return the field's version and value, read together."""
 
     def get_dict(self, names: tuple[str, ...]) -> dict[str, object]:
         """Every field's value under its name in `names`, read at one point in time."""
@@ -116,7 +116,7 @@ class Segment:
         """
 
     def _read(self, field: int) -> bytes:
-        """The field's bytes, read consistently with concurrent writes; for tests."""
+        """Return the field's bytes, read consistently with concurrent writes; for tests."""
 
     def _read_all(self) -> list[bytes]:
         """Every field's bytes, read at one point in time; for tests."""
@@ -167,13 +167,13 @@ class Segment:
         """Free a slot claimed with [`register_waiter`][sharedbox._native.Segment.register_waiter]."""
 
     def waiter_held(self, slot: int) -> bool:
-        """True while `slot` is still this process's; false once it was freed under it."""
+        """Return True while `slot` is still this process's; false once it was freed under it."""
 
     def interrupt(self, slot: int) -> None:
         """End the wait in `slot`, in any process, or the next one if none is running."""
 
     def _export(self) -> CapsuleType:
-        """A `"sharedbox_box"` capsule holding a handle with its own mapping of the segment."""
+        """Return a `"sharedbox_box"` capsule holding a handle with its own mapping of the segment."""
 
     def force_unlock(self) -> None:
         """Release a write lock left behind by a process that died while writing."""

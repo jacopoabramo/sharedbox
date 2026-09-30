@@ -24,7 +24,7 @@ def register(cls: type[SharedBox]) -> None:
 
 
 def box_class(schema_hash: int) -> type[SharedBox] | None:
-    """The first class defined with `schema_hash` that is still alive, or None if there is none."""
+    """Return the first class defined with `schema_hash` that is still alive, or None if there is none."""
     # A copy, since a class freed during the loop removes its entry from the list.
     for ref in tuple(CLASSES.get(schema_hash, ())):
         cls = ref()
@@ -59,17 +59,17 @@ class BoxRef:
 
 
 def box_ref(value: Any) -> BoxRef | None:
-    """A reference field's native value, `(create_id, schema_hash, name)` or None, as callers see it."""
+    """Return a reference field's native value, `(create_id, schema_hash, name)` or None, as callers see it."""
     return None if value is None else BoxRef(value[2], value[1], value[0])
 
 
 def shown(spec: FieldSpec, value: Any) -> Any:
-    """A field's native value as callers see it: a reference field gives a [`BoxRef`][sharedbox.BoxRef] or None."""
+    """Return a field's native value as callers see it: a reference field gives a [`BoxRef`][sharedbox.BoxRef] or None."""
     return value if spec.target is None else box_ref(value)
 
 
 def stored(spec: FieldSpec, value: Any) -> tuple[int, int, str] | None:
-    """What a reference field stores for `value`: None, or the box's create id, schema hash and name.
+    """Return what a reference field stores for `value`: None, or the box's create id, schema hash and name.
 
     Raises
     ------

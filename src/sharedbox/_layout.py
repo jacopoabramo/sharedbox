@@ -229,7 +229,7 @@ def is_box_class(hint: object) -> TypeGuard[type[SharedBox]]:
 
 
 def reference(hint: object) -> tuple[type[SharedBox], bool] | None:
-    """The box class of a reference field annotated `X` or `X | None`, and whether it may be None."""
+    """Return the box class of a reference field annotated `X` or `X | None`, and whether it may be None."""
     if is_box_class(hint):
         return hint, False
     if get_origin(hint) in (Union, types.UnionType):
@@ -256,7 +256,7 @@ def forward_refs(hint: object) -> list[ForwardRef]:
 
 
 def type_hints(cls: type) -> dict[str, Any]:
-    """The resolved annotations of `cls` and its bases, in which `cls` may name itself.
+    """Return the resolved annotations of `cls` and its bases, in which `cls` may name itself.
 
     Raises
     ------
@@ -306,7 +306,7 @@ def type_hints(cls: type) -> dict[str, Any]:
 
 
 def own_annotations(cls: type) -> dict[str, Any]:
-    """The annotations `cls` itself declares, in declaration order, without failing on a name not bound yet."""
+    """Return the annotations `cls` itself declares, in declaration order, without failing on a name not bound yet."""
     if sys.version_info >= (3, 14):
         # Evaluating would fail for a class that names itself, which is not bound yet.
         return inspect.get_annotations(cls, format=Format.FORWARDREF)

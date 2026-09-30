@@ -153,7 +153,7 @@ def has_default(param: Field) -> bool:
 
 
 def signature(params: list[Field]) -> inspect.Signature:
-    """The constructor signature a dataclass with these fields and `InitVar` ones would have."""
+    """Return the constructor signature a dataclass with these fields and `InitVar` ones would have."""
     return inspect.Signature(
         [
             inspect.Parameter(
@@ -756,7 +756,7 @@ class SharedBox(metaclass=SharedBoxMeta):
     def _inner(
         self, spec: FieldSpec, create_id: int, schema_hash: int, name: str
     ) -> SharedBox:
-        """The box a reference field refers to: the one this handle attached before, or a new one."""
+        """Return the box a reference field refers to: the one this handle attached before, or a new one."""
         cached = self._refs.get(spec.index)
         # Reading a dict entry is atomic on every build, so the usual case takes no lock.
         if cached is not None and cached[0] == create_id and not cached[2].closed:
@@ -790,7 +790,7 @@ class SharedBox(metaclass=SharedBoxMeta):
     def __sharedbox_box__(
         self, max_version: tuple[int, int] | None = None, **kwargs: Any
     ) -> CapsuleType:
-        """A `"sharedbox_box"` capsule holding a handle with its own mapping of the segment.
+        """Return a `"sharedbox_box"` capsule holding a handle with its own mapping of the segment.
 
         Closing or unlinking the box does not affect the handle.
 

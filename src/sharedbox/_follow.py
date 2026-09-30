@@ -241,7 +241,7 @@ class Follower:
         return spec
 
     def source(self) -> tuple[Segment, type[SharedBox], Watcher] | None:
-        """The segment, class and watcher of the box whose reference fields this follower's links and tree follow."""
+        """Return the segment, class and watcher of the box whose reference fields this follower's links and tree follow."""
         if self.box is not None:
             return self.box._segment, type(self.box), self.box._watcher
         if self.outer is not None:
@@ -261,7 +261,7 @@ class Follower:
     def tree_children(
         self, segment: Segment, cls: type[SharedBox], watcher: Watcher
     ) -> list[tuple[Follower, Any]]:
-        """A new node for each reference field of the source, with the value its watcher last saw."""
+        """Create a node for each reference field of the source, with the value its watcher last saw."""
         if self.nested is None:
             # This follower starts the tree: its own box counts as followed.
             self.seen = {(segment.name, segment.create_id): []}
@@ -329,7 +329,7 @@ class Follower:
             raise error
 
     def open(self, value: Any) -> SharedBox | None:
-        """A new handle on the box `value` refers to, or None if there is none to follow."""
+        """Open a new handle on the box `value` refers to, or None if there is none to follow."""
         if value is None:
             return None
         create_id, schema_hash, name = value
@@ -427,7 +427,7 @@ def close_all(boxes: list[SharedBox], wait: bool) -> None:
 
 
 def box_events(cls: type[SharedBox], segment: Segment, watcher: Watcher) -> BoxEvents:
-    """A new events group for the box of `cls` on `segment`, with the follower its `follow` uses."""
+    """Create a new events group for the box of `cls` on `segment`, with the follower its `follow` uses."""
     group = cls.__events_class__()
     top = Follower(None, None, cls, group)
     top.outer = segment

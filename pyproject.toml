@@ -65,8 +65,18 @@ build-verbosity = 1
 line-length = 88
 
 [tool.ruff.lint]
-extend-select = ["E402", "PLC0415"]
-ignore = ["BLE001"]
+extend-select = ["D", "E402", "PLC0415"]
+ignore = ["BLE001", "D100", "D104"]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["D"]
+"docs/**" = ["D"]
+"scripts/**" = ["D"]
+"benchmarks/**" = ["D"]
+"src/sharedbox/benchmarks/**" = ["D"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "numpy"
 
 [tool.mypy]
 strict = true
