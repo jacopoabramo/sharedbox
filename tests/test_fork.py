@@ -17,6 +17,7 @@ from sharedbox import BoxEvents, LockTimeoutError, SharedBox
 from sharedbox._events import Watcher
 from sharedbox._layout import FieldSpec, NativeField
 from sharedbox._native import Segment
+from sharedbox._refs import attach_reference
 
 pytestmark = [
     pytest.mark.skipif(sys.platform == "win32", reason="Windows has no fork"),
@@ -299,6 +300,49 @@ def test_forked_child_forwards_after_a_follow_whose_rebuild_failed_to_read(
             assert ready.wait(10)
             wheel.turns = 4
             assert out.get(timeout=10) == 4
+        finally:
+            code = finish(child)
+        assert code == 0
+
+
+def test_forked_child_follows_a_box_whose_attach_failed_in_follow_after_a_move(
+    unique_name: str, names: Callable[[str], str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Check that a forked child whose follow failed to attach a box does not raise, and forwards from the box the reference moves to."""
+    ctx = mp.get_context("fork")
+    ready = ctx.Event()
+    out: Queue[int] = ctx.Queue()
+    real = attach_reference
+    failed: list[str] = []
+
+    def fail_once(
+        spec: FieldSpec, create_id: int, schema_hash: int, name: str
+    ) -> SharedBox:
+        if not failed:
+            failed.append(name)
+            raise RuntimeError("attach failed")
+        return real(spec, create_id, schema_hash, name)
+
+    with Wheel.create(names("w")) as wheel, Cart.create(unique_name, wheel) as cart:
+        cart.events.follow("wheel")
+        # Patched only while forking, so only the child fails.
+        monkeypatch.setattr("sharedbox._follow.attach_reference", fail_once)
+        child = fork(forward_in_child, cart, ready, out)
+        monkeypatch.undo()
+        try:
+            assert ready.wait(10)
+            with Wheel.create(names("v")) as moved:
+                cart.wheel = moved
+                # The child follows the new box some time after the move and misses writes made before that.
+                got = None
+                for turns in range(1, 101):
+                    moved.turns = turns
+                    try:
+                        got = out.get(timeout=0.1)
+                    except queue.Empty:
+                        continue
+                    break
+                assert got is not None
         finally:
             code = finish(child)
         assert code == 0

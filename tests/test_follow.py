@@ -11,6 +11,7 @@ from multiprocessing.synchronize import Event
 from typing import Any
 
 import pytest
+from psygnal import EmissionInfo
 
 from sharedbox import BoxClosedError, BoxRef, SharedBox
 from sharedbox._events import Watcher
@@ -523,8 +524,9 @@ def ref_of(box: SharedBox) -> BoxRef:
 def test_follow_without_a_field_reports_changes_down_a_chain_with_their_path(
     names: Callable[[str], str],
 ) -> None:
-    """Check that follow() emits each change inside the boxes down a chain on nested with its path, and moves when a reference below the outer box changes."""
+    """Check that follow() emits each change inside the boxes down a chain on nested with its path, also to callbacks of the whole group, and moves when a reference below the outer box changes."""
     seen: queue.Queue[tuple[tuple[str, ...], object, object]] = queue.Queue()
+    group: queue.Queue[EmissionInfo] = queue.Queue()
     with (
         Encoder.create(names("e1")) as e1,
         Encoder.create(names("e2")) as e2,
@@ -533,8 +535,14 @@ def test_follow_without_a_field_reports_changes_down_a_chain_with_their_path(
     ):
         assert stage.events.follow() is None
         stage.events.nested.connect(lambda path, new, old: seen.put((path, new, old)))
+        stage.events.connect(group.put)
         e1.count = 3
         assert seen.get(timeout=5) == (("motor", "encoder", "count"), 3, 0)
+        info = group.get(timeout=5)
+        assert (info.signal.name, info.args) == (
+            "nested",
+            (("motor", "encoder", "count"), 3, 0),
+        )
         motor.position = 7
         assert seen.get(timeout=5) == (("motor", "position"), 7, 0)
         stage.target = 1
