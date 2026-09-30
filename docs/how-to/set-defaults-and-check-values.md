@@ -12,7 +12,7 @@ values: [`field`][sharedbox.field], `dataclasses.KW_ONLY`,
 ## Give a field a default
 
 A plain value after `=` is the default. For a value computed each time a
-box is created, use `field(default_factory=...)`:
+[box](../explanation/glossary.md#box) is created, use `field(default_factory=...)`:
 
 ```{.python}
 --8<-- "docs/examples/set_defaults_and_check_values.py:defaults"

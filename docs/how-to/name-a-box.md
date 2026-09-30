@@ -51,7 +51,8 @@ When one class describes several boxes, give each its own name with
 --8<-- "docs/examples/name_a_box.py:each-box"
 ```
 
-`create` takes the field values after the name, as calling the class does.
+`create` takes the [field](../explanation/glossary.md#field) values after the name, as calling
+the class does.
 
 ## If the name is taken
 

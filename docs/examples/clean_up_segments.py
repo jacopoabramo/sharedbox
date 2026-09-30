@@ -18,15 +18,21 @@ job.close()
 Job.unlink()
 # --8<-- [end:unlink]
 
+creator = Job(True)
+
 # --8<-- [start:force-unlock]
-job = Job()
+job = Job.attach()
 try:
     job.done = False
 except LockTimeoutError as error:
-    print(error)
-    # only once the process the message names is no longer running
+    print(error)  # ... locked by pid 1234 ...
+    # only once process 1234 is no longer running
     job.force_unlock()
+    print(job.done)  # True: the write that timed out did not happen
+    job.done = False
+print(job.done)  # False
 # --8<-- [end:force-unlock]
 
 job.close()
+creator.close()
 Job.unlink()

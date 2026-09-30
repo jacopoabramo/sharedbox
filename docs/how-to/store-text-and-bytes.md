@@ -6,7 +6,7 @@ icon: lucide/wrench
 
 A `str` or `bytes` [field](../explanation/glossary.md#field) needs a
 [capacity](../explanation/glossary.md#capacity): the most bytes it can
-hold. The box sets that room aside when it is created, so a value can never
+hold. The [box](../explanation/glossary.md#box) sets that room aside when it is created, so a value can never
 grow past it.
 
 ## 1. Declare the field with a capacity

@@ -26,7 +26,8 @@ print(settings.name)  # example-settings
 # --8<-- [start:each-box]
 x_axis = Motor.create("example-x-axis")
 y_axis = Motor.create("example-y-axis", 5)
-print(Motor.attach("example-y-axis").position)  # 5
+y_view = Motor.attach("example-y-axis")
+print(y_view.position)  # 5
 # --8<-- [end:each-box]
 
 # --8<-- [start:taken]
@@ -36,7 +37,7 @@ except SegmentExistsError as error:
     print(error)  # a segment named 'example-x-axis' already exists; its creator, ...
 # --8<-- [end:taken]
 
-for box in (motor, same, settings, x_axis, y_axis):
+for box in (motor, same, settings, x_axis, y_axis, y_view):
     box.close()
 Motor.unlink()
 Settings.unlink()

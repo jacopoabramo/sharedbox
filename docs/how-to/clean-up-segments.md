@@ -63,13 +63,16 @@ taken. Every later read and write then waits for the class's
 `lock_timeout` and raises [`LockTimeoutError`][sharedbox.LockTimeoutError],
 whose message names the process that holds the lock. Once you know that
 process is no longer running, call
-[`force_unlock`][sharedbox.SharedBox.force_unlock]:
+[`force_unlock`][sharedbox.SharedBox.force_unlock] on a box attached to the
+same segment, then write again:
 
 ```{.python}
 --8<-- "docs/examples/clean_up_segments.py:force-unlock"
 ```
 
-`force_unlock` does not check the process itself. Releasing the lock of a
+The write that timed out did not happen, so the field still holds its old
+value until you write it again. `force_unlock` does not check the process
+itself. Releasing the lock of a
 writer that is still running lets other reads and writes run while its
 write is half done.
 

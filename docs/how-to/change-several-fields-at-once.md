@@ -6,7 +6,8 @@ icon: lucide/wrench
 
 Assigning `point.x` and then `point.y` is two writes, and another process
 can read the [box](../explanation/glossary.md#box) between them and see a
-new `x` with an old `y`. Reading two fields one after the other has the
+new `x` with an old `y`. Reading two [fields](../explanation/glossary.md#field) one after the
+other has the
 same problem. Write and read the fields together instead.
 
 ## 1. Write them with `update`

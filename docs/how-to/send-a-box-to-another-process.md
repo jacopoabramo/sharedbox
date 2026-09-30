@@ -24,14 +24,15 @@ With the `spawn` or `forkserver` start method, `multiprocessing` pickles the
 arguments. The pickle holds only the box's name and which box it is (see
 [`SharedBox`][sharedbox.SharedBox]), and unpickling it attaches a new
 [handle](../explanation/glossary.md#handle): an independent box on the
-same data, which the child closes when it is done. `multiprocessing.shared_memory.SharedMemory` is sent the same way.
+same data, which the child closes when it is done.
+`multiprocessing.shared_memory.SharedMemory` is sent the same way.
 
 With the `fork` start method nothing is pickled: the child uses the
 parent's box object, which keeps working after the fork.
 
 ## 2. In a pool, attach once per worker
 
-Each unpickle opens the segment again, so a box passed with every task is
+Each unpickle opens the [segment](../explanation/glossary.md#segment) again, so a box passed with every task is
 opened once per task. Pass the box's name to the pool's initializer
 instead, and attach there:
 

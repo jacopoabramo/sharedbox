@@ -4,7 +4,7 @@ icon: lucide/wrench
 
 # How to follow a whole reference graph
 
-A box whose [reference fields](../explanation/glossary.md#reference-field)
+A [box](../explanation/glossary.md#box) whose [reference fields](../explanation/glossary.md#reference-field)
 lead to other boxes, which have reference fields of their own, forms a
 graph. This guide listens to changes anywhere in that graph with one
 callback.
