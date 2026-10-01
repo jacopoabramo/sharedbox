@@ -17,10 +17,8 @@ Dates are marked as `DD-MM-YYYY`
 
 ### Changed
 
-- `SharedBox.update`: writes in one native call that finds fields by
-  name, about 2.4 times faster.
-- `SharedBox.snapshot`: reads the record without allocating memory for
-  records up to 4 KiB, about 14% faster.
+- `SharedBox.update` and `SharedBox.snapshot`: native methods, unless a
+  class defines its own.
 
 ## [0.3.1] - 01-10-2026
 
