@@ -931,10 +931,11 @@ class SharedBox(metaclass=SharedBoxMeta):
 
         Unlike the callbacks of a local evented dataclass, these run on the
         box's watcher thread; connect with `thread="main"` and call
-        `psygnal.emit_queued()` to run them on the main thread instead. Closing the box delivers writes the watcher
-        thread had not seen yet, so callbacks may run once on the thread
-        that calls [`close`][sharedbox.SharedBox.close]. A box that is
-        garbage collected drops them.
+        `psygnal.emit_queued()` to run them on the main thread instead.
+        Closing the box delivers writes the watcher thread had not seen
+        yet, so callbacks may run once on the thread that calls
+        [`close`][sharedbox.SharedBox.close]. A box that is garbage
+        collected drops them.
 
         If several writes happen between two checks by the watcher thread,
         only one emission happens, with the latest value; `old` is the

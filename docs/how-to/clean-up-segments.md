@@ -71,9 +71,9 @@ same segment, then write again:
 ```
 
 The write that timed out did not happen, so the field still holds its old
-value until you write it again. Check that the writer has stopped first;
-[`force_unlock`][sharedbox.SharedBox.force_unlock] says what happens if it
-has not.
+value until you write it again.
+[`force_unlock`][sharedbox.SharedBox.force_unlock] says what happens if the
+writer is still running.
 
 ??? example "The whole script"
 

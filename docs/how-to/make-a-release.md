@@ -78,7 +78,7 @@ mark the release as a pre-release:
 
 ```bash
 gh release create v0.3.0rc1 --target main --title v0.3.0rc1 --prerelease \
-  --notes "Changes: https://github.com/jacopoabramo/sharedbox/blob/main/CHANGELOG.md"
+  --notes "Changes: https://github.com/jacopoabramo/sharedbox/blob/main/CHANGELOG.md#unreleased"
 ```
 
 Its notes link to the `Unreleased` section of the changelog on `main`.

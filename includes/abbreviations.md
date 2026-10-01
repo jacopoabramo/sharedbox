@@ -1,6 +1,6 @@
 *[ABI]: Application binary interface. The rules compiled code follows to call other compiled code, so that two builds can work together.
 *[API]: Application programming interface. The functions and classes a library offers to code that uses it.
-*[CI]: Continuous integration. The builds and tests GitHub runs on every push and pull request.
+*[CI]: Continuous integration. The builds and tests GitHub runs on pushes and pull requests to the main branch.
 *[CPU]: Central processing unit. The processor that runs a program.
 *[GIL]: Global interpreter lock. The lock that lets only one thread of a CPython process run Python code at a time.
 *[OS]: Operating system.
