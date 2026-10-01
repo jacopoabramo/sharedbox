@@ -188,6 +188,7 @@ struct Segment::Impl {
     // The handle's checked field table, in the form codec.cpp takes.
     std::vector<FieldDesc> fields;
     std::vector<std::string> names;
+    std::size_t record_size = 0;
     double lock_timeout = default_lock_timeout;
     std::atomic<bool> closed{false};
     // close() can race any other call on every build, since lock waits release the GIL and the
@@ -203,6 +204,7 @@ struct Segment::Impl {
             const field_spec &f = box.field(i);
             fields.push_back({f.offset, f.capacity, static_cast<FieldKind>(f.kind)});
         }
+        record_size = box.record_size();
         static_cast<void>(box.set_lock_timeout(seconds(lock_timeout)));
         box.set_wait_hooks(before_wait, after_wait);
     }
@@ -354,10 +356,7 @@ void Segment::read(std::uint32_t index, FieldRead &out) const {
     out.version = got.version;
 }
 
-std::size_t Segment::record_size() const {
-    auto guard = impl_->enter();
-    return impl_->box.record_size();
-}
+std::size_t Segment::record_size() const { return impl_->record_size; }
 
 void Segment::read_record(std::span<std::byte> out) const {
     auto guard = impl_->enter();
