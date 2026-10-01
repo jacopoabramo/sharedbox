@@ -1,5 +1,6 @@
 """Charts of the results of `benchbox all`, as SVG files for light and dark pages."""
 
+import io
 import json
 from pathlib import Path
 from typing import NamedTuple
@@ -148,7 +149,13 @@ def write_charts(folder: Path) -> list[Path]:
                 ("ops", ops_figure(groups, theme)),
                 ("roundtrip", roundtrip_figure(results, theme)),
             ):
+                svg = io.StringIO()
+                fig.savefig(
+                    svg, format="svg", transparent=True, metadata={"Date": None}
+                )
                 path = folder / f"{stem}-{theme.name}.svg"
-                fig.savefig(path, transparent=True, metadata={"Date": None})
+                # matplotlib ends many path lines with a space, which whitespace checks reject.
+                lines = (line.rstrip() for line in svg.getvalue().splitlines())
+                path.write_text("\n".join(lines) + "\n", encoding="utf-8")
                 written.append(path)
     return written
