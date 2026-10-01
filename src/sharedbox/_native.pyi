@@ -287,11 +287,13 @@ class BoxMethod:
     def __new__(
         cls,
         kind: int,
+        owner: type,
         qualname: str,
         names: tuple[str, ...],
         specs: tuple[FieldSpec | None, ...],
         helper: Callable[..., object],
         follow: Callable[..., object] | None,
+        fallback: Callable[..., object],
         segment_slot: object,
     ) -> Self: ...
     def __call__(self, *args: Any, **kwargs: Any) -> Any: ...

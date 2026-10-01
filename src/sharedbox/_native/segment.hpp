@@ -142,8 +142,6 @@ public:
     double lock_timeout() const;
     const FieldDesc &field(std::uint32_t index) const;
     const std::string &field_name(std::uint32_t index) const;
-    /// The index of the field whose label is "Class.name", or nullopt if there is none.
-    std::optional<std::uint32_t> index_of(std::string_view name) const;
     /// Removes the name, like shm_unlink: existing handles keep working. A no-op on
     /// Windows, where the OS frees the segment when its last handle closes.
     static void unlink(const std::string &name);

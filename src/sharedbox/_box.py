@@ -206,7 +206,15 @@ def install_native_methods(cls: type[SharedBox]) -> None:
                 cls,
                 method,
                 BoxMethod(
-                    kind, cls.__qualname__, names, specs, helper, follow, segment_slot
+                    kind,
+                    cls,
+                    cls.__qualname__,
+                    names,
+                    specs,
+                    helper,
+                    follow,
+                    SharedBox.__dict__[method],
+                    segment_slot,
                 ),
             )
 

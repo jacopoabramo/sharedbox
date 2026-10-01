@@ -862,3 +862,31 @@ def test_update_keeps_no_reference_to_its_values(unique_name: str) -> None:
         for _ in range(1000):
             box.update(label=label)
         assert sys.getrefcount(label) == before
+
+
+class Base(SharedBox):
+    label: Annotated[str, Capacity(8)] = ""
+
+
+class Child(Base):
+    n: int = 0
+
+    def update(self, **values: Any) -> None:
+        super().update(**values)
+
+
+def test_super_update_from_a_subclass_writes_the_fields_it_adds(
+    unique_name: str,
+) -> None:
+    """Check that super().update from a subclass writes both its own field and an inherited one."""
+    with Child.create(unique_name) as box:
+        box.update(n=5, label="base")
+        assert (box.n, box.label) == (5, "base")
+
+
+def test_update_called_on_another_class_uses_the_box_class(unique_name: str) -> None:
+    """Check that Point.update on a Pair box refuses Point's field names, naming Pair, and writes nothing."""
+    with Pair.create(unique_name, 1, 2) as box:
+        with pytest.raises(TypeError, match=r"^Pair has no field\(s\) x$"):
+            Point.update(cast(Point, box), x=7.0)
+        assert box.snapshot() == {"a": 1, "b": 2}

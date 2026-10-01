@@ -883,3 +883,17 @@ def test_update_through_an_override_still_converts_references(
         holder.update(target=motor)
         assert holder.target is not None
         assert holder.target.name == motor.name
+
+
+def test_update_of_a_reference_keeps_no_objects(names: Callable[[str], str]) -> None:
+    """Check that repeated update of a reference field leaves no objects behind."""
+    with Motor.create(names("m")) as motor, Holder.create(names("h"), None) as holder:
+        holder.update(motor=motor)
+        gc.collect()
+        before = sys.getallocatedblocks()
+        for _ in range(1000):
+            holder.update(motor=motor)
+        gc.collect()
+        # Each update converts the box to a new tuple of two ints and a name; one kept
+        # per update would add thousands of blocks, while 100 covers allocator noise.
+        assert sys.getallocatedblocks() <= before + 100

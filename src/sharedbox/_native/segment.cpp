@@ -17,7 +17,6 @@
 #include <span>
 #include <system_error>
 #include <thread>
-#include <unordered_map>
 
 namespace sharedbox {
 namespace {
@@ -184,8 +183,6 @@ struct Segment::Impl {
     // The handle's checked field table, in the form codec.cpp takes.
     std::vector<FieldDesc> fields;
     std::vector<std::string> names;
-    // Each field's name, the part of its label after the class, viewing into names.
-    std::unordered_map<std::string_view, std::uint32_t> by_name;
     double lock_timeout = default_lock_timeout;
     std::atomic<bool> closed{false};
     // close() can race any other call on every build, since lock waits release the GIL and the
@@ -196,11 +193,6 @@ struct Segment::Impl {
 
     // Called once the handle is open, to take what the rest of this file reads from it.
     void bind() {
-        by_name.reserve(names.size());
-        for (std::uint32_t i = 0; i < names.size(); ++i) {
-            const std::string_view label = names[i];
-            by_name.emplace(label.substr(label.rfind('.') + 1), i);
-        }
         fields.reserve(box.field_count());
         for (std::uint16_t i = 0; i < box.field_count(); ++i) {
             const field_spec &f = box.field(i);
@@ -544,13 +536,6 @@ const std::string &Segment::name() const { return impl_->name; }
 double Segment::lock_timeout() const { return impl_->lock_timeout; }
 
 const FieldDesc &Segment::field(std::uint32_t index) const { return impl_->field(index); }
-
-std::optional<std::uint32_t> Segment::index_of(std::string_view name) const {
-    const auto found = impl_->by_name.find(name);
-    if (found == impl_->by_name.end())
-        return std::nullopt;
-    return found->second;
-}
 
 const std::string &Segment::field_name(std::uint32_t index) const {
     impl_->field(index);

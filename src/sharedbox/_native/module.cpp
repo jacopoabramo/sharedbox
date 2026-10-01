@@ -15,6 +15,7 @@
 #include <span>
 #include <string_view>
 #include <system_error>
+#include <type_traits>
 #include <utility>
 
 #include <sharedbox/sharedbox.hpp>
@@ -187,11 +188,13 @@ struct BoxMethod {
     PyObject ob_base;
     vectorcallfunc vectorcall;
     int kind;
+    PyObject *cls;          // the class it was made for, given as owner
     PyObject *qualname;     // the class's __qualname__, for messages
     PyObject *names;        // tuple of str, in field index order
     PyObject *specs;        // tuple: the FieldSpec of a reference field, else None
     PyObject *helper;       // update: _refs.stored
     PyObject *follow;       // None for update
+    PyObject *fallback;     // SharedBox's Python method, for a box of another class
     PyObject *segment_slot; // SharedBox's _segment slot descriptor
     descrgetfunc read_slot;
 };
@@ -202,6 +205,9 @@ enum BoxMethodKind { kind_update = 0 };
 // constructed, since MSVC constructs and destroys a whole array of a class type through a call per
 // element, which costs more than the rest of a small update.
 template <typename T, std::size_t N> class Scratch {
+    // The constructor builds the entries outside any cleanup that would free the heap block.
+    static_assert(std::is_nothrow_default_constructible_v<T>);
+
 public:
     explicit Scratch(std::size_t size)
         : size_(size), data_(size <= N ? reinterpret_cast<T *>(local_) : std::allocator<T>().allocate(size)) {
@@ -255,6 +261,10 @@ PyObject *box_update(PyObject *callable, PyObject *const *args, std::size_t narg
                                                     : "update() takes no positional arguments");
         return nullptr;
     }
+    // The names and specs are those of m.cls; a box of a subclass with more fields, or of an
+    // unrelated class, needs its own class's layout, which the Python method reads.
+    if (reinterpret_cast<PyObject *>(Py_TYPE(args[0])) != m.cls)
+        return PyObject_Vectorcall(m.fallback, args, nargsf, kwnames);
     try {
         const nb::object segment = nb::steal(segment_of(m.segment_slot, m.read_slot, args[0]));
         if (!segment.is_valid())
@@ -293,14 +303,14 @@ PyObject *box_update(PyObject *callable, PyObject *const *args, std::size_t narg
 }
 
 PyObject *box_method_new(PyTypeObject *type, PyObject *args, PyObject *kwargs) noexcept {
-    static const char *keywords[] = {"kind",   "qualname", "names",        "specs",
-                                     "helper", "follow",   "segment_slot", nullptr};
+    static const char *keywords[] = {"kind",   "owner",  "qualname", "names",        "specs",
+                                     "helper", "follow", "fallback", "segment_slot", nullptr};
     int kind = 0;
-    PyObject *qualname = nullptr, *names = nullptr, *specs = nullptr, *helper = nullptr, *follow = nullptr,
-             *segment_slot = nullptr;
-    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "iUO!O!OOO:BoxMethod", const_cast<char **>(keywords), &kind,
-                                     &qualname, &PyTuple_Type, &names, &PyTuple_Type, &specs, &helper, &follow,
-                                     &segment_slot))
+    PyObject *cls = nullptr, *qualname = nullptr, *names = nullptr, *specs = nullptr, *helper = nullptr,
+             *follow = nullptr, *fallback = nullptr, *segment_slot = nullptr;
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "iO!UO!O!OOOO:BoxMethod", const_cast<char **>(keywords), &kind,
+                                     &PyType_Type, &cls, &qualname, &PyTuple_Type, &names, &PyTuple_Type, &specs,
+                                     &helper, &follow, &fallback, &segment_slot))
         return nullptr;
     if (kind != kind_update) {
         PyErr_Format(PyExc_ValueError, "unknown BoxMethod kind %d", kind);
@@ -315,8 +325,8 @@ PyObject *box_method_new(PyTypeObject *type, PyObject *args, PyObject *kwargs) n
             PyErr_SetString(PyExc_TypeError, "names must hold only str");
             return nullptr;
         }
-    if (!PyCallable_Check(helper)) {
-        PyErr_SetString(PyExc_TypeError, "helper must be callable");
+    if (!PyCallable_Check(helper) || !PyCallable_Check(fallback)) {
+        PyErr_SetString(PyExc_TypeError, "helper and fallback must be callable");
         return nullptr;
     }
     auto read_slot = reinterpret_cast<descrgetfunc>(PyType_GetSlot(Py_TYPE(segment_slot), Py_tp_descr_get));
@@ -330,11 +340,13 @@ PyObject *box_method_new(PyTypeObject *type, PyObject *args, PyObject *kwargs) n
         return nullptr;
     self->vectorcall = box_update;
     self->kind = kind;
+    self->cls = Py_NewRef(cls);
     self->qualname = Py_NewRef(qualname);
     self->names = Py_NewRef(names);
     self->specs = Py_NewRef(specs);
     self->helper = Py_NewRef(helper);
     self->follow = Py_NewRef(follow);
+    self->fallback = Py_NewRef(fallback);
     self->segment_slot = Py_NewRef(segment_slot);
     self->read_slot = read_slot;
     return reinterpret_cast<PyObject *>(self);
@@ -343,22 +355,26 @@ PyObject *box_method_new(PyTypeObject *type, PyObject *args, PyObject *kwargs) n
 int box_method_traverse(PyObject *self, visitproc visit, void *arg) {
     const auto *m = reinterpret_cast<BoxMethod *>(self);
     Py_VISIT(Py_TYPE(self));
+    Py_VISIT(m->cls);
     Py_VISIT(m->qualname);
     Py_VISIT(m->names);
     Py_VISIT(m->specs);
     Py_VISIT(m->helper);
     Py_VISIT(m->follow);
+    Py_VISIT(m->fallback);
     Py_VISIT(m->segment_slot);
     return 0;
 }
 
 int box_method_clear(PyObject *self) {
     auto *m = reinterpret_cast<BoxMethod *>(self);
+    Py_CLEAR(m->cls);
     Py_CLEAR(m->qualname);
     Py_CLEAR(m->names);
     Py_CLEAR(m->specs);
     Py_CLEAR(m->helper);
     Py_CLEAR(m->follow);
+    Py_CLEAR(m->fallback);
     Py_CLEAR(m->segment_slot);
     return 0;
 }
@@ -394,7 +410,7 @@ PyType_Slot box_method_slots[] = {{Py_tp_new, reinterpret_cast<void *>(box_metho
 
 PyType_Spec box_method_spec = {"sharedbox._native.BoxMethod", sizeof(BoxMethod), 0,
                                Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC | Py_TPFLAGS_HAVE_VECTORCALL |
-                                   Py_TPFLAGS_METHOD_DESCRIPTOR,
+                                   Py_TPFLAGS_IMMUTABLETYPE | Py_TPFLAGS_METHOD_DESCRIPTOR,
                                box_method_slots};
 
 // A consumer that takes the handle renames the capsule "used_sharedbox_box" and releases the
