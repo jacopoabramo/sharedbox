@@ -41,6 +41,7 @@ from ._layout import (
 from ._native import (
     LAYOUT_VERSION,
     BoxClosedError,
+    BoxMethod,
     SchemaMismatchError,
     Segment,
     SegmentNotFoundError,
@@ -190,6 +191,24 @@ def fields(class_or_box: type[SharedBox] | SharedBox) -> tuple[Field, ...]:
     if not issubclass(cls, SharedBox) or cls is SharedBox:
         raise TypeError("fields() takes a SharedBox subclass or one of its boxes")
     return tuple(f for f in cls.__sharedbox_init__ if not isinstance(f.type, InitVar))
+
+
+def install_native_methods(cls: type[SharedBox]) -> None:
+    """Set the native update on `cls` where it would otherwise inherit SharedBox's."""
+    layout = cls.__layout__
+    names = tuple(sys.intern(spec.name) for spec in layout.fields)
+    specs = tuple(spec if spec.target is not None else None for spec in layout.fields)
+    segment_slot = SharedBox.__dict__["_segment"]
+    for method, kind, helper, follow in (("update", 0, stored, None),):
+        owner = next(c for c in cls.__mro__ if method in c.__dict__)
+        if owner is SharedBox or isinstance(owner.__dict__[method], BoxMethod):
+            setattr(
+                cls,
+                method,
+                BoxMethod(
+                    kind, cls.__qualname__, names, specs, helper, follow, segment_slot
+                ),
+            )
 
 
 def unpickle_box(
@@ -651,6 +670,7 @@ class SharedBox(metaclass=SharedBoxMeta):
                 )
             cls.__max_waiters__ = max_waiters
         cls.__events_class__ = events_class(cls, layout)
+        install_native_methods(cls)
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         self._open(type(self)._layout_name(), args, kwargs)
@@ -838,20 +858,21 @@ class SharedBox(metaclass=SharedBoxMeta):
         ValueError
             If a `str` or `bytes` value is longer than its capacity.
         """
+        # A native method replaces this on every class that does not define update.
         layout = type(self).__layout__
-        if layout.refs:
-            # Unknown names first, so they are reported before a bad reference value.
-            self._check_names(values)
-            by_name = layout.by_name
-            values = {
-                n: v if by_name[n].target is None else stored(by_name[n], v)
-                for n, v in values.items()
-            }
+        by_name = layout.by_name
         try:
-            self._segment.update(values)
+            pairs = [(by_name[n].index, v) for n, v in values.items()]
         except KeyError:
             self._check_names(values)
             raise
+        if layout.refs:
+            specs = layout.fields
+            pairs = [
+                (i, v if specs[i].target is None else stored(specs[i], v))
+                for i, v in pairs
+            ]
+        self._segment.set(pairs)
 
     def snapshot(self, *, follow: bool = False) -> dict[str, Any]:
         """Return every field's value, with this box read at one point in time.

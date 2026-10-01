@@ -14,7 +14,7 @@ import types
 from collections.abc import Iterator
 from dataclasses import KW_ONLY
 from multiprocessing.synchronize import Event
-from typing import Annotated, cast
+from typing import Annotated, Any, cast
 
 import pytest
 
@@ -781,3 +781,84 @@ def test_update_and_snapshot_handle_a_record_larger_than_a_page(
     with Large.create(unique_name) as box:
         box.update(count=7, blob=blob)
         assert box.snapshot() == {"count": 7, "blob": blob}
+
+
+class Overriding(SharedBox):
+    x: float = 0.0
+    y: float = 0.0
+
+    def update(self, **values: Any) -> None:
+        super().update(**{k: v * 2 for k, v in values.items()})
+
+
+class BelowOverriding(Overriding):
+    pass
+
+
+class Doubling:
+    def update(self, **values: Any) -> None:
+        SharedBox.update(cast(SharedBox, self), **{k: v * 2 for k, v in values.items()})
+
+
+class DoublingFirst(Doubling, SharedBox):
+    x: float = 0.0
+
+
+def test_a_class_that_defines_update_keeps_it_and_its_subclasses_too(
+    unique_name: str,
+) -> None:
+    """Check that update defined on a class, inherited below it or taken from a mixin before SharedBox is the one called."""
+    with (
+        Overriding.create(f"{unique_name}-o") as o,
+        BelowOverriding.create(f"{unique_name}-b") as b,
+        DoublingFirst.create(f"{unique_name}-m") as m,
+    ):
+        o.update(x=1.0)
+        b.update(y=2.0)
+        m.update(x=3.0)
+        assert (o.x, b.y, m.x) == (2.0, 4.0, 6.0)
+
+
+def test_update_called_on_the_class_or_taken_off_the_box_writes(
+    unique_name: str,
+) -> None:
+    """Check that Point.update(box, ...) and a stored box.update both write."""
+    with Point.create(unique_name) as box:
+        Point.update(box, x=1.0)
+        write = box.update
+        write(y=2.0)
+        assert (box.x, box.y) == (1.0, 2.0)
+
+
+def test_update_finds_a_field_whose_name_is_built_at_run_time(
+    unique_name: str,
+) -> None:
+    """Check that a keyword name that is not the interned field name still finds its field."""
+    with Point.create(unique_name) as box:
+        box.update(**{"LABEL".lower(): "run time"})
+        assert box.label == "run time"
+
+
+def test_update_refuses_positional_arguments(unique_name: str) -> None:
+    """Check that update with a positional argument raises TypeError and writes nothing."""
+    with Point.create(unique_name) as box:
+        with pytest.raises(TypeError):
+            box.update(1.0)  # type: ignore[call-arg]
+        assert box.x == 0.0
+
+
+def test_update_with_no_values_changes_nothing(unique_name: str) -> None:
+    """Check that update with no arguments returns and leaves every field as it was."""
+    with Point.create(unique_name, 1.0, 2.0) as box:
+        box.update()
+        assert box.snapshot() == {"x": 1.0, "y": 2.0, "label": ""}
+
+
+def test_update_keeps_no_reference_to_its_values(unique_name: str) -> None:
+    """Check that update does not change the reference count of the values it writes."""
+    label = "LEAKCHECK".lower()
+    with Point.create(unique_name) as box:
+        before = sys.getrefcount(label)
+        for _ in range(1000):
+            box.update(label=label)
+        assert sys.getrefcount(label) == before

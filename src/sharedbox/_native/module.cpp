@@ -19,6 +19,10 @@
 
 #include <sharedbox/sharedbox.hpp>
 
+#if PY_VERSION_HEX < 0x030C0000
+#include <structmember.h>
+#endif
+
 #include "codec.hpp"
 #include "segment.hpp"
 
@@ -98,8 +102,8 @@ struct Field {
 // A new reference to the Segment in box's _segment slot, or nullptr with an exception set: the
 // AttributeError of an empty slot, as a Python descriptor reading box._segment would raise. A Segment
 // made by Segment.__new__ alone has no C++ object behind it, so it counts as the wrong type.
-PyObject *segment_of(const Field &f, PyObject *box) {
-    PyObject *segment = f.read_slot(f.segment_slot.ptr(), box, reinterpret_cast<PyObject *>(Py_TYPE(box)));
+PyObject *segment_of(PyObject *segment_slot, descrgetfunc read_slot, PyObject *box) {
+    PyObject *segment = read_slot(segment_slot, box, reinterpret_cast<PyObject *>(Py_TYPE(box)));
     if (segment != nullptr && (Py_TYPE(segment) != segment_type || !nb::inst_ready(segment))) {
         Py_DECREF(segment);
         PyErr_SetString(PyExc_TypeError, "_segment does not hold a Segment");
@@ -114,7 +118,7 @@ PyObject *field_get(PyObject *self, PyObject *box, PyObject *) noexcept {
     if (!field_ready(self))
         return nullptr;
     const Field &f = *nb::inst_ptr<Field>(self);
-    const nb::object segment = nb::steal(segment_of(f, box));
+    const nb::object segment = nb::steal(segment_of(f.segment_slot.ptr(), f.read_slot, box));
     if (!segment.is_valid())
         return nullptr;
     try {
@@ -133,7 +137,7 @@ int field_set(PyObject *self, PyObject *box, PyObject *value) noexcept {
     if (!field_ready(self))
         return -1;
     const Field &f = *nb::inst_ptr<Field>(self);
-    const nb::object segment = nb::steal(segment_of(f, box));
+    const nb::object segment = nb::steal(segment_of(f.segment_slot.ptr(), f.read_slot, box));
     if (!segment.is_valid())
         return -1;
     try {
@@ -148,6 +152,250 @@ int field_set(PyObject *self, PyObject *box, PyObject *value) noexcept {
 PyType_Slot field_slots[] = {{Py_tp_descr_get, reinterpret_cast<void *>(field_get)},
                              {Py_tp_descr_set, reinterpret_cast<void *>(field_set)},
                              {0, nullptr}};
+
+// The limited API has no tuple macros; the full API's skip the checks the functions make.
+Py_ssize_t tuple_size(PyObject *tuple) {
+#ifdef Py_LIMITED_API
+    return PyTuple_Size(tuple);
+#else
+    return PyTuple_GET_SIZE(tuple);
+#endif
+}
+
+PyObject *tuple_item(PyObject *tuple, Py_ssize_t i) {
+#ifdef Py_LIMITED_API
+    return PyTuple_GetItem(tuple, i);
+#else
+    return PyTuple_GET_ITEM(tuple, i);
+#endif
+}
+
+#if PY_VERSION_HEX < 0x030C0000
+constexpr int member_ssize_t = T_PYSSIZET;
+constexpr int member_readonly = READONLY;
+#else
+constexpr int member_ssize_t = Py_T_PYSSIZET;
+constexpr int member_readonly = Py_READONLY;
+#endif
+
+// Set in NB_MODULE: types.MethodType, since PyMethod_New is not in the limited API.
+PyObject *method_type = nullptr;
+
+// A SharedBox method in C, made for one class from its fields. A class holds its BoxMethod, whose
+// specs can hold the class as a reference target, so the type supports the cycle collector.
+struct BoxMethod {
+    PyObject ob_base;
+    vectorcallfunc vectorcall;
+    int kind;
+    PyObject *qualname;     // the class's __qualname__, for messages
+    PyObject *names;        // tuple of str, in field index order
+    PyObject *specs;        // tuple: the FieldSpec of a reference field, else None
+    PyObject *helper;       // update: _refs.stored
+    PyObject *follow;       // None for update
+    PyObject *segment_slot; // SharedBox's _segment slot descriptor
+    descrgetfunc read_slot;
+};
+
+enum BoxMethodKind { kind_update = 0 };
+
+// Holds size value-initialised entries: up to N in place, more on the heap. Only the entries in use are
+// constructed, since MSVC constructs and destroys a whole array of a class type through a call per
+// element, which costs more than the rest of a small update.
+template <typename T, std::size_t N> class Scratch {
+public:
+    explicit Scratch(std::size_t size)
+        : size_(size), data_(size <= N ? reinterpret_cast<T *>(local_) : std::allocator<T>().allocate(size)) {
+        std::uninitialized_value_construct_n(data_, size_);
+    }
+    Scratch(const Scratch &) = delete;
+    Scratch &operator=(const Scratch &) = delete;
+    ~Scratch() {
+        std::destroy_n(data_, size_);
+        if (size_ > N)
+            std::allocator<T>().deallocate(data_, size_);
+    }
+    T &operator[](std::size_t i) { return data_[i]; }
+    std::span<T> span() { return {data_, size_}; }
+
+private:
+    alignas(T) std::byte local_[N * sizeof(T)];
+    std::size_t size_;
+    T *data_;
+};
+
+// The index of the field called name, or -1. Keyword names written in code are interned like the
+// field names, so a pointer match finds them; a name built at run time needs the text compared.
+Py_ssize_t field_index(const BoxMethod &m, PyObject *name) {
+    const Py_ssize_t count = tuple_size(m.names);
+    for (Py_ssize_t i = 0; i < count; ++i)
+        if (tuple_item(m.names, i) == name)
+            return i;
+    for (Py_ssize_t i = 0; i < count; ++i)
+        if (PyUnicode_Compare(tuple_item(m.names, i), name) == 0)
+            return i;
+    return -1;
+}
+
+// Raises the TypeError of SharedBox._check_names for every name in kwnames that is not a field.
+void raise_unknown(const BoxMethod &m, PyObject *kwnames) {
+    nb::list unknown;
+    for (Py_ssize_t k = 0; k < tuple_size(kwnames); ++k)
+        if (field_index(m, tuple_item(kwnames, k)) < 0)
+            unknown.append(nb::handle(tuple_item(kwnames, k)));
+    unknown.sort();
+    const nb::object joined = nb::str(", ").attr("join")(unknown);
+    PyErr_Format(PyExc_TypeError, "%U has no field(s) %U", m.qualname, joined.ptr());
+}
+
+PyObject *box_update(PyObject *callable, PyObject *const *args, std::size_t nargsf, PyObject *kwnames) noexcept {
+    const BoxMethod &m = *reinterpret_cast<BoxMethod *>(callable);
+    const Py_ssize_t nargs = PyVectorcall_NARGS(nargsf);
+    if (nargs != 1) {
+        PyErr_SetString(PyExc_TypeError, nargs == 0 ? "update() needs the box as its first argument"
+                                                    : "update() takes no positional arguments");
+        return nullptr;
+    }
+    try {
+        const nb::object segment = nb::steal(segment_of(m.segment_slot, m.read_slot, args[0]));
+        if (!segment.is_valid())
+            return nullptr;
+        const std::size_t count = kwnames == nullptr ? 0 : static_cast<std::size_t>(tuple_size(kwnames));
+        Scratch<sharedbox::Pending, 8> pending(count);
+        Scratch<std::pair<std::uint32_t, std::string>, 8> encoded(count);
+        Scratch<nb::object, 8> owned(count);
+        // Every name is found before any value is converted, so unknown names are reported first.
+        for (std::size_t k = 0; k < count; ++k) {
+            const Py_ssize_t index = field_index(m, tuple_item(kwnames, static_cast<Py_ssize_t>(k)));
+            if (index < 0) {
+                raise_unknown(m, kwnames);
+                return nullptr;
+            }
+            pending[k] = {static_cast<std::uint32_t>(index), args[1 + k]};
+        }
+        for (std::size_t k = 0; k < count; ++k) {
+            PyObject *spec = tuple_item(m.specs, pending[k].field);
+            if (spec == Py_None)
+                continue;
+            // Kept until the write ends, since pending holds only a borrowed pointer to it.
+            owned[k] = nb::steal(PyObject_CallFunctionObjArgs(m.helper, spec, pending[k].value, nullptr));
+            if (!owned[k].is_valid())
+                return nullptr;
+            pending[k].value = owned[k].ptr();
+        }
+        Segment &s = *nb::inst_ptr<Segment>(segment);
+        sharedbox::encode_all(s, pending.span(), encoded.span());
+        s.write(encoded.span());
+        Py_RETURN_NONE;
+    } catch (...) {
+        set_error();
+        return nullptr;
+    }
+}
+
+PyObject *box_method_new(PyTypeObject *type, PyObject *args, PyObject *kwargs) noexcept {
+    static const char *keywords[] = {"kind",   "qualname", "names",        "specs",
+                                     "helper", "follow",   "segment_slot", nullptr};
+    int kind = 0;
+    PyObject *qualname = nullptr, *names = nullptr, *specs = nullptr, *helper = nullptr, *follow = nullptr,
+             *segment_slot = nullptr;
+    if (!PyArg_ParseTupleAndKeywords(args, kwargs, "iUO!O!OOO:BoxMethod", const_cast<char **>(keywords), &kind,
+                                     &qualname, &PyTuple_Type, &names, &PyTuple_Type, &specs, &helper, &follow,
+                                     &segment_slot))
+        return nullptr;
+    if (kind != kind_update) {
+        PyErr_Format(PyExc_ValueError, "unknown BoxMethod kind %d", kind);
+        return nullptr;
+    }
+    if (tuple_size(names) != tuple_size(specs)) {
+        PyErr_SetString(PyExc_ValueError, "names and specs differ in length");
+        return nullptr;
+    }
+    for (Py_ssize_t i = 0; i < tuple_size(names); ++i)
+        if (!PyUnicode_Check(tuple_item(names, i))) {
+            PyErr_SetString(PyExc_TypeError, "names must hold only str");
+            return nullptr;
+        }
+    if (!PyCallable_Check(helper)) {
+        PyErr_SetString(PyExc_TypeError, "helper must be callable");
+        return nullptr;
+    }
+    auto read_slot = reinterpret_cast<descrgetfunc>(PyType_GetSlot(Py_TYPE(segment_slot), Py_tp_descr_get));
+    if (read_slot == nullptr) {
+        PyErr_SetString(PyExc_TypeError, "segment_slot must be a descriptor");
+        return nullptr;
+    }
+    auto alloc = reinterpret_cast<allocfunc>(PyType_GetSlot(type, Py_tp_alloc));
+    auto *self = reinterpret_cast<BoxMethod *>(alloc(type, 0));
+    if (self == nullptr)
+        return nullptr;
+    self->vectorcall = box_update;
+    self->kind = kind;
+    self->qualname = Py_NewRef(qualname);
+    self->names = Py_NewRef(names);
+    self->specs = Py_NewRef(specs);
+    self->helper = Py_NewRef(helper);
+    self->follow = Py_NewRef(follow);
+    self->segment_slot = Py_NewRef(segment_slot);
+    self->read_slot = read_slot;
+    return reinterpret_cast<PyObject *>(self);
+}
+
+int box_method_traverse(PyObject *self, visitproc visit, void *arg) {
+    const auto *m = reinterpret_cast<BoxMethod *>(self);
+    Py_VISIT(Py_TYPE(self));
+    Py_VISIT(m->qualname);
+    Py_VISIT(m->names);
+    Py_VISIT(m->specs);
+    Py_VISIT(m->helper);
+    Py_VISIT(m->follow);
+    Py_VISIT(m->segment_slot);
+    return 0;
+}
+
+int box_method_clear(PyObject *self) {
+    auto *m = reinterpret_cast<BoxMethod *>(self);
+    Py_CLEAR(m->qualname);
+    Py_CLEAR(m->names);
+    Py_CLEAR(m->specs);
+    Py_CLEAR(m->helper);
+    Py_CLEAR(m->follow);
+    Py_CLEAR(m->segment_slot);
+    return 0;
+}
+
+void box_method_dealloc(PyObject *self) {
+    PyTypeObject *type = Py_TYPE(self);
+    PyObject_GC_UnTrack(self);
+    box_method_clear(self);
+    reinterpret_cast<freefunc>(PyType_GetSlot(type, Py_tp_free))(self);
+    Py_DECREF(type);
+}
+
+// Only reached where the method is not called straight away, as in `f = box.update` or
+// super().update: the interpreter calls a method descriptor without binding it first.
+PyObject *box_method_get(PyObject *self, PyObject *box, PyObject *) noexcept {
+    if (box == nullptr || box == Py_None)
+        return Py_NewRef(self);
+    return PyObject_CallFunctionObjArgs(method_type, self, box, nullptr);
+}
+
+PyMemberDef box_method_members[] = {
+    {"__vectorcalloffset__", member_ssize_t, offsetof(BoxMethod, vectorcall), member_readonly, nullptr},
+    {nullptr, 0, 0, 0, nullptr}};
+
+PyType_Slot box_method_slots[] = {{Py_tp_new, reinterpret_cast<void *>(box_method_new)},
+                                  {Py_tp_dealloc, reinterpret_cast<void *>(box_method_dealloc)},
+                                  {Py_tp_traverse, reinterpret_cast<void *>(box_method_traverse)},
+                                  {Py_tp_clear, reinterpret_cast<void *>(box_method_clear)},
+                                  {Py_tp_call, reinterpret_cast<void *>(PyVectorcall_Call)},
+                                  {Py_tp_descr_get, reinterpret_cast<void *>(box_method_get)},
+                                  {Py_tp_members, box_method_members},
+                                  {0, nullptr}};
+
+PyType_Spec box_method_spec = {"sharedbox._native.BoxMethod", sizeof(BoxMethod), 0,
+                               Py_TPFLAGS_DEFAULT | Py_TPFLAGS_HAVE_GC | Py_TPFLAGS_HAVE_VECTORCALL |
+                                   Py_TPFLAGS_METHOD_DESCRIPTOR,
+                               box_method_slots};
 
 // A consumer that takes the handle renames the capsule "used_sharedbox_box" and releases the
 // handle itself; the struct's memory is freed here either way. PyCapsule_IsValid sets no error,
@@ -283,39 +531,6 @@ NB_MODULE(_native, m) {
             },
             "names"_a)
         .def(
-            "update",
-            [](Segment &s, nb::dict values) {
-                // An update of a few fields, the usual case, needs no allocation for the list.
-                sharedbox::Pending few_pending[8];
-                std::pair<std::uint32_t, std::string> few[8];
-                std::vector<sharedbox::Pending> many_pending;
-                Encoded many;
-                std::span<sharedbox::Pending> pending(few_pending, values.size());
-                std::span<std::pair<std::uint32_t, std::string>> encoded(few, values.size());
-                if (values.size() > std::size(few)) {
-                    many_pending.resize(values.size());
-                    many.resize(values.size());
-                    pending = many_pending;
-                    encoded = many;
-                }
-                std::size_t next = 0;
-                // Every value is converted before the write, so a bad one writes nothing.
-                for (const auto &[key, value] : values) {
-                    Py_ssize_t size = 0;
-                    const char *text = PyUnicode_AsUTF8AndSize(key.ptr(), &size);
-                    if (text == nullptr)
-                        throw nb::python_error();
-                    const std::string_view name(text, static_cast<std::size_t>(size));
-                    const std::optional<std::uint32_t> index = s.index_of(name);
-                    if (!index)
-                        throw nb::key_error(std::string(name).c_str());
-                    pending[next++] = {*index, value.ptr()};
-                }
-                sharedbox::encode_all(s, pending, encoded);
-                s.write(encoded);
-            },
-            "values"_a)
-        .def(
             "set",
             [](Segment &s, const Values &values) {
                 Encoded encoded;
@@ -408,4 +623,10 @@ NB_MODULE(_native, m) {
             },
             "spec"_a, "segment_slot"_a)
         .def_ro("spec", &Field::spec);
+
+    method_type = nb::object(nb::module_::import_("types").attr("MethodType")).release().ptr();
+    nb::object box_method = nb::steal(PyType_FromSpec(&box_method_spec));
+    if (!box_method.is_valid())
+        throw nb::python_error();
+    m.attr("BoxMethod") = box_method;
 }

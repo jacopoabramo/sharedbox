@@ -866,3 +866,20 @@ def test_a_stored_reference_with_an_invalid_name_is_a_broken_reference(
             match=r"Stage\.motor refers to box .*not a valid box name",
         ):
             _ = stage.motor
+
+
+def test_update_through_an_override_still_converts_references(
+    names: Callable[[str], str],
+) -> None:
+    """Check that super().update from an override stores a box in a reference field."""
+
+    class Holder(SharedBox):
+        target: Motor | None = None
+
+        def update(self, **values: Any) -> None:
+            super().update(**values)
+
+    with Motor.create(names("m")) as motor, Holder.create(names("h")) as holder:
+        holder.update(target=motor)
+        assert holder.target is not None
+        assert holder.target.name == motor.name
