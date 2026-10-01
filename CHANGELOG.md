@@ -18,7 +18,7 @@ Dates are marked as `DD-MM-YYYY`
 ### Changed
 
 - `SharedBox.update` and `SharedBox.snapshot`: native methods, unless a
-  class defines its own.
+  class defines or inherits its own.
 
 ## [0.3.1] - 01-10-2026
 

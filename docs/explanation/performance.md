@@ -7,8 +7,8 @@ icon: lucide/lightbulb
 `benchbox` times sharedbox against the ways the Python standard library
 offers to share data between processes. The charts on this page come from
 one run of `benchbox all` followed by `benchbox plot`, on Windows 11 with
-an AMD Ryzen 9 7945HX, CPython 3.11 and a development version
-of sharedbox after 0.3.1.
+an AMD Ryzen 9 7945HX, CPython 3.11 and a development version of
+sharedbox after 0.3.1.
 [How to run the benchmarks](../how-to/run-benchmarks.md) shows how to make
 the same charts on your own machine.
 
@@ -48,7 +48,7 @@ with `struct` and no lock packs or unpacks the same values in 59 ns and
     | write int | 56 ns | 50 ns | 793 ns | 635 ns | 1.4 us | 23.1 us |
     | read int | 50 ns | 46 ns | 781 ns | 624 ns | 920 ns | 25.2 us |
     | write float | 56 ns | 52 ns | 777 ns | 634 ns | 1.4 us | 23.6 us |
-    | read float | 48 ns | 50 ns | 780 ns | 627 ns | 917 ns | 28.4 us |
+    | read float | 47 ns | 50 ns | 780 ns | 627 ns | 917 ns | 28.4 us |
     | write str | 56 ns | 83 ns | 831 ns | 657 ns | 1.5 us | 21.7 us |
     | read str | 43 ns | 80 ns | 835 ns | 631 ns | 1.0 us | 26.6 us |
     | update two fields | 87 ns | 59 ns | 796 ns | 1.3 us (a lock per value) | 2.8 us | 48.6 us |
