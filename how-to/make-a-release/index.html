@@ -2933,7 +2933,7 @@
 
 
 <h1 id="how-to-make-a-release">How to make a release<a class="headerlink" href="#how-to-make-a-release" title="Permanent link">&para;</a></h1>
-<p>A release is a GitHub release. Publishing it starts <abbr title="Continuous integration. The builds and tests GitHub runs on every push and pull request.">CI</abbr>, which builds the
+<p>A release is a GitHub release. Publishing it starts <abbr title="Continuous integration. The builds and tests GitHub runs on pushes and pull requests to the main branch.">CI</abbr>, which builds the
 wheels, tests them and uploads them to PyPI.</p>
 <h2 id="before-you-start">Before you start<a class="headerlink" href="#before-you-start" title="Permanent link">&para;</a></h2>
 <p><a href="https://cli.github.com"><code>gh</code></a> signed in with write access to the
@@ -2967,14 +2967,14 @@ it once the checks pass:</p>
 <p>The release notes link to the changelog as it is in the tag.</p>
 <p>The tag is <code>vX.Y.Z</code>. The package version comes from it, through
 setuptools-scm, so the tag must be on the commit you want to release.</p>
-<h2 id="what-ci-does-with-it">What <abbr title="Continuous integration. The builds and tests GitHub runs on every push and pull request.">CI</abbr> does with it<a class="headerlink" href="#what-ci-does-with-it" title="Permanent link">&para;</a></h2>
-<p>Publishing the release runs <abbr title="Continuous integration. The builds and tests GitHub runs on every push and pull request.">CI</abbr> on the tagged commit. It first builds the
+<h2 id="what-ci-does-with-it">What <abbr title="Continuous integration. The builds and tests GitHub runs on pushes and pull requests to the main branch.">CI</abbr> does with it<a class="headerlink" href="#what-ci-does-with-it" title="Permanent link">&para;</a></h2>
+<p>Publishing the release runs <abbr title="Continuous integration. The builds and tests GitHub runs on pushes and pull requests to the main branch.">CI</abbr> on the tagged commit. It first builds the
 wheels and tests each one. It then checks that the tag has the form
 <code>vX.Y.Z</code> or <code>vX.Y.ZrcN</code>, that the pre-release flag matches (set for <code>rc</code>
 tags, not set for the others), builds the source distribution and checks
 that its version is the tag's. A mismatch fails the build before anything
 is uploaded to PyPI.</p>
-<p>Once the lint checks, the docs build and the C++ tests pass as well, <abbr title="Continuous integration. The builds and tests GitHub runs on every push and pull request.">CI</abbr>
+<p>Once the lint checks, the docs build and the C++ tests pass as well, <abbr title="Continuous integration. The builds and tests GitHub runs on pushes and pull requests to the main branch.">CI</abbr>
 uploads the wheels and the source distribution to
 <a href="https://pypi.org/project/sharedbox/">PyPI</a>. A final release also
 publishes the documentation site. The site is published on every push to
@@ -2983,7 +2983,7 @@ publishes the documentation site. The site is published on every push to
 <p>Leave <code>Unreleased</code> in the changelog, tag the candidate <code>vX.Y.ZrcN</code> and
 mark the release as a pre-release:</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>gh<span class="w"> </span>release<span class="w"> </span>create<span class="w"> </span>v0.3.0rc1<span class="w"> </span>--target<span class="w"> </span>main<span class="w"> </span>--title<span class="w"> </span>v0.3.0rc1<span class="w"> </span>--prerelease<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span>--notes<span class="w"> </span><span class="s2">"Changes: https://github.com/jacopoabramo/sharedbox/blob/main/CHANGELOG.md"</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span>--notes<span class="w"> </span><span class="s2">"Changes: https://github.com/jacopoabramo/sharedbox/blob/main/CHANGELOG.md#unreleased"</span>
 </span></code></pre></div>
 <p>Its notes link to the <code>Unreleased</code> section of the changelog on <code>main</code>.</p>
 <p>A candidate uploads the package to PyPI and leaves the documentation site

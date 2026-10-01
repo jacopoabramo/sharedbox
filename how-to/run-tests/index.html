@@ -3073,11 +3073,11 @@ environment variable. <code>tests/conftest.py</code> sets it once per <code>pyte
 every process the run starts inherits it, so the name stays the same within
 a run and differs between runs. This is what lets several workers, or
 several <code>tox</code> environments, run at the same time.</p>
-<p>On <abbr title="Continuous integration. The builds and tests GitHub runs on every push and pull request.">CI</abbr> the Linux wheels are tested in a container with 1 GiB of shared
+<p>On <abbr title="Continuous integration. The builds and tests GitHub runs on pushes and pull requests to the main branch.">CI</abbr> the Linux wheels are tested in a container with 1 GiB of shared
 memory, so keep the segments a test creates well under that.</p>
 <h2 id="run-every-environment-with-tox">Run every environment with tox<a class="headerlink" href="#run-every-environment-with-tox" title="Permanent link">&para;</a></h2>
 <p><code>tox</code> builds each environment from <code>uv.lock</code>, so every run uses the same
-tool versions. <abbr title="Continuous integration. The builds and tests GitHub runs on every push and pull request.">CI</abbr> does not run the tests through <code>tox</code>: it runs them
+tool versions. <abbr title="Continuous integration. The builds and tests GitHub runs on pushes and pull requests to the main branch.">CI</abbr> does not run the tests through <code>tox</code>: it runs them
 against each wheel it builds.</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>uv<span class="w"> </span>run<span class="w"> </span>tox<span class="w">          </span><span class="c1"># every environment, one after the other</span>
 </span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>uv<span class="w"> </span>run<span class="w"> </span>tox<span class="w"> </span>-p<span class="w"> </span>auto<span class="w">  </span><span class="c1"># the same, in parallel</span>
@@ -3128,14 +3128,14 @@ repository the way a project using CMake's <code>FetchContent</code> does:</p>
 </span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>cmake<span class="w"> </span>--build<span class="w"> </span>build-cpp<span class="w"> </span>--config<span class="w"> </span>Release
 </span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>ctest<span class="w"> </span>--test-dir<span class="w"> </span>build-cpp<span class="w"> </span>-C<span class="w"> </span>Release<span class="w"> </span>--output-on-failure
 </span></code></pre></div>
-<p><abbr title="Continuous integration. The builds and tests GitHub runs on every push and pull request.">CI</abbr> runs them on Linux and Windows, and again on Linux with
+<p><abbr title="Continuous integration. The builds and tests GitHub runs on pushes and pull requests to the main branch.">CI</abbr> runs them on Linux and Windows, and again on Linux with
 AddressSanitizer and UndefinedBehaviorSanitizer.</p>
 <h3 id="the-c-consumer">The C consumer<a class="headerlink" href="#the-c-consumer" title="Permanent link">&para;</a></h3>
 <p><code>tests/test_capsule.py</code> builds the C library in <code>tests/cpp/consumer/</code>
 against the installed wheel with CMake, then loads it and passes it a
 <a href="../../explanation/glossary/#box">box</a>.
 The tests that need it are skipped when CMake is not on <code>PATH</code>. Set
-<code>SHAREDBOX_REQUIRE_C_CONSUMER=1</code> to make it fail instead, as <abbr title="Continuous integration. The builds and tests GitHub runs on every push and pull request.">CI</abbr> does:</p>
+<code>SHAREDBOX_REQUIRE_C_CONSUMER=1</code> to make it fail instead, as <abbr title="Continuous integration. The builds and tests GitHub runs on pushes and pull requests to the main branch.">CI</abbr> does:</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="nv">SHAREDBOX_REQUIRE_C_CONSUMER</span><span class="o">=</span><span class="m">1</span><span class="w"> </span>uv<span class="w"> </span>run<span class="w"> </span>pytest<span class="w"> </span>tests/test_capsule.py
 </span></code></pre></div>
 <h2 id="run-the-property-tests-longer">Run the property tests longer<a class="headerlink" href="#run-the-property-tests-longer" title="Permanent link">&para;</a></h2>
@@ -3154,7 +3154,7 @@ They carry the <code>stress</code> marker and are left out of a normal run:</p>
 <p><code>SHAREDBOX_STRESS_SCALE</code> multiplies every duration and count; <code>1</code> is the
 default. The tests write their numbers to <code>build/stress/*.json</code> and print
 them at the end of the run.</p>
-<p>On <abbr title="Continuous integration. The builds and tests GitHub runs on every push and pull request.">CI</abbr> the stress tests run only when the workflow is started by hand, on
+<p>On <abbr title="Continuous integration. The builds and tests GitHub runs on pushes and pull requests to the main branch.">CI</abbr> the stress tests run only when the workflow is started by hand, on
 Linux and Windows against the CPython 3.12 wheel. That job also runs the
 property tests with the <code>thorough</code> profile.</p>
 <h2 id="check-the-speed-of-a-change">Check the speed of a change<a class="headerlink" href="#check-the-speed-of-a-change" title="Permanent link">&para;</a></h2>

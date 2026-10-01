@@ -2952,7 +2952,7 @@ and <code>force_unlock</code> releases it.</p>
 <p>The wait for the lock spins, then yields, then sleeps for a doubling
 interval of at most 1 ms. On Windows a sleep ends on a timer tick, so a
 wait lasts at least one tick; the Notes of <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;SharedBox&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox"><code>SharedBox</code></a>
-give its length. In the stress tests on GitHub Actions runners (<abbr title="Continuous integration. The builds and tests GitHub runs on every push and pull request.">CI</abbr> runs
+give its length. In the stress tests on GitHub Actions runners (<abbr title="Continuous integration. The builds and tests GitHub runs on pushes and pull requests to the main branch.">CI</abbr> runs
 36440952244 and 36443594984), a 1 ms <code>lock_timeout</code> ended after 15.7 and
 15.8 ms on Windows (median of 200 waits), against 1.18 and 1.16 ms on
 Linux. A lock holder that is descheduled for one timer tick can also make

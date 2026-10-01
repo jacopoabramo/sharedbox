@@ -2980,7 +2980,7 @@
 <p>sharedbox checks formatting and lint with <a href="https://prek.j178.dev"><code>prek</code></a>,
 which runs the hooks listed in <code>prek.toml</code> at the project root. The same
 hooks run on every commit once installed, in <code>uv run tox -e lint</code>, and in
-<abbr title="Continuous integration. The builds and tests GitHub runs on every push and pull request.">CI</abbr>.</p>
+<abbr title="Continuous integration. The builds and tests GitHub runs on pushes and pull requests to the main branch.">CI</abbr>.</p>
 <h2 id="before-you-start">Before you start<a class="headerlink" href="#before-you-start" title="Permanent link">&para;</a></h2>
 <p><a href="../set-up-development/">Set up a development environment</a>. <code>prek</code>, <code>ruff</code>
 and <code>clang-format</code> are in the <code>lint</code> dependency group, which <code>uv sync</code>
@@ -3049,11 +3049,11 @@ anywhere but the top of a module (<code>E402</code>, <code>PLC0415</code>). <cod
 failure, so the commit stops with the fix unstaged. Review the change, stage
 it with <code>git add</code>, and commit again. A <code>ruff</code> violation that <code>--fix</code> cannot
 repair is printed with its rule code and has to be fixed by hand.</p>
-<p><abbr title="Continuous integration. The builds and tests GitHub runs on every push and pull request.">CI</abbr> runs the hooks on every tracked file. Any file a hook rewrites fails the
+<p><abbr title="Continuous integration. The builds and tests GitHub runs on pushes and pull requests to the main branch.">CI</abbr> runs the hooks on every tracked file. Any file a hook rewrites fails the
 build there.</p>
 <h2 id="which-versions-run">Which versions run<a class="headerlink" href="#which-versions-run" title="Permanent link">&para;</a></h2>
 <p>The hooks run <code>uv run --locked --only-group lint &lt;tool&gt;</code>, so they use the
-versions pinned in <code>uv.lock</code>, the same ones <code>tox</code> and <abbr title="Continuous integration. The builds and tests GitHub runs on every push and pull request.">CI</abbr> use. Updating a
+versions pinned in <code>uv.lock</code>, the same ones <code>tox</code> and <abbr title="Continuous integration. The builds and tests GitHub runs on pushes and pull requests to the main branch.">CI</abbr> use. Updating a
 tool in the lock file updates the hook too; <code>prek.toml</code> holds no separate
 version. <code>--only-group lint</code> makes a fresh clone install only the three
 tools before the hooks run.</p>

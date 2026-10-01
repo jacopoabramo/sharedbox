@@ -2996,9 +2996,9 @@ same segment, then write again:</p>
 </span><span id="__span-3-10"><a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="nb">print</span><span class="p">(</span><span class="n">job</span><span class="o">.</span><span class="n">done</span><span class="p">)</span>  <span class="c1"># False</span>
 </span></code></pre></div>
 <p>The write that timed out did not happen, so the field still holds its old
-value until you write it again. Check that the writer has stopped first;
-<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;force_unlock&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.force_unlock"><code>force_unlock</code></a> says what happens if it
-has not.</p>
+value until you write it again.
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;force_unlock&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.force_unlock"><code>force_unlock</code></a> says what happens if the
+writer is still running.</p>
 <details class="example">
 <summary>The whole script</summary>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="sd">"""The script of the guide "How to clean up segments"."""</span>

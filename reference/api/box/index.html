@@ -3880,10 +3880,11 @@ can still attach it.</p>
 <code>box.events.connect(cb)</code> to all of them.</p>
 <p>Unlike the callbacks of a local evented dataclass, these run on the
 box's watcher thread; connect with <code>thread="main"</code> and call
-<code>psygnal.emit_queued()</code> to run them on the main thread instead. Closing the box delivers writes the watcher
-thread had not seen yet, so callbacks may run once on the thread
-that calls <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;close&lt;/span&gt;" href="./#sharedbox.SharedBox.close"><code>close</code></a>. A box that is
-garbage collected drops them.</p>
+<code>psygnal.emit_queued()</code> to run them on the main thread instead.
+Closing the box delivers writes the watcher thread had not seen
+yet, so callbacks may run once on the thread that calls
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;close&lt;/span&gt;" href="./#sharedbox.SharedBox.close"><code>close</code></a>. A box that is garbage
+collected drops them.</p>
 <p>If several writes happen between two checks by the watcher thread,
 only one emission happens, with the latest value; <code>old</code> is the
 value from the last emission. A write that leaves the value
