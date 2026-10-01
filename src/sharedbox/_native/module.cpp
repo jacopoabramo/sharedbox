@@ -199,6 +199,7 @@ struct BoxMethod {
     PyObject *fallback;     // SharedBox's Python method, for a box of another class
     PyObject *segment_slot; // SharedBox's _segment slot descriptor
     descrgetfunc read_slot;
+    bool has_refs; // whether any entry of specs is not None
 };
 
 enum BoxMethodKind { kind_update = 0, kind_snapshot = 1 };
@@ -275,7 +276,7 @@ PyObject *box_update(PyObject *callable, PyObject *const *args, std::size_t narg
         Scratch<sharedbox::Pending, 8> pending(count);
         Scratch<sharedbox::EncodeBuffer, 8> buffers(count);
         Scratch<sharedbox::value, 8> encoded(count);
-        Scratch<nb::object, 8> owned(count);
+        Scratch<nb::object, 8> owned(m.has_refs ? count : 0);
         // Every name is found before any value is converted, so unknown names are reported first.
         for (std::size_t k = 0; k < count; ++k) {
             const Py_ssize_t index = field_index(m, tuple_item(kwnames, static_cast<Py_ssize_t>(k)));
@@ -285,7 +286,7 @@ PyObject *box_update(PyObject *callable, PyObject *const *args, std::size_t narg
             }
             pending[k] = {static_cast<std::uint32_t>(index), args[1 + k]};
         }
-        for (std::size_t k = 0; k < count; ++k) {
+        for (std::size_t k = 0; m.has_refs && k < count; ++k) {
             PyObject *spec = tuple_item(m.specs, pending[k].field);
             if (spec == Py_None)
                 continue;
@@ -330,7 +331,6 @@ PyObject *box_snapshot(PyObject *callable, PyObject *const *args, std::size_t na
         if (!segment.is_valid())
             return nullptr;
         const Segment &s = *nb::inst_ptr<Segment>(segment);
-        bool has_refs = false;
         const nb::object values = sharedbox::with_record(s, [&](const std::byte *record) {
             nb::object out = nb::steal(PyDict_New());
             if (!out.is_valid())
@@ -340,7 +340,6 @@ PyObject *box_snapshot(PyObject *callable, PyObject *const *args, std::size_t na
                 nb::object value = decode_value(s.field(index), s.payload(index, record));
                 PyObject *spec = tuple_item(m.specs, i);
                 if (spec != Py_None) {
-                    has_refs = true;
                     value = nb::steal(PyObject_CallFunctionObjArgs(m.helper, value.ptr(), nullptr));
                     if (!value.is_valid())
                         throw nb::python_error();
@@ -350,7 +349,7 @@ PyObject *box_snapshot(PyObject *callable, PyObject *const *args, std::size_t na
             }
             return out;
         });
-        if (has_refs) {
+        if (m.has_refs) {
             const int truth = PyObject_IsTrue(follow);
             if (truth < 0)
                 return nullptr;
@@ -416,6 +415,9 @@ PyObject *box_method_new(PyTypeObject *type, PyObject *args, PyObject *kwargs) n
     self->fallback = Py_NewRef(fallback);
     self->segment_slot = Py_NewRef(segment_slot);
     self->read_slot = read_slot;
+    self->has_refs = false;
+    for (Py_ssize_t i = 0; i < tuple_size(specs); ++i)
+        self->has_refs = self->has_refs || tuple_item(specs, i) != Py_None;
     return reinterpret_cast<PyObject *>(self);
 }
 
