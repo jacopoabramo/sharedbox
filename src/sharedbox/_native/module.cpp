@@ -67,8 +67,9 @@ std::uint64_t stored_ref_id(const Segment &s, std::uint32_t index) {
 }
 
 void set_one(Segment &s, std::uint32_t index, nb::handle value) {
+    sharedbox::check_index(index, s.field_count());
     sharedbox::EncodeBuffer buffer;
-    s.write_one(index, sharedbox::encode(s.field(index), s.field_name(index), value.ptr(), buffer));
+    s.write_one(index, sharedbox::encode(s.fields()[index], s.field_names()[index], value.ptr(), buffer));
 }
 
 // Both set in NB_MODULE.
