@@ -33,6 +33,8 @@ bool is_prefixed(FieldKind kind);
 std::size_t field_alignment(FieldKind kind);
 /// Bytes the field occupies in the record, the length prefix included.
 std::size_t field_span(const FieldDesc &field);
+/// The stored bytes of field inside a copy of the record made by Segment::read_record.
+std::string_view payload(const FieldDesc &field, const std::byte *record);
 
 struct SegmentExists : std::runtime_error {
     using std::runtime_error::runtime_error;
@@ -95,8 +97,6 @@ public:
     /// Copies the whole record, every field from one moment, into out, which holds record_size() bytes;
     /// payload() finds a field in it.
     void read_record(std::span<std::byte> out) const;
-    /// The stored bytes of field inside a copy made by read_record.
-    std::string_view payload(std::uint32_t field, const std::byte *record) const;
     std::uint32_t field_count() const;
     /// Writes values under one lock; each field index was checked against field_count() before it
     /// was narrowed into a value.

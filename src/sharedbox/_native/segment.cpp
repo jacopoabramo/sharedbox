@@ -172,6 +172,11 @@ std::size_t field_span(const FieldDesc &field) {
     return static_cast<std::size_t>(detail::field_span(to_spec(field)));
 }
 
+std::string_view payload(const FieldDesc &field, const std::byte *record) {
+    const std::span<const std::byte> bytes = detail::payload(to_spec(field), record);
+    return {reinterpret_cast<const char *>(bytes.data()), bytes.size()};
+}
+
 void set_wait_hooks(WaitHook before, ResumeHook after) {
     before_wait = before;
     after_wait = after;
@@ -360,13 +365,6 @@ void Segment::read_record(std::span<std::byte> out) const {
 }
 
 std::uint32_t Segment::field_count() const { return static_cast<std::uint32_t>(impl_->fields.size()); }
-
-std::string_view Segment::payload(std::uint32_t index, const std::byte *record) const {
-    // From the Segment's own copy of the field, not through the handle, which a close() may have emptied
-    // since read_record returned.
-    const std::span<const std::byte> bytes = detail::payload(to_spec(impl_->field(index)), record);
-    return {reinterpret_cast<const char *>(bytes.data()), bytes.size()};
-}
 
 void Segment::write(std::span<const value> values) {
     auto guard = impl_->enter();

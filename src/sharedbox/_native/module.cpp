@@ -331,13 +331,16 @@ PyObject *box_snapshot(PyObject *callable, PyObject *const *args, std::size_t na
         if (!segment.is_valid())
             return nullptr;
         const Segment &s = *nb::inst_ptr<Segment>(segment);
+        // The Segment's own copy of the fields, not the handle's, which a close() may empty while this runs.
+        const std::span<const sharedbox::FieldDesc> fields = s.fields();
         const nb::object values = sharedbox::with_record(s, [&](const std::byte *record) {
             nb::object out = nb::steal(PyDict_New());
             if (!out.is_valid())
                 throw nb::python_error();
             for (Py_ssize_t i = 0; i < tuple_size(m.names); ++i) {
                 const auto index = static_cast<std::uint32_t>(i);
-                nb::object value = decode_value(s.field(index), s.payload(index, record));
+                sharedbox::check_index(index, fields.size());
+                nb::object value = decode_value(fields[index], sharedbox::payload(fields[index], record));
                 PyObject *spec = tuple_item(m.specs, i);
                 if (spec != Py_None) {
                     value = nb::steal(PyObject_CallFunctionObjArgs(m.helper, value.ptr(), nullptr));
@@ -615,7 +618,7 @@ NB_MODULE(_native, m) {
                 return sharedbox::with_record(s, [&](const std::byte *record) {
                     nb::dict out;
                     for (std::uint32_t i = 0; i < s.field_count(); ++i)
-                        out[names[i]] = decode_value(s.field(i), s.payload(i, record));
+                        out[names[i]] = decode_value(s.fields()[i], sharedbox::payload(s.fields()[i], record));
                     return out;
                 });
             },
@@ -645,7 +648,7 @@ NB_MODULE(_native, m) {
                  return sharedbox::with_record(s, [&](const std::byte *record) {
                      nb::list_builder out(s.field_count());
                      for (std::uint32_t i = 0; i < s.field_count(); ++i) {
-                         const std::string_view value = s.payload(i, record);
+                         const std::string_view value = sharedbox::payload(s.fields()[i], record);
                          out.put(nb::bytes(value.data(), value.size()));
                      }
                      return out.commit();
