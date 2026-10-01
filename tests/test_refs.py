@@ -897,3 +897,19 @@ def test_update_of_a_reference_keeps_no_objects(names: Callable[[str], str]) -> 
         # Each update converts the box to a new tuple of two ints and a name; one kept
         # per update would add thousands of blocks, while 100 covers allocator noise.
         assert sys.getallocatedblocks() <= before + 100
+
+
+def test_snapshot_following_a_reference_keeps_no_objects(
+    names: Callable[[str], str],
+) -> None:
+    """Check that repeated snapshot(follow=True) of a box with a reference field leaves no objects behind."""
+    with Motor.create(names("m")) as motor, Holder.create(names("h"), motor) as holder:
+        holder.snapshot(follow=True)
+        gc.collect()
+        before = sys.getallocatedblocks()
+        for _ in range(1000):
+            holder.snapshot(follow=True)
+        gc.collect()
+        # Each snapshot makes a BoxRef and a nested snapshot; one kept per snapshot
+        # would add thousands of blocks, while 100 covers allocator noise.
+        assert sys.getallocatedblocks() <= before + 100

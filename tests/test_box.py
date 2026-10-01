@@ -975,22 +975,33 @@ def test_snapshot_keeps_no_reference_to_its_values(unique_name: str) -> None:
 
 
 def test_update_and_snapshot_never_show_half_of_an_update(unique_name: str) -> None:
-    """Check that readers taking snapshots while threads update two fields always see them equal."""
+    """Check that snapshots taken while threads update two fields see them equal, which only the free-threaded build, with no GIL held between the two stores, could break."""
     stop = threading.Event()
     torn: list[dict[str, Any]] = []
+    errors: list[Exception] = []
+    reads: list[int] = []
     with Point.create(unique_name) as box:
 
         def write() -> None:
             n = 0.0
-            while not stop.is_set():
-                n += 1.0
-                box.update(x=n, y=n)
+            try:
+                while not stop.is_set():
+                    n += 1.0
+                    box.update(x=n, y=n)
+            except Exception as error:
+                errors.append(error)
 
         def read() -> None:
-            while not stop.is_set():
-                values = box.snapshot()
-                if values["x"] != values["y"]:
-                    torn.append(values)
+            count = 0
+            try:
+                while not stop.is_set():
+                    values = box.snapshot()
+                    count += 1
+                    if values["x"] != values["y"]:
+                        torn.append(values)
+            except Exception as error:
+                errors.append(error)
+            reads.append(count)
 
         threads = [threading.Thread(target=write) for _ in range(2)]
         threads += [threading.Thread(target=read) for _ in range(2)]
@@ -1000,4 +1011,8 @@ def test_update_and_snapshot_never_show_half_of_an_update(unique_name: str) -> N
         stop.set()
         for thread in threads:
             thread.join()
+        final = box.x
+    assert errors == []
     assert torn == []
+    assert sum(reads) > 0
+    assert final > 0
