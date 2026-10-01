@@ -874,6 +874,9 @@ class Child(Base):
     def update(self, **values: Any) -> None:
         super().update(**values)
 
+    def snapshot(self, *, follow: bool = False) -> dict[str, Any]:
+        return super().snapshot(follow=follow)
+
 
 def test_super_update_from_a_subclass_writes_the_fields_it_adds(
     unique_name: str,
@@ -890,3 +893,60 @@ def test_update_called_on_another_class_uses_the_box_class(unique_name: str) -> 
         with pytest.raises(TypeError, match=r"^Pair has no field\(s\) x$"):
             Point.update(cast(Point, box), x=7.0)
         assert box.snapshot() == {"a": 1, "b": 2}
+
+
+def test_super_snapshot_from_a_subclass_reads_the_fields_it_adds(
+    unique_name: str,
+) -> None:
+    """Check that super().snapshot from a subclass reads both its own field and an inherited one."""
+    with Child.create(unique_name, "base", 5) as box:
+        assert box.snapshot() == {"label": "base", "n": 5}
+
+
+def test_snapshot_refuses_a_positional_argument(unique_name: str) -> None:
+    """Check that snapshot(True) raises TypeError."""
+    with Point.create(unique_name) as box, pytest.raises(TypeError):
+        box.snapshot(True)  # type: ignore[call-arg]
+
+
+def test_snapshot_keeps_no_reference_to_its_values(unique_name: str) -> None:
+    """Check that repeated snapshots leave none of the values they decode behind."""
+    with Point.create(unique_name, 1.0, 2.0, "held") as box:
+        box.snapshot()
+        gc.collect()
+        before = sys.getallocatedblocks()
+        for _ in range(1000):
+            box.snapshot()
+        gc.collect()
+        # sys.getrefcount of a local differs between builds, so count blocks instead. One
+        # value kept per snapshot would add a thousand blocks, while 100 covers allocator noise.
+        assert sys.getallocatedblocks() <= before + 100
+
+
+def test_update_and_snapshot_never_show_half_of_an_update(unique_name: str) -> None:
+    """Check that readers taking snapshots while threads update two fields always see them equal."""
+    stop = threading.Event()
+    torn: list[dict[str, Any]] = []
+    with Point.create(unique_name) as box:
+
+        def write() -> None:
+            n = 0.0
+            while not stop.is_set():
+                n += 1.0
+                box.update(x=n, y=n)
+
+        def read() -> None:
+            while not stop.is_set():
+                values = box.snapshot()
+                if values["x"] != values["y"]:
+                    torn.append(values)
+
+        threads = [threading.Thread(target=write) for _ in range(2)]
+        threads += [threading.Thread(target=read) for _ in range(2)]
+        for thread in threads:
+            thread.start()
+        time.sleep(1.0)
+        stop.set()
+        for thread in threads:
+            thread.join()
+    assert torn == []

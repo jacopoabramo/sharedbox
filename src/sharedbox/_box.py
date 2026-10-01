@@ -194,12 +194,15 @@ def fields(class_or_box: type[SharedBox] | SharedBox) -> tuple[Field, ...]:
 
 
 def install_native_methods(cls: type[SharedBox]) -> None:
-    """Set the native update on `cls` where it would otherwise inherit SharedBox's."""
+    """Set the native update and snapshot on `cls` where it would otherwise inherit SharedBox's."""
     layout = cls.__layout__
     names = tuple(sys.intern(spec.name) for spec in layout.fields)
     specs = tuple(spec if spec.target is not None else None for spec in layout.fields)
     segment_slot = SharedBox.__dict__["_segment"]
-    for method, kind, helper, follow in (("update", 0, stored, None),):
+    for method, kind, helper, follow in (
+        ("update", 0, stored, None),
+        ("snapshot", 1, box_ref, SharedBox._follow),
+    ):
         owner = next(c for c in cls.__mro__ if method in c.__dict__)
         if owner is SharedBox or isinstance(owner.__dict__[method], BoxMethod):
             setattr(
@@ -907,6 +910,7 @@ class SharedBox(metaclass=SharedBoxMeta):
             With `follow`, if no class defined in this process has the
             schema hash of a box referred to.
         """
+        # A native method replaces this on every class that does not define snapshot.
         layout = type(self).__layout__
         values = self._segment.get_dict(layout.names)
         if layout.refs:

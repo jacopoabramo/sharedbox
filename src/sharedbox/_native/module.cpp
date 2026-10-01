@@ -192,14 +192,14 @@ struct BoxMethod {
     PyObject *qualname;     // the class's __qualname__, for messages
     PyObject *names;        // tuple of str, in field index order
     PyObject *specs;        // tuple: the FieldSpec of a reference field, else None
-    PyObject *helper;       // update: _refs.stored
-    PyObject *follow;       // None for update
+    PyObject *helper;       // update: _refs.stored; snapshot: _refs.box_ref
+    PyObject *follow;       // snapshot: SharedBox._follow; None for update
     PyObject *fallback;     // SharedBox's Python method, for a box of another class
     PyObject *segment_slot; // SharedBox's _segment slot descriptor
     descrgetfunc read_slot;
 };
 
-enum BoxMethodKind { kind_update = 0 };
+enum BoxMethodKind { kind_update = 0, kind_snapshot = 1 };
 
 // Holds size value-initialised entries: up to N in place, more on the heap. Only the entries in use are
 // constructed, since MSVC constructs and destroys a whole array of a class type through a call per
@@ -302,6 +302,69 @@ PyObject *box_update(PyObject *callable, PyObject *const *args, std::size_t narg
     }
 }
 
+PyObject *box_snapshot(PyObject *callable, PyObject *const *args, std::size_t nargsf, PyObject *kwnames) noexcept {
+    const BoxMethod &m = *reinterpret_cast<BoxMethod *>(callable);
+    const Py_ssize_t nargs = PyVectorcall_NARGS(nargsf);
+    if (nargs != 1) {
+        PyErr_SetString(PyExc_TypeError, nargs == 0 ? "snapshot() needs the box as its first argument"
+                                                    : "snapshot() takes no positional arguments");
+        return nullptr;
+    }
+    // As in box_update, a box of another class needs its own class's layout.
+    if (reinterpret_cast<PyObject *>(Py_TYPE(args[0])) != m.cls)
+        return PyObject_Vectorcall(m.fallback, args, nargsf, kwnames);
+    PyObject *follow = Py_False;
+    for (Py_ssize_t k = 0; kwnames != nullptr && k < tuple_size(kwnames); ++k) {
+        PyObject *name = tuple_item(kwnames, k);
+        if (PyUnicode_CompareWithASCIIString(name, "follow") != 0) {
+            PyErr_Format(PyExc_TypeError, "snapshot() got an unexpected keyword argument '%U'", name);
+            return nullptr;
+        }
+        follow = args[1 + k];
+    }
+    try {
+        const nb::object segment = nb::steal(segment_of(m.segment_slot, m.read_slot, args[0]));
+        if (!segment.is_valid())
+            return nullptr;
+        const Segment &s = *nb::inst_ptr<Segment>(segment);
+        bool has_refs = false;
+        const nb::object values = sharedbox::with_record(s, [&](const std::byte *record) {
+            nb::object out = nb::steal(PyDict_New());
+            if (!out.is_valid())
+                throw nb::python_error();
+            for (Py_ssize_t i = 0; i < tuple_size(m.names); ++i) {
+                const auto index = static_cast<std::uint32_t>(i);
+                nb::object value = decode_value(s.field(index), s.payload(index, record));
+                PyObject *spec = tuple_item(m.specs, i);
+                if (spec != Py_None) {
+                    has_refs = true;
+                    value = nb::steal(PyObject_CallFunctionObjArgs(m.helper, value.ptr(), nullptr));
+                    if (!value.is_valid())
+                        throw nb::python_error();
+                }
+                if (PyDict_SetItem(out.ptr(), tuple_item(m.names, i), value.ptr()) < 0)
+                    throw nb::python_error();
+            }
+            return out;
+        });
+        if (has_refs) {
+            const int truth = PyObject_IsTrue(follow);
+            if (truth < 0)
+                return nullptr;
+            if (truth > 0) {
+                PyObject *result = PyObject_CallFunctionObjArgs(m.follow, args[0], values.ptr(), nullptr);
+                if (result == nullptr)
+                    return nullptr;
+                Py_DECREF(result);
+            }
+        }
+        return Py_NewRef(values.ptr());
+    } catch (...) {
+        set_error();
+        return nullptr;
+    }
+}
+
 PyObject *box_method_new(PyTypeObject *type, PyObject *args, PyObject *kwargs) noexcept {
     static const char *keywords[] = {"kind",   "owner",  "qualname", "names",        "specs",
                                      "helper", "follow", "fallback", "segment_slot", nullptr};
@@ -312,7 +375,7 @@ PyObject *box_method_new(PyTypeObject *type, PyObject *args, PyObject *kwargs) n
                                      &PyType_Type, &cls, &qualname, &PyTuple_Type, &names, &PyTuple_Type, &specs,
                                      &helper, &follow, &fallback, &segment_slot))
         return nullptr;
-    if (kind != kind_update) {
+    if (kind != kind_update && kind != kind_snapshot) {
         PyErr_Format(PyExc_ValueError, "unknown BoxMethod kind %d", kind);
         return nullptr;
     }
@@ -325,8 +388,9 @@ PyObject *box_method_new(PyTypeObject *type, PyObject *args, PyObject *kwargs) n
             PyErr_SetString(PyExc_TypeError, "names must hold only str");
             return nullptr;
         }
-    if (!PyCallable_Check(helper) || !PyCallable_Check(fallback)) {
-        PyErr_SetString(PyExc_TypeError, "helper and fallback must be callable");
+    if (!PyCallable_Check(helper) || !PyCallable_Check(fallback) ||
+        (kind == kind_snapshot && !PyCallable_Check(follow))) {
+        PyErr_SetString(PyExc_TypeError, "helper, fallback and the follow of a snapshot must be callable");
         return nullptr;
     }
     auto read_slot = reinterpret_cast<descrgetfunc>(PyType_GetSlot(Py_TYPE(segment_slot), Py_tp_descr_get));
@@ -338,7 +402,7 @@ PyObject *box_method_new(PyTypeObject *type, PyObject *args, PyObject *kwargs) n
     auto *self = reinterpret_cast<BoxMethod *>(alloc(type, 0));
     if (self == nullptr)
         return nullptr;
-    self->vectorcall = box_update;
+    self->vectorcall = kind == kind_update ? box_update : box_snapshot;
     self->kind = kind;
     self->cls = Py_NewRef(cls);
     self->qualname = Py_NewRef(qualname);
