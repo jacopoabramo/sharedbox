@@ -519,8 +519,6 @@ const std::string &Segment::name() const { return impl_->name; }
 
 double Segment::lock_timeout() const { return impl_->lock_timeout; }
 
-const FieldDesc &Segment::field(std::uint32_t index) const { return impl_->field(index); }
-
 std::span<const FieldDesc> Segment::fields() const { return impl_->fields; }
 
 std::span<const std::string> Segment::field_names() const { return impl_->names; }

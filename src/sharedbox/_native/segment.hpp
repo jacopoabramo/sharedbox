@@ -142,7 +142,6 @@ public:
     bool closed() const;
     const std::string &name() const;
     double lock_timeout() const;
-    const FieldDesc &field(std::uint32_t index) const;
     /// Every field, in index order; fixed once the segment is open.
     std::span<const FieldDesc> fields() const;
     /// The label of every field, in index order; fixed once the segment is open.
