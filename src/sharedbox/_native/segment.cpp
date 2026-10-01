@@ -368,28 +368,15 @@ std::string_view Segment::payload(std::uint32_t index, const std::byte *record) 
     return {reinterpret_cast<const char *>(bytes.data()), bytes.size()};
 }
 
-void Segment::write(std::span<const std::pair<std::uint32_t, std::string>> values) {
+void Segment::write(std::span<const value> values) {
     auto guard = impl_->enter();
-    // A write of a few fields, the usual case, needs no allocation here.
-    value few[8];
-    std::vector<value> many;
-    value *converted = few;
-    if (values.size() > std::size(few)) {
-        many.resize(values.size());
-        converted = many.data();
-    }
-    for (std::size_t i = 0; i < values.size(); ++i) {
-        // Checked before the narrowing cast, which would otherwise turn index 65536 into field 0.
-        check_index(values[i].first, impl_->fields.size());
-        converted[i] = {static_cast<std::uint16_t>(values[i].first), bytes_of(values[i].second)};
-    }
-    impl_->write({converted, values.size()});
+    impl_->write(values);
 }
 
-void Segment::write_one(std::uint32_t index, std::string_view bytes) {
+void Segment::write_one(std::uint32_t index, std::span<const std::byte> bytes) {
     auto guard = impl_->enter();
     check_index(index, impl_->fields.size());
-    const value one{static_cast<std::uint16_t>(index), bytes_of(bytes)};
+    const value one{static_cast<std::uint16_t>(index), bytes};
     impl_->write({&one, 1});
 }
 

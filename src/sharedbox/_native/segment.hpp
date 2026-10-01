@@ -11,7 +11,7 @@
 #include <utility>
 #include <vector>
 
-struct sbx_handle;
+#include <sharedbox/sharedbox.hpp>
 
 namespace sharedbox {
 
@@ -98,9 +98,11 @@ public:
     /// The stored bytes of field inside a copy made by read_record.
     std::string_view payload(std::uint32_t field, const std::byte *record) const;
     std::uint32_t field_count() const;
-    void write(std::span<const std::pair<std::uint32_t, std::string>> values);
-    /// write() of a single value, without building a vector.
-    void write_one(std::uint32_t field, std::string_view bytes);
+    /// Writes values under one lock; each field index was checked against field_count() before it
+    /// was narrowed into a value.
+    void write(std::span<const value> values);
+    /// write() of a single value.
+    void write_one(std::uint32_t field, std::span<const std::byte> bytes);
     std::uint64_t version(std::uint32_t field) const;
     /// version() of every field, in field order.
     std::vector<std::uint64_t> versions() const;

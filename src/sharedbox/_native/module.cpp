@@ -67,7 +67,8 @@ std::uint64_t stored_ref_id(const Segment &s, std::uint32_t index) {
 }
 
 void set_one(Segment &s, std::uint32_t index, nb::handle value) {
-    s.write_one(index, sharedbox::encode(s.field(index), s.field_name(index), value.ptr()));
+    sharedbox::EncodeBuffer buffer;
+    s.write_one(index, sharedbox::encode(s.field(index), s.field_name(index), value.ptr(), buffer));
 }
 
 // Both set in NB_MODULE.
@@ -271,7 +272,8 @@ PyObject *box_update(PyObject *callable, PyObject *const *args, std::size_t narg
             return nullptr;
         const std::size_t count = kwnames == nullptr ? 0 : static_cast<std::size_t>(tuple_size(kwnames));
         Scratch<sharedbox::Pending, 8> pending(count);
-        Scratch<std::pair<std::uint32_t, std::string>, 8> encoded(count);
+        Scratch<sharedbox::EncodeBuffer, 8> buffers(count);
+        Scratch<sharedbox::value, 8> encoded(count);
         Scratch<nb::object, 8> owned(count);
         // Every name is found before any value is converted, so unknown names are reported first.
         for (std::size_t k = 0; k < count; ++k) {
@@ -293,7 +295,7 @@ PyObject *box_update(PyObject *callable, PyObject *const *args, std::size_t narg
             pending[k].value = owned[k].ptr();
         }
         Segment &s = *nb::inst_ptr<Segment>(segment);
-        sharedbox::encode_all(s, pending.span(), encoded.span());
+        sharedbox::encode_all(s, pending.span(), buffers.span(), encoded.span());
         s.write(encoded.span());
         Py_RETURN_NONE;
     } catch (...) {
@@ -518,7 +520,8 @@ NB_MODULE(_native, m) {
     m.def(
         "check",
         [](std::uint32_t kind, std::uint32_t capacity, const std::string &name, nb::handle value) {
-            sharedbox::encode({0, capacity, to_kind(kind)}, name, value.ptr());
+            sharedbox::EncodeBuffer buffer;
+            sharedbox::encode({0, capacity, to_kind(kind)}, name, value.ptr(), buffer);
         },
         "kind"_a, "capacity"_a, "name"_a, "value"_a.none());
 
@@ -545,7 +548,11 @@ NB_MODULE(_native, m) {
                 encoded.reserve(values.size());
                 for (const auto &[index, value] : values) {
                     sharedbox::check_index(index, descs.size());
-                    encoded.emplace_back(index, sharedbox::encode(descs[index], names[index], value.ptr()));
+                    sharedbox::EncodeBuffer buffer;
+                    const std::span<const std::byte> bytes =
+                        sharedbox::encode(descs[index], names[index], value.ptr(), buffer);
+                    encoded.emplace_back(index,
+                                         std::string(reinterpret_cast<const char *>(bytes.data()), bytes.size()));
                 }
                 return Segment::create(name, descs, names, record_size, schema_hash, lock_timeout, waiter_slots,
                                        encoded, publish);
@@ -613,12 +620,13 @@ NB_MODULE(_native, m) {
         .def(
             "set",
             [](Segment &s, const Values &values) {
-                Encoded encoded;
-                encoded.reserve(values.size());
-                for (const auto &[index, value] : values)
-                    encoded.emplace_back(index,
-                                         sharedbox::encode(s.field(index), s.field_name(index), value.ptr()));
-                s.write(encoded);
+                Scratch<sharedbox::Pending, 8> pending(values.size());
+                for (std::size_t i = 0; i < values.size(); ++i)
+                    pending[i] = {values[i].first, values[i].second.ptr()};
+                Scratch<sharedbox::EncodeBuffer, 8> buffers(values.size());
+                Scratch<sharedbox::value, 8> encoded(values.size());
+                sharedbox::encode_all(s, pending.span(), buffers.span(), encoded.span());
+                s.write(encoded.span());
             },
             "values"_a)
         .def(
@@ -643,11 +651,15 @@ NB_MODULE(_native, m) {
         .def(
             "_write",
             [](Segment &s, const std::vector<std::pair<std::uint32_t, nb::bytes>> &values) {
-                Encoded copied;
-                copied.reserve(values.size());
-                for (const auto &[index, data] : values)
-                    copied.emplace_back(index, std::string(data.c_str(), data.size()));
-                s.write(copied);
+                std::vector<sharedbox::value> converted;
+                converted.reserve(values.size());
+                for (const auto &[index, data] : values) {
+                    // Checked before the narrowing cast, which would otherwise turn index 65536 into field 0.
+                    sharedbox::check_index(index, s.field_count());
+                    converted.push_back(
+                        {static_cast<std::uint16_t>(index), std::as_bytes(std::span(data.c_str(), data.size()))});
+                }
+                s.write(converted);
             },
             "values"_a)
         .def("version", &Segment::version, "field"_a)
