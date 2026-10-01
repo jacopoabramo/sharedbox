@@ -191,4 +191,11 @@ PyObject *decode(const FieldDesc &field, const char *data, std::size_t size) {
     return nullptr;
 }
 
+void encode_all(const Segment &s, std::span<const Pending> values,
+                std::span<std::pair<std::uint32_t, std::string>> out) {
+    for (std::size_t i = 0; i < values.size(); ++i)
+        out[i] = {values[i].field,
+                  encode(s.field(values[i].field), s.field_name(values[i].field), values[i].value)};
+}
+
 } // namespace sharedbox
