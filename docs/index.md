@@ -59,6 +59,5 @@ Expected output:
 - [How-to Guides](how-to/index.md): install sharedbox and get one task done with a box
 - [Explanations](explanation/index.md): how a box works and why it is built that way
 - [Reference](reference/index.md): the API, the segment layout and the C and C++ interface
-- [API reference](reference/api/index.md): every name `sharedbox` exports
 - [Changelog](reference/changelog.md): what changed in each release
 - [Contributing](how-to/contribute.md): set up a clone, run the tests and send a change
