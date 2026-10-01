@@ -194,7 +194,11 @@ def fields(class_or_box: type[SharedBox] | SharedBox) -> tuple[Field, ...]:
 
 
 def install_native_methods(cls: type[SharedBox]) -> None:
-    """Set the native update and snapshot on `cls` where it would otherwise inherit SharedBox's."""
+    """Set the native update and snapshot on `cls` where it would otherwise inherit SharedBox's.
+
+    If a base's native method would hide an override that `cls` inherits
+    from a base later in its MRO, the override is set on `cls` instead.
+    """
     layout = cls.__layout__
     names = tuple(sys.intern(spec.name) for spec in layout.fields)
     specs = tuple(spec if spec.target is not None else None for spec in layout.fields)
@@ -203,8 +207,9 @@ def install_native_methods(cls: type[SharedBox]) -> None:
         ("update", 0, stored, None),
         ("snapshot", 1, box_ref, SharedBox._follow),
     ):
-        owner = next(c for c in cls.__mro__ if method in c.__dict__)
-        if owner is SharedBox or isinstance(owner.__dict__[method], BoxMethod):
+        found = [c.__dict__[method] for c in cls.__mro__ if method in c.__dict__]
+        defined = next(m for m in found if not isinstance(m, BoxMethod))
+        if defined is SharedBox.__dict__[method]:
             setattr(
                 cls,
                 method,
@@ -220,6 +225,9 @@ def install_native_methods(cls: type[SharedBox]) -> None:
                     segment_slot,
                 ),
             )
+        elif isinstance(found[0], BoxMethod):
+            # A base earlier in the MRO holds its native method, which would hide this override.
+            setattr(cls, method, defined)
 
 
 def unpickle_box(
@@ -869,7 +877,7 @@ class SharedBox(metaclass=SharedBoxMeta):
         ValueError
             If a `str` or `bytes` value is longer than its capacity.
         """
-        # A native method replaces this on every class that does not define update.
+        # A native method replaces this on every class that does not define or inherit its own update.
         layout = type(self).__layout__
         by_name = layout.by_name
         try:
@@ -910,7 +918,7 @@ class SharedBox(metaclass=SharedBoxMeta):
             With `follow`, if no class defined in this process has the
             schema hash of a box referred to.
         """
-        # A native method replaces this on every class that does not define snapshot.
+        # A native method replaces this on every class that does not define or inherit its own snapshot.
         layout = type(self).__layout__
         values = self._segment.get_dict(layout.names)
         if layout.refs:

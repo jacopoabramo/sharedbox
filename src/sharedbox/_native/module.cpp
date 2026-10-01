@@ -183,6 +183,8 @@ constexpr int member_readonly = Py_READONLY;
 
 // Set in NB_MODULE: types.MethodType, since PyMethod_New is not in the limited API.
 PyObject *method_type = nullptr;
+// Set in NB_MODULE: builtins.getattr, which a pickled BoxMethod is rebuilt with.
+PyObject *getattr_function = nullptr;
 
 // A SharedBox method in C, made for one class from its fields. A class holds its BoxMethod, whose
 // specs can hold the class as a reference target, so the type supports the cycle collector.
@@ -471,6 +473,41 @@ PyObject *box_method_get(PyObject *self, PyObject *box, PyObject *) noexcept {
     return PyObject_Vectorcall(method_type, call, 2, nullptr);
 }
 
+const char *method_name(const BoxMethod &m) { return m.kind == kind_update ? "update" : "snapshot"; }
+
+PyObject *box_method_name(PyObject *self, void *) {
+    return PyUnicode_InternFromString(method_name(*reinterpret_cast<BoxMethod *>(self)));
+}
+
+PyObject *box_method_qualname(PyObject *self, void *) {
+    const BoxMethod &m = *reinterpret_cast<BoxMethod *>(self);
+    return PyUnicode_FromFormat("%U.%s", m.qualname, method_name(m));
+}
+
+PyObject *box_method_doc(PyObject *self, void *) {
+    return PyObject_GetAttrString(reinterpret_cast<BoxMethod *>(self)->fallback, "__doc__");
+}
+
+// inspect.signature follows __wrapped__ to the Python method, whose parameters this one takes.
+PyObject *box_method_wrapped(PyObject *self, void *) {
+    return Py_NewRef(reinterpret_cast<BoxMethod *>(self)->fallback);
+}
+
+// Pickled as getattr(cls, name), so the unpickled method is the one the class holds there.
+PyObject *box_method_reduce(PyObject *self, PyObject *) {
+    const BoxMethod &m = *reinterpret_cast<BoxMethod *>(self);
+    return Py_BuildValue("O(Os)", getattr_function, m.cls, method_name(m));
+}
+
+PyGetSetDef box_method_getset[] = {{"__name__", box_method_name, nullptr, nullptr, nullptr},
+                                   {"__qualname__", box_method_qualname, nullptr, nullptr, nullptr},
+                                   {"__doc__", box_method_doc, nullptr, nullptr, nullptr},
+                                   {"__wrapped__", box_method_wrapped, nullptr, nullptr, nullptr},
+                                   {nullptr, nullptr, nullptr, nullptr, nullptr}};
+
+PyMethodDef box_method_methods[] = {{"__reduce__", box_method_reduce, METH_NOARGS, nullptr},
+                                    {nullptr, nullptr, 0, nullptr}};
+
 PyMemberDef box_method_members[] = {
     {"__vectorcalloffset__", member_ssize_t, offsetof(BoxMethod, vectorcall), member_readonly, nullptr},
     {nullptr, 0, 0, 0, nullptr}};
@@ -482,6 +519,8 @@ PyType_Slot box_method_slots[] = {{Py_tp_new, reinterpret_cast<void *>(box_metho
                                   {Py_tp_call, reinterpret_cast<void *>(PyVectorcall_Call)},
                                   {Py_tp_descr_get, reinterpret_cast<void *>(box_method_get)},
                                   {Py_tp_members, box_method_members},
+                                  {Py_tp_getset, box_method_getset},
+                                  {Py_tp_methods, box_method_methods},
                                   {0, nullptr}};
 
 PyType_Spec box_method_spec = {"sharedbox._native.BoxMethod", sizeof(BoxMethod), 0,
@@ -727,6 +766,7 @@ NB_MODULE(_native, m) {
         .def_ro("spec", &Field::spec);
 
     method_type = nb::object(nb::module_::import_("types").attr("MethodType")).release().ptr();
+    getattr_function = nb::object(nb::module_::import_("builtins").attr("getattr")).release().ptr();
     nb::object box_method = nb::steal(PyType_FromSpec(&box_method_spec));
     if (!box_method.is_valid())
         throw nb::python_error();

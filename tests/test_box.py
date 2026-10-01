@@ -1,6 +1,8 @@
 import contextlib
 import copy
+import functools
 import gc
+import inspect
 import multiprocessing as mp
 import os
 import pickle
@@ -901,6 +903,55 @@ def test_super_snapshot_from_a_subclass_reads_the_fields_it_adds(
     """Check that super().snapshot from a subclass reads both its own field and an inherited one."""
     with Child.create(unique_name, "base", 5) as box:
         assert box.snapshot() == {"label": "base", "n": 5}
+
+
+class WithA(SharedBox):
+    a: int = 0
+
+
+class Counting(SharedBox):
+    m: int = 0
+
+    def update(self, **values: Any) -> None:
+        super().update(m=self.m + 1, **values)
+
+    def snapshot(self, *, follow: bool = False) -> dict[str, Any]:
+        return {**super().snapshot(follow=follow), "counted": True}
+
+
+class Diamond(WithA, Counting):
+    pass
+
+
+def test_an_override_on_a_later_base_beats_the_native_methods(unique_name: str) -> None:
+    """Check that update and snapshot defined on the second base of a class are the ones called."""
+    with Diamond.create(unique_name, m=0) as box:
+        box.update(a=1)
+        assert box.snapshot() == {"a": 1, "m": 1, "counted": True}
+
+
+def test_update_pickles_bound_unbound_and_in_a_partial(unique_name: str) -> None:
+    """Check that Pair.update, box.update and a partial of box.update pickle and still write."""
+    with Pair.create(unique_name) as box:
+        unbound = pickle.loads(pickle.dumps(Pair.update))
+        assert unbound is Pair.update
+        unbound(box, a=1)
+        bound = pickle.loads(pickle.dumps(box.update))
+        partial = pickle.loads(pickle.dumps(functools.partial(box.update, b=2)))
+        with bound.__self__, partial.func.__self__:
+            bound(a=3)
+            partial()
+        assert box.snapshot() == {"a": 3, "b": 2}
+
+
+@pytest.mark.parametrize("method", ["update", "snapshot"])
+def test_native_methods_show_the_python_signature_and_docstring(method: str) -> None:
+    """Check that the native update and snapshot report the name, signature and docstring of SharedBox's."""
+    native = getattr(Pair, method)
+    python = SharedBox.__dict__[method]
+    assert (native.__name__, native.__qualname__) == (method, f"Pair.{method}")
+    assert inspect.signature(native) == inspect.signature(python)
+    assert native.__doc__ == python.__doc__
 
 
 def test_snapshot_refuses_a_positional_argument(unique_name: str) -> None:
