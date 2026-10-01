@@ -5,8 +5,9 @@ icon: lucide/lightbulb
 # How the module is built
 
 The part of sharedbox that reads and writes shared memory is a compiled
-module, `sharedbox._native`. This page explains how one build line gives a
-wheel for every supported Python.
+module, `sharedbox._native`. `update` and `snapshot` are native methods, set
+on each box class unless the class defines or inherits its own. This page
+explains how one build line gives a wheel for every supported Python.
 
 ## One line, three wheels
 

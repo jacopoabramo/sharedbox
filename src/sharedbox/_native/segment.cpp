@@ -172,6 +172,11 @@ std::size_t field_span(const FieldDesc &field) {
     return static_cast<std::size_t>(detail::field_span(to_spec(field)));
 }
 
+std::string_view payload(const FieldDesc &field, const std::byte *record) {
+    const std::span<const std::byte> bytes = detail::payload(to_spec(field), record);
+    return {reinterpret_cast<const char *>(bytes.data()), bytes.size()};
+}
+
 void set_wait_hooks(WaitHook before, ResumeHook after) {
     before_wait = before;
     after_wait = after;
@@ -183,6 +188,7 @@ struct Segment::Impl {
     // The handle's checked field table, in the form codec.cpp takes.
     std::vector<FieldDesc> fields;
     std::vector<std::string> names;
+    std::size_t record_size = 0;
     double lock_timeout = default_lock_timeout;
     std::atomic<bool> closed{false};
     // close() can race any other call on every build, since lock waits release the GIL and the
@@ -198,6 +204,7 @@ struct Segment::Impl {
             const field_spec &f = box.field(i);
             fields.push_back({f.offset, f.capacity, static_cast<FieldKind>(f.kind)});
         }
+        record_size = box.record_size();
         static_cast<void>(box.set_lock_timeout(seconds(lock_timeout)));
         box.set_wait_hooks(before_wait, after_wait);
     }
@@ -349,46 +356,24 @@ void Segment::read(std::uint32_t index, FieldRead &out) const {
     out.version = got.version;
 }
 
-std::unique_ptr<std::byte[]> Segment::read_record() const {
+std::size_t Segment::record_size() const { return impl_->record_size; }
+
+void Segment::read_record(std::span<std::byte> out) const {
     auto guard = impl_->enter();
-    const std::size_t size = impl_->box.record_size();
-    // new[] without () leaves the bytes uninitialised; the read overwrites all of them.
-    std::unique_ptr<std::byte[]> record(new std::byte[size]);
-    impl_->check(impl_->box.read_record({record.get(), size}));
-    return record;
+    impl_->check(impl_->box.read_record(out));
 }
 
 std::uint32_t Segment::field_count() const { return static_cast<std::uint32_t>(impl_->fields.size()); }
 
-std::string_view Segment::payload(std::uint32_t index, const std::byte *record) const {
-    // From the Segment's own copy of the field, not through the handle, which a close() may have emptied
-    // since read_record returned.
-    const std::span<const std::byte> bytes = detail::payload(to_spec(impl_->field(index)), record);
-    return {reinterpret_cast<const char *>(bytes.data()), bytes.size()};
-}
-
-void Segment::write(const std::vector<std::pair<std::uint32_t, std::string>> &values) {
+void Segment::write(std::span<const value> values) {
     auto guard = impl_->enter();
-    // A write of a few fields, the usual case, needs no allocation here.
-    value few[8];
-    std::vector<value> many;
-    value *converted = few;
-    if (values.size() > std::size(few)) {
-        many.resize(values.size());
-        converted = many.data();
-    }
-    for (std::size_t i = 0; i < values.size(); ++i) {
-        // Checked before the narrowing cast, which would otherwise turn index 65536 into field 0.
-        check_index(values[i].first, impl_->fields.size());
-        converted[i] = {static_cast<std::uint16_t>(values[i].first), bytes_of(values[i].second)};
-    }
-    impl_->write({converted, values.size()});
+    impl_->write(values);
 }
 
-void Segment::write_one(std::uint32_t index, std::string_view bytes) {
+void Segment::write_one(std::uint32_t index, std::span<const std::byte> bytes) {
     auto guard = impl_->enter();
     check_index(index, impl_->fields.size());
-    const value one{static_cast<std::uint16_t>(index), bytes_of(bytes)};
+    const value one{static_cast<std::uint16_t>(index), bytes};
     impl_->write({&one, 1});
 }
 
@@ -534,11 +519,8 @@ const std::string &Segment::name() const { return impl_->name; }
 
 double Segment::lock_timeout() const { return impl_->lock_timeout; }
 
-const FieldDesc &Segment::field(std::uint32_t index) const { return impl_->field(index); }
+std::span<const FieldDesc> Segment::fields() const { return impl_->fields; }
 
-const std::string &Segment::field_name(std::uint32_t index) const {
-    impl_->field(index);
-    return impl_->names[index];
-}
+std::span<const std::string> Segment::field_names() const { return impl_->names; }
 
 } // namespace sharedbox

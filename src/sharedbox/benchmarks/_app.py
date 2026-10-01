@@ -19,6 +19,8 @@ if sys.platform == "win32":
     import winreg
 if find_spec("pyperf") is not None:
     import pyperf
+if find_spec("pyperf") is not None and find_spec("matplotlib") is not None:
+    from sharedbox.benchmarks import plot
 
 app = typer.Typer(
     help="Measure sharedbox on this machine.",
@@ -109,6 +111,22 @@ def size_command(
     if markdown:
         argv.append("--markdown")
     raise typer.Exit(size.main(argv))
+
+
+@app.command("plot")
+def plot_command(
+    folder: Annotated[
+        Path,
+        typer.Argument(
+            metavar="DIR", help="Directory that `benchbox all --out` wrote."
+        ),
+    ],
+) -> None:
+    """Draw ops.json and roundtrip.json of DIR as SVG charts, for light and dark pages."""
+    if find_spec("pyperf") is None or find_spec("matplotlib") is None:
+        raise SystemExit(INSTALL_HINT)
+    for path in plot.write_charts(folder):
+        typer.echo(path)
 
 
 def cpu_name() -> str:

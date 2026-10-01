@@ -41,6 +41,7 @@ from ._layout import (
 from ._native import (
     LAYOUT_VERSION,
     BoxClosedError,
+    BoxMethod,
     SchemaMismatchError,
     Segment,
     SegmentNotFoundError,
@@ -190,6 +191,43 @@ def fields(class_or_box: type[SharedBox] | SharedBox) -> tuple[Field, ...]:
     if not issubclass(cls, SharedBox) or cls is SharedBox:
         raise TypeError("fields() takes a SharedBox subclass or one of its boxes")
     return tuple(f for f in cls.__sharedbox_init__ if not isinstance(f.type, InitVar))
+
+
+def install_native_methods(cls: type[SharedBox]) -> None:
+    """Set the native update and snapshot on `cls` where it would otherwise inherit SharedBox's.
+
+    If a base's native method would hide an override that `cls` inherits
+    from a base later in its MRO, the override is set on `cls` instead.
+    """
+    layout = cls.__layout__
+    names = tuple(sys.intern(spec.name) for spec in layout.fields)
+    specs = tuple(spec if spec.target is not None else None for spec in layout.fields)
+    segment_slot = SharedBox.__dict__["_segment"]
+    for method, kind, helper, follow in (
+        ("update", 0, stored, None),
+        ("snapshot", 1, box_ref, SharedBox._follow),
+    ):
+        found = [c.__dict__[method] for c in cls.__mro__ if method in c.__dict__]
+        defined = next(m for m in found if not isinstance(m, BoxMethod))
+        if defined is SharedBox.__dict__[method]:
+            setattr(
+                cls,
+                method,
+                BoxMethod(
+                    kind,
+                    cls,
+                    cls.__qualname__,
+                    names,
+                    specs,
+                    helper,
+                    follow,
+                    SharedBox.__dict__[method],
+                    segment_slot,
+                ),
+            )
+        elif isinstance(found[0], BoxMethod):
+            # A base earlier in the MRO holds its native method, which would hide this override.
+            setattr(cls, method, defined)
 
 
 def unpickle_box(
@@ -651,6 +689,7 @@ class SharedBox(metaclass=SharedBoxMeta):
                 )
             cls.__max_waiters__ = max_waiters
         cls.__events_class__ = events_class(cls, layout)
+        install_native_methods(cls)
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         self._open(type(self)._layout_name(), args, kwargs)
@@ -838,6 +877,7 @@ class SharedBox(metaclass=SharedBoxMeta):
         ValueError
             If a `str` or `bytes` value is longer than its capacity.
         """
+        # A native method replaces this on every class that does not define or inherit its own update.
         layout = type(self).__layout__
         by_name = layout.by_name
         try:
@@ -878,6 +918,7 @@ class SharedBox(metaclass=SharedBoxMeta):
             With `follow`, if no class defined in this process has the
             schema hash of a box referred to.
         """
+        # A native method replaces this on every class that does not define or inherit its own snapshot.
         layout = type(self).__layout__
         values = self._segment.get_dict(layout.names)
         if layout.refs:

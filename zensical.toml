@@ -49,6 +49,7 @@ nav = [
         "explanation/closing-and-lifetime.md",
         "explanation/checking-a-process-is-alive.md",
         "explanation/how-the-module-is-built.md",
+        "explanation/performance.md",
         "explanation/limits.md",
     ]},
     { "Reference" = [

@@ -62,13 +62,15 @@ public:
 
 } // namespace
 
-std::string encode(const FieldDesc &field, const std::string &name, PyObject *value) {
+std::span<const std::byte> encode(const FieldDesc &field, const std::string &name, PyObject *value,
+                                  EncodeBuffer &buffer) {
+    static constexpr std::byte bool_bytes[2] = {std::byte{0}, std::byte{1}};
     std::size_t size = 0;
     switch (field.kind) {
     case FieldKind::Bool: {
         if (!PyBool_Check(value))
             goto wrong_type;
-        return std::string(1, value == Py_True ? '\x01' : '\x00');
+        return {&bool_bytes[value == Py_True ? 1 : 0], 1};
     }
     case FieldKind::Int: {
         if (PyBool_Check(value) || !PyLong_Check(value))
@@ -79,9 +81,8 @@ std::string encode(const FieldDesc &field, const std::string &name, PyObject *va
             raise(PyExc_OverflowError, name + " holds a signed 64-bit integer; the value does not fit");
         if (number == -1 && PyErr_Occurred())
             throw nb::python_error();
-        std::string out(8, '\0');
-        std::memcpy(out.data(), &number, 8);
-        return out;
+        std::memcpy(buffer.small, &number, 8);
+        return {buffer.small, 8};
     }
     case FieldKind::Float: {
         if (PyBool_Check(value) || !(PyFloat_Check(value) || PyLong_Check(value)))
@@ -93,34 +94,39 @@ std::string encode(const FieldDesc &field, const std::string &name, PyObject *va
             PyErr_Clear();
             raise(PyExc_OverflowError, name + " holds a 64-bit float; the value does not fit");
         }
-        std::string out(8, '\0');
-        std::memcpy(out.data(), &number, 8);
-        return out;
+        std::memcpy(buffer.small, &number, 8);
+        return {buffer.small, 8};
     }
     case FieldKind::Str: {
         if (!PyUnicode_Check(value))
             goto wrong_type;
         Py_ssize_t length = 0;
+        // The UTF-8 text belongs to value and lasts as long as it does.
         const char *data = PyUnicode_AsUTF8AndSize(value, &length);
         if (data == nullptr)
             throw nb::python_error();
         size = static_cast<std::size_t>(length);
         if (size > field.capacity)
             goto too_long;
-        return std::string(data, size);
+        return std::as_bytes(std::span(data, size));
     }
     case FieldKind::Bytes: {
         if (!PyBytes_Check(value) && !PyByteArray_Check(value) && !PyMemoryView_Check(value))
             goto wrong_type;
-        Buffer buffer(value);
-        size = static_cast<std::size_t>(buffer.view.len);
+        Buffer view(value);
+        size = static_cast<std::size_t>(view.view.len);
         if (size > field.capacity)
             goto too_long;
-        std::string out(size, '\0');
+        // Copied, since a bytearray can change while a write waits for the lock without the GIL.
+        std::byte *out = buffer.small;
+        if (size > sizeof buffer.small) {
+            buffer.large.reset(new std::byte[size]);
+            out = buffer.large.get();
+        }
         // Copies a strided memoryview in logical order, as bytes() would.
-        if (PyBuffer_ToContiguous(out.data(), &buffer.view, buffer.view.len, 'C') != 0)
+        if (PyBuffer_ToContiguous(out, &view.view, view.view.len, 'C') != 0)
             throw nb::python_error();
-        return out;
+        return {out, size};
     }
     case FieldKind::Ref: {
         box_ref ref{};
@@ -142,9 +148,8 @@ std::string encode(const FieldDesc &field, const std::string &name, PyObject *va
                 raise(PyExc_ValueError, name + " needs a box name matching [A-Za-z0-9_.-]{1,128}");
             std::memcpy(ref.name, box_name.data(), box_name.size());
         }
-        std::string out(sizeof ref, '\0');
-        std::memcpy(out.data(), &ref, sizeof ref);
-        return out;
+        std::memcpy(buffer.small, &ref, sizeof ref);
+        return {buffer.small, sizeof ref};
     }
     }
     raise(PyExc_SystemError, "unknown field kind");
@@ -189,6 +194,19 @@ PyObject *decode(const FieldDesc &field, const char *data, std::size_t size) {
     }
     }
     return nullptr;
+}
+
+void encode_all(const Segment &s, std::span<const Pending> values, std::span<EncodeBuffer> buffers,
+                std::span<value> out) {
+    const std::span<const FieldDesc> fields = s.fields();
+    const std::span<const std::string> names = s.field_names();
+    for (std::size_t i = 0; i < values.size(); ++i) {
+        const std::uint32_t index = values[i].field;
+        // Checked before the narrowing cast, which would otherwise turn index 65536 into field 0.
+        check_index(index, fields.size());
+        out[i] = {static_cast<std::uint16_t>(index),
+                  encode(fields[index], names[index], values[i].value, buffers[i])};
+    }
 }
 
 } // namespace sharedbox

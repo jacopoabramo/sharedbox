@@ -1,6 +1,8 @@
 import contextlib
 import copy
+import functools
 import gc
+import inspect
 import multiprocessing as mp
 import os
 import pickle
@@ -14,7 +16,7 @@ import types
 from collections.abc import Iterator
 from dataclasses import KW_ONLY
 from multiprocessing.synchronize import Event
-from typing import Annotated, cast
+from typing import Annotated, Any, cast
 
 import pytest
 
@@ -766,3 +768,251 @@ def test_snapshot_keys_follow_declaration_order(unique_name: str) -> None:
             ("label", "x"),
             ("count", 3),
         ]
+
+
+class Large(SharedBox):
+    count: int = 0
+    blob: Annotated[bytes, Capacity(64 * 1024)] = b""
+
+
+def test_update_and_snapshot_handle_a_record_larger_than_a_page(
+    unique_name: str,
+) -> None:
+    """Check that update writes and snapshot reads back a record of 64 KiB."""
+    blob = bytes(range(256)) * 256
+    with Large.create(unique_name) as box:
+        box.update(count=7, blob=blob)
+        assert box.snapshot() == {"count": 7, "blob": blob}
+
+
+class Overriding(SharedBox):
+    x: float = 0.0
+    y: float = 0.0
+
+    def update(self, **values: Any) -> None:
+        super().update(**{k: v * 2 for k, v in values.items()})
+
+
+class BelowOverriding(Overriding):
+    pass
+
+
+class Doubling:
+    def update(self, **values: Any) -> None:
+        SharedBox.update(cast(SharedBox, self), **{k: v * 2 for k, v in values.items()})
+
+
+class DoublingFirst(Doubling, SharedBox):
+    x: float = 0.0
+
+
+def test_a_class_that_defines_update_keeps_it_and_its_subclasses_too(
+    unique_name: str,
+) -> None:
+    """Check that update defined on a class, inherited below it or taken from a mixin before SharedBox is the one called."""
+    with (
+        Overriding.create(f"{unique_name}-o") as o,
+        BelowOverriding.create(f"{unique_name}-b") as b,
+        DoublingFirst.create(f"{unique_name}-m") as m,
+    ):
+        o.update(x=1.0)
+        b.update(y=2.0)
+        m.update(x=3.0)
+        assert (o.x, b.y, m.x) == (2.0, 4.0, 6.0)
+
+
+def test_update_called_on_the_class_or_taken_off_the_box_writes(
+    unique_name: str,
+) -> None:
+    """Check that Point.update(box, ...) and a stored box.update both write."""
+    with Point.create(unique_name) as box:
+        Point.update(box, x=1.0)
+        write = box.update
+        write(y=2.0)
+        assert (box.x, box.y) == (1.0, 2.0)
+
+
+def test_update_finds_a_field_whose_name_is_built_at_run_time(
+    unique_name: str,
+) -> None:
+    """Check that a keyword name that is not the interned field name still finds its field."""
+    with Point.create(unique_name) as box:
+        box.update(**{"LABEL".lower(): "run time"})
+        assert box.label == "run time"
+
+
+def test_update_refuses_positional_arguments(unique_name: str) -> None:
+    """Check that update with a positional argument raises TypeError and writes nothing."""
+    with Point.create(unique_name) as box:
+        with pytest.raises(TypeError):
+            box.update(1.0)  # type: ignore[call-arg]
+        assert box.x == 0.0
+
+
+def test_update_with_no_values_changes_nothing(unique_name: str) -> None:
+    """Check that update with no arguments returns and leaves every field as it was."""
+    with Point.create(unique_name, 1.0, 2.0) as box:
+        box.update()
+        assert box.snapshot() == {"x": 1.0, "y": 2.0, "label": ""}
+
+
+def test_update_keeps_no_reference_to_its_values(unique_name: str) -> None:
+    """Check that update does not change the reference count of the values it writes."""
+    label = "LEAKCHECK".lower()
+    with Point.create(unique_name) as box:
+        before = sys.getrefcount(label)
+        for _ in range(1000):
+            box.update(label=label)
+        assert sys.getrefcount(label) == before
+
+
+class Base(SharedBox):
+    label: Annotated[str, Capacity(8)] = ""
+
+
+class Child(Base):
+    n: int = 0
+
+    def update(self, **values: Any) -> None:
+        super().update(**values)
+
+    def snapshot(self, *, follow: bool = False) -> dict[str, Any]:
+        return super().snapshot(follow=follow)
+
+
+def test_super_update_from_a_subclass_writes_the_fields_it_adds(
+    unique_name: str,
+) -> None:
+    """Check that super().update from a subclass writes both its own field and an inherited one."""
+    with Child.create(unique_name) as box:
+        box.update(n=5, label="base")
+        assert (box.n, box.label) == (5, "base")
+
+
+def test_update_called_on_another_class_uses_the_box_class(unique_name: str) -> None:
+    """Check that Point.update on a Pair box refuses Point's field names, naming Pair, and writes nothing."""
+    with Pair.create(unique_name, 1, 2) as box:
+        with pytest.raises(TypeError, match=r"^Pair has no field\(s\) x$"):
+            Point.update(cast(Point, box), x=7.0)
+        assert box.snapshot() == {"a": 1, "b": 2}
+
+
+def test_super_snapshot_from_a_subclass_reads_the_fields_it_adds(
+    unique_name: str,
+) -> None:
+    """Check that super().snapshot from a subclass reads both its own field and an inherited one."""
+    with Child.create(unique_name, "base", 5) as box:
+        assert box.snapshot() == {"label": "base", "n": 5}
+
+
+class WithA(SharedBox):
+    a: int = 0
+
+
+class Counting(SharedBox):
+    m: int = 0
+
+    def update(self, **values: Any) -> None:
+        super().update(m=self.m + 1, **values)
+
+    def snapshot(self, *, follow: bool = False) -> dict[str, Any]:
+        return {**super().snapshot(follow=follow), "counted": True}
+
+
+class Diamond(WithA, Counting):
+    pass
+
+
+def test_an_override_on_a_later_base_beats_the_native_methods(unique_name: str) -> None:
+    """Check that update and snapshot defined on the second base of a class are the ones called."""
+    with Diamond.create(unique_name, m=0) as box:
+        box.update(a=1)
+        assert box.snapshot() == {"a": 1, "m": 1, "counted": True}
+
+
+def test_update_pickles_bound_unbound_and_in_a_partial(unique_name: str) -> None:
+    """Check that Pair.update, box.update and a partial of box.update pickle and still write."""
+    with Pair.create(unique_name) as box:
+        unbound = pickle.loads(pickle.dumps(Pair.update))
+        assert unbound is Pair.update
+        unbound(box, a=1)
+        bound = pickle.loads(pickle.dumps(box.update))
+        partial = pickle.loads(pickle.dumps(functools.partial(box.update, b=2)))
+        with bound.__self__, partial.func.__self__:
+            bound(a=3)
+            partial()
+        assert box.snapshot() == {"a": 3, "b": 2}
+
+
+@pytest.mark.parametrize("method", ["update", "snapshot"])
+def test_native_methods_show_the_python_signature_and_docstring(method: str) -> None:
+    """Check that the native update and snapshot report the name, signature and docstring of SharedBox's."""
+    native = getattr(Pair, method)
+    python = SharedBox.__dict__[method]
+    assert (native.__name__, native.__qualname__) == (method, f"Pair.{method}")
+    assert inspect.signature(native) == inspect.signature(python)
+    assert native.__doc__ == python.__doc__
+
+
+def test_snapshot_refuses_a_positional_argument(unique_name: str) -> None:
+    """Check that snapshot(True) raises TypeError."""
+    with Point.create(unique_name) as box, pytest.raises(TypeError):
+        box.snapshot(True)  # type: ignore[call-arg]
+
+
+def test_snapshot_keeps_no_reference_to_its_values(unique_name: str) -> None:
+    """Check that repeated snapshots leave none of the values they decode behind."""
+    with Point.create(unique_name, 1.0, 2.0, "held") as box:
+        box.snapshot()
+        gc.collect()
+        before = sys.getallocatedblocks()
+        for _ in range(1000):
+            box.snapshot()
+        gc.collect()
+        # sys.getrefcount of a local differs between builds, so count blocks instead. One
+        # value kept per snapshot would add a thousand blocks, while 100 covers allocator noise.
+        assert sys.getallocatedblocks() <= before + 100
+
+
+def test_update_and_snapshot_never_show_half_of_an_update(unique_name: str) -> None:
+    """Check that snapshots taken while threads update two fields see them equal, which only the free-threaded build, with no GIL held between the two stores, could break."""
+    stop = threading.Event()
+    torn: list[dict[str, Any]] = []
+    errors: list[Exception] = []
+    reads: list[int] = []
+    with Point.create(unique_name) as box:
+
+        def write() -> None:
+            n = 0.0
+            try:
+                while not stop.is_set():
+                    n += 1.0
+                    box.update(x=n, y=n)
+            except Exception as error:
+                errors.append(error)
+
+        def read() -> None:
+            count = 0
+            try:
+                while not stop.is_set():
+                    values = box.snapshot()
+                    count += 1
+                    if values["x"] != values["y"]:
+                        torn.append(values)
+            except Exception as error:
+                errors.append(error)
+            reads.append(count)
+
+        threads = [threading.Thread(target=write) for _ in range(2)]
+        threads += [threading.Thread(target=read) for _ in range(2)]
+        for thread in threads:
+            thread.start()
+        time.sleep(1.0)
+        stop.set()
+        for thread in threads:
+            thread.join()
+        final = box.x
+    assert errors == []
+    assert torn == []
+    assert sum(reads) > 0
+    assert final > 0

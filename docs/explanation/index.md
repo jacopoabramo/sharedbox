@@ -36,5 +36,7 @@ half-finished write.
   running process from one that exited
 - [How the module is built](how-the-module-is-built.md): one build line for
   three kinds of wheel
+- [How fast a box is](performance.md): sharedbox timed against the
+  standard library, in two charts
 - [Limits](limits.md): platforms, file descriptors, threads, and what a box
   cannot hold

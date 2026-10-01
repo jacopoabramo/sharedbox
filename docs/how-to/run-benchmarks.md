@@ -75,6 +75,19 @@ there, older builds included.
 
 `python -m sharedbox.benchmarks` runs the same command as `benchbox`.
 
+## Draw the results
+
+```bash
+benchbox plot results
+```
+
+`plot` reads `ops.json` and `roundtrip.json` from the folder `all` wrote
+and saves two charts next to them as SVG, each in a light and a dark
+variant: `ops-light.svg`, `ops-dark.svg`, `roundtrip-light.svg` and
+`roundtrip-dark.svg`. The dark files suit a page with a dark background.
+[How fast a box is](../explanation/performance.md) shows the charts of one
+run.
+
 ## Run the pytest benchmarks
 
 The pytest benchmarks are separate and live only in the repository:

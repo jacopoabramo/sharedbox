@@ -4,13 +4,14 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
 #include <utility>
 #include <vector>
 
-struct sbx_handle;
+#include <sharedbox/sharedbox.hpp>
 
 namespace sharedbox {
 
@@ -32,6 +33,8 @@ bool is_prefixed(FieldKind kind);
 std::size_t field_alignment(FieldKind kind);
 /// Bytes the field occupies in the record, the length prefix included.
 std::size_t field_span(const FieldDesc &field);
+/// The stored bytes of field inside a copy of the record made by Segment::read_record.
+std::string_view payload(const FieldDesc &field, const std::byte *record);
 
 struct SegmentExists : std::runtime_error {
     using std::runtime_error::runtime_error;
@@ -89,14 +92,17 @@ public:
 
     /// Reads the field's bytes and version, from one moment, into out.
     void read(std::uint32_t field, FieldRead &out) const;
-    /// A copy of the whole record, every field from one moment; payload() finds a field in it.
-    std::unique_ptr<std::byte[]> read_record() const;
-    /// The stored bytes of field inside a copy made by read_record.
-    std::string_view payload(std::uint32_t field, const std::byte *record) const;
+    /// Bytes of the record, the size of the buffer read_record fills.
+    std::size_t record_size() const;
+    /// Copies the whole record, every field from one moment, into out, which holds record_size() bytes;
+    /// payload() finds a field in it.
+    void read_record(std::span<std::byte> out) const;
     std::uint32_t field_count() const;
-    void write(const std::vector<std::pair<std::uint32_t, std::string>> &values);
-    /// write() of a single value, without building a vector.
-    void write_one(std::uint32_t field, std::string_view bytes);
+    /// Writes values under one lock; each field index was checked against field_count() before it
+    /// was narrowed into a value.
+    void write(std::span<const value> values);
+    /// write() of a single value.
+    void write_one(std::uint32_t field, std::span<const std::byte> bytes);
     std::uint64_t version(std::uint32_t field) const;
     /// version() of every field, in field order.
     std::vector<std::uint64_t> versions() const;
@@ -136,8 +142,10 @@ public:
     bool closed() const;
     const std::string &name() const;
     double lock_timeout() const;
-    const FieldDesc &field(std::uint32_t index) const;
-    const std::string &field_name(std::uint32_t index) const;
+    /// Every field, in index order; fixed once the segment is open.
+    std::span<const FieldDesc> fields() const;
+    /// The label of every field, in index order; fixed once the segment is open.
+    std::span<const std::string> field_names() const;
     /// Removes the name, like shm_unlink: existing handles keep working. A no-op on
     /// Windows, where the OS frees the segment when its last handle closes.
     static void unlink(const std::string &name);

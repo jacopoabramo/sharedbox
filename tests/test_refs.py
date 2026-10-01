@@ -866,3 +866,50 @@ def test_a_stored_reference_with_an_invalid_name_is_a_broken_reference(
             match=r"Stage\.motor refers to box .*not a valid box name",
         ):
             _ = stage.motor
+
+
+def test_update_through_an_override_still_converts_references(
+    names: Callable[[str], str],
+) -> None:
+    """Check that super().update from an override stores a box in a reference field."""
+
+    class Holder(SharedBox):
+        target: Motor | None = None
+
+        def update(self, **values: Any) -> None:
+            super().update(**values)
+
+    with Motor.create(names("m")) as motor, Holder.create(names("h")) as holder:
+        holder.update(target=motor)
+        assert holder.target is not None
+        assert holder.target.name == motor.name
+
+
+def test_update_of_a_reference_keeps_no_objects(names: Callable[[str], str]) -> None:
+    """Check that repeated update of a reference field leaves no objects behind."""
+    with Motor.create(names("m")) as motor, Holder.create(names("h"), None) as holder:
+        holder.update(motor=motor)
+        gc.collect()
+        before = sys.getallocatedblocks()
+        for _ in range(1000):
+            holder.update(motor=motor)
+        gc.collect()
+        # Each update converts the box to a new tuple of two ints and a name; one kept
+        # per update would add thousands of blocks, while 100 covers allocator noise.
+        assert sys.getallocatedblocks() <= before + 100
+
+
+def test_snapshot_following_a_reference_keeps_no_objects(
+    names: Callable[[str], str],
+) -> None:
+    """Check that repeated snapshot(follow=True) of a box with a reference field leaves no objects behind."""
+    with Motor.create(names("m")) as motor, Holder.create(names("h"), motor) as holder:
+        holder.snapshot(follow=True)
+        gc.collect()
+        before = sys.getallocatedblocks()
+        for _ in range(1000):
+            holder.snapshot(follow=True)
+        gc.collect()
+        # Each snapshot makes a BoxRef and a nested snapshot; one kept per snapshot
+        # would add thousands of blocks, while 100 covers allocator noise.
+        assert sys.getallocatedblocks() <= before + 100

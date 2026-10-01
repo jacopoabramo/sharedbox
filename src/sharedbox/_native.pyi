@@ -1,6 +1,6 @@
 import sys
-from collections.abc import Sequence
-from typing import Any, Final, Never, Self, overload
+from collections.abc import Callable, Sequence
+from typing import Any, Final, Never, Self, final, overload
 
 from typing_extensions import disjoint_base
 
@@ -279,3 +279,31 @@ class Field:
     @overload
     def __get__(self, box: object, owner: type | None = None, /) -> Any: ...
     def __set__(self, box: object, value: object, /) -> None: ...
+
+@final
+class BoxMethod:
+    """A native `update` or `snapshot`, bound to the box it is called on."""
+
+    def __new__(
+        cls,
+        kind: int,
+        owner: type,
+        qualname: str,
+        names: tuple[str, ...],
+        specs: tuple[FieldSpec | None, ...],
+        helper: Callable[..., object],
+        follow: Callable[..., object] | None,
+        fallback: Callable[..., object],
+        segment_slot: object,
+    ) -> Self: ...
+    @property
+    def __name__(self) -> str: ...
+    @property
+    def __qualname__(self) -> str: ...
+    @property
+    def __doc__(self) -> str | None: ...  # type: ignore[override]
+    @property
+    def __wrapped__(self) -> Callable[..., object]: ...
+    def __call__(self, *args: Any, **kwargs: Any) -> Any: ...
+    def __get__(self, obj: object, objtype: type | None = None, /) -> Any: ...
+    def __reduce__(self) -> tuple[Callable[..., Any], tuple[type, str]]: ...
