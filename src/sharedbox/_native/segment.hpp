@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <span>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -89,12 +90,15 @@ public:
 
     /// Reads the field's bytes and version, from one moment, into out.
     void read(std::uint32_t field, FieldRead &out) const;
-    /// A copy of the whole record, every field from one moment; payload() finds a field in it.
-    std::unique_ptr<std::byte[]> read_record() const;
+    /// Bytes of the record, the size of the buffer read_record fills.
+    std::size_t record_size() const;
+    /// Copies the whole record, every field from one moment, into out, which holds record_size() bytes;
+    /// payload() finds a field in it.
+    void read_record(std::span<std::byte> out) const;
     /// The stored bytes of field inside a copy made by read_record.
     std::string_view payload(std::uint32_t field, const std::byte *record) const;
     std::uint32_t field_count() const;
-    void write(const std::vector<std::pair<std::uint32_t, std::string>> &values);
+    void write(std::span<const std::pair<std::uint32_t, std::string>> values);
     /// write() of a single value, without building a vector.
     void write_one(std::uint32_t field, std::string_view bytes);
     std::uint64_t version(std::uint32_t field) const;
@@ -138,6 +142,8 @@ public:
     double lock_timeout() const;
     const FieldDesc &field(std::uint32_t index) const;
     const std::string &field_name(std::uint32_t index) const;
+    /// The index of the field whose label is "Class.name", or nullopt if there is none.
+    std::optional<std::uint32_t> index_of(std::string_view name) const;
     /// Removes the name, like shm_unlink: existing handles keep working. A no-op on
     /// Windows, where the OS frees the segment when its last handle closes.
     static void unlink(const std::string &name);

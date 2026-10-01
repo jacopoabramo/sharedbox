@@ -151,6 +151,17 @@ class Segment:
     def get_dict(self, names: tuple[str, ...]) -> dict[str, object]:
         """Return every field's value under its name in `names`, read at one point in time."""
 
+    def update(self, values: dict[str, object]) -> None:
+        """Convert every value, then write them all under one lock, each under its field's name.
+
+        A reference field takes `(create_id, schema_hash, name)`, or None to empty it.
+
+        Raises
+        ------
+        KeyError
+            If a name is not a field; nothing is written.
+        """
+
     def set(self, values: Sequence[tuple[int, object]]) -> None:
         """Convert every value, then write them all under one lock.
 

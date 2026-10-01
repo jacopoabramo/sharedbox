@@ -766,3 +766,18 @@ def test_snapshot_keys_follow_declaration_order(unique_name: str) -> None:
             ("label", "x"),
             ("count", 3),
         ]
+
+
+class Large(SharedBox):
+    count: int = 0
+    blob: Annotated[bytes, Capacity(64 * 1024)] = b""
+
+
+def test_update_and_snapshot_handle_a_record_larger_than_a_page(
+    unique_name: str,
+) -> None:
+    """Check that update writes and snapshot reads back a record of 64 KiB."""
+    blob = bytes(range(256)) * 256
+    with Large.create(unique_name) as box:
+        box.update(count=7, blob=blob)
+        assert box.snapshot() == {"count": 7, "blob": blob}

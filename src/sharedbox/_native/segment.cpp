@@ -17,6 +17,7 @@
 #include <span>
 #include <system_error>
 #include <thread>
+#include <unordered_map>
 
 namespace sharedbox {
 namespace {
@@ -183,6 +184,8 @@ struct Segment::Impl {
     // The handle's checked field table, in the form codec.cpp takes.
     std::vector<FieldDesc> fields;
     std::vector<std::string> names;
+    // Each field's name, the part of its label after the class, viewing into names.
+    std::unordered_map<std::string_view, std::uint32_t> by_name;
     double lock_timeout = default_lock_timeout;
     std::atomic<bool> closed{false};
     // close() can race any other call on every build, since lock waits release the GIL and the
@@ -193,6 +196,11 @@ struct Segment::Impl {
 
     // Called once the handle is open, to take what the rest of this file reads from it.
     void bind() {
+        by_name.reserve(names.size());
+        for (std::uint32_t i = 0; i < names.size(); ++i) {
+            const std::string_view label = names[i];
+            by_name.emplace(label.substr(label.rfind('.') + 1), i);
+        }
         fields.reserve(box.field_count());
         for (std::uint16_t i = 0; i < box.field_count(); ++i) {
             const field_spec &f = box.field(i);
@@ -349,13 +357,14 @@ void Segment::read(std::uint32_t index, FieldRead &out) const {
     out.version = got.version;
 }
 
-std::unique_ptr<std::byte[]> Segment::read_record() const {
+std::size_t Segment::record_size() const {
     auto guard = impl_->enter();
-    const std::size_t size = impl_->box.record_size();
-    // new[] without () leaves the bytes uninitialised; the read overwrites all of them.
-    std::unique_ptr<std::byte[]> record(new std::byte[size]);
-    impl_->check(impl_->box.read_record({record.get(), size}));
-    return record;
+    return impl_->box.record_size();
+}
+
+void Segment::read_record(std::span<std::byte> out) const {
+    auto guard = impl_->enter();
+    impl_->check(impl_->box.read_record(out));
 }
 
 std::uint32_t Segment::field_count() const { return static_cast<std::uint32_t>(impl_->fields.size()); }
@@ -367,7 +376,7 @@ std::string_view Segment::payload(std::uint32_t index, const std::byte *record) 
     return {reinterpret_cast<const char *>(bytes.data()), bytes.size()};
 }
 
-void Segment::write(const std::vector<std::pair<std::uint32_t, std::string>> &values) {
+void Segment::write(std::span<const std::pair<std::uint32_t, std::string>> values) {
     auto guard = impl_->enter();
     // A write of a few fields, the usual case, needs no allocation here.
     value few[8];
@@ -535,6 +544,13 @@ const std::string &Segment::name() const { return impl_->name; }
 double Segment::lock_timeout() const { return impl_->lock_timeout; }
 
 const FieldDesc &Segment::field(std::uint32_t index) const { return impl_->field(index); }
+
+std::optional<std::uint32_t> Segment::index_of(std::string_view name) const {
+    const auto found = impl_->by_name.find(name);
+    if (found == impl_->by_name.end())
+        return std::nullopt;
+    return found->second;
+}
 
 const std::string &Segment::field_name(std::uint32_t index) const {
     impl_->field(index);

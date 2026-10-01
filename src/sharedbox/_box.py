@@ -839,19 +839,19 @@ class SharedBox(metaclass=SharedBoxMeta):
             If a `str` or `bytes` value is longer than its capacity.
         """
         layout = type(self).__layout__
-        by_name = layout.by_name
+        if layout.refs:
+            # Unknown names first, so they are reported before a bad reference value.
+            self._check_names(values)
+            by_name = layout.by_name
+            values = {
+                n: v if by_name[n].target is None else stored(by_name[n], v)
+                for n, v in values.items()
+            }
         try:
-            pairs = [(by_name[n].index, v) for n, v in values.items()]
+            self._segment.update(values)
         except KeyError:
             self._check_names(values)
             raise
-        if layout.refs:
-            specs = layout.fields
-            pairs = [
-                (i, v if specs[i].target is None else stored(specs[i], v))
-                for i, v in pairs
-            ]
-        self._segment.set(pairs)
 
     def snapshot(self, *, follow: bool = False) -> dict[str, Any]:
         """Return every field's value, with this box read at one point in time.

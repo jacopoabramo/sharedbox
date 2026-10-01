@@ -6,9 +6,13 @@
 #include <nanobind/stl/unique_ptr.h>
 #include <nanobind/stl/vector.h>
 
+#include <cstddef>
 #include <cstring>
 #include <exception>
+#include <iterator>
+#include <memory>
 #include <new>
+#include <span>
 #include <string_view>
 #include <system_error>
 #include <utility>
@@ -26,6 +30,22 @@ namespace {
 
 using Values = std::vector<std::pair<std::uint32_t, nb::object>>;
 using Encoded = std::vector<std::pair<std::uint32_t, std::string>>;
+
+// Reads the whole record and passes it to use; a record of up to 4 KiB, the usual size, is read
+// into the stack, so the read allocates nothing.
+template <typename Use> decltype(auto) with_record(const Segment &s, Use &&use) {
+    alignas(std::max_align_t) std::byte small[4096];
+    std::unique_ptr<std::byte[]> large;
+    const std::size_t size = s.record_size();
+    std::byte *record = small;
+    if (size > sizeof small) {
+        // new[] without () leaves the bytes uninitialised; the read overwrites all of them.
+        large.reset(new std::byte[size]);
+        record = large.get();
+    }
+    s.read_record({record, size});
+    return use(static_cast<const std::byte *>(record));
+}
 
 sharedbox::FieldKind to_kind(std::uint32_t code) {
     if (!sharedbox::kind_is_valid(code))
@@ -270,13 +290,42 @@ NB_MODULE(_native, m) {
                 if (names.size() != s.field_count())
                     throw std::invalid_argument("got " + std::to_string(names.size()) + " field names for " +
                                                 std::to_string(s.field_count()) + " fields");
-                const auto record = s.read_record();
-                nb::dict out;
-                for (std::uint32_t i = 0; i < s.field_count(); ++i)
-                    out[names[i]] = decode_value(s.field(i), s.payload(i, record.get()));
-                return out;
+                return with_record(s, [&](const std::byte *record) {
+                    nb::dict out;
+                    for (std::uint32_t i = 0; i < s.field_count(); ++i)
+                        out[names[i]] = decode_value(s.field(i), s.payload(i, record));
+                    return out;
+                });
             },
             "names"_a)
+        .def(
+            "update",
+            [](Segment &s, nb::dict values) {
+                // An update of a few fields, the usual case, needs no allocation for the list.
+                std::pair<std::uint32_t, std::string> few[8];
+                Encoded many;
+                std::span<std::pair<std::uint32_t, std::string>> encoded(few, values.size());
+                if (values.size() > std::size(few)) {
+                    many.resize(values.size());
+                    encoded = many;
+                }
+                std::size_t next = 0;
+                // Every value is converted before the write, so a bad one writes nothing.
+                for (const auto &[key, value] : values) {
+                    Py_ssize_t size = 0;
+                    const char *text = PyUnicode_AsUTF8AndSize(key.ptr(), &size);
+                    if (text == nullptr)
+                        throw nb::python_error();
+                    const std::string_view name(text, static_cast<std::size_t>(size));
+                    const std::optional<std::uint32_t> index = s.index_of(name);
+                    if (!index)
+                        throw nb::key_error(std::string(name).c_str());
+                    encoded[next++] = {*index,
+                                       sharedbox::encode(s.field(*index), s.field_name(*index), value.ptr())};
+                }
+                s.write(encoded);
+            },
+            "values"_a)
         .def(
             "set",
             [](Segment &s, const Values &values) {
@@ -298,13 +347,14 @@ NB_MODULE(_native, m) {
             "field"_a)
         .def("_read_all",
              [](const Segment &s) -> nb::typed<nb::list, nb::bytes> {
-                 const auto record = s.read_record();
-                 nb::list_builder out(s.field_count());
-                 for (std::uint32_t i = 0; i < s.field_count(); ++i) {
-                     const std::string_view value = s.payload(i, record.get());
-                     out.put(nb::bytes(value.data(), value.size()));
-                 }
-                 return out.commit();
+                 return with_record(s, [&](const std::byte *record) {
+                     nb::list_builder out(s.field_count());
+                     for (std::uint32_t i = 0; i < s.field_count(); ++i) {
+                         const std::string_view value = s.payload(i, record);
+                         out.put(nb::bytes(value.data(), value.size()));
+                     }
+                     return out.commit();
+                 });
              })
         .def(
             "_write",
