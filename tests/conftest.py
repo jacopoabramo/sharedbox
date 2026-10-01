@@ -4,6 +4,7 @@ import os
 import sys
 import uuid
 from collections.abc import Callable, Iterator
+from importlib.util import find_spec
 from pathlib import Path
 
 import pytest
@@ -30,6 +31,11 @@ def pytest_ignore_collect(collection_path: Path, config: pytest.Config) -> bool 
         return True
     # Its class names itself in an unquoted annotation, which fails to evaluate before 3.14.
     if collection_path.name == "test_refs_lazy.py" and sys.version_info < (3, 14):
+        return True
+    # The wheel tests in CI install neither, since they come with the benchmarks extra.
+    if collection_path.name == "test_benchbox_plot.py" and (
+        find_spec("matplotlib") is None or find_spec("pyperf") is None
+    ):
         return True
     return None
 

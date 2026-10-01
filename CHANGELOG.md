@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 Dates are marked as `DD-MM-YYYY`
 
+## [Unreleased]
+
+### Added
+
+- `benchbox plot`: draws the results of `benchbox all` as SVG charts, in a
+  light and a dark variant. The `benchmarks` extra now includes
+  matplotlib.
+
 ## [0.3.1] - 01-10-2026
 
 ### Added
@@ -212,6 +220,7 @@ stage.events.nested.connect(lambda path, new, old: print(path, new))
 
 - Initial release
 
+[Unreleased]: https://github.com/jacopoabramo/sharedbox/compare/v0.3.1...HEAD
 [0.3.1]: https://github.com/jacopoabramo/sharedbox/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/jacopoabramo/sharedbox/compare/0.2.4...v0.3.0
 [0.2.4]: https://github.com/jacopoabramo/sharedbox/compare/0.1.0...0.2.4

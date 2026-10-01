@@ -31,9 +31,10 @@ sharedbox/
 |   |-- py.typed
 |   |-- benchmarks/            the benchbox command (extra: benchmarks)
 |   |   |-- cli.py             entry point; exits with an install hint without Typer
-|   |   |-- _app.py            Typer commands: ops, roundtrip, size, all
+|   |   |-- _app.py            Typer commands: ops, roundtrip, size, plot, all
 |   |   |-- ops.py             pyperf timings of single operations, against the stdlib
 |   |   |-- roundtrip.py       cross-process round trip percentiles
+|   |   |-- plot.py            SVG charts of the ops and roundtrip results (matplotlib)
 |   |   |-- size.py            wheel and extension size (standard library only)
 |   |   `-- size_diff.py       wheel size table against main, for CI (standard library only)
 |   `-- _native/
@@ -41,6 +42,7 @@ sharedbox/
 |       |-- codec.{hpp,cpp}    converts field values to and from their stored bytes
 |       `-- segment.{hpp,cpp}  Segment: a sharedbox::handle plus error messages and the lifetime lock
 |-- tests/                     pytest; many tests spawn processes
+|   |-- test_benchbox_plot.py  benchbox plot; skipped without matplotlib and pyperf
 |   |-- test_capsule.py        __sharedbox_box__, and the C consumer in tests/cpp/consumer/
 |   |-- test_doc_examples.py   runs each docs/examples/*.py script
 |   |-- test_doc_tutorials.py  runs docs/tutorials/motor.py and checks the output its pages show

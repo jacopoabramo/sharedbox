@@ -32,6 +32,7 @@ benchbox = "sharedbox.benchmarks.cli:main"
 
 [project.optional-dependencies]
 benchmarks = [
+    "matplotlib>=3.11.2",
     "pyperf>=2.10.0",
     "typer>=0.27.2",
 ]
@@ -129,6 +130,7 @@ commands = [
 
 [dependency-groups]
 benchmarks = [
+    "matplotlib>=3.11.2",
     "pyperf>=2.10.0",
     "typer>=0.27.2",
 ]
