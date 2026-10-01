@@ -144,6 +144,10 @@ public:
     double lock_timeout() const;
     const FieldDesc &field(std::uint32_t index) const;
     const std::string &field_name(std::uint32_t index) const;
+    /// Every field, in index order; fixed once the segment is open.
+    std::span<const FieldDesc> fields() const;
+    /// The label of every field, in index order; fixed once the segment is open.
+    std::span<const std::string> field_names() const;
     /// Removes the name, like shm_unlink: existing handles keep working. A no-op on
     /// Windows, where the OS frees the segment when its last handle closes.
     static void unlink(const std::string &name);

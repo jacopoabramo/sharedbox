@@ -198,11 +198,14 @@ PyObject *decode(const FieldDesc &field, const char *data, std::size_t size) {
 
 void encode_all(const Segment &s, std::span<const Pending> values, std::span<EncodeBuffer> buffers,
                 std::span<value> out) {
+    const std::span<const FieldDesc> fields = s.fields();
+    const std::span<const std::string> names = s.field_names();
     for (std::size_t i = 0; i < values.size(); ++i) {
-        // s.field checks the index before it is narrowed.
-        const FieldDesc &field = s.field(values[i].field);
-        out[i] = {static_cast<std::uint16_t>(values[i].field),
-                  encode(field, s.field_name(values[i].field), values[i].value, buffers[i])};
+        const std::uint32_t index = values[i].field;
+        // Checked before the narrowing cast, which would otherwise turn index 65536 into field 0.
+        check_index(index, fields.size());
+        out[i] = {static_cast<std::uint16_t>(index),
+                  encode(fields[index], names[index], values[i].value, buffers[i])};
     }
 }
 
