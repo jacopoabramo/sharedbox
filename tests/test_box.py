@@ -28,6 +28,7 @@ from sharedbox import (
     SegmentExistsError,
     SegmentNotFoundError,
     SharedBox,
+    field,
 )
 from sharedbox._box import unpickle_box
 
@@ -925,7 +926,7 @@ class Diamond(WithA, Counting):
 
 def test_an_override_on_a_later_base_beats_the_native_methods(unique_name: str) -> None:
     """Check that update and snapshot defined on the second base of a class are the ones called."""
-    with Diamond.create(unique_name, m=0) as box:
+    with Diamond.create(unique_name) as box:
         box.update(a=1)
         assert box.snapshot() == {"a": 1, "m": 1, "counted": True}
 
@@ -1016,3 +1017,24 @@ def test_update_and_snapshot_never_show_half_of_an_update(unique_name: str) -> N
     assert torn == []
     assert sum(reads) > 0
     assert final > 0
+
+
+class First(SharedBox):
+    a: int = 1
+
+
+class Second(SharedBox):
+    b: float = 2.5
+    c: int = field(default_factory=lambda: 7)
+
+
+class Both(First, Second):
+    pass
+
+
+def test_a_class_with_two_box_bases_keeps_the_defaults_of_both(
+    unique_name: str,
+) -> None:
+    """Check that fields of the second box base keep their defaults and factories, in dataclass order."""
+    with Both.create(unique_name) as box:
+        assert list(box.snapshot().items()) == [("b", 2.5), ("c", 7), ("a", 1)]

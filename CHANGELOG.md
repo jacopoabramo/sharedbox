@@ -20,6 +20,12 @@ Dates are marked as `DD-MM-YYYY`
 - `SharedBox.update` and `SharedBox.snapshot`: native methods, unless a
   class defines or inherits its own.
 
+### Fixed
+
+- `SharedBox`: a class with more than one box base keeps the defaults and
+  default factories of the fields it inherits from every base, not only
+  the first.
+
 ## [0.3.1] - 01-10-2026
 
 ### Added
