@@ -291,7 +291,8 @@ PyObject *box_update(PyObject *callable, PyObject *const *args, std::size_t narg
             if (spec == Py_None)
                 continue;
             // Kept until the write ends, since pending holds only a borrowed pointer to it.
-            owned[k] = nb::steal(PyObject_CallFunctionObjArgs(m.helper, spec, pending[k].value, nullptr));
+            PyObject *const call[] = {spec, pending[k].value};
+            owned[k] = nb::steal(PyObject_Vectorcall(m.helper, call, 2, nullptr));
             if (!owned[k].is_valid())
                 return nullptr;
             pending[k].value = owned[k].ptr();
@@ -343,7 +344,8 @@ PyObject *box_snapshot(PyObject *callable, PyObject *const *args, std::size_t na
                 nb::object value = decode_value(fields[index], sharedbox::payload(fields[index], record));
                 PyObject *spec = tuple_item(m.specs, i);
                 if (spec != Py_None) {
-                    value = nb::steal(PyObject_CallFunctionObjArgs(m.helper, value.ptr(), nullptr));
+                    PyObject *const call[] = {value.ptr()};
+                    value = nb::steal(PyObject_Vectorcall(m.helper, call, 1, nullptr));
                     if (!value.is_valid())
                         throw nb::python_error();
                 }
@@ -357,7 +359,8 @@ PyObject *box_snapshot(PyObject *callable, PyObject *const *args, std::size_t na
             if (truth < 0)
                 return nullptr;
             if (truth > 0) {
-                PyObject *result = PyObject_CallFunctionObjArgs(m.follow, args[0], values.ptr(), nullptr);
+                PyObject *const call[] = {args[0], values.ptr()};
+                PyObject *result = PyObject_Vectorcall(m.follow, call, 2, nullptr);
                 if (result == nullptr)
                     return nullptr;
                 Py_DECREF(result);
@@ -464,7 +467,8 @@ void box_method_dealloc(PyObject *self) {
 PyObject *box_method_get(PyObject *self, PyObject *box, PyObject *) noexcept {
     if (box == nullptr || box == Py_None)
         return Py_NewRef(self);
-    return PyObject_CallFunctionObjArgs(method_type, self, box, nullptr);
+    PyObject *const call[] = {self, box};
+    return PyObject_Vectorcall(method_type, call, 2, nullptr);
 }
 
 PyMemberDef box_method_members[] = {
