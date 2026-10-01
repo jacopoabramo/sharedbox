@@ -15,6 +15,13 @@ Dates are marked as `DD-MM-YYYY`
   light and a dark variant. The `benchmarks` extra now includes
   matplotlib.
 
+### Changed
+
+- `SharedBox.update`: writes in one native call that finds fields by
+  name, about 2.4 times faster.
+- `SharedBox.snapshot`: reads the record without allocating memory for
+  records up to 4 KiB, about 14% faster.
+
 ## [0.3.1] - 01-10-2026
 
 ### Added
