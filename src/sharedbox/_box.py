@@ -581,10 +581,12 @@ class SharedBox(metaclass=SharedBoxMeta):
             raise TypeError(
                 f"{cls.__qualname__}: field() is used for {', '.join(stray)}, which are not fields"
             )
-        options = dict(cls.__sharedbox_options__)
         own = own_kw_only(cls, kw_only)
+        # From every base, as dataclasses do: an attribute lookup would see only the first.
+        options: dict[str, Field] = {}
         inherited: dict[str, bool] = {}
         for base in reversed(cls.__mro__[1:]):
+            options.update(base.__dict__.get("__sharedbox_options__", {}))
             inherited.update(
                 (p.name, p.kw_only) for p in base.__dict__.get("__sharedbox_init__", ())
             )
