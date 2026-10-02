@@ -2,12 +2,16 @@
 
 from __future__ import annotations
 
+import dataclasses
 import datetime
 import decimal
 import enum
 import struct
+import sys
 import types
+import typing
 import uuid
+from collections import abc
 from dataclasses import dataclass
 from typing import (
     TYPE_CHECKING,
@@ -16,15 +20,20 @@ from typing import (
     Final,
     Literal,
     NewType,
+    NotRequired,
+    Required,
     TypeGuard,
     Union,
     get_args,
     get_origin,
+    get_type_hints,
+    is_typeddict,
 )
 
 if TYPE_CHECKING:
     from ._box import SharedBox
 
+READ_ONLY: Final[Any] = getattr(typing, "ReadOnly", None)
 MAX_CAPACITY: Final[int] = 1 << 20
 FIRST_DESCRIBED: Final[int] = 64
 MAX_DEPTH: Final[int] = 16
@@ -313,6 +322,17 @@ def dispatch(
         return enum_spec(hint, where)
     if get_origin(hint) is Literal:
         return literal_spec(hint, where)
+    if hint is tuple or get_origin(hint) is tuple:
+        args = get_args(hint)
+        if len(args) == 2 and args[1] is Ellipsis:
+            raise unsupported(where, hint)
+        return tuple_spec(hint, where, depth, path)
+    if isinstance(hint, type):
+        spec = record_spec(hint, where, depth, path)
+        if spec is not None:
+            return spec
+    if dataclasses.is_dataclass(get_origin(hint)) or is_typeddict(get_origin(hint)):
+        raise TypeError(f"{where}: generic record {hint!r} is not supported")
     raise unsupported(where, hint)
 
 
@@ -440,17 +460,7 @@ def union_spec(
             raise TypeError(
                 f"{where}: an array can be a field or a record member, not optional"
             )
-        a = inner.alignment
-        return TypeSpec(
-            "optional",
-            round_up(a + inner.size, a),
-            a,
-            f"optional({inner.text})",
-            members=(Member(a, inner),),
-            count=1,
-            match=(*inner.match, NoneType),
-            hashable=inner.hashable,
-        )
+        return optional_of(inner)
     takers = [arg for arg in rest if takes_capacity(arg, where, path)]
     if capacity is not None and len(takers) != 1:
         raise TypeError(
@@ -504,6 +514,21 @@ def union_spec(
     )
 
 
+def optional_of(inner: TypeSpec) -> TypeSpec:
+    """Return the optional around `inner`: a presence byte, padding to its alignment, then the value."""
+    a = inner.alignment
+    return TypeSpec(
+        "optional",
+        round_up(a + inner.size, a),
+        a,
+        f"optional({inner.text})",
+        members=(Member(a, inner),),
+        count=1,
+        match=(*inner.match, NoneType),
+        hashable=inner.hashable,
+    )
+
+
 def takes_capacity(hint: Any, where: str, path: frozenset[int]) -> bool:
     """Whether a `Capacity` on `hint` has a type to apply to."""
     hint, _, path = unwrap(hint, where, path)
@@ -516,6 +541,187 @@ def takes_capacity(hint: Any, where: str, path: frozenset[int]) -> bool:
             if arg is not NoneType
         )
     return False
+
+
+def record_hints(cls: type, where: str) -> dict[str, Any]:
+    """Return the resolved annotations of a record class, with `Annotated` extras kept."""
+    try:
+        return get_type_hints(cls, include_extras=True)
+    except NameError as error:
+        raise TypeError(
+            f"{where}: {error.name!r} is not defined; a class named in a record's annotations must be defined first"
+        ) from None
+
+
+def lay_out(
+    kind: str, items: list[tuple[str, TypeSpec]], where: str
+) -> tuple[tuple[Member, ...], int, int]:
+    """Place record members by descending alignment, as fields are; return them in declaration order, the size and the alignment."""
+    if not 0 < len(items) <= 256:
+        raise TypeError(f"{where}: a {kind} holds 1 to 256 members, not {len(items)}")
+    offsets = [0] * len(items)
+    end = 0
+    for i in sorted(range(len(items)), key=lambda i: -items[i][1].alignment):
+        end = round_up(end, items[i][1].alignment)
+        offsets[i] = end
+        end += items[i][1].size
+    a = max(spec.alignment for _, spec in items)
+    members = tuple(
+        Member(offsets[i], spec, name) for i, (name, spec) in enumerate(items)
+    )
+    return members, round_up(end, a), a
+
+
+def record_spec(
+    hint: type, where: str, depth: int, path: frozenset[int]
+) -> TypeSpec | None:
+    """Return how instances of the record class `hint` are stored, or None if it is not one."""
+    if is_typeddict(hint):
+        form = 3
+    elif issubclass(hint, tuple) and hasattr(hint, "_fields"):
+        form = 1
+    elif (
+        dataclasses.is_dataclass(hint)
+        or hasattr(hint, "__attrs_attrs__")
+        or hasattr(hint, "__struct_fields__")
+    ):
+        form = 0
+    else:
+        return None
+    if getattr(hint, "__parameters__", ()):
+        raise TypeError(
+            f"{where}: generic record class {hint.__qualname__} is not supported"
+        )
+    hints = record_hints(hint, where)
+    below = deeper(depth, where)
+    attrs: list[str] = []
+    keywords: list[str] = []
+    required: list[bool] = []
+    items: list[tuple[str, TypeSpec]] = []
+    if form == 3:
+        qualifiers = {Required, NotRequired} | (
+            {READ_ONLY} if READ_ONLY is not None else set()
+        )
+        for key, member in hints.items():
+            needed = key in hint.__required_keys__  # type: ignore[attr-defined]
+            while get_origin(member) in qualifiers:
+                if get_origin(member) is Required:
+                    needed = True
+                elif get_origin(member) is NotRequired:
+                    needed = False
+                (member,) = get_args(member)
+            spec = parse(member, f"{where}.{key}", depth=below, path=path)
+            if not needed:
+                deeper(below, where)
+                spec = optional_of(spec)
+            attrs.append(key)
+            required.append(needed)
+            items.append((key, spec))
+    else:
+        for name, keyword, member in record_members(hint, hints, form, where):
+            attrs.append(name)
+            keywords.append(keyword)
+            items.append(
+                (name, parse(member, f"{where}.{name}", depth=below, path=path))
+            )
+    members, size, alignment = lay_out("record", items, where)
+    hashable = (
+        form != 3
+        and hint.__hash__ is not None
+        and all(m.type.hashable for m in members)
+    )
+    struct_config = getattr(hint, "__struct_config__", None)
+    if struct_config is not None:
+        hashable = hashable and bool(getattr(struct_config, "frozen", False))
+    text = (
+        "record("
+        + ",".join(
+            f"{m.name}{'' if form != 3 or req else '?'}:{m.type.text}"
+            for m, req in zip(members, required or [True] * len(members), strict=True)
+        )
+        + ")"
+    )
+    return TypeSpec(
+        "record",
+        size,
+        alignment,
+        text,
+        members=members,
+        count=len(members),
+        after=b"".join(name_bytes(m.name) for m in members),
+        info=(
+            form,
+            None if form == 3 else hint,
+            tuple(sys.intern(a) for a in attrs),
+            tuple(sys.intern(k) for k in (keywords or attrs)),
+            tuple(required),
+        ),
+        match=(abc.Mapping,) if form == 3 else (hint,),
+        exact=None if form == 3 else hint,
+        hashable=hashable,
+    )
+
+
+def record_members(
+    hint: type, hints: dict[str, Any], form: int, where: str
+) -> list[tuple[str, str, Any]]:
+    """Return `(attribute, keyword, annotation)` of each stored member of a dataclass, attrs class, Struct or NamedTuple."""
+    if form == 1:
+        return [(name, name, hints[name]) for name in hint._fields]  # type: ignore[attr-defined]
+    if dataclasses.is_dataclass(hint):
+        for name, member in hints.items():
+            if isinstance(member, dataclasses.InitVar) and name not in vars(hint):
+                raise TypeError(
+                    f"{where}: InitVar {name!r} of {hint.__qualname__} has no default, so a read could not rebuild it"
+                )
+        found = []
+        for f in dataclasses.fields(hint):
+            if not f.init:
+                raise TypeError(
+                    f"{where}: {hint.__qualname__}.{f.name} has init=False, so a read could not rebuild it"
+                )
+            found.append((f.name, f.name, hints[f.name]))
+        return found
+    if hasattr(hint, "__attrs_attrs__"):
+        found = []
+        for a in hint.__attrs_attrs__:
+            if not a.init:
+                raise TypeError(
+                    f"{where}: {hint.__qualname__}.{a.name} has init=False, so a read could not rebuild it"
+                )
+            member = hints.get(a.name, a.type)
+            if member is None:
+                raise TypeError(f"{where}: {hint.__qualname__}.{a.name} has no type")
+            keyword = getattr(a, "alias", None) or a.name.lstrip("_")
+            found.append((a.name, keyword, member))
+        return found
+    return [(name, name, hints[name]) for name in hint.__struct_fields__]  # type: ignore[attr-defined]
+
+
+def tuple_spec(hint: Any, where: str, depth: int, path: frozenset[int]) -> TypeSpec:
+    """Return how a fixed-length `tuple[A, B, ...]` is stored."""
+    args = get_args(hint)
+    if not args or args == ((),):
+        raise unsupported(where, hint)
+    below = deeper(depth, where)
+    items = [
+        (str(i), parse(arg, f"{where}[{i}]", depth=below, path=path))
+        for i, arg in enumerate(args)
+    ]
+    members, size, alignment = lay_out("tuple", items, where)
+    members = tuple(Member(m.offset, m.type) for m in members)
+    return TypeSpec(
+        "tuple",
+        size,
+        alignment,
+        "tuple(" + ",".join(m.type.text for m in members) + ")",
+        members=members,
+        count=len(members),
+        info=(2, None, (), (), ()),
+        match=(tuple,),
+        exact=tuple,
+        hashable=all(m.type.hashable for m in members),
+    )
 
 
 class Table:

@@ -37,6 +37,16 @@ def pytest_ignore_collect(collection_path: Path, config: pytest.Config) -> bool 
         find_spec("matplotlib") is None or find_spec("pyperf") is None
     ):
         return True
+    # attrs and msgspec are dev dependencies that may lack wheels for an interpreter under test.
+    optional = {
+        "test_types_records_attrs.py": "attrs",
+        "test_types_records_msgspec.py": "msgspec",
+    }
+    if (
+        collection_path.name in optional
+        and find_spec(optional[collection_path.name]) is None
+    ):
+        return True
     return None
 
 

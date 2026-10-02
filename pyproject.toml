@@ -135,7 +135,9 @@ benchmarks = [
     "typer>=0.27.2",
 ]
 dev = [
+    "attrs>=26.1.0",
     "hypothesis>=6.168.3",
+    "msgspec>=0.22.0",
     "mypy>=2.3.1",
     "nanobind>=3.1.0",
     "pytest>=9.1.1",

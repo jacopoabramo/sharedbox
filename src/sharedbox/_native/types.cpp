@@ -185,6 +185,27 @@ void Types::prepare(std::uint32_t node, std::uint8_t kind, nb::object info) {
         }
         break;
     }
+    case kind_record:
+    case kind_tuple: {
+        n.form = static_cast<int>(PyLong_AsLong(item(n.info, 0)));
+        n.cls = item(n.info, 1);
+        PyObject *attrs = item(n.info, 2);
+        PyObject *keywords = item(n.info, 3);
+        PyObject *required = item(n.info, 4);
+        const bool named = n.form != 2;
+        if (n.form < 0 || n.form > 3 || !PyTuple_Check(attrs) || !PyTuple_Check(keywords) ||
+            !PyTuple_Check(required) ||
+            (named && (PyTuple_Size(attrs) != count || PyTuple_Size(keywords) != count)) ||
+            (n.form == 3 && PyTuple_Size(required) != count))
+            throw std::invalid_argument("a record's Python data does not match its description");
+        for (Py_ssize_t i = 0; named && i < count; ++i) {
+            n.attrs.push_back(PyTuple_GetItem(attrs, i));
+            n.keywords.push_back(PyTuple_GetItem(keywords, i));
+        }
+        for (Py_ssize_t i = 0; n.form == 3 && i < count; ++i)
+            n.required.push_back(PyTuple_GetItem(required, i) == Py_True);
+        break;
+    }
     default:
         break;
     }
@@ -325,6 +346,63 @@ void Types::encode_into(const detail::type_ref &t, PyObject *value, std::byte *o
         encode_into(m.type, value, out + m.offset, where);
         return;
     }
+    case kind_record:
+    case kind_tuple: {
+        const detail::type_node &node = tree_.node(t.node);
+        auto member = [&](std::uint32_t i) -> const detail::type_member & {
+            return tree_.member(node.members + i);
+        };
+        if (n.form == 3) {
+            if (!instance(value, scalars::mapping()))
+                wrong(where.name, "a mapping with the TypedDict's keys", value);
+            const nb::object keys = nb::steal(PyMapping_Keys(value));
+            if (!keys.is_valid())
+                throw nb::python_error();
+            for (nb::handle key : nb::borrow<nb::list>(keys))
+                if (std::find_if(n.attrs.begin(), n.attrs.end(), [&](PyObject *a) {
+                        return PyUnicode_Check(key.ptr()) && PyUnicode_Compare(a, key.ptr()) == 0;
+                    }) == n.attrs.end()) {
+                    const nb::object shown = nb::steal(PyObject_Repr(key.ptr()));
+                    raise(PyExc_TypeError, where.name + " has no key " + nb::borrow<nb::str>(shown).c_str());
+                }
+            for (std::uint32_t i = 0; i < node.count; ++i) {
+                nb::object v = nb::steal(PyObject_GetItem(value, n.attrs[i]));
+                if (!v.is_valid()) {
+                    if (!PyErr_ExceptionMatches(PyExc_KeyError))
+                        throw nb::python_error();
+                    PyErr_Clear();
+                    if (n.required[i])
+                        raise(PyExc_TypeError, where.name + " needs key '" +
+                                                   std::string(nb::borrow<nb::str>(n.attrs[i]).c_str()) + "'");
+                    continue;
+                }
+                const detail::type_member &m = member(i);
+                if (n.required[i]) {
+                    encode_into(m.type, v.ptr(), out + m.offset, where);
+                } else {
+                    // A key that may be missing is an optional whose presence byte says it was there, so a None
+                    // value under it stays a None value.
+                    const detail::type_member &inner = tree_.member(tree_.node(m.type.node).members);
+                    out[m.offset] = std::byte{1};
+                    encode_into(inner.type, v.ptr(), out + m.offset + inner.offset, where);
+                }
+            }
+            return;
+        }
+        if (n.form == 2 ? !PyTuple_Check(value) : !instance(value, n.cls))
+            wrong(where.name, n.form == 2 ? std::string("a tuple") : "a " + type_name(n.cls), value);
+        if (n.form != 0 && PyTuple_Size(value) != node.count)
+            raise(PyExc_ValueError, where.name + " holds a tuple of " + std::to_string(node.count) +
+                                        " items; the value has " + std::to_string(PyTuple_Size(value)));
+        for (std::uint32_t i = 0; i < node.count; ++i) {
+            const nb::object v = n.form == 0 ? nb::steal(PyObject_GetAttr(value, n.attrs[i]))
+                                             : nb::borrow(PyTuple_GetItem(value, static_cast<Py_ssize_t>(i)));
+            if (!v.is_valid())
+                throw nb::python_error();
+            encode_into(member(i).type, v.ptr(), out + member(i).offset, where);
+        }
+        return;
+    }
     default:
         raise(PyExc_TypeError,
               where.name + ": values of kind " + std::to_string(t.kind) + " are not supported yet");
@@ -400,6 +478,52 @@ nb::object Types::decode_from(const detail::type_ref &t, const std::byte *data, 
         const detail::type_member &m = tree_.member(node.members + tag);
         return decode_from(m.type, data + m.offset, t.node, tag, where);
     }
+    case kind_record:
+    case kind_tuple: {
+        auto member = [&](std::uint32_t i) -> const detail::type_member & {
+            return tree_.member(node.members + i);
+        };
+        if (n.form == 3) {
+            nb::dict out;
+            for (std::uint32_t i = 0; i < node.count; ++i) {
+                const detail::type_member &m = member(i);
+                if (n.required[i]) {
+                    out[nb::handle(n.attrs[i])] = decode_from(m.type, data + m.offset, t.node, i, where);
+                    continue;
+                }
+                const auto present = load<std::uint8_t>(data + m.offset);
+                if (present > 1)
+                    corrupt(where.name);
+                if (present == 1) {
+                    const detail::type_member &inner = tree_.member(tree_.node(m.type.node).members);
+                    out[nb::handle(n.attrs[i])] =
+                        decode_from(inner.type, data + m.offset + inner.offset, m.type.node, 0, where);
+                }
+            }
+            return out;
+        }
+        if (n.form == 0) {
+            nb::dict kwargs;
+            for (std::uint32_t i = 0; i < node.count; ++i)
+                kwargs[nb::handle(n.keywords[i])] =
+                    decode_from(member(i).type, data + member(i).offset, t.node, i, where);
+            PyObject *made = PyObject_Call(n.cls, nb::tuple().ptr(), kwargs.ptr());
+            if (made == nullptr)
+                throw nb::python_error();
+            return nb::steal(made);
+        }
+        nb::object items = nb::steal(PyTuple_New(node.count));
+        for (std::uint32_t i = 0; i < node.count; ++i) {
+            nb::object v = decode_from(member(i).type, data + member(i).offset, t.node, i, where);
+            PyTuple_SetItem(items.ptr(), static_cast<Py_ssize_t>(i), v.release().ptr());
+        }
+        if (n.form == 2)
+            return items;
+        PyObject *made = PyObject_CallObject(n.cls, items.ptr());
+        if (made == nullptr)
+            throw nb::python_error();
+        return nb::steal(made);
+    }
     default:
         raise(PyExc_TypeError,
               where.name + ": values of kind " + std::to_string(t.kind) + " are not supported yet");
@@ -440,6 +564,11 @@ bool Types::accepts(const detail::type_ref &t, PyObject *value) const {
                 return true;
         return false;
     }
+    case kind_record:
+    case kind_tuple:
+        if (n.form == 3)
+            return instance(value, scalars::mapping());
+        return n.form == 2 ? PyTuple_Check(value) != 0 : instance(value, n.cls);
     default:
         return false;
     }
