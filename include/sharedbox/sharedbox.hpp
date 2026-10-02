@@ -13,6 +13,7 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <complex>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -1731,6 +1732,265 @@ private:
     detail::type_ref ref_{};
 };
 
+inline constexpr std::int32_t max_date_ordinal = 3652059;
+// date(1970, 1, 1).toordinal(): the day sys_days counts from.
+inline constexpr std::int32_t unix_epoch_ordinal = 719163;
+inline constexpr std::int64_t micros_per_day = 86400000000;
+inline constexpr std::int16_t max_offset_minutes = 1439;
+
+// A time of day: wall time, the offset from UTC in minutes (0 when naive), and Python's fold.
+struct time_value {
+    std::chrono::microseconds of_day;
+    std::int16_t offset;
+    bool naive;
+    bool fold;
+};
+
+// A date and time: micros since 1970-01-01T00:00, wall time when naive and UTC when aware.
+struct datetime_value {
+    std::int64_t micros;
+    std::int16_t offset;
+    bool naive;
+    bool fold;
+
+    // The wall time, naive or not.
+    std::chrono::local_time<std::chrono::microseconds> local() const noexcept {
+        return std::chrono::local_time<std::chrono::microseconds>(
+            std::chrono::microseconds(micros + (naive ? 0 : std::int64_t{offset} * 60000000)));
+    }
+    // The instant; for a naive value, the wall time read as UTC.
+    std::chrono::sys_time<std::chrono::microseconds> utc() const noexcept {
+        return std::chrono::sys_time<std::chrono::microseconds>(std::chrono::microseconds(micros));
+    }
+};
+
+// Python's timedelta, normalised as Python stores it.
+struct timedelta_value {
+    std::int32_t days;
+    std::int32_t seconds;
+    std::int32_t microseconds;
+};
+
+namespace detail {
+
+template <class T> T load(std::span<const std::byte> bytes, std::size_t at) noexcept {
+    T value;
+    std::memcpy(&value, bytes.data() + at, sizeof value);
+    return value;
+}
+
+template <class T> void put(std::span<std::byte> bytes, std::size_t at, T value) noexcept {
+    std::memcpy(bytes.data() + at, &value, sizeof value);
+}
+
+inline constexpr std::int64_t min_wall = std::int64_t{1 - unix_epoch_ordinal} * micros_per_day;
+inline constexpr std::int64_t max_wall =
+    std::int64_t{max_date_ordinal - unix_epoch_ordinal + 1} * micros_per_day - 1;
+inline constexpr std::uint8_t flag_naive = 1;
+inline constexpr std::uint8_t flag_fold = 2;
+
+inline bool offset_ok(std::int16_t offset, bool naive) noexcept {
+    return offset >= -max_offset_minutes && offset <= max_offset_minutes && (!naive || offset == 0);
+}
+
+// Wall time of a datetime value, or nullopt-like false when its fields could not come from Python.
+inline bool wall_ok(std::int64_t micros, std::int16_t offset, bool naive) noexcept {
+    // Checked before the sum, which a forged micros near the int64 limits would overflow.
+    if (micros < min_wall - micros_per_day || micros > max_wall + micros_per_day)
+        return false;
+    const std::int64_t wall = micros + (naive ? 0 : std::int64_t{offset} * 60000000);
+    return wall >= min_wall && wall <= max_wall;
+}
+
+} // namespace detail
+
+[[nodiscard]] inline result<std::complex<double>> decode_complex(std::span<const std::byte> bytes) noexcept {
+    if (bytes.size() != 16)
+        return unexpected(status::range);
+    return std::complex<double>(detail::load<double>(bytes, 0), detail::load<double>(bytes, 8));
+}
+
+[[nodiscard]] inline status encode_complex(std::complex<double> value, std::span<std::byte> out) noexcept {
+    if (out.size() != 16)
+        return status::range;
+    detail::put(out, 0, value.real());
+    detail::put(out, 8, value.imag());
+    return status::ok;
+}
+
+[[nodiscard]] inline result<std::chrono::sys_days> decode_date(std::span<const std::byte> bytes) noexcept {
+    if (bytes.size() != 4)
+        return unexpected(status::range);
+    const auto ordinal = detail::load<std::int32_t>(bytes, 0);
+    if (ordinal < 1 || ordinal > max_date_ordinal)
+        return unexpected(status::corrupt);
+    return std::chrono::sys_days(std::chrono::days(ordinal - unix_epoch_ordinal));
+}
+
+[[nodiscard]] inline status encode_date(std::chrono::sys_days day, std::span<std::byte> out) noexcept {
+    const std::int64_t ordinal = std::int64_t{day.time_since_epoch().count()} + unix_epoch_ordinal;
+    if (out.size() != 4 || ordinal < 1 || ordinal > max_date_ordinal)
+        return status::range;
+    detail::put(out, 0, static_cast<std::int32_t>(ordinal));
+    return status::ok;
+}
+
+[[nodiscard]] inline result<time_value> decode_time(std::span<const std::byte> bytes) noexcept {
+    if (bytes.size() != 16)
+        return unexpected(status::range);
+    const auto micros = detail::load<std::int64_t>(bytes, 0);
+    const auto offset = detail::load<std::int16_t>(bytes, 8);
+    const auto flags = detail::load<std::uint8_t>(bytes, 10);
+    const bool naive = (flags & detail::flag_naive) != 0;
+    if ((flags & ~3u) != 0 || micros < 0 || micros >= micros_per_day || !detail::offset_ok(offset, naive))
+        return unexpected(status::corrupt);
+    return time_value{std::chrono::microseconds(micros), offset, naive, (flags & detail::flag_fold) != 0};
+}
+
+[[nodiscard]] inline status encode_time(const time_value &value, std::span<std::byte> out) noexcept {
+    const std::int64_t micros = value.of_day.count();
+    if (out.size() != 16 || micros < 0 || micros >= micros_per_day ||
+        !detail::offset_ok(value.offset, value.naive))
+        return status::range;
+    std::memset(out.data(), 0, out.size());
+    detail::put(out, 0, micros);
+    detail::put(out, 8, value.offset);
+    detail::put(
+        out, 10,
+        static_cast<std::uint8_t>((value.naive ? detail::flag_naive : 0) | (value.fold ? detail::flag_fold : 0)));
+    return status::ok;
+}
+
+[[nodiscard]] inline result<datetime_value> decode_datetime(std::span<const std::byte> bytes) noexcept {
+    if (bytes.size() != 16)
+        return unexpected(status::range);
+    const auto micros = detail::load<std::int64_t>(bytes, 0);
+    const auto offset = detail::load<std::int16_t>(bytes, 8);
+    const auto flags = detail::load<std::uint8_t>(bytes, 10);
+    const bool naive = (flags & detail::flag_naive) != 0;
+    if ((flags & ~3u) != 0 || !detail::offset_ok(offset, naive) || !detail::wall_ok(micros, offset, naive))
+        return unexpected(status::corrupt);
+    return datetime_value{micros, offset, naive, (flags & detail::flag_fold) != 0};
+}
+
+[[nodiscard]] inline status encode_datetime(const datetime_value &value, std::span<std::byte> out) noexcept {
+    if (out.size() != 16 || !detail::offset_ok(value.offset, value.naive) ||
+        !detail::wall_ok(value.micros, value.offset, value.naive))
+        return status::range;
+    std::memset(out.data(), 0, out.size());
+    detail::put(out, 0, value.micros);
+    detail::put(out, 8, value.offset);
+    detail::put(
+        out, 10,
+        static_cast<std::uint8_t>((value.naive ? detail::flag_naive : 0) | (value.fold ? detail::flag_fold : 0)));
+    return status::ok;
+}
+
+[[nodiscard]] inline result<timedelta_value> decode_timedelta(std::span<const std::byte> bytes) noexcept {
+    if (bytes.size() != 12)
+        return unexpected(status::range);
+    const timedelta_value value{detail::load<std::int32_t>(bytes, 0), detail::load<std::int32_t>(bytes, 4),
+                                detail::load<std::int32_t>(bytes, 8)};
+    if (value.days < -999999999 || value.days > 999999999 || value.seconds < 0 || value.seconds > 86399 ||
+        value.microseconds < 0 || value.microseconds > 999999)
+        return unexpected(status::corrupt);
+    return value;
+}
+
+[[nodiscard]] inline status encode_timedelta(const timedelta_value &value, std::span<std::byte> out) noexcept {
+    if (out.size() != 12 || value.days < -999999999 || value.days > 999999999 || value.seconds < 0 ||
+        value.seconds > 86399 || value.microseconds < 0 || value.microseconds > 999999)
+        return status::range;
+    detail::put(out, 0, value.days);
+    detail::put(out, 4, value.seconds);
+    detail::put(out, 8, value.microseconds);
+    return status::ok;
+}
+
+[[nodiscard]] inline result<std::array<std::byte, 16>> decode_uuid(std::span<const std::byte> bytes) noexcept {
+    if (bytes.size() != 16)
+        return unexpected(status::range);
+    std::array<std::byte, 16> out;
+    std::memcpy(out.data(), bytes.data(), 16);
+    return out;
+}
+
+[[nodiscard]] inline status encode_uuid(const std::array<std::byte, 16> &value,
+                                        std::span<std::byte> out) noexcept {
+    if (out.size() != 16)
+        return status::range;
+    std::memcpy(out.data(), value.data(), 16);
+    return status::ok;
+}
+
+[[nodiscard]] inline result<bool> decode_bool(std::span<const std::byte> bytes) noexcept {
+    if (bytes.size() != 1)
+        return unexpected(status::range);
+    const auto byte = detail::load<std::uint8_t>(bytes, 0);
+    if (byte > 1)
+        return unexpected(status::corrupt);
+    return byte == 1;
+}
+
+// An optional's presence byte, the first byte of its value.
+[[nodiscard]] inline result<bool> decode_present(std::span<const std::byte> bytes) noexcept {
+    return bytes.empty() ? result<bool>(unexpected(status::range)) : decode_bool(bytes.first(1));
+}
+
+[[nodiscard]] inline result<std::uint64_t> decode_flag(std::span<const std::byte> bytes) noexcept {
+    if (bytes.size() != 8)
+        return unexpected(status::range);
+    return detail::load<std::uint64_t>(bytes, 0);
+}
+
+[[nodiscard]] inline status encode_flag(std::uint64_t bits, std::span<std::byte> out) noexcept {
+    if (out.size() != 8)
+        return status::range;
+    detail::put(out, 0, bits);
+    return status::ok;
+}
+
+// The member position of an enum or the value position of a literal.
+[[nodiscard]] inline result<std::uint16_t> decode_position(type_view type,
+                                                           std::span<const std::byte> bytes) noexcept {
+    if ((type.kind() != kind_enum && type.kind() != kind_literal) || bytes.size() != 2)
+        return unexpected(status::range);
+    const auto position = detail::load<std::uint16_t>(bytes, 0);
+    if (position >= type.count())
+        return unexpected(status::corrupt);
+    return position;
+}
+
+[[nodiscard]] inline status encode_position(type_view type, std::uint16_t position,
+                                            std::span<std::byte> out) noexcept {
+    if ((type.kind() != kind_enum && type.kind() != kind_literal) || out.size() != 2 || position >= type.count())
+        return status::range;
+    detail::put(out, 0, position);
+    return status::ok;
+}
+
+// A union's tag, the first byte of its value: the member it holds.
+[[nodiscard]] inline result<std::uint8_t> decode_tag(type_view type, std::span<const std::byte> bytes) noexcept {
+    if (type.kind() != kind_union || bytes.empty())
+        return unexpected(status::range);
+    const auto tag = detail::load<std::uint8_t>(bytes, 0);
+    if (tag >= type.count())
+        return unexpected(status::corrupt);
+    return tag;
+}
+
+// The length of a list, set or dict value, the u32 its value starts with.
+[[nodiscard]] inline result<std::uint32_t> decode_length(type_view type,
+                                                         std::span<const std::byte> bytes) noexcept {
+    const std::uint8_t kind = type.kind();
+    if ((kind != kind_list && kind != kind_set && kind != kind_dict) || bytes.size() < 4)
+        return unexpected(status::range);
+    const auto length = detail::load<std::uint32_t>(bytes, 0);
+    if (length > type.capacity() || bytes.size() < type.slots() + std::uint64_t{length} * type.stride())
+        return unexpected(status::corrupt);
+    return length;
+}
+
 // A box's segment, mapped into this process. Move-only; the destructor releases it. Every member
 // function may be called from several threads at once; destroying or moving a handle must not overlap
 // another call on it.
@@ -1798,6 +2058,15 @@ public:
     // Copies the whole record, every field from one moment, into buf of at least record_size() bytes,
     // and returns the generation of that moment.
     [[nodiscard]] result<std::uint64_t> read_record(std::span<std::byte> buf) const;
+    // As read, for a list, set or dict field: copies the length and the slots the value uses, not the
+    // whole capacity. status::range for a field of another kind.
+    [[nodiscard]] result<read_value> read_used(std::uint16_t field, std::span<std::byte> buf) const;
+    // As read and read_record, for values of large_copy bytes or more: the wait hooks run once around
+    // the whole call, and a copy starts again as soon as a writer moves the sequence number.
+    [[nodiscard]] result<read_value> read_large(std::uint16_t field, std::span<std::byte> buf) const;
+    [[nodiscard]] result<std::uint64_t> read_record_large(std::span<std::byte> buf) const;
+    // As write, with the wait hooks run once around the whole call.
+    [[nodiscard]] result<void> write_large(std::span<const value> values, seconds lock_timeout);
     // The stored bytes of field inside a copy made by read_record.
     std::span<const std::byte> payload(std::uint16_t field, std::span<const std::byte> record) const noexcept;
     // Writes every value under one lock, so readers see all of them or none, then wakes waiters.
@@ -1845,6 +2114,7 @@ public:
     [[nodiscard]] sbx_handle *to_capsule() &&;
 
 private:
+    template <bool Hooks> result<std::uint64_t> lock_with(seconds lock_timeout);
     explicit handle(detail::state *s) noexcept : s_(s) {}
     void swap(handle &other) noexcept { std::swap(s_, other.s_); }
 
@@ -1969,13 +2239,33 @@ inline status copy_fields(state &s, const void *base, const header &line0) noexc
     return place_fields(s.fields.get(), s.field_count, s.types, s.record_size, true);
 }
 
-inline bool values_ok(std::span<const field_spec> fields, std::span<const value> values) noexcept {
+inline bool is_collection(std::uint32_t kind) noexcept { return kind - kind_list <= 2u; }
+
+// A list, set or dict value is its length and the slots it uses, so its bytes may be shorter than the field.
+inline bool collection_fits(const type_node &node, std::span<const std::byte> bytes) noexcept {
+    if (bytes.size() < node.slots)
+        return false;
+    std::uint32_t length = 0;
+    std::memcpy(&length, bytes.data(), sizeof length);
+    return length <= node.capacity && bytes.size() == node.slots + std::uint64_t{length} * node.stride;
+}
+
+inline bool values_ok(const state &s, std::span<const value> values) noexcept {
     for (const value &v : values) {
-        if (v.field >= fields.size())
+        if (v.field >= s.field_count)
             return false;
-        const field_spec &f = fields[v.field];
-        if (!kind_known(f.kind) || (prefixed(f.kind) ? v.bytes.size() > f.capacity : v.bytes.size() != f.capacity))
+        const field_spec &f = s.fields[v.field];
+        if (!kind_known(f.kind))
             return false;
+        if (prefixed(f.kind)) {
+            if (v.bytes.size() > f.capacity)
+                return false;
+        } else if (is_collection(f.kind)) [[unlikely]] {
+            if (!collection_fits(s.types.node(s.types.field(v.field).node), v.bytes))
+                return false;
+        } else if (v.bytes.size() != f.capacity) {
+            return false;
+        }
     }
     return true;
 }
@@ -2027,7 +2317,7 @@ inline result<handle> create_impl(std::string_view name, std::span<const field_s
     std::copy(fields.begin(), fields.end(), s->fields.get());
     if (s->types.parse(types, {entries.get(), count}, major == 1) != status::ok ||
         place_fields(s->fields.get(), count, s->types, record_size, false) != status::ok ||
-        !values_ok({s->fields.get(), count}, initial))
+        !values_ok(*s, initial))
         return unexpected(status::range);
     const auto record =
         static_cast<std::uint32_t>(round_up(tail_end(count, waiter_slots) + types.size(), record_alignment));
@@ -2186,12 +2476,15 @@ inline std::uint64_t handle::size() const noexcept { return s_->size; }
 
 namespace detail {
 
-// Runs attempt until it succeeds, pausing between tries; false once timeout seconds have passed. The
-// hooks run only when the first try fails, before the first pause and after the last.
-template <class F> SHAREDBOX_HOT bool retry(const state &s, double timeout, F &&attempt) {
+// Runs attempt until it succeeds, pausing between tries; false once timeout seconds have passed. With
+// Hooks, the wait hooks run only when the first try fails, before the first pause and after the last;
+// the large copies run them around everything instead, so they pass false.
+template <bool Hooks = true, class F> SHAREDBOX_HOT bool retry(const state &s, double timeout, F &&attempt) {
     if (attempt())
         return true;
-    void *hook = s.before_wait != nullptr ? s.before_wait() : nullptr;
+    void *hook = nullptr;
+    if constexpr (Hooks)
+        hook = s.before_wait != nullptr ? s.before_wait() : nullptr;
     backoff wait(timeout);
     bool done = false;
     while (!wait.expired()) {
@@ -2201,10 +2494,48 @@ template <class F> SHAREDBOX_HOT bool retry(const state &s, double timeout, F &&
             break;
         }
     }
-    if (s.after_wait != nullptr)
-        s.after_wait(hook);
+    if constexpr (Hooks)
+        if (s.after_wait != nullptr)
+            s.after_wait(hook);
     return done;
 }
+
+// Values of at least this many bytes are copied with read_large and write_large, which run the wait
+// hooks around the whole copy, so a caller that releases a lock in them does so for the copy too.
+inline constexpr std::size_t large_copy = std::size_t{1} << 20;
+inline constexpr std::size_t copy_chunk = std::size_t{4} << 20;
+
+// Copies n bytes while seq stays at before, a chunk at a time; false as soon as it moved, so a reader
+// does not finish a copy it would throw away.
+inline bool copy_checked(std::byte *dst, const std::byte *src, std::size_t n, std::atomic_ref<std::uint64_t> seq,
+                         std::uint64_t before) noexcept {
+    for (std::size_t done = 0; done < n;) {
+        const std::size_t step = (std::min)(copy_chunk, n - done);
+        std::memcpy(dst + done, src + done, step);
+        done += step;
+        std::atomic_thread_fence(std::memory_order_acquire);
+        if (seq.load(std::memory_order_acquire) != before)
+            return false;
+    }
+    return true;
+}
+
+// Runs before_wait now and after_wait when it goes out of scope.
+class hooks_around {
+public:
+    explicit hooks_around(const state &s) noexcept
+        : s_(s), hook_(s.before_wait != nullptr ? s.before_wait() : nullptr) {}
+    ~hooks_around() {
+        if (s_.after_wait != nullptr)
+            s_.after_wait(hook_);
+    }
+    hooks_around(const hooks_around &) = delete;
+    hooks_around &operator=(const hooks_around &) = delete;
+
+private:
+    const state &s_;
+    void *hook_;
+};
 
 } // namespace detail
 
@@ -2268,18 +2599,115 @@ inline result<std::uint64_t> handle::read_record(std::span<std::byte> buf) const
     return generation;
 }
 
+inline result<read_value> handle::read_used(std::uint16_t field, std::span<std::byte> buf) const {
+    const detail::state &s = *s_;
+    if (field >= s.field_count || !detail::is_collection(s.fields[field].kind))
+        return unexpected(status::range);
+    const field_spec &f = s.fields[field];
+    const detail::type_node &node = s.types.node(s.types.field(field).node);
+    auto seq = detail::atomic(s.hdr->seq);
+    read_value out{0, 0};
+    const bool done = detail::retry(s, s.lock_timeout, [&]() noexcept {
+        const std::uint64_t before = seq.load(std::memory_order_acquire);
+        if ((before & 1u) != 0)
+            return false;
+        const std::byte *src = s.record + f.offset;
+        std::uint32_t length;
+        std::memcpy(&length, src, sizeof length);
+        // A torn read may see any length; the sequence check below throws that copy away.
+        if (length > node.capacity)
+            length = node.capacity;
+        const std::size_t used = node.slots + std::size_t{length} * node.stride;
+        if (used <= buf.size())
+            std::memcpy(buf.data(), src, used);
+        const std::uint64_t version = detail::atomic(s.counts[field]).load(std::memory_order_relaxed);
+        std::atomic_thread_fence(std::memory_order_acquire);
+        if (seq.load(std::memory_order_acquire) != before)
+            return false;
+        out = {used, version};
+        return true;
+    });
+    if (!done)
+        return unexpected(status::lock_timeout);
+    return out;
+}
+
+inline result<read_value> handle::read_large(std::uint16_t field, std::span<std::byte> buf) const {
+    const detail::state &s = *s_;
+    if (field >= s.field_count)
+        return unexpected(status::range);
+    const field_spec &f = s.fields[field];
+    auto seq = detail::atomic(s.hdr->seq);
+    read_value out{0, 0};
+    const detail::hooks_around hooks(s);
+    const bool done = detail::retry<false>(s, s.lock_timeout, [&]() noexcept {
+        const std::uint64_t before = seq.load(std::memory_order_acquire);
+        if ((before & 1u) != 0)
+            return false;
+        const std::span<const std::byte> src = detail::payload(f, s.record);
+        if (src.size() <= buf.size() && !detail::copy_checked(buf.data(), src.data(), src.size(), seq, before))
+            return false;
+        const std::uint64_t version = detail::atomic(s.counts[field]).load(std::memory_order_relaxed);
+        std::atomic_thread_fence(std::memory_order_acquire);
+        if (seq.load(std::memory_order_acquire) != before)
+            return false;
+        out = {src.size(), version};
+        return true;
+    });
+    if (!done)
+        return unexpected(status::lock_timeout);
+    return out;
+}
+
+inline result<std::uint64_t> handle::read_record_large(std::span<std::byte> buf) const {
+    const detail::state &s = *s_;
+    if (buf.size() < s.record_size)
+        return unexpected(status::range);
+    auto seq = detail::atomic(s.hdr->seq);
+    std::uint64_t generation = 0;
+    const detail::hooks_around hooks(s);
+    const bool done = detail::retry<false>(s, s.lock_timeout, [&]() noexcept {
+        const std::uint64_t before = seq.load(std::memory_order_acquire);
+        if ((before & 1u) != 0 || !detail::copy_checked(buf.data(), s.record, s.record_size, seq, before))
+            return false;
+        generation = before >> 1;
+        return true;
+    });
+    if (!done)
+        return unexpected(status::lock_timeout);
+    return generation;
+}
+
+inline result<void> handle::write_large(std::span<const value> values, seconds lock_timeout) {
+    detail::state &s = *s_;
+    if (!detail::values_ok(s, values))
+        return unexpected(status::range);
+    const detail::hooks_around hooks(s);
+    const result<std::uint64_t> locked = lock_with<false>(lock_timeout);
+    if (!locked)
+        return unexpected(locked.error());
+    for (const value &v : values) {
+        detail::store(s, v);
+        auto count = detail::atomic(s.counts[v.field]);
+        count.store(count.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
+    }
+    unlock(*locked);
+    detail::wake_waiters(s);
+    return {};
+}
+
 inline std::span<const std::byte> handle::payload(std::uint16_t field,
                                                   std::span<const std::byte> record) const noexcept {
     return detail::payload(s_->fields[field], record.data());
 }
 
-SHAREDBOX_HOT result<std::uint64_t> handle::lock(seconds lock_timeout) {
+template <bool Hooks> SHAREDBOX_HOT result<std::uint64_t> handle::lock_with(seconds lock_timeout) {
     detail::state &s = *s_;
     if (!detail::timeout_ok(lock_timeout, false))
         return unexpected(status::range);
     auto seq = detail::atomic(s.hdr->seq);
     std::uint64_t locked = 0;
-    const bool done = detail::retry(s, lock_timeout.count(), [&]() noexcept {
+    const bool done = detail::retry<Hooks>(s, lock_timeout.count(), [&]() noexcept {
         std::uint64_t even = seq.load(std::memory_order_relaxed);
         if ((even & 1u) != 0 ||
             !seq.compare_exchange_strong(even, even + 1, std::memory_order_acquire, std::memory_order_relaxed))
@@ -2294,6 +2722,8 @@ SHAREDBOX_HOT result<std::uint64_t> handle::lock(seconds lock_timeout) {
         return unexpected(status::lock_timeout);
     return locked;
 }
+
+SHAREDBOX_HOT result<std::uint64_t> handle::lock(seconds lock_timeout) { return lock_with<true>(lock_timeout); }
 
 SHAREDBOX_HOT void handle::unlock(std::uint64_t locked) noexcept {
     header &h = *s_->hdr;
@@ -2310,7 +2740,7 @@ SHAREDBOX_HOT void handle::unlock(std::uint64_t locked) noexcept {
 
 SHAREDBOX_HOT result<void> handle::write(std::span<const value> values, seconds lock_timeout) {
     detail::state &s = *s_;
-    if (!detail::values_ok({s.fields.get(), s.field_count}, values))
+    if (!detail::values_ok(s, values))
         return unexpected(status::range);
     const result<std::uint64_t> locked = lock(lock_timeout);
     if (!locked)
