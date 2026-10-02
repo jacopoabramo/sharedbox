@@ -6,6 +6,7 @@ import datetime
 import decimal
 import enum
 import struct
+import types
 import uuid
 from dataclasses import dataclass
 from typing import (
@@ -16,6 +17,7 @@ from typing import (
     Literal,
     NewType,
     TypeGuard,
+    Union,
     get_args,
     get_origin,
 )
@@ -293,6 +295,14 @@ def dispatch(
             hashable=hint is not bytearray,
             bytearray=hint is bytearray,
         )
+    if get_origin(hint) in (Union, types.UnionType):
+        if capacity is not None and not takes_capacity(hint):
+            raise TypeError(f"{where}: Capacity does not apply to {hint!r}")
+        return union_spec(hint, where, capacity, depth, path)
+    if is_box_class(hint):
+        raise TypeError(
+            f"{where}: a reference to a box must be a field of its own, annotated X or X | None, not part of another type"
+        )
     if capacity is not None and not takes_capacity(hint):
         raise TypeError(f"{where}: Capacity does not apply to {hint!r}")
     if isinstance(hint, type) and hint in SCALARS:
@@ -404,9 +414,107 @@ def literal_spec(hint: Any, where: str) -> TypeSpec:
     )
 
 
+NoneType = type(None)
+
+
+def narrower(a: TypeSpec, b: TypeSpec) -> bool:
+    """Whether some class `a` matches is a strict subclass of one `b` matches."""
+    return any(x is not y and issubclass(x, y) for x in a.match for y in b.match)
+
+
+def union_spec(
+    hint: Any, where: str, capacity: int | None, depth: int, path: frozenset[int]
+) -> TypeSpec:
+    args = get_args(hint)
+    rest = tuple(arg for arg in args if arg is not NoneType)
+    below = deeper(depth, where)
+    if len(rest) < len(args):
+        inner = parse(
+            rest[0] if len(rest) == 1 else Union[rest],  # noqa: UP007
+            where,
+            capacity=capacity,
+            depth=below,
+            path=path,
+        )
+        if inner.kind == "array":
+            raise TypeError(
+                f"{where}: an array can be a field or a record member, not optional"
+            )
+        a = inner.alignment
+        return TypeSpec(
+            "optional",
+            round_up(a + inner.size, a),
+            a,
+            f"optional({inner.text})",
+            members=(Member(a, inner),),
+            count=1,
+            match=(*inner.match, NoneType),
+            hashable=inner.hashable,
+        )
+    takers = [arg for arg in rest if takes_capacity(unwrap(arg, where, path)[0])]
+    if capacity is not None and len(takers) != 1:
+        raise TypeError(
+            f"{where}: a Capacity on a union needs exactly one member it applies to; {hint!r} has {len(takers)}"
+        )
+    members = [
+        parse(
+            arg,
+            where,
+            capacity=capacity if arg is (takers or [None])[0] else None,
+            depth=below,
+            path=path,
+        )
+        for arg in rest
+    ]
+    if len(members) > 255:
+        raise TypeError(f"{where}: a union holds at most 255 members")
+    for m in members:
+        if m.kind == "array":
+            raise TypeError(
+                f"{where}: an array can be a field or a record member, not a union member"
+            )
+    for i, m in enumerate(members):
+        for other in members[:i]:
+            shared = set(m.match) & set(other.match)
+            if shared:
+                raise TypeError(
+                    f"{where}: two union members take values of the same class, {sorted(c.__name__ for c in shared)}; "
+                    "the stored value could not tell which was meant"
+                )
+    order = sorted(
+        range(len(members)),
+        key=lambda i: (
+            -sum(
+                narrower(members[i], members[j]) for j in range(len(members)) if j != i
+            )
+        ),
+    )
+    a = max(m.alignment for m in members)
+    largest = max(m.size for m in members)
+    return TypeSpec(
+        "union",
+        round_up(a + largest, a),
+        a,
+        "union(" + ",".join(m.text for m in members) + ")",
+        members=tuple(Member(a, m) for m in members),
+        count=len(members),
+        info=(tuple(order), tuple(m.exact for m in members)),
+        match=tuple(dict.fromkeys(c for m in members for c in m.match)),
+        hashable=all(m.hashable for m in members),
+    )
+
+
 def takes_capacity(hint: Any) -> bool:
     """Whether a `Capacity` on `hint` has a type to apply to."""
-    return isinstance(hint, type) and hint in TEXT
+    if isinstance(hint, type) and hint in TEXT:
+        return True
+    if get_origin(hint) in (Union, types.UnionType):
+        return any(
+            takes_capacity(unwrap(arg, "", frozenset())[0])
+            for arg in get_args(hint)
+            if arg is not NoneType
+        )
+    return False
 
 
 class Table:

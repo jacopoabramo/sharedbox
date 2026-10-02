@@ -170,6 +170,21 @@ void Types::prepare(std::uint32_t node, std::uint8_t kind, nb::object info) {
             n.items.push_back(PyTuple_GetItem(values, i));
         break;
     }
+    case kind_union: {
+        PyObject *order = item(n.info, 0);
+        PyObject *exact = item(n.info, 1);
+        if (!PyTuple_Check(order) || !PyTuple_Check(exact) || PyTuple_Size(order) != count ||
+            PyTuple_Size(exact) != count)
+            throw std::invalid_argument("a union's order and classes do not match its description");
+        for (std::uint16_t i = 0; i < count; ++i) {
+            const long tag = PyLong_AsLong(PyTuple_GetItem(order, i));
+            if (tag < 0 || tag >= count)
+                throw std::invalid_argument("a union's order names a member it does not have");
+            n.order.push_back(static_cast<std::uint8_t>(tag));
+            n.items.push_back(PyTuple_GetItem(exact, i));
+        }
+        break;
+    }
     default:
         break;
     }
@@ -232,6 +247,17 @@ nb::object Types::decode(std::uint32_t index, std::span<const std::byte> bytes,
 }
 
 void Types::encode_into(const detail::type_ref &t, PyObject *value, std::byte *out, const Where &where) const {
+    if (t.kind <= kind_bytes) {
+        EncodeBuffer scratch;
+        const std::span<const std::byte> bytes = sharedbox::encode(desc_of(t), where.name, value, scratch);
+        if (detail::prefixed(t.kind)) {
+            put(out, static_cast<std::uint32_t>(bytes.size()));
+            out += 4;
+        }
+        if (!bytes.empty())
+            std::memcpy(out, bytes.data(), bytes.size());
+        return;
+    }
     if (t.kind >= kind_complex && t.kind <= kind_uuid) {
         scalars::encode(t.kind, value, {out, t.size}, where.name);
         return;
@@ -266,6 +292,32 @@ void Types::encode_into(const detail::type_ref &t, PyObject *value, std::byte *o
         put(out, static_cast<std::uint16_t>(position));
         return;
     }
+    case kind_optional: {
+        const detail::type_member &inner = tree_.member(tree_.node(t.node).members);
+        if (value == Py_None)
+            return;
+        out[0] = std::byte{1};
+        encode_into(inner.type, value, out + inner.offset, where);
+        return;
+    }
+    case kind_union: {
+        const detail::type_node &node = tree_.node(t.node);
+        int chosen = -1;
+        for (const std::uint8_t tag : n.order)
+            if (n.items[tag] != Py_None && reinterpret_cast<PyObject *>(Py_TYPE(value)) == n.items[tag]) {
+                chosen = tag;
+                break;
+            }
+        for (std::size_t k = 0; chosen < 0 && k < n.order.size(); ++k)
+            if (accepts(tree_.member(node.members + n.order[k]).type, value))
+                chosen = n.order[k];
+        if (chosen < 0)
+            wrong(where.name, "a value of one of its union's types", value);
+        const detail::type_member &m = tree_.member(node.members + static_cast<std::uint32_t>(chosen));
+        out[0] = static_cast<std::byte>(chosen);
+        encode_into(m.type, value, out + m.offset, where);
+        return;
+    }
     default:
         raise(PyExc_TypeError,
               where.name + ": values of kind " + std::to_string(t.kind) + " are not supported yet");
@@ -274,8 +326,25 @@ void Types::encode_into(const detail::type_ref &t, PyObject *value, std::byte *o
 
 nb::object Types::decode_from(const detail::type_ref &t, const std::byte *data, std::uint32_t container,
                               std::uint32_t member, const Where &where) const {
-    static_cast<void>(container);
-    static_cast<void>(member);
+    if (t.kind <= kind_bytes) {
+        std::size_t size = t.size;
+        if (detail::prefixed(t.kind)) {
+            const auto length = load<std::uint32_t>(data);
+            if (length > t.size - 4)
+                corrupt(where.name);
+            data += 4;
+            size = length;
+        } else if (t.kind == kind_bool && load<std::uint8_t>(data) > 1) {
+            corrupt(where.name);
+        }
+        if (t.kind == kind_bytes && read_as_bytearray(container, member))
+            return nb::steal(PyByteArray_FromStringAndSize(reinterpret_cast<const char *>(data),
+                                                           static_cast<Py_ssize_t>(size)));
+        PyObject *value = sharedbox::decode(desc_of(t), reinterpret_cast<const char *>(data), size);
+        if (value == nullptr)
+            throw nb::python_error();
+        return nb::steal(value);
+    }
     if (t.kind >= kind_complex && t.kind <= kind_uuid) {
         PyObject *value = scalars::decode(t.kind, {data, t.size}, where.name);
         if (value == nullptr)
@@ -299,6 +368,22 @@ nb::object Types::decode_from(const detail::type_ref &t, const std::byte *data, 
             throw nb::python_error();
         return nb::steal(made);
     }
+    case kind_optional: {
+        const auto present = load<std::uint8_t>(data);
+        if (present > 1)
+            corrupt(where.name);
+        if (present == 0)
+            return nb::none();
+        const detail::type_member &inner = tree_.member(node.members);
+        return decode_from(inner.type, data + inner.offset, t.node, 0, where);
+    }
+    case kind_union: {
+        const auto tag = load<std::uint8_t>(data);
+        if (tag >= node.count)
+            corrupt(where.name);
+        const detail::type_member &m = tree_.member(node.members + tag);
+        return decode_from(m.type, data + m.offset, t.node, tag, where);
+    }
     default:
         raise(PyExc_TypeError,
               where.name + ": values of kind " + std::to_string(t.kind) + " are not supported yet");
@@ -306,6 +391,20 @@ nb::object Types::decode_from(const detail::type_ref &t, const std::byte *data, 
 }
 
 bool Types::accepts(const detail::type_ref &t, PyObject *value) const {
+    switch (t.kind) {
+    case kind_bool:
+        return PyBool_Check(value);
+    case kind_int:
+        return PyLong_Check(value) && !PyBool_Check(value);
+    case kind_float:
+        return (PyFloat_Check(value) || PyLong_Check(value)) && !PyBool_Check(value);
+    case kind_str:
+        return PyUnicode_Check(value);
+    case kind_bytes:
+        return PyBytes_Check(value) || PyByteArray_Check(value) || PyMemoryView_Check(value);
+    default:
+        break;
+    }
     if (t.kind >= kind_complex && t.kind <= kind_decimal)
         return scalars::accepts(t.kind, value);
     const NodeInfo &n = nodes_[t.node];
@@ -316,6 +415,15 @@ bool Types::accepts(const detail::type_ref &t, PyObject *value) const {
         return instance(value, n.cls);
     case kind_literal:
         return literal_position(n, value) >= 0;
+    case kind_optional:
+        return value == Py_None || accepts(tree_.member(tree_.node(t.node).members).type, value);
+    case kind_union: {
+        const detail::type_node &node = tree_.node(t.node);
+        for (std::uint32_t i = 0; i < node.count; ++i)
+            if (accepts(tree_.member(node.members + i).type, value))
+                return true;
+        return false;
+    }
     default:
         return false;
     }
