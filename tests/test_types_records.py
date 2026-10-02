@@ -1,6 +1,8 @@
 import collections
 import dataclasses
 import datetime
+import subprocess
+import sys
 from dataclasses import InitVar, dataclass
 from typing import Annotated, Generic, NamedTuple, NotRequired, TypedDict, TypeVar
 
@@ -248,3 +250,31 @@ def test_an_absent_key_is_not_added_by_a_default_factory(unique_name: str) -> No
         assert box.noted == {}
         assert not source
     Notes.unlink(unique_name)
+
+
+RECORD_CLASS_AT_EXIT = """
+import dataclasses
+
+from sharedbox import SharedBox
+
+
+@dataclasses.dataclass
+class Inner:
+    x: int
+
+
+class Outer(SharedBox):
+    inner: Inner
+"""
+
+
+def test_a_record_field_class_is_freed_at_exit() -> None:
+    """Check that a box class whose record type refers back to its module leaves no leak report at exit."""
+    done = subprocess.run(
+        [sys.executable, "-c", RECORD_CLASS_AT_EXIT],
+        capture_output=True,
+        check=True,
+        text=True,
+        timeout=60,
+    )
+    assert "leaked" not in done.stderr

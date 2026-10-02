@@ -193,8 +193,24 @@ int field_set(PyObject *self, PyObject *box, PyObject *value) noexcept {
     }
 }
 
+// A class holds its Fields, and a Field reaches back to the class's module through its Types (a
+// record type's generated methods keep the module's globals), so the collector must see them to free
+// that cycle. There is no tp_clear: like a tuple's, a Field's references never change, and every
+// cycle through one also passes through the class dict holding it, which the collector clears.
+int field_traverse(PyObject *self, visitproc visit, void *arg) {
+    Py_VISIT(Py_TYPE(self));
+    if (!nb::inst_ready(self))
+        return 0;
+    const Field &f = *nb::inst_ptr<Field>(self);
+    Py_VISIT(f.spec.ptr());
+    Py_VISIT(f.segment_slot.ptr());
+    Py_VISIT(f.types.ptr());
+    return 0;
+}
+
 PyType_Slot field_slots[] = {{Py_tp_descr_get, reinterpret_cast<void *>(field_get)},
                              {Py_tp_descr_set, reinterpret_cast<void *>(field_set)},
+                             {Py_tp_traverse, reinterpret_cast<void *>(field_traverse)},
                              {0, nullptr}};
 
 // The limited API has no tuple macros; the full API's skip the checks the functions make.
