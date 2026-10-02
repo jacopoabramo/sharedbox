@@ -63,7 +63,7 @@ def test_a_datetime_is_refused_by_a_date_field(unique_name: str) -> None:
     """Check that a datetime given to a date field raises TypeError, rather than storing the date alone."""
     with Event.create(unique_name, **VALUES) as box:
         with pytest.raises(TypeError, match="Event.day expects a date"):
-            box.day = datetime.datetime(2026, 1, 1, 12)
+            box.day = datetime.datetime(2026, 1, 1, 12)  # noqa: DTZ001
         assert box.day == VALUES["day"]
     Event.unlink(unique_name)
 
@@ -131,7 +131,7 @@ def test_type_aliases_are_unwrapped() -> None:
 def test_an_alias_naming_something_undefined_is_a_type_error() -> None:
     """Check that an alias whose value names an undefined class raises TypeError, not NameError."""
     namespace: dict[str, object] = {}
-    exec("type A = Undefined", namespace)
+    exec("type A = Undefined", namespace)  # noqa: S102
     with pytest.raises(TypeError, match="is not defined"):
         build_layout(
             type(
