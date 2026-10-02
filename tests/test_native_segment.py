@@ -17,6 +17,7 @@ import pytest
 from sharedbox import SharedBox
 from sharedbox._layout import NativeField
 from sharedbox._native import (
+    LAYOUT_VERSION,
     BoxClosedError,
     LockTimeoutError,
     SchemaMismatchError,
@@ -343,8 +344,8 @@ def test_small_box_takes_one_page(unique_name: str) -> None:
     segment.close()
 
 
-def test_raw_bytes_follow_layout_1_0(unique_name: str) -> None:
-    """Check that the mapped bytes of a segment match layout 1.0 field by field."""
+def test_raw_bytes_follow_the_layout(unique_name: str) -> None:
+    """Check that the mapped bytes of a segment match the layout field by field."""
     fields = [
         NativeField(0, 8, INT),
         NativeField(8, 8, FLOAT),
@@ -365,7 +366,7 @@ def test_raw_bytes_follow_layout_1_0(unique_name: str) -> None:
     segment.close()
     assert len(raw) == 4096
     assert raw[0:8] == MAGIC
-    assert raw[8:12] == bytes([1, 0, 0, 0])
+    assert raw[8:12] == struct.pack("<HH", *LAYOUT_VERSION)
     assert struct.unpack_from("<HHQIIII", raw, 12) == (
         3,
         64,
@@ -379,7 +380,7 @@ def test_raw_bytes_follow_layout_1_0(unique_name: str) -> None:
     assert create_id != 0
     assert creator_start != 0
     assert creator_pid == os.getpid()
-    assert raw[60:64] == bytes(4)
+    assert raw[60:64] == bytes(4)  # types_size
     # seq, writer_pid, wake_word and waiters after one write, with no one waiting.
     assert struct.unpack_from("<QIII", raw, 64) == (2, 0, 1, 0)
     assert raw[84:88] == bytes(4)
@@ -429,8 +430,8 @@ def test_corrupt_header_is_refused(
 def test_another_major_version_is_refused(unique_name: str) -> None:
     """Check that attach raises SchemaMismatchError for a different major layout version."""
     segment = create(unique_name)
-    patch_header(unique_name, 8, "<H", 2)
-    with pytest.raises(SchemaMismatchError, match=r"uses layout 2\.0"):
+    patch_header(unique_name, 8, "<H", 3)
+    with pytest.raises(SchemaMismatchError, match=r"uses layout 3\.0"):
         attach(unique_name)
     segment.close()
 
@@ -735,10 +736,10 @@ def test_an_unpublished_segment_is_attached_only_after_publish(
 def test_attach_refuses_a_field_of_a_kind_it_cannot_read(unique_name: str) -> None:
     """Check that attach refuses a segment with a field of an unknown kind, naming the kind."""
     owner = create(unique_name)
-    # Field 0 becomes kind 9, which sharedbox.hpp opens as opaque bytes.
-    patch_header(unique_name, 132, "<I", 8 | 9 << 24)
+    # Field 0 becomes kind 13, which sharedbox.hpp opens as opaque bytes.
+    patch_header(unique_name, 132, "<I", 8 | 13 << 24)
     with pytest.raises(
-        SchemaMismatchError, match="kind 9, which this version cannot read"
+        SchemaMismatchError, match="kind 13, which this version cannot read"
     ):
         attach(unique_name)
     owner.close()

@@ -107,7 +107,7 @@ std::string exists_message(const std::string &name, const std::vector<std::strin
                unlink + " removes it";
 #endif
     }
-    if (seen->layout_major != layout_major)
+    if (!detail::major_ok(seen->layout_major))
         return taken;
     if (std::optional<std::string> foreign = foreign_creator(*seen, taken))
         return *foreign;

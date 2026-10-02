@@ -11,6 +11,7 @@ import pytest
 
 import sharedbox
 from sharedbox import BoxClosedError, SharedBox
+from sharedbox._native import LAYOUT_VERSION
 
 CONSUMER = Path(__file__).parent / "cpp" / "consumer"
 # PyCapsule_SetName keeps the pointer, so the name must outlive the capsule.
@@ -107,8 +108,7 @@ def test_the_capsule_holds_a_handle_on_the_box(unique_name: str) -> None:
         capsule = box.__sharedbox_box__()
         handle = handle_of(capsule)
         assert (handle.layout_major, handle.layout_minor, handle.handle_version) == (
-            1,
-            0,
+            *LAYOUT_VERSION,
             1,
         )
         assert handle.size == box._segment._size
@@ -119,7 +119,7 @@ def test_the_capsule_holds_a_handle_on_the_box(unique_name: str) -> None:
 def test_an_unused_capsule_outlives_close_and_unlink(unique_name: str) -> None:
     """Check that the memory behind a capsule stays readable after the box is closed and unlinked."""
     box = Frame.create(unique_name, 0.5, 3)
-    capsule = box.__sharedbox_box__(max_version=(1, 0))
+    capsule = box.__sharedbox_box__(max_version=LAYOUT_VERSION)
     handle = handle_of(capsule)
     box.close()
     Frame.unlink(unique_name)
@@ -131,8 +131,8 @@ def test_an_unused_capsule_outlives_close_and_unlink(unique_name: str) -> None:
 def test_requests_the_box_cannot_meet_are_refused(unique_name: str) -> None:
     """Check that the capsule request refuses a newer major version and a stream, and a closed box raises BoxClosedError."""
     with Frame.create(unique_name) as box:
-        with pytest.raises(BufferError, match="major version 2"):
-            box.__sharedbox_box__(max_version=(2, 0))
+        with pytest.raises(BufferError, match="major version 3"):
+            box.__sharedbox_box__(max_version=(3, 0))
         with pytest.raises(NotImplementedError, match="stream"):
             box.__sharedbox_box__(stream=True)
     with pytest.raises(BoxClosedError):

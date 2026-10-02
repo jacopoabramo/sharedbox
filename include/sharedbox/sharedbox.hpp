@@ -1,4 +1,5 @@
-// sharedbox.hpp: layout 1.0 of a sharedbox segment and the protocols that use it.
+// sharedbox.hpp: layout 2.0 of a sharedbox segment, the 1.0 layout it still opens, and the protocols that
+// use them.
 //
 // C++20, header-only, 64-bit little-endian targets, no exceptions. Names in sharedbox::detail are
 // internal and may change in any release. Every translation unit of a program must see the same
@@ -76,10 +77,12 @@ namespace sharedbox {
 // Renamed when this header's C++ interface changes incompatibly, so code built against headers with
 // different inline namespaces can be linked into one program without their names colliding. Names in
 // detail may change without a rename, so a shared library should build with hidden visibility.
-inline namespace v1 {
+inline namespace v2 {
 
-inline constexpr std::uint16_t layout_major = 1;
+inline constexpr std::uint16_t layout_major = 2;
 inline constexpr std::uint16_t layout_minor = 0;
+// The oldest major version open and from_capsule still accept.
+inline constexpr std::uint16_t oldest_layout_major = 1;
 inline constexpr std::uint32_t handle_version = 1;
 // "SHREDBX1" read as a little-endian u64.
 inline constexpr std::uint64_t magic = 0x3158424445524853;
@@ -95,6 +98,11 @@ inline constexpr double max_timeout = 86400.0;
 inline constexpr double default_lock_timeout = 5.0;
 inline constexpr std::uint32_t kind_shift = 24;
 inline constexpr std::uint32_t capacity_mask = (std::uint32_t{1} << kind_shift) - 1;
+// A description's offset is the low 24 bits of a field entry, so the table holds at most 16 MiB.
+inline constexpr std::uint32_t max_types_size = capacity_mask + 1;
+inline constexpr std::uint32_t max_type_depth = 16;
+// Layout 2.0 keeps the page-rounded mapping below 4 GiB, so its size fits header::size.
+inline constexpr std::uint64_t max_mapping_size = (std::uint64_t{1} << 32) - page_size;
 
 inline constexpr std::uint8_t kind_bool = 0;
 inline constexpr std::uint8_t kind_int = 1;
@@ -102,6 +110,26 @@ inline constexpr std::uint8_t kind_float = 2;
 inline constexpr std::uint8_t kind_str = 3;
 inline constexpr std::uint8_t kind_bytes = 4;
 inline constexpr std::uint8_t kind_ref = 5;
+inline constexpr std::uint8_t kind_complex = 6;
+inline constexpr std::uint8_t kind_date = 7;
+inline constexpr std::uint8_t kind_time = 8;
+inline constexpr std::uint8_t kind_datetime = 9;
+inline constexpr std::uint8_t kind_timedelta = 10;
+inline constexpr std::uint8_t kind_uuid = 11;
+inline constexpr std::uint8_t kind_decimal = 12;
+// From here on a field entry's low 24 bits are the offset of the field's description, not a size.
+inline constexpr std::uint8_t first_described_kind = 64;
+inline constexpr std::uint8_t kind_enum = 64;
+inline constexpr std::uint8_t kind_flag = 65;
+inline constexpr std::uint8_t kind_literal = 66;
+inline constexpr std::uint8_t kind_optional = 67;
+inline constexpr std::uint8_t kind_union = 68;
+inline constexpr std::uint8_t kind_record = 69;
+inline constexpr std::uint8_t kind_tuple = 70;
+inline constexpr std::uint8_t kind_list = 71;
+inline constexpr std::uint8_t kind_set = 72;
+inline constexpr std::uint8_t kind_dict = 73;
+inline constexpr std::uint8_t kind_array = 74;
 
 enum class status : int {
     ok = 0,
@@ -154,7 +182,8 @@ struct header {
     std::uint64_t create_id;
     std::uint64_t creator_start;
     std::uint32_t creator_pid;
-    std::uint8_t reserved0[4];
+    // Bytes of the description table after the waiter slots; 0 in layout 1.0, where these were reserved.
+    std::uint32_t types_size;
     std::uint64_t seq;
     std::uint32_t writer_pid;
     std::uint32_t wake_word;
@@ -203,7 +232,7 @@ static_assert(offsetof(header, size) == 36);
 static_assert(offsetof(header, create_id) == 40);
 static_assert(offsetof(header, creator_start) == 48);
 static_assert(offsetof(header, creator_pid) == 56);
-static_assert(offsetof(header, reserved0) == 60);
+static_assert(offsetof(header, types_size) == 60);
 static_assert(offsetof(header, seq) == 64);
 static_assert(offsetof(header, writer_pid) == 72);
 static_assert(offsetof(header, wake_word) == 76);
@@ -667,19 +696,42 @@ inline bool timeout_ok(seconds t, bool zero_allowed) noexcept {
     return (zero_allowed ? s >= 0 : s > 0) && s <= max_timeout;
 }
 
-inline bool prefixed(std::uint32_t kind) noexcept { return kind == kind_str || kind == kind_bytes; }
+inline bool described(std::uint32_t kind) noexcept { return kind >= first_described_kind; }
 
-inline bool kind_known(std::uint32_t kind) noexcept { return kind <= kind_ref; }
-
-// Alignment of a field of this kind within the record: 1, 8, 8, 4, 4, 8; 1 for a kind this header does
-// not know, whose alignment it cannot check.
-inline std::uint32_t kind_alignment(std::uint32_t kind) noexcept {
-    if (kind == kind_bool || !kind_known(kind))
-        return 1u;
-    return prefixed(kind) ? 4u : 8u;
+// str, bytes and decimal: a u32 length, then up to capacity bytes. A mask, so the int path of payload and
+// store pays one test, as it did when only str and bytes were prefixed.
+inline bool prefixed(std::uint32_t kind) noexcept {
+    constexpr std::uint32_t mask = (1u << kind_str) | (1u << kind_bytes) | (1u << kind_decimal);
+    return kind < 32 && ((mask >> kind) & 1u) != 0;
 }
 
-// The capacity every field of a fixed-size kind has; 0 for str and bytes and for unknown kinds.
+inline bool kind_known(std::uint32_t kind) noexcept {
+    return kind <= kind_decimal || (kind >= kind_enum && kind <= kind_array);
+}
+
+// Alignment of a fixed kind within the record; 1 for a kind this header does not know, whose alignment
+// it cannot check. A described kind's alignment comes from its description.
+inline std::uint32_t kind_alignment(std::uint32_t kind) noexcept {
+    switch (kind) {
+    case kind_int:
+    case kind_float:
+    case kind_ref:
+    case kind_complex:
+    case kind_time:
+    case kind_datetime:
+        return 8u;
+    case kind_str:
+    case kind_bytes:
+    case kind_decimal:
+    case kind_date:
+    case kind_timedelta:
+        return 4u;
+    default:
+        return 1u;
+    }
+}
+
+// The capacity every field of a fixed-size kind has; 0 for prefixed, described and unknown kinds.
 inline std::uint32_t fixed_capacity(std::uint32_t kind) noexcept {
     switch (kind) {
     case kind_bool:
@@ -689,6 +741,15 @@ inline std::uint32_t fixed_capacity(std::uint32_t kind) noexcept {
         return 8u;
     case kind_ref:
         return sizeof(box_ref);
+    case kind_complex:
+    case kind_time:
+    case kind_datetime:
+    case kind_uuid:
+        return 16u;
+    case kind_date:
+        return 4u;
+    case kind_timedelta:
+        return 12u;
     default:
         return 0u;
     }
@@ -702,6 +763,8 @@ inline std::uint64_t field_span(const field_spec &f) noexcept {
 // open takes a field of a kind it does not know as opaque bytes, still inside the record, which read
 // returns and write refuses; create refuses it.
 inline bool field_fits(const field_spec &f, std::uint32_t record_size, bool unknown_kind_ok) noexcept {
+    if (described(f.kind) && kind_known(f.kind))
+        return false;
     if ((!kind_known(f.kind) && !unknown_kind_ok) || f.capacity == 0 || f.capacity > max_capacity)
         return false;
     if (f.offset % kind_alignment(f.kind) != 0 || f.offset > record_size)
@@ -1000,7 +1063,7 @@ inline result<std::uint64_t> random_id() noexcept {
 }
 
 // Checks line 0 of a header, copied out of a mapping of mapped_size bytes, before anything reads
-// through it.
+// through it. The caller has already refused a major version outside oldest_layout_major..layout_major.
 inline status check_geometry(const header &h, std::uint64_t mapped_size) noexcept {
     if (h.field_count == 0 || h.field_count > max_fields)
         return status::corrupt;
@@ -1008,11 +1071,21 @@ inline status check_geometry(const header &h, std::uint64_t mapped_size) noexcep
         return status::corrupt;
     if (h.tail != header_size || h.size != mapped_size || h.record % record_alignment != 0)
         return status::corrupt;
-    if (h.record < tail_end(h.field_count, h.waiter_slots))
-        return status::corrupt;
-    if (h.record_size > max_record_size || std::uint64_t{h.record} + h.record_size > mapped_size)
-        return status::corrupt;
-    return status::ok;
+    const std::uint64_t slots_end = tail_end(h.field_count, h.waiter_slots);
+    const std::uint64_t record_end = std::uint64_t{h.record} + h.record_size;
+    if (h.layout_major == 1) {
+        if (h.types_size != 0 || h.record < slots_end || h.record_size > max_record_size)
+            return status::corrupt;
+    } else {
+        if (h.types_size % 8 != 0 || h.types_size > max_types_size ||
+            h.record < round_up(slots_end + h.types_size, record_alignment) || record_end > max_mapping_size)
+            return status::corrupt;
+    }
+    return record_end > mapped_size ? status::corrupt : status::ok;
+}
+
+inline bool major_ok(std::uint16_t major) noexcept {
+    return major >= oldest_layout_major && major <= layout_major;
 }
 
 // Line 0 of the header at base, copied once so that only the copy is checked and used.
@@ -1023,6 +1096,18 @@ inline header copy_line0(const void *base) noexcept {
 }
 
 struct state;
+
+} // namespace detail
+
+class handle;
+
+namespace detail {
+
+[[nodiscard]] inline result<handle> create_impl(std::string_view name, std::span<const field_spec> fields,
+                                                std::uint32_t record_size, std::uint64_t schema_hash,
+                                                std::uint16_t waiter_slots, std::span<const value> initial,
+                                                std::span<const std::byte> types, std::uint16_t major,
+                                                bool publish);
 
 } // namespace detail
 
@@ -1040,14 +1125,17 @@ public:
     ~handle();
 
     // Creates the box: the name, the mapping, the header and field table, every waiter slot free, and
-    // the initial values; no other process can open it before all of that is written.
+    // the initial values; no other process can open it before all of that is written. types is the
+    // description table of the fields of a described kind; empty when there are none.
     [[nodiscard]] static result<handle> create(std::string_view name, std::span<const field_spec> fields,
                                                std::uint32_t record_size, std::uint64_t schema_hash,
-                                               std::uint16_t waiter_slots, std::span<const value> initial);
+                                               std::uint16_t waiter_slots, std::span<const value> initial,
+                                               std::span<const std::byte> types = {});
     // As create, but open waits until publish() is called, so the creator can change the values first.
     [[nodiscard]] static result<handle>
     create_unpublished(std::string_view name, std::span<const field_spec> fields, std::uint32_t record_size,
-                       std::uint64_t schema_hash, std::uint16_t waiter_slots, std::span<const value> initial);
+                       std::uint64_t schema_hash, std::uint16_t waiter_slots, std::span<const value> initial,
+                       std::span<const std::byte> types = {});
     // Lets open find a box made by create_unpublished. status::range if the box is already published,
     // as every box a handle made by open or from_capsule reaches is. A handle from duplicate() of an
     // unpublished creator shares its mapping and could publish it, so a creator must not hand one out
@@ -1069,6 +1157,8 @@ public:
     std::uint16_t waiter_slots() const noexcept;
     // The segment's minor version, or this header's if that is lower.
     std::uint16_t minor_version() const noexcept;
+    // The segment's major version: 1 for a box made by a 0.3 release, 2 otherwise.
+    std::uint16_t major_version() const noexcept;
     void *base() const noexcept;
     std::uint64_t size() const noexcept;
 
@@ -1134,6 +1224,11 @@ private:
     void swap(handle &other) noexcept { std::swap(s_, other.s_); }
 
     detail::state *s_ = nullptr;
+
+    friend result<handle> detail::create_impl(std::string_view name, std::span<const field_spec> fields,
+                                              std::uint32_t record_size, std::uint64_t schema_hash,
+                                              std::uint16_t waiter_slots, std::span<const value> initial,
+                                              std::span<const std::byte> types, std::uint16_t major, bool publish);
 };
 
 namespace detail {
@@ -1144,6 +1239,7 @@ struct state {
     char name[name_max + 1] = {};
     std::uint16_t field_count = 0;
     std::uint16_t waiter_slots = 0;
+    std::uint16_t layout_major = 0;
     std::uint16_t layout_minor = 0;
     std::uint32_t record_size = 0;
     std::uint32_t record_offset = 0;
@@ -1214,7 +1310,8 @@ inline std::unique_ptr<state> make_state(std::string_view name, std::uint16_t fi
 }
 
 // Points s into the mapping at base, whose line 0 and field table s already holds.
-inline void bind(state &s, void *base, std::uint64_t size, std::uint16_t segment_minor) noexcept {
+inline void bind(state &s, void *base, std::uint64_t size, std::uint16_t segment_major,
+                 std::uint16_t segment_minor) noexcept {
     auto *bytes = static_cast<std::byte *>(base);
     const std::size_t table = header_size + std::size_t{s.field_count} * sizeof(stored_field);
     s.hdr = static_cast<header *>(base);
@@ -1222,6 +1319,7 @@ inline void bind(state &s, void *base, std::uint64_t size, std::uint16_t segment
     s.slots = reinterpret_cast<waiter_slot *>(bytes + table + std::size_t{s.field_count} * sizeof(std::uint64_t));
     s.record = bytes + s.record_offset;
     s.size = size;
+    s.layout_major = segment_major;
     s.layout_minor = segment_minor < sharedbox::layout_minor ? segment_minor : sharedbox::layout_minor;
 }
 
@@ -1273,47 +1371,39 @@ SHAREDBOX_HOT std::span<const std::byte> payload(const field_spec &f, const std:
     return {src + sizeof length, length > f.capacity ? f.capacity : length};
 }
 
-} // namespace detail
-
-inline handle::~handle() { delete s_; }
-
-inline result<handle> handle::create(std::string_view name, std::span<const field_spec> fields,
-                                     std::uint32_t record_size, std::uint64_t schema_hash,
-                                     std::uint16_t waiter_slots, std::span<const value> initial) {
-    result<handle> made = create_unpublished(name, fields, record_size, schema_hash, waiter_slots, initial);
-    if (made)
-        static_cast<void>(made->publish());
-    return made;
-}
-
-inline result<handle> handle::create_unpublished(std::string_view name, std::span<const field_spec> fields,
-                                                 std::uint32_t record_size, std::uint64_t schema_hash,
-                                                 std::uint16_t waiter_slots, std::span<const value> initial) {
-    if (!detail::name_ok(name) || fields.empty() || fields.size() > max_fields || waiter_slots == 0 ||
-        waiter_slots > max_waiter_slots || record_size > detail::max_record_size)
+// create and create_unpublished; tests make 1.0 boxes with major 1, which takes no description table.
+inline result<handle> create_impl(std::string_view name, std::span<const field_spec> fields,
+                                  std::uint32_t record_size, std::uint64_t schema_hash, std::uint16_t waiter_slots,
+                                  std::span<const value> initial,
+                                  [[maybe_unused]] std::span<const std::byte> types, std::uint16_t major,
+                                  bool publish) {
+    if (!name_ok(name) || fields.empty() || fields.size() > max_fields || waiter_slots == 0 ||
+        waiter_slots > max_waiter_slots || !major_ok(major) || (major == 1 && !types.empty()))
+        return unexpected(status::range);
+    if (major == 1 ? record_size > max_record_size : std::uint64_t{record_size} > max_mapping_size)
         return unexpected(status::range);
     for (const field_spec &f : fields)
-        if (!detail::field_fits(f, record_size, false))
+        if (!field_fits(f, record_size, false))
             return unexpected(status::range);
-    if (detail::fields_overlap(fields) || !detail::values_ok(fields, initial))
+    if (fields_overlap(fields) || !values_ok(fields, initial))
         return unexpected(status::range);
     const auto count = static_cast<std::uint16_t>(fields.size());
-    const auto record =
-        static_cast<std::uint32_t>(detail::round_up(detail::tail_end(count, waiter_slots), record_alignment));
-    const std::uint64_t size = detail::round_up(std::uint64_t{record} + record_size, page_size);
-    const result<std::uint64_t> id = detail::random_id();
+    const auto record = static_cast<std::uint32_t>(round_up(tail_end(count, waiter_slots), record_alignment));
+    const std::uint64_t size = round_up(std::uint64_t{record} + record_size, page_size);
+    const result<std::uint64_t> id = random_id();
     if (!id)
         return unexpected(id.error());
-    std::unique_ptr<detail::state> s = detail::make_state(name, count, waiter_slots);
+    std::unique_ptr<state> s = make_state(name, count, waiter_slots);
     if (s == nullptr)
         return unexpected(status::os);
-    result<detail::os_mapping> map = detail::map_create(name, size);
+    result<os_mapping> map = map_create(name, size);
     if (!map)
         return unexpected(map.error());
     s->map = std::move(*map);
     auto *base = s->map.base();
     header &h = *static_cast<header *>(base);
-    h.layout_major = layout_major;
+    h.layout_major = major;
+    h.types_size = 0;
     h.layout_minor = layout_minor;
     h.field_count = count;
     h.waiter_slots = waiter_slots;
@@ -1323,9 +1413,9 @@ inline result<handle> handle::create_unpublished(std::string_view name, std::spa
     h.tail = header_size;
     h.size = static_cast<std::uint32_t>(size);
     h.create_id = *id;
-    h.creator_start = detail::current_start();
-    h.creator_pid = detail::current_pid();
-    h.creator_pidns = detail::current_pidns();
+    h.creator_start = current_start();
+    h.creator_pid = current_pid();
+    h.creator_pidns = current_pidns();
     for (std::uint16_t i = 0; i < count; ++i) {
         const stored_field stored{fields[i].offset,
                                   fields[i].capacity | std::uint32_t{fields[i].kind} << kind_shift};
@@ -1337,10 +1427,33 @@ inline result<handle> handle::create_unpublished(std::string_view name, std::spa
     s->record_offset = record;
     s->schema_hash = schema_hash;
     s->create_id = *id;
-    detail::bind(*s, base, size, layout_minor);
+    bind(*s, base, size, major, layout_minor);
     for (const value &v : initial)
-        detail::store(*s, v);
-    return handle(s.release());
+        store(*s, v);
+    handle made(s.release());
+    if (publish)
+        static_cast<void>(made.publish());
+    return made;
+}
+
+} // namespace detail
+
+inline handle::~handle() { delete s_; }
+
+inline result<handle> handle::create(std::string_view name, std::span<const field_spec> fields,
+                                     std::uint32_t record_size, std::uint64_t schema_hash,
+                                     std::uint16_t waiter_slots, std::span<const value> initial,
+                                     std::span<const std::byte> types) {
+    return detail::create_impl(name, fields, record_size, schema_hash, waiter_slots, initial, types, layout_major,
+                               true);
+}
+
+inline result<handle> handle::create_unpublished(std::string_view name, std::span<const field_spec> fields,
+                                                 std::uint32_t record_size, std::uint64_t schema_hash,
+                                                 std::uint16_t waiter_slots, std::span<const value> initial,
+                                                 std::span<const std::byte> types) {
+    return detail::create_impl(name, fields, record_size, schema_hash, waiter_slots, initial, types, layout_major,
+                               false);
 }
 
 inline result<void> handle::publish() noexcept {
@@ -1365,7 +1478,7 @@ inline result<handle> handle::open(std::string_view name, seconds timeout) {
         wait.pause();
     }
     const header line0 = detail::copy_line0(hdr);
-    if (line0.layout_major != layout_major)
+    if (!detail::major_ok(line0.layout_major))
         return unexpected(status::layout);
     if (const status rc = detail::check_geometry(line0, map->size()); rc != status::ok)
         return unexpected(rc);
@@ -1379,7 +1492,7 @@ inline result<handle> handle::open(std::string_view name, seconds timeout) {
     s->schema_hash = line0.schema_hash;
     s->create_id = line0.create_id;
     s->map = std::move(*map);
-    detail::bind(*s, s->map.base(), s->map.size(), line0.layout_minor);
+    detail::bind(*s, s->map.base(), s->map.size(), line0.layout_major, line0.layout_minor);
     detail::free_dead_waiters(*s);
     return handle(s.release());
 }
@@ -1392,6 +1505,7 @@ inline std::uint64_t handle::schema_hash() const noexcept { return s_->schema_ha
 inline std::uint64_t handle::create_id() const noexcept { return s_->create_id; }
 inline std::uint16_t handle::waiter_slots() const noexcept { return s_->waiter_slots; }
 inline std::uint16_t handle::minor_version() const noexcept { return s_->layout_minor; }
+inline std::uint16_t handle::major_version() const noexcept { return s_->layout_major; }
 inline void *handle::base() const noexcept { return s_->hdr; }
 inline std::uint64_t handle::size() const noexcept { return s_->size; }
 
@@ -1869,7 +1983,7 @@ inline status export_into(handle &&h, sbx_handle &out) noexcept {
     auto *owner = new (std::nothrow) handle(std::move(h));
     if (owner == nullptr)
         return status::os;
-    out.layout_major = layout_major;
+    out.layout_major = owner->major_version();
     out.layout_minor = owner->minor_version();
     out.handle_version = handle_version;
     out.base = owner->base();
@@ -1896,7 +2010,7 @@ inline result<handle> handle::from_capsule(sbx_handle *capsule) {
     if (capsule->size < page_size || detail::atomic(hdr->magic).load(std::memory_order_acquire) != magic)
         return unexpected(status::corrupt);
     const header line0 = detail::copy_line0(hdr);
-    if (line0.layout_major != layout_major)
+    if (!detail::major_ok(line0.layout_major))
         return unexpected(status::layout);
     if (const status rc = detail::check_geometry(line0, capsule->size); rc != status::ok)
         return unexpected(rc);
@@ -1911,7 +2025,7 @@ inline result<handle> handle::from_capsule(sbx_handle *capsule) {
     s->create_id = line0.create_id;
     s->foreign = *capsule;
     capsule->release = nullptr;
-    detail::bind(*s, s->foreign.base, s->foreign.size, line0.layout_minor);
+    detail::bind(*s, s->foreign.base, s->foreign.size, line0.layout_major, line0.layout_minor);
     return handle(s.release());
 }
 
@@ -1952,7 +2066,7 @@ inline result<handle> handle::duplicate() const {
     s->create_id = src.create_id;
     s->lock_timeout = src.lock_timeout;
     s->map = std::move(map);
-    detail::bind(*s, s->map.base(), src.size, src.layout_minor);
+    detail::bind(*s, s->map.base(), src.size, src.layout_major, src.layout_minor);
     return handle(s.release());
 }
 
@@ -1963,7 +2077,7 @@ inline sbx_handle *handle::to_capsule() && {
     return out.release();
 }
 
-} // namespace v1
+} // namespace v2
 } // namespace sharedbox
 
 #undef SHAREDBOX_HOT
