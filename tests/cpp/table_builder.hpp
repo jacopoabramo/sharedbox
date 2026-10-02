@@ -38,7 +38,9 @@ struct table_builder {
             bytes.push_back(std::byte{0});
     }
     // Overwrites the u32 at offset, for an entry whose description is written after it.
-    void patch(std::size_t offset, std::uint32_t value) { std::memcpy(bytes.data() + offset, &value, sizeof value); }
+    void patch(std::size_t offset, std::uint32_t value) {
+        std::memcpy(bytes.data() + offset, &value, sizeof value);
+    }
     std::span<const std::byte> span() const { return bytes; }
 };
 
