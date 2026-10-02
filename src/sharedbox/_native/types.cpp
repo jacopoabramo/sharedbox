@@ -14,6 +14,60 @@ namespace {
     throw nb::python_error();
 }
 
+// Item i of a description's Python tuple, borrowed; invalid_argument if the tuple has another shape.
+PyObject *item(const nb::object &info, Py_ssize_t i) {
+    if (!PyTuple_Check(info.ptr()) || PyTuple_Size(info.ptr()) <= i)
+        throw std::invalid_argument("the Python data of a description has the wrong shape");
+    return PyTuple_GetItem(info.ptr(), i);
+}
+
+std::string type_name(PyObject *type) {
+    const nb::object name = nb::handle(type).attr("__qualname__");
+    return nb::borrow<nb::str>(name).c_str();
+}
+
+[[noreturn]] void wrong(const std::string &where, const std::string &expected, PyObject *value) {
+    raise(PyExc_TypeError,
+          where + " expects " + expected + ", got " + type_name(reinterpret_cast<PyObject *>(Py_TYPE(value))));
+}
+
+[[noreturn]] void corrupt(const std::string &where) {
+    raise(PyExc_ValueError, where + ": the stored value is not one Python can hold");
+}
+
+bool instance(PyObject *value, PyObject *type) {
+    const int found = PyObject_IsInstance(value, type);
+    if (found < 0)
+        throw nb::python_error();
+    return found == 1;
+}
+
+// The position of value among a literal's values, matching type and value, so 1 and True stay apart;
+// -1 if it is none of them.
+int literal_position(const NodeInfo &n, PyObject *value) {
+    for (std::size_t i = 0; i < n.items.size(); ++i) {
+        PyObject *candidate = n.items[i];
+        if (Py_TYPE(candidate) != Py_TYPE(value))
+            continue;
+        if (candidate == value)
+            return static_cast<int>(i);
+        const int equal = PyObject_RichCompareBool(candidate, value, Py_EQ);
+        if (equal < 0)
+            throw nb::python_error();
+        if (equal == 1)
+            return static_cast<int>(i);
+    }
+    return -1;
+}
+
+template <class T> T load(const std::byte *data) {
+    T value;
+    std::memcpy(&value, data, sizeof value);
+    return value;
+}
+
+template <class T> void put(std::byte *out, T value) { std::memcpy(out, &value, sizeof value); }
+
 std::uint64_t bytearray_key(std::uint32_t container, std::uint32_t member) {
     return (std::uint64_t{container} << 32) | member;
 }
@@ -92,9 +146,31 @@ bool Types::read_as_bytearray(std::uint32_t container, std::uint32_t member) con
 void Types::prepare(std::uint32_t node, std::uint8_t kind, nb::object info) {
     NodeInfo &n = nodes_[node];
     n.info = std::move(info);
+    const std::uint16_t count = tree_.node(node).count;
     switch (kind) {
+    case kind_enum: {
+        n.cls = item(n.info, 0);
+        PyObject *members = item(n.info, 1);
+        if (!PyTuple_Check(members) || PyTuple_Size(members) != count)
+            throw std::invalid_argument("an enum's members do not match its description");
+        for (std::uint16_t i = 0; i < count; ++i) {
+            n.items.push_back(PyTuple_GetItem(members, i));
+            n.positions.emplace(n.items.back(), i);
+        }
+        break;
+    }
+    case kind_flag:
+        n.cls = item(n.info, 0);
+        break;
+    case kind_literal: {
+        PyObject *values = item(n.info, 0);
+        if (!PyTuple_Check(values) || PyTuple_Size(values) != count)
+            throw std::invalid_argument("a literal's values do not match its description");
+        for (std::uint16_t i = 0; i < count; ++i)
+            n.items.push_back(PyTuple_GetItem(values, i));
+        break;
+    }
     default:
-        // A kind with no Python data of its own keeps only the tuple.
         break;
     }
 }
@@ -160,7 +236,40 @@ void Types::encode_into(const detail::type_ref &t, PyObject *value, std::byte *o
         scalars::encode(t.kind, value, {out, t.size}, where.name);
         return;
     }
-    raise(PyExc_TypeError, where.name + ": values of kind " + std::to_string(t.kind) + " are not supported yet");
+    const NodeInfo &n = nodes_[t.node];
+    switch (t.kind) {
+    case kind_enum: {
+        if (reinterpret_cast<PyObject *>(Py_TYPE(value)) != n.cls)
+            wrong(where.name, "a " + type_name(n.cls) + " member", value);
+        put(out, n.positions.at(value));
+        return;
+    }
+    case kind_flag: {
+        if (!instance(value, n.cls))
+            wrong(where.name, "a " + type_name(n.cls), value);
+        const nb::object number = nb::handle(value).attr("value");
+        const unsigned long long bits = PyLong_AsUnsignedLongLong(number.ptr());
+        if (bits == static_cast<unsigned long long>(-1) && PyErr_Occurred()) {
+            PyErr_Clear();
+            raise(PyExc_ValueError, where.name + " holds flag bits of 0 to 2**64 - 1; the value's do not fit");
+        }
+        put(out, static_cast<std::uint64_t>(bits));
+        return;
+    }
+    case kind_literal: {
+        const int position = literal_position(n, value);
+        if (position < 0) {
+            const nb::object shown = nb::steal(PyObject_Repr(value));
+            raise(PyExc_ValueError, where.name + " expects one of its Literal values, got " +
+                                        std::string(nb::borrow<nb::str>(shown).c_str()));
+        }
+        put(out, static_cast<std::uint16_t>(position));
+        return;
+    }
+    default:
+        raise(PyExc_TypeError,
+              where.name + ": values of kind " + std::to_string(t.kind) + " are not supported yet");
+    }
 }
 
 nb::object Types::decode_from(const detail::type_ref &t, const std::byte *data, std::uint32_t container,
@@ -173,13 +282,43 @@ nb::object Types::decode_from(const detail::type_ref &t, const std::byte *data, 
             throw nb::python_error();
         return nb::steal(value);
     }
-    raise(PyExc_TypeError, where.name + ": values of kind " + std::to_string(t.kind) + " are not supported yet");
+    const NodeInfo &n = nodes_[t.node];
+    const detail::type_node &node = tree_.node(t.node);
+    switch (t.kind) {
+    case kind_enum:
+    case kind_literal: {
+        const auto position = load<std::uint16_t>(data);
+        if (position >= node.count)
+            corrupt(where.name);
+        return nb::borrow(n.items[position]);
+    }
+    case kind_flag: {
+        const nb::object bits = nb::steal(PyLong_FromUnsignedLongLong(load<std::uint64_t>(data)));
+        PyObject *made = PyObject_CallFunctionObjArgs(n.cls, bits.ptr(), nullptr);
+        if (made == nullptr)
+            throw nb::python_error();
+        return nb::steal(made);
+    }
+    default:
+        raise(PyExc_TypeError,
+              where.name + ": values of kind " + std::to_string(t.kind) + " are not supported yet");
+    }
 }
 
 bool Types::accepts(const detail::type_ref &t, PyObject *value) const {
     if (t.kind >= kind_complex && t.kind <= kind_decimal)
         return scalars::accepts(t.kind, value);
-    return false;
+    const NodeInfo &n = nodes_[t.node];
+    switch (t.kind) {
+    case kind_enum:
+        return reinterpret_cast<PyObject *>(Py_TYPE(value)) == n.cls;
+    case kind_flag:
+        return instance(value, n.cls);
+    case kind_literal:
+        return literal_position(n, value) >= 0;
+    default:
+        return false;
+    }
 }
 
 } // namespace sharedbox

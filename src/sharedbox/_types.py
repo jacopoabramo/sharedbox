@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import datetime
 import decimal
+import enum
 import struct
 import uuid
 from dataclasses import dataclass
@@ -12,6 +13,7 @@ from typing import (
     Annotated,
     Any,
     Final,
+    Literal,
     NewType,
     TypeGuard,
     get_args,
@@ -295,7 +297,111 @@ def dispatch(
         raise TypeError(f"{where}: Capacity does not apply to {hint!r}")
     if isinstance(hint, type) and hint in SCALARS:
         return SCALARS[hint]
+    if isinstance(hint, type) and issubclass(hint, enum.Flag):
+        return flag_spec(hint, where)
+    if isinstance(hint, type) and issubclass(hint, enum.Enum):
+        return enum_spec(hint, where)
+    if get_origin(hint) is Literal:
+        return literal_spec(hint, where)
     raise unsupported(where, hint)
+
+
+def name_bytes(text: str) -> bytes:
+    """`text` as a description stores a name: a u16 length, then UTF-8."""
+    raw = text.encode()
+    if len(raw) > MAX_COUNT:
+        raise TypeError(f"a name of {len(raw)} bytes does not fit a description")
+    return struct.pack("<H", len(raw)) + raw
+
+
+def enum_spec(hint: type[enum.Enum], where: str) -> TypeSpec:
+    members = tuple(hint)
+    if not 0 < len(members) <= MAX_COUNT:
+        raise TypeError(
+            f"{where}: an enum needs 1 to {MAX_COUNT} members; {hint.__name__} has {len(members)}"
+        )
+    return TypeSpec(
+        "enum",
+        2,
+        2,
+        "enum(" + ",".join(m.name for m in members) + ")",
+        count=len(members),
+        after=b"".join(name_bytes(m.name) for m in members),
+        info=(hint, members),
+        match=(hint,),
+        exact=hint,
+    )
+
+
+def flag_spec(hint: type[enum.Flag], where: str) -> TypeSpec:
+    members = tuple(hint)
+    if not 0 < len(members) <= 64:
+        raise TypeError(
+            f"{where}: a flag needs 1 to 64 members; {hint.__name__} has {len(members)}"
+        )
+    for m in members:
+        if not isinstance(m.value, int) or not 0 <= m.value < 1 << 64:
+            raise TypeError(
+                f"{where}: flag member {m.name} needs an int value of 0 to 2**64 - 1"
+            )
+    return TypeSpec(
+        "flag",
+        8,
+        8,
+        "flag(" + ",".join(f"{m.name}={m.value}" for m in members) + ")",
+        count=len(members),
+        after=b"".join(
+            name_bytes(str(m.name)) + struct.pack("<Q", m.value) for m in members
+        ),
+        info=(hint,),
+        match=(hint,),
+        exact=hint,
+    )
+
+
+def literal_spec(hint: Any, where: str) -> TypeSpec:
+    values = get_args(hint)
+    if not 0 < len(values) <= MAX_COUNT:
+        raise TypeError(f"{where}: a Literal needs 1 to {MAX_COUNT} values")
+    parts: list[bytes] = []
+    texts: list[str] = []
+    for value in values:
+        if value is None:
+            parts.append(b"\x00")
+            texts.append("None")
+        elif isinstance(value, bool):
+            parts.append(struct.pack("<BB", 1, value))
+            texts.append(repr(value))
+        elif isinstance(value, enum.Enum):
+            parts.append(b"\x05" + name_bytes(value.name))
+            texts.append(f"member:{value.name}")
+        elif isinstance(value, int):
+            if not -(1 << 63) <= value < 1 << 63:
+                raise TypeError(
+                    f"{where}: Literal value {value} does not fit a signed 64-bit integer"
+                )
+            parts.append(struct.pack("<Bq", 2, value))
+            texts.append(f"int:{value}")
+        elif isinstance(value, str):
+            parts.append(b"\x03" + name_bytes(value))
+            texts.append(f"str:{value!r}")
+        elif isinstance(value, bytes):
+            parts.append(struct.pack("<BI", 4, len(value)) + value)
+            texts.append(f"bytes:{value!r}")
+        else:
+            raise TypeError(
+                f"{where}: Literal value {value!r} is not None, a bool, an int, a str, bytes or an enum member"
+            )
+    return TypeSpec(
+        "literal",
+        2,
+        2,
+        "literal(" + ",".join(texts) + ")",
+        count=len(values),
+        after=b"".join(parts),
+        info=(values,),
+        match=tuple(dict.fromkeys(type(value) for value in values)),
+    )
 
 
 def takes_capacity(hint: Any) -> bool:

@@ -2,12 +2,14 @@
 
 import datetime
 import decimal
+import enum
 import struct
 import uuid
 
 import pytest
 
-from sharedbox._layout import NativeField
+from sharedbox import SchemaMismatchError
+from sharedbox._layout import NativeField, build_layout
 from sharedbox._native import LAYOUT_VERSION, Segment, Types
 
 COMPLEX, DATE, TIME, DATETIME, TIMEDELTA, UUID, DECIMAL = range(6, 13)
@@ -246,3 +248,37 @@ def test_types_decode_refuses_bytes_of_the_wrong_size(index: int, data: bytes) -
     t = Types([NativeField(0, 8, 1), NativeField(8, 20, DECIMAL)], labels, b"", {}, [])
     with pytest.raises(ValueError, match=labels[index]):
         t.decode(index, data)
+
+
+class Before(enum.Enum):
+    RED = 1
+    GREEN = 2
+
+
+class After(enum.Enum):
+    RED = 1
+    BLUE = 2
+
+
+def test_a_different_table_is_refused_at_attach(unique_name: str) -> None:
+    """Check that attach raises SchemaMismatchError when the tables differ, even with the same schema hash."""
+    first = build_layout(
+        type("T", (), {"__annotations__": {"x": Before}, "__module__": "__main__"})
+    )
+    second = build_layout(
+        type("T", (), {"__annotations__": {"x": After}, "__module__": "__main__"})
+    )
+    natives = [s.native for s in first.fields]
+    owner = Segment.create(
+        unique_name,
+        natives,
+        ["T.x"],
+        first.record_size,
+        0xAB,
+        1.0,
+        [],
+        types=first.types,
+    )
+    with pytest.raises(SchemaMismatchError, match="field types differ"):
+        Segment.attach(unique_name, ["T.x"], 0xAB, 1.0, second.types)
+    owner.close()
