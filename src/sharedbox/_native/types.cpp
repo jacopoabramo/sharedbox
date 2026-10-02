@@ -76,6 +76,21 @@ FieldDesc desc_of(const detail::type_ref &t) {
     return {0, detail::prefixed(t.kind) ? t.size - 4 : t.size, static_cast<FieldKind>(t.kind)};
 }
 
+// The elements of a list, set or dict value, taken once: another thread changing the value while it is
+// encoded, or while the write waits for the lock on the free-threaded build, cannot change what is stored.
+nb::object snapshot(PyObject *value, std::uint8_t kind) {
+    PyObject *items = kind == kind_dict ? PyMapping_Items(value) : PySequence_Tuple(value);
+    if (items == nullptr)
+        throw nb::python_error();
+    return nb::steal(items);
+}
+
+Py_ssize_t length_of(PyObject *items) { return PyList_Check(items) ? PyList_Size(items) : PyTuple_Size(items); }
+
+PyObject *at(PyObject *items, Py_ssize_t i) {
+    return PyList_Check(items) ? PyList_GetItem(items, i) : PyTuple_GetItem(items, i);
+}
+
 } // namespace
 
 const Types &need(const Types *types, std::uint32_t index) {
@@ -185,6 +200,11 @@ void Types::prepare(std::uint32_t node, std::uint8_t kind, nb::object info) {
         }
         break;
     }
+    case kind_list:
+    case kind_set:
+    case kind_dict:
+        n.cls = item(n.info, 0);
+        break;
     case kind_record:
     case kind_tuple: {
         n.form = static_cast<int>(PyLong_AsLong(item(n.info, 0)));
@@ -231,6 +251,10 @@ std::span<const std::byte> Types::encode(std::uint32_t index, PyObject *value, E
         buffer.text = scalars::decimal_text(value, t.size - 4, name);
         return std::as_bytes(std::span(buffer.text.data(), buffer.text.size()));
     }
+    if (detail::is_collection(t.kind)) {
+        std::byte *out = buffer.reserve(t.size);
+        return {out, encode_collection(t, value, out, {name})};
+    }
     std::byte *out = buffer.reserve(t.size);
     encode_into(t, value, out, {name});
     return {out, t.size};
@@ -248,6 +272,13 @@ nb::object Types::decode(std::uint32_t index, std::span<const std::byte> bytes,
     if (!fits)
         raise(PyExc_ValueError, name + ": " + std::to_string(bytes.size()) +
                                     " bytes do not fit a value that takes " + std::to_string(t.size));
+    if (detail::is_collection(t.kind)) {
+        const auto length = bytes.size() >= 4 ? load<std::uint32_t>(bytes.data()) : 0u;
+        const detail::type_node &node = tree_.node(t.node);
+        if (bytes.size() < 4 || length > node.capacity ||
+            bytes.size() < node.slots + std::uint64_t{length} * node.stride)
+            corrupt(name);
+    }
     if (t.kind <= kind_ref) {
         if (t.kind == kind_bytes && field_is_bytearray(index))
             return nb::steal(PyByteArray_FromStringAndSize(reinterpret_cast<const char *>(bytes.data()),
@@ -265,6 +296,32 @@ nb::object Types::decode(std::uint32_t index, std::span<const std::byte> bytes,
         return nb::steal(value);
     }
     return decode_from(t, bytes.data(), field_container, index, {name});
+}
+
+std::size_t Types::encode_collection(const detail::type_ref &t, PyObject *value, std::byte *out,
+                                     const Where &where) const {
+    if (!accepts(t, value))
+        wrong(where.name, t.kind == kind_dict ? "a mapping" : t.kind == kind_set ? "a set" : "a sequence", value);
+    const detail::type_node &node = tree_.node(t.node);
+    const nb::object items = snapshot(value, t.kind);
+    const Py_ssize_t length = length_of(items.ptr());
+    if (length > static_cast<Py_ssize_t>(node.capacity))
+        raise(PyExc_ValueError, where.name + " holds at most " + std::to_string(node.capacity) +
+                                    " elements; the value has " + std::to_string(length));
+    put(out, static_cast<std::uint32_t>(length));
+    const detail::type_member &first = tree_.member(node.members);
+    for (Py_ssize_t i = 0; i < length; ++i) {
+        std::byte *slot = out + node.slots + static_cast<std::size_t>(i) * node.stride;
+        PyObject *element = at(items.ptr(), i);
+        if (t.kind != kind_dict) {
+            encode_into(first.type, element, slot, where);
+            continue;
+        }
+        const detail::type_member &value_member = tree_.member(node.members + 1);
+        encode_into(first.type, PyTuple_GetItem(element, 0), slot, where);
+        encode_into(value_member.type, PyTuple_GetItem(element, 1), slot + value_member.offset, where);
+    }
+    return node.slots + static_cast<std::size_t>(length) * node.stride;
 }
 
 void Types::encode_into(const detail::type_ref &t, PyObject *value, std::byte *out, const Where &where) const {
@@ -346,6 +403,11 @@ void Types::encode_into(const detail::type_ref &t, PyObject *value, std::byte *o
         encode_into(m.type, value, out + m.offset, where);
         return;
     }
+    case kind_list:
+    case kind_set:
+    case kind_dict:
+        encode_collection(t, value, out, where);
+        return;
     case kind_record:
     case kind_tuple: {
         const detail::type_node &node = tree_.node(t.node);
@@ -481,6 +543,38 @@ nb::object Types::decode_from(const detail::type_ref &t, const std::byte *data, 
         const detail::type_member &m = tree_.member(node.members + tag);
         return decode_from(m.type, data + m.offset, t.node, tag, where);
     }
+    case kind_list:
+    case kind_set:
+    case kind_dict: {
+        const auto length = load<std::uint32_t>(data);
+        if (length > node.capacity)
+            corrupt(where.name);
+        const detail::type_member &first = tree_.member(node.members);
+        if (t.kind == kind_dict) {
+            const detail::type_member &value_member = tree_.member(node.members + 1);
+            nb::dict out;
+            for (std::uint32_t i = 0; i < length; ++i) {
+                const std::byte *slot = data + node.slots + std::size_t{i} * node.stride;
+                nb::object key = decode_from(first.type, slot, t.node, 0, where);
+                out[key] = decode_from(value_member.type, slot + value_member.offset, t.node, 1, where);
+            }
+            return out;
+        }
+        nb::object list = nb::steal(PyList_New(length));
+        for (std::uint32_t i = 0; i < length; ++i) {
+            nb::object element =
+                decode_from(first.type, data + node.slots + std::size_t{i} * node.stride, t.node, 0, where);
+            PyList_SetItem(list.ptr(), static_cast<Py_ssize_t>(i), element.release().ptr());
+        }
+        if (n.cls == reinterpret_cast<PyObject *>(&PyList_Type))
+            return list;
+        PyObject *made = n.cls == reinterpret_cast<PyObject *>(&PyTuple_Type)       ? PyList_AsTuple(list.ptr())
+                         : n.cls == reinterpret_cast<PyObject *>(&PyFrozenSet_Type) ? PyFrozenSet_New(list.ptr())
+                                                                                    : PySet_New(list.ptr());
+        if (made == nullptr)
+            throw nb::python_error();
+        return nb::steal(made);
+    }
     case kind_record:
     case kind_tuple: {
         auto member = [&](std::uint32_t i) -> const detail::type_member & {
@@ -569,6 +663,13 @@ bool Types::accepts(const detail::type_ref &t, PyObject *value) const {
                 return true;
         return false;
     }
+    case kind_list:
+        return instance(value, scalars::sequence()) && !PyUnicode_Check(value) && !PyBytes_Check(value) &&
+               !PyByteArray_Check(value);
+    case kind_set:
+        return instance(value, scalars::set());
+    case kind_dict:
+        return instance(value, scalars::mapping());
     case kind_record:
     case kind_tuple:
         if (n.form == 3)

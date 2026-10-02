@@ -186,6 +186,23 @@ TEXT: Final[dict[type, str]] = {
     decimal.Decimal: "decimal",
 }
 
+LISTS: Final[dict[Any, type]] = {
+    list: list,
+    abc.Sequence: list,
+    abc.MutableSequence: list,
+}
+SETS: Final[dict[Any, type]] = {
+    set: set,
+    frozenset: frozenset,
+    abc.Set: set,
+    abc.MutableSet: set,
+}
+DICTS: Final[dict[Any, type]] = {
+    dict: dict,
+    abc.Mapping: dict,
+    abc.MutableMapping: dict,
+}
+
 
 def unsupported(where: str, hint: object) -> TypeError:
     return TypeError(f"{where}: unsupported annotation {hint!r}; use {SUPPORTED}")
@@ -304,6 +321,8 @@ def dispatch(
             hashable=hint is not bytearray,
             bytearray=hint is bytearray,
         )
+    if is_collection(hint):
+        return collection_spec(hint, where, capacity, depth, path)
     if get_origin(hint) in (Union, types.UnionType):
         if capacity is not None and not takes_capacity(hint, where, path):
             raise TypeError(f"{where}: Capacity does not apply to {hint!r}")
@@ -323,9 +342,6 @@ def dispatch(
     if get_origin(hint) is Literal:
         return literal_spec(hint, where)
     if hint is tuple or get_origin(hint) is tuple:
-        args = get_args(hint)
-        if len(args) == 2 and args[1] is Ellipsis:
-            raise unsupported(where, hint)
         return tuple_spec(hint, where, depth, path)
     if isinstance(hint, type):
         spec = record_spec(hint, where, depth, path)
@@ -540,7 +556,7 @@ def takes_capacity(hint: Any, where: str, path: frozenset[int]) -> bool:
             for arg in get_args(hint)
             if arg is not NoneType
         )
-    return False
+    return is_collection(hint)
 
 
 def record_hints(cls: type, where: str) -> dict[str, Any]:
@@ -737,6 +753,87 @@ def tuple_spec(hint: Any, where: str, depth: int, path: frozenset[int]) -> TypeS
         match=(tuple,),
         exact=tuple,
         hashable=all(m.type.hashable for m in members),
+    )
+
+
+def is_collection(hint: Any) -> bool:
+    origin = get_origin(hint)
+    variadic = (
+        origin is tuple and len(get_args(hint)) == 2 and get_args(hint)[1] is Ellipsis
+    )
+    return variadic or origin in LISTS or origin in SETS or origin in DICTS
+
+
+def collection_spec(
+    hint: Any, where: str, capacity: int | None, depth: int, path: frozenset[int]
+) -> TypeSpec:
+    origin = get_origin(hint)
+    if capacity is None:
+        raise TypeError(
+            f"{where}: {hint!r} needs a Capacity in elements, as in Annotated[{hint!r}, Capacity(n)]"
+        )
+    below = deeper(depth, where)
+    args = get_args(hint)
+    if origin in DICTS:
+        kind, read = "dict", DICTS[origin]
+        key = parse(args[0], f"{where}[key]", depth=below, path=path)
+        value = parse(args[1], f"{where}[value]", depth=below, path=path)
+        if not key.hashable:
+            raise TypeError(
+                f"{where}: dict keys of {key.text} are not hashable when read back"
+            )
+        pair = max(key.alignment, value.alignment)
+        at_value = round_up(key.size, value.alignment)
+        stride = round_up(at_value + value.size, pair)
+        members = (Member(0, key), Member(at_value, value))
+        a = max(4, pair)
+        text = f"dict[{capacity}]({key.text},{value.text})"
+    else:
+        if origin is tuple:
+            kind, read = "list", tuple
+        elif origin in LISTS:
+            kind, read = "list", LISTS[origin]
+        else:
+            kind, read = "set", SETS[origin]
+        element = parse(args[0], f"{where}[]", depth=below, path=path)
+        if kind == "set" and not element.hashable:
+            raise TypeError(
+                f"{where}: set elements of {element.text} are not hashable when read back"
+            )
+        stride = round_up(element.size, element.alignment)
+        a = max(4, element.alignment)
+        members = (Member(round_up(4, a), element),)  # type: ignore[assignment]
+        text = f"{kind}[{capacity}]({element.text})"
+    for m in members:
+        if m.type.kind == "array":
+            raise TypeError(
+                f"{where}: an array can be a field or a record member, not a collection element"
+            )
+    slots = round_up(4, a)
+    size = slots + capacity * stride
+    if size >= 1 << 32:
+        raise TypeError(
+            f"{where}: {capacity} elements take {size} bytes; a record holds less than 4 GiB"
+        )
+    return TypeSpec(
+        kind,
+        size,
+        a,
+        text,
+        capacity=capacity,
+        members=members,
+        count=len(members),
+        before=struct.pack("<I", capacity),
+        info=(read,),
+        match=(
+            (abc.Mapping,)
+            if kind == "dict"
+            else (abc.Set,)
+            if kind == "set"
+            else (abc.Sequence,)
+        ),
+        exact=read,
+        hashable=read in (tuple, frozenset) and all(m.type.hashable for m in members),
     )
 
 

@@ -83,6 +83,9 @@ private:
     void encode_into(const detail::type_ref &t, PyObject *value, std::byte *out, const Where &where) const;
     nb::object decode_from(const detail::type_ref &t, const std::byte *data, std::uint32_t container,
                            std::uint32_t member, const Where &where) const;
+    /// Writes a list, set or dict value at out: its length, then its slots; returns the bytes used.
+    std::size_t encode_collection(const detail::type_ref &t, PyObject *value, std::byte *out,
+                                  const Where &where) const;
     bool accepts(const detail::type_ref &t, PyObject *value) const;
     void prepare(std::uint32_t node, std::uint8_t kind, nb::object info);
     bool read_as_bytearray(std::uint32_t container, std::uint32_t member) const;
