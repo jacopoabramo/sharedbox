@@ -130,8 +130,8 @@ TEST_CASE("forged tables are refused") {
         t.put(std::uint8_t{2});
         t.put(std::uint8_t{0});
         t.put(std::uint16_t{0});
-        t.put(std::uint64_t{1} << 40);
-        t.put(std::uint64_t{1} << 40);
+        t.put(std::uint64_t{1} << 20);
+        t.put(std::uint64_t{1} << 20);
         CHECK(parse(t, entry_of(kind_array, 0)) == status::corrupt);
     }
     SUBCASE("a list whose size does not match its capacity") {
@@ -179,6 +179,34 @@ TEST_CASE("forged tables are refused") {
         t.pad();
         CHECK(parse(t, entry_of(kind_record, 0)) == status::corrupt);
     }
+    SUBCASE("a list stride that wraps past 32 bits") {
+        table_builder t;
+        t.head(kind_list, 1, 4);
+        const std::size_t outer = t.bytes.size();
+        t.put(std::uint32_t{1});
+        t.entry(4, kind_list, 0);
+        t.pad();
+        const std::uint32_t inner = t.head(kind_list, 1, 0xFFFFFFFEu);
+        t.put(std::uint32_t{10});
+        t.entry(4, kind_record, 0);
+        t.pad();
+        const std::uint32_t rec = t.head(kind_record, 1, 429496729);
+        t.entry(0, kind_bool, 1);
+        t.name("x");
+        t.pad();
+        t.patch(outer + 8, entry_of(kind_list, inner));
+        t.patch(inner + 8 + 4 + 4, entry_of(kind_record, rec));
+        CHECK(parse(t, entry_of(kind_list, 0)) == status::corrupt);
+    }
+    SUBCASE("an enum name that is not UTF-8") {
+        table_builder t;
+        t.head(kind_enum, 1, 2);
+        t.put(std::uint16_t{2});
+        t.put(std::uint8_t{0xC0});
+        t.put(std::uint8_t{0x80});
+        t.pad();
+        CHECK(parse(t, entry_of(kind_enum, 0)) == status::corrupt);
+    }
     SUBCASE("a description that is not 8-aligned") {
         const table_builder t = colour();
         CHECK(parse(t, entry_of(kind_enum, 4)) == status::corrupt);
@@ -215,4 +243,24 @@ TEST_CASE("create refuses a table that does not check") {
     t.bytes[1] = std::byte{1};
     const field_spec fields[1] = {{0, 0, kind_enum}};
     CHECK(handle::create(unique("types-bad"), fields, 8, 1, 4, {}, t.span()).error() == status::range);
+}
+
+TEST_CASE("layout 1.0 refuses a described kind") {
+    const field_spec fields[1] = {{0, 8, kind_int}};
+    const std::string name = unique("types-v1");
+    SUBCASE("on open") {
+        auto owner = detail::create_impl(name, fields, 8, 1, 4, {}, {}, 1, true);
+        REQUIRE(owner.has_value());
+        auto *bytes = static_cast<std::byte *>(owner->base());
+        stored_field stored;
+        std::memcpy(&stored, bytes + header_size, sizeof stored);
+        stored.capacity_and_kind = entry_of(kind_enum, 8);
+        std::memcpy(bytes + header_size, &stored, sizeof stored);
+        CHECK(handle::open(name, seconds(1.0)).error() == status::corrupt);
+        static_cast<void>(unlink(name));
+    }
+    SUBCASE("on create") {
+        const field_spec bad[1] = {{0, 8, kind_enum}};
+        CHECK(detail::create_impl(name, bad, 8, 1, 4, {}, {}, 1, true).error() == status::range);
+    }
 }

@@ -855,18 +855,27 @@ struct type_counts {
     std::uint32_t literals = 0;
 };
 
-// Rejects bytes that cannot start a UTF-8 sequence or continue one; overlong forms are let through, since
-// names are compared as bytes, never decoded here.
+// Whether text is well-formed UTF-8: no overlong forms, no surrogates, nothing above U+10FFFF.
 inline bool utf8_ok(std::string_view text) noexcept {
     std::size_t i = 0;
     while (i < text.size()) {
         const auto c = static_cast<unsigned char>(text[i]);
-        const std::size_t n = c < 0x80 ? 1 : (c >> 5) == 0x6 ? 2 : (c >> 4) == 0xE ? 3 : (c >> 3) == 0x1E ? 4 : 0;
+        const std::size_t n = c < 0x80                   ? 1
+                              : (c >= 0xC2 && c <= 0xDF) ? 2
+                              : (c >> 4) == 0xE          ? 3
+                              : (c >= 0xF0 && c <= 0xF4) ? 4
+                                                         : 0;
         if (n == 0 || text.size() - i < n)
             return false;
         for (std::size_t k = 1; k < n; ++k)
             if ((static_cast<unsigned char>(text[i + k]) & 0xC0) != 0x80)
                 return false;
+        if (n > 2) {
+            const auto b = static_cast<unsigned char>(text[i + 1]);
+            if ((c == 0xE0 && b < 0xA0) || (c == 0xED && b > 0x9F) || (c == 0xF0 && b < 0x90) ||
+                (c == 0xF4 && b > 0x8F))
+                return false;
+        }
         i += n;
     }
     return true;
@@ -922,6 +931,8 @@ public:
     status field(std::uint32_t entry, bool v1, type_ref &out) noexcept {
         const auto kind = static_cast<std::uint8_t>(entry >> kind_shift);
         const std::uint32_t low = entry & capacity_mask;
+        if (v1 && described(kind) && kind_known(kind))
+            return status::corrupt;
         if (v1 || !described(kind))
             return fixed(kind, low, true, out);
         return describe(kind, low, no_parent, 1, true, true, out);
@@ -1250,10 +1261,14 @@ inline status type_parser::place(std::uint8_t kind, const type_head &head, type_
     case kind_set: {
         const type_ref &e = m[0].type;
         const std::uint32_t a = (std::max)(4u, e.alignment);
-        node.stride = static_cast<std::uint32_t>(round_up(e.size, e.alignment));
+        const std::uint64_t stride = round_up(e.size, e.alignment);
+        if (stride > UINT32_MAX)
+            return status::corrupt;
+        node.stride = static_cast<std::uint32_t>(stride);
         node.slots = static_cast<std::uint32_t>(round_up(4, a));
         out.alignment = a;
-        return m[0].offset == node.slots && size == node.slots + std::uint64_t{node.capacity} * node.stride
+        return m[0].offset == node.slots && size == node.slots + std::uint64_t{node.capacity} * node.stride &&
+                       size % a == 0
                    ? status::ok
                    : status::corrupt;
     }
@@ -1264,10 +1279,14 @@ inline status type_parser::place(std::uint8_t kind, const type_head &head, type_
         const std::uint32_t a = (std::max)(4u, pair);
         if (m[0].offset != 0 || m[1].offset != round_up(k.size, v.alignment))
             return status::corrupt;
-        node.stride = static_cast<std::uint32_t>(round_up(std::uint64_t{m[1].offset} + v.size, pair));
+        const std::uint64_t stride = round_up(std::uint64_t{m[1].offset} + v.size, pair);
+        if (stride > UINT32_MAX)
+            return status::corrupt;
+        node.stride = static_cast<std::uint32_t>(stride);
         node.slots = static_cast<std::uint32_t>(round_up(4, a));
         out.alignment = a;
-        return size == node.slots + std::uint64_t{node.capacity} * node.stride ? status::ok : status::corrupt;
+        return size == node.slots + std::uint64_t{node.capacity} * node.stride && size % a == 0 ? status::ok
+                                                                                                : status::corrupt;
     }
     default:
         return status::corrupt;
