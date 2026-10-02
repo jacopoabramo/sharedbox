@@ -318,6 +318,8 @@ std::size_t Types::encode_collection(const detail::type_ref &t, PyObject *value,
             continue;
         }
         const detail::type_member &value_member = tree_.member(node.members + 1);
+        if (!PyTuple_Check(element) || PyTuple_Size(element) != 2)
+            wrong(where.name, "a mapping whose items() are (key, value) pairs", value);
         encode_into(first.type, PyTuple_GetItem(element, 0), slot, where);
         encode_into(value_member.type, PyTuple_GetItem(element, 1), slot + value_member.offset, where);
     }
@@ -561,6 +563,8 @@ nb::object Types::decode_from(const detail::type_ref &t, const std::byte *data, 
             return out;
         }
         nb::object list = nb::steal(PyList_New(length));
+        if (!list.is_valid())
+            throw nb::python_error();
         for (std::uint32_t i = 0; i < length; ++i) {
             nb::object element =
                 decode_from(first.type, data + node.slots + std::size_t{i} * node.stride, t.node, 0, where);

@@ -774,6 +774,8 @@ def collection_spec(
         )
     below = deeper(depth, where)
     args = get_args(hint)
+    if len(args) != (2 if origin in DICTS or origin is tuple else 1):
+        raise unsupported(where, hint)
     if origin in DICTS:
         kind, read = "dict", DICTS[origin]
         key = parse(args[0], f"{where}[key]", depth=below, path=path)

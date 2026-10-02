@@ -1,7 +1,8 @@
+# ruff: noqa: RUF012, PYI025
 import sys
 import typing
-from collections.abc import Mapping, Sequence, Set
-from typing import Annotated
+from collections.abc import Iterator, Mapping, Sequence, Set
+from typing import Annotated, Any
 
 import pytest
 from crossproc import snapshot_in_child, update_in_child
@@ -10,6 +11,20 @@ from sharedbox import Capacity, SharedBox
 from sharedbox._layout import build_layout
 
 Name = Annotated[str, Capacity(8)]
+
+
+class Ragged(Mapping[str, int]):
+    def __getitem__(self, key: str) -> int:
+        return 0
+
+    def __iter__(self) -> Iterator[str]:
+        return iter(["a"])
+
+    def __len__(self) -> int:
+        return 1
+
+    def items(self) -> Any:
+        return [("a",)]
 
 
 class Bag(SharedBox):
@@ -23,6 +38,7 @@ class Bag(SharedBox):
     view: Annotated[Mapping[Name, float], Capacity(2)] = {}
     group: Annotated[Set[int], Capacity(2)] = set()
     raw: Annotated[list[Annotated[bytearray, Capacity(4)]], Capacity(2)] = []
+    maybe: Annotated[list[int] | None, Capacity(3)] = None
 
 
 VALUES = {
@@ -36,6 +52,7 @@ VALUES = {
     "view": {"k": 0.25},
     "group": {7},
     "raw": [bytearray(b"ab")],
+    "maybe": [1, 2],
 }
 
 
@@ -45,7 +62,17 @@ def test_collections_survive_another_process(unique_name: str) -> None:
         seen = snapshot_in_child(box)
         assert seen == VALUES
         assert [type(seen[k]) for k in VALUES] == [
-            list, tuple, set, frozenset, dict, list, list, dict, set, list,
+            list,
+            tuple,
+            set,
+            frozenset,
+            dict,
+            list,
+            list,
+            dict,
+            set,
+            list,
+            list,
         ]
         assert type(seen["raw"][0]) is bytearray
         update_in_child(box, numbers=[1.0] * 16, scores={})
@@ -82,6 +109,7 @@ def test_a_read_copies_only_the_used_slots(unique_name: str) -> None:
         ("scores", {"k": "v"}, TypeError),
         ("grid", [[1, 2, 3, 4]], ValueError),
         ("seq", b"ab", TypeError),
+        ("scores", Ragged(), TypeError),
     ],
 )
 def test_collections_that_do_not_fit_are_refused(
@@ -96,7 +124,9 @@ def test_collections_that_do_not_fit_are_refused(
 
 
 def make(annotation: object) -> type:
-    return type("T", (), {"__annotations__": {"x": annotation}, "__module__": "__main__"})
+    return type(
+        "T", (), {"__annotations__": {"x": annotation}, "__module__": "__main__"}
+    )
 
 
 @pytest.mark.parametrize(
@@ -105,19 +135,49 @@ def make(annotation: object) -> type:
         (list[int], "Capacity"),
         (Annotated[list[str], Capacity(2)], "unsupported"),
         (Annotated[set[Annotated[list[int], Capacity(2)]], Capacity(2)], "hashable"),
-        (Annotated[dict[Annotated[bytearray, Capacity(2)], int], Capacity(2)], "hashable"),
+        (
+            Annotated[dict[Annotated[bytearray, Capacity(2)], int], Capacity(2)],
+            "hashable",
+        ),
         (Annotated[list, Capacity(2)], "Capacity does not apply"),
+        (Annotated[typing.List, Capacity(2)], "unsupported"),  # noqa: UP006
+        (Annotated[typing.Dict, Capacity(2)], "unsupported"),  # noqa: UP006
+        (Annotated[list[int, str], Capacity(2)], "unsupported"),  # type: ignore[misc]
     ],
 )
-def test_collections_the_layout_cannot_keep_are_refused(annotation: object, message: str) -> None:
+def test_collections_the_layout_cannot_keep_are_refused(
+    annotation: object, message: str
+) -> None:
     """Check that a collection without a capacity, an element without one, an unhashable set element or key, and a bare list raise TypeError."""
     with pytest.raises(TypeError, match=message):
         build_layout(make(annotation))
 
 
-@pytest.mark.skipif(sys.version_info < (3, 12), reason="typing.TypeAliasType is new in 3.12")
+@pytest.mark.skipif(
+    sys.version_info < (3, 12), reason="typing.TypeAliasType is new in 3.12"
+)
 def test_an_alias_that_contains_itself_is_refused() -> None:
     """Check that a recursive type alias raises TypeError rather than recursing without end."""
-    tree = typing.TypeAliasType("Tree", Annotated[list["Tree"], Capacity(2)])  # type: ignore[attr-defined,name-defined]
+    tree = typing.TypeAliasType("Tree", Annotated[list["Tree"], Capacity(2)])  # type: ignore[attr-defined,name-defined]  # noqa: F821
     with pytest.raises(TypeError):
         build_layout(make(tree))
+
+
+def test_an_optional_collection_holds_a_list_or_none(unique_name: str) -> None:
+    """Check that a list or None in an optional field reads back as stored."""
+    with Bag.create(unique_name, **VALUES) as box:
+        assert box.maybe == [1, 2]
+        box.maybe = None
+        assert box.maybe is None
+    Bag.unlink(unique_name)
+
+
+@pytest.mark.skipif(
+    sys.version_info < (3, 12), reason="the type statement is new in 3.12"
+)
+def test_an_alias_that_names_itself_is_refused() -> None:
+    """Check that a type statement alias that refers to itself raises TypeError."""
+    namespace = {"Annotated": Annotated, "Capacity": Capacity}
+    exec("type Tree = Annotated[list[Tree], Capacity(2)]", namespace)  # noqa: S102
+    with pytest.raises(TypeError, match="refers to itself"):
+        build_layout(make(namespace["Tree"]))
