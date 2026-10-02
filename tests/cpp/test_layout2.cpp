@@ -116,3 +116,12 @@ TEST_CASE("kinds 6 to 12 are fixed kinds with their sizes") {
     CHECK(handle::create(name, typed, 48, 1, 4, {}).has_value());
     static_cast<void>(unlink(name));
 }
+
+TEST_CASE("a record that, with the tail before it, passes the mapping limit is refused") {
+    const std::string name = unique("v2-big");
+    const auto made =
+        handle::create(name, fields, static_cast<std::uint32_t>(sharedbox::max_mapping_size - 8), 1, 64, {});
+    REQUIRE_FALSE(made.has_value());
+    CHECK(made.error() == status::range);
+    CHECK(open_status(name) == status::not_found);
+}

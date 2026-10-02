@@ -1389,6 +1389,8 @@ inline result<handle> create_impl(std::string_view name, std::span<const field_s
         return unexpected(status::range);
     const auto count = static_cast<std::uint16_t>(fields.size());
     const auto record = static_cast<std::uint32_t>(round_up(tail_end(count, waiter_slots), record_alignment));
+    if (major == 2 && std::uint64_t{record} + record_size > max_mapping_size)
+        return unexpected(status::range);
     const std::uint64_t size = round_up(std::uint64_t{record} + record_size, page_size);
     const result<std::uint64_t> id = random_id();
     if (!id)
