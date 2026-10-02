@@ -39,7 +39,6 @@ from ._layout import (
     own_kw_only,
 )
 from ._native import (
-    LAYOUT_VERSION,
     BoxClosedError,
     BoxMethod,
     SchemaMismatchError,
@@ -223,6 +222,7 @@ def install_native_methods(cls: type[SharedBox]) -> None:
                     follow,
                     SharedBox.__dict__[method],
                     segment_slot,
+                    layout.types,
                 ),
             )
         elif isinstance(found[0], BoxMethod):
@@ -639,7 +639,7 @@ class SharedBox(metaclass=SharedBoxMeta):
                 if param.default is not MISSING and spec.target is not None:
                     stored(spec, param.default)
                 elif param.default is not MISSING:
-                    spec.check(param.default)
+                    layout.check(spec, param.default)
                 if not param.init and not has_default(param):
                     raise TypeError(
                         f"{cls.__qualname__}: field {attr!r} has init=False and no default"
@@ -647,7 +647,7 @@ class SharedBox(metaclass=SharedBoxMeta):
                 setattr(
                     cls,
                     attr,
-                    FieldDescriptor(spec, segment_slot)
+                    FieldDescriptor(spec, segment_slot, layout.types)
                     if spec.target is None
                     else Reference(spec),
                 )
@@ -740,8 +740,9 @@ class SharedBox(metaclass=SharedBoxMeta):
             [spec.label for spec in layout.fields],
             layout.schema_hash,
             cls.__lock_timeout__,
+            layout.types,
         )
-        box._watcher = Watcher(box._segment)
+        box._watcher = Watcher(box._segment, layout.types)
         box._track()
         return box
 
@@ -822,9 +823,10 @@ class SharedBox(metaclass=SharedBoxMeta):
             ],
             cls.__max_waiters__,
             publish=False,
+            types=layout.types,
         )
         try:
-            self._watcher = Watcher(self._segment)
+            self._watcher = Watcher(self._segment, layout.types)
             self._track()
             post_init = getattr(cls, "__post_init__", None)
             if post_init is not None:
@@ -893,7 +895,7 @@ class SharedBox(metaclass=SharedBoxMeta):
                 (i, v if specs[i].target is None else stored(specs[i], v))
                 for i, v in pairs
             ]
-        self._segment.set(pairs)
+        self._segment.set(pairs, layout.types)
 
     def snapshot(self, *, follow: bool = False) -> dict[str, Any]:
         """Return every field's value, with this box read at one point in time.
@@ -922,7 +924,7 @@ class SharedBox(metaclass=SharedBoxMeta):
         """
         # A native method replaces this on every class that does not define or inherit its own snapshot.
         layout = type(self).__layout__
-        values = self._segment.get_dict(layout.names)
+        values = self._segment.get_dict(layout.names, layout.types)
         if layout.refs:
             for spec in layout.refs:
                 values[spec.name] = box_ref(values[spec.name])
@@ -1126,7 +1128,7 @@ class SharedBox(metaclass=SharedBoxMeta):
             raise BufferError(
                 "the box is not published yet; call __sharedbox_box__ after __post_init__ returns"
             )
-        major, minor = LAYOUT_VERSION
+        major, minor = self._segment.layout_version
         if max_version is not None and max_version[0] != major:
             raise BufferError(
                 f"box {self.name!r} has layout {major}.{minor}; "

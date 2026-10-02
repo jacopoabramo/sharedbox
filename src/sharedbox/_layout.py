@@ -10,21 +10,31 @@ from dataclasses import KW_ONLY, MISSING, InitVar, dataclass
 from types import MappingProxyType
 from typing import (
     TYPE_CHECKING,
-    Annotated,
     Any,
     ClassVar,
     Final,
     ForwardRef,
     Literal,
     NamedTuple,
-    TypeGuard,
     Union,
+    cast,
     get_args,
     get_origin,
     get_type_hints,
 )
 
-from ._native import check as native_check
+from ._native import Types
+from ._types import (
+    CODES,
+    Table,
+    TypeSpec,
+    is_box_class,
+    parse,
+    round_up,
+)
+from ._types import (
+    Capacity as Capacity,  # noqa: PLC0414
+)
 
 if sys.version_info >= (3, 14):
     from annotationlib import Format
@@ -32,57 +42,36 @@ if sys.version_info >= (3, 14):
 if TYPE_CHECKING:
     from ._box import SharedBox
 
-Kind = Literal["bool", "int", "float", "str", "bytes", "ref"]
+Kind = Literal[
+    "bool",
+    "int",
+    "float",
+    "str",
+    "bytes",
+    "ref",
+    "complex",
+    "date",
+    "time",
+    "datetime",
+    "timedelta",
+    "uuid",
+    "decimal",
+    "enum",
+    "flag",
+    "literal",
+    "optional",
+    "union",
+    "record",
+    "tuple",
+    "list",
+    "set",
+    "dict",
+    "array",
+]
 
-MAX_CAPACITY: Final[int] = 1 << 20
 MAX_FIELDS: Final[int] = 256
 ALIGN: Final[int] = 8
 REF_SIZE: Final[int] = 144
-SCALARS: Final[dict[type, tuple[Kind, int]]] = {
-    bool: ("bool", 1),
-    int: ("int", 8),
-    float: ("float", 8),
-}
-PREFIXED: Final[tuple[Kind, ...]] = ("str", "bytes")
-KIND_CODES: Final[dict[Kind, int]] = {
-    "bool": 0,
-    "int": 1,
-    "float": 2,
-    "str": 3,
-    "bytes": 4,
-    "ref": 5,
-}
-ALIGNMENT: Final[dict[Kind, int]] = {
-    "int": 8,
-    "float": 8,
-    "str": 4,
-    "bytes": 4,
-    "ref": 8,
-    "bool": 1,
-}
-
-
-@dataclass(frozen=True)
-class Capacity:
-    """Maximum encoded size of a `str` or `bytes` field.
-
-    It goes in the annotation, as in `Annotated[str, Capacity(32)]`, and
-    allows 1 to 1048576 bytes (1 MiB).
-
-    Raises
-    ------
-    ValueError
-        If `size` is not between 1 and 1 MiB.
-    """
-
-    size: int
-    """Bytes, not characters: a UTF-8 character can take up to 4 bytes."""
-
-    def __post_init__(self) -> None:
-        if not 0 < self.size <= MAX_CAPACITY:
-            raise ValueError(
-                f"capacity must be between 1 and {MAX_CAPACITY} bytes, got {self.size}"
-            )
 
 
 @dataclass(frozen=True, eq=False)
@@ -205,9 +194,9 @@ class NativeField(NamedTuple):
     offset: int
     """Byte offset of the field from the start of the record."""
     capacity: int
-    """Bytes reserved for the value, not counting the length prefix."""
+    """Bytes reserved for the value, not counting a length prefix; for a described kind, the offset of its description."""
     kind: int
-    """0 bool, 1 int, 2 float, 3 str, 4 bytes, 5 ref."""
+    """The kind code: 0 to 12 for fixed kinds, 64 and up for described ones."""
 
 
 @dataclass(frozen=True)
@@ -218,7 +207,7 @@ class FieldSpec:
     index: int
     """Position in declaration order; also the field's number in the native segment."""
     kind: Kind
-    """One of `"bool"`, `"int"`, `"float"`, `"str"`, `"bytes"`, `"ref"`."""
+    """The key of the field's kind in the kind table, such as `"int"` or `"datetime"`."""
     offset: int
     """Byte offset of the field from the start of the record."""
     capacity: int
@@ -229,14 +218,15 @@ class FieldSpec:
     """The box class a reference field is annotated with; None for every other kind."""
     optional: bool = False
     """True for a reference field annotated `X | None`, which may be empty."""
+    type: TypeSpec | None = None
+    """How the value is stored; None for a reference field."""
+    description: int = -1
+    """Offset of the field's description in the class's table; -1 for a kind without one."""
 
     @property
     def native(self) -> NativeField:
-        return NativeField(self.offset, self.capacity, KIND_CODES[self.kind])
-
-    def check(self, value: Any) -> None:
-        """Raise what writing `value` to this field would raise."""
-        native_check(KIND_CODES[self.kind], self.capacity, self.label, value)
+        low = self.description if self.description >= 0 else self.capacity
+        return NativeField(self.offset, low, CODES[self.kind])
 
 
 @dataclass(frozen=True)
@@ -255,21 +245,12 @@ class Layout:
     """Field names in declaration order."""
     refs: tuple[FieldSpec, ...]
     """The reference fields, in declaration order."""
+    types: Types
+    """The field types the native module converts values with."""
 
-
-def classify(name: str, hint: object) -> tuple[Kind, int]:
-    if isinstance(hint, type) and hint in SCALARS:
-        return SCALARS[hint]
-    if get_origin(hint) is Annotated:
-        base, *extras = get_args(hint)
-        capacities = [extra for extra in extras if isinstance(extra, Capacity)]
-        if base in (str, bytes) and len(capacities) == 1:
-            return base.__name__, capacities[0].size
-    raise TypeError(
-        f"field {name!r}: unsupported annotation {hint!r}; use bool, int, float, "
-        "Annotated[str, Capacity(n)], Annotated[bytes, Capacity(n)], or a "
-        "SharedBox subclass, optionally with | None"
-    )
+    def check(self, spec: FieldSpec, value: Any) -> None:
+        """Raise what writing `value` to the field `spec` would raise."""
+        self.types.check(spec.index, value)
 
 
 def class_identity(cls: type) -> str:
@@ -277,12 +258,6 @@ def class_identity(cls: type) -> str:
     # multiprocessing's spawn start method re-imports the main script as __mp_main__.
     module = "__main__" if cls.__module__ == "__mp_main__" else cls.__module__
     return f"{module}.{cls.__qualname__}"
-
-
-def is_box_class(hint: object) -> TypeGuard[type[SharedBox]]:
-    # A SharedBox subclass has its identity before its layout is built, so a class
-    # that refers to itself passes too.
-    return isinstance(hint, type) and hasattr(hint, "__sharedbox_identity__")
 
 
 def reference(hint: object) -> tuple[type[SharedBox], bool] | None:
@@ -402,11 +377,19 @@ def own_kw_only(cls: type, kw_only: bool = False) -> dict[str, bool]:
     return flags
 
 
+def field_text(spec: FieldSpec) -> str:
+    """Return the part of the schema text that covers `spec`."""
+    if spec.type is not None:
+        return f"{spec.name}:{spec.type.text}"
+    assert spec.target is not None
+    optional = "?" if spec.optional else ""
+    return f"{spec.name}:ref{optional}:{spec.target.__sharedbox_identity__}"
+
+
 def build_layout(cls: type, identity: str | None = None) -> Layout:
     """Lay out the public annotated fields of `cls`, base classes first.
 
-    Fields are packed by descending alignment (8-byte fields and
-    references, then `str`/`bytes`, then `bool`), not declaration order;
+    Fields are packed by descending alignment, not declaration order;
     `Layout.fields` keeps the declaration order. `InitVar` annotations are
     not fields. A field annotated with a `SharedBox` subclass `X`, or
     `X | None`, refers to a box of `X`.
@@ -423,60 +406,80 @@ def build_layout(cls: type, identity: str | None = None) -> Layout:
         If `cls` declares no fields, more than 256, a field with an
         unsupported annotation, or one naming a class that is not defined.
     """
-    found: list[tuple[str, Kind, int, tuple[type[SharedBox], bool] | None]] = []
+    found: list[tuple[str, TypeSpec | None, tuple[type[SharedBox], bool] | None]] = []
     for name, hint in declared(cls):
         if isinstance(hint, InitVar):
             continue
         ref = reference(hint)
-        if ref is None:
-            found.append((name, *classify(name, hint), None))
-        else:
-            found.append((name, "ref", REF_SIZE, ref))
+        spec = None if ref is not None else parse(hint, f"{cls.__qualname__}.{name}")
+        found.append((name, spec, ref))
     if not found:
         raise TypeError(f"{cls.__qualname__} declares no fields")
     if len(found) > MAX_FIELDS:
         raise TypeError(
             f"{cls.__qualname__} declares {len(found)} fields; the limit is {MAX_FIELDS}"
         )
-    order = sorted(range(len(found)), key=lambda i: -ALIGNMENT[found[i][1]])
+    aligns = [8 if spec is None else spec.alignment for _, spec, _ in found]
+    sizes = [REF_SIZE if spec is None else spec.size for _, spec, _ in found]
     offsets = [0] * len(found)
     offset = 0
-    for i in order:
-        kind, capacity = found[i][1], found[i][2]
-        align = ALIGNMENT[kind]
-        offset = -(-offset // align) * align
+    for i in sorted(range(len(found)), key=lambda i: -aligns[i]):
+        offset = round_up(offset, aligns[i])
         offsets[i] = offset
-        offset += capacity + (4 if kind in PREFIXED else 0)
-    record_size = -(-offset // ALIGN) * ALIGN
-    specs = tuple(
-        FieldSpec(
-            name,
-            i,
-            kind,
-            offsets[i],
-            capacity,
-            f"{cls.__qualname__}.{name}",
-            *(ref or (None, False)),
+        offset += sizes[i]
+    record_size = round_up(offset, max(ALIGN, *aligns))
+    table = Table()
+    specs: list[FieldSpec] = []
+    for i, (name, spec, ref) in enumerate(found):
+        if spec is None:
+            assert ref is not None
+            specs.append(
+                FieldSpec(
+                    name,
+                    i,
+                    "ref",
+                    offsets[i],
+                    REF_SIZE,
+                    f"{cls.__qualname__}.{name}",
+                    *ref,
+                )
+            )
+            continue
+        description = table.describe(spec) if spec.described else -1
+        if spec.bytearray:
+            table.bytearrays.append((-1, i))
+        specs.append(
+            FieldSpec(
+                name,
+                i,
+                cast(Kind, spec.kind),
+                offsets[i],
+                spec.entry_low,
+                f"{cls.__qualname__}.{name}",
+                type=spec,
+                description=description,
+            )
         )
-        for i, (name, kind, capacity, ref) in enumerate(found)
-    )
     text = "|".join(
         [
             class_identity(cls) if identity is None else identity,
-            *(
-                f"{s.name}:{s.kind}:{s.capacity}"
-                if s.target is None
-                else f"{s.name}:ref{'?' if s.optional else ''}:{s.target.__sharedbox_identity__}"
-                for s in specs
-            ),
+            *map(field_text, specs),
         ]
     )
     schema_hash = int.from_bytes(hashlib.sha256(text.encode()).digest()[:8], "little")
+    types = Types(
+        [s.native for s in specs],
+        [s.label for s in specs],
+        bytes(table.data),
+        table.info,
+        table.bytearrays,
+    )
     return Layout(
-        specs,
+        tuple(specs),
         record_size,
         schema_hash,
         {s.name: s for s in specs},
         tuple(s.name for s in specs),
         tuple(s for s in specs if s.target is not None),
+        types,
     )

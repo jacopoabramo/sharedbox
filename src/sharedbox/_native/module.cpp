@@ -59,9 +59,13 @@ const sharedbox::Types *types_of(nb::handle types) {
 
 // Decodes a field read with Segment::read; an array takes the read's heap buffer instead of copying it.
 nb::object decode_read(const sharedbox::Types *types, std::uint32_t index, sharedbox::FieldRead &read) {
-    if (static_cast<std::uint8_t>(read.field->kind) <= sharedbox::kind_ref)
-        return decode_value(*read.field, read.bytes);
     const auto *data = reinterpret_cast<const std::byte *>(read.bytes.data());
+    if (static_cast<std::uint8_t>(read.field->kind) <= sharedbox::kind_ref) {
+        if (read.field->kind == sharedbox::FieldKind::Bytes && types != nullptr &&
+            types->field_is_bytearray(index)) [[unlikely]]
+            return types->decode(index, {data, read.bytes.size()}, nullptr);
+        return decode_value(*read.field, read.bytes);
+    }
     return sharedbox::need(types, index)
         .decode(index, {data, read.bytes.size()}, read.large ? &read.large : nullptr);
 }
@@ -70,10 +74,14 @@ nb::object decode_read(const sharedbox::Types *types, std::uint32_t index, share
 nb::object decode_payload(const sharedbox::Types *types, const sharedbox::FieldDesc &field, std::uint32_t index,
                           const std::byte *record) {
     const std::string_view bytes = sharedbox::payload(field, record);
-    if (static_cast<std::uint8_t>(field.kind) <= sharedbox::kind_ref)
+    const auto data = std::as_bytes(std::span(bytes.data(), bytes.size()));
+    if (static_cast<std::uint8_t>(field.kind) <= sharedbox::kind_ref) {
+        if (field.kind == sharedbox::FieldKind::Bytes && types != nullptr && types->field_is_bytearray(index))
+            [[unlikely]]
+            return types->decode(index, data, nullptr);
         return decode_value(field, bytes);
-    return sharedbox::need(types, index)
-        .decode(index, std::as_bytes(std::span(bytes.data(), bytes.size())), nullptr);
+    }
+    return sharedbox::need(types, index).decode(index, data, nullptr);
 }
 
 nb::object get(const Segment &s, std::uint32_t index, const sharedbox::Types *types) {

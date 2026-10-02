@@ -34,10 +34,11 @@ def test_fields_are_packed_by_alignment() -> None:
 
 def test_check_refuses_what_a_write_would() -> None:
     """Check that a field spec's check accepts a valid value and raises TypeError for a wrong type."""
-    spec = build_layout(Sample).by_name["count"]
-    spec.check(3)
+    layout = build_layout(Sample)
+    spec = layout.by_name["count"]
+    layout.check(spec, 3)
     with pytest.raises(TypeError, match="Sample.count expects int, got str"):
-        spec.check("3")
+        layout.check(spec, "3")
 
 
 def test_kw_only_leaves_the_schema_hash_unchanged() -> None:
@@ -57,7 +58,8 @@ def test_kw_only_leaves_the_schema_hash_unchanged() -> None:
 
 def test_float_field_accepts_int() -> None:
     """Check that a float field spec accepts an int."""
-    build_layout(Sample).by_name["ratio"].check(2)
+    layout = build_layout(Sample)
+    layout.check(layout.by_name["ratio"], 2)
 
 
 @pytest.mark.parametrize(
@@ -75,7 +77,8 @@ def test_float_field_accepts_int() -> None:
 def test_encode_rejects(name: str, value: object, error: type[Exception]) -> None:
     """Check that each invalid value for a field spec raises the expected error."""
     with pytest.raises(error):
-        build_layout(Sample).by_name[name].check(value)
+        layout = build_layout(Sample)
+        layout.check(layout.by_name[name], value)
 
 
 def test_unsupported_annotation() -> None:

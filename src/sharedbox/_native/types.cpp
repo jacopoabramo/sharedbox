@@ -137,6 +137,9 @@ nb::object Types::decode(std::uint32_t index, std::span<const std::byte> bytes,
         raise(PyExc_ValueError, name + ": " + std::to_string(bytes.size()) +
                                     " bytes do not fit a value that takes " + std::to_string(t.size));
     if (t.kind <= kind_ref) {
+        if (t.kind == kind_bytes && field_is_bytearray(index))
+            return nb::steal(PyByteArray_FromStringAndSize(reinterpret_cast<const char *>(bytes.data()),
+                                                           static_cast<Py_ssize_t>(bytes.size())));
         PyObject *value =
             sharedbox::decode(desc_of(t), reinterpret_cast<const char *>(bytes.data()), bytes.size());
         if (value == nullptr)

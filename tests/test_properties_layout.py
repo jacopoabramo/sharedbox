@@ -9,7 +9,7 @@ from hypothesis import strategies as st
 
 from sharedbox import Capacity, SharedBox
 from sharedbox._box import RESERVED
-from sharedbox._layout import ALIGNMENT, build_layout
+from sharedbox._layout import build_layout
 
 NAMES = st.from_regex(r"[a-z][a-z0-9_]{0,12}", fullmatch=True).filter(
     lambda n: n not in RESERVED and not keyword.iskeyword(n)
@@ -57,7 +57,8 @@ def test_random_classes_lay_out_without_overlap(
     assert [(s.name, s.kind, s.capacity) for s in layout.fields] == fields
     spans = []
     for spec in layout.fields:
-        assert spec.offset % ALIGNMENT[spec.kind] == 0
+        assert spec.type is not None
+        assert spec.offset % spec.type.alignment == 0
         end = spec.offset + spec.capacity + (4 if spec.kind in ("str", "bytes") else 0)
         assert end <= layout.record_size
         spans.append((spec.offset, end))

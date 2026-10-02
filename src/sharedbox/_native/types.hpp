@@ -45,6 +45,9 @@ struct NodeInfo {
 
 /// The field types of one class: the description table, parsed by sharedbox.hpp, each field's label,
 /// and what converting values needs from Python. Fixed once made.
+/// The field's container index in bytearray keys.
+inline constexpr std::uint32_t field_container = detail::no_node;
+
 class Types {
 public:
     /// fields as Segment.create takes them; info maps a description's offset to its tuple; bytearrays
@@ -67,6 +70,9 @@ public:
     nb::object decode(std::uint32_t index, std::span<const std::byte> bytes,
                       std::unique_ptr<std::byte[]> *owned) const;
 
+    /// Whether field index is a bytes field read back as bytearray.
+    bool field_is_bytearray(std::uint32_t index) const { return read_as_bytearray(field_container, index); }
+
     int traverse(visitproc visit, void *arg) const;
     void clear();
 
@@ -87,8 +93,5 @@ private:
     std::vector<NodeInfo> nodes_;
     std::vector<std::uint64_t> bytearrays_;
 };
-
-/// The field's container index in bytearray keys.
-inline constexpr std::uint32_t field_container = detail::no_node;
 
 } // namespace sharedbox
