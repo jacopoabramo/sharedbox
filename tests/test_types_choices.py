@@ -11,7 +11,7 @@ from sharedbox._layout import build_layout
 class Colour(enum.Enum):
     RED = "r"
     GREEN = "g"
-    CRIMSON = "r"
+    CRIMSON = "r"  # noqa: PIE796
 
 
 class Level(enum.IntEnum):
@@ -39,13 +39,18 @@ class Choice(SharedBox):
     level: Level = Level.LOW
     perm: Perm = Perm.R
     bits: Bits = Bits.A
-    mode: Literal["fast", "slow", 1, True, None, Level.HIGH, b"raw"] = "fast"
+    mode: Literal["fast", "slow", 1, True, None, Level.HIGH, b"raw"] = "fast"  # noqa: PYI061
 
 
 def test_members_and_values_survive_another_process(unique_name: str) -> None:
     """Check that enum members, flag combinations and literal values read back as the same objects in a spawned process."""
     with Choice.create(unique_name) as box:
-        box.update(colour=Colour.GREEN, perm=Perm.R | Perm.W, bits=Bits.A | Bits.B, mode=Level.HIGH)
+        box.update(
+            colour=Colour.GREEN,
+            perm=Perm.R | Perm.W,
+            bits=Bits.A | Bits.B,
+            mode=Level.HIGH,
+        )
         seen = snapshot_in_child(box)
         assert seen["colour"] is Colour.GREEN
         assert seen["perm"] == Perm.R | Perm.W
@@ -58,7 +63,9 @@ def test_members_and_values_survive_another_process(unique_name: str) -> None:
 
 
 @pytest.mark.parametrize("value", ["fast", "slow", 1, True, None, Level.HIGH, b"raw"])
-def test_each_literal_value_reads_back_with_its_type(unique_name: str, value: Any) -> None:
+def test_each_literal_value_reads_back_with_its_type(
+    unique_name: str, value: Any
+) -> None:
     """Check that every literal value, 1 and True included, reads back equal and of the same type."""
     with Choice.create(unique_name) as box:
         box.mode = value
@@ -99,18 +106,29 @@ def test_values_outside_the_type_are_refused(
 
 
 def make(name: str, annotation: object) -> type:
-    return type(name, (), {"__annotations__": {"x": annotation}, "__module__": "__main__"})
+    return type(
+        name, (), {"__annotations__": {"x": annotation}, "__module__": "__main__"}
+    )
 
 
 def test_the_hash_follows_the_members_not_the_class_name() -> None:
     """Check that the schema hash changes with an enum's members and a literal's values, and not with the enum's name."""
     Same = enum.Enum("Same", ["RED", "GREEN", "CRIMSON"])
     More = enum.Enum("More", ["RED", "GREEN", "CRIMSON", "BLUE"])
-    assert build_layout(make("T", Colour)).schema_hash != build_layout(make("T", More)).schema_hash
-    assert build_layout(make("T", Same)).schema_hash != build_layout(make("T", Colour)).schema_hash
+    assert (
+        build_layout(make("T", Colour)).schema_hash
+        != build_layout(make("T", More)).schema_hash
+    )
+    assert (
+        build_layout(make("T", Same)).schema_hash
+        != build_layout(make("T", Colour)).schema_hash
+    )
     Renamed = enum.Enum("Renamed", ["RED", "GREEN"])
     Two = enum.Enum("Two", ["RED", "GREEN"])
-    assert build_layout(make("T", Renamed)).schema_hash == build_layout(make("T", Two)).schema_hash
+    assert (
+        build_layout(make("T", Renamed)).schema_hash
+        == build_layout(make("T", Two)).schema_hash
+    )
     assert (
         build_layout(make("T", Literal["a", "b"])).schema_hash
         != build_layout(make("T", Literal["a", "c"])).schema_hash
