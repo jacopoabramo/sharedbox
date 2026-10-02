@@ -6,11 +6,13 @@
 #include "table_builder.hpp"
 #include "unique.hpp"
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cstring>
 #include <memory>
 #include <string>
+#include <thread>
 #include <vector>
 
 using namespace sharedbox;
@@ -135,7 +137,7 @@ TEST_CASE("a list field takes its length and used slots, and read_used copies on
 }
 
 TEST_CASE("large copies run the wait hooks once around themselves") {
-    // 1 Mi ints: 8 MiB, two copy chunks.
+    // 1 Mi ints: 8 MiB and 8 bytes, three copy chunks.
     const std::uint32_t capacity = max_capacity;
     const table_builder t = int_list(capacity);
     const std::string name = unique("values-large");
@@ -143,7 +145,14 @@ TEST_CASE("large copies run the wait hooks once around themselves") {
     const std::uint32_t size = 8 + 8 * capacity;
     auto box = handle::create(name, fields, size, 1, 4, {}, t.span());
     REQUIRE(box.has_value());
-    box->set_wait_hooks([]() -> void * { ++hooks_before; return nullptr; }, [](void *) { ++hooks_after; });
+    auto other = handle::open(name, sharedbox::seconds(1.0));
+    REQUIRE(other.has_value());
+    box->set_wait_hooks(
+        []() -> void * {
+            ++hooks_before;
+            return nullptr;
+        },
+        [](void *) { ++hooks_after; });
     std::vector<std::byte> bytes(size);
     std::memcpy(bytes.data(), &capacity, 4);
     for (std::uint32_t i = 0; i < capacity; ++i) {
@@ -151,17 +160,40 @@ TEST_CASE("large copies run the wait hooks once around themselves") {
         std::memcpy(bytes.data() + 8 + std::size_t{i} * 8, &n, 8);
     }
     const value v{0, bytes};
-    REQUIRE(box->write_large({&v, 1}, sharedbox::seconds(5.0)).has_value());
-    CHECK((hooks_before == 1 && hooks_after == 1));
+
+    // Another handle holds the write lock for a while, so each call has to wait.
+    const auto contended = [&](auto &&call) {
+        hooks_before = hooks_after = 0;
+        const auto locked = other->lock(sharedbox::seconds(1.0));
+        REQUIRE(locked.has_value());
+        std::thread releaser([&] {
+            std::this_thread::sleep_for(milliseconds(50));
+            other->unlock(*locked);
+        });
+        call();
+        releaser.join();
+        CHECK((hooks_before == 1 && hooks_after == 1));
+    };
+
+    contended([&] { REQUIRE(box->write_large({&v, 1}, sharedbox::seconds(5.0)).has_value()); });
     std::vector<std::byte> got(size);
-    const auto read = box->read_large(0, got);
-    REQUIRE(read.has_value());
-    CHECK((read->len == size && read->version == 1));
+    contended([&] {
+        const auto read = box->read_large(0, got);
+        REQUIRE(read.has_value());
+        CHECK((read->len == size && read->version == 1));
+    });
     CHECK(got == bytes);
-    CHECK((hooks_before == 2 && hooks_after == 2));
+    std::fill(got.begin(), got.end(), std::byte{0});
+    contended([&] {
+        const auto read = box->read_used(0, got);
+        REQUIRE(read.has_value());
+        CHECK(read->len == size);
+    });
+    CHECK(got == bytes);
     std::vector<std::byte> record(box->record_size());
+    hooks_before = hooks_after = 0;
     REQUIRE(box->read_record_large(record).has_value());
     CHECK(std::memcmp(record.data(), bytes.data(), size) == 0);
-    CHECK((hooks_before == 3 && hooks_after == 3));
+    CHECK((hooks_before == 1 && hooks_after == 1));
     static_cast<void>(unlink(name));
 }

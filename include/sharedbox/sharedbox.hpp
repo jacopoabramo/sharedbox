@@ -2599,15 +2599,22 @@ inline result<std::uint64_t> handle::read_record(std::span<std::byte> buf) const
     return generation;
 }
 
-inline result<read_value> handle::read_used(std::uint16_t field, std::span<std::byte> buf) const {
-    const detail::state &s = *s_;
-    if (field >= s.field_count || !detail::is_collection(s.fields[field].kind))
-        return unexpected(status::range);
+namespace detail {
+
+struct no_hooks {
+    explicit no_hooks(const state &) noexcept {}
+};
+
+// read_used for one field; Large runs the wait hooks once around the copy and checks the sequence
+// number between chunks.
+template <bool Large>
+result<read_value> read_used_impl(const state &s, std::uint16_t field, std::span<std::byte> buf) {
     const field_spec &f = s.fields[field];
-    const detail::type_node &node = s.types.node(s.types.field(field).node);
-    auto seq = detail::atomic(s.hdr->seq);
+    const type_node &node = s.types.node(s.types.field(field).node);
+    auto seq = atomic(s.hdr->seq);
     read_value out{0, 0};
-    const bool done = detail::retry(s, s.lock_timeout, [&]() noexcept {
+    const std::conditional_t<Large, hooks_around, no_hooks> hooks(s);
+    const bool done = retry<!Large>(s, s.lock_timeout, [&]() noexcept {
         const std::uint64_t before = seq.load(std::memory_order_acquire);
         if ((before & 1u) != 0)
             return false;
@@ -2618,9 +2625,15 @@ inline result<read_value> handle::read_used(std::uint16_t field, std::span<std::
         if (length > node.capacity)
             length = node.capacity;
         const std::size_t used = node.slots + std::size_t{length} * node.stride;
-        if (used <= buf.size())
-            std::memcpy(buf.data(), src, used);
-        const std::uint64_t version = detail::atomic(s.counts[field]).load(std::memory_order_relaxed);
+        if (used <= buf.size()) {
+            if constexpr (Large) {
+                if (!copy_checked(buf.data(), src, used, seq, before))
+                    return false;
+            } else {
+                std::memcpy(buf.data(), src, used);
+            }
+        }
+        const std::uint64_t version = atomic(s.counts[field]).load(std::memory_order_relaxed);
         std::atomic_thread_fence(std::memory_order_acquire);
         if (seq.load(std::memory_order_acquire) != before)
             return false;
@@ -2630,6 +2643,18 @@ inline result<read_value> handle::read_used(std::uint16_t field, std::span<std::
     if (!done)
         return unexpected(status::lock_timeout);
     return out;
+}
+
+} // namespace detail
+
+inline result<read_value> handle::read_used(std::uint16_t field, std::span<std::byte> buf) const {
+    const detail::state &s = *s_;
+    if (field >= s.field_count || !detail::is_collection(s.fields[field].kind))
+        return unexpected(status::range);
+    const detail::type_node &node = s.types.node(s.types.field(field).node);
+    if (node.slots + std::uint64_t{node.capacity} * node.stride >= detail::large_copy)
+        return detail::read_used_impl<true>(s, field, buf);
+    return detail::read_used_impl<false>(s, field, buf);
 }
 
 inline result<read_value> handle::read_large(std::uint16_t field, std::span<std::byte> buf) const {
