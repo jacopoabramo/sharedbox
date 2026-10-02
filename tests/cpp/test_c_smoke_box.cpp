@@ -1,4 +1,5 @@
 // The C++ half of test_c_smoke.c: creates and removes the box the C program opens.
+#include "table_builder.hpp"
 #include "unique.hpp"
 
 #include <optional>
@@ -11,9 +12,21 @@ std::optional<sharedbox::handle> box;
 } // namespace
 
 extern "C" const char *smoke_create(void) {
-    constexpr sharedbox::field_spec fields[1] = {{0, 8, sharedbox::kind_int}};
+    // An enum of two members, the description of field 3.
+    static table_builder types = [] {
+        table_builder t;
+        t.head(sharedbox::kind_enum, 2, 2);
+        t.name("OFF");
+        t.name("ON");
+        t.pad();
+        return t;
+    }();
+    const sharedbox::field_spec fields[4] = {{0, 8, sharedbox::kind_int},
+                                             {8, 16, sharedbox::kind_datetime},
+                                             {24, 16, sharedbox::kind_complex},
+                                             {40, 0, sharedbox::kind_enum}};
     box_name = unique("c-smoke");
-    auto made = sharedbox::handle::create(box_name, fields, 8, 0x5EED, 4, {});
+    auto made = sharedbox::handle::create(box_name, fields, 48, 0x5EED, 4, {}, types.span());
     if (!made)
         return nullptr;
     box.emplace(std::move(*made));
