@@ -1890,6 +1890,8 @@ dependencies = [
 [package.optional-dependencies]
 benchmarks = [
     { name = "matplotlib" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
+    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "pyperf" },
     { name = "typer" },
 ]
@@ -1897,6 +1899,8 @@ benchmarks = [
 [package.dev-dependencies]
 benchmarks = [
     { name = "matplotlib" },
+    { name = "numpy", version = "2.4.6", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
+    { name = "numpy", version = "2.5.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "pyperf" },
     { name = "typer" },
 ]
@@ -1932,6 +1936,7 @@ tox = [
 [package.metadata]
 requires-dist = [
     { name = "matplotlib", marker = "extra == 'benchmarks'", specifier = ">=3.11.2" },
+    { name = "numpy", marker = "extra == 'benchmarks'", specifier = ">=2.4.6" },
     { name = "psygnal", specifier = ">=0.16.1" },
     { name = "pyperf", marker = "extra == 'benchmarks'", specifier = ">=2.10.0" },
     { name = "typer", marker = "extra == 'benchmarks'", specifier = ">=0.27.2" },
@@ -1941,6 +1946,7 @@ provides-extras = ["benchmarks"]
 [package.metadata.requires-dev]
 benchmarks = [
     { name = "matplotlib", specifier = ">=3.11.2" },
+    { name = "numpy", specifier = ">=2.4.6" },
     { name = "pyperf", specifier = ">=2.10.0" },
     { name = "typer", specifier = ">=0.27.2" },
 ]

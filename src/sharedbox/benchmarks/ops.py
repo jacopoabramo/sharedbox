@@ -13,16 +13,19 @@ which convert the Python value in the native module, against the raw
 
 import argparse
 import atexit
+import datetime
 import multiprocessing as mp
 import os
 import struct
+from dataclasses import dataclass
 from fnmatch import fnmatchcase
 from multiprocessing.shared_memory import ShareableList, SharedMemory
 from typing import Annotated, Any
 
+import numpy as np
 import pyperf
 
-from sharedbox import Capacity, SharedBox
+from sharedbox import Capacity, DType, Shape, SharedBox
 
 INT = struct.Struct("<q")
 FLOAT = struct.Struct("<d")
@@ -40,6 +43,37 @@ class Record(SharedBox):
 
 class Holder(SharedBox):
     record: Record | None = None
+
+
+@dataclass(frozen=True)
+class Quad:
+    a: int
+    b: float
+    c: bool
+    d: int
+
+
+class Typed(SharedBox):
+    when: datetime.datetime = datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
+    quad: Quad = Quad(0, 0.0, False, 0)
+    floats: Annotated[list[float], Capacity(16)] = []  # noqa: RUF012
+    image: Annotated[np.ndarray, Shape(512, 512), DType("float32")] = np.zeros(
+        (512, 512), np.float32
+    )
+
+
+WHEN = datetime.datetime(2026, 10, 2, 9, 30, tzinfo=datetime.UTC)
+QUAD = Quad(1, 1.5, True, 2)
+FLOATS = [0.5] * 16
+IMAGE = np.ones((512, 512), np.float32)
+
+
+def open_typed() -> tuple[Any, ...]:
+    name = f"bench-ops-typed-{os.getpid()}"
+    box = Typed.create(name)
+    atexit.register(Typed.unlink, name)
+    atexit.register(box.close)
+    return (box,)
 
 
 OPEN: dict[str, tuple[Any, ...]] = {}
@@ -101,6 +135,7 @@ OPENERS = {
     "values": open_values,
     "list": open_list,
     "namespace": open_namespace,
+    "typed": open_typed,
 }
 
 
@@ -117,6 +152,7 @@ SHM = "buf, lock = resources('shm')"
 VALUES = "a, b, s = resources('values')"
 LIST = "shared, = resources('list')"
 NAMESPACE = "ns, = resources('namespace')"
+TYPED = "typed, = resources('typed')"
 
 BENCHMARKS: list[tuple[str, str, str, list[str]]] = [
     ("write int", "SharedBox", BOX, ["box.a = 1"]),
@@ -264,6 +300,14 @@ BENCHMARKS: list[tuple[str, str, str, list[str]]] = [
     ("native set str", "split", BOX, ["seg.set([(2, 'hello')])"]),
     ("native get str", "split", BOX, ["seg.get(2)"]),
     ("native versions", "split", BOX, ["seg.versions()"]),
+    ("write datetime", "SharedBox", TYPED, ["typed.when = WHEN"]),
+    ("read datetime", "SharedBox", TYPED, ["typed.when"]),
+    ("write record", "SharedBox", TYPED, ["typed.quad = QUAD"]),
+    ("read record", "SharedBox", TYPED, ["typed.quad"]),
+    ("write list16", "SharedBox", TYPED, ["typed.floats = FLOATS"]),
+    ("read list16", "SharedBox", TYPED, ["typed.floats"]),
+    ("write array 1 MiB", "SharedBox", TYPED, ["typed.image = IMAGE"]),
+    ("read array 1 MiB", "SharedBox", TYPED, ["typed.image"]),
 ]
 
 
