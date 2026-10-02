@@ -31,6 +31,9 @@ class Frame(SharedBox):
 
 class Series(SharedBox):
     samples: Annotated[np.ndarray, Shape(3), DType("float64")] = np.zeros(3)
+    counts: Annotated[npt.NDArray[np.intc], Shape(2), DType(np.intc)] = np.zeros(
+        2, np.intc
+    )
 
 
 @dataclass
@@ -127,6 +130,14 @@ def test_a_buffer_protocol_source_is_accepted(unique_name: str, source: object) 
     with Series.create(unique_name) as box:
         box.samples = source  # type: ignore[assignment]
         assert np.array_equal(box.samples, [1.5, -2.0, 3.0])
+    Series.unlink(unique_name)
+
+
+def test_a_numpy_scalar_type_is_named_by_its_dtype(unique_name: str) -> None:
+    """Check that NDArray[np.intc] and DType(np.intc) make an int32 field that keeps an intc array."""
+    with Series.create(unique_name) as box:
+        box.counts = np.array([1, -2], np.intc)
+        assert np.array_equal(box.counts, [1, -2]) and box.counts.dtype == np.int32
     Series.unlink(unique_name)
 
 

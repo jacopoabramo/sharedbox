@@ -1,5 +1,6 @@
 """Array fields: their shape and element type, and how each array library reads them back."""
 
+import contextlib
 import importlib
 import sys
 from collections.abc import Callable
@@ -76,6 +77,10 @@ def dtype_name(dtype: object) -> str:
     if isinstance(dtype, str):
         return dtype
     if isinstance(dtype, type):
+        # A numpy scalar type's name can differ from its dtype's: numpy.intc is int32.
+        if dtype.__module__ == "numpy":
+            with contextlib.suppress(TypeError):
+                return str(sys.modules["numpy"].dtype(dtype).name)
         return dtype.__name__
     return str(dtype).removeprefix("torch.")
 
