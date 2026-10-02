@@ -2,6 +2,7 @@
 
 #include <Python.h>
 #include <nanobind/nanobind.h>
+#include <nanobind/ndarray.h>
 #include <sharedbox/sharedbox.hpp>
 
 #include <cstddef>
@@ -87,6 +88,15 @@ private:
     std::size_t encode_collection(const detail::type_ref &t, PyObject *value, std::byte *out,
                                   const Where &where) const;
     bool accepts(const detail::type_ref &t, PyObject *value) const;
+    /// The array view of value, checked against an array type; raises TypeError or ValueError naming the
+    /// field. source receives the object whose memory the view points into.
+    nb::ndarray<nb::ro> array_view(const detail::type_ref &t, PyObject *value, const Where &where,
+                                   nb::object &source) const;
+    /// Copies an array view into out, gathering a strided one in C order.
+    static void copy_array(const nb::ndarray<nb::ro> &view, std::byte *out);
+    /// An array value whose bytes start at data; owned, when it holds data, is taken instead of copied.
+    nb::object decode_array(const detail::type_ref &t, const std::byte *data,
+                            std::unique_ptr<std::byte[]> *owned) const;
     void prepare(std::uint32_t node, std::uint8_t kind, nb::object info);
     bool read_as_bytearray(std::uint32_t container, std::uint32_t member) const;
 

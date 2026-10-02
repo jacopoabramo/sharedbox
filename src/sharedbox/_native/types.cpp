@@ -87,6 +87,17 @@ nb::object snapshot(PyObject *value, std::uint8_t kind) {
 
 Py_ssize_t length_of(PyObject *items) { return PyList_Check(items) ? PyList_Size(items) : PyTuple_Size(items); }
 
+// Whether the array's elements lie in C order with no gaps, so one memcpy copies it.
+bool contiguous(const nb::ndarray<nb::ro> &view) {
+    std::int64_t expected = 1;
+    for (std::size_t i = view.ndim(); i-- > 0;) {
+        if (view.shape(i) != 1 && view.stride(i) != expected)
+            return false;
+        expected *= static_cast<std::int64_t>(view.shape(i));
+    }
+    return true;
+}
+
 PyObject *at(PyObject *items, Py_ssize_t i) {
     return PyList_Check(items) ? PyList_GetItem(items, i) : PyTuple_GetItem(items, i);
 }
@@ -205,6 +216,10 @@ void Types::prepare(std::uint32_t node, std::uint8_t kind, nb::object info) {
     case kind_dict:
         n.cls = item(n.info, 0);
         break;
+    case kind_array:
+        n.cls = item(n.info, 0);
+        n.as_uint16 = item(n.info, 1) == Py_True;
+        break;
     case kind_record:
     case kind_tuple: {
         n.form = static_cast<int>(PyLong_AsLong(item(n.info, 0)));
@@ -251,6 +266,17 @@ std::span<const std::byte> Types::encode(std::uint32_t index, PyObject *value, E
         buffer.text = scalars::decimal_text(value, t.size - 4, name);
         return std::as_bytes(std::span(buffer.text.data(), buffer.text.size()));
     }
+    if (t.kind == kind_array) {
+        nb::object source;
+        const nb::ndarray<nb::ro> view = array_view(t, value, {name}, source);
+        if (contiguous(view)) {
+            buffer.keep = std::move(source);
+            return {static_cast<const std::byte *>(view.data()), t.size};
+        }
+        std::byte *out = buffer.reserve(t.size);
+        copy_array(view, out);
+        return {out, t.size};
+    }
     if (detail::is_collection(t.kind)) {
         std::byte *out = buffer.reserve(t.size);
         return {out, encode_collection(t, value, out, {name})};
@@ -262,9 +288,13 @@ std::span<const std::byte> Types::encode(std::uint32_t index, PyObject *value, E
 
 nb::object Types::decode(std::uint32_t index, std::span<const std::byte> bytes,
                          std::unique_ptr<std::byte[]> *owned) const {
-    static_cast<void>(owned);
     const detail::type_ref &t = field(index);
     const std::string &name = labels_[index];
+    if (t.kind == kind_array) {
+        if (bytes.size() != t.size)
+            raise(PyExc_ValueError, name + ": the stored array has the wrong size");
+        return decode_array(t, bytes.data(), owned);
+    }
     // A list, set or dict is read as its length and the slots it uses, so it may be shorter than its size.
     const bool fits = detail::prefixed(t.kind)        ? bytes.size() <= t.size - 4
                       : detail::is_collection(t.kind) ? bytes.size() <= t.size
@@ -410,6 +440,11 @@ void Types::encode_into(const detail::type_ref &t, PyObject *value, std::byte *o
     case kind_dict:
         encode_collection(t, value, out, where);
         return;
+    case kind_array: {
+        nb::object source;
+        copy_array(array_view(t, value, where, source), out);
+        return;
+    }
     case kind_record:
     case kind_tuple: {
         const detail::type_node &node = tree_.node(t.node);
@@ -627,10 +662,95 @@ nb::object Types::decode_from(const detail::type_ref &t, const std::byte *data, 
             throw nb::python_error();
         return nb::steal(made);
     }
+    case kind_array:
+        return decode_array(t, data, nullptr);
     default:
         raise(PyExc_TypeError,
               where.name + ": values of kind " + std::to_string(t.kind) + " are not supported yet");
     }
+}
+
+nb::ndarray<nb::ro> Types::array_view(const detail::type_ref &t, PyObject *value, const Where &where,
+                                      nb::object &source) const {
+    const NodeInfo &n = nodes_[t.node];
+    const detail::type_node &node = tree_.node(t.node);
+    source = nb::borrow(value);
+    // numpy exports no DLPack type for bfloat16, so such a field reads and writes its elements as uint16.
+    if (n.as_uint16)
+        source = nb::steal(PyObject_CallMethod(value, "view", "s", "uint16"));
+    if (!source.is_valid()) {
+        PyErr_Clear();
+        wrong(where.name, "an array", value);
+    }
+    nb::ndarray<nb::ro> view;
+    if (!nb::try_cast(source, view, false))
+        wrong(where.name, "an array with __dlpack__ or the buffer protocol", value);
+    if (view.device_type() != nb::device::cpu::value)
+        wrong(where.name, "an array in CPU memory", value);
+    const nb::dlpack::dtype want = n.as_uint16
+                                       ? nb::dlpack::dtype{1, 16, 1}
+                                       : nb::dlpack::dtype{node.dtype.code, node.dtype.bits, node.dtype.lanes};
+    if (view.dtype() != want)
+        wrong(where.name, "an array of the field's DType", value);
+    bool same = view.ndim() == node.ndim;
+    for (std::size_t i = 0; same && i < node.ndim; ++i)
+        same = view.shape(i) == tree_.number(node.numbers + static_cast<std::uint32_t>(i));
+    if (!same)
+        raise(PyExc_ValueError, where.name + " holds an array of the field's Shape; the value's shape differs");
+    return view;
+}
+
+void Types::copy_array(const nb::ndarray<nb::ro> &view, std::byte *out) {
+    const std::size_t item = view.itemsize();
+    const auto *base = static_cast<const std::byte *>(view.data());
+    if (contiguous(view)) {
+        std::memcpy(out, base, view.nbytes());
+        return;
+    }
+    std::size_t index[8] = {};
+    const std::size_t total = view.size();
+    for (std::size_t k = 0; k < total; ++k) {
+        std::int64_t at = 0;
+        for (std::size_t i = 0; i < view.ndim(); ++i)
+            at += static_cast<std::int64_t>(index[i]) * view.stride(i);
+        std::memcpy(out + k * item, base + at * static_cast<std::int64_t>(item), item);
+        for (std::size_t i = view.ndim(); i-- > 0;) {
+            if (++index[i] < view.shape(i))
+                break;
+            index[i] = 0;
+        }
+    }
+}
+
+nb::object Types::decode_array(const detail::type_ref &t, const std::byte *data,
+                               std::unique_ptr<std::byte[]> *owned) const {
+    const NodeInfo &n = nodes_[t.node];
+    const detail::type_node &node = tree_.node(t.node);
+    std::unique_ptr<std::byte[]> buffer;
+    if (owned != nullptr && owned->get() == data) {
+        buffer = std::move(*owned);
+    } else {
+        buffer.reset(new std::byte[t.size]);
+        std::memcpy(buffer.get(), data, t.size);
+    }
+    std::size_t shape[8];
+    for (std::uint32_t i = 0; i < node.ndim; ++i)
+        shape[i] = static_cast<std::size_t>(tree_.number(node.numbers + i));
+    const nb::dlpack::dtype dtype = n.as_uint16
+                                        ? nb::dlpack::dtype{1, 16, 1}
+                                        : nb::dlpack::dtype{node.dtype.code, node.dtype.bits, node.dtype.lanes};
+    std::byte *raw = buffer.get();
+    nb::capsule owner(raw, [](void *p) noexcept { delete[] static_cast<std::byte *>(p); });
+    // Released only once the capsule exists, so a failure to make it does not leak the buffer.
+    buffer.release();
+    // array_api makes a nanobind.nb_ndarray with __dlpack__; a framework-less ndarray casts to a bare capsule.
+    nb::object array = nb::cast(nb::ndarray<nb::array_api>(raw, node.ndim, shape, owner, nullptr, dtype));
+    if (n.cls == Py_None)
+        return array;
+    PyObject *made = PyObject_CallFunctionObjArgs(n.cls, array.ptr(), nullptr);
+    if (made == nullptr)
+        throw nb::python_error();
+    return nb::steal(made);
 }
 
 bool Types::accepts(const detail::type_ref &t, PyObject *value) const {

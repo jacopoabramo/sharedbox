@@ -6,6 +6,7 @@ import dataclasses
 import datetime
 import decimal
 import enum
+import math
 import struct
 import sys
 import types
@@ -28,6 +29,17 @@ from typing import (
     get_origin,
     get_type_hints,
     is_typeddict,
+)
+
+from ._arrays import (
+    CONVERTERS,
+    DLPACK,
+    DType,
+    Shape,
+    SupportsDLPack,
+    converter,
+    dtype_name,
+    key,
 )
 
 if TYPE_CHECKING:
@@ -253,9 +265,16 @@ def unwrap(
             except NameError as error:
                 raise TypeError(f"{where}: {error.name!r} is not defined") from None
         elif is_alias(origin):
-            raise TypeError(
-                f"{where}: generic type alias {hint!r} is not supported; use its value"
-            )
+            try:
+                value = origin.__value__
+            except NameError:
+                value = None
+            if not is_array_type(value):
+                raise TypeError(
+                    f"{where}: generic type alias {hint!r} is not supported; use its value"
+                )
+            # numpy.typing.NDArray is a generic type alias from Python 3.12 on.
+            hint = value[get_args(hint)]
         else:
             return hint, extras, path
 
@@ -294,7 +313,76 @@ def parse(
         raise TypeError(f"{where}: more than one Capacity applies to {hint!r}")
     if capacities:
         capacity = capacities[0]
+    if any(isinstance(extra, (Shape, DType)) for extra in extras) or is_array_type(
+        hint
+    ):
+        if capacity is not None:
+            raise TypeError(
+                f"{where}: Capacity does not apply to an array; give its Shape"
+            )
+        return array_spec(hint, extras, where)
     return dispatch(hint, extras, where, capacity, depth, path)
+
+
+def is_array_type(hint: Any) -> bool:
+    origin = get_origin(hint) or hint
+    return isinstance(origin, type) and (
+        origin is SupportsDLPack
+        or key(origin) in CONVERTERS
+        or key(origin) in ("numpy.ndarray", "torch.Tensor")
+    )
+
+
+def annotation_dtype(hint: Any) -> str | None:
+    """Return the dtype a parametrised array annotation names, as in `NDArray[np.float32]`; None if it names none."""
+    args = get_args(hint)
+    if len(args) != 2:
+        return None
+    inner = get_args(args[1])
+    if len(inner) != 1 or not isinstance(inner[0], type):
+        return None
+    name = dtype_name(inner[0])
+    return name if name in DLPACK else None
+
+
+def array_spec(hint: Any, extras: list[Any], where: str) -> TypeSpec:
+    shapes = [extra for extra in extras if isinstance(extra, Shape)]
+    dtypes = [extra.name for extra in extras if isinstance(extra, DType)]
+    if len(shapes) != 1:
+        raise TypeError(
+            f"{where}: an array field needs one Shape, as in Annotated[numpy.ndarray, Shape(2, 3), DType('float32')]"
+        )
+    named = annotation_dtype(hint)
+    if len(dtypes) > 1 or (not dtypes and named is None):
+        raise TypeError(
+            f"{where}: an array field needs one DType, or a dtype in its annotation"
+        )
+    name = dtypes[0] if dtypes else named
+    assert name is not None
+    if named is not None and named != name:
+        raise TypeError(
+            f"{where}: the annotation's dtype {named} and DType({name!r}) disagree"
+        )
+    code, bits = DLPACK[name]
+    dims = shapes[0].dims
+    size = math.prod(dims) * bits // 8
+    if size >= 1 << 32:
+        raise TypeError(
+            f"{where}: the array takes {size} bytes; a record holds less than 4 GiB"
+        )
+    origin = get_origin(hint) or hint
+    convert, as_uint16 = converter(origin, name, where)
+    return TypeSpec(
+        "array",
+        size,
+        64,
+        f"array({name},{'x'.join(map(str, dims))})",
+        after=struct.pack("<BBHB3x", code, bits, 1, len(dims))
+        + struct.pack(f"<{len(dims)}Q", *dims),
+        info=(convert, as_uint16),
+        match=(origin,),
+        hashable=False,
+    )
 
 
 def dispatch(

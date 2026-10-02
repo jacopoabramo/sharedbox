@@ -37,10 +37,13 @@ def pytest_ignore_collect(collection_path: Path, config: pytest.Config) -> bool 
         find_spec("matplotlib") is None or find_spec("pyperf") is None
     ):
         return True
-    # attrs and msgspec are dev dependencies that may lack wheels for an interpreter under test.
+    # attrs, msgspec and ml_dtypes are dev dependencies that may lack wheels for an interpreter
+    # under test; torch is not a dependency at all.
     optional = {
         "test_types_records_attrs.py": "attrs",
         "test_types_records_msgspec.py": "msgspec",
+        "test_types_arrays_bfloat16.py": "ml_dtypes",
+        "test_types_arrays_torch.py": "torch",
     }
     if (
         collection_path.name in optional
