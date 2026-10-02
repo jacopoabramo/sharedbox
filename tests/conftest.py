@@ -1,4 +1,5 @@
 import contextlib
+import gc
 import json
 import os
 import sys
@@ -101,3 +102,15 @@ def pytest_terminal_summary(terminalreporter: pytest.TerminalReporter) -> None:
         terminalreporter.write_sep("-", name)
         for key, value in results.items():
             terminalreporter.write_line(f"{key:>30}  {value}")
+
+
+def pytest_unconfigure(config: pytest.Config) -> None:
+    # Hypothesis times the collector with a gc callback, and the interpreter keeps gc.callbacks
+    # until after its last collection at exit. What the callback reaches (test functions and
+    # the box classes their annotations name) then outlives the extension, which nanobind
+    # reports as leaked instances.
+    gc.callbacks[:] = [
+        callback
+        for callback in gc.callbacks
+        if not getattr(callback, "__module__", "").startswith("hypothesis.")
+    ]
