@@ -197,3 +197,52 @@ def test_a_layout_1_box_opens_with_types(unique_name: str) -> None:
     assert other.get_dict(("x", "y")) == {"x": 5, "y": 2.5}
     other.close()
     owner.close()
+
+
+class FarAhead(datetime.datetime):
+    """A datetime whose own utcoffset gives 45 days, whose minutes overflow 16 bits."""
+
+    def utcoffset(self) -> datetime.timedelta:
+        return datetime.timedelta(days=45)
+
+
+class NumberOffset(datetime.datetime):
+    """A datetime whose own utcoffset gives an int rather than a timedelta."""
+
+    def utcoffset(self) -> int:  # type: ignore[override]
+        return 5
+
+
+@pytest.mark.parametrize(
+    ("value", "error"),
+    [
+        (FarAhead(2026, 1, 1), ValueError),
+        (NumberOffset(2026, 1, 1), TypeError),
+    ],
+)
+def test_an_offset_no_timezone_can_give_is_refused(
+    unique_name: str, value: datetime.datetime, error: type[Exception]
+) -> None:
+    """Check that a utcoffset of a day or more, or not a timedelta, raises naming the field."""
+    segment = create(unique_name)
+    with pytest.raises(error, match="T.when"):
+        segment.set([(0, value)], types())
+    segment.close()
+
+
+def test_a_stored_decimal_that_is_not_utf8_raises(unique_name: str) -> None:
+    """Check that a decimal field holding bytes that are not UTF-8 raises ValueError naming the field."""
+    segment = create(unique_name)
+    segment._write([(6, b"\xff")])
+    with pytest.raises(ValueError, match="T.price"):
+        segment.get(6, types())
+    segment.close()
+
+
+@pytest.mark.parametrize(("index", "data"), [(0, b""), (1, b"1" * 21)])
+def test_types_decode_refuses_bytes_of_the_wrong_size(index: int, data: bytes) -> None:
+    """Check that Types.decode raises ValueError naming the field for bytes the field cannot hold."""
+    labels = ["P.n", "P.price"]
+    t = Types([NativeField(0, 8, 1), NativeField(8, 20, DECIMAL)], labels, b"", {}, [])
+    with pytest.raises(ValueError, match=labels[index]):
+        t.decode(index, data)

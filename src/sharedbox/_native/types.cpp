@@ -129,6 +129,13 @@ nb::object Types::decode(std::uint32_t index, std::span<const std::byte> bytes,
     static_cast<void>(owned);
     const detail::type_ref &t = field(index);
     const std::string &name = labels_[index];
+    // A list, set or dict is read as its length and the slots it uses, so it may be shorter than its size.
+    const bool fits = detail::prefixed(t.kind)        ? bytes.size() <= t.size - 4
+                      : detail::is_collection(t.kind) ? bytes.size() <= t.size
+                                                      : bytes.size() == t.size;
+    if (!fits)
+        raise(PyExc_ValueError, name + ": " + std::to_string(bytes.size()) +
+                                    " bytes do not fit a value that takes " + std::to_string(t.size));
     if (t.kind <= kind_ref) {
         PyObject *value =
             sharedbox::decode(desc_of(t), reinterpret_cast<const char *>(bytes.data()), bytes.size());
@@ -142,9 +149,6 @@ nb::object Types::decode(std::uint32_t index, std::span<const std::byte> bytes,
             throw nb::python_error();
         return nb::steal(value);
     }
-    if (bytes.size() < t.size)
-        raise(PyExc_ValueError,
-              name + ": " + std::to_string(bytes.size()) + " bytes, the value takes " + std::to_string(t.size));
     return decode_from(t, bytes.data(), field_container, index, {name});
 }
 

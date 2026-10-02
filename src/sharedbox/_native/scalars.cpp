@@ -195,8 +195,18 @@ std::optional<std::int16_t> offset_of(PyObject *value, const std::string &name) 
     const nb::object offset = nb::steal(owned(PyObject_CallMethodObjArgs(value, utcoffset_name, nullptr)));
     if (offset.is_none())
         return std::nullopt;
+    // A subclass's utcoffset can return anything, and the full API's field macros trust the type.
+#ifndef Py_LIMITED_API
+    const bool delta = PyDelta_Check(offset.ptr());
+#else
+    const bool delta = instance(offset.ptr(), timedelta_type);
+#endif
+    if (!delta)
+        raise(PyExc_TypeError, name + " needs utcoffset() to return a timedelta or None");
     const timedelta_value d = delta_fields(offset.ptr());
     const std::int64_t seconds = std::int64_t{d.days} * 86400 + d.seconds;
+    if (seconds <= -86400 || seconds >= 86400)
+        raise(PyExc_ValueError, name + " keeps a UTC offset of less than a day; the value's is not");
     if (d.microseconds != 0 || seconds % 60 != 0)
         raise(PyExc_ValueError, name + " keeps a UTC offset in whole minutes; the value's is not");
     return static_cast<std::int16_t>(seconds / 60);
@@ -298,7 +308,8 @@ void encode(std::uint8_t kind, PyObject *value, std::span<std::byte> out, const 
     switch (kind) {
     case kind_complex: {
         const double re = PyComplex_RealAsDouble(value);
-        const double im = PyComplex_ImagAsDouble(value);
+        // ImagAsDouble may run Python code, which must not start with an exception set.
+        const double im = PyErr_Occurred() ? 0.0 : PyComplex_ImagAsDouble(value);
         if (PyErr_Occurred()) {
             if (!PyErr_ExceptionMatches(PyExc_OverflowError))
                 throw nb::python_error();
@@ -446,8 +457,14 @@ PyObject *decode(std::uint8_t kind, std::span<const std::byte> bytes, const std:
             return PyObject_Call(uuid_type, empty_tuple, kwargs.ptr());
         }
         case kind_decimal: {
-            const nb::object text = nb::steal(owned(PyUnicode_DecodeUTF8(
-                reinterpret_cast<const char *>(bytes.data()), static_cast<Py_ssize_t>(bytes.size()), "strict")));
+            const nb::object text = nb::steal(PyUnicode_DecodeUTF8(
+                reinterpret_cast<const char *>(bytes.data()), static_cast<Py_ssize_t>(bytes.size()), "strict"));
+            if (!text.is_valid()) {
+                if (!PyErr_ExceptionMatches(PyExc_UnicodeDecodeError))
+                    throw nb::python_error();
+                PyErr_Clear();
+                corrupt(name, "Decimal");
+            }
             PyObject *value = PyObject_CallFunctionObjArgs(decimal_type, text.ptr(), nullptr);
             // decimal raises InvalidOperation, an ArithmeticError, for text that is not a number.
             if (value == nullptr && PyErr_ExceptionMatches(PyExc_ArithmeticError)) {
