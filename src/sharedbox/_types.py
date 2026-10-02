@@ -149,7 +149,9 @@ class Member:
     name: str = ""
 
 
-def fixed(kind: str, size: int, alignment: int, cls: type, text: str | None = None) -> TypeSpec:
+def fixed(
+    kind: str, size: int, alignment: int, cls: type, text: str | None = None
+) -> TypeSpec:
     return TypeSpec(kind, size, alignment, text or kind, match=(cls,), exact=cls)
 
 
@@ -185,7 +187,8 @@ def deeper(depth: int, where: str) -> int:
 
 def is_alias(hint: object) -> bool:
     """Whether `hint` is the alias a `type` statement makes, from `typing` or `typing_extensions`."""
-    return type(hint).__name__ == "TypeAliasType" and hasattr(hint, "__value__")
+    kind = type(hint)
+    return kind.__name__ == "TypeAliasType" and hasattr(kind, "__value__")
 
 
 def unwrap(
@@ -273,7 +276,7 @@ def dispatch(
     path: frozenset[int],
 ) -> TypeSpec:
     """Return the `TypeSpec` of an unwrapped annotation; `parse` documents the parameters."""
-    if hint in TEXT:
+    if isinstance(hint, type) and hint in TEXT:
         if capacity is None:
             raise unsupported(where, hint)
         kind = TEXT[hint]
@@ -297,7 +300,7 @@ def dispatch(
 
 def takes_capacity(hint: Any) -> bool:
     """Whether a `Capacity` on `hint` has a type to apply to."""
-    return hint in TEXT
+    return isinstance(hint, type) and hint in TEXT
 
 
 class Table:

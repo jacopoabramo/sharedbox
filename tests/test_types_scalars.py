@@ -48,7 +48,9 @@ def test_scalar_fields_survive_another_process(unique_name: str) -> None:
         assert seen == {**VALUES, "limit": 10}
         assert type(seen["raw"]) is bytearray
         assert seen["when"].utcoffset() == datetime.timedelta(hours=1)
-        update_in_child(box, day=datetime.date(2000, 1, 1), price=decimal.Decimal("0.5"))
+        update_in_child(
+            box, day=datetime.date(2000, 1, 1), price=decimal.Decimal("0.5")
+        )
         assert box.day == datetime.date(2000, 1, 1)
         assert box.price == decimal.Decimal("0.5")
         assert type(box.raw) is bytearray
@@ -92,20 +94,49 @@ def test_classes_with_only_0_3_kinds_keep_their_schema_hash() -> None:
         (Annotated[Annotated[str, Capacity(4)], Capacity(8)], "more than one Capacity"),
         (Final, "Final needs a type"),
         (list, "unsupported annotation"),
+        ([int], "unsupported annotation"),
     ],
 )
-def test_annotations_that_cannot_be_stored_are_refused(hint: object, message: str) -> None:
+def test_annotations_that_cannot_be_stored_are_refused(
+    hint: object, message: str
+) -> None:
     """Check that an annotation the layout cannot store raises TypeError when the class is defined."""
     with pytest.raises(TypeError, match=message):
-        build_layout(type("Bad", (), {"__annotations__": {"x": hint}, "__module__": "__main__"}))
+        build_layout(
+            type("Bad", (), {"__annotations__": {"x": hint}, "__module__": "__main__"})
+        )
 
 
-@pytest.mark.skipif(sys.version_info < (3, 12), reason="typing.TypeAliasType is new in 3.12")
+@pytest.mark.skipif(
+    sys.version_info < (3, 12), reason="typing.TypeAliasType is new in 3.12"
+)
 def test_type_aliases_are_unwrapped() -> None:
     """Check that a type alias stores as its value and hashes the same."""
     alias = typing.TypeAliasType("Celsius", float)  # type: ignore[attr-defined]
-    layout = build_layout(type("T", (), {"__annotations__": {"x": alias}, "__module__": "__main__"}))
+    layout = build_layout(
+        type("T", (), {"__annotations__": {"x": alias}, "__module__": "__main__"})
+    )
     assert layout.by_name["x"].kind == "float"
-    assert layout.schema_hash == build_layout(
-        type("T", (), {"__annotations__": {"x": float}, "__module__": "__main__"})
-    ).schema_hash
+    assert (
+        layout.schema_hash
+        == build_layout(
+            type("T", (), {"__annotations__": {"x": float}, "__module__": "__main__"})
+        ).schema_hash
+    )
+
+
+@pytest.mark.skipif(
+    sys.version_info < (3, 12), reason="typing.TypeAliasType is new in 3.12"
+)
+def test_an_alias_naming_something_undefined_is_a_type_error() -> None:
+    """Check that an alias whose value names an undefined class raises TypeError, not NameError."""
+    namespace: dict[str, object] = {}
+    exec("type A = Undefined", namespace)
+    with pytest.raises(TypeError, match="is not defined"):
+        build_layout(
+            type(
+                "T",
+                (),
+                {"__annotations__": {"x": namespace["A"]}, "__module__": "__main__"},
+            )
+        )

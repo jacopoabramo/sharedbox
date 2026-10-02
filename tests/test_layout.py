@@ -76,8 +76,8 @@ def test_float_field_accepts_int() -> None:
 )
 def test_encode_rejects(name: str, value: object, error: type[Exception]) -> None:
     """Check that each invalid value for a field spec raises the expected error."""
+    layout = build_layout(Sample)
     with pytest.raises(error):
-        layout = build_layout(Sample)
         layout.check(layout.by_name[name], value)
 
 
