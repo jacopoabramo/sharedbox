@@ -248,7 +248,7 @@ class Watcher:
         # Moves forwarding when a reference field changes; set by the box's events group.
         self.follower: Follower | None = None
         self._fields: tuple[FieldSpec, ...] = ()
-        self._seen: dict[int, tuple[int, Any]] = {}
+        self._seen: dict[int, tuple[int, bytes, Any]] = {}
         self._slot: int | None = None
         self._slots_full = False
 
@@ -299,13 +299,15 @@ class Watcher:
 
     def last(self, spec: FieldSpec) -> Any:
         """Return the value of `spec` the watcher last saw, which it compares the next change with."""
-        return self._seen[spec.index][1]
+        return self._seen[spec.index][2]
+
+    def _read(self, spec: FieldSpec) -> tuple[int, bytes, Any]:
+        """Return the field's write count, stored bytes and value, from one read."""
+        version, raw = self._segment.read_versioned(spec.index)
+        return version, raw, self._types.decode(spec.index, raw)
 
     def _listen_locked(self, sink: Sink, fields: tuple[FieldSpec, ...]) -> None:
-        self._seen = {
-            spec.index: self._segment.get_versioned(spec.index, self._types)
-            for spec in fields
-        }
+        self._seen = {spec.index: self._read(spec) for spec in fields}
         self._fields = fields
         self._sink = sink
 
@@ -327,13 +329,21 @@ class Watcher:
             return
         versions = self._segment.versions()
         for spec in fields:
-            seen_version, old = self._seen[spec.index]
+            seen_version, seen_raw, old = self._seen[spec.index]
             if versions[spec.index] == seen_version:
                 continue
-            version, new = self._segment.get_versioned(spec.index, self._types)
-            self._seen[spec.index] = (version, new)
-            if new == old:
+            version, raw = self._segment.read_versioned(spec.index)
+            # Bytes, not ==: == raises for arrays and some decimals, and calls 1 and True the same.
+            if raw == seen_raw:
+                self._seen[spec.index] = (version, raw, old)
                 continue
+            try:
+                new = self._types.decode(spec.index, raw)
+            except Exception:
+                self._seen[spec.index] = (version, raw, old)
+                logger.exception("reading a change of field %r failed", spec.name)
+                continue
+            self._seen[spec.index] = (version, raw, new)
             try:
                 sink(spec, new, old)
             except Exception:
