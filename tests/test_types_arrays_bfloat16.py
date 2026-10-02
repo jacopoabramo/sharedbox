@@ -2,6 +2,7 @@ from typing import Annotated
 
 import ml_dtypes
 import numpy as np
+import pytest
 
 from sharedbox import DType, Shape, SharedBox
 
@@ -18,4 +19,16 @@ def test_bfloat16_arrays_read_back_as_bfloat16(unique_name: str) -> None:
     with Weights.create(unique_name, values) as box:
         assert box.w.dtype == ml_dtypes.bfloat16
         assert np.array_equal(box.w, values)
+    Weights.unlink(unique_name)
+
+
+@pytest.mark.parametrize("dtype", [np.float16, np.int16, np.float32])
+def test_other_dtypes_are_refused_by_a_bfloat16_field(
+    unique_name: str, dtype: type
+) -> None:
+    """Check that a 2-byte or 4-byte array of another dtype raises TypeError and leaves a bfloat16 field as it was."""
+    with Weights.create(unique_name) as box:
+        with pytest.raises(TypeError, match="Weights.w"):
+            box.w = np.ones(3, dtype)
+        assert not box.w.any()
     Weights.unlink(unique_name)

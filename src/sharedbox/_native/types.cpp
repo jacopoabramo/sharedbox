@@ -87,6 +87,13 @@ nb::object snapshot(PyObject *value, std::uint8_t kind) {
 
 Py_ssize_t length_of(PyObject *items) { return PyList_Check(items) ? PyList_Size(items) : PyTuple_Size(items); }
 
+// Whether value is a numpy array of ml_dtypes' bfloat16, which has a uint16 view but no DLPack export.
+bool numpy_bfloat16(PyObject *value) {
+    const nb::object dtype = nb::getattr(value, "dtype", nb::none());
+    const nb::object name = nb::getattr(dtype, "name", nb::none());
+    return PyUnicode_Check(name.ptr()) && PyUnicode_CompareWithASCIIString(name.ptr(), "bfloat16") == 0;
+}
+
 // Whether the array's elements lie in C order with no gaps, so one memcpy copies it.
 bool contiguous(const nb::ndarray<nb::ro> &view) {
     std::int64_t expected = 1;
@@ -267,14 +274,11 @@ std::span<const std::byte> Types::encode(std::uint32_t index, PyObject *value, E
         return std::as_bytes(std::span(buffer.text.data(), buffer.text.size()));
     }
     if (t.kind == kind_array) {
-        nb::object source;
-        const nb::ndarray<nb::ro> view = array_view(t, value, {name}, source);
-        if (contiguous(view)) {
-            buffer.keep = std::move(source);
-            return {static_cast<const std::byte *>(view.data()), t.size};
-        }
+        buffer.keep = array_view(t, value, {name});
+        if (contiguous(buffer.keep))
+            return {static_cast<const std::byte *>(buffer.keep.data()), t.size};
         std::byte *out = buffer.reserve(t.size);
-        copy_array(view, out);
+        copy_array(buffer.keep, out);
         return {out, t.size};
     }
     if (detail::is_collection(t.kind)) {
@@ -440,11 +444,9 @@ void Types::encode_into(const detail::type_ref &t, PyObject *value, std::byte *o
     case kind_dict:
         encode_collection(t, value, out, where);
         return;
-    case kind_array: {
-        nb::object source;
-        copy_array(array_view(t, value, where, source), out);
+    case kind_array:
+        copy_array(array_view(t, value, where), out);
         return;
-    }
     case kind_record:
     case kind_tuple: {
         const detail::type_node &node = tree_.node(t.node);
@@ -670,28 +672,26 @@ nb::object Types::decode_from(const detail::type_ref &t, const std::byte *data, 
     }
 }
 
-nb::ndarray<nb::ro> Types::array_view(const detail::type_ref &t, PyObject *value, const Where &where,
-                                      nb::object &source) const {
+nb::ndarray<nb::ro> Types::array_view(const detail::type_ref &t, PyObject *value, const Where &where) const {
     const NodeInfo &n = nodes_[t.node];
     const detail::type_node &node = tree_.node(t.node);
-    source = nb::borrow(value);
-    // numpy exports no DLPack type for bfloat16, so such a field reads and writes its elements as uint16.
-    if (n.as_uint16)
-        source = nb::steal(PyObject_CallMethod(value, "view", "s", "uint16"));
-    if (!source.is_valid()) {
-        PyErr_Clear();
-        wrong(where.name, "an array", value);
-    }
     nb::ndarray<nb::ro> view;
-    if (!nb::try_cast(source, view, false))
-        wrong(where.name, "an array with __dlpack__ or the buffer protocol", value);
-    if (view.device_type() != nb::device::cpu::value)
+    const bool imported = nb::try_cast(nb::handle(value), view, false);
+    if (imported && view.device_type() != nb::device::cpu::value)
         wrong(where.name, "an array in CPU memory", value);
-    const nb::dlpack::dtype want = n.as_uint16
-                                       ? nb::dlpack::dtype{1, 16, 1}
-                                       : nb::dlpack::dtype{node.dtype.code, node.dtype.bits, node.dtype.lanes};
-    if (view.dtype() != want)
-        wrong(where.name, "an array of the field's DType", value);
+    if (!imported || view.dtype() != nb::dlpack::dtype{node.dtype.code, node.dtype.bits, node.dtype.lanes}) {
+        // numpy exports no DLPack type for bfloat16, so an ml_dtypes bfloat16 array is taken as its uint16 view.
+        if (!n.as_uint16 || !numpy_bfloat16(value))
+            wrong(where.name,
+                  imported ? "an array of the field's DType" : "an array with __dlpack__ or the buffer protocol",
+                  value);
+        const nb::object bits = nb::steal(PyObject_CallMethod(value, "view", "s", "uint16"));
+        if (!bits.is_valid())
+            throw nb::python_error();
+        if (!nb::try_cast(bits, view, false) || view.device_type() != nb::device::cpu::value ||
+            view.dtype() != nb::dlpack::dtype{1, 16, 1})
+            wrong(where.name, "an array of the field's DType", value);
+    }
     bool same = view.ndim() == node.ndim;
     for (std::size_t i = 0; same && i < node.ndim; ++i)
         same = view.shape(i) == tree_.number(node.numbers + static_cast<std::uint32_t>(i));
@@ -731,7 +731,12 @@ nb::object Types::decode_array(const detail::type_ref &t, const std::byte *data,
         buffer = std::move(*owned);
     } else {
         buffer.reset(new std::byte[t.size]);
-        std::memcpy(buffer.get(), data, t.size);
+        if (t.size >= detail::large_copy) {
+            nb::gil_scoped_release unlocked;
+            std::memcpy(buffer.get(), data, t.size);
+        } else {
+            std::memcpy(buffer.get(), data, t.size);
+        }
     }
     std::size_t shape[8];
     for (std::uint32_t i = 0; i < node.ndim; ++i)

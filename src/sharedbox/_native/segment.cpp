@@ -255,7 +255,8 @@ struct Segment::Impl {
         const FieldDesc &field = fields[f];
         const std::size_t size = field.capacity;
         std::byte *buf = reinterpret_cast<std::byte *>(out.words);
-        if (size > sizeof out.words) {
+        // An array is read straight into the heap buffer its decoded value then owns.
+        if (size > sizeof out.words || static_cast<std::uint8_t>(field.kind) == kind_array) {
             out.large.reset(new std::byte[size]);
             buf = out.large.get();
         }

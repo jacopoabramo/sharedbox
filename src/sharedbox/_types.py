@@ -274,7 +274,10 @@ def unwrap(
                     f"{where}: generic type alias {hint!r} is not supported; use its value"
                 )
             # numpy.typing.NDArray is a generic type alias from Python 3.12 on.
-            hint = value[get_args(hint)]
+            try:
+                hint = value[get_args(hint)]
+            except TypeError as error:
+                raise TypeError(f"{where}: {hint!r}: {error}") from None
         else:
             return hint, extras, path
 
@@ -333,16 +336,32 @@ def is_array_type(hint: Any) -> bool:
     )
 
 
-def annotation_dtype(hint: Any) -> str | None:
-    """Return the dtype a parametrised array annotation names, as in `NDArray[np.float32]`; None if it names none."""
+def annotation_dtype(hint: Any, where: str) -> str | None:
+    """Return the dtype a parametrised array annotation names, as in `NDArray[np.float32]`; None if it names none.
+
+    Raises
+    ------
+    TypeError
+        If it names a concrete scalar type DLPack cannot describe.
+    """
     args = get_args(hint)
     if len(args) != 2:
         return None
     inner = get_args(args[1])
-    if len(inner) != 1 or not isinstance(inner[0], type):
+    # Any and an abstract scalar type such as numpy.floating, which has subclasses, name no one dtype.
+    if (
+        len(inner) != 1
+        or not isinstance(inner[0], type)
+        or inner[0] is Any
+        or inner[0].__subclasses__()
+    ):
         return None
     name = dtype_name(inner[0])
-    return name if name in DLPACK else None
+    if name not in DLPACK:
+        raise TypeError(
+            f"{where}: unsupported array element type {name}; use one of {', '.join(DLPACK)}"
+        )
+    return name
 
 
 def array_spec(hint: Any, extras: list[Any], where: str) -> TypeSpec:
@@ -352,7 +371,7 @@ def array_spec(hint: Any, extras: list[Any], where: str) -> TypeSpec:
         raise TypeError(
             f"{where}: an array field needs one Shape, as in Annotated[numpy.ndarray, Shape(2, 3), DType('float32')]"
         )
-    named = annotation_dtype(hint)
+    named = annotation_dtype(hint, where)
     if len(dtypes) > 1 or (not dtypes and named is None):
         raise TypeError(
             f"{where}: an array field needs one DType, or a dtype in its annotation"

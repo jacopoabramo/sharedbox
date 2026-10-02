@@ -2,6 +2,7 @@
 
 #include <Python.h>
 #include <nanobind/nanobind.h>
+#include <nanobind/ndarray.h>
 
 #include <cstddef>
 #include <cstdint>
@@ -40,8 +41,9 @@ struct EncodeBuffer {
     std::unique_ptr<std::byte[]> large;
     /// A decimal's text, which the value does not hold itself.
     std::string text;
-    /// The array a value's bytes point into, kept alive until the write ends.
-    nanobind::object keep;
+    /// The array view a value's bytes point into; holding it keeps the source's buffer exported, so a
+    /// resizable source cannot move its memory before the write ends.
+    nanobind::ndarray<nanobind::ro> keep;
 };
 
 /// The bytes stored for value, held in buffer, in constant data, or for a str in value itself, so

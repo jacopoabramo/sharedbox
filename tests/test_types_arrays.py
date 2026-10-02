@@ -1,3 +1,4 @@
+import array
 import multiprocessing as mp
 from dataclasses import dataclass
 from typing import Annotated, Any
@@ -26,6 +27,10 @@ class Frame(SharedBox):
     big: Annotated[np.ndarray, Shape(1024, 1024), DType("float64")] = np.zeros(
         (1024, 1024)
     )
+
+
+class Series(SharedBox):
+    samples: Annotated[np.ndarray, Shape(3), DType("float64")] = np.zeros(3)
 
 
 @dataclass
@@ -110,6 +115,21 @@ def test_arrays_of_the_wrong_shape_or_dtype_are_refused(
     Frame.unlink(unique_name)
 
 
+@pytest.mark.parametrize(
+    "source",
+    [
+        array.array("d", [1.5, -2.0, 3.0]),
+        memoryview(array.array("d", [1.5, -2.0, 3.0])),
+    ],
+)
+def test_a_buffer_protocol_source_is_accepted(unique_name: str, source: object) -> None:
+    """Check that an object with only the buffer protocol is written and reads back equal."""
+    with Series.create(unique_name) as box:
+        box.samples = source  # type: ignore[assignment]
+        assert np.array_equal(box.samples, [1.5, -2.0, 3.0])
+    Series.unlink(unique_name)
+
+
 class Plain:
     """An array type nothing has registered."""
 
@@ -139,6 +159,10 @@ def make(annotation: object) -> type:
             "collection element",
         ),
         (Annotated[np.ndarray, Shape(2), DType("float32")] | None, "not optional"),
+        (
+            Annotated[npt.NDArray[np.object_], Shape(2), DType("float32")],
+            "element type",
+        ),
     ],
 )
 def test_array_annotations_that_cannot_be_kept_are_refused(
