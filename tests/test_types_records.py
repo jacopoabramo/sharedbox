@@ -1,3 +1,4 @@
+import collections
 import dataclasses
 import datetime
 from dataclasses import InitVar, dataclass
@@ -47,7 +48,7 @@ class Shapes(SharedBox):
 
 
 VALUES = {
-    "sample": Sample("label", Point(1.5, -2.0), datetime.datetime(2026, 1, 1)),
+    "sample": Sample("label", Point(1.5, -2.0), datetime.datetime(2026, 1, 1)),  # noqa: DTZ001
     "pair": Pair(3, b"ab"),
     "coords": (7, 0.25, True),
     "options": Options(speed=2.5, name="fast"),
@@ -144,6 +145,14 @@ class Init:
     scale: InitVar[int]
 
 
+@dataclass(init=False)
+class NoInit:
+    a: int
+
+
+Untyped = collections.namedtuple("Untyped", ["a"])
+
+
 @dataclass
 class Generic1(Generic[T]):
     a: int
@@ -163,6 +172,8 @@ class Holding:
     [
         (Hidden, "init=False"),
         (Init, "InitVar"),
+        (NoInit, "init=False"),
+        (Untyped, "no type"),
         (Generic1, "generic"),
         (Holding, "reference"),
         (tuple[()], "unsupported"),
@@ -187,3 +198,53 @@ def test_the_hash_follows_the_structure_not_the_class_name() -> None:
     assert (
         build_layout(make(first)).schema_hash != build_layout(make(changed)).schema_hash
     )
+
+
+@dataclass
+class Base:
+    scale: InitVar[int] = 1
+
+
+@dataclass
+class Derived(Base):
+    a: int = 0
+
+
+def test_an_initvar_with_a_default_on_a_base_class_is_accepted() -> None:
+    """Check that an InitVar whose default is declared on a base dataclass is not refused."""
+    build_layout(make(Derived))
+
+
+def test_a_not_required_key_counts_toward_the_depth_limit() -> None:
+    """Check that a record under a NotRequired key at the 16th level is refused by Python, not the native parser."""
+    outer = TypedDict("outer", {"k": NotRequired[nested(15)]})  # type: ignore[misc]
+    with pytest.raises(TypeError, match="16 levels"):
+        build_layout(make(outer))
+
+
+class Noted(TypedDict):
+    note: NotRequired[Annotated[str, Capacity(8)] | None]
+
+
+class Notes(SharedBox):
+    noted: Noted = field(default_factory=lambda: Noted())
+
+
+def test_a_missing_key_differs_from_a_none_value(unique_name: str) -> None:
+    """Check that a NotRequired key holding None reads back as None and an absent key stays absent."""
+    with Notes.create(unique_name) as box:
+        box.noted = {"note": None}
+        assert box.noted == {"note": None}
+        box.noted = {}
+        assert box.noted == {}
+    Notes.unlink(unique_name)
+
+
+def test_an_absent_key_is_not_added_by_a_default_factory(unique_name: str) -> None:
+    """Check that writing a defaultdict leaves its missing NotRequired key out."""
+    with Notes.create(unique_name) as box:
+        source: collections.defaultdict[str, str] = collections.defaultdict(str)
+        box.noted = source  # type: ignore[assignment]
+        assert box.noted == {}
+        assert not source
+    Notes.unlink(unique_name)

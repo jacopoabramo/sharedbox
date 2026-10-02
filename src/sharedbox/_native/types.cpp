@@ -366,11 +366,14 @@ void Types::encode_into(const detail::type_ref &t, PyObject *value, std::byte *o
                     raise(PyExc_TypeError, where.name + " has no key " + nb::borrow<nb::str>(shown).c_str());
                 }
             for (std::uint32_t i = 0; i < node.count; ++i) {
-                nb::object v = nb::steal(PyObject_GetItem(value, n.attrs[i]));
-                if (!v.is_valid()) {
-                    if (!PyErr_ExceptionMatches(PyExc_KeyError))
-                        throw nb::python_error();
-                    PyErr_Clear();
+                // Absence is decided from the keys, since GetItem on a defaultdict would insert the key.
+                const int has = PySequence_Contains(keys.ptr(), n.attrs[i]);
+                if (has < 0)
+                    throw nb::python_error();
+                nb::object v = has == 1 ? nb::steal(PyObject_GetItem(value, n.attrs[i])) : nb::object();
+                if (has == 1 && !v.is_valid())
+                    throw nb::python_error();
+                if (has == 0) {
                     if (n.required[i])
                         raise(PyExc_TypeError, where.name + " needs key '" +
                                                    std::string(nb::borrow<nb::str>(n.attrs[i]).c_str()) + "'");
@@ -513,6 +516,8 @@ nb::object Types::decode_from(const detail::type_ref &t, const std::byte *data, 
             return nb::steal(made);
         }
         nb::object items = nb::steal(PyTuple_New(node.count));
+        if (!items.is_valid())
+            throw nb::python_error();
         for (std::uint32_t i = 0; i < node.count; ++i) {
             nb::object v = decode_from(member(i).type, data + member(i).offset, t.node, i, where);
             PyTuple_SetItem(items.ptr(), static_cast<Py_ssize_t>(i), v.release().ptr());

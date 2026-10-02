@@ -610,9 +610,13 @@ def record_spec(
                 elif get_origin(member) is NotRequired:
                     needed = False
                 (member,) = get_args(member)
-            spec = parse(member, f"{where}.{key}", depth=below, path=path)
+            spec = parse(
+                member,
+                f"{where}.{key}",
+                depth=below if needed else deeper(below, where),
+                path=path,
+            )
             if not needed:
-                deeper(below, where)
                 spec = optional_of(spec)
             attrs.append(key)
             required.append(needed)
@@ -628,6 +632,7 @@ def record_spec(
     hashable = (
         form != 3
         and hint.__hash__ is not None
+        and hint.__eq__ is not object.__eq__  # type: ignore[comparison-overlap]
         and all(m.type.hashable for m in members)
     )
     struct_config = getattr(hint, "__struct_config__", None)
@@ -667,10 +672,17 @@ def record_members(
 ) -> list[tuple[str, str, Any]]:
     """Return `(attribute, keyword, annotation)` of each stored member of a dataclass, attrs class, Struct or NamedTuple."""
     if form == 1:
+        for name in hint._fields:  # type: ignore[attr-defined]
+            if name not in hints:
+                raise TypeError(f"{where}: {hint.__qualname__}.{name} has no type")
         return [(name, name, hints[name]) for name in hint._fields]  # type: ignore[attr-defined]
     if dataclasses.is_dataclass(hint):
+        if not hint.__dataclass_params__.init:  # type: ignore[attr-defined]
+            raise TypeError(
+                f"{where}: {hint.__qualname__} has init=False, so a read could not rebuild it"
+            )
         for name, member in hints.items():
-            if isinstance(member, dataclasses.InitVar) and name not in vars(hint):
+            if isinstance(member, dataclasses.InitVar) and not hasattr(hint, name):
                 raise TypeError(
                     f"{where}: InitVar {name!r} of {hint.__qualname__} has no default, so a read could not rebuild it"
                 )
@@ -683,6 +695,10 @@ def record_members(
             found.append((f.name, f.name, hints[f.name]))
         return found
     if hasattr(hint, "__attrs_attrs__"):
+        if "__init__" not in vars(hint):
+            raise TypeError(
+                f"{where}: {hint.__qualname__} has init=False, so a read could not rebuild it"
+            )
         found = []
         for a in hint.__attrs_attrs__:
             if not a.init:
