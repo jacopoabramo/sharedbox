@@ -296,14 +296,14 @@ def dispatch(
             bytearray=hint is bytearray,
         )
     if get_origin(hint) in (Union, types.UnionType):
-        if capacity is not None and not takes_capacity(hint):
+        if capacity is not None and not takes_capacity(hint, where, path):
             raise TypeError(f"{where}: Capacity does not apply to {hint!r}")
         return union_spec(hint, where, capacity, depth, path)
     if is_box_class(hint):
         raise TypeError(
             f"{where}: a reference to a box must be a field of its own, annotated X or X | None, not part of another type"
         )
-    if capacity is not None and not takes_capacity(hint):
+    if capacity is not None and not takes_capacity(hint, where, path):
         raise TypeError(f"{where}: Capacity does not apply to {hint!r}")
     if isinstance(hint, type) and hint in SCALARS:
         return SCALARS[hint]
@@ -451,7 +451,7 @@ def union_spec(
             match=(*inner.match, NoneType),
             hashable=inner.hashable,
         )
-    takers = [arg for arg in rest if takes_capacity(unwrap(arg, where, path)[0])]
+    takers = [arg for arg in rest if takes_capacity(arg, where, path)]
     if capacity is not None and len(takers) != 1:
         raise TypeError(
             f"{where}: a Capacity on a union needs exactly one member it applies to; {hint!r} has {len(takers)}"
@@ -504,13 +504,14 @@ def union_spec(
     )
 
 
-def takes_capacity(hint: Any) -> bool:
+def takes_capacity(hint: Any, where: str, path: frozenset[int]) -> bool:
     """Whether a `Capacity` on `hint` has a type to apply to."""
+    hint, _, path = unwrap(hint, where, path)
     if isinstance(hint, type) and hint in TEXT:
         return True
     if get_origin(hint) in (Union, types.UnionType):
         return any(
-            takes_capacity(unwrap(arg, "", frozenset())[0])
+            takes_capacity(arg, where, path)
             for arg in get_args(hint)
             if arg is not NoneType
         )

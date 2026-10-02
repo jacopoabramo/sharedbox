@@ -262,6 +262,13 @@ void Types::encode_into(const detail::type_ref &t, PyObject *value, std::byte *o
         scalars::encode(t.kind, value, {out, t.size}, where.name);
         return;
     }
+    if (t.kind == kind_decimal) {
+        const std::string text = scalars::decimal_text(value, t.size - 4, where.name);
+        put(out, static_cast<std::uint32_t>(text.size()));
+        if (!text.empty())
+            std::memcpy(out + 4, text.data(), text.size());
+        return;
+    }
     const NodeInfo &n = nodes_[t.node];
     switch (t.kind) {
     case kind_enum: {
@@ -347,6 +354,15 @@ nb::object Types::decode_from(const detail::type_ref &t, const std::byte *data, 
     }
     if (t.kind >= kind_complex && t.kind <= kind_uuid) {
         PyObject *value = scalars::decode(t.kind, {data, t.size}, where.name);
+        if (value == nullptr)
+            throw nb::python_error();
+        return nb::steal(value);
+    }
+    if (t.kind == kind_decimal) {
+        const auto length = load<std::uint32_t>(data);
+        if (length > t.size - 4)
+            corrupt(where.name);
+        PyObject *value = scalars::decode(kind_decimal, {data + 4, length}, where.name);
         if (value == nullptr)
             throw nb::python_error();
         return nb::steal(value);
