@@ -1,4 +1,5 @@
 #include "codec.hpp"
+#include "types.hpp"
 
 #include <nanobind/nanobind.h>
 #include <sharedbox/sharedbox.hpp>
@@ -196,16 +197,19 @@ PyObject *decode(const FieldDesc &field, const char *data, std::size_t size) {
     return nullptr;
 }
 
-void encode_all(const Segment &s, std::span<const Pending> values, std::span<EncodeBuffer> buffers,
-                std::span<value> out) {
+void encode_all(const Segment &s, const Types *types, std::span<const Pending> values,
+                std::span<EncodeBuffer> buffers, std::span<value> out) {
     const std::span<const FieldDesc> fields = s.fields();
     const std::span<const std::string> names = s.field_names();
     for (std::size_t i = 0; i < values.size(); ++i) {
         const std::uint32_t index = values[i].field;
         // Checked before the narrowing cast, which would otherwise turn index 65536 into field 0.
         check_index(index, fields.size());
+        const FieldDesc &field = fields[index];
         out[i] = {static_cast<std::uint16_t>(index),
-                  encode(fields[index], names[index], values[i].value, buffers[i])};
+                  static_cast<std::uint8_t>(field.kind) <= kind_ref
+                      ? encode(field, names[index], values[i].value, buffers[i])
+                      : need(types, index).encode(index, values[i].value, buffers[i])};
     }
 }
 

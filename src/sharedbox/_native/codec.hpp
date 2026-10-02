@@ -4,6 +4,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <memory>
 #include <span>
 #include <string>
@@ -14,6 +15,8 @@
 
 namespace sharedbox {
 
+class Types;
+
 /// Room for the bytes of one encoded value: a number, a reference or a short bytes value fits in
 /// place, a longer bytes value goes on the heap. The constructor leaves the bytes uninitialised.
 struct EncodeBuffer {
@@ -21,8 +24,21 @@ struct EncodeBuffer {
     EncodeBuffer(const EncodeBuffer &) = delete;
     EncodeBuffer &operator=(const EncodeBuffer &) = delete;
 
+    /// n zeroed bytes, in place when they fit, else on the heap.
+    std::byte *reserve(std::size_t n) {
+        std::byte *out = small;
+        if (n > sizeof small) {
+            large.reset(new std::byte[n]);
+            out = large.get();
+        }
+        std::memset(out, 0, n);
+        return out;
+    }
+
     alignas(std::uint64_t) std::byte small[sizeof(box_ref)];
     std::unique_ptr<std::byte[]> large;
+    /// A decimal's text, which the value does not hold itself.
+    std::string text;
 };
 
 /// The bytes stored for value, held in buffer, in constant data, or for a str in value itself, so
@@ -42,8 +58,11 @@ struct Pending {
 /// Encodes every value of values into out, using the buffer of the same position; buffers and out
 /// hold as many entries as values. Checks each value before returning, so a caller that writes only
 /// after it returns writes all or nothing. A bad value or field index raises a C++ exception.
-void encode_all(const Segment &s, std::span<const Pending> values, std::span<EncodeBuffer> buffers,
-                std::span<value> out);
+void encode_all(const Segment &s, const Types *types, std::span<const Pending> values,
+                std::span<EncodeBuffer> buffers, std::span<value> out);
+
+/// types, or a TypeError naming the field when a value of a kind above 5 has none to convert it.
+const Types &need(const Types *types, std::uint32_t index);
 
 /// Reads the whole record and passes it to use; a record of up to 4 KiB, the usual size, is read
 /// into the stack, so the read allocates nothing.

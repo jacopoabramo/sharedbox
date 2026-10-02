@@ -1,5 +1,5 @@
 import sys
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from typing import Any, Final, Never, Self, final, overload
 
 from typing_extensions import disjoint_base
@@ -102,6 +102,7 @@ class Segment:
         values: Sequence[tuple[int, object]],
         waiter_slots: int = 64,
         publish: bool = True,
+        types: Types | None = None,
     ) -> Segment:
         """Create the segment with `values` written before any other process can see it.
 
@@ -116,19 +117,42 @@ class Segment:
         publish
             If false, no other process can attach until
             [`publish`][sharedbox._native.Segment.publish].
+        types
+            Converts the values of kinds above 5, and gives the description
+            table the segment stores.
         """
 
     @staticmethod
     def attach(
-        name: str, names: Sequence[str], schema_hash: int, lock_timeout: float
+        name: str,
+        names: Sequence[str],
+        schema_hash: int,
+        lock_timeout: float,
+        types: Types | None = None,
     ) -> Segment:
-        """Open an existing segment whose schema hash matches."""
+        """Open an existing segment whose schema hash matches.
+
+        With `types`, the segment's description table must also equal
+        `types.table`.
+        """
+
+    @staticmethod
+    def _create_layout_1(
+        name: str,
+        fields: Sequence[tuple[int, int, int]],
+        names: Sequence[str],
+        record_size: int,
+        schema_hash: int,
+        lock_timeout: float,
+        values: Sequence[tuple[int, object]],
+    ) -> Segment:
+        """Create a segment with the 1.0 layout, which holds kinds 0 to 5 only; for tests."""
 
     @staticmethod
     def unlink(name: str) -> None:
         """Remove the name, as `shm_unlink` does; a no-op on Windows."""
 
-    def get(self, field: int) -> object:
+    def get(self, field: int, types: Types | None = None) -> object:
         """Return the field's value; `(create_id, schema_hash, name)`, or None when empty, for a reference field."""
 
     def cached_ref(self, field: int, cache: dict[int, RefEntry]) -> object:
@@ -145,13 +169,22 @@ class Segment:
             If the entry is not `(create_id, box, Segment)`.
         """
 
-    def get_versioned(self, field: int) -> tuple[int, object]:
+    def get_versioned(
+        self, field: int, types: Types | None = None
+    ) -> tuple[int, object]:
         """Return the field's version and value, read together."""
 
-    def get_dict(self, names: tuple[str, ...]) -> dict[str, object]:
+    def read_versioned(self, field: int) -> tuple[int, bytes]:
+        """Return the field's version and stored bytes, read together."""
+
+    def get_dict(
+        self, names: tuple[str, ...], types: Types | None = None
+    ) -> dict[str, object]:
         """Return every field's value under its name in `names`, read at one point in time."""
 
-    def set(self, values: Sequence[tuple[int, object]]) -> None:
+    def set(
+        self, values: Sequence[tuple[int, object]], types: Types | None = None
+    ) -> None:
         """Convert every value, then write them all under one lock.
 
         A reference field takes `(create_id, schema_hash, name)`, or None to empty it.
@@ -258,11 +291,37 @@ class Segment:
     def lock_timeout(self) -> float:
         """Seconds a read or write waits for another writer's lock."""
 
+    @property
+    def layout_version(self) -> tuple[int, int]:
+        """`(major, minor)` of the segment's layout."""
+
+@disjoint_base
+class Types:
+    """The field types of one class: its description table and what converting values needs."""
+
+    def __init__(
+        self,
+        fields: Sequence[tuple[int, int, int]],
+        labels: Sequence[str],
+        table: bytes,
+        info: Mapping[int, tuple[object, ...]],
+        bytearrays: Sequence[tuple[int, int]],
+    ) -> None: ...
+    @property
+    def table(self) -> bytes:
+        """The description table, as the segment stores it."""
+    def check(self, field: int, value: object) -> None:
+        """Raise what writing `value` to `field` would raise."""
+    def decode(self, field: int, data: bytes) -> object:
+        """Return the value stored as `data`, as `read_versioned` returns it."""
+
 @disjoint_base
 class Field:
     """Reads and writes one field of the box it is accessed through."""
 
-    def __init__(self, spec: FieldSpec, segment_slot: object) -> None:
+    def __init__(
+        self, spec: FieldSpec, segment_slot: object, types: Types | None = None
+    ) -> None:
         """Read and write the field `spec` describes.
 
         Parameters
@@ -270,6 +329,8 @@ class Field:
         segment_slot
             `SharedBox.__dict__["_segment"]`, the descriptor of the slot
             holding a box's segment.
+        types
+            The class's types, which a field of a kind above 5 needs.
         """
 
     @property
@@ -295,6 +356,7 @@ class BoxMethod:
         follow: Callable[..., object] | None,
         fallback: Callable[..., object],
         segment_slot: object,
+        types: Types | None = None,
     ) -> Self: ...
     @property
     def __name__(self) -> str: ...
