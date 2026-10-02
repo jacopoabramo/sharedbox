@@ -38,6 +38,20 @@ CONSUMER_API int consumer_write_int(sbx_handle *h, uint16_t field, int64_t value
     return sbx_write(h, &v, 1, 1.0);
 }
 
+CONSUMER_API int consumer_read_datetime(const sbx_handle *h, uint16_t field, int64_t *micros, int16_t *offset) {
+    sbx_datetime value;
+    int rc = sbx_read_datetime(h, field, &value);
+    if (rc == SBX_OK) {
+        *micros = value.micros;
+        *offset = value.offset_minutes;
+    }
+    return rc;
+}
+
+CONSUMER_API int consumer_read_position(const sbx_handle *h, uint16_t field, uint16_t *position) {
+    return sbx_read_position(h, field, position);
+}
+
 CONSUMER_API void consumer_release(sbx_handle *h) {
     sbx_release(h);
     free(h);
