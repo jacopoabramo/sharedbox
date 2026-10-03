@@ -1,7 +1,9 @@
 """Single-operation timings of SharedBox and the standard library's shared memory.
 
-Every contender holds the same record: an int, a float and a string of up
-to 32 bytes. `mp.Value/Array` takes one lock per value, so its "update two
+The contenders that compare against the standard library hold the same
+record: an int, a float and a string of up to 32 bytes. Rows for a datetime,
+a record, a list and an array time SharedBox alone; they have no
+standard-library counterpart. `mp.Value/Array` takes one lock per value, so its "update two
 fields" and "read all" rows take two or three locks one after the other.
 Rows under `split` isolate the native segment's typed `set`/`get`,
 which convert the Python value in the native module, against the raw
@@ -51,29 +53,6 @@ class Quad:
     b: float
     c: bool
     d: int
-
-
-class Typed(SharedBox):
-    when: datetime.datetime = datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC)
-    quad: Quad = Quad(0, 0.0, False, 0)
-    floats: Annotated[list[float], Capacity(16)] = []  # noqa: RUF012
-    image: Annotated[np.ndarray, Shape(512, 512), DType("float32")] = np.zeros(
-        (512, 512), np.float32
-    )
-
-
-WHEN = datetime.datetime(2026, 10, 2, 9, 30, tzinfo=datetime.UTC)
-QUAD = Quad(1, 1.5, True, 2)
-FLOATS = [0.5] * 16
-IMAGE = np.ones((512, 512), np.float32)
-
-
-def open_typed() -> tuple[Any, ...]:
-    name = f"bench-ops-typed-{os.getpid()}"
-    box = Typed.create(name)
-    atexit.register(Typed.unlink, name)
-    atexit.register(box.close)
-    return (box,)
 
 
 OPEN: dict[str, tuple[Any, ...]] = {}
@@ -126,6 +105,27 @@ def open_namespace() -> tuple[Any, ...]:
     ns = manager.Namespace()
     ns.a, ns.b, ns.s = 0, 0.0, ""
     return (ns,)
+
+
+class Typed(SharedBox):
+    when: datetime.datetime
+    quad: Quad
+    floats: Annotated[list[float], Capacity(16)]
+    image: Annotated[np.ndarray, Shape(512, 512), DType("float32")]
+
+
+WHEN = datetime.datetime(2026, 10, 2, 9, 30, tzinfo=datetime.UTC)
+QUAD = Quad(1, 1.5, True, 2)
+FLOATS = [0.5] * 16
+IMAGE = np.ones((512, 512), np.float32)
+
+
+def open_typed() -> tuple[Any, ...]:
+    name = f"bench-ops-typed-{os.getpid()}"
+    box = Typed.create(name, WHEN, QUAD, FLOATS, IMAGE)
+    atexit.register(Typed.unlink, name)
+    atexit.register(box.close)
+    return (box,)
 
 
 OPENERS = {
