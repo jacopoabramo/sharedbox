@@ -91,7 +91,8 @@ private:
     /// The array view of value, checked against an array type; raises TypeError or ValueError naming the
     /// field. The view keeps the memory it points into exported and alive.
     nb::ndarray<nb::ro> array_view(const detail::type_ref &t, PyObject *value, const Where &where) const;
-    /// Copies an array view into out, gathering a strided one in C order.
+    /// Copies an array view into out, gathering a strided one in C order. A copy of
+    /// detail::large_copy bytes or more runs with the GIL released.
     static void copy_array(const nb::ndarray<nb::ro> &view, std::byte *out);
     /// An array value whose bytes start at data; owned, when it holds data, is taken instead of copied.
     nb::object decode_array(const detail::type_ref &t, const std::byte *data,

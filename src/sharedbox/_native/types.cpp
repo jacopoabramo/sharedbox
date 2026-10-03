@@ -105,6 +105,29 @@ bool contiguous(const nb::ndarray<nb::ro> &view) {
     return true;
 }
 
+// Copies an array view into out, gathering a strided one in C order.
+void gather(const nb::ndarray<nb::ro> &view, std::byte *out) {
+    const std::size_t item = view.itemsize();
+    const auto *base = static_cast<const std::byte *>(view.data());
+    if (contiguous(view)) {
+        std::memcpy(out, base, view.nbytes());
+        return;
+    }
+    std::size_t index[8] = {};
+    const std::size_t total = view.size();
+    for (std::size_t k = 0; k < total; ++k) {
+        std::int64_t at = 0;
+        for (std::size_t i = 0; i < view.ndim(); ++i)
+            at += static_cast<std::int64_t>(index[i]) * view.stride(i);
+        std::memcpy(out + k * item, base + at * static_cast<std::int64_t>(item), item);
+        for (std::size_t i = view.ndim(); i-- > 0;) {
+            if (++index[i] < view.shape(i))
+                break;
+            index[i] = 0;
+        }
+    }
+}
+
 PyObject *at(PyObject *items, Py_ssize_t i) {
     return PyList_Check(items) ? PyList_GetItem(items, i) : PyTuple_GetItem(items, i);
 }
@@ -712,24 +735,11 @@ nb::ndarray<nb::ro> Types::array_view(const detail::type_ref &t, PyObject *value
 }
 
 void Types::copy_array(const nb::ndarray<nb::ro> &view, std::byte *out) {
-    const std::size_t item = view.itemsize();
-    const auto *base = static_cast<const std::byte *>(view.data());
-    if (contiguous(view)) {
-        std::memcpy(out, base, view.nbytes());
-        return;
-    }
-    std::size_t index[8] = {};
-    const std::size_t total = view.size();
-    for (std::size_t k = 0; k < total; ++k) {
-        std::int64_t at = 0;
-        for (std::size_t i = 0; i < view.ndim(); ++i)
-            at += static_cast<std::int64_t>(index[i]) * view.stride(i);
-        std::memcpy(out + k * item, base + at * static_cast<std::int64_t>(item), item);
-        for (std::size_t i = view.ndim(); i-- > 0;) {
-            if (++index[i] < view.shape(i))
-                break;
-            index[i] = 0;
-        }
+    if (view.nbytes() >= detail::large_copy) {
+        nb::gil_scoped_release unlocked;
+        gather(view, out);
+    } else {
+        gather(view, out);
     }
 }
 
