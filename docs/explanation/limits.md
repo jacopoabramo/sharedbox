@@ -23,7 +23,9 @@ unlinked stays until reboot (see [Closing and
 lifetime](closing-and-lifetime.md#lifetime-the-same-rules-as-multiprocessingshared_memory)).
 
 Releases up to 0.3.0rc0 named segments differently and used another
-layout, so they and this release do not see each other's boxes.
+layout, so they and this release do not see each other's boxes. Releases
+0.3.0 and 0.3.1 cannot open a box made with layout 2.0; this release opens
+the boxes of 0.3.0 and 0.3.1.
 
 ## Open boxes and file descriptors
 
@@ -43,12 +45,17 @@ costs](waiting-for-changes.md#forwarding-costs) has the measurements.
 
 ## What a box holds
 
-A box holds `bool`, `int` (64-bit), `float`, and `str` or `bytes` with a
-[capacity](glossary.md#capacity) in bytes, plus references to other boxes.
-Lists, dicts, arrays and other objects are not stored. The number of fields
-and the size of a capacity are limited as well:
-[`SharedBox`][sharedbox.SharedBox] and [`Capacity`][sharedbox.Capacity]
-give the numbers.
+A box holds the types listed in [Field types](field-types.md), and no
+other objects. The number of fields and the size of a capacity are
+limited: [`SharedBox`][sharedbox.SharedBox] and
+[`Capacity`][sharedbox.Capacity] give the numbers. Also:
+
+- A collection holds 1 to 1048576 elements.
+- Types nest 16 levels deep.
+- An enum or literal holds at most 65535 values, a flag 64 members and a
+  union 255.
+- An array has 1 to 8 dimensions.
+- A record, arrays included, is less than 4 GiB.
 
 ## One lock per box
 

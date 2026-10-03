@@ -24,6 +24,9 @@ nav = [
         { "Use a box" = [
             "how-to/name-a-box.md",
             "how-to/store-text-and-bytes.md",
+            "how-to/store-records.md",
+            "how-to/store-collections.md",
+            "how-to/store-arrays.md",
             "how-to/set-defaults-and-check-values.md",
             "how-to/change-several-fields-at-once.md",
             "how-to/send-a-box-to-another-process.md",
@@ -43,6 +46,7 @@ nav = [
         "explanation/index.md",
         "explanation/when-to-use-sharedbox.md",
         "explanation/how-a-box-is-stored.md",
+        "explanation/field-types.md",
         "explanation/reading-and-writing.md",
         "explanation/waiting-for-changes.md",
         "explanation/references.md",
@@ -58,6 +62,7 @@ nav = [
         { "API" = [
             "reference/api/index.md",
             "reference/api/box.md",
+            "reference/api/arrays.md",
             "reference/api/events.md",
             "reference/api/references.md",
             "reference/api/errors.md",

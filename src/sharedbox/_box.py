@@ -341,16 +341,20 @@ class SharedBox(metaclass=SharedBoxMeta):
 
     | Annotation | Stored as |
     | --- | --- |
-    | `bool` | 1 byte |
-    | `int` | signed 64-bit integer; a larger value raises `OverflowError` |
-    | `float` | 64-bit float; an `int` is accepted and converted |
-    | `Annotated[str, Capacity(n)]` | UTF-8, at most `n` bytes |
-    | `Annotated[bytes, Capacity(n)]` | at most `n` bytes; `bytearray` and `memoryview` are accepted |
+    | `bool`, `int`, `float`, `complex` | fixed-size numbers; a `float` field takes an `int` |
+    | `Annotated[str, Capacity(n)]`, `bytes`, `bytearray`, `Decimal` | at most `n` bytes |
+    | `date`, `time`, `datetime`, `timedelta`, `UUID` | fixed-size values; times naive or with a fixed offset |
+    | an `Enum`, `Flag` or `Literal` | the member's position, the bits, or the value's position |
+    | an optional `X` (`Optional[X]`), a union | the member the value's type picks |
+    | a dataclass, `NamedTuple`, tuple, `TypedDict`, attrs class or `msgspec.Struct` | its members |
+    | `Annotated[list[T], Capacity(n)]`, and `set`, `frozenset`, `dict`, `tuple[T, ...]` | at most `n` elements |
+    | `Annotated[<array type>, Shape(...), DType(...)]` | the array's elements |
 
-    A `SharedBox` subclass `X`, or `X | None`, makes a reference field,
-    described below. [`Capacity`][sharedbox.Capacity] sets `n`. Names
-    starting with `_` and `ClassVar` annotations are not fields. Fields of
-    a base class come first.
+    A `SharedBox` subclass, optional or not, makes a reference field,
+    described below. [`Capacity`][sharedbox.Capacity] sets `n`. A read
+    returns a new value: changing a list, record or array read from a box
+    changes only that copy. Names starting with `_` and `ClassVar`
+    annotations are not fields. Fields of a base class come first.
 
     Fields are positional by default, in declaration order, as in a
     dataclass. Fields declared after a `dataclasses.KW_ONLY` annotation in
@@ -360,13 +364,15 @@ class SharedBox(metaclass=SharedBoxMeta):
     `inspect.signature` of the class gives its constructor's parameters; a
     `default_factory` default shows as `<factory>`.
 
-    Assigning a value of the wrong type raises `TypeError`, and a `str` or
-    `bytes` value longer than its capacity raises `ValueError`; either way
-    the stored value does not change. Assigning to a name that is not a
-    field raises `AttributeError`, and so does deleting a field. A box has
-    no `__dict__`: every subclass gets empty `__slots__` unless it
-    declares its own. Two boxes are equal only if they are the same
-    object.
+    Assigning a value of the wrong type raises `TypeError`, and a value
+    that does not fit its field raises `ValueError`, or `OverflowError`
+    for an `int` value out of range for its `int`, `float` or `complex`
+    field; either way the stored value does not change. A `bytes` field
+    takes `bytes`, `bytearray` and `memoryview` values. Assigning to a
+    name that is not a field raises `AttributeError`, and so does deleting
+    a field. A box has no `__dict__`: every subclass gets empty
+    `__slots__` unless it declares its own. Two boxes are equal only if
+    they are the same object.
 
     A `dataclasses.InitVar[T]` annotation declares a constructor argument
     that is not stored. It takes a position like a field and may have a
@@ -493,8 +499,18 @@ class SharedBox(metaclass=SharedBoxMeta):
     ValueError
         When the class is defined, for a `name` that does not match
         `[A-Za-z0-9_.-]{1,128}`, a `lock_timeout` or `max_waiters` out of
-        range, or a default longer than its capacity. When the class is
-        called, for a `str` or `bytes` value longer than its capacity.
+        range, or a default that does not fit its field (any of the cases
+        below). When the class is called or a field is assigned, for a
+        `str`, `bytes` or `Decimal` value longer than its capacity, a
+        collection with more elements than its capacity, a tuple of the
+        wrong length, an array of the wrong shape, a `Literal` field given
+        another value, flag bits outside 0 to 2**64 - 1, a time or
+        datetime whose UTC offset is not whole minutes of less than a day,
+        or a `time` whose tzinfo gives no offset without a date.
+    OverflowError
+        When the class is defined or called, or a field is assigned, with
+        an `int` value out of range for its `int`, `float` or `complex`
+        field.
     SegmentExistsError
         When the class is called and the name is taken.
     SchemaMismatchError

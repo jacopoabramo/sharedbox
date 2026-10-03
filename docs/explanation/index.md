@@ -22,6 +22,8 @@ half-finished write.
   ordinary object shared between threads
 - [How a box is stored](how-a-box-is-stored.md): the named mapping, its
   layout, and the [schema hash](glossary.md#schema-hash)
+- [Field types](field-types.md): the types a field can hold and how each
+  is stored
 - [Reading and writing](reading-and-writing.md): the copied layout and the
   [sequence lock](glossary.md#sequence-lock)
 - [Waiting for changes](waiting-for-changes.md):

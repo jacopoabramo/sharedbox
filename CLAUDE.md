@@ -13,8 +13,8 @@ the layout and the native module converts values.
 ```text
 sharedbox/
 |-- include/sharedbox/
-|   |-- sharedbox.hpp          layout 1.0 and its protocols: create, publish, open, lock, read, write, waiter slots, capsule handle
-|   |-- sharedbox_c.h          minimal C interface: sbx_open, sbx_import, sbx_read, sbx_write, sbx_schema_hash, sbx_release
+|   |-- sharedbox.hpp          layout 2.0 (and 1.0 reading) and its protocols: create, publish, open, lock, read, write, description table, waiter slots, capsule handle
+|   |-- sharedbox_c.h          minimal C interface: sbx_open, sbx_import, sbx_read, sbx_write, sbx_schema_hash, sbx_release, sbx_field_desc, typed sbx_read_* and sbx_write_*
 |   `-- sharedbox_c.cpp        its implementation, compiled by the consumer (CMake target sharedbox::c)
 |-- cmake/
 |   |-- sharedbox-config.cmake       find_package(sharedbox) from an installed wheel; the build writes
@@ -24,6 +24,8 @@ sharedbox/
 |   |-- __init__.py            re-exports the public API, get_include()
 |   |-- _box.py                SharedBox: class keywords, fields, fields(), create/attach, __post_init__, update, snapshot, unlink, __sharedbox_box__
 |   |-- _layout.py             Capacity, field() and Field, field offsets and kind codes, schema hash
+|   |-- _types.py              annotation parsing into TypeSpec, the description table
+|   |-- _arrays.py             Shape, DType, SupportsDLPack, register_array_type
 |   |-- _events.py             BoxEvents, FieldWatch, the watcher thread
 |   |-- _follow.py             BoxEvents.follow and unfollow: forwarding the events of boxes that references reach
 |   |-- _refs.py               reference fields: BoxRef, the class registry, BrokenReferenceError, UnknownBoxClassError
@@ -43,8 +45,12 @@ sharedbox/
 |       |-- codec.{hpp,cpp}    converts field values to and from their stored bytes; encode_all
 |       |                      checks every value of an update before any is written,
 |       |                      with_record reads the whole record at once
+|       |-- types.{hpp,cpp}    Types: conversions of kinds above 5, arrays
+|       |-- scalars.{hpp,cpp}  kinds 6 to 12, the datetime C API on full-API builds
 |       `-- segment.{hpp,cpp}  Segment: a sharedbox::handle plus error messages and the lifetime lock
 |-- tests/                     pytest; many tests spawn processes
+|   |-- crossproc.py           helpers that run a box in another process
+|   |-- forged_types.py        builds segments with forged description tables
 |   |-- test_benchbox_plot.py  benchbox plot; skipped without matplotlib and pyperf
 |   |-- test_capsule.py        __sharedbox_box__, and the C consumer in tests/cpp/consumer/
 |   |-- test_doc_examples.py   runs each docs/examples/*.py script
@@ -64,7 +70,7 @@ sharedbox/
 |-- docs/                      Diataxis site built by Zensical: tutorials/, how-to/, explanation/, reference/
 |   |-- tutorials/motor.py     the script the three tutorials build and include
 |   |-- examples/              one script per how-to guide, included by the guide
-|   `-- reference/segment-layout.md  layout 1.0, names and protocols
+|   `-- reference/segment-layout.md  layout 2.0 and 1.0, names and protocols
 |-- includes/abbreviations.md  acronym tooltips appended to every page
 |-- zensical.toml              site configuration and navigation
 |-- .github/workflows/ci.yaml  lint, docs check, C++ tests, cibuildwheel wheels, tests, stress,
@@ -97,42 +103,43 @@ the class's identity (the `identity` class keyword, by default
 `module.qualname`, with `__mp_main__` counted as `__main__`). Creating
 always asks for a new name and raises `SegmentExistsError` if it is taken.
 
-Layout 1.0, from offset 0:
+Layout 2.0, from offset 0:
 
 - Header, 128 bytes. Line 0, written once at creation: `magic`,
-  `layout_major` 1, `layout_minor` 0, `field_count`, `waiter_slots`,
-  `schema_hash`, `record_size`, `record`, `tail` (always 128), `size`, and
-  the creator fields `create_id`, `creator_start`, `creator_pid`. Line 1,
-  changed by writes and waits: `seq` (sequence lock; the generation is
+  `layout_major` 2, `layout_minor` 0, `field_count`, `waiter_slots`,
+  `schema_hash`, `record_size`, `record`, `tail` (always 128), `size`,
+  `types_size` (offset 60; 0 in layout 1.0), and the creator fields
+  `create_id`, `creator_start`, `creator_pid`. Line 1, changed by writes
+  and waits: `seq` (sequence lock; the generation is
   `seq >> 1`, there is no generation field), `writer_pid`, `wake_word`,
   `waiters`, `creator_pidns`. Both lines keep reserved zero bytes.
 - The tail: `field_count` field table entries of 8 bytes (`u32 offset`,
-  `u32 capacity_and_kind`: low 24 bits the capacity, top 8 the kind code),
-  one `u64` write count per field, then `waiter_slots` slots of 24 bytes
-  (`owner_start`, `owner_pidns`, `owner_pid`, `interrupt`).
+  `u32 capacity_and_kind`: top 8 bits the kind code, the low 24 the
+  capacity or size, or for kinds 64 and up the offset of the field's
+  description), one `u64` write count per field, then `waiter_slots` slots
+  of 24 bytes (`owner_start`, `owner_pidns`, `owner_pid`, `interrupt`),
+  then the description table of `types_size` bytes. Kinds are 0 to 5 as
+  in layout 1.0, 6 to 12 (fixed-size scalars) and 64 to 74 (described
+  types).
 - The record, at a multiple of 64. The mapping size is rounded up to 4 KiB.
+  `record + record_size <= 2**32 - 4096`.
 
 `magic` is stored last on create, with release ordering, after the initial
-values are in the record; attach waits for it. Attach refuses another
-`layout_major`, checks every geometry field against the mapping size,
-copies the field table and uses only the copy. `static_assert`s in
-`sharedbox.hpp` check every `sizeof` and `offsetof`.
+values are in the record; attach waits for it. Attach accepts
+`layout_major` 1 and 2 and refuses another, checks every geometry field
+against the mapping size, copies the field table and uses only the copy.
+`static_assert`s in `sharedbox.hpp` check every `sizeof` and `offsetof`.
 
 ### Record encoding
 
-Fields are packed by descending alignment (`int`, `float` and `ref` first,
-then `str`/`bytes`, then `bool`), not declaration order, each starting at a
-multiple of its own alignment. The native module converts values to and
-from these bytes; nothing is pickled. Everything is little-endian.
+Fields are packed by descending alignment, not declaration order, each
+starting at a multiple of its own alignment. The native module converts
+values to and from these bytes; nothing is pickled. Everything is
+little-endian. `docs/reference/segment-layout.md` gives every kind and its
+bytes.
 
-- `bool`: 1 byte, `0x00` or `0x01`.
-- `int`: 8 bytes, signed.
-- `float`: 8 bytes, IEEE 754 double.
-- `str`, `bytes`: `u32` length, then up to `capacity` bytes (UTF-8 for `str`).
-- `ref` (kind 5): 144 bytes, `u64 create_id` (0 = empty), `u64 schema_hash`,
-  then the box name NUL-padded to 128 bytes.
-
-At most 256 fields; a capacity is 1 byte to 1 MiB.
+At most 256 fields; a capacity is 1 byte to 1 MiB, and a collection's
+capacity counts elements, 1 to 1048576.
 
 ### Lifecycle
 

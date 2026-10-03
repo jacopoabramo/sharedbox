@@ -9,8 +9,8 @@ sharedbox installs two headers with its wheel, in the folder that
 
 | Header | What it declares | Specified in |
 | --- | --- | --- |
-| [`sharedbox/sharedbox.hpp`](https://github.com/jacopoabramo/sharedbox/blob/main/include/sharedbox/sharedbox.hpp) | the C++20 API: `sharedbox::handle`, `sharedbox::result`, `sharedbox::status` | [`sharedbox.hpp`](segment-layout.md#sharedboxhpp) |
-| [`sharedbox/sharedbox_c.h`](https://github.com/jacopoabramo/sharedbox/blob/main/include/sharedbox/sharedbox_c.h) | the six `sbx_*` C functions and the status codes | [`sharedbox_c.h`](segment-layout.md#sharedbox_ch) |
+| [`sharedbox/sharedbox.hpp`](https://github.com/jacopoabramo/sharedbox/blob/main/include/sharedbox/sharedbox.hpp) | the C++20 API: `sharedbox::handle`, `sharedbox::result`, `sharedbox::status`, `sharedbox::type_view` and the `encode_*` and `decode_*` functions of the value types; the inline namespace is `v2` | [`sharedbox.hpp`](segment-layout.md#sharedboxhpp) |
+| [`sharedbox/sharedbox_c.h`](https://github.com/jacopoabramo/sharedbox/blob/main/include/sharedbox/sharedbox_c.h) | the `sbx_*` C functions, including `sbx_field_desc` and the typed reads and writes, and the status codes | [`sharedbox_c.h`](segment-layout.md#sharedbox_ch) |
 | both | `sbx_handle`, the struct a capsule holds | [Capsule handle](segment-layout.md#capsule-handle) |
 
 The Python side of the exchange, `__sharedbox_box__` and the capsule it

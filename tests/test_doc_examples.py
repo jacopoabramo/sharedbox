@@ -1,6 +1,7 @@
 import os
 import subprocess
 import sys
+from importlib.util import find_spec
 from pathlib import Path
 
 import pytest
@@ -13,6 +14,8 @@ EXAMPLES = sorted(
 @pytest.mark.parametrize("script", EXAMPLES, ids=lambda path: path.stem)
 def test_an_example_script_runs(script: Path, tmp_path: Path) -> None:
     """Check that each script a how-to guide shows runs to the end without error."""
+    if script.stem == "store_arrays" and find_spec("numpy") is None:
+        pytest.skip("the arrays guide needs numpy")
     run = os.environ["SHAREDBOX_TEST_RUN"]
     copy = tmp_path / script.name
     copy.write_text(

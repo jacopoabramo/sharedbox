@@ -2,13 +2,15 @@
 icon: lucide/file-text
 ---
 
-# Segment layout 1.0
+# Segment layout
 
-This page describes how a box is stored in shared memory: the object names,
-the bytes of the mapping, and the protocols every process follows to read,
-write and wait. It is the contract between sharedbox and any other code that
-opens a box. `include/sharedbox/sharedbox.hpp` implements it, and the Python
-extension runs on that header.
+This page describes layout 2.0, which this version writes, and layout
+1.0, which 0.3 releases wrote and this version still opens. It describes
+how a box is stored in shared memory: the object names, the bytes of the
+mapping, and the protocols every process follows to read, write and wait.
+It is the contract between sharedbox and any other code that opens a box.
+`include/sharedbox/sharedbox.hpp` implements it, and the Python extension
+runs on that header.
 
 ## Goal
 
@@ -68,6 +70,7 @@ offset 0     header            128 bytes, two cache lines
 offset 128   field table       field_count x 8 bytes
              write counts      field_count x 8 bytes
              waiter slots      waiter_slots x 24 bytes
+             description table types_size bytes, 8-aligned (layout 2.0)
              (zero padding up to a multiple of 64)
 record       record            record_size bytes, 64-byte aligned
              (zero padding up to a multiple of 4096)
@@ -94,7 +97,7 @@ struct header {                     // sharedbox::header, 128 bytes
     uint64_t create_id;             // 40  random at create, never 0
     uint64_t creator_start;         // 48  creator's start time, see Liveness
     uint32_t creator_pid;           // 56
-    uint8_t  reserved0[4];          // 60  zero; minor versions may use it
+    uint32_t types_size;            // 60  bytes of the description table; 0 in layout 1.0
     // line 1: changed by writes and waits
     uint64_t seq;                   // 64  sequence lock: even when free, odd while writing
     uint32_t writer_pid;            // 72  holder of the write lock, 0 if none
@@ -122,12 +125,15 @@ rounds a record up to a multiple of 8): 1752 bytes used, one 4 KiB page. A
 box with three fields and 64 slots stays in one page up to about 2.3 KB of
 record.
 
-- This is layout `1.0`: bytes 8 to 11 are `01 00 00 00` (`layout_major`
-  1, `layout_minor` 0). The layout version counts the segment format and
-  is not tied to the package version.
-- Field table entry, 8 bytes: `u32 offset`, `u32 capacity_and_kind` (low
-  24 bits the capacity, top 8 bits the kind code: `bool` 0, `int` 1,
-  `float` 2, `str` 3, `bytes` 4, `ref` 5).
+- This is layout `2.0`: bytes 8 to 11 are `02 00 00 00` (`layout_major`
+  2, `layout_minor` 0). Layout 1.0 is the same except that offset 60 is
+  reserved and zero, there is no description table, and the field kinds
+  are 0 to 5 only. Attach accepts majors 1 and 2. The layout version
+  counts the segment format and is not tied to the package version.
+- Field table entry, 8 bytes: `u32 offset`, `u32 capacity_and_kind`: top 8
+  bits the kind code. For kinds below 64 the low 24 bits are the size or
+  capacity; for kinds 64 and up they are the offset of the field's
+  description in the table.
 - Offsets are the creator's choice. The Python side packs fields by
   descending alignment; another creator may pack differently. Attachers
   read offsets from the field table and never compute them, so a box
@@ -146,11 +152,6 @@ record.
   };
   ```
 
-- Record encoding, little-endian: `bool` 1 byte, `0x00` or `0x01`; `int`
-  8 bytes signed; `float` 8 bytes IEEE 754 double; `str` and `bytes` a
-  `u32` length, then up to `capacity` bytes (UTF-8 for `str`); `ref`
-  144 bytes, below. Alignment within the record: 8 for `int`, `float` and
-  `ref`, 4 for `str` and `bytes`, 1 for `bool`.
 - A `ref` field refers to another box, which keeps its own segment. Its
   capacity is always 144:
 
@@ -168,6 +169,117 @@ record.
   attaches the named box compares its `create_id` with the stored one to
   tell it from a box created again under the same name.
 
+### Kind codes
+
+| code | kind | entry's low 24 bits | size, alignment |
+| --- | --- | --- | --- |
+| 0 | bool | 1 | 1, 1 |
+| 1 | int | 8 | 8, 8 |
+| 2 | float | 8 | 8, 8 |
+| 3 | str | capacity | 4 + capacity, 4 |
+| 4 | bytes | capacity | 4 + capacity, 4 |
+| 5 | ref | 144 | 144, 8 |
+| 6 | complex | 16 | 16, 8 |
+| 7 | date | 4 | 4, 4 |
+| 8 | time | 16 | 16, 8 |
+| 9 | datetime | 16 | 16, 8 |
+| 10 | timedelta | 12 | 12, 4 |
+| 11 | uuid | 16 | 16, 1 |
+| 12 | decimal | capacity | 4 + capacity, 4 |
+| 64 | enum | description offset | 2, 2 |
+| 65 | flag | description offset | 8, 8 |
+| 66 | literal | description offset | 2, 2 |
+| 67 | optional | description offset | from the description |
+| 68 | union | description offset | from the description |
+| 69 | record | description offset | from the description |
+| 70 | tuple | description offset | from the description |
+| 71 | list | description offset | from the description |
+| 72 | set | description offset | from the description |
+| 73 | dict | description offset | from the description |
+| 74 | array | description offset | data size, 64 |
+
+A field of a kind the reader does not know is opened as opaque bytes: a
+kind below 64 is sized by its entry, one from 64 by its description's
+head. Every described size is a multiple of its alignment.
+
+### Encodings
+
+Little-endian.
+
+- `bool`: 1 byte, `0x00` or `0x01`.
+- `int`: 8 bytes, signed.
+- `float`: 8 bytes, IEEE 754 double.
+- `str`, `bytes`: `u32` length, then up to `capacity` bytes (UTF-8 for
+  `str`).
+- `ref`: 144 bytes, as `box_ref` above.
+- `complex`: two `f64`, real then imaginary.
+- `date`: `i32` `date.toordinal()`, 1 to 3652059.
+- `time`: `i64` microseconds since midnight (wall time), `i16` UTC offset
+  in minutes, `u8` flags (bit 0 naive, bit 1 fold), 5 reserved zero bytes.
+- `datetime`: `i64` microseconds since 1970-01-01T00:00 (wall time if
+  naive, UTC if aware), `i16` offset in minutes, `u8` flags as `time`, 5
+  reserved zero bytes.
+- `timedelta`: `i32` days, `i32` seconds, `i32` microseconds.
+- `uuid`: `UUID.bytes`, in network byte order.
+- `decimal`: `u32` length, then the text of `str(value)`.
+- `enum`, `literal`: `u16` position; `flag`: `u64` bits.
+- `optional`: a presence byte, padding to the member's alignment `A`, then
+  the member; size `round_up(A + member size, A)`.
+- `union`: a `u8` tag, padding to the largest member alignment `A`, then
+  the member; size `round_up(A + largest member size, A)`.
+- `record`, `tuple`: members at the offsets their entries give.
+- `list`, `set`: `u32` length, padding to `max(4, A)`, then `capacity`
+  slots of `round_up(element size, element alignment)` bytes.
+- `dict`: as `list`, with a key and value pair as the slot: the key at 0,
+  the value at `round_up(key size, value alignment)`.
+- `array`: the elements in C order.
+
+### Descriptions
+
+The description table follows the waiter slots. Each description is an
+8-byte head, `u8 kind`, `u8 flags` (zero), `u16 count`, `u32 size`, a
+body, and zero padding to a multiple of 8. An entry inside a body has the
+shape of a field table entry, with the offset counted from the start of
+the value. A name is a `u16` length, then UTF-8.
+
+| kind | count | body |
+| --- | --- | --- |
+| enum | 1 to 65535 | `count` member names |
+| flag | 1 to 64 | `count` members: a name, then `u64` bits |
+| literal | 1 to 65535 | `count` values: a `u8` tag, then 0 None (nothing), 1 bool (`u8`), 2 int (`i64`), 3 str (a name), 4 bytes (`u32` length, then bytes), 5 enum member (a name) |
+| optional | 1 | one entry |
+| union | 2 to 255 | `count` entries; member `i` has tag `i` |
+| record | 1 to 256 | `count` entries, then `count` member names |
+| tuple | 1 to 256 | `count` entries |
+| list, set | 1 | `u32` capacity, then the element's entry |
+| dict | 2 | `u32` capacity, then the key's entry and the value's |
+| array | 0 | `u8` DLPack code, `u8` bits, `u16` lanes (1), `u8` ndim (1 to 8), 3 zero bytes, then `ndim` `u64` dimensions |
+
+Attach copies the table and checks it before using it: every description
+is 8-aligned, inside the table, read once, after its parent and apart from
+every other; nesting is at most 16 deep; counts are in the ranges above;
+members lie inside their parent, aligned and apart; every size the
+description implies is computed without overflow and matches the head; an
+array's code is one of 0, 1, 2, 4, 5, 6, its bits a multiple of 8 and every
+dimension at least 1. A failure refuses the segment. A reference may only
+be a field, and an array only a field or a record member.
+
+### Decoding checks
+
+A stable sequence number shows a copy is consistent, not that it holds a
+value Python can have. Readers check presence bytes and `bool` (0 or 1),
+reserved flag bits (0), union tags and enum and literal positions (below
+their count), lengths (at most the capacity), date ordinals (1 to
+3652059), times (below a day), offsets (within 1439 minutes either way)
+and timedeltas (within Python's range), and treat a failure as a corrupt
+value.
+
+### Writing a list, set or dict
+
+The bytes written for a list, set or dict field are its length and the
+slots it uses, shorter than the field when it is not full; a reader copies
+the same part.
+
 ## Schema identity
 
 The schema is the list of fields that fixes a record's shape: names, kinds,
@@ -181,6 +293,30 @@ attacher agree on it and on the class's meaning.
   `bool`). A `ref` field enters as `name:ref:<identity>`, or
   `name:ref?:<identity>` when it may be empty (annotated `X | None`), with
   the identity of the class it refers to in place of the capacity.
+- A field of a kind from 6 on enters as `name:<type text>`. The type text
+  of each kind, with `T` for the type text of a member:
+    - `complex`, `date`, `time`, `datetime`, `timedelta`, `uuid`: the kind
+      name alone. `bool:1`, `int:8` and `float:8` are the texts of those
+      kinds inside a described type.
+    - `str:n`, `bytes:n` and `decimal:n`: `n` is the capacity in bytes.
+      A `bytearray` is `bytes:n`.
+    - `enum(A,B)`: the member names in definition order.
+      `flag(R=1,W=2)`: each member name with its value.
+    - `literal(v,...)`: each value in order as `None`, `True` or `False`,
+      `int:1`, `str:'x'` (the Python `repr`), `bytes:b'x'` or
+      `member:NAME` for an enum member.
+    - `optional(T)`, and `union(T,...)` with the members in the order
+      stored.
+    - `record(name:T,...)` for a dataclass, `NamedTuple`, `TypedDict`,
+      attrs class or `msgspec.Struct`, with the members in order. A
+      `TypedDict` key that may be missing enters as `name?:optional(T)`.
+    - `tuple(T,...)` for a fixed-length tuple.
+    - `list[n](T)`, `set[n](T)` and `dict[n](K,V)`: `n` is the capacity in
+      elements. A `frozenset` is a `set`; `tuple[T, ...]` is a `list`.
+    - `array(dtype,d1xd2x...)`, as in `array(float32,2x3)`.
+
+  A class whose fields are all of kinds 0 to 5 has the hash it had in
+  layout 1.0.
 - `schema_hash`: the first 8 bytes of SHA-256 over that text, read as a
   little-endian `u64`.
 - Identity: the `identity=` class keyword, a non-empty string; without it,
@@ -208,11 +344,20 @@ attacher agree on it and on the class's meaning.
 
   __main__.Stage|label:str:4|motor:ref?:motor/1
   schema_hash  = 0xe58153f79aa6fdf6
+
+  demo/1|when:date|mode:enum(RED,BLUE)|tags:list[2](str:4)|note:optional(int:8)
+  schema_hash  = 0x2a9e5c5cc2876a4c
   ```
+
+  The last line is a class with `identity="demo/1"` and the fields
+  `when: date`, `mode: Color` (members `RED` and `BLUE`),
+  `tags: Annotated[list[Annotated[str, Capacity(4)]], Capacity(2)]` and
+  `note: int | None`.
 
 ## Versioning rules
 
-- A reader refuses a segment whose `layout_major` differs from its own.
+- A reader refuses a `layout_major` it does not know: this version opens
+  majors 1 and 2.
 - A reader opens a segment whose `layout_minor` is higher than its own, and
   ignores what it does not know. A handle reports the lower of the
   segment's minor and its own.
@@ -220,19 +365,25 @@ attacher agree on it and on the class's meaning.
   in older minors, or features that stay off unless the segment says they
   are on and the reader knows them.
 - That includes field kinds: `handle::open` and `handle::from_capsule`
-  accept a field whose kind code they do not know. Its offset and capacity
-  are still checked against the record (capacity 1 byte to 1 MiB, the field
-  inside the record, no overlap), with no alignment asked, and its bytes are
-  otherwise opaque. A reader opens and reads a field of a kind it does not
-  know; it never writes one, and `write` returns `status::range` for it.
-  The Python extension, which converts every field, refuses such a segment
-  with `SchemaMismatchError`.
-- For a kind a reader does not know, `capacity` is the field's whole span
-  in the record, so a future kind with a length prefix counts the prefix
-  in `capacity`.
+  accept a field whose kind code they do not know. Its bytes are otherwise
+  opaque, and the field must lie inside the record without overlapping
+  another. A reader opens and reads a field of a kind it does not know; it
+  never writes one, and `write` returns `status::range` for it. The Python
+  extension, which converts every field, refuses such a segment with
+  `SchemaMismatchError`.
+- For an unknown kind, the entry's low 24 bits are the field's whole span
+  in the record (1 byte to 1 MiB), so a future kind with a length prefix
+  counts the prefix in it, and no alignment is asked. In a layout 2.0
+  segment this holds for kinds below 64 only: for an unknown kind from 64
+  on, the low 24 bits are the offset of its description, whose head's
+  `size` is the span, and no alignment is asked either.
+- Layout 2.0 adds the description table and kinds 6 to 12 and 64 to 74. A
+  later 2.x minor version may add kinds; a reader opens a field of a kind
+  it does not know as opaque bytes.
 - A change to how existing bytes are read or written (the sequence lock,
   field encoding, the slot layout, object names) raises `layout_major`.
-- The package takes a semver major step whenever `layout_major` changes.
+- The package takes a semver major step whenever `layout_major` changes;
+  before 1.0, a minor version step does.
 
 ## Protocols
 
@@ -279,10 +430,12 @@ Every shared word is a plain integer in the mapping, accessed through
    through it: `field_count` and `waiter_slots` in range, `tail == 128`,
    the record 64-byte aligned, after the waiter slots and inside the
    mapping, `size` equal to the mapping size, and each field table entry
-   (capacity 1 byte to 1 MiB, and 1, 8 or 144 bytes for the fixed kinds,
-   alignment for the known kinds, the field inside the record, no two
-   fields overlapping). A field of an unknown kind is opaque (Versioning
-   rules). A failed check is `status::corrupt`.
+   (capacity 1 byte to 1 MiB, and the sizes of Kind codes for the fixed
+   kinds, alignment for the known kinds, the field inside the record, no
+   two fields overlapping), then the description table (Descriptions). In
+   layout 2.0 `record + record_size` is at most 2^32 - 4096. A field of an
+   unknown kind is opaque (Versioning rules). A failed check is
+   `status::corrupt`.
 5. Copy the field table and use only the copy afterwards.
 6. Free the waiter slots of dead processes (see Waiter slots).
 
@@ -450,7 +603,7 @@ and a creator that still runs is reported as still creating the box.
 ## Implementation language
 
 The core is C++20, header-only, in namespace `sharedbox`. Its names are
-declared in the inline namespace `sharedbox::v1`, which changes when the
+declared in the inline namespace `sharedbox::v2`, which changes when the
 C++ interface changes incompatibly, so code built against headers with
 different inline namespaces can be linked into one program. Names in
 `sharedbox::detail` may change without a new inline namespace, so shared
@@ -488,14 +641,21 @@ Windows.
 
 ```cpp
 namespace sharedbox {
-inline namespace v1 {
+inline namespace v2 {
 
-inline constexpr std::uint16_t layout_major = 1, layout_minor = 0;
+inline constexpr std::uint16_t layout_major = 2, layout_minor = 0;
+inline constexpr std::uint16_t oldest_layout_major = 1;
 // Also: the layout constants handle_version, magic, header_size, name_max, max_fields,
 // max_capacity, max_waiter_slots, default_waiter_slots, record_alignment, page_size,
-// max_timeout, default_lock_timeout, kind_shift, capacity_mask and kind_bool, kind_int,
-// kind_float, kind_str, kind_bytes, kind_ref; the structs header, stored_field, waiter_slot
-// and box_ref (see Layout); result<T> and unexpected (see Implementation language).
+// max_timeout, default_lock_timeout, kind_shift, capacity_mask, max_types_size,
+// max_type_depth, max_mapping_size, first_described_kind, max_date_ordinal,
+// unix_epoch_ordinal, micros_per_day, max_offset_minutes, literal_none through
+// literal_enum, and the kind codes kind_bool, kind_int, kind_float, kind_str,
+// kind_bytes, kind_ref, kind_complex through kind_decimal and kind_enum through
+// kind_array; the structs header, stored_field, waiter_slot, box_ref and
+// type_head (see Layout); dl_dtype and literal_value, which type_view's dtype()
+// and literal() return (see Layout 2.0 adds); result<T> and unexpected (see
+// Implementation language).
 
 enum class status : int { ok = 0, exists = -1, not_found = -2, layout = -3, schema = -4,
                           corrupt = -5, lock_timeout = -6, timeout = -7, no_slot = -8,
@@ -511,10 +671,12 @@ class handle {                                  // move-only; the destructor rel
 public:
     static result<handle> create(std::string_view name, std::span<const field_spec> fields,
                                  std::uint32_t record_size, std::uint64_t schema_hash,
-                                 std::uint16_t waiter_slots, std::span<const value> initial);
+                                 std::uint16_t waiter_slots, std::span<const value> initial,
+                                 std::span<const std::byte> types = {});
     static result<handle> create_unpublished(std::string_view name, std::span<const field_spec> fields,
                                              std::uint32_t record_size, std::uint64_t schema_hash,
-                                             std::uint16_t waiter_slots, std::span<const value> initial);
+                                             std::uint16_t waiter_slots, std::span<const value> initial,
+                                             std::span<const std::byte> types = {});
     result<void> publish() noexcept;
     static result<handle> open(std::string_view name, seconds timeout);
     static result<handle> from_capsule(sbx_handle *capsule);
@@ -524,17 +686,24 @@ public:
     std::string_view name() const noexcept;
     std::uint16_t field_count() const noexcept;
     const field_spec &field(std::uint16_t index) const noexcept;
+    type_view field_type(std::uint16_t index) const noexcept;
+    std::span<const std::byte> types_table() const noexcept;
     std::uint32_t record_size() const noexcept;
     std::uint64_t schema_hash() const noexcept;
     std::uint64_t create_id() const noexcept;
     std::uint16_t waiter_slots() const noexcept;
     std::uint16_t minor_version() const noexcept;
+    std::uint16_t major_version() const noexcept;
     void *base() const noexcept;
     std::uint64_t size() const noexcept;
 
     result<void> set_lock_timeout(seconds timeout) noexcept;
     result<read_value> read(std::uint16_t field, std::span<std::byte> buf) const;
     result<std::uint64_t> read_record(std::span<std::byte> buf) const;
+    result<read_value> read_used(std::uint16_t field, std::span<std::byte> buf) const;
+    result<read_value> read_large(std::uint16_t field, std::span<std::byte> buf) const;
+    result<std::uint64_t> read_record_large(std::span<std::byte> buf) const;
+    result<void> write_large(std::span<const value> values, seconds lock_timeout);
     std::span<const std::byte> payload(std::uint16_t field, std::span<const std::byte> record) const noexcept;
     result<void> write(std::span<const value> values, seconds lock_timeout);
     std::uint64_t generation() const noexcept;
@@ -553,13 +722,35 @@ public:
 result<void> unlink(std::string_view name) noexcept;
 result<header> inspect(std::string_view name) noexcept;
 
-}  // namespace v1
+}  // namespace v2
 }  // namespace sharedbox
 ```
 
 Every function returning `result` is `[[nodiscard]]`. `handle` also has
 `lock`, `unlock` and `set_wait_hooks`, which the tests and the Python
 extension use.
+
+Layout 2.0 adds these names to the header:
+
+- `type_view` and `handle::field_type(index)`: a field's type, read from
+  its description. `handle::types_table()` returns the table's bytes.
+- `time_value`, `datetime_value` and `timedelta_value`, with an
+  `encode_*` and a `decode_*` function for each, and the same pair for
+  `complex`, `date`, `uuid`, `flag` and enum and literal positions
+  (`encode_position`, `decode_position`). `decode_bool`, `decode_present`,
+  `decode_tag` and `decode_length` have no encoder.
+- `handle::major_version()` and `oldest_layout_major`, the lowest major
+  version `open` and `from_capsule` accept.
+- The constants `first_described_kind`, `max_date_ordinal`,
+  `unix_epoch_ordinal`, `micros_per_day`, `max_offset_minutes` and
+  `literal_none` through `literal_enum`, and the structs `type_head`,
+  `dl_dtype` and `literal_value`.
+- `handle::read_used`, which copies only the used part of a list, set or
+  dict field; `read_large`, `read_record_large` and `write_large`, which
+  copy a large value, running the wait hooks once around the copy.
+- A `types` parameter on `handle::create` and `handle::create_unpublished`:
+  the description table, empty by default.
+- The inline namespace is `v2`.
 
 - `status`: `ok`, and one code per error the Python side raises, so the
   extension maps each to its exception class. `exists`: the name is taken.
@@ -656,9 +847,21 @@ uint64_t sbx_schema_hash(const sbx_handle *h);
 void     sbx_release(sbx_handle *h);
 ```
 
-- It holds only `sbx_handle`, `sbx_value`, the status codes and these six
-  functions. Creating, waiting, `interrupt`, `force_unlock` and `unlink`
-  are in the C++ API only.
+- It holds `sbx_handle`, `sbx_value`, the status codes, the six functions
+  above and the typed functions below. Creating, waiting, `interrupt`,
+  `force_unlock` and `unlink` are in the C++ API only.
+- `sbx_field_desc` returns a field's kind code and its description's
+  bytes. `sbx_read_*` and `sbx_write_*` exist for `complex`, `date`,
+  `time`, `datetime`, `timedelta`, `uuid`, enum and literal positions
+  (`position`), flag bits (`flag`) and an optional's presence (`present`,
+  read only). A read gives `SBX_E_RANGE` for a field of another kind and
+  `SBX_E_CORRUPT` for a stored value no Python value has; a write gives
+  `SBX_E_RANGE` for a value out of range.
+- `sbx_time` and `sbx_datetime` hold `int64_t micros`, `int16_t
+  offset_minutes` and `uint8_t naive, fold`; `sbx_timedelta` holds
+  `int32_t days, seconds, microseconds`. A `sbx_time` counts microseconds
+  since midnight in wall-clock time; a `sbx_datetime` counts microseconds
+  since 1970-01-01T00:00, wall time when naive and UTC when aware.
 - Each function converts its arguments and calls `sharedbox.hpp`.
   `sbx_open` fills `out` with a handle whose `private_data` holds a
   `sharedbox::handle` and whose `release` deletes it. `sbx_import` wraps a

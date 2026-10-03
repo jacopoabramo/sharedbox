@@ -20,6 +20,12 @@ Learn how to name, fill, share and remove a
   name
 - [How to store text and bytes](store-text-and-bytes.md): pick a
   capacity and handle values that do not fit
+- [How to store records](store-records.md): dataclasses, named tuples and
+  typed dicts as one field
+- [How to store lists, sets and dicts](store-collections.md): collections
+  with a capacity in elements
+- [How to store arrays](store-arrays.md): a shape, a dtype and any DLPack
+  library
 - [How to set defaults and check values](set-defaults-and-check-values.md):
   defaults, keyword-only fields and `__post_init__`
 - [How to change several fields at once](change-several-fields-at-once.md):

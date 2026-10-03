@@ -96,7 +96,7 @@ and `NOMINMAX` before that include and removes them at its end. Code that
 needs the full `windows.h` or the `min` and `max` macros must include
 `windows.h` before `sharedbox.hpp`.
 
-The header declares its C++ names in `sharedbox::v1`, an inline
+The header declares its C++ names in `sharedbox::v2`, an inline
 namespace, so code still writes `sharedbox::handle`. The inline namespace
 changes when the header's C++ interface changes incompatibly, so libraries
 built against headers with different inline namespaces can be linked into
