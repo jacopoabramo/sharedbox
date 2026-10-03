@@ -155,6 +155,15 @@ def test_an_enum_or_literal_17_deep_is_refused(leaf: object) -> None:
         build_layout(make(nested(16, leaf)))
 
 
+@pytest.mark.parametrize("annotation", [int | None, tuple[bool]])
+def test_a_presence_or_bool_byte_of_2_reads_as_corrupt(annotation: object) -> None:
+    """Check that an optional's presence byte or a bool inside a tuple holding 2 raises ValueError naming the field."""
+    layout = build_layout(make(annotation))
+    size = layout.fields[0].type.size  # type: ignore[union-attr]
+    with pytest.raises(ValueError, match="T.x"):
+        layout.types.decode(0, b"" + bytes(size - 1))
+
+
 @dataclass
 class Hidden:
     a: int
