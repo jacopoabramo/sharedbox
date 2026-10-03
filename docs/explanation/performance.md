@@ -56,7 +56,7 @@ with `struct` and no lock packs or unpacks the same values in 59 ns and
 
 ## Large values
 
-Reading a 1 MiB array field took 240 us and writing one took 19 us, in the
+Reading a 1 MiB array field took 180 us and writing one took 19 us, in the
 same run and on the same machine and versions as the rest of this page. A read
 is slower because it allocates a new array each time. A box has one write
 lock, so while a large value is copied, reads and writes of every other
