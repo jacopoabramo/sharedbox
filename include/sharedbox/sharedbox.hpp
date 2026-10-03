@@ -2250,7 +2250,7 @@ inline bool collection_fits(const type_node &node, std::span<const std::byte> by
     return length <= node.capacity && bytes.size() == node.slots + std::uint64_t{length} * node.stride;
 }
 
-inline bool values_ok(const state &s, std::span<const value> values) noexcept {
+SHAREDBOX_HOT bool values_ok(const state &s, std::span<const value> values) noexcept {
     for (const value &v : values) {
         if (v.field >= s.field_count)
             return false;

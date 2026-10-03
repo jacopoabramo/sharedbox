@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <cstring>
 #include <memory>
+#include <optional>
 #include <span>
 #include <string>
 
@@ -39,11 +40,10 @@ struct EncodeBuffer {
 
     alignas(std::uint64_t) std::byte small[sizeof(box_ref)];
     std::unique_ptr<std::byte[]> large;
-    /// A decimal's text, which the value does not hold itself.
-    std::string text;
     /// The array view a value's bytes point into; holding it keeps the source's buffer exported, so a
-    /// resizable source cannot move its memory before the write ends.
-    nanobind::ndarray<nanobind::ro> keep;
+    /// resizable source cannot move its memory before the write ends. Optional, so a write of any
+    /// other kind skips the view's out-of-line destructor.
+    std::optional<nanobind::ndarray<nanobind::ro>> keep;
 };
 
 /// The bytes stored for value, held in buffer, in constant data, or for a str in value itself, so

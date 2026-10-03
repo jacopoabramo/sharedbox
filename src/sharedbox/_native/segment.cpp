@@ -271,6 +271,20 @@ struct Segment::Impl {
         out.version = got.version;
     }
 
+    // A value longer than out.words, read again at its stored length until it fits. A function of its
+    // own: inlined into Segment::read, this loop made MSVC pass the int path's values through the stack.
+    void read_long(std::uint16_t f, std::size_t len, FieldRead &out) const {
+        read_value got{len, 0};
+        std::size_t size = 0;
+        do {
+            size = got.len;
+            out.large.reset(new std::byte[size]);
+            got = check(box.read(f, {out.large.get(), size}));
+        } while (got.len > size);
+        out.bytes = {reinterpret_cast<const char *>(out.large.get()), got.len};
+        out.version = got.version;
+    }
+
     // Every value's index is checked; the caller holds enter()'s guard.
     void write(std::span<const value> values) {
         std::size_t total = 0;
@@ -380,18 +394,10 @@ void Segment::read(std::uint32_t index, FieldRead &out) const {
     const auto f = static_cast<std::uint16_t>(index);
     if (detail::described(static_cast<std::uint32_t>(out.field->kind))) [[unlikely]]
         return impl_->read_described(f, out);
-    read_value got = impl_->check(impl_->box.read(f, std::as_writable_bytes(std::span(out.words))));
-    if (got.len <= sizeof out.words) {
-        out.bytes = {reinterpret_cast<const char *>(out.words), got.len};
-    } else {
-        std::size_t size = 0;
-        do {
-            size = got.len;
-            out.large.reset(new std::byte[size]);
-            got = impl_->check(impl_->box.read(f, {out.large.get(), size}));
-        } while (got.len > size);
-        out.bytes = {reinterpret_cast<const char *>(out.large.get()), got.len};
-    }
+    const read_value got = impl_->check(impl_->box.read(f, std::as_writable_bytes(std::span(out.words))));
+    if (got.len > sizeof out.words) [[unlikely]]
+        return impl_->read_long(f, got.len, out);
+    out.bytes = {reinterpret_cast<const char *>(out.words), got.len};
     out.version = got.version;
 }
 

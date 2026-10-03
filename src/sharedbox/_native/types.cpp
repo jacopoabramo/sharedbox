@@ -270,15 +270,17 @@ std::span<const std::byte> Types::encode(std::uint32_t index, PyObject *value, E
     if (t.kind <= kind_ref)
         return sharedbox::encode(desc_of(t), name, value, buffer);
     if (t.kind == kind_decimal) {
-        buffer.text = scalars::decimal_text(value, t.size - 4, name);
-        return std::as_bytes(std::span(buffer.text.data(), buffer.text.size()));
+        const std::string text = scalars::decimal_text(value, t.size - 4, name);
+        std::byte *out = buffer.reserve(text.size());
+        std::memcpy(out, text.data(), text.size());
+        return {out, text.size()};
     }
     if (t.kind == kind_array) {
-        buffer.keep = array_view(t, value, {name});
-        if (contiguous(buffer.keep))
-            return {static_cast<const std::byte *>(buffer.keep.data()), t.size};
+        const nb::ndarray<nb::ro> &view = buffer.keep.emplace(array_view(t, value, {name}));
+        if (contiguous(view))
+            return {static_cast<const std::byte *>(view.data()), t.size};
         std::byte *out = buffer.reserve(t.size);
-        copy_array(buffer.keep, out);
+        copy_array(view, out);
         return {out, t.size};
     }
     if (detail::is_collection(t.kind)) {
