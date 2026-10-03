@@ -1,10 +1,19 @@
 import collections
 import dataclasses
 import datetime
+import enum
 import subprocess
 import sys
 from dataclasses import InitVar, dataclass
-from typing import Annotated, Generic, NamedTuple, NotRequired, TypedDict, TypeVar
+from typing import (
+    Annotated,
+    Generic,
+    Literal,
+    NamedTuple,
+    NotRequired,
+    TypedDict,
+    TypeVar,
+)
 
 import pytest
 from crossproc import snapshot_in_child, update_in_child
@@ -114,9 +123,9 @@ def test_record_values_that_do_not_fit_are_refused(
     Shapes.unlink(unique_name)
 
 
-def nested(depth: int) -> type:
-    """A dataclass holding a dataclass, `depth` records deep."""
-    cls: type = dataclasses.make_dataclass("Leaf", [("value", int)])
+def nested(depth: int, leaf: object = int) -> type:
+    """A dataclass holding a dataclass, `depth` records deep, the innermost holding a `leaf`."""
+    cls: type = dataclasses.make_dataclass("Leaf", [("value", leaf)])
     for level in range(depth - 1):
         cls = dataclasses.make_dataclass(f"Level{level}", [("inner", cls)])
     return cls
@@ -133,6 +142,17 @@ def test_records_nest_16_deep() -> None:
     build_layout(make(nested(16)))
     with pytest.raises(TypeError, match="16 levels"):
         build_layout(make(nested(17)))
+
+
+class Color(enum.Enum):
+    RED = 1
+
+
+@pytest.mark.parametrize("leaf", [Color, Literal[1]])
+def test_an_enum_or_literal_17_deep_is_refused(leaf: object) -> None:
+    """Check that an enum or a literal inside 16 nested records raises a TypeError naming the field."""
+    with pytest.raises(TypeError, match=r"^T\.x\..*16 levels"):
+        build_layout(make(nested(16, leaf)))
 
 
 @dataclass

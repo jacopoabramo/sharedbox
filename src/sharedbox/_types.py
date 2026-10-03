@@ -323,8 +323,12 @@ def parse(
             raise TypeError(
                 f"{where}: Capacity does not apply to an array; give its Shape"
             )
-        return array_spec(hint, extras, where)
-    return dispatch(hint, extras, where, capacity, depth, path)
+        spec = array_spec(hint, extras, where)
+    else:
+        spec = dispatch(hint, extras, where, capacity, depth, path)
+    if spec.described and depth > MAX_DEPTH:
+        raise TypeError(f"{where}: types nest at most {MAX_DEPTH} levels deep")
+    return spec
 
 
 def is_array_type(hint: Any) -> bool:
