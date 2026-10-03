@@ -3,8 +3,9 @@
 The contenders that compare against the standard library hold the same
 record: an int, a float and a string of up to 32 bytes. Rows for a datetime,
 a record, a list and an array time SharedBox alone; they have no
-standard-library counterpart. `mp.Value/Array` takes one lock per value, so its "update two
-fields" and "read all" rows take two or three locks one after the other.
+standard-library counterpart. `mp.Value/Array` takes one lock per value, so
+its "update two fields" and "read all" rows take two or three locks one after
+the other.
 Rows under `split` isolate the native segment's typed `set`/`get`,
 which convert the Python value in the native module, against the raw
 `_write`/`_read` calls that move already-encoded bytes.
