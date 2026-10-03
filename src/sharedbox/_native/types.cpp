@@ -211,6 +211,8 @@ void Types::prepare(std::uint32_t node, std::uint8_t kind, nb::object info) {
             throw std::invalid_argument("a union's order and classes do not match its description");
         for (std::uint16_t i = 0; i < count; ++i) {
             const long tag = PyLong_AsLong(PyTuple_GetItem(order, i));
+            if (tag == -1)
+                PyErr_Clear();
             if (tag < 0 || tag >= count)
                 throw std::invalid_argument("a union's order names a member it does not have");
             n.order.push_back(static_cast<std::uint8_t>(tag));
@@ -230,6 +232,8 @@ void Types::prepare(std::uint32_t node, std::uint8_t kind, nb::object info) {
     case kind_record:
     case kind_tuple: {
         n.form = static_cast<int>(PyLong_AsLong(item(n.info, 0)));
+        if (n.form == -1)
+            PyErr_Clear();
         n.cls = item(n.info, 1);
         PyObject *attrs = item(n.info, 2);
         PyObject *keywords = item(n.info, 3);
@@ -564,8 +568,13 @@ nb::object Types::decode_from(const detail::type_ref &t, const std::byte *data, 
     case kind_flag: {
         const nb::object bits = nb::steal(PyLong_FromUnsignedLongLong(load<std::uint64_t>(data)));
         PyObject *made = PyObject_CallFunctionObjArgs(n.cls, bits.ptr(), nullptr);
-        if (made == nullptr)
-            throw nb::python_error();
+        if (made == nullptr) {
+            // A Flag with the STRICT boundary raises ValueError for bits it does not declare.
+            if (!PyErr_ExceptionMatches(PyExc_ValueError))
+                throw nb::python_error();
+            PyErr_Clear();
+            corrupt(where.name);
+        }
         return nb::steal(made);
     }
     case kind_optional: {

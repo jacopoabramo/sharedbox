@@ -1,4 +1,5 @@
 import enum
+import struct
 from typing import Any, Literal
 
 import pytest
@@ -109,6 +110,13 @@ def make(name: str, annotation: object) -> type:
     return type(
         name, (), {"__annotations__": {"x": annotation}, "__module__": "__main__"}
     )
+
+
+def test_flag_bits_the_class_does_not_declare_read_as_corrupt() -> None:
+    """Check that a stored flag value with an undeclared bit raises ValueError naming the field."""
+    types = build_layout(make("T", Perm)).types
+    with pytest.raises(ValueError, match="T.x"):
+        types.decode(0, struct.pack("<Q", 8))
 
 
 def test_the_hash_follows_the_members_not_the_class_name() -> None:
