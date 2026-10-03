@@ -18,6 +18,12 @@
 #include <system_error>
 #include <thread>
 
+#if defined(_MSC_VER)
+#define SEGMENT_NOINLINE __declspec(noinline)
+#else
+#define SEGMENT_NOINLINE __attribute__((noinline))
+#endif
+
 namespace sharedbox {
 namespace {
 
@@ -273,7 +279,7 @@ struct Segment::Impl {
 
     // A value longer than out.words, read again at its stored length until it fits. A function of its
     // own: inlined into Segment::read, this loop made MSVC pass the int path's values through the stack.
-    void read_long(std::uint16_t f, std::size_t len, FieldRead &out) const {
+    SEGMENT_NOINLINE void read_long(std::uint16_t f, std::size_t len, FieldRead &out) const {
         read_value got{len, 0};
         std::size_t size = 0;
         do {
