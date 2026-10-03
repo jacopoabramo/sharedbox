@@ -40,9 +40,8 @@ struct EncodeBuffer {
 
     alignas(std::uint64_t) std::byte small[sizeof(box_ref)];
     std::unique_ptr<std::byte[]> large;
-    /// The array view a value's bytes point into; holding it keeps the source's buffer exported, so a
-    /// resizable source cannot move its memory before the write ends. Optional, so a write of any
-    /// other kind skips the view's out-of-line destructor.
+    /// The array view a value's bytes point into, kept so a resizable source cannot move its memory
+    /// before the write ends. Optional, so a write of any other kind skips the view's destructor.
     std::optional<nanobind::ndarray<nanobind::ro>> keep;
 };
 
