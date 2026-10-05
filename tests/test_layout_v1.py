@@ -1,8 +1,13 @@
+import ctypes
 import queue
 from typing import Annotated
 
 from sharedbox import Capacity, SharedBox
 from sharedbox._native import Segment
+
+get_pointer = ctypes.pythonapi.PyCapsule_GetPointer
+get_pointer.restype = ctypes.c_void_p
+get_pointer.argtypes = [ctypes.py_object, ctypes.c_char_p]
 
 
 class Point(SharedBox):
@@ -35,7 +40,11 @@ def test_a_box_made_with_layout_1_works_through_the_python_api(
         box.events.x.connect(lambda new, old: seen.put((new, old)))
         box.update(x=4, label="new")
         assert seen.get(timeout=5) == (4, 3)
+        assert box.snapshot() == {"x": 4, "y": 0.0, "label": "new"}
         assert box._segment.layout_version == (1, 0)
-        box.__sharedbox_box__(max_version=(1, 0))
+        capsule = box.__sharedbox_box__(max_version=(1, 0))
+        # layout_major is the first field of sbx_handle.
+        handle = get_pointer(capsule, b"sharedbox_box")
+        assert ctypes.c_uint16.from_address(handle).value == 1
     owner.close()
     Point.unlink(unique_name)
