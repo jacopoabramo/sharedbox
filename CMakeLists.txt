@@ -44,7 +44,9 @@ nanobind_add_module(_native
     NB_DOMAIN sharedbox
     src/sharedbox/_native/codec.cpp
     src/sharedbox/_native/module.cpp
-    src/sharedbox/_native/segment.cpp)
+    src/sharedbox/_native/scalars.cpp
+    src/sharedbox/_native/segment.cpp
+    src/sharedbox/_native/types.cpp)
 target_link_libraries(_native PRIVATE sharedbox::headers)
 
 if(WIN32)

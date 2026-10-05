@@ -22,10 +22,11 @@ many, can be [handles](#handle) on the same segment.
 
 ### Capacity
 
-The capacity of a `str` or `bytes` [field](#field) is the largest number of
-bytes it can hold, set with [`Capacity`][sharedbox.Capacity] inside
-`Annotated`. It counts bytes, not characters. The field takes that much
-room in the record whatever it holds.
+The capacity of a `str`, `bytes`, `bytearray` or `Decimal` [field](#field)
+is the most bytes it can hold, and of a list, set or dict field the most
+elements. It is set with [`Capacity`][sharedbox.Capacity] inside
+`Annotated`. For text it counts bytes, not characters. The field takes
+that much room in the record whatever it holds.
 
 ### Create id
 
@@ -33,6 +34,13 @@ A create id is a random number drawn when a [box](#box) is created and kept
 in its header; it is never 0. A [reference field](#reference-field) and a
 pickled box store it, so a process can tell the box from one created later
 under the same name. See [Reference fields](references.md#broken-references).
+
+### Description
+
+The bytes in a [segment](#segment) that say how a value of a type is laid
+out, for a type whose kind alone does not say: an enum's members, a
+record's members and names, a list's capacity, an array's shape and
+element type.
 
 ### Field
 

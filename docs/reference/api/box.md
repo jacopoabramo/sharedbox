@@ -10,7 +10,7 @@ icon: lucide/code
 | [`field`][sharedbox.field] | sets the options of one field of a `SharedBox` class, as `dataclasses.field` does |
 | [`fields`][sharedbox.fields] | returns one `Field` per field of a `SharedBox` subclass or [box](../../explanation/glossary.md#box), in declaration order |
 | [`Field`][sharedbox.Field] | options of one field of a `SharedBox` class, as `field` takes them |
-| [`Capacity`][sharedbox.Capacity] | maximum encoded size of a `str` or `bytes` field: its [capacity](../../explanation/glossary.md#capacity) |
+| [`Capacity`][sharedbox.Capacity] | maximum size of a field: bytes for text and bytes, elements for a collection. See [capacity](../../explanation/glossary.md#capacity) |
 
 ::: sharedbox.SharedBox
     options:

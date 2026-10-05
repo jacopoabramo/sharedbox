@@ -1,4 +1,6 @@
 import ctypes
+import datetime
+import enum
 import gc
 import importlib.metadata
 import os
@@ -11,6 +13,7 @@ import pytest
 
 import sharedbox
 from sharedbox import BoxClosedError, SharedBox
+from sharedbox._native import LAYOUT_VERSION
 
 CONSUMER = Path(__file__).parent / "cpp" / "consumer"
 # PyCapsule_SetName keeps the pointer, so the name must outlive the capsule.
@@ -89,6 +92,19 @@ def consumer(tmp_path_factory: pytest.TempPathFactory) -> ctypes.CDLL:
         ctypes.c_uint16,
         ctypes.c_int64,
     ]
+    library.consumer_read_datetime.restype = ctypes.c_int
+    library.consumer_read_datetime.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_uint16,
+        ctypes.POINTER(ctypes.c_int64),
+        ctypes.POINTER(ctypes.c_int16),
+    ]
+    library.consumer_read_position.restype = ctypes.c_int
+    library.consumer_read_position.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_uint16,
+        ctypes.POINTER(ctypes.c_uint16),
+    ]
     library.consumer_release.restype = None
     library.consumer_release.argtypes = [ctypes.c_void_p]
     return library
@@ -107,8 +123,7 @@ def test_the_capsule_holds_a_handle_on_the_box(unique_name: str) -> None:
         capsule = box.__sharedbox_box__()
         handle = handle_of(capsule)
         assert (handle.layout_major, handle.layout_minor, handle.handle_version) == (
-            1,
-            0,
+            *LAYOUT_VERSION,
             1,
         )
         assert handle.size == box._segment._size
@@ -119,7 +134,7 @@ def test_the_capsule_holds_a_handle_on_the_box(unique_name: str) -> None:
 def test_an_unused_capsule_outlives_close_and_unlink(unique_name: str) -> None:
     """Check that the memory behind a capsule stays readable after the box is closed and unlinked."""
     box = Frame.create(unique_name, 0.5, 3)
-    capsule = box.__sharedbox_box__(max_version=(1, 0))
+    capsule = box.__sharedbox_box__(max_version=LAYOUT_VERSION)
     handle = handle_of(capsule)
     box.close()
     Frame.unlink(unique_name)
@@ -131,8 +146,8 @@ def test_an_unused_capsule_outlives_close_and_unlink(unique_name: str) -> None:
 def test_requests_the_box_cannot_meet_are_refused(unique_name: str) -> None:
     """Check that the capsule request refuses a newer major version and a stream, and a closed box raises BoxClosedError."""
     with Frame.create(unique_name) as box:
-        with pytest.raises(BufferError, match="major version 2"):
-            box.__sharedbox_box__(max_version=(2, 0))
+        with pytest.raises(BufferError, match="major version 3"):
+            box.__sharedbox_box__(max_version=(3, 0))
         with pytest.raises(NotImplementedError, match="stream"):
             box.__sharedbox_box__(stream=True)
     with pytest.raises(BoxClosedError):
@@ -172,3 +187,49 @@ def test_a_c_library_keeps_the_box_after_close_and_unlink(
     assert consumer.consumer_read_int(taken, count, ctypes.byref(value)) == 0
     assert value.value == 9
     consumer.consumer_release(taken)
+
+
+class Level(enum.Enum):
+    LOW = 1
+    HIGH = 2
+
+
+class Shot(SharedBox):
+    taken: datetime.datetime = datetime.datetime(
+        2026, 1, 2, 3, 4, tzinfo=datetime.timezone(datetime.timedelta(hours=1))
+    )
+    level: Level = Level.HIGH
+
+
+def test_a_c_library_reads_a_datetime_and_an_enum(
+    unique_name: str, consumer: ctypes.CDLL
+) -> None:
+    """Check that a C library reads a datetime as UTC microseconds with its offset, and an enum as its member's position."""
+    layout = Shot.__layout__
+    with Shot.create(unique_name) as box:
+        capsule = box.__sharedbox_box__()
+        taken = consumer.consumer_take(
+            get_pointer(capsule, b"sharedbox_box"), layout.schema_hash
+        )
+        assert taken
+        assert set_name(capsule, USED_NAME) == 0
+        micros, offset, position = ctypes.c_int64(), ctypes.c_int16(), ctypes.c_uint16()
+        when = layout.by_name["taken"].index
+        assert (
+            consumer.consumer_read_datetime(
+                taken, when, ctypes.byref(micros), ctypes.byref(offset)
+            )
+            == 0
+        )
+        epoch = datetime.datetime(1970, 1, 1, tzinfo=datetime.UTC)
+        assert micros.value == (box.taken - epoch) // datetime.timedelta(microseconds=1)
+        assert offset.value == 60
+        assert (
+            consumer.consumer_read_position(
+                taken, layout.by_name["level"].index, ctypes.byref(position)
+            )
+            == 0
+        )
+        assert position.value == 1
+        consumer.consumer_release(taken)
+    Shot.unlink(unique_name)

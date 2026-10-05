@@ -35,9 +35,7 @@ field values, 64-byte aligned. [Layout](../reference/segment-layout.md#layout)
 gives every offset.
 
 Each field has a fixed place and a fixed size in the record. Fields are
-packed by descending alignment (the 8-byte `int` and `float` fields and
-reference fields first, then `str` and `bytes`, then `bool`), not
-declaration order. The values passed to
+packed by descending alignment, not declaration order. The values passed to
 [`create`][sharedbox.SharedBox.create] are written into the record before
 the header's `magic` word is set, so an attaching process never sees a
 record before every field holds its starting value.
@@ -68,8 +66,9 @@ each field type, and [Layout](../reference/segment-layout.md#layout) the
 bytes of each kind.
 
 Because a value is copied into the record, a box holds only the stored
-types: no lists, dicts or other objects. A `str` or `bytes` field takes the
-room of its [capacity](glossary.md#capacity) whatever it holds.
+types, listed in [Field types](field-types.md), and not arbitrary objects.
+A field takes the room of its [capacity](glossary.md#capacity) whatever it
+holds.
 [`Capacity`][sharedbox.Capacity] goes inside `Annotated` because it belongs
 to the stored type, not to the field's options.
 
@@ -94,7 +93,7 @@ otherwise one process would read another's `float` as an `int` and get
 wrong values with no error.
 
 The schema hash is the first 8 bytes of SHA-256 over the class's
-[identity](glossary.md#identity) and each field's `name:kind:capacity`.
+[identity](glossary.md#identity) and each field's name and type text.
 [Schema identity](../reference/segment-layout.md#schema-identity) has the
 exact text and a test vector. The identity is `module.qualname` unless the
 class sets `identity=`. The attaching process compares the header's hash

@@ -39,7 +39,6 @@ from ._layout import (
     own_kw_only,
 )
 from ._native import (
-    LAYOUT_VERSION,
     BoxClosedError,
     BoxMethod,
     SchemaMismatchError,
@@ -223,6 +222,7 @@ def install_native_methods(cls: type[SharedBox]) -> None:
                     follow,
                     SharedBox.__dict__[method],
                     segment_slot,
+                    layout.types,
                 ),
             )
         elif isinstance(found[0], BoxMethod):
@@ -341,16 +341,20 @@ class SharedBox(metaclass=SharedBoxMeta):
 
     | Annotation | Stored as |
     | --- | --- |
-    | `bool` | 1 byte |
-    | `int` | signed 64-bit integer; a larger value raises `OverflowError` |
-    | `float` | 64-bit float; an `int` is accepted and converted |
-    | `Annotated[str, Capacity(n)]` | UTF-8, at most `n` bytes |
-    | `Annotated[bytes, Capacity(n)]` | at most `n` bytes; `bytearray` and `memoryview` are accepted |
+    | `bool`, `int`, `float`, `complex` | fixed-size numbers; a `float` field takes an `int` |
+    | `Annotated[str, Capacity(n)]`, `bytes`, `bytearray`, `Decimal` | at most `n` bytes |
+    | `date`, `time`, `datetime`, `timedelta`, `UUID` | fixed-size values; times naive or with a fixed offset |
+    | an `Enum`, `Flag` or `Literal` | the member's position, the bits, or the value's position |
+    | an optional `X` (`Optional[X]`), a union | the member the value's type picks |
+    | a dataclass, `NamedTuple`, tuple, `TypedDict`, attrs class or `msgspec.Struct` | its members |
+    | `Annotated[list[T], Capacity(n)]`, and `set`, `frozenset`, `dict`, `tuple[T, ...]` | at most `n` elements |
+    | `Annotated[<array type>, Shape(...), DType(...)]` | the array's elements |
 
-    A `SharedBox` subclass `X`, or `X | None`, makes a reference field,
-    described below. [`Capacity`][sharedbox.Capacity] sets `n`. Names
-    starting with `_` and `ClassVar` annotations are not fields. Fields of
-    a base class come first.
+    A `SharedBox` subclass, optional or not, makes a reference field,
+    described below. [`Capacity`][sharedbox.Capacity] sets `n`. A read
+    returns a new value: changing a list, record or array read from a box
+    changes only that copy. Names starting with `_` and `ClassVar`
+    annotations are not fields. Fields of a base class come first.
 
     Fields are positional by default, in declaration order, as in a
     dataclass. Fields declared after a `dataclasses.KW_ONLY` annotation in
@@ -360,13 +364,15 @@ class SharedBox(metaclass=SharedBoxMeta):
     `inspect.signature` of the class gives its constructor's parameters; a
     `default_factory` default shows as `<factory>`.
 
-    Assigning a value of the wrong type raises `TypeError`, and a `str` or
-    `bytes` value longer than its capacity raises `ValueError`; either way
-    the stored value does not change. Assigning to a name that is not a
-    field raises `AttributeError`, and so does deleting a field. A box has
-    no `__dict__`: every subclass gets empty `__slots__` unless it
-    declares its own. Two boxes are equal only if they are the same
-    object.
+    Assigning a value of the wrong type raises `TypeError`, and a value
+    that does not fit its field raises `ValueError`, or `OverflowError`
+    for an `int` value out of range for its `int`, `float` or `complex`
+    field; either way the stored value does not change. A `bytes` field
+    takes `bytes`, `bytearray` and `memoryview` values. Assigning to a
+    name that is not a field raises `AttributeError`, and so does deleting
+    a field. A box has no `__dict__`: every subclass gets empty
+    `__slots__` unless it declares its own. Two boxes are equal only if
+    they are the same object.
 
     A `dataclasses.InitVar[T]` annotation declares a constructor argument
     that is not stored. It takes a position like a field and may have a
@@ -493,8 +499,18 @@ class SharedBox(metaclass=SharedBoxMeta):
     ValueError
         When the class is defined, for a `name` that does not match
         `[A-Za-z0-9_.-]{1,128}`, a `lock_timeout` or `max_waiters` out of
-        range, or a default longer than its capacity. When the class is
-        called, for a `str` or `bytes` value longer than its capacity.
+        range, or a default that does not fit its field (any of the cases
+        below). When the class is called or a field is assigned, for a
+        `str`, `bytes` or `Decimal` value longer than its capacity, a
+        collection with more elements than its capacity, a tuple of the
+        wrong length, an array of the wrong shape, a `Literal` field given
+        another value, flag bits outside 0 to 2**64 - 1, a time or
+        datetime whose UTC offset is not whole minutes of less than a day,
+        or a `time` whose tzinfo gives no offset without a date.
+    OverflowError
+        When the class is defined or called, or a field is assigned, with
+        an `int` value out of range for its `int`, `float` or `complex`
+        field.
     SegmentExistsError
         When the class is called and the name is taken.
     SchemaMismatchError
@@ -639,7 +655,7 @@ class SharedBox(metaclass=SharedBoxMeta):
                 if param.default is not MISSING and spec.target is not None:
                     stored(spec, param.default)
                 elif param.default is not MISSING:
-                    spec.check(param.default)
+                    layout.check(spec, param.default)
                 if not param.init and not has_default(param):
                     raise TypeError(
                         f"{cls.__qualname__}: field {attr!r} has init=False and no default"
@@ -647,7 +663,7 @@ class SharedBox(metaclass=SharedBoxMeta):
                 setattr(
                     cls,
                     attr,
-                    FieldDescriptor(spec, segment_slot)
+                    FieldDescriptor(spec, segment_slot, layout.types)
                     if spec.target is None
                     else Reference(spec),
                 )
@@ -740,8 +756,9 @@ class SharedBox(metaclass=SharedBoxMeta):
             [spec.label for spec in layout.fields],
             layout.schema_hash,
             cls.__lock_timeout__,
+            layout.types,
         )
-        box._watcher = Watcher(box._segment)
+        box._watcher = Watcher(box._segment, layout.types)
         box._track()
         return box
 
@@ -822,9 +839,10 @@ class SharedBox(metaclass=SharedBoxMeta):
             ],
             cls.__max_waiters__,
             publish=False,
+            types=layout.types,
         )
         try:
-            self._watcher = Watcher(self._segment)
+            self._watcher = Watcher(self._segment, layout.types)
             self._track()
             post_init = getattr(cls, "__post_init__", None)
             if post_init is not None:
@@ -893,7 +911,7 @@ class SharedBox(metaclass=SharedBoxMeta):
                 (i, v if specs[i].target is None else stored(specs[i], v))
                 for i, v in pairs
             ]
-        self._segment.set(pairs)
+        self._segment.set(pairs, layout.types)
 
     def snapshot(self, *, follow: bool = False) -> dict[str, Any]:
         """Return every field's value, with this box read at one point in time.
@@ -922,7 +940,7 @@ class SharedBox(metaclass=SharedBoxMeta):
         """
         # A native method replaces this on every class that does not define or inherit its own snapshot.
         layout = type(self).__layout__
-        values = self._segment.get_dict(layout.names)
+        values = self._segment.get_dict(layout.names, layout.types)
         if layout.refs:
             for spec in layout.refs:
                 values[spec.name] = box_ref(values[spec.name])
@@ -1126,7 +1144,7 @@ class SharedBox(metaclass=SharedBoxMeta):
             raise BufferError(
                 "the box is not published yet; call __sharedbox_box__ after __post_init__ returns"
             )
-        major, minor = LAYOUT_VERSION
+        major, minor = self._segment.layout_version
         if max_version is not None and max_version[0] != major:
             raise BufferError(
                 f"box {self.name!r} has layout {major}.{minor}; "

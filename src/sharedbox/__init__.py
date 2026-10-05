@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from ._arrays import DType, Shape, SupportsDLPack, register_array_type
 from ._box import SharedBox, SupportsSharedBox, fields
 from ._events import BoxEvents, FieldWatch
 from ._layout import Capacity, Field, field
@@ -19,19 +20,23 @@ __all__ = [
     "BoxRef",
     "BrokenReferenceError",
     "Capacity",
+    "DType",
     "Field",
     "FieldWatch",
     "LockTimeoutError",
     "SchemaMismatchError",
     "SegmentExistsError",
     "SegmentNotFoundError",
+    "Shape",
     "SharedBox",
+    "SupportsDLPack",
     "SupportsSharedBox",
     "UnknownBoxClassError",
     "__version__",
     "field",
     "fields",
     "get_include",
+    "register_array_type",
 ]
 
 

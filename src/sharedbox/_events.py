@@ -27,7 +27,7 @@ if TYPE_CHECKING:
 
     from ._follow import Follower
     from ._layout import FieldSpec, Layout
-    from ._native import Segment
+    from ._native import Segment, Types
 
 T = TypeVar("T")
 PENDING, DONE, CANCELLED = "pending", "done", "cancelled"
@@ -232,11 +232,13 @@ class Watcher:
         "_slots_full",
         "_stop",
         "_thread",
+        "_types",
         "follower",
     )
 
-    def __init__(self, segment: Segment) -> None:
+    def __init__(self, segment: Segment, types: Types) -> None:
         self._segment = segment
+        self._types = types
         self._pending: list[FieldFuture[Any]] = []
         self._lock = threading.RLock()
         self._stop = threading.Event()
@@ -246,7 +248,7 @@ class Watcher:
         # Moves forwarding when a reference field changes; set by the box's events group.
         self.follower: Follower | None = None
         self._fields: tuple[FieldSpec, ...] = ()
-        self._seen: dict[int, tuple[int, Any]] = {}
+        self._seen: dict[int, tuple[int, bytes, Any]] = {}
         self._slot: int | None = None
         self._slots_full = False
 
@@ -256,7 +258,7 @@ class Watcher:
 
     def future(self, field: FieldSpec, since: int | None = None) -> FieldFuture[Any]:
         """Return a future for the first write to `field` after version `since` (default: now)."""
-        current, value = self._segment.get_versioned(field.index)
+        current, value = self._segment.get_versioned(field.index, self._types)
         fut: FieldFuture[Any] = FieldFuture(
             self, field, current if since is None else since
         )
@@ -297,12 +299,15 @@ class Watcher:
 
     def last(self, spec: FieldSpec) -> Any:
         """Return the value of `spec` the watcher last saw, which it compares the next change with."""
-        return self._seen[spec.index][1]
+        return self._seen[spec.index][2]
+
+    def _read(self, spec: FieldSpec) -> tuple[int, bytes, Any]:
+        """Return the field's write count, stored bytes and value, from one read."""
+        version, raw = self._segment.read_versioned(spec.index)
+        return version, raw, self._types.decode(spec.index, raw)
 
     def _listen_locked(self, sink: Sink, fields: tuple[FieldSpec, ...]) -> None:
-        self._seen = {
-            spec.index: self._segment.get_versioned(spec.index) for spec in fields
-        }
+        self._seen = {spec.index: self._read(spec) for spec in fields}
         self._fields = fields
         self._sink = sink
 
@@ -324,13 +329,21 @@ class Watcher:
             return
         versions = self._segment.versions()
         for spec in fields:
-            seen_version, old = self._seen[spec.index]
+            seen_version, seen_raw, old = self._seen[spec.index]
             if versions[spec.index] == seen_version:
                 continue
-            version, new = self._segment.get_versioned(spec.index)
-            self._seen[spec.index] = (version, new)
-            if new == old:
+            version, raw = self._segment.read_versioned(spec.index)
+            # Bytes, not ==: == raises for arrays and some decimals, and calls 1 and True the same.
+            if raw == seen_raw:
+                self._seen[spec.index] = (version, raw, old)
                 continue
+            try:
+                new = self._types.decode(spec.index, raw)
+            except Exception:
+                self._seen[spec.index] = (version, raw, old)
+                logger.exception("reading a change of field %r failed", spec.name)
+                continue
+            self._seen[spec.index] = (version, raw, new)
             try:
                 sink(spec, new, old)
             except Exception:
@@ -458,7 +471,7 @@ class Watcher:
         # Read every value before removing any future, so a failed read leaves them all pending.
         values: list[tuple[FieldFuture[Any], Any, int]] = []
         for fut in ready:
-            version, value = self._segment.get_versioned(fut._field.index)
+            version, value = self._segment.get_versioned(fut._field.index, self._types)
             values.append((fut, shown(fut._field, value), version))
         with self._lock:
             for fut in ready:

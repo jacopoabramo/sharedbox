@@ -26,7 +26,7 @@ function(sbx_test_target target)
     endif()
 endfunction()
 
-set(sbx_tests test_result test_atomics test_mapping test_lock test_slots test_wait)
+set(sbx_tests test_result test_atomics test_mapping test_lock test_slots test_wait test_layout2 test_types test_values)
 if(WIN32)
     list(APPEND sbx_tests test_windows_h)
 else()

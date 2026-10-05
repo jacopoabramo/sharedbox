@@ -23,7 +23,6 @@ struct FieldDesc {
     FieldKind kind;
 };
 
-bool kind_is_valid(std::uint32_t code);
 /// Throws std::out_of_range unless index < count.
 void check_index(std::uint32_t index, std::size_t count);
 /// Throws std::invalid_argument unless there is one name per field.
@@ -69,10 +68,11 @@ struct FieldRead {
     const FieldDesc *field = nullptr;
     std::uint64_t version = 0;
     std::string_view bytes;
-    // Most values fit in words; a longer one is read again into large, at its stored length, never at
-    // the field's capacity. Words rather than chars, so MSVC's /GS adds no stack cookie check to every read.
+    // Most values fit in words. Words rather than chars, so MSVC's /GS adds no stack cookie check to
+    // every read. A value longer than words is read again into large, sized from its stored length or,
+    // for a described kind, its size; new[] leaves it uninitialised.
     std::uint64_t words[32];
-    std::string large;
+    std::unique_ptr<std::byte[]> large;
 };
 
 /// A named shared-memory segment holding one fixed-layout record.
@@ -83,9 +83,12 @@ public:
     static std::unique_ptr<Segment>
     create(const std::string &name, const std::vector<FieldDesc> &fields, const std::vector<std::string> &names,
            std::uint64_t record_size, std::uint64_t schema_hash, double lock_timeout, std::uint16_t waiter_slots,
-           const std::vector<std::pair<std::uint32_t, std::string>> &values, bool publish = true);
+           const std::vector<std::pair<std::uint32_t, std::string>> &values, const std::string &types_table = {},
+           std::uint16_t major = layout_major, bool publish = true);
+    /// With types_table, the segment's description table must equal it.
     static std::unique_ptr<Segment> attach(const std::string &name, const std::vector<std::string> &names,
-                                           std::uint64_t schema_hash, double lock_timeout);
+                                           std::uint64_t schema_hash, double lock_timeout,
+                                           const std::string *types_table);
     ~Segment();
     Segment(const Segment &) = delete;
     Segment &operator=(const Segment &) = delete;
@@ -139,6 +142,8 @@ public:
     void close();
     /// Bytes of the segment's mapping.
     std::uint64_t size() const;
+    std::uint16_t major_version() const;
+    std::uint16_t minor_version() const;
     bool closed() const;
     const std::string &name() const;
     double lock_timeout() const;

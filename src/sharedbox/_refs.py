@@ -173,13 +173,15 @@ class Reference:
         hit = box._segment.cached_ref(self.index, box._refs)
         if hit is not False:
             return hit  # type: ignore[return-value]
-        value: Any = box._segment.get(self.index)
+        value: Any = box._segment.get(self.index, type(box).__layout__.types)
         if value is None:
             return None
         return box._inner(self.spec, *value)
 
     def __set__(self, box: SharedBox, value: object) -> None:
-        box._segment.set([(self.index, stored(self.spec, value))])
+        box._segment.set(
+            [(self.index, stored(self.spec, value))], type(box).__layout__.types
+        )
 
     def __delete__(self, box: SharedBox) -> None:
         raise AttributeError("a SharedBox field cannot be deleted")

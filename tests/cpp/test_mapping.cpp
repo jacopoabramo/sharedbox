@@ -112,7 +112,7 @@ TEST_CASE("checks on open") {
     h.layout_minor = 7;
     auto newer = handle::open(name, seconds(1.0));
     CHECK((newer && newer->minor_version() == 0));
-    CHECK(forged(h.layout_major, std::uint16_t{2}) == status::layout);
+    CHECK(forged(h.layout_major, std::uint16_t{3}) == status::layout);
     const auto seen = sharedbox::inspect(name);
     CHECK((seen && seen->layout_minor == 7));
     h.layout_minor = 0;
@@ -123,6 +123,7 @@ TEST_CASE("checks on open") {
 TEST_CASE("geometry limits") {
     constexpr std::uint32_t mapped = std::uint32_t{1} << 30;
     header h{};
+    h.layout_major = 1;
     h.field_count = 1;
     h.waiter_slots = 1;
     h.tail = sharedbox::header_size;
@@ -209,16 +210,16 @@ TEST_CASE("open accepts a kind it does not know") {
     auto owner = create(name);
     REQUIRE(owner.has_value());
     auto *table = reinterpret_cast<sharedbox::stored_field *>(static_cast<std::byte *>(owner->base()) + 128);
-    // Kind 9 at offset 9: open asks no alignment of a kind it does not know.
-    table[1] = {9u, 16u | 9u << 24};
+    // Kind 13 at offset 9: open asks no alignment of a kind it does not know.
+    table[1] = {9u, 16u | 13u << 24};
     auto opened = handle::open(name, seconds(1.0));
     REQUIRE(opened.has_value());
-    CHECK((opened->field(1).kind == 9 && opened->field(1).offset == 9 && opened->field(1).capacity == 16));
+    CHECK((opened->field(1).kind == 13 && opened->field(1).offset == 9 && opened->field(1).capacity == 16));
     const char text[16] = "opaque bytes";
     const sharedbox::value value{1, std::as_bytes(std::span(text))};
     const auto written = opened->write({&value, 1}, seconds(1.0));
     CHECK((!written && written.error() == status::range));
-    // Stands for a newer writer that knows kind 9.
+    // Stands for a newer writer that knows kind 13.
     std::memcpy(static_cast<std::byte *>(owner->base()) + header_of(*owner).record + 9, text, 16);
     char back[16] = {};
     const auto got = opened->read(1, std::as_writable_bytes(std::span(back)));
@@ -230,7 +231,7 @@ TEST_CASE("open accepts a kind it does not know") {
     REQUIRE(capsule != nullptr);
     {
         auto taken = handle::from_capsule(capsule);
-        CHECK((taken && taken->field(1).kind == 9));
+        CHECK((taken && taken->field(1).kind == 13));
         if (!taken)
             capsule->release(capsule);
     }

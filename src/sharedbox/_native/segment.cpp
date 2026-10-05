@@ -18,6 +18,12 @@
 #include <system_error>
 #include <thread>
 
+#if defined(_MSC_VER)
+#define SEGMENT_NOINLINE __declspec(noinline)
+#else
+#define SEGMENT_NOINLINE __attribute__((noinline))
+#endif
+
 namespace sharedbox {
 namespace {
 
@@ -30,7 +36,8 @@ void check_values(const std::vector<FieldDesc> &fields, std::span<const value> v
     for (const value &v : values) {
         check_index(v.field, fields.size());
         const FieldDesc &f = fields[v.field];
-        if (is_prefixed(f.kind) ? v.bytes.size() > f.capacity : v.bytes.size() != f.capacity)
+        const bool shorter_ok = is_prefixed(f.kind) || detail::is_collection(static_cast<std::uint32_t>(f.kind));
+        if (shorter_ok ? v.bytes.size() > f.capacity : v.bytes.size() != f.capacity)
             throw std::invalid_argument("value for field " + std::to_string(v.field) + " is " +
                                         std::to_string(v.bytes.size()) + " bytes; the field holds " +
                                         std::to_string(f.capacity));
@@ -107,7 +114,7 @@ std::string exists_message(const std::string &name, const std::vector<std::strin
                unlink + " removes it";
 #endif
     }
-    if (seen->layout_major != layout_major)
+    if (!detail::major_ok(seen->layout_major))
         return taken;
     if (std::optional<std::string> foreign = foreign_creator(*seen, taken))
         return *foreign;
@@ -150,8 +157,6 @@ std::string exists_message(const std::string &name, const std::vector<std::strin
 }
 
 } // namespace
-
-bool kind_is_valid(std::uint32_t code) { return code <= kind_ref; }
 
 void check_index(std::uint32_t index, std::size_t count) {
     if (index >= count)
@@ -250,9 +255,49 @@ struct Segment::Impl {
         return fields[index];
     }
 
+    // A described field: a list, set or dict copies its used slots, a large value runs the wait hooks
+    // around its copy, anything else is read whole.
+    void read_described(std::uint16_t f, FieldRead &out) const {
+        const FieldDesc &field = fields[f];
+        const std::size_t size = field.capacity;
+        std::byte *buf = reinterpret_cast<std::byte *>(out.words);
+        // An array is read straight into the heap buffer its decoded value then owns.
+        if (size > sizeof out.words || static_cast<std::uint8_t>(field.kind) == kind_array) {
+            out.large.reset(new std::byte[size]);
+            buf = out.large.get();
+        }
+        read_value got{};
+        if (detail::is_collection(static_cast<std::uint32_t>(field.kind)))
+            got = check(box.read_used(f, {buf, size}));
+        else if (size >= detail::large_copy)
+            got = check(box.read_large(f, {buf, size}));
+        else
+            got = check(box.read(f, {buf, size}));
+        out.bytes = {reinterpret_cast<const char *>(buf), got.len};
+        out.version = got.version;
+    }
+
+    // A value longer than out.words, read again at its stored length until it fits. A function of its
+    // own: inlined into Segment::read, this loop made MSVC pass the int path's values through the stack.
+    SEGMENT_NOINLINE void read_long(std::uint16_t f, std::size_t len, FieldRead &out) const {
+        read_value got{len, 0};
+        std::size_t size = 0;
+        do {
+            size = got.len;
+            out.large.reset(new std::byte[size]);
+            got = check(box.read(f, {out.large.get(), size}));
+        } while (got.len > size);
+        out.bytes = {reinterpret_cast<const char *>(out.large.get()), got.len};
+        out.version = got.version;
+    }
+
     // Every value's index is checked; the caller holds enter()'s guard.
     void write(std::span<const value> values) {
-        const result<void> written = box.write(values, seconds(lock_timeout));
+        std::size_t total = 0;
+        for (const value &v : values)
+            total += v.bytes.size();
+        const result<void> written = total >= detail::large_copy ? box.write_large(values, seconds(lock_timeout))
+                                                                 : box.write(values, seconds(lock_timeout));
         // write checks the values too; this finds which one, for the message.
         if (!written && written.error() == status::range)
             check_values(fields, values);
@@ -274,7 +319,7 @@ std::unique_ptr<Segment> Segment::create(const std::string &name, const std::vec
                                          std::uint64_t schema_hash, double lock_timeout,
                                          std::uint16_t waiter_slots,
                                          const std::vector<std::pair<std::uint32_t, std::string>> &values,
-                                         bool publish) {
+                                         const std::string &types_table, std::uint16_t major, bool publish) {
     check_lock_timeout(lock_timeout);
     if (fields.empty() || fields.size() > max_fields)
         throw std::invalid_argument("a box needs between 1 and 256 fields");
@@ -288,7 +333,13 @@ std::unique_ptr<Segment> Segment::create(const std::string &name, const std::vec
         check_index(index, fields.size());
         initial.push_back({static_cast<std::uint16_t>(index), bytes_of(bytes)});
     }
-    check_values(fields, initial);
+    // Checked here for a message that names the field. A described field's capacity here is its
+    // description's offset, not its size, and kinds 6 to 11 are always encoded at their exact size;
+    // the header checks both.
+    for (const value &v : initial)
+        if (const auto kind = static_cast<std::uint32_t>(fields[v.field].kind);
+            kind <= kind_ref || detail::prefixed(kind))
+            check_values(fields, {&v, 1});
     std::vector<field_spec> table;
     table.reserve(fields.size());
     for (const auto &f : fields)
@@ -299,9 +350,8 @@ std::unique_ptr<Segment> Segment::create(const std::string &name, const std::vec
     impl->names = names;
     impl->lock_timeout = lock_timeout;
     const auto size = static_cast<std::uint32_t>(record_size);
-    result<handle> made = publish
-                              ? handle::create(name, table, size, schema_hash, waiter_slots, initial)
-                              : handle::create_unpublished(name, table, size, schema_hash, waiter_slots, initial);
+    result<handle> made = detail::create_impl(name, table, size, schema_hash, waiter_slots, initial,
+                                              bytes_of(types_table), major, publish);
     if (!made && made.error() == status::exists)
         throw SegmentExists(exists_message(name, names));
     impl->box = impl->check(std::move(made));
@@ -310,7 +360,8 @@ std::unique_ptr<Segment> Segment::create(const std::string &name, const std::vec
 }
 
 std::unique_ptr<Segment> Segment::attach(const std::string &name, const std::vector<std::string> &names,
-                                         std::uint64_t schema_hash, double lock_timeout) {
+                                         std::uint64_t schema_hash, double lock_timeout,
+                                         const std::string *types_table) {
     check_lock_timeout(lock_timeout);
     auto impl = std::make_unique<Impl>();
     impl->name = name;
@@ -328,11 +379,17 @@ std::unique_ptr<Segment> Segment::attach(const std::string &name, const std::vec
     impl->box = impl->check(std::move(opened));
     if (impl->box.schema_hash() != schema_hash)
         throw SchemaMismatch("segment '" + name + "' was created by a different class");
+    if (types_table != nullptr) {
+        const std::span<const std::byte> stored = impl->box.types_table();
+        if (stored.size() != types_table->size() ||
+            std::memcmp(stored.data(), types_table->data(), stored.size()) != 0)
+            throw SchemaMismatch("segment '" + name + "' was created by a class whose field types differ");
+    }
     check_names(names, impl->box.field_count());
     // The header opens a field of a kind it does not know; this module can neither convert nor
     // check its value.
     for (std::uint16_t i = 0; i < impl->box.field_count(); ++i)
-        if (!kind_is_valid(impl->box.field(i).kind))
+        if (!detail::kind_known(impl->box.field(i).kind))
             throw SchemaMismatch("segment '" + name + "' has a field of kind " +
                                  std::to_string(impl->box.field(i).kind) + ", which this version cannot read");
     impl->bind();
@@ -343,16 +400,12 @@ void Segment::read(std::uint32_t index, FieldRead &out) const {
     auto guard = impl_->enter();
     out.field = &impl_->field(index);
     const auto f = static_cast<std::uint16_t>(index);
-    read_value got = impl_->check(impl_->box.read(f, std::as_writable_bytes(std::span(out.words))));
-    if (got.len <= sizeof out.words) {
-        out.bytes = {reinterpret_cast<const char *>(out.words), got.len};
-    } else {
-        do {
-            out.large.resize(got.len);
-            got = impl_->check(impl_->box.read(f, std::as_writable_bytes(std::span(out.large))));
-        } while (got.len > out.large.size());
-        out.bytes = {out.large.data(), got.len};
-    }
+    if (detail::described(static_cast<std::uint32_t>(out.field->kind))) [[unlikely]]
+        return impl_->read_described(f, out);
+    const read_value got = impl_->check(impl_->box.read(f, std::as_writable_bytes(std::span(out.words))));
+    if (got.len > sizeof out.words) [[unlikely]]
+        return impl_->read_long(f, got.len, out);
+    out.bytes = {reinterpret_cast<const char *>(out.words), got.len};
     out.version = got.version;
 }
 
@@ -360,7 +413,10 @@ std::size_t Segment::record_size() const { return impl_->record_size; }
 
 void Segment::read_record(std::span<std::byte> out) const {
     auto guard = impl_->enter();
-    impl_->check(impl_->box.read_record(out));
+    if (out.size() >= detail::large_copy)
+        impl_->check(impl_->box.read_record_large(out));
+    else
+        impl_->check(impl_->box.read_record(out));
 }
 
 std::uint32_t Segment::field_count() const { return static_cast<std::uint32_t>(impl_->fields.size()); }
@@ -511,6 +567,16 @@ void Segment::unlink(const std::string &name) {
 std::uint64_t Segment::size() const {
     auto guard = impl_->enter();
     return impl_->box.size();
+}
+
+std::uint16_t Segment::major_version() const {
+    auto guard = impl_->enter();
+    return impl_->box.major_version();
+}
+
+std::uint16_t Segment::minor_version() const {
+    auto guard = impl_->enter();
+    return impl_->box.minor_version();
 }
 
 bool Segment::closed() const { return impl_->closed; }

@@ -1,4 +1,5 @@
 import contextlib
+import gc
 import json
 import os
 import sys
@@ -35,6 +36,19 @@ def pytest_ignore_collect(collection_path: Path, config: pytest.Config) -> bool 
     # The wheel tests in CI install neither, since they come with the benchmarks extra.
     if collection_path.name == "test_benchbox_plot.py" and (
         find_spec("matplotlib") is None or find_spec("pyperf") is None
+    ):
+        return True
+    # attrs, msgspec and ml_dtypes are dev dependencies that may lack wheels for an interpreter
+    # under test; torch is not a dependency at all.
+    optional = {
+        "test_types_records_attrs.py": "attrs",
+        "test_types_records_msgspec.py": "msgspec",
+        "test_types_arrays_bfloat16.py": "ml_dtypes",
+        "test_types_arrays_torch.py": "torch",
+    }
+    if (
+        collection_path.name in optional
+        and find_spec(optional[collection_path.name]) is None
     ):
         return True
     return None
@@ -88,3 +102,15 @@ def pytest_terminal_summary(terminalreporter: pytest.TerminalReporter) -> None:
         terminalreporter.write_sep("-", name)
         for key, value in results.items():
             terminalreporter.write_line(f"{key:>30}  {value}")
+
+
+def pytest_unconfigure(config: pytest.Config) -> None:
+    # Hypothesis times the collector with a gc callback, and the interpreter keeps gc.callbacks
+    # until after its last collection at exit. What the callback reaches (test functions and
+    # the box classes their annotations name) then outlives the extension, which nanobind
+    # reports as leaked instances.
+    gc.callbacks[:] = [
+        callback
+        for callback in gc.callbacks
+        if not getattr(callback, "__module__", "").startswith("hypothesis.")
+    ]

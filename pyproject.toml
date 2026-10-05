@@ -33,6 +33,7 @@ benchbox = "sharedbox.benchmarks.cli:main"
 [project.optional-dependencies]
 benchmarks = [
     "matplotlib>=3.11.2",
+    "numpy>=2.4.6",
     "pyperf>=2.10.0",
     "typer>=0.27.2",
 ]
@@ -85,7 +86,7 @@ warn_unreachable = true
 files = ["src", "tests", "docs/tutorials", "docs/examples"]
 
 [[tool.mypy.overrides]]
-module = ["pyperf"]
+module = ["pyperf", "torch"]
 ignore_missing_imports = true
 
 [tool.tox]
@@ -131,13 +132,18 @@ commands = [
 [dependency-groups]
 benchmarks = [
     "matplotlib>=3.11.2",
+    "numpy>=2.4.6",
     "pyperf>=2.10.0",
     "typer>=0.27.2",
 ]
 dev = [
+    "attrs>=26.1.0",
     "hypothesis>=6.168.3",
+    "ml-dtypes>=0.6.0",
+    "msgspec>=0.22.0",
     "mypy>=2.3.1",
     "nanobind>=3.1.0",
+    "numpy>=2.4.6",
     "pytest>=9.1.1",
     "pytest-codspeed>=5.0.3",
     "pytest-xdist>=3.8.0",

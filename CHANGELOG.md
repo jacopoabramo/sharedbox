@@ -9,14 +9,62 @@ Dates are marked as `DD-MM-YYYY`
 
 ## [Unreleased]
 
+## [0.4.0] - 05-10-2026
+
 ### Added
 
 - `benchbox plot`: draws the results of `benchbox all` as SVG charts, in a
   light and a dark variant. The `benchmarks` extra now includes
   matplotlib.
+- `SharedBox`: fields of type `complex`, `datetime.date`, `datetime.time`,
+  `datetime.datetime`, `datetime.timedelta`, `uuid.UUID` and
+  `Annotated[decimal.Decimal, Capacity(n)]`.
+- `SharedBox`: `enum.Enum`, `enum.Flag` and `typing.Literal` fields.
+- `SharedBox`: `X | None` and union fields.
+- `SharedBox`: record fields: dataclasses, `NamedTuple`, fixed-length
+  tuples, `TypedDict`, attrs classes and `msgspec.Struct`.
+- `SharedBox`: `list`, `tuple[T, ...]`, `set`, `frozenset`, `dict` and
+  `bytearray` fields and their `collections.abc` forms, with a `Capacity`
+  in elements.
+- `Shape`, `DType`, `SupportsDLPack`, `register_array_type`: array fields
+  through DLPack.
+- `sharedbox.hpp`: `type_view`, `handle::field_type`,
+  `handle::types_table`, `handle::major_version`, `oldest_layout_major`,
+  `time_value`, `datetime_value`, `timedelta_value`, the kind codes
+  `kind_complex` to `kind_decimal` and `kind_enum` to `kind_array`,
+  `max_type_depth`, `max_types_size`, `max_mapping_size`,
+  `first_described_kind`, `max_date_ordinal`, `unix_epoch_ordinal`,
+  `micros_per_day`, `max_offset_minutes`, `literal_none` to
+  `literal_enum`, `type_head`, `dl_dtype`, `literal_value`,
+  `encode_*` and `decode_*` functions for complex, date, time, datetime,
+  timedelta, uuid, flag and position values, `decode_bool`,
+  `decode_present`, `decode_tag`, `decode_length`, `handle::read_used`,
+  `handle::read_large`, `handle::read_record_large` and
+  `handle::write_large`.
+- `sharedbox_c.h`: `sbx_field_desc`, the structs `sbx_time`,
+  `sbx_datetime` and `sbx_timedelta`, and typed reads and writes of
+  complex, date, time, datetime, timedelta, UUID, enum and literal
+  positions, flag bits and optional presence.
+- `benchbox ops`: rows for datetime, record, list and array fields.
+
+```python
+class Frame(SharedBox):
+    taken: datetime.datetime
+    image: Annotated[np.ndarray, Shape(480, 640), DType("uint8")]
+    tags: Annotated[list[Annotated[str, Capacity(16)]], Capacity(8)] = field(default_factory=list)
+```
 
 ### Changed
 
+- Segments use layout 2.0. Releases 0.3.0 and 0.3.1 cannot open a box made
+  by this version; this version opens boxes made by them.
+- `SharedBox.events` and `SharedBox.watch()`: a field counts as changed
+  when its stored bytes change. Writing `NaN` again no longer emits;
+  `-0.0` after `0.0` does.
+- `Capacity`: also sets the most elements of a collection.
+- `sharedbox.hpp`: the inline namespace is `v2`; `handle::create` and
+  `handle::create_unpublished` take a description table.
+- The `benchmarks` extra includes numpy.
 - `SharedBox.update` and `SharedBox.snapshot`: native methods, unless a
   class defines or inherits its own.
 
@@ -231,7 +279,8 @@ stage.events.nested.connect(lambda path, new, old: print(path, new))
 
 - Initial release
 
-[Unreleased]: https://github.com/jacopoabramo/sharedbox/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/jacopoabramo/sharedbox/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/jacopoabramo/sharedbox/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/jacopoabramo/sharedbox/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/jacopoabramo/sharedbox/compare/0.2.4...v0.3.0
 [0.2.4]: https://github.com/jacopoabramo/sharedbox/compare/0.1.0...0.2.4
