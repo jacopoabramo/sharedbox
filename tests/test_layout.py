@@ -33,7 +33,7 @@ def test_fields_are_packed_by_alignment() -> None:
 
 
 def test_check_refuses_what_a_write_would() -> None:
-    """Check that a field spec's check accepts a valid value and raises TypeError for a wrong type."""
+    """Check that Layout.check accepts an int for an int field and raises TypeError for a str."""
     layout = build_layout(Sample)
     spec = layout.by_name["count"]
     layout.check(spec, 3)
