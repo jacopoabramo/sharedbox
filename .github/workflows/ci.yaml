@@ -118,7 +118,7 @@ jobs:
         env:
           CIBW_BUILD: ${{ matrix.python }}-${{ matrix.platform_id }}
           CIBW_CONTAINER_ENGINE: "docker; create_args: --shm-size=1g"
-          CIBW_TEST_REQUIRES: pytest hypothesis
+          CIBW_TEST_REQUIRES: pytest hypothesis numpy
           CIBW_TEST_COMMAND: pytest {project}/tests
         with:
           package-dir: .
