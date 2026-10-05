@@ -259,16 +259,21 @@ void init() {
     mapping_abc = nb::object(abc.attr("Mapping")).release().ptr();
     sequence_abc = nb::object(abc.attr("Sequence")).release().ptr();
     set_abc = nb::object(abc.attr("Set")).release().ptr();
-    utcoffset_name = PyUnicode_InternFromString("utcoffset");
-    bytes_name = PyUnicode_InternFromString("bytes");
-    fold_name = PyUnicode_InternFromString("fold");
-    tzinfo_name = PyUnicode_InternFromString("tzinfo");
-    empty_tuple = PyTuple_New(0);
+    const auto checked = [](PyObject *made) {
+        if (made == nullptr)
+            throw nb::python_error();
+        return made;
+    };
+    utcoffset_name = checked(PyUnicode_InternFromString("utcoffset"));
+    bytes_name = checked(PyUnicode_InternFromString("bytes"));
+    fold_name = checked(PyUnicode_InternFromString("fold"));
+    tzinfo_name = checked(PyUnicode_InternFromString("tzinfo"));
+    empty_tuple = checked(PyTuple_New(0));
 #ifdef Py_LIMITED_API
     const char *attrs[10] = {"year",   "month",       "day",  "hour",    "minute",
                              "second", "microsecond", "days", "seconds", "microseconds"};
     for (int i = 0; i < 10; ++i)
-        names[i] = PyUnicode_InternFromString(attrs[i]);
+        names[i] = checked(PyUnicode_InternFromString(attrs[i]));
 #else
     PyDateTime_IMPORT;
     if (PyDateTimeAPI == nullptr)
