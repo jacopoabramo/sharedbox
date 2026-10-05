@@ -84,14 +84,22 @@ TEST_CASE("dates, times and timedeltas keep their ranges") {
 }
 
 TEST_CASE("positions, tags, presence and lengths stay below their counts") {
+    // An enum of 2 names, a union of int and float, and a list of 3 ints, one field each.
     table_builder t;
     t.head(kind_enum, 2, 2);
     t.name("A");
     t.name("B");
     t.pad();
+    const std::uint32_t union_at = t.head(kind_union, 2, 16);
+    t.entry(8, kind_int, 8);
+    t.entry(8, kind_float, 8);
+    const std::uint32_t list_at = t.head(kind_list, 1, 32);
+    t.put(std::uint32_t{3});
+    t.entry(8, kind_int, 8);
+    t.pad();
     const std::string name = unique("values-enum");
-    const field_spec fields[1] = {{0, 0, kind_enum}};
-    auto box = handle::create(name, fields, 8, 1, 4, {}, t.span());
+    const field_spec fields[3] = {{48, 0, kind_enum}, {0, union_at, kind_union}, {16, list_at, kind_list}};
+    auto box = handle::create(name, fields, 56, 1, 4, {}, t.span());
     REQUIRE(box.has_value());
     const type_view view = box->field_type(0);
     std::array<std::byte, 2> pos{};
@@ -99,10 +107,40 @@ TEST_CASE("positions, tags, presence and lengths stay below their counts") {
     REQUIRE(encode_position(view, 1, pos) == status::ok);
     CHECK(*decode_position(view, pos) == 1);
     pos[0] = std::byte{2};
-    CHECK(decode_position(view, pos).error() == status::corrupt);
+    const auto position = decode_position(view, pos);
+    REQUIRE_FALSE(position);
+    CHECK(position.error() == status::corrupt);
     const std::array<std::byte, 1> two{std::byte{2}};
-    CHECK(decode_present(two).error() == status::corrupt);
-    CHECK(decode_bool(two).error() == status::corrupt);
+    const auto present = decode_present(two);
+    REQUIRE_FALSE(present);
+    CHECK(present.error() == status::corrupt);
+    const auto flag = decode_bool(two);
+    REQUIRE_FALSE(flag);
+    CHECK(flag.error() == status::corrupt);
+
+    const type_view either = box->field_type(1);
+    std::array<std::byte, 16> tagged{};
+    tagged[0] = std::byte{1};
+    CHECK(*decode_tag(either, tagged) == 1);
+    tagged[0] = std::byte{2};
+    const auto tag = decode_tag(either, tagged);
+    REQUIRE_FALSE(tag);
+    CHECK(tag.error() == status::corrupt);
+
+    const type_view list = box->field_type(2);
+    std::array<std::byte, 32> items{};
+    const std::uint32_t three = 3;
+    std::memcpy(items.data(), &three, 4);
+    CHECK(*decode_length(list, items) == 3);
+    // Three elements need 32 bytes; 24 cannot hold them.
+    const auto short_bytes = decode_length(list, std::span<const std::byte>(items.data(), 24));
+    REQUIRE_FALSE(short_bytes);
+    CHECK(short_bytes.error() == status::corrupt);
+    const std::uint32_t four = 4;
+    std::memcpy(items.data(), &four, 4);
+    const auto too_long = decode_length(list, items);
+    REQUIRE_FALSE(too_long);
+    CHECK(too_long.error() == status::corrupt);
     static_cast<void>(unlink(name));
 }
 
