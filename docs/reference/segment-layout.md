@@ -274,6 +274,10 @@ their count), lengths (at most the capacity), date ordinals (1 to
 and timedeltas (within Python's range), and treat a failure as a corrupt
 value.
 
+Only a `bool` inside a described kind has to be 0 or 1. A field of kinds
+0 to 5 decodes as it did in 0.3, so a `bool` field whose byte is not 0
+reads as `True`.
+
 ### Writing a list, set or dict
 
 The bytes written for a list, set or dict field are its length and the
