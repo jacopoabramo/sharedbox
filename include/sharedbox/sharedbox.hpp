@@ -153,7 +153,7 @@ struct field_spec {
     std::uint8_t kind;
 };
 
-// Bytes for one field in the record encoding, without the length prefix of str and bytes.
+// Bytes for one field in the record encoding, without the length prefix of str, bytes and decimal.
 struct value {
     std::uint16_t field;
     std::span<const std::byte> bytes;
@@ -792,7 +792,7 @@ inline std::uint32_t fixed_capacity(std::uint32_t kind) noexcept {
     }
 }
 
-// Bytes the field occupies in the record, the length prefix of str and bytes included.
+// Bytes the field occupies in the record, the length prefix of str, bytes and decimal included.
 inline std::uint64_t field_span(const field_spec &f) noexcept {
     return (prefixed(f.kind) ? 4u : 0u) + std::uint64_t{f.capacity};
 }

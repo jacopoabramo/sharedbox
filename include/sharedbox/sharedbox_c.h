@@ -47,7 +47,7 @@ typedef struct sbx_handle {
     void *private_data;
 } sbx_handle;
 
-/* Bytes for one field in the record encoding, without the length prefix of str and bytes. */
+/* Bytes for one field in the record encoding, without the length prefix of str, bytes and decimal. */
 typedef struct sbx_value {
     uint16_t field;
     const void *data;
@@ -81,11 +81,12 @@ SBX_API int sbx_open(const char *name, double timeout, sbx_handle *out);
 SBX_API int sbx_import(sbx_handle *capsule, sbx_handle *out);
 
 /* Copies the field's stored bytes into buf. If they are longer than cap, nothing is copied, *len gets
- * their length and the call returns SBX_E_RANGE. len and version may be NULL. */
+ * their length and the call returns SBX_E_RANGE. len and version may be NULL. A list, set or dict field
+ * gives its whole capacity: the length, then every slot, used or not. */
 SBX_API int sbx_read(const sbx_handle *h, uint16_t field, void *buf, size_t cap, size_t *len, uint64_t *version);
 
 /* Writes every value under one lock, so readers see all of them or none. SBX_E_RANGE for a field of a
- * kind this header does not know. */
+ * kind this header does not know. A list, set or dict value is its length and the slots it uses, no more. */
 SBX_API int sbx_write(sbx_handle *h, const sbx_value *values, size_t n, double lock_timeout);
 
 /* The schema hash the box was created with; compare it with the one the caller expects. 0 when h was
