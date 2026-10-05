@@ -4,7 +4,6 @@
 
 #include "unique.hpp"
 
-#include <cstring>
 #include <string>
 
 using sharedbox::handle;

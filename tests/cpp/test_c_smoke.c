@@ -56,8 +56,11 @@ int main(void) {
         ok = ok && sbx_read_position(&h, 3, &position) == SBX_OK && position == 1;
         ok = ok && sbx_write_position(&h, 3, 2, 1.0) == SBX_E_RANGE;
         ok = ok && sbx_read_complex(&h, 1, zback) == SBX_E_RANGE;
+        /* Kind 64 is enum. Its description is an 8-byte head, the names OFF and ON with their u16
+         * lengths (9 bytes), padded to 24. */
         ok = ok && sbx_field_desc(&h, 3, &kind, &desc, &desc_len) == SBX_OK;
         ok = ok && kind == 64 && desc != NULL && desc_len == 24;
+        /* Kind 1 is int, which has no description. */
         ok = ok && sbx_field_desc(&h, 0, &kind, &desc, &desc_len) == SBX_OK;
         ok = ok && kind == 1 && desc == NULL && desc_len == 0;
     }
