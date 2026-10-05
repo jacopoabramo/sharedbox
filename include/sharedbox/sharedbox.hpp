@@ -1704,14 +1704,28 @@ public:
     std::uint32_t slots() const noexcept { return described() ? node().slots : 0; }
     std::uint32_t stride() const noexcept { return described() ? node().stride : 0; }
     // optional, union, record, tuple: i < count(); list and set: 0, the element; dict: 0 key, 1 value.
-    type_view member(std::uint16_t i) const noexcept { return {table_, table_->member(node().members + i).type}; }
-    std::uint32_t member_offset(std::uint16_t i) const noexcept {
-        return table_->member(node().members + i).offset;
+    // Another kind or index gives an empty type_view and offset 0.
+    type_view member(std::uint16_t i) const noexcept {
+        return has(i, kind_optional, kind_dict) ? type_view{table_, table_->member(node().members + i).type}
+                                                : type_view{};
     }
-    // enum, flag, record.
-    std::string_view name(std::uint16_t i) const noexcept { return table_->name(node().names + i); }
-    std::uint64_t flag_bits(std::uint16_t i) const noexcept { return table_->number(node().numbers + i); }
-    const literal_value &literal(std::uint16_t i) const noexcept { return table_->literal(node().literals + i); }
+    std::uint32_t member_offset(std::uint16_t i) const noexcept {
+        return has(i, kind_optional, kind_dict) ? table_->member(node().members + i).offset : 0;
+    }
+    // enum, flag, record; another kind or index gives an empty name.
+    std::string_view name(std::uint16_t i) const noexcept {
+        const bool named = has(i, kind_enum, kind_flag) || has(i, kind_record, kind_record);
+        return named ? table_->name(node().names + i) : std::string_view{};
+    }
+    // flag; another kind or index gives 0.
+    std::uint64_t flag_bits(std::uint16_t i) const noexcept {
+        return has(i, kind_flag, kind_flag) ? table_->number(node().numbers + i) : 0;
+    }
+    // literal; another kind or index gives a value with tag 0 and no text.
+    const literal_value &literal(std::uint16_t i) const noexcept {
+        static constexpr literal_value empty{};
+        return has(i, kind_literal, kind_literal) ? table_->literal(node().literals + i) : empty;
+    }
     dl_dtype dtype() const noexcept { return described() ? node().dtype : dl_dtype{}; }
     std::span<const std::uint64_t> shape() const noexcept {
         if (!described() || ref_.kind != kind_array)
@@ -1727,6 +1741,10 @@ private:
     friend class handle;
     type_view(const detail::type_table *table, detail::type_ref ref) noexcept : table_(table), ref_(ref) {}
     const detail::type_node &node() const noexcept { return table_->node(ref_.node); }
+    // Whether the kind is in [first, last] and i is below count().
+    bool has(std::uint16_t i, std::uint8_t first, std::uint8_t last) const noexcept {
+        return described() && ref_.kind >= first && ref_.kind <= last && i < node().count;
+    }
 
     const detail::type_table *table_ = nullptr;
     detail::type_ref ref_{};

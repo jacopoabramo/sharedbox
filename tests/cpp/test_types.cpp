@@ -99,6 +99,27 @@ TEST_CASE("a record holding a list shows its members") {
     CHECK(table.name(node.names + 1) == "b");
 }
 
+TEST_CASE("type_view gives empty values for another kind or an index past count") {
+    const table_builder t = record_with_list();
+    const std::string name = unique("types-view");
+    const field_spec fields[1] = {{0, 0, kind_record}};
+    auto box = handle::create(name, fields, 40, 1, 4, {}, t.span());
+    REQUIRE(box.has_value());
+    const type_view record = box->field_type(0);
+    const type_view list = record.member(1);
+    CHECK((list.kind() == kind_list && record.member_offset(1) == 8 && record.name(1) == "b"));
+    CHECK((!record.member(2).described() && record.member(2).size() == 0));
+    CHECK(record.member_offset(2) == 0);
+    CHECK(record.name(2).empty());
+    CHECK(record.flag_bits(0) == 0);
+    CHECK((record.literal(0).tag == 0 && record.literal(0).text.empty()));
+    CHECK(list.member(0).kind() == kind_int);
+    CHECK(list.member(1).size() == 0);
+    CHECK(list.name(0).empty());
+    CHECK(record.member(0).member(0).size() == 0);
+    static_cast<void>(unlink(name));
+}
+
 TEST_CASE("forged tables are refused") {
     SUBCASE("a child that points back at its parent") {
         table_builder t;
@@ -242,7 +263,9 @@ TEST_CASE("create refuses a table that does not check") {
     table_builder t = colour();
     t.bytes[1] = std::byte{1};
     const field_spec fields[1] = {{0, 0, kind_enum}};
-    CHECK(handle::create(unique("types-bad"), fields, 8, 1, 4, {}, t.span()).error() == status::range);
+    const auto created = handle::create(unique("types-bad"), fields, 8, 1, 4, {}, t.span());
+    REQUIRE_FALSE(created);
+    CHECK(created.error() == status::range);
 }
 
 TEST_CASE("layout 1.0 refuses a described kind") {
@@ -256,11 +279,15 @@ TEST_CASE("layout 1.0 refuses a described kind") {
         std::memcpy(&stored, bytes + header_size, sizeof stored);
         stored.capacity_and_kind = entry_of(kind_enum, 8);
         std::memcpy(bytes + header_size, &stored, sizeof stored);
-        CHECK(handle::open(name, seconds(1.0)).error() == status::corrupt);
+        const auto opened = handle::open(name, seconds(1.0));
+        REQUIRE_FALSE(opened);
+        CHECK(opened.error() == status::corrupt);
         static_cast<void>(unlink(name));
     }
     SUBCASE("on create") {
         const field_spec bad[1] = {{0, 8, kind_enum}};
-        CHECK(detail::create_impl(name, bad, 8, 1, 4, {}, {}, 1, true).error() == status::range);
+        const auto created = detail::create_impl(name, bad, 8, 1, 4, {}, {}, 1, true);
+        REQUIRE_FALSE(created);
+        CHECK(created.error() == status::range);
     }
 }
