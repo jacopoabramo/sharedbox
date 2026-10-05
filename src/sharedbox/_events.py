@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import atexit
 import contextlib
 import logging
 import threading
@@ -37,11 +38,35 @@ logger = logging.getLogger("sharedbox")
 Sink: TypeAlias = "Callable[[FieldSpec, Any, Any], None]"
 # Marks watcher threads: one must not join another, since that one may be joining it.
 WATCHER_THREAD = threading.local()
+RUNNING: set[Watcher] = set()
 
 
 def on_watcher_thread() -> bool:
     """Return whether the calling thread is the watcher thread of some box."""
     return getattr(WATCHER_THREAD, "active", False)
+
+
+def stop_watchers() -> None:
+    """Stop every watcher thread and wait for it to end, before the interpreter finalizes.
+
+    On CPython before 3.14, a daemon thread that takes the GIL back during
+    finalization is ended with `pthread_exit` on Linux. The unwinding that
+    starts there aborts the process when it reaches the native call that
+    released the GIL, such as a watcher's wait or a box's `close`.
+    """
+    while RUNNING:
+        watcher = RUNNING.pop()
+        watcher.stop(wait=False)
+        thread = watcher._thread
+        if (
+            thread is not None
+            and thread.is_alive()
+            and thread is not threading.current_thread()
+        ):
+            thread.join()
+
+
+atexit.register(stop_watchers)
 
 
 class FieldFuture(Generic[T]):
@@ -402,6 +427,7 @@ class Watcher:
         self._thread = None
         self._pending = []
         self._slot = None
+        RUNNING.discard(self)
 
     def _start_locked(self) -> None:
         if self._thread is None and not self._stop.is_set():
@@ -410,6 +436,7 @@ class Watcher:
                 name=f"sharedbox-watch-{self._segment.name}",
                 daemon=True,
             )
+            RUNNING.add(self)
             self._thread.start()
 
     def _claim(self) -> int | None:
@@ -456,6 +483,7 @@ class Watcher:
                     # The step bounds how long a freed slot or a missed wake-up goes unnoticed.
                     generation = self._segment.wait(generation, STEP, slot)
             finally:
+                RUNNING.discard(self)
                 if self._slot is not None:
                     self._segment.release_waiter(self._slot)
 
