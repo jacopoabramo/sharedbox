@@ -19,7 +19,8 @@ Dates are marked as `DD-MM-YYYY`
   that exits while watcher threads still run no longer aborts with
   `terminate called without an active exception` on Linux with CPython
   3.11 to 3.13. At exit, sharedbox stops every watcher thread and waits
-  for it to end, including any callback it is running.
+  up to 2 seconds in all for them to end, including any callback they are
+  running.
 
 ## [0.4.0] - 05-10-2026
 
