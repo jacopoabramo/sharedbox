@@ -211,7 +211,13 @@ class FieldSpec:
     offset: int
     """Byte offset of the field from the start of the record."""
     capacity: int
-    """Encoded size in bytes; for `str` and `bytes` the most the value may take."""
+    """Bytes the value takes in the record.
+
+    For `str`, `bytes` and `Decimal` it is the most the value may take,
+    without its 4-byte length prefix. For a described kind,
+    [`native`][sharedbox._layout.FieldSpec.native] gives the native module
+    the offset of the field's description in place of this size.
+    """
     label: str = ""
     """`"<Class>.<field>"`, used in error messages."""
     target: type[SharedBox] | None = None
@@ -238,7 +244,14 @@ class Layout:
     record_size: int
     """Bytes the record needs, a multiple of 8."""
     schema_hash: int
-    """First 8 bytes of SHA-256 over the identity and every field's name, kind and capacity, read little-endian."""
+    """First 8 bytes, read little-endian, of SHA-256 over the identity and every field's name and type.
+
+    The type covers the kind and capacity, and for a described kind its
+    description: the member names of an enum, the names and values of a
+    flag, the values of a literal, the members of a union, record or
+    tuple, the element types of a collection, and the shape and dtype of
+    an array.
+    """
     by_name: Mapping[str, FieldSpec]
     """Each field's spec under its name."""
     names: tuple[str, ...]
