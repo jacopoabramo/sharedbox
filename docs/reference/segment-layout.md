@@ -765,8 +765,8 @@ Layout 2.0 adds these names to the header:
   see Protocols. `range`: an argument out of range. `os`: an OS call
   failed, with `errno` or `GetLastError()` left as the call set it.
 - `create` and `write` take raw bytes in the record encoding, without the
-  length prefix of `str` and `bytes`; converting language values stays in
-  each binding.
+  length prefix of `str`, `bytes` and `Decimal`; converting language values
+  stays in each binding.
 - `open` takes no schema hash; callers compare `schema_hash()` with their
   own. Its `timeout`, in `(0, 86400]`, only bounds the wait for a creator
   (the Python extension passes at most 1 s). Reads use a lock timeout of

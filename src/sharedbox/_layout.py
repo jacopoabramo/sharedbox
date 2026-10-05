@@ -250,7 +250,8 @@ class Layout:
     description: the member names of an enum, the names and values of a
     flag, the values of a literal, the members of a union, record or
     tuple, the element types of a collection, and the shape and dtype of
-    an array.
+    an array. For a reference field it covers whether the field is optional
+    and the identity of the class it points to.
     """
     by_name: Mapping[str, FieldSpec]
     """Each field's spec under its name."""

@@ -1721,7 +1721,7 @@ public:
     std::uint64_t flag_bits(std::uint16_t i) const noexcept {
         return has(i, kind_flag, kind_flag) ? table_->number(node().numbers + i) : 0;
     }
-    // literal; another kind or index gives a value with tag 0 and no text.
+    // literal; another kind or index gives a None value; compare i with count() to tell them apart.
     const literal_value &literal(std::uint16_t i) const noexcept {
         static constexpr literal_value empty{};
         return has(i, kind_literal, kind_literal) ? table_->literal(node().literals + i) : empty;
