@@ -14,7 +14,7 @@ jobs:
     name: Lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       # local hooks in prek.toml call `uv run --locked --only-group lint ...`
       - uses: astral-sh/setup-uv@v7
@@ -62,7 +62,7 @@ jobs:
       ASAN_OPTIONS: detect_leaks=1
       UBSAN_OPTIONS: print_stacktrace=1
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
 
@@ -108,13 +108,13 @@ jobs:
           - { os: ubuntu-latest, python: cp314t, platform_id: musllinux_x86_64 }
 
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           ref: ${{ github.event_name == 'release' && github.event.release.tag_name || '' }}
 
       - name: Build wheels
-        uses: pypa/cibuildwheel@v3.2.0
+        uses: pypa/cibuildwheel@v4.2.1
         env:
           CIBW_BUILD: ${{ matrix.python }}-${{ matrix.platform_id }}
           CIBW_CONTAINER_ENGINE: "docker; create_args: --shm-size=1g"
@@ -153,7 +153,7 @@ jobs:
       actions: read
     continue-on-error: true
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - name: Download this run's size artifacts
         uses: actions/download-artifact@v8
@@ -199,7 +199,7 @@ jobs:
           - { os: ubuntu-latest, wheel: cibw-wheels-cp312-manylinux_x86_64 }
           - { os: windows-latest, wheel: cibw-wheels-cp312-win_amd64 }
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
 
       - uses: astral-sh/setup-uv@v7
 
@@ -243,7 +243,7 @@ jobs:
             *)    [ "$PRERELEASE" = "false" ] || { echo "::error::$TAG must not be marked pre-release"; exit 1; } ;;
           esac
 
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
           ref: ${{ github.event_name == 'release' && github.event.release.tag_name || '' }}
