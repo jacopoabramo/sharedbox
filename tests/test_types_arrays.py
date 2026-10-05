@@ -15,6 +15,7 @@ from sharedbox import (
     SupportsDLPack,
     register_array_type,
 )
+from sharedbox._arrays import CONVERTERS, key
 from sharedbox._layout import build_layout
 
 
@@ -187,18 +188,21 @@ def test_array_annotations_that_cannot_be_kept_are_refused(
 def test_a_registered_type_reads_back_through_its_converter(unique_name: str) -> None:
     """Check that register_array_type makes a field of that type read back through the given function."""
     register_array_type(Wrapped, lambda array: Wrapped(np.from_dlpack(array)))
-    holder: Any = type(
-        "Holder",
-        (SharedBox,),
-        {
-            "__annotations__": {"x": Annotated[Wrapped, Shape(3), DType("int32")]},
-            "__module__": __name__,
-        },
-    )
-    with holder.create(unique_name, np.array([1, 2, 3], np.int32)) as box:
-        assert isinstance(box.x, Wrapped)
-        assert np.array_equal(box.x.array, [1, 2, 3])
-    holder.unlink(unique_name)
+    try:
+        holder: Any = type(
+            "Holder",
+            (SharedBox,),
+            {
+                "__annotations__": {"x": Annotated[Wrapped, Shape(3), DType("int32")]},
+                "__module__": __name__,
+            },
+        )
+        with holder.create(unique_name, np.array([1, 2, 3], np.int32)) as box:
+            assert isinstance(box.x, Wrapped)
+            assert np.array_equal(box.x.array, [1, 2, 3])
+        holder.unlink(unique_name)
+    finally:
+        del CONVERTERS[key(Wrapped)]
 
 
 @pytest.mark.parametrize("dims", [(), (0,), tuple(range(1, 10))])
