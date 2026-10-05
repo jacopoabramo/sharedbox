@@ -333,7 +333,9 @@ std::unique_ptr<Segment> Segment::create(const std::string &name, const std::vec
         check_index(index, fields.size());
         initial.push_back({static_cast<std::uint16_t>(index), bytes_of(bytes)});
     }
-    // A described field's capacity here is its description's offset, not its size; the header checks it.
+    // Checked here for a message that names the field. A described field's capacity here is its
+    // description's offset, not its size, and kinds 6 to 11 are always encoded at their exact size;
+    // the header checks both.
     for (const value &v : initial)
         if (const auto kind = static_cast<std::uint32_t>(fields[v.field].kind);
             kind <= kind_ref || detail::prefixed(kind))
