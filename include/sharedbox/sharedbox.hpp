@@ -2333,8 +2333,10 @@ inline result<handle> create_impl(std::string_view name, std::span<const field_s
     if (s == nullptr)
         return unexpected(status::os);
     std::copy(fields.begin(), fields.end(), s->fields.get());
-    if (s->types.parse(types, {entries.get(), count}, major == 1) != status::ok ||
-        place_fields(s->fields.get(), count, s->types, record_size, false) != status::ok ||
+    // A table the caller built wrong is its mistake, status::range; running out of memory is not.
+    if (const status rc = s->types.parse(types, {entries.get(), count}, major == 1); rc != status::ok)
+        return unexpected(rc == status::os ? status::os : status::range);
+    if (place_fields(s->fields.get(), count, s->types, record_size, false) != status::ok ||
         !values_ok(*s, initial))
         return unexpected(status::range);
     const auto record =
