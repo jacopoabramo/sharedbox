@@ -326,8 +326,8 @@ def parse(
         spec = array_spec(hint, extras, where)
     else:
         spec = dispatch(hint, extras, where, capacity, depth, path)
-    if spec.described and depth > MAX_DEPTH:
-        raise TypeError(f"{where}: types nest at most {MAX_DEPTH} levels deep")
+    if spec.described:
+        deeper(depth, where)
     return spec
 
 
