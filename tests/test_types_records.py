@@ -18,7 +18,7 @@ from typing import (
 import pytest
 from crossproc import snapshot_in_child, update_in_child
 
-from sharedbox import Capacity, SharedBox, field
+from sharedbox import Capacity, DType, Shape, SharedBox, SupportsDLPack, field
 from sharedbox._layout import build_layout
 
 T = TypeVar("T")
@@ -148,9 +148,11 @@ class Color(enum.Enum):
     RED = 1
 
 
-@pytest.mark.parametrize("leaf", [Color, Literal[1]])
-def test_an_enum_or_literal_17_deep_is_refused(leaf: object) -> None:
-    """Check that an enum or a literal inside 16 nested records raises a TypeError naming the field."""
+@pytest.mark.parametrize(
+    "leaf", [Color, Literal[1], Annotated[SupportsDLPack, Shape(1), DType("uint8")]]
+)
+def test_an_enum_literal_or_array_17_deep_is_refused(leaf: object) -> None:
+    """Check that an enum, literal or array inside 16 nested records raises a TypeError naming the field."""
     with pytest.raises(TypeError, match=r"^T\.x\..*16 levels"):
         build_layout(make(nested(16, leaf)))
 
