@@ -9,6 +9,10 @@ Dates are marked as `DD-MM-YYYY`
 
 ## [Unreleased]
 
+### Changed
+
+- `SharedBox.update`: takes about 7 to 9 ns less per call on Windows.
+
 ## [0.4.0] - 05-10-2026
 
 ### Added
