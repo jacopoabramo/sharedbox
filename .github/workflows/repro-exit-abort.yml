@@ -67,12 +67,11 @@ jobs:
           echo "iterations=$ITERATIONS failures=$failures aborts=$aborts" | tee logs/summary.txt
           echo "${{ matrix.python }} on ${{ matrix.code }}: $ITERATIONS iterations, $failures failed, $aborts aborted" >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Run the exit stress test
+      - name: Run the exit test
         if: always()
         run: |
-          test -f tests/stress/test_stress_exit.py || exit 0
           ulimit -c unlimited
-          uv run --no-sync pytest tests/stress/test_stress_exit.py -m stress -v -p no:cacheprovider 2>&1 | tee logs/stress.txt
+          uv run --no-sync pytest tests/test_exit.py -v -p no:cacheprovider 2>&1 | tee logs/exit-test.txt
 
       - name: Print a backtrace of every core
         if: always()
