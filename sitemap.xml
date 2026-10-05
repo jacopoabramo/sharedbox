@@ -13,6 +13,9 @@
         <loc>https://jacopoabramo.github.io/sharedbox/explanation/closing-and-lifetime/</loc>
       </url>
       <url>
+        <loc>https://jacopoabramo.github.io/sharedbox/explanation/field-types/</loc>
+      </url>
+      <url>
         <loc>https://jacopoabramo.github.io/sharedbox/explanation/glossary/</loc>
       </url>
       <url>
@@ -100,6 +103,15 @@
         <loc>https://jacopoabramo.github.io/sharedbox/how-to/set-up-development/</loc>
       </url>
       <url>
+        <loc>https://jacopoabramo.github.io/sharedbox/how-to/store-arrays/</loc>
+      </url>
+      <url>
+        <loc>https://jacopoabramo.github.io/sharedbox/how-to/store-collections/</loc>
+      </url>
+      <url>
+        <loc>https://jacopoabramo.github.io/sharedbox/how-to/store-records/</loc>
+      </url>
+      <url>
         <loc>https://jacopoabramo.github.io/sharedbox/how-to/store-text-and-bytes/</loc>
       </url>
       <url>
@@ -110,6 +122,9 @@
       </url>
       <url>
         <loc>https://jacopoabramo.github.io/sharedbox/reference/api/</loc>
+      </url>
+      <url>
+        <loc>https://jacopoabramo.github.io/sharedbox/reference/api/arrays/</loc>
       </url>
       <url>
         <loc>https://jacopoabramo.github.io/sharedbox/reference/api/box/</loc>

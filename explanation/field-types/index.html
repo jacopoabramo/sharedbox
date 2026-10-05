@@ -12,13 +12,13 @@
         <meta name="author" content="Jacopo Abramo">
       
       
-        <link rel="canonical" href="https://jacopoabramo.github.io/sharedbox/explanation/how-the-module-is-built/">
+        <link rel="canonical" href="https://jacopoabramo.github.io/sharedbox/explanation/field-types/">
       
       
-        <link rel="prev" href="../checking-a-process-is-alive/">
+        <link rel="prev" href="../how-a-box-is-stored/">
       
       
-        <link rel="next" href="../performance/">
+        <link rel="next" href="../reading-and-writing/">
       
       
         
@@ -29,7 +29,7 @@
     
     
       
-        <title>How the module is built - sharedbox</title>
+        <title>Field types - sharedbox</title>
       
     
     
@@ -85,7 +85,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#how-the-module-is-built" class="md-skip">
+        <a href="#field-types" class="md-skip">
           Skip to content
         </a>
       
@@ -119,7 +119,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              How the module is built
+              Field types
             
           </span>
         </div>
@@ -1601,10 +1601,38 @@
                   
   
   
+    
   
   
-    <li class="md-nav__item">
-      <a href="../field-types/" class="md-nav__link">
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-lightbulb" viewBox="0 0 24 24"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5M9 18h6M10 22h4"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  Field types
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="././" class="md-nav__link md-nav__link--active">
         
   
   
@@ -1621,6 +1649,104 @@
   
 
       </a>
+      
+        
+
+
+<nav class="md-nav md-nav--secondary" aria-label="On this page">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      On this page
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#what-the-segment-says-about-a-type" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        What the segment says about a type
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#a-read-builds-a-new-value" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        A read builds a new value
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#dates-and-times" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Dates and times
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#enums-and-literals" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Enums and literals
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#unions" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Unions
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#when-a-field-counts-as-changed" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        When a field counts as changed
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#large-values" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Large values
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
     </li>
   
 
@@ -1775,38 +1901,10 @@
                   
   
   
-    
   
   
-  
-    <li class="md-nav__item md-nav__item--active">
-      
-      
-      
-      
-        
-      
-      
-        <label class="md-nav__link md-nav__link--active" for="__toc">
-          
-  
-  
-    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-lightbulb" viewBox="0 0 24 24"><path d="M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5M9 18h6M10 22h4"/></svg>
-  
-  <span class="md-ellipsis">
-    
-  
-  How the module is built
-
-    
-  </span>
-  
-  
-
-          <span class="md-nav__icon md-icon"></span>
-        </label>
-      
-      <a href="././" class="md-nav__link md-nav__link--active">
+    <li class="md-nav__item">
+      <a href="../how-the-module-is-built/" class="md-nav__link">
         
   
   
@@ -1823,60 +1921,6 @@
   
 
       </a>
-      
-        
-
-
-<nav class="md-nav md-nav--secondary" aria-label="On this page">
-  
-  
-  
-    
-  
-  
-    <label class="md-nav__title" for="__toc">
-      <span class="md-nav__icon md-icon"></span>
-      On this page
-    </label>
-    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
-      
-        <li class="md-nav__item">
-  <a href="#one-line-three-wheels" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        One line, three wheels
-      </span>
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#the-header-in-the-wheel" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        The header in the wheel
-      </span>
-    </span>
-  </a>
-  
-</li>
-      
-        <li class="md-nav__item">
-  <a href="#sources" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        Sources
-      </span>
-    </span>
-  </a>
-  
-</li>
-      
-    </ul>
-  
-</nav>
-      
     </li>
   
 
@@ -2922,10 +2966,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#one-line-three-wheels" class="md-nav__link">
+  <a href="#what-the-segment-says-about-a-type" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        One line, three wheels
+        What the segment says about a type
       </span>
     </span>
   </a>
@@ -2933,10 +2977,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#the-header-in-the-wheel" class="md-nav__link">
+  <a href="#a-read-builds-a-new-value" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        The header in the wheel
+        A read builds a new value
       </span>
     </span>
   </a>
@@ -2944,10 +2988,54 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#sources" class="md-nav__link">
+  <a href="#dates-and-times" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Sources
+        Dates and times
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#enums-and-literals" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Enums and literals
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#unions" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Unions
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#when-a-field-counts-as-changed" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        When a field counts as changed
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#large-values" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Large values
       </span>
     </span>
   </a>
@@ -3054,85 +3142,131 @@
   
 
 
-<h1 id="how-the-module-is-built">How the module is built<a class="headerlink" href="#how-the-module-is-built" title="Permanent link">&para;</a></h1>
-<p>The part of sharedbox that reads and writes shared memory is a compiled
-module, <code>sharedbox._native</code>. <code>update</code> and <code>snapshot</code> are native methods, set
-on each box class unless the class defines or inherits its own. This page
-explains how one build line gives a wheel for every supported Python.</p>
-<h2 id="one-line-three-wheels">One line, three wheels<a class="headerlink" href="#one-line-three-wheels" title="Permanent link">&para;</a></h2>
-<p>The module is built with nanobind, which connects C++ to Python, as C++20
-against <code>sharedbox::headers</code>, the CMake target of
-<a href="https://github.com/jacopoabramo/sharedbox/blob/main/include/sharedbox/sharedbox.hpp"><code>include/sharedbox/sharedbox.hpp</code></a>:</p>
-<div class="language-cmake highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nb">nanobind_add_module</span><span class="p">(</span><span class="s">_native</span>
-</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="w">    </span><span class="s">STABLE_ABI</span>
-</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="w">    </span><span class="s">FREE_THREADED</span>
-</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="w">    </span><span class="s">LTO</span>
-</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="w">    </span><span class="s">NB_DOMAIN</span><span class="w"> </span><span class="s">sharedbox</span>
-</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="w">    </span><span class="s">src/sharedbox/_native/codec.cpp</span>
-</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="w">    </span><span class="s">src/sharedbox/_native/module.cpp</span>
-</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="w">    </span><span class="s">src/sharedbox/_native/segment.cpp</span><span class="p">)</span>
-</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="nb">target_link_libraries</span><span class="p">(</span><span class="s">_native</span><span class="w"> </span><span class="s">PRIVATE</span><span class="w"> </span><span class="s">sharedbox::headers</span><span class="p">)</span>
-</span></code></pre></div>
-<p><code>STABLE_ABI</code> asks for a module that works on every later Python version
-without recompiling. nanobind supports this from Python 3.12,<sup id="fnref:nanobind-cmake"><a class="footnote-ref" href="#fn:nanobind-cmake">1</a></sup>
-so one wheel covers 3.12, 3.13, 3.14 and later. <code>FREE_THREADED</code> asks for a
-module that runs without the <abbr title="Global interpreter lock. The lock that lets only one thread of a CPython process run Python code at a time.">GIL</abbr>; it only takes effect on free-threaded
-Python.<sup id="fnref:nanobind-free-threaded"><a class="footnote-ref" href="#fn:nanobind-free-threaded">2</a></sup> nanobind ignores whichever option does not
-fit the interpreter doing the build,<sup id="fnref2:nanobind-cmake"><a class="footnote-ref" href="#fn:nanobind-cmake">1</a></sup><sup id="fnref2:nanobind-free-threaded"><a class="footnote-ref" href="#fn:nanobind-free-threaded">2</a></sup>
-which is why one line produces all three wheels:</p>
+<h1 id="field-types">Field types<a class="headerlink" href="#field-types" title="Permanent link">&para;</a></h1>
+<p>A <a href="../glossary/#field">field</a> can hold any of the types below. Each is
+stored in the <a href="../glossary/#segment">segment</a> in a fixed number of bytes,
+so a value never needs more room than the field set aside when the
+<a href="../glossary/#box">box</a> was created.</p>
 <table>
 <thead>
 <tr>
-<th>Wheel</th>
-<th>Built on</th>
-<th>Runs on</th>
+<th>Type</th>
+<th>Stored as</th>
 </tr>
 </thead>
 <tbody>
 <tr>
-<td><code>cp311-cp311</code></td>
-<td>CPython 3.11</td>
-<td>3.11 only (the stable <abbr title="Application binary interface. The rules compiled code follows to call other compiled code, so that two builds can work together.">ABI</abbr> needs 3.12)</td>
+<td><code>bool</code>, <code>int</code>, <code>float</code></td>
+<td>1, 8 and 8 bytes</td>
 </tr>
 <tr>
-<td><code>cp312-abi3</code></td>
-<td>CPython 3.12</td>
-<td>every normal CPython from 3.12</td>
+<td><code>complex</code></td>
+<td>two 64-bit floats</td>
 </tr>
 <tr>
-<td><code>cp314-cp314t</code></td>
-<td>free-threaded CPython 3.14</td>
-<td>free-threaded 3.14</td>
+<td><code>Annotated[str, Capacity(n)]</code>, <code>bytes</code>, <code>bytearray</code></td>
+<td>a length, then up to <code>n</code> bytes</td>
+</tr>
+<tr>
+<td><code>Annotated[Decimal, Capacity(n)]</code></td>
+<td>the text of <code>str(value)</code>, up to <code>n</code> bytes</td>
+</tr>
+<tr>
+<td><code>date</code>, <code>time</code>, <code>datetime</code>, <code>timedelta</code></td>
+<td>4, 16, 16 and 12 bytes</td>
+</tr>
+<tr>
+<td><code>UUID</code></td>
+<td>its 16 bytes</td>
+</tr>
+<tr>
+<td>an <code>Enum</code></td>
+<td>the member's position</td>
+</tr>
+<tr>
+<td>a <code>Flag</code> or <code>IntFlag</code></td>
+<td>the combined bits</td>
+</tr>
+<tr>
+<td>a <code>Literal</code></td>
+<td>the value's position</td>
+</tr>
+<tr>
+<td>an optional <code>X</code> (<code>Optional[X]</code>), a union</td>
+<td>a byte saying which member, then that member</td>
+</tr>
+<tr>
+<td>a dataclass, <code>NamedTuple</code>, tuple, <code>TypedDict</code>, attrs class, <code>msgspec.Struct</code></td>
+<td>its members, packed like fields</td>
+</tr>
+<tr>
+<td>a <code>list</code>, <code>set</code>, <code>frozenset</code>, <code>dict</code>, <code>tuple[T, ...]</code> with <code>Capacity(n)</code></td>
+<td>a length, then room for <code>n</code> elements</td>
+</tr>
+<tr>
+<td>an array with <code>Shape</code> and <code>DType</code></td>
+<td>its elements, in C order</td>
+</tr>
+<tr>
+<td>a <code>SharedBox</code> subclass, optional or not</td>
+<td>a <a href="../references/">reference</a> to that box</td>
 </tr>
 </tbody>
 </table>
-<p>Free-threaded Python cannot load stable-<abbr title="Application binary interface. The rules compiled code follows to call other compiled code, so that two builds can work together.">ABI</abbr> modules.<sup id="fnref3:nanobind-free-threaded"><a class="footnote-ref" href="#fn:nanobind-free-threaded">2</a></sup>
-A stable <abbr title="Application binary interface. The rules compiled code follows to call other compiled code, so that two builds can work together.">ABI</abbr> for free-threaded builds (<code>abi3t</code>) starts with Python
-3.15.<sup id="fnref:pep-803"><a class="footnote-ref" href="#fn:pep-803">3</a></sup></p>
-<h2 id="the-header-in-the-wheel">The header in the wheel<a class="headerlink" href="#the-header-in-the-wheel" title="Permanent link">&para;</a></h2>
-<p>The build also installs <code>include/sharedbox/</code> and the CMake config into the
-wheel, so other extensions can compile against the same header.
-<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-function&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;get_include&lt;/span&gt;" href="../../reference/api/library-authors/#sharedbox.get_include"><code>get_include</code></a> returns the folder that holds it.</p>
-<h2 id="sources">Sources<a class="headerlink" href="#sources" title="Permanent link">&para;</a></h2>
-<div class="footnote">
-<hr />
-<ol>
-<li id="fn:nanobind-cmake">
-<p>nanobind, CMake interface: <code>STABLE_ABI</code> (CPython 3.12 or newer),
-<code>NB_DOMAIN</code>.
-<a href="https://nanobind.readthedocs.io/en/latest/api_cmake.html">https://nanobind.readthedocs.io/en/latest/api_cmake.html</a>&#160;<a class="footnote-backref" href="#fnref:nanobind-cmake" title="Jump back to footnote 1 in the text">&#8617;</a><a class="footnote-backref" href="#fnref2:nanobind-cmake" title="Jump back to footnote 1 in the text">&#8617;</a></p>
-</li>
-<li id="fn:nanobind-free-threaded">
-<p>nanobind, "Free-threaded Python": <code>FREE_THREADED</code>, ignored on builds
-that do not support it; no stable <abbr title="Application binary interface. The rules compiled code follows to call other compiled code, so that two builds can work together.">ABI</abbr> for free-threaded linked builds.
-<a href="https://nanobind.readthedocs.io/en/latest/free_threaded.html">https://nanobind.readthedocs.io/en/latest/free_threaded.html</a>&#160;<a class="footnote-backref" href="#fnref:nanobind-free-threaded" title="Jump back to footnote 2 in the text">&#8617;</a><a class="footnote-backref" href="#fnref2:nanobind-free-threaded" title="Jump back to footnote 2 in the text">&#8617;</a><a class="footnote-backref" href="#fnref3:nanobind-free-threaded" title="Jump back to footnote 2 in the text">&#8617;</a></p>
-</li>
-<li id="fn:pep-803">
-<p>PEP 803, the stable <abbr title="Application binary interface. The rules compiled code follows to call other compiled code, so that two builds can work together.">ABI</abbr> for free-threaded builds (<code>abi3t</code>).
-<a href="https://peps.python.org/pep-0803/">https://peps.python.org/pep-0803/</a>&#160;<a class="footnote-backref" href="#fnref:pep-803" title="Jump back to footnote 3 in the text">&#8617;</a></p>
-</li>
-</ol>
-</div>
+<p><code>NewType</code>, <code>Final</code>, <code>Annotated</code> and <code>type</code> aliases are read through to the
+type they stand for.</p>
+<h2 id="what-the-segment-says-about-a-type">What the segment says about a type<a class="headerlink" href="#what-the-segment-says-about-a-type" title="Permanent link">&para;</a></h2>
+<p>A type whose layout its kind does not fix, such as an enum, a record or a
+list, has a <a href="../glossary/#description">description</a> in the segment: its
+members, names, capacity or shape. C and C++ programs read a field of any
+type through it; see the
+<a href="../../reference/segment-layout/#descriptions">segment layout</a>. The
+<a href="../glossary/#schema-hash">schema hash</a> covers these descriptions, so a
+class whose enum gains a member, or whose record changes a member's type,
+no longer attaches to boxes made with the old one. It does not cover how
+Python reads a value back: a record class's name, <code>list</code> against
+<code>tuple[T, ...]</code>, or <code>set</code> against <code>frozenset</code>.</p>
+<h2 id="a-read-builds-a-new-value">A read builds a new value<a class="headerlink" href="#a-read-builds-a-new-value" title="Permanent link">&para;</a></h2>
+<p>Every read decodes the stored bytes into a new object. Changing a list,
+a record or an array read from a box changes only that object; assign it
+back to store it. A record is rebuilt by calling its class, so its
+<code>__post_init__</code>, converters and validators run on every read.</p>
+<h2 id="dates-and-times">Dates and times<a class="headerlink" href="#dates-and-times" title="Permanent link">&para;</a></h2>
+<p>A <code>datetime</code> or <code>time</code> is naive or has a fixed offset from <abbr title="Coordinated Universal Time. The time standard that offsets such as +02:00 are measured from.">UTC</abbr>. An aware
+value is stored by its offset at that moment, in whole minutes, and comes
+back with a <code>datetime.timezone</code> of that offset: a named zone such as a
+<code>ZoneInfo</code> is not kept. A <code>time</code> needs a <code>tzinfo</code> that gives an offset
+without a date. A <code>date</code> field refuses a <code>datetime</code>, which would lose its
+time of day.</p>
+<h2 id="enums-and-literals">Enums and literals<a class="headerlink" href="#enums-and-literals" title="Permanent link">&para;</a></h2>
+<p>An enum member is stored by its position in the class, so reading gives
+back the member itself and <code>is</code> comparisons work. Changing the order of
+members changes what stored positions mean, and the schema hash changes
+with it. A <code>Literal</code> field keeps the value and its type apart: in
+<code>Literal[1, True]</code>, <code>1</code> and <code>True</code> are two values.</p>
+<h2 id="unions">Unions<a class="headerlink" href="#unions" title="Permanent link">&para;</a></h2>
+<p>A union stores which member it holds. A value whose type is exactly one
+member's type goes to that member; otherwise the most specific member that
+takes it is used, so <code>bool</code> comes before <code>int</code>. <code>float | int</code> keeps <code>3</code>
+an <code>int</code>. Two members that take values of the same class, such as
+<code>list[int] | list[str]</code>, raise <code>TypeError</code> when the class is defined,
+since the stored value could not tell them apart.</p>
+<h2 id="when-a-field-counts-as-changed">When a field counts as changed<a class="headerlink" href="#when-a-field-counts-as-changed" title="Permanent link">&para;</a></h2>
+<p><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-attribute&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-attribute-name&quot;&gt;events&lt;/span&gt;
+
+
+  &lt;span class=&quot;doc doc-labels&quot;&gt;
+      &lt;small class=&quot;doc doc-label doc-label-property&quot;&gt;&lt;code&gt;property&lt;/code&gt;&lt;/small&gt;
+  &lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.events"><code>events</code></a> and
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;watch&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.watch"><code>watch</code></a> report a change when a field's
+stored bytes change. Writing <code>NaN</code> again reports nothing, <code>-0.0</code> after
+<code>0.0</code> reports a change, and so does <code>True</code> after <code>1</code> in an <code>int | bool</code>
+field.</p>
+<h2 id="large-values">Large values<a class="headerlink" href="#large-values" title="Permanent link">&para;</a></h2>
+<p>A box has one write lock. While a large array is copied in or out, every
+other read and write of that box waits, and the copy runs with the <abbr title="Global interpreter lock. The lock that lets only one thread of a CPython process run Python code at a time.">GIL</abbr>
+released. <a href="../performance/#large-values">How fast a box is</a> gives the copy
+cost; a large array is best kept in a box of its own.</p>
 
 
 
@@ -3175,7 +3309,7 @@ that do not support it; no stable <abbr title="Application binary interface. The
       <nav class="md-footer__inner md-grid" aria-label="Footer" >
         
           
-          <a href="../checking-a-process-is-alive/" class="md-footer__link md-footer__link--prev" aria-label="Previous: Checking a process is alive">
+          <a href="../how-a-box-is-stored/" class="md-footer__link md-footer__link--prev" aria-label="Previous: How a box is stored">
             <div class="md-footer__button md-icon">
               
               <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-arrow-left" viewBox="0 0 24 24"><path d="m12 19-7-7 7-7M19 12H5"/></svg>
@@ -3185,20 +3319,20 @@ that do not support it; no stable <abbr title="Application binary interface. The
                 Previous
               </span>
               <div class="md-ellipsis">
-                Checking a process is alive
+                How a box is stored
               </div>
             </div>
           </a>
         
         
           
-          <a href="../performance/" class="md-footer__link md-footer__link--next" aria-label="Next: How fast a box is">
+          <a href="../reading-and-writing/" class="md-footer__link md-footer__link--next" aria-label="Next: Reading and writing">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                How fast a box is
+                Reading and writing
               </div>
             </div>
             <div class="md-footer__button md-icon">
