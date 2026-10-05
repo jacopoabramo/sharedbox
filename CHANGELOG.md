@@ -9,6 +9,8 @@ Dates are marked as `DD-MM-YYYY`
 
 ## [Unreleased]
 
+## [0.4.0] - 05-10-2026
+
 ### Added
 
 - `benchbox plot`: draws the results of `benchbox all` as SVG charts, in a
@@ -277,7 +279,8 @@ stage.events.nested.connect(lambda path, new, old: print(path, new))
 
 - Initial release
 
-[Unreleased]: https://github.com/jacopoabramo/sharedbox/compare/v0.3.1...HEAD
+[Unreleased]: https://github.com/jacopoabramo/sharedbox/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/jacopoabramo/sharedbox/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/jacopoabramo/sharedbox/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/jacopoabramo/sharedbox/compare/0.2.4...v0.3.0
 [0.2.4]: https://github.com/jacopoabramo/sharedbox/compare/0.1.0...0.2.4
