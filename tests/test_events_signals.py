@@ -1,5 +1,7 @@
+import enum
 import multiprocessing as mp
 import queue
+import struct
 import threading
 import time
 
@@ -12,6 +14,15 @@ from sharedbox import SharedBox
 class Counter(SharedBox):
     value: int = 0
     other: int = 0
+
+
+class Colour(enum.Enum):
+    RED = 1
+    GREEN = 2
+
+
+class Painted(SharedBox):
+    colour: Colour = Colour.RED
 
 
 def set_value_later(name: str, value: int, delay: float) -> None:
@@ -169,3 +180,21 @@ def test_one_update_emits_every_changed_field(unique_name: str) -> None:
         box.update(value=1, other=2)
         got = {seen.get(timeout=5), seen.get(timeout=5)}
         assert got == {("value", 1, 0), ("other", 2, 0)}
+
+
+def test_a_change_that_does_not_decode_is_logged_and_skipped(
+    unique_name: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Log a stored value that does not decode, skip it, and still emit the next change."""
+    failed = "reading a change of field 'colour' failed"
+    seen: queue.Queue[tuple[Colour, Colour]] = queue.Queue()
+    with Painted.create(unique_name) as box:
+        box.events.colour.connect(lambda new, old: seen.put((new, old)))
+        index = Painted.__layout__.by_name["colour"].index
+        box._segment._write([(index, struct.pack("<H", 9))])
+        deadline = time.monotonic() + 5
+        while failed not in caplog.text and time.monotonic() < deadline:
+            time.sleep(0.01)
+        assert failed in caplog.text
+        box.colour = Colour.GREEN
+        assert seen.get(timeout=5) == (Colour.GREEN, Colour.RED)
