@@ -206,10 +206,14 @@ void encode_all(const Segment &s, const Types *types, std::span<const Pending> v
         // Checked before the narrowing cast, which would otherwise turn index 65536 into field 0.
         check_index(index, fields.size());
         const FieldDesc &field = fields[index];
-        out[i] = {static_cast<std::uint16_t>(index),
-                  static_cast<std::uint8_t>(field.kind) <= kind_ref
-                      ? encode(field, names[index], values[i].value, buffers[i])
-                      : need(types, index).encode(index, values[i].value, buffers[i])};
+        // The members are written separately because MSVC copies a value built in one step through
+        // a stack temporary and reloads it, which stalls for about 10 ns per update.
+        const std::span<const std::byte> bytes =
+            static_cast<std::uint8_t>(field.kind) <= kind_ref
+                ? encode(field, names[index], values[i].value, buffers[i])
+                : need(types, index).encode(index, values[i].value, buffers[i]);
+        out[i].field = static_cast<std::uint16_t>(index);
+        out[i].bytes = bytes;
     }
 }
 
