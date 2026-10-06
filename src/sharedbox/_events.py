@@ -1,9 +1,11 @@
 from __future__ import annotations
 
 import asyncio
+import atexit
 import contextlib
 import logging
 import threading
+import time
 from collections.abc import AsyncIterator, Callable, Generator, Iterator
 from concurrent.futures import CancelledError
 from typing import (
@@ -32,16 +34,56 @@ if TYPE_CHECKING:
 T = TypeVar("T")
 PENDING, DONE, CANCELLED = "pending", "done", "cancelled"
 STEP: Final = 1.0
+# Seconds the exit handler waits for stopped watcher threads, together.
+EXIT_WAIT: Final = 2.0
 logger = logging.getLogger("sharedbox")
 # Receives each change of a field as native values: the field, the new value, the old one.
 Sink: TypeAlias = "Callable[[FieldSpec, Any, Any], None]"
 # Marks watcher threads: one must not join another, since that one may be joining it.
 WATCHER_THREAD = threading.local()
+RUNNING: set[Watcher] = set()
 
 
 def on_watcher_thread() -> bool:
     """Return whether the calling thread is the watcher thread of some box."""
     return getattr(WATCHER_THREAD, "active", False)
+
+
+def stop_watchers() -> None:
+    """Stop every watcher thread and wait for them to end, before the interpreter finalizes.
+
+    The wait lasts at most `EXIT_WAIT` seconds in all; a thread still running
+    a callback after that is logged and left running. On CPython before 3.14, a daemon thread that takes the GIL back during
+    finalization is ended with `pthread_exit` on Linux. The unwinding that
+    starts there aborts the process when it reaches the native call that
+    released the GIL, such as a watcher's wait or a box's `close`.
+    """
+    # A copy, because watcher threads remove themselves from the set while this runs.
+    watchers = RUNNING.copy()
+    threads = [watcher._thread for watcher in watchers]
+    for watcher in watchers:
+        watcher.stop(wait=False)
+    # Bounded, so a callback that never returns cannot keep the process from exiting.
+    deadline = time.monotonic() + EXIT_WAIT
+    for thread in threads:
+        if thread is not None and thread is not threading.current_thread():
+            thread.join(max(0.0, deadline - time.monotonic()))
+    late = [
+        thread.name
+        for thread in threads
+        if thread is not None
+        and thread.is_alive()
+        and thread is not threading.current_thread()
+    ]
+    if late:
+        logger.warning(
+            "watcher threads still running at exit after %s s: %s",
+            EXIT_WAIT,
+            ", ".join(late),
+        )
+
+
+atexit.register(stop_watchers)
 
 
 class FieldFuture(Generic[T]):
@@ -402,6 +444,7 @@ class Watcher:
         self._thread = None
         self._pending = []
         self._slot = None
+        RUNNING.discard(self)
 
     def _start_locked(self) -> None:
         if self._thread is None and not self._stop.is_set():
@@ -410,6 +453,7 @@ class Watcher:
                 name=f"sharedbox-watch-{self._segment.name}",
                 daemon=True,
             )
+            RUNNING.add(self)
             self._thread.start()
 
     def _claim(self) -> int | None:
@@ -456,6 +500,7 @@ class Watcher:
                     # The step bounds how long a freed slot or a missed wake-up goes unnoticed.
                     generation = self._segment.wait(generation, STEP, slot)
             finally:
+                RUNNING.discard(self)
                 if self._slot is not None:
                     self._segment.release_waiter(self._slot)
 
