@@ -122,6 +122,11 @@ IMAGE = np.ones((512, 512), np.float32)
 OUT = np.empty_like(IMAGE)
 
 
+def fill_image(box: Typed) -> None:
+    with box.writing("image") as view:
+        np.copyto(view, IMAGE)
+
+
 def open_typed() -> tuple[Any, ...]:
     name = f"bench-ops-typed-{os.getpid()}"
     box = Typed.create(name, WHEN, QUAD, FLOATS, IMAGE)
@@ -311,6 +316,7 @@ BENCHMARKS: list[tuple[str, str, str, list[str]]] = [
     ("write array 1 MiB", "SharedBox", TYPED, ["typed.image = IMAGE"]),
     ("read array 1 MiB", "SharedBox", TYPED, ["typed.image"]),
     ("read_into array 1 MiB", "SharedBox", TYPED, ["typed.read_into('image', OUT)"]),
+    ("writing array 1 MiB", "SharedBox", TYPED, ["fill_image(typed)"]),
 ]
 
 
