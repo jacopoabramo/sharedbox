@@ -17,6 +17,10 @@ Dates are marked as `DD-MM-YYYY`
   writer and reader processes share it, for a box, `mp.Value` and
   `SharedMemory` with a `Lock`.
 
+### Changed
+
+- `SharedBox`: a field named `read_into` raises `TypeError`.
+
 ## [0.4.1] - 07-10-2026
 
 ### Changed
