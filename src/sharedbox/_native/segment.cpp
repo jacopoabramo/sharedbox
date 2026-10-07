@@ -587,6 +587,9 @@ void Segment::close() {
         return;
     std::unique_lock guard(impl_->lifetime);
     impl_->box = handle();
+    // Arrays writing handed out keep their own copy; this one would keep the segment mapped until the
+    // Segment is collected.
+    impl_->writer.reset();
 }
 
 void Segment::unlink(const std::string &name) {

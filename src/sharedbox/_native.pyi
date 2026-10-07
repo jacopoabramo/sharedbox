@@ -91,6 +91,7 @@ class FieldWriter:
     def end(self) -> None:
         """Count the write, release the lock and wake waiters; later calls do nothing."""
 
+@disjoint_base
 class Segment:
     """A named shared-memory segment holding one fixed-layout record."""
 

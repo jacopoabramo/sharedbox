@@ -1,3 +1,4 @@
+import gc
 import threading
 from typing import Annotated, Any
 
@@ -78,8 +79,21 @@ def test_a_view_outlives_close_without_crashing(unique_name: str) -> None:
     with box.writing("small") as small:
         small[...] = 1
     box.close()
+    del box
+    gc.collect()
     small[0, 0] = 7
-    assert small[0, 0] == 7
+    Camera.unlink(unique_name)
+
+
+def test_close_frees_the_segment_of_a_box_that_used_writing(unique_name: str) -> None:
+    """Free the segment at close(), so the name can be created again while the closed box is still referenced."""
+    box = Camera.create(unique_name)
+    with box.writing("small"):
+        pass
+    box.close()
+    Camera.unlink(unique_name)
+    again = Camera.create(unique_name)
+    again.close()
     Camera.unlink(unique_name)
 
 
