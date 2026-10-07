@@ -4,10 +4,10 @@ icon: lucide/play
 
 # Sharing a record between processes
 
-In this tutorial you define a record with three
-[fields](../explanation/glossary.md#field), create it in shared memory, and
-change one field from a second process. Such a record is a
-[box](../explanation/glossary.md#box).
+In this tutorial you build a small script in which two processes share one
+record: the first creates it, the second changes a value in it, and the
+first reads the change. Such a record is a [box](../explanation/glossary.md#box), and on the way
+you meet the three calls you will use most: `create`, `attach` and `close`.
 
 ## Before you start
 
@@ -16,69 +16,80 @@ change one field from a second process. Such a record is a
     Python 3.11 or newer on Windows or Linux, and
     [`uv`](https://docs.astral.sh/uv/).
 
-Make a project folder and add sharedbox to it:
+Make a project folder and add `sharedbox` to it:
 
 ```bash
 uv init --bare --pin-python --python 3.11
 uv add sharedbox
 ```
 
-In the folder, make an empty file called `motor.py`. Start it with these
-imports:
+In the folder, create an empty file called `motor.py` and start it with
+these imports:
 
 ```{.python}
 --8<-- "docs/tutorials/motor.py:imports"
 ```
 
-The [third tutorial](refer-to-another-box.md) uses `queue` and `time`.
+You won't need `queue` and `time` until the
+[third tutorial](refer-to-another-box.md), but adding them now saves you
+coming back to this line.
 
 ## 1. Define the record
 
-Add a class below the imports:
+Below the imports, describe the record as a class:
 
 ```{.python}
 --8<-- "docs/tutorials/motor.py:motor"
 ```
 
-`Motor` is a subclass of [`SharedBox`][sharedbox.SharedBox]. Each annotated
-attribute is a field, and the value after `=` is its default. A `str`
-field needs a [capacity](../explanation/glossary.md#capacity): the most
-bytes it can hold, here 32. [How a box is stored](../explanation/how-a-box-is-stored.md)
-explains why every field has a fixed size.
+This reads like a dataclass, and it works like one: each annotated
+attribute is a [field](../explanation/glossary.md#field), and the value after `=` is its default.
+The difference is that `Motor` subclasses
+[`SharedBox`][sharedbox.SharedBox], so its fields live in shared memory
+instead of inside one Python object.
+
+Text needs a size limit, its [capacity](../explanation/glossary.md#capacity): `label` holds at most
+32 bytes. Every field has a fixed size so that all processes agree on where
+each value sits; [How a box is stored](../explanation/how-a-box-is-stored.md)
+explains why that matters.
 
 ## 2. Change it from another process
 
-Add a function that opens the box and writes one field:
+Next, add the function the second process will run. It opens the box,
+writes one field and lets go:
 
 ```{.python}
 --8<-- "docs/tutorials/motor.py:move"
 ```
 
-[`attach`][sharedbox.SharedBox.attach] opens the box called
-`tutorial-motor`, which another process creates. Setting `position` writes
-the value into shared memory. [`close`][sharedbox.SharedBox.close] closes
-this process's [handle](../explanation/glossary.md#handle) on the box; the
-box itself stays.
+[`attach`][sharedbox.SharedBox.attach] opens the box named
+`tutorial-motor`, which the first process creates in the next step. Setting
+`motor.position` writes the new value straight into shared memory, where
+every process can see it. [`close`][sharedbox.SharedBox.close] then drops
+this process's [handle](../explanation/glossary.md#handle) on the box, and the box itself stays
+for the processes still using it.
 
 ## 3. Create the box
 
-Add the function that creates the box and starts the second process:
+Now add the function the first process runs. It creates the box, starts the
+second process and reads what that process wrote:
 
 ```{.python}
 --8<-- "docs/tutorials/motor.py:share"
 ```
 
-[`create`][sharedbox.SharedBox.create] makes a new
-[segment](../explanation/glossary.md#segment) of shared memory under the
-name it is given, and takes field values as calling the class does;
-`position` and `enabled` keep their defaults. The `with` block closes the
-box at its end, and [`unlink`][sharedbox.SharedBox.unlink] removes the
-name, so the next run can create it again.
-[How to name a box](../how-to/name-a-box.md) shows the other ways to
-choose the name.
+[`create`][sharedbox.SharedBox.create] puts the box in a new
+[segment](../explanation/glossary.md#segment) of shared memory under the name you give it. It
+takes field values the way calling the class does, so here you set `label`
+and leave `position` and `enabled` at their defaults.
 
-The second process runs `move(10)`. After `join`, reading `motor.position`
-reads the segment again and finds the value that process wrote.
+The second process runs `move(10)`. Once `join` returns, that process has
+finished, so reading `motor.position` finds the value it wrote.
+
+When the `with` block ends it closes the box, and
+[`unlink`][sharedbox.SharedBox.unlink] removes the name, so the next run
+can create the box again. [How to name a box](../how-to/name-a-box.md)
+shows other ways to choose a name.
 
 ## 4. Run it
 
@@ -89,12 +100,15 @@ if __name__ == "__main__":
     share()
 ```
 
-The second process may import the script to find `move`, and the `if`
-keeps it from calling `share()` too. Run the script:
+You need them because the second process may import your script to find
+`move`, and the `if` stops it from calling `share()` a second time. Now run
+the script:
 
 ```bash
 uv run motor.py
 ```
+
+You should see:
 
 ```text
 position set by the other process: 10
@@ -102,14 +116,15 @@ position set by the other process: 10
 
 ## What you built
 
-A record in shared memory that two processes read and write: one created
-it, the other changed a field, and the first read the change.
+You have a record in shared memory that two processes read and write: the
+first created it, the second changed `position`, and the first read the
+new value.
 
 ## Next steps
 
-- [Reacting to changes](react-to-changes.md) is the next tutorial: the
-  first process sees the write as it happens, instead of reading it
-  afterwards.
-- [How a box is stored](../explanation/how-a-box-is-stored.md) explains
-  what the segment holds.
-- [`SharedBox`][sharedbox.SharedBox] lists the types a field can have.
+- [Reacting to changes](react-to-changes.md) is next: instead of reading
+  the value after the other process ends, the first process sees each
+  change the moment it happens.
+- [How a box is stored](../explanation/how-a-box-is-stored.md) shows what
+  the shared memory holds.
+- [`SharedBox`][sharedbox.SharedBox] lists every type a field can have.
