@@ -95,10 +95,10 @@ bool numpy_bfloat16(PyObject *value) {
 }
 
 std::string dtype_text(const nb::dlpack::dtype &dtype) {
-    static constexpr const char *codes[] = {"int", "uint", "float", "opaque", "bfloat", "complex", "bool"};
+    static constexpr const char *codes[] = {"int", "uint", "float", "opaque", "bfloat", "complex"};
     if (dtype.code == 6)
         return "bool";
-    const std::string base = dtype.code < 7 ? codes[dtype.code] : "code " + std::to_string(dtype.code) + " ";
+    const std::string base = dtype.code < 6 ? codes[dtype.code] : "code " + std::to_string(dtype.code) + " ";
     return base + std::to_string(dtype.bits);
 }
 
@@ -118,6 +118,19 @@ bool contiguous(const nb::ndarray<nb::ro> &view) {
         expected *= static_cast<std::int64_t>(view.shape(i));
     }
     return true;
+}
+
+// Raises the TypeError for an out that cannot be filled, naming why: it is not an array, its memory is not
+// the CPU's, it has gaps, or it is read-only.
+[[noreturn]] void refuse_out(const std::string &name, nb::handle out) {
+    nb::ndarray<nb::ro> any;
+    if (!nb::try_cast(out, any, false))
+        wrong(name, "an array with __dlpack__ or the buffer protocol as out", out.ptr());
+    if (any.device_type() != nb::device::cpu::value)
+        raise(PyExc_TypeError, name + ": out is not in CPU memory");
+    if (!contiguous(any))
+        raise(PyExc_TypeError, name + ": out is not C-contiguous");
+    raise(PyExc_TypeError, name + ": out is read-only");
 }
 
 // Copies an array view into out, gathering a strided one in C order.
@@ -769,7 +782,7 @@ nb::ndarray<nb::c_contig, nb::device::cpu> Types::array_out(std::uint32_t index,
             want = {1, 16, 1};
         }
         if (!bits.is_valid() || !nb::try_cast(bits, view, false))
-            wrong(name, "a writable C-contiguous array in CPU memory as out", out);
+            refuse_out(name, bits.is_valid() ? bits : nb::handle(out));
     }
     if (view.dtype() != want)
         raise(PyExc_ValueError,

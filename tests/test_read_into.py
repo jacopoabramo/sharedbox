@@ -79,9 +79,9 @@ def test_read_into_fills_the_given_arrays_with_another_process_write(
     [
         (lambda: np.empty((3, 4), np.int16), ValueError, r"shape \(3, 4\)"),
         (lambda: np.empty((4, 3), np.int32), ValueError, "dtype int32"),
-        (lambda: np.empty((4, 6), np.int16)[:, ::2], TypeError, "C-contiguous"),
-        (read_only, TypeError, "writable"),
-        (lambda: [[0] * 3] * 4, TypeError, "array"),
+        (lambda: np.empty((4, 6), np.int16)[:, ::2], TypeError, "is not C-contiguous"),
+        (read_only, TypeError, "is read-only"),
+        (lambda: [[0] * 3] * 4, TypeError, "expects an array"),
     ],
 )
 def test_read_into_refuses_an_out_that_does_not_fit(
@@ -130,13 +130,22 @@ def test_read_into_raises_on_a_closed_box(unique_name: str) -> None:
     Camera.unlink(unique_name)
 
 
-def test_read_into_times_out_while_a_writer_holds_the_lock(unique_name: str) -> None:
-    """Raise LockTimeoutError when the write lock stays held past the lock timeout."""
+@pytest.mark.parametrize(
+    ("field", "out"),
+    [
+        ("small", lambda: np.empty((4, 3), np.int16)),
+        ("image", lambda: np.empty((512, 512), np.float32)),
+    ],
+)
+def test_read_into_times_out_while_a_writer_holds_the_lock(
+    unique_name: str, field: str, out: Callable[[], np.ndarray]
+) -> None:
+    """Raise LockTimeoutError when the write lock stays held past the lock timeout, for a small and a 1 MiB field."""
     with Camera.create(unique_name) as box:
         box._segment._hold_write_lock()
         try:
             with pytest.raises(LockTimeoutError):
-                box.read_into("small", np.empty((4, 3), np.int16))
+                box.read_into(field, out())
         finally:
             box._segment._release_held_lock()
     Camera.unlink(unique_name)
