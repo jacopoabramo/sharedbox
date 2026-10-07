@@ -9,6 +9,12 @@ Dates are marked as `DD-MM-YYYY`
 
 ## [Unreleased]
 
+### Added
+
+- `benchbox contention`: times writes and reads of an `int` while several
+  writer and reader processes share it, for a box, `mp.Value` and
+  `SharedMemory` with a `Lock`.
+
 ## [0.4.1] - 07-10-2026
 
 ### Changed
