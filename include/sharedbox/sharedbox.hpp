@@ -167,6 +167,14 @@ struct read_value {
     std::uint64_t version;
 };
 
+// An array field held for writing in place: its bytes in the record, and the even seq begin_write locked
+// from, which end_write releases.
+struct field_write {
+    std::uint16_t field;
+    std::span<std::byte> bytes;
+    std::uint64_t locked;
+};
+
 enum class wake { changed, interrupted };
 
 struct header {
@@ -2102,6 +2110,12 @@ public:
     // itself. For tests that hold the lock.
     [[nodiscard]] result<std::uint64_t> lock(seconds lock_timeout);
     void unlock(std::uint64_t locked) noexcept;
+    // Takes the write lock and returns the bytes of an array field for writing in place, with the seq to end
+    // with. status::range for a field past field_count() or of another kind. Readers in every process retry
+    // until end_write.
+    [[nodiscard]] result<field_write> begin_write(std::uint16_t field, seconds lock_timeout);
+    // Adds one to the field's write count, releases the lock begin_write took and wakes waiters.
+    void end_write(const field_write &w) noexcept;
 
     // Claims a free waiter slot for this process, first freeing the slots of processes that have exited.
     [[nodiscard]] result<std::uint16_t> register_waiter();
@@ -2781,6 +2795,26 @@ SHAREDBOX_HOT void handle::unlock(std::uint64_t locked) noexcept {
     std::uint64_t expected = locked + 1;
     detail::atomic(h.seq).compare_exchange_strong(expected, locked + 2, std::memory_order_release,
                                                   std::memory_order_relaxed);
+}
+
+inline result<field_write> handle::begin_write(std::uint16_t field, seconds lock_timeout) {
+    detail::state &s = *s_;
+    if (field >= s.field_count || s.fields[field].kind != kind_array)
+        return unexpected(status::range);
+    const result<std::uint64_t> locked = lock(lock_timeout);
+    if (!locked)
+        return unexpected(locked.error());
+    const field_spec &f = s.fields[field];
+    return field_write{field, {s.record + f.offset, f.capacity}, *locked};
+}
+
+inline void handle::end_write(const field_write &w) noexcept {
+    detail::state &s = *s_;
+    // Only the lock holder changes a count, so a plain store of the sum is enough.
+    auto count = detail::atomic(s.counts[w.field]);
+    count.store(count.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
+    unlock(w.locked);
+    detail::wake_waiters(s);
 }
 
 SHAREDBOX_HOT result<void> handle::write(std::span<const value> values, seconds lock_timeout) {
