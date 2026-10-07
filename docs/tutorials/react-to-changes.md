@@ -5,9 +5,9 @@ icon: lucide/play
 # Reacting to changes
 
 In [Sharing a record between processes](share-a-record.md), the first
-process read the new position after the second process had ended. In this
-tutorial it sees the change as it happens, in two ways: a callback, and a
-loop over the values written.
+process only learned the new position after the second process had ended.
+In this tutorial you make it notice the change the moment it happens, in two
+ways: with a callback, and with a loop that waits for each new value.
 
 ## Before you start
 
@@ -24,24 +24,26 @@ Add this function below `share`:
 --8<-- "docs/tutorials/motor.py:react"
 ```
 
-[`events`][sharedbox.SharedBox.events] has one psygnal signal per
-[field](../explanation/glossary.md#field).
-The lambda connected to `events.position` runs each time any process
-changes `position`, with the new and the old value.
-[`watch`][sharedbox.SharedBox.watch] returns an iterator over the values
-written to `position` from now on, and `next` waits for the first of them.
+It listens in two ways at once. The first is
+[`events`][sharedbox.SharedBox.events], which has one signal per
+[field](../explanation/glossary.md#field). The signals come from `psygnal`,
+a small library for callbacks: the lambda you connect to `events.position`
+runs each time any process changes `position`, and gets the new and the old
+value. The second is
+[`watch`][sharedbox.SharedBox.watch], which gives you an iterator over the
+values written to `position` from now on, so `next` waits for the first
+one.
 
-The [box](../explanation/glossary.md#box)'s
-[watcher](../explanation/glossary.md#watcher) serves both: a
-background thread that waits for writes from any process. While it
-waits, it holds one of the box's
-[waiter slots](../explanation/glossary.md#waiter-slot).
+Both rely on the [box](../explanation/glossary.md#box)'s [watcher](../explanation/glossary.md#watcher), a background
+thread that waits for writes from any process. While it waits, it holds
+one of the box's [waiter slots](../explanation/glossary.md#waiter-slot);
 [Waiting for changes](../explanation/waiting-for-changes.md) explains how a
-write wakes it.
+write wakes it up.
 
 ## 2. Run it
 
-Add the highlighted line at the end of the file:
+In the `if` block at the end of the file, add the highlighted line, so the
+script runs the new function after the old one:
 
 ```{.python hl_lines="3"}
 if __name__ == "__main__":
@@ -55,26 +57,32 @@ Run the script:
 uv run motor.py
 ```
 
+You should see the first tutorial's line, then the two new ones:
+
 ```text
 position set by the other process: 10
 position 0 -> 20
 watched 20
 ```
 
-The callback runs on the watcher thread and `next` returns on the main
-thread, so both could print at the same moment. The script prints the
-watched value after the `with` block instead: closing the box waits for the
-watcher thread, so the callback has printed by then.
+The callback runs on the watcher thread, while `next` returns on your main
+thread, so the two could print at the same moment and mix their lines. That
+is why the script prints the watched value only after the `with` block:
+closing the box stops the watcher thread and waits for it to finish, and
+since the callback runs on that thread, it has printed by then.
 
-A program that must handle a change on its main thread, such as one with a
-window, connects the callback with `thread="main"`. psygnal then queues each
-call, and the main thread runs the queued calls when it calls
-`psygnal.emit_queued()`.
+!!! warning "Callbacks run on another thread"
+    A callback runs on the watcher thread, not on your main thread. If your
+    program must handle changes on its main thread, for example because it
+    has a window, connect the callback with `thread="main"`. `psygnal` then
+    queues each call, and your main thread runs the queued calls whenever it
+    calls `psygnal.emit_queued()`.
 
 ## 3. Wait in asyncio code
 
-`watch` also works with `async for`, which waits without blocking the event
-loop. This example is a separate script, `sensor.py`:
+If your program uses `asyncio`, `watch` works with `async for` too, and
+waits without blocking the event loop. Try it in a separate script,
+`sensor.py`:
 
 ```python
 import asyncio
@@ -109,20 +117,31 @@ async def main() -> None:
 asyncio.run(main())
 ```
 
+Run it with `uv run sensor.py`, and it prints each value as the writer
+stores it:
+
+```text
+1.0
+2.0
+3.0
+```
+
 `Sensor()` creates the box under a name taken from the class, and
-`Sensor.attach()` opens it by that name. The writer here is a task in the
-same process; a writer in another process wakes the loop the same way.
+`Sensor.attach()` opens it by that same name. To keep the example short, the
+writer is a task in the same process, but a writer in another process wakes
+the loop in exactly the same way.
 
 ## What you built
 
-A box that reports each write from another process as it happens, to a
-callback and to a loop.
+You have a box that tells you about each write from another process as it
+happens, both through a callback and through a loop you can also use in
+`asyncio` code.
 
 ## Next steps
 
-- [Referring to another box](refer-to-another-box.md) is the next
-  tutorial: a box that refers to a motor, and a callback that follows the
-  reference.
+- [Referring to another box](refer-to-another-box.md) is next: a box that
+  points at a motor, and a callback that follows it to whichever motor it
+  points at.
 - [Waiting for changes](../explanation/waiting-for-changes.md) explains the
   watcher and the rules for when a callback runs.
 - [`FieldWatch`][sharedbox.FieldWatch] and

@@ -100,9 +100,10 @@ if __name__ == "__main__":
     share()
 ```
 
-You need them because the second process may import your script to find
-`move`, and the `if` stops it from calling `share()` a second time. Now run
-the script:
+You need them because, depending on your system, the second process starts a
+fresh Python that imports your script to find `move`. Without the `if`, that
+import would call `share()` again and try to create the box a second time.
+Now run the script:
 
 ```bash
 uv run motor.py
