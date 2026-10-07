@@ -10,16 +10,24 @@
 > [!WARNING]
 > This project is a work in progress; be patient or feel free to contribute.
 
-`sharedbox` keeps records in shared memory. Each box is one named segment, and every process that opens it reads and writes the same fields.
+`sharedbox` lets several Python processes share one record, as if they all
+held the same dataclass. You declare the fields once, and every process that
+opens the record reads and writes the same values in shared memory, so no
+process has to send them to another.
 
 ## Installation
 
-It is recommended to install `sharedbox` in a virtual environment; for example using `uv`:
+`sharedbox` needs CPython 3.11 or newer on Windows x64 or Linux x86_64. PyPI
+has compiled wheels, so you don't need a compiler:
 
 ```sh
-uv venv --python 3.11
-.venv\Scripts\activate
-uv pip install sharedbox
+pip install sharedbox
+```
+
+or, in a project that [`uv`](https://docs.astral.sh/uv/) manages:
+
+```sh
+uv add sharedbox
 ```
 
 ## Quick start
@@ -52,14 +60,32 @@ if __name__ == "__main__":
     Motor.unlink()
 ```
 
+The child finds the box by its class alone, and the parent prints the change
+as soon as the child makes it.
+
 ## Documentation
 
-The [documentation site](https://jacopoabramo.github.io/sharedbox) has a
-tutorial, how-to guides, explanations of how a box works, and the API
-reference.
+The [documentation site](https://jacopoabramo.github.io/sharedbox) starts
+with three tutorials, then has how-to guides, explanations of how a
+box works, and the API reference. C and C++ code can use a box too, either
+handed over from Python or opened by name; the
+[C and C++ guides](https://jacopoabramo.github.io/sharedbox/how-to/accept-a-box-in-cpp/)
+show how.
 
-C++ and C code can take a box from Python or open one by name; see the
-[C and C++ guides](https://jacopoabramo.github.io/sharedbox/how-to/accept-a-box-in-cpp/).
+## Development
+
+To change `sharedbox` itself you need `git`, `uv`, CMake 3.30 or newer and a
+C++20 compiler (MSVC or GCC):
+
+```sh
+git clone https://github.com/jacopoabramo/sharedbox.git
+cd sharedbox
+uv sync --dev
+uv run pytest
+```
+
+[How to set up a development environment](https://jacopoabramo.github.io/sharedbox/how-to/set-up-development/)
+has the details.
 
 ## License
 

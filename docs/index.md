@@ -15,9 +15,17 @@ hide:
 
 # `sharedbox`
 
-`sharedbox` keeps records in shared memory. Each [box](explanation/glossary.md#box) is one named [segment](explanation/glossary.md#segment), and every process that opens it reads and writes the same [fields](explanation/glossary.md#field).
+`sharedbox` lets several Python processes share one record, as if they all
+held the same dataclass. You declare the fields once, and every process that
+opens the record reads and writes the same values. The values sit in shared
+memory, a block of memory the operating system lets several processes use
+at once, so no process has to send them to another. Such a record is a
+[box](explanation/glossary.md#box).
 
-## Quick start
+## A first look
+
+Here a parent process creates a box, starts a child that moves the motor,
+and prints the change the moment it happens:
 
 ```python
 import multiprocessing as mp
@@ -47,17 +55,44 @@ if __name__ == "__main__":
     Motor.unlink()
 ```
 
-Expected output:
+`Capacity(32)` gives the text field room for 32 bytes, since every field
+has a fixed size. Running the script prints:
 
 ```text
 1 -> 10
 ```
 
+The child never receives the box from the parent: `Motor.attach()` finds it
+by the class alone. The parent learns about the change because
+`events.position.connect` asks for a callback whenever any process writes
+`position`.
+
+## Is it for you?
+
+`sharedbox` fits when separate processes need the same small set of values,
+such as the state of a device that one process controls and another shows.
+Reading or writing a number or a short string takes well under a
+microsecond, and a process that is reading never holds up one that is
+writing.
+
+If your code runs in threads of one process instead, you can share ordinary
+Python objects, which is simpler;
+[When to use sharedbox](explanation/when-to-use-sharedbox.md) compares the
+two.
+
+`sharedbox` runs on CPython 3.11 or newer, on Windows and Linux;
+[How to install sharedbox](how-to/install-sharedbox.md) has the details.
+
 ## Where to go next
 
-- [Tutorials](tutorials/index.md): build a first script, one step at a time
-- [How-to Guides](how-to/index.md): install sharedbox and get one task done with a box
-- [Explanations](explanation/index.md): how a box works and why it is built that way
-- [Reference](reference/index.md): the API, the segment layout and the C and C++ interface
-- [Changelog](reference/changelog.md): what changed in each release
-- [Contributing](how-to/contribute.md): set up a clone, run the tests and send a change
+- [Tutorials](tutorials/index.md): start here if `sharedbox` is new to you,
+  and build a small script one step at a time.
+- [How-to Guides](how-to/index.md): install `sharedbox`, then get one task
+  done, such as storing an array or naming a box.
+- [Explanations](explanation/index.md): how a box works inside, and why it
+  is built that way.
+- [Reference](reference/index.md): the API, the memory layout and the C and
+  C++ interface.
+- [Changelog](reference/changelog.md): what changed in each release.
+- [Contributing](how-to/contribute.md): set up a copy you can change, run
+  the tests and send your change.
