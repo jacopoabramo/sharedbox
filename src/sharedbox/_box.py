@@ -62,6 +62,7 @@ RESERVED = frozenset(
         "unlink",
         "update",
         "snapshot",
+        "read_into",
         "watch",
         "events",
         "force_unlock",
@@ -116,6 +117,7 @@ if sys.platform != "win32":
 
 
 B = TypeVar("B", bound="SharedBox")
+A = TypeVar("A")
 
 
 class FactoryDefault:
@@ -947,6 +949,40 @@ class SharedBox(metaclass=SharedBoxMeta):
             if follow:
                 self._follow(values)
         return values
+
+    def read_into(self, field: str, out: A) -> A:
+        """Copy an array field into `out` and return `out`.
+
+        The copy holds one complete write, as a read does, but goes into
+        memory the caller already has, so nothing is allocated.
+
+        Parameters
+        ----------
+        out
+            A writable, C-contiguous array in CPU memory with the field's
+            [`DType`][sharedbox.DType] and [`Shape`][sharedbox.Shape]. Its
+            contents are unspecified if the call raises.
+
+        Raises
+        ------
+        TypeError
+            If the field is not an array field, or `out` is not a writable,
+            C-contiguous array in CPU memory.
+        ValueError
+            If the box has no such field, or `out` has another dtype or
+            shape.
+        LockTimeoutError
+            If another writer holds the lock longer than the lock timeout.
+        BoxClosedError
+            If the box is closed.
+        """
+        spec = self._spec(field)
+        if spec.kind != "array":
+            raise TypeError(
+                f"{spec.label} is not an array field; read_into takes array fields only"
+            )
+        self._segment.read_into(spec.index, out, type(self).__layout__.types)
+        return out
 
     def _follow(self, values: dict[str, Any]) -> None:
         """Replace the references in `values`, read from this box, with nested snapshots, depth first."""

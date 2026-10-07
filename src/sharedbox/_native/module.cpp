@@ -719,6 +719,13 @@ NB_MODULE(_native, m) {
             [](const Segment &s, std::uint32_t index, nb::handle types) { return get(s, index, types_of(types)); },
             "field"_a, "types"_a = nb::none())
         .def(
+            "read_into",
+            [](const Segment &s, std::uint32_t index, nb::handle out, nb::handle types) {
+                const auto view = sharedbox::need(types_of(types), index).array_out(index, out.ptr());
+                s.read_into(index, {static_cast<std::byte *>(view.data()), view.nbytes()});
+            },
+            "field"_a, "out"_a, "types"_a = nb::none())
+        .def(
             "get_versioned",
             [](const Segment &s, std::uint32_t index, nb::handle types) {
                 sharedbox::FieldRead read;

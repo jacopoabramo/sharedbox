@@ -28,7 +28,23 @@ annotation. The annotated type decides what a read returns: a
 A write copies the array into the [box](../explanation/glossary.md#box),
 and a read copies it out into a new array, so the two never share memory.
 
-## 3. Read with another library
+## 3. Read into an array you already have
+
+A read allocates a new array every time. To read the same field again and
+again, for example once per frame, pass an array you already have to
+[`read_into`][sharedbox.SharedBox.read_into], which copies the field into
+it and returns it:
+
+```{.python}
+--8<-- "docs/examples/store_arrays.py:read-into"
+```
+
+The array must be writable, C-contiguous, in CPU memory, and have the
+field's dtype and shape. On Windows, getting fresh memory for a large array
+costs more than copying into it, so reading into an array you keep is much
+faster there.
+
+## 4. Read with another library
 
 A `SupportsDLPack` field reads back an object any DLPack library imports:
 
@@ -40,7 +56,7 @@ For an array type other than numpy's and torch's, call
 [`register_array_type`][sharedbox.register_array_type] with the type and
 its `from_dlpack` function before defining the class.
 
-## 4. Handle the wrong shape or dtype
+## 5. Handle the wrong shape or dtype
 
 ```{.python}
 --8<-- "docs/examples/store_arrays.py:wrong-shape"

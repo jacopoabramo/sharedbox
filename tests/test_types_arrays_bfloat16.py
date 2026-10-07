@@ -22,6 +22,16 @@ def test_bfloat16_arrays_read_back_as_bfloat16(unique_name: str) -> None:
     Weights.unlink(unique_name)
 
 
+def test_read_into_fills_a_bfloat16_array(unique_name: str) -> None:
+    """Fill an ml_dtypes bfloat16 array through its uint16 view."""
+    values = np.array([0.5, -1.0, 2.0], ml_dtypes.bfloat16)
+    with Weights.create(unique_name, values) as box:
+        out = np.zeros(3, ml_dtypes.bfloat16)
+        assert box.read_into("w", out) is out
+        assert np.array_equal(out, values)
+    Weights.unlink(unique_name)
+
+
 @pytest.mark.parametrize("dtype", [np.float16, np.int16, np.float32])
 def test_other_dtypes_are_refused_by_a_bfloat16_field(
     unique_name: str, dtype: type

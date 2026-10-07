@@ -155,6 +155,18 @@ class Segment:
     def get(self, field: int, types: Types | None = None) -> object:
         """Return the field's value; `(create_id, schema_hash, name)`, or None when empty, for a reference field."""
 
+    def read_into(self, field: int, out: object, types: Types | None = None) -> None:
+        """Copy an array field into `out`, a writable C-contiguous CPU array of the field's dtype and shape.
+
+        Raises
+        ------
+        TypeError
+            If the field is not an array, or `out` is not a writable
+            C-contiguous array in CPU memory.
+        ValueError
+            If `out` has another dtype or shape.
+        """
+
     def cached_ref(self, field: int, cache: dict[int, RefEntry]) -> object:
         """Return `cache[field][1]` if the reference field holds `cache[field][0]` and `cache[field][2]` is open.
 
