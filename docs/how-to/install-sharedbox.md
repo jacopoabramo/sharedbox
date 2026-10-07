@@ -4,8 +4,8 @@ icon: lucide/wrench
 
 # How to install sharedbox
 
-PyPI has compiled wheels of sharedbox, so installing it needs no
-compiler.
+`sharedbox` comes as ready-built packages (wheels) on PyPI, so you can
+install it without a compiler.
 
 ## Before you start
 
@@ -30,8 +30,8 @@ pip install sharedbox
 
 ## Which wheel you get
 
-Each platform has three wheels, and the installer picks the one that
-matches your Python:
+You don't have to choose a wheel yourself: each platform has three, and the
+installer picks the one that matches your Python.
 
 | Python | Wheel tag |
 | --- | --- |
@@ -39,14 +39,15 @@ matches your Python:
 | CPython 3.12 and newer | `cp312-abi3` |
 | Free-threaded CPython 3.14 | `cp314-cp314t` |
 
-They are built for Windows x64 and for Linux x86_64, with glibc and with
-musl. [How the module is built](../explanation/how-the-module-is-built.md)
+They are built for Windows x64 and for Linux x86_64, both for the common
+glibc-based distributions and for musl-based ones such as Alpine.
+[How the module is built](../explanation/how-the-module-is-built.md)
 explains why there are three.
 
 ## Add the benchmark command
 
-The `benchmarks` extra installs the `benchbox` command, which measures
-sharedbox on your own machine:
+If you want to measure `sharedbox` on your own machine, install the
+`benchmarks` extra, which adds the `benchbox` command:
 
 ```bash
 uv add "sharedbox[benchmarks]"

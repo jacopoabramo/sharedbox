@@ -4,23 +4,24 @@ icon: lucide/wrench
 
 # How to accept a box in a C++ extension
 
-A Python user hands your extension the [box](../explanation/glossary.md#box)
-object itself:
+If you write a C++ extension, say a camera driver, your users can hand it a
+[box](../explanation/glossary.md#box) directly, and your code reads and writes the same fields
+their Python code does:
 
 ```python
 with Frame() as frame:
     camera.run(frame)            # camera: an extension that supports sharedbox
 ```
 
-Your extension then reads and writes the box through the header-only C++20
-library `sharedbox/sharedbox.hpp`, which sharedbox installs with its wheel.
-Your extension links no library from sharedbox. The extension gets its own
-[handle](../explanation/glossary.md#handle) on the
-[segment](../explanation/glossary.md#segment), so closing or unlinking the
-box in Python does not affect it.
+Your extension reads and writes the box through `sharedbox/sharedbox.hpp`, a
+header-only C++20 library that comes with the `sharedbox` wheel, so you
+don't link any library from `sharedbox`. Your extension gets its own
+[handle](../explanation/glossary.md#handle) on the [segment](../explanation/glossary.md#segment), which means it keeps
+working even if the Python side closes or unlinks the box.
 
-For C code, see [How to accept a box in a C extension](accept-a-box-in-c.md).
-For a program with no Python, see
+Writing C instead? See
+[How to accept a box in a C extension](accept-a-box-in-c.md). For a program
+that has no Python at all, see
 [How to open a box from a program](open-a-box-from-a-program.md).
 
 ## Before you start
@@ -32,7 +33,8 @@ For a program with no Python, see
 
 ## Know the box you expect
 
-The examples on these pages use this class:
+Your code has to know which kind of box it accepts. The examples on these
+pages use this class:
 
 ```python
 from sharedbox import SharedBox
@@ -43,8 +45,7 @@ class Frame(SharedBox, identity="camera/frame/1"):
     count: int = 0
 ```
 
-Your code needs two values computed from the class and kept as
-constants:
+From it you work out two values once and keep them as constants:
 
 - The [schema hash](../explanation/glossary.md#schema-hash): the first 8
   bytes of SHA-256 over `camera/frame/1|exposure:float:8|count:int:8`,
@@ -53,17 +54,19 @@ constants:
   of SHA-256 over the [identity](../explanation/glossary.md#identity)
   `camera/frame/1`. For `Frame` it is `d8dfe7af542f1d91`.
 
-`sharedbox.hpp` does not compute SHA-256, so compute both with your own
-library, or once in Python. [The schema hash](../explanation/how-a-box-is-stored.md#the-schema-hash)
+`sharedbox.hpp` doesn't compute SHA-256, so work both out with your own
+library, or once in Python.
+[The schema hash](../explanation/how-a-box-is-stored.md#the-schema-hash)
 explains what the hashed text holds.
 
-A [field](../explanation/glossary.md#field) is addressed by its position
-in declaration order: `exposure` is field 0, `count` is field 1.
+In C++ you name a [field](../explanation/glossary.md#field) by its position in the class, counting
+from 0: `exposure` is field 0 and `count` is field 1.
 
 ## Declare the parameter
 
-In the stubs of your extension, annotate the box parameter with
-[`SupportsSharedBox`][sharedbox.SupportsSharedBox]:
+So that type checkers know your function takes a box, annotate the
+parameter with [`SupportsSharedBox`][sharedbox.SupportsSharedBox] in your
+extension's stubs:
 
 ```python
 from sharedbox import SupportsSharedBox
@@ -73,55 +76,58 @@ def run(frame: SupportsSharedBox) -> None: ...
 
 ## Build against the header
 
-Add `sharedbox` to `[build-system] requires` and build as C++20. Then do
-one of the following:
+Add `sharedbox` to `[build-system] requires` and build as C++20. Then point
+your build at the header in one of two ways:
 
 - Put [`sharedbox.get_include()`][sharedbox.get_include] on the include
   path.
 - With CMake, add `Path(sharedbox.get_include()).parent` to
-  `CMAKE_PREFIX_PATH`, call `find_package(sharedbox 0.3 CONFIG REQUIRED)`
+  `CMAKE_PREFIX_PATH`, call `find_package(sharedbox 0.4 CONFIG REQUIRED)`
   and link `sharedbox::headers` (C++) or `sharedbox::c` (C). The version
   is optional. Before 1.0 a request accepts only the same minor version,
-  so `0.3` accepts 0.3.0 and later 0.3 releases but not 0.4.
+  so `0.4` accepts 0.4.0 and later 0.4 releases but not 0.5.
 
 `sharedbox::c` compiles `sharedbox_c.cpp` into the target that links it,
-so the project must enable the CXX language as well as C; configure stops
-with a message if it does not. On Linux both targets link `rt` and
+so your project has to enable the CXX language as well as C; if it doesn't,
+configure stops with a message saying so. On Linux both targets link `rt` and
 `Threads::Threads`, on Windows `bcrypt`.
 
-On Windows `sharedbox.hpp` includes `windows.h` and `bcrypt.h`. It
-includes `windows.h` in its lean form and without the `min` and `max`
-macros: unless you defined them already, it defines `WIN32_LEAN_AND_MEAN`
-and `NOMINMAX` before that include and removes them at its end. Code that
-needs the full `windows.h` or the `min` and `max` macros must include
-`windows.h` before `sharedbox.hpp`.
+!!! warning "The header trims `windows.h`"
+    On Windows, `sharedbox.hpp` includes `windows.h` and `bcrypt.h`, with
+    `windows.h` in its lean form and without the `min` and `max` macros:
+    unless you defined them already, it defines `WIN32_LEAN_AND_MEAN` and
+    `NOMINMAX` before the include and removes them afterwards. If your code
+    needs the full `windows.h` or the `min` and `max` macros, include
+    `windows.h` before `sharedbox.hpp`.
 
-The header declares its C++ names in `sharedbox::v2`, an inline
-namespace, so code still writes `sharedbox::handle`. The inline namespace
-changes when the header's C++ interface changes incompatibly, so libraries
-built against headers with different inline namespaces can be linked into
-one program. The C functions `sbx_*` keep their names across versions.
-Names in `sharedbox::detail` are internal and may change in any release
-without a new inline namespace.
+You write `sharedbox::handle`, but the header actually declares its C++
+names in an inline namespace, `sharedbox::v2`. That namespace changes
+whenever the C++ interface changes incompatibly, so libraries built against
+different versions of the header can still be linked into one program. The
+C functions `sbx_*` keep their names across versions. Names in
+`sharedbox::detail` are internal and may change in any release.
 
-On Linux, when two shared libraries built against different releases of
-the header are loaded into one program, the dynamic linker uses one copy of
-each inline function and variable for both, even where the two copies
-differ. A shared library that uses `sharedbox::headers` or `sharedbox::c`
-should build with hidden visibility, so its copies stay private to it:
+!!! warning "Build shared libraries with hidden visibility on Linux"
+    When two shared libraries built against different releases of the
+    header are loaded into one program, the Linux dynamic linker uses one
+    copy of each inline function and variable for both, even where the two
+    differ. Build a shared library that uses `sharedbox::headers` or
+    `sharedbox::c` with hidden visibility, so its copies stay private to it:
 
-```cmake
-set_target_properties(reader PROPERTIES
-    C_VISIBILITY_PRESET hidden
-    CXX_VISIBILITY_PRESET hidden
-    VISIBILITY_INLINES_HIDDEN ON)
-```
+    ```cmake
+    set_target_properties(reader PROPERTIES
+        C_VISIBILITY_PRESET hidden
+        CXX_VISIBILITY_PRESET hidden
+        VISIBILITY_INLINES_HIDDEN ON)
+    ```
 
 `sharedbox_c.h` declares the `sbx_*` functions with hidden visibility on
 GCC and Clang outside Windows, so each library keeps its own copy of them
 whatever its target settings.
 
 ## Take the box from the capsule
+
+With the build set up, taking the box is four steps:
 
 1. Call `__sharedbox_box__` on the object you were given.
 2. Take the handle out of the capsule with
@@ -149,7 +155,7 @@ static PyObject *run(PyObject *, PyObject *frame) {
         PyCapsule_SetName(capsule, "used_sharedbox_box");
     Py_DECREF(capsule);
     if (!box)
-        return PyErr_Format(PyExc_ValueError, "not a sharedbox layout 1.x box");
+        return PyErr_Format(PyExc_ValueError, "not a box this sharedbox.hpp can open");
     if (box->schema_hash() != FRAME_SCHEMA)
         return PyErr_Format(PyExc_TypeError, "expected a Frame box");
     // box is independent of the Python box from here on, and may move to another thread.
@@ -161,10 +167,11 @@ static PyObject *run(PyObject *, PyObject *frame) {
 }
 ```
 
-`from_capsule` checks the segment the handle points to, as an attach does.
-On success it takes over the capsule's handle, and destroying `box`
-releases it. When it fails, the capsule keeps its handle and releases it
-when the capsule is garbage collected.
+`from_capsule` checks the segment the handle points to, just as an attach
+does. If the check passes, `box` takes over the capsule's handle and
+releases it when `box` is destroyed. If it fails, the capsule keeps its
+handle and releases it when the capsule is garbage collected, so nothing
+leaks either way.
 
 ## Next steps
 

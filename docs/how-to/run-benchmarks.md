@@ -4,9 +4,11 @@ icon: lucide/wrench
 
 # How to run the benchmarks
 
-The `benchbox` command measures sharedbox on your own machine: single
-operations, change notification between two processes, several processes
-sharing one value, and wheel size.
+Numbers measured on someone else's machine only go so far. The `benchbox`
+command measures `sharedbox` on yours, next to the ways the standard
+library shares data between processes: single reads and writes, how fast a
+change reaches another process, several processes sharing one value, and
+the size of the installed package.
 
 ## Before you start
 
