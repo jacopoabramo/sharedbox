@@ -8,7 +8,7 @@ import os
 import sys
 import threading
 import weakref
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Generator, Iterator
 from dataclasses import MISSING, InitVar
 from functools import partial
 from typing import (
@@ -63,6 +63,7 @@ RESERVED = frozenset(
         "update",
         "snapshot",
         "read_into",
+        "writing",
         "watch",
         "events",
         "force_unlock",
@@ -983,6 +984,45 @@ class SharedBox(metaclass=SharedBoxMeta):
             )
         self._segment.read_into(spec.index, out, type(self).__layout__.types)
         return out
+
+    @contextlib.contextmanager
+    def writing(self, field: str) -> Generator[Any, None, None]:
+        """Hold the box's write lock and yield the array field to fill in place.
+
+        The block gets an array of the field's declared type that views the
+        field in shared memory and holds its current value. Leaving the
+        block releases the lock, counts the write and wakes watchers, also
+        when the block raises, since the bytes have already changed.
+        While the block runs, reads and writes of the box in every process
+        wait for the lock, so keep it short. Writing a field of this box
+        inside the block waits on that same lock and raises
+        [`LockTimeoutError`][sharedbox.LockTimeoutError]. The array keeps
+        its own mapping, so using it after the box is closed cannot crash,
+        but writing to it after the block takes no lock and tells no one.
+
+        Raises
+        ------
+        TypeError
+            If the field is not an array field.
+        ValueError
+            If the box has no such field.
+        LockTimeoutError
+            If another writer holds the lock longer than the lock timeout.
+        BoxClosedError
+            If the box is closed.
+        """
+        spec = self._spec(field)
+        if spec.kind != "array":
+            raise TypeError(
+                f"{spec.label} is not an array field; writing takes array fields only"
+            )
+        writer, view = self._segment.begin_write(
+            spec.index, type(self).__layout__.types
+        )
+        try:
+            yield view
+        finally:
+            writer.end()
 
     def _follow(self, values: dict[str, Any]) -> None:
         """Replace the references in `values`, read from this box, with nested snapshots, depth first."""

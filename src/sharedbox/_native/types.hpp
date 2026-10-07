@@ -78,6 +78,9 @@ public:
     /// out a writable C-contiguous array in CPU memory, and ValueError unless out has the field's dtype and
     /// shape; an ml_dtypes bfloat16 array is taken as its uint16 view.
     nb::ndarray<nb::c_contig, nb::device::cpu> array_out(std::uint32_t index, PyObject *out) const;
+    /// A writable array over data, the bytes of array field index, which owner keeps alive, passed through the
+    /// field's converter as a read is. Raises TypeError unless the field is an array.
+    nb::object array_over(std::uint32_t index, std::byte *data, nb::handle owner) const;
 
     int traverse(visitproc visit, void *arg) const;
     void clear();
@@ -102,6 +105,8 @@ private:
     /// An array value whose bytes start at data; owned, when it holds data, is taken instead of copied.
     nb::object decode_array(const detail::type_ref &t, const std::byte *data,
                             std::unique_ptr<std::byte[]> *owned) const;
+    /// The array over raw that owner keeps alive, with the node's shape and dtype, through the converter.
+    nb::object wrap_array(const detail::type_ref &t, std::byte *raw, nb::handle owner) const;
     void prepare(std::uint32_t node, std::uint8_t kind, nb::object info);
     bool read_as_bytearray(std::uint32_t container, std::uint32_t member) const;
 

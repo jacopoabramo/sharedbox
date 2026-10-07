@@ -422,6 +422,17 @@ void Segment::read_into(std::uint32_t index, std::span<std::byte> out) const {
         impl_->check(impl_->box.read(f, out));
 }
 
+std::unique_ptr<FieldWriter> Segment::begin_write(std::uint32_t index) const {
+    auto guard = impl_->enter();
+    impl_->field(index);
+    auto box = std::make_shared<handle>(impl_->check(impl_->box.duplicate()));
+    // duplicate() copies the lock timeout but not the wait hooks.
+    box->set_wait_hooks(before_wait, after_wait);
+    const field_write write =
+        impl_->check(box->begin_write(static_cast<std::uint16_t>(index), seconds(impl_->lock_timeout)));
+    return std::make_unique<FieldWriter>(std::move(box), write);
+}
+
 std::size_t Segment::record_size() const { return impl_->record_size; }
 
 void Segment::read_record(std::span<std::byte> out) const {
