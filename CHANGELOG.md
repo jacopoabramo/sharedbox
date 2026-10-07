@@ -9,6 +9,8 @@ Dates are marked as `DD-MM-YYYY`
 
 ## [Unreleased]
 
+## [0.4.1] - 07-10-2026
+
 ### Changed
 
 - `SharedBox.update`: takes about 7 to 9 ns less per call on Windows.
@@ -292,7 +294,8 @@ stage.events.nested.connect(lambda path, new, old: print(path, new))
 
 - Initial release
 
-[Unreleased]: https://github.com/jacopoabramo/sharedbox/compare/v0.4.0...HEAD
+[Unreleased]: https://github.com/jacopoabramo/sharedbox/compare/v0.4.1...HEAD
+[0.4.1]: https://github.com/jacopoabramo/sharedbox/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/jacopoabramo/sharedbox/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/jacopoabramo/sharedbox/compare/v0.3.0...v0.3.1
 [0.3.0]: https://github.com/jacopoabramo/sharedbox/compare/0.2.4...v0.3.0
