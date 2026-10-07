@@ -29,6 +29,12 @@ sensor.read_into("frame", frame)
 print(int(frame.sum()))  # 168
 # --8<-- [end:read-into]
 
+# --8<-- [start:writing]
+with sensor.writing("frame") as frame:
+    frame[0, :] = 255
+print(int(sensor.frame[0].sum()))  # 1530
+# --8<-- [end:writing]
+
 # --8<-- [start:any-library]
 raw = sensor.raw
 print(np.from_dlpack(raw))  # [0. 0. 0.]

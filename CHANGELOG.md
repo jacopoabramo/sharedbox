@@ -13,6 +13,8 @@ Dates are marked as `DD-MM-YYYY`
 
 - `SharedBox.read_into`: copies an array field into an array the caller
   passes and returns it, without allocating a new array.
+- `SharedBox.writing`: a context manager that holds the box's write lock
+  and yields an array field as an array to fill in place.
 - `benchbox contention`: times writes and reads of an `int` while several
   writer and reader processes share it, for a box, `mp.Value` and
   `SharedMemory` with a `Lock`.
@@ -20,6 +22,7 @@ Dates are marked as `DD-MM-YYYY`
 ### Changed
 
 - `SharedBox`: a field named `read_into` raises `TypeError`.
+- `SharedBox`: a field named `writing` raises `TypeError`.
 
 ## [0.4.1] - 07-10-2026
 

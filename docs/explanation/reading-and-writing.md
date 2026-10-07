@@ -75,6 +75,14 @@ without a hidden lock inside the program:[^lock-free]
 static_assert(std::atomic_ref<std::uint64_t>::is_always_lock_free);
 ```
 
+[`writing`][sharedbox.SharedBox.writing] holds this same lock for as long
+as its block runs, so a reader that starts in the meantime keeps retrying
+until the block ends. If that takes longer than the reader's lock timeout,
+the reader gives up with [`LockTimeoutError`][sharedbox.LockTimeoutError].
+That trade is worth it for a large array a producer can fill in place,
+because it saves a full copy, but only while the block stays shorter than
+the readers' lock timeout.
+
 ## Waiting for the lock
 
 A writer that waits too long, or a reader that keeps losing to writers,

@@ -44,7 +44,33 @@ field's dtype and shape. On Windows, getting fresh memory for a large array
 costs more than copying into it, so reading into an array you keep is much
 faster there.
 
-## 4. Read with another library
+## 4. Fill an array field in place
+
+If your data comes from something that can write straight into memory you
+hand it, such as a camera driver, [`writing`][sharedbox.SharedBox.writing]
+saves you the extra copy. It gives you the field itself to fill:
+
+```{.python}
+--8<-- "docs/examples/store_arrays.py:writing"
+```
+
+The array starts out holding the field's current value. When the block
+ends, the box counts the write and wakes everyone watching the field, even
+if the block stopped halfway with an exception.
+
+!!! warning "Everyone else waits while the block runs"
+    The block holds the box's write lock, so every read and write of the
+    box waits until it ends, in every process. A reader that waits longer
+    than its lock timeout raises
+    [`LockTimeoutError`][sharedbox.LockTimeoutError]. Do the slow work
+    before the block, and keep the block itself short.
+
+!!! warning "The array is yours only inside the block"
+    Writing to the array after the block takes no lock and tells nobody,
+    so a reader can see half of your change. Use it inside the `with`
+    block and nowhere else.
+
+## 5. Read with another library
 
 A `SupportsDLPack` field reads back an object any DLPack library imports:
 
@@ -56,7 +82,7 @@ For an array type other than numpy's and torch's, call
 [`register_array_type`][sharedbox.register_array_type] with the type and
 its `from_dlpack` function before defining the class.
 
-## 5. Handle the wrong shape or dtype
+## 6. Handle the wrong shape or dtype
 
 ```{.python}
 --8<-- "docs/examples/store_arrays.py:wrong-shape"
