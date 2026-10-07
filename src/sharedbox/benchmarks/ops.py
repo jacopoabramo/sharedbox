@@ -119,6 +119,7 @@ WHEN = datetime.datetime(2026, 10, 2, 9, 30, tzinfo=datetime.UTC)
 QUAD = Quad(1, 1.5, True, 2)
 FLOATS = [0.5] * 16
 IMAGE = np.ones((512, 512), np.float32)
+OUT = np.empty_like(IMAGE)
 
 
 def open_typed() -> tuple[Any, ...]:
@@ -309,6 +310,7 @@ BENCHMARKS: list[tuple[str, str, str, list[str]]] = [
     ("read list16", "SharedBox", TYPED, ["typed.floats"]),
     ("write array 1 MiB", "SharedBox", TYPED, ["typed.image = IMAGE"]),
     ("read array 1 MiB", "SharedBox", TYPED, ["typed.image"]),
+    ("read_into array 1 MiB", "SharedBox", TYPED, ["typed.read_into('image', OUT)"]),
 ]
 
 
