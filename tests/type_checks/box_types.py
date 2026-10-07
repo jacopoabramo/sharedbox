@@ -1,8 +1,20 @@
 from dataclasses import InitVar
 from typing import Annotated, Any, assert_type, cast
 
+import numpy as np
+import numpy.typing as npt
+
 import sharedbox
-from sharedbox import BoxRef, Capacity, Field, SharedBox, SupportsSharedBox, field
+from sharedbox import (
+    BoxRef,
+    Capacity,
+    DType,
+    Field,
+    Shape,
+    SharedBox,
+    SupportsSharedBox,
+    field,
+)
 
 
 class Motor(SharedBox):
@@ -94,3 +106,11 @@ def references(cart: Cart, fast: FastWheel, copy: WheelCopy) -> None:
     Cart(copy)  # type: ignore[arg-type]
     cart.wheel = copy  # type: ignore[assignment]
     cart.wheel = cast(Wheel, copy)
+
+
+class Camera(SharedBox):
+    image: Annotated[npt.NDArray[np.float32], Shape(4), DType("float32")]
+
+
+def read_into(camera: Camera, out: npt.NDArray[np.float32]) -> None:
+    assert_type(camera.read_into("image", out), npt.NDArray[np.float32])

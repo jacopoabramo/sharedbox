@@ -11,6 +11,8 @@ Dates are marked as `DD-MM-YYYY`
 
 ### Added
 
+- `SharedBox.read_into`: copies an array field into an array the caller
+  passes and returns it, without allocating a new array.
 - `benchbox contention`: times writes and reads of an `int` while several
   writer and reader processes share it, for a box, `mp.Value` and
   `SharedMemory` with a `Lock`.
