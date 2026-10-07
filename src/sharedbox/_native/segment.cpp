@@ -409,6 +409,19 @@ void Segment::read(std::uint32_t index, FieldRead &out) const {
     out.version = got.version;
 }
 
+void Segment::read_into(std::uint32_t index, std::span<std::byte> out) const {
+    auto guard = impl_->enter();
+    const FieldDesc &field = impl_->field(index);
+    if (out.size() != field.capacity)
+        throw std::invalid_argument("box '" + impl_->name + "': field " + std::to_string(index) + " holds " +
+                                    std::to_string(field.capacity) + " bytes, not " + std::to_string(out.size()));
+    const auto f = static_cast<std::uint16_t>(index);
+    if (out.size() >= detail::large_copy)
+        impl_->check(impl_->box.read_large(f, out));
+    else
+        impl_->check(impl_->box.read(f, out));
+}
+
 std::size_t Segment::record_size() const { return impl_->record_size; }
 
 void Segment::read_record(std::span<std::byte> out) const {

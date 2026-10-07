@@ -94,6 +94,21 @@ bool numpy_bfloat16(PyObject *value) {
     return PyUnicode_Check(name.ptr()) && PyUnicode_CompareWithASCIIString(name.ptr(), "bfloat16") == 0;
 }
 
+std::string dtype_text(const nb::dlpack::dtype &dtype) {
+    static constexpr const char *codes[] = {"int", "uint", "float", "opaque", "bfloat", "complex", "bool"};
+    if (dtype.code == 6)
+        return "bool";
+    const std::string base = dtype.code < 7 ? codes[dtype.code] : "code " + std::to_string(dtype.code) + " ";
+    return base + std::to_string(dtype.bits);
+}
+
+template <class Dim> std::string shape_text(std::size_t ndim, Dim dim) {
+    std::string text = "(";
+    for (std::size_t i = 0; i < ndim; ++i)
+        text += (i == 0 ? "" : ", ") + std::to_string(dim(i));
+    return text + (ndim == 1 ? ",)" : ")");
+}
+
 // Whether the array's elements lie in C order with no gaps, so one memcpy copies it.
 bool contiguous(const nb::ndarray<nb::ro> &view) {
     std::int64_t expected = 1;
@@ -731,6 +746,43 @@ nb::ndarray<nb::ro> Types::array_view(const detail::type_ref &t, PyObject *value
         same = view.shape(i) == tree_.number(node.numbers + static_cast<std::uint32_t>(i));
     if (!same)
         raise(PyExc_ValueError, where.name + " holds an array of the field's Shape; the value's shape differs");
+    return view;
+}
+
+nb::ndarray<nb::c_contig, nb::device::cpu> Types::array_out(std::uint32_t index, PyObject *out) const {
+    const detail::type_ref &t = field(index);
+    const std::string &name = labels_[index];
+    if (t.kind != kind_array)
+        raise(PyExc_TypeError, name + " is not an array field");
+    const NodeInfo &n = nodes_[t.node];
+    const detail::type_node &node = tree_.node(t.node);
+    nb::dlpack::dtype want{node.dtype.code, node.dtype.bits, node.dtype.lanes};
+    nb::ndarray<nb::c_contig, nb::device::cpu> view;
+    if (!nb::try_cast(nb::handle(out), view, false)) {
+        // numpy exports no DLPack type for bfloat16, so an ml_dtypes bfloat16 array is filled through its uint16
+        // view.
+        nb::object bits;
+        if (n.as_uint16 && numpy_bfloat16(out)) {
+            bits = nb::steal(PyObject_CallMethod(out, "view", "s", "uint16"));
+            if (!bits.is_valid())
+                throw nb::python_error();
+            want = {1, 16, 1};
+        }
+        if (!bits.is_valid() || !nb::try_cast(bits, view, false))
+            wrong(name, "a writable C-contiguous array in CPU memory as out", out);
+    }
+    if (view.dtype() != want)
+        raise(PyExc_ValueError,
+              name + ": out has dtype " + dtype_text(view.dtype()) + ", the field holds " + dtype_text(want));
+    bool same = view.ndim() == node.ndim;
+    for (std::size_t i = 0; same && i < node.ndim; ++i)
+        same = view.shape(i) == tree_.number(node.numbers + static_cast<std::uint32_t>(i));
+    if (!same)
+        raise(PyExc_ValueError, name + ": out has shape " +
+                                    shape_text(view.ndim(), [&](std::size_t i) { return view.shape(i); }) +
+                                    ", the field holds " + shape_text(node.ndim, [&](std::size_t i) {
+                                        return tree_.number(node.numbers + static_cast<std::uint32_t>(i));
+                                    }));
     return view;
 }
 

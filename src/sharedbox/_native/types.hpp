@@ -74,6 +74,11 @@ public:
     /// Whether field index is a bytes field read back as bytearray.
     bool field_is_bytearray(std::uint32_t index) const { return read_as_bytearray(field_container, index); }
 
+    /// out as a writable destination for array field index. Raises TypeError unless the field is an array and
+    /// out a writable C-contiguous array in CPU memory, and ValueError unless out has the field's dtype and
+    /// shape; an ml_dtypes bfloat16 array is taken as its uint16 view.
+    nb::ndarray<nb::c_contig, nb::device::cpu> array_out(std::uint32_t index, PyObject *out) const;
+
     int traverse(visitproc visit, void *arg) const;
     void clear();
 

@@ -95,6 +95,9 @@ public:
 
     /// Reads the field's bytes and version, from one moment, into out.
     void read(std::uint32_t field, FieldRead &out) const;
+    /// Copies the field's stored bytes, from one complete write, into out, which holds exactly as many bytes
+    /// as the field; for an array field. Throws std::invalid_argument for another size.
+    void read_into(std::uint32_t field, std::span<std::byte> out) const;
     /// Bytes of the record, the size of the buffer read_record fills.
     std::size_t record_size() const;
     /// Copies the whole record, every field from one moment, into out, which holds record_size() bytes;
