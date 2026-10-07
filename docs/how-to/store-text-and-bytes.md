@@ -4,15 +4,15 @@ icon: lucide/wrench
 
 # How to store text and bytes
 
-A `str` or `bytes` [field](../explanation/glossary.md#field) needs a
-[capacity](../explanation/glossary.md#capacity): the most bytes it can
-hold. The [box](../explanation/glossary.md#box) sets that room aside when it is created, so a value can never
-grow past it.
+Text and bytes vary in length, but every [field](../explanation/glossary.md#field) of a
+[box](../explanation/glossary.md#box) has a fixed size. So when you declare a `str` or `bytes`
+field, you also say how much room it gets, its [capacity](../explanation/glossary.md#capacity):
+the most bytes it can hold. This guide shows how to choose it and what
+happens when a value doesn't fit.
 
 ## 1. Declare the field with a capacity
 
-Put [`Capacity`][sharedbox.Capacity] in the annotation, inside
-`Annotated`:
+Wrap the type in `Annotated` and add a [`Capacity`][sharedbox.Capacity]:
 
 ```{.python}
 --8<-- "docs/examples/store_text_and_bytes.py:declare"
@@ -20,19 +20,19 @@ Put [`Capacity`][sharedbox.Capacity] in the annotation, inside
 
 ## 2. Write and read values
 
-Assign and read the field as any other:
+From then on you use the field like any other attribute:
 
 ```{.python}
 --8<-- "docs/examples/store_text_and_bytes.py:write"
 ```
 
-A `bytes` field also takes a `bytearray` or a `memoryview`, and reading it
-gives `bytes`.
+You can also assign a `bytearray` or a `memoryview` to a `bytes` field;
+reading it back always gives you `bytes`.
 
 ## 3. Handle a value that is too long
 
-A value longer than the capacity raises `ValueError`, and the field keeps
-its old value:
+If you assign a value longer than the capacity, you get a `ValueError` and
+the field keeps its old value, so a reader never sees half of it:
 
 ```{.python}
 --8<-- "docs/examples/store_text_and_bytes.py:too-long"
@@ -40,20 +40,22 @@ its old value:
 
 ## 4. Count bytes, not characters
 
-A capacity counts the bytes of the UTF-8 encoding, and a character takes 1
-to 4 of them:
+The capacity counts bytes of the UTF-8 encoding, not characters, and a
+character takes between 1 and 4 bytes. Text with accents or other scripts
+fills the room faster than it looks:
 
 ```{.python}
 --8<-- "docs/examples/store_text_and_bytes.py:bytes-not-characters"
 ```
 
-For text of up to `n` characters in any language, give the field a
-capacity of `4 * n`. For text you know is ASCII, `n` is enough.
+To be sure `n` characters of any language fit, give the field a capacity of
+`4 * n`. If you know the text is plain ASCII, `n` is enough.
 
 ## 5. Cut a value to fit
 
-To store the start of a longer text instead of refusing it, cut its
-encoding to the capacity and drop a character the cut split in two:
+Sometimes you'd rather keep the start of a long text than refuse it. Cut
+its encoding to the capacity, and drop any character the cut split in two,
+as this helper does:
 
 ```{.python}
 --8<-- "docs/examples/store_text_and_bytes.py:fit"

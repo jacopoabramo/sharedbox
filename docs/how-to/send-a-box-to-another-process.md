@@ -4,13 +4,14 @@ icon: lucide/wrench
 
 # How to send a box to another process
 
-A process that did not create a [box](../explanation/glossary.md#box) can
-get it in two ways: as an argument when it starts, or by name with
-[`attach`][sharedbox.SharedBox.attach]. This guide uses `multiprocessing`.
+A process that didn't create a [box](../explanation/glossary.md#box) can get it in two ways: you
+hand it over as an argument when the process starts, or the process opens
+it by name with [`attach`][sharedbox.SharedBox.attach]. This guide shows
+both with `multiprocessing`, and when to prefer which.
 
 ## 1. Pass the box as an argument
 
-Give the box to the process like any other argument:
+Hand the box to the new process like any other argument:
 
 ```{.python}
 --8<-- "docs/examples/send_a_box_to_another_process.py:argument"
@@ -20,21 +21,23 @@ Give the box to the process like any other argument:
 --8<-- "docs/examples/send_a_box_to_another_process.py:main"
 ```
 
-With the `spawn` or `forkserver` start method, `multiprocessing` pickles the
-arguments. The pickle holds only the box's name and which box it is (see
-[`SharedBox`][sharedbox.SharedBox]), and unpickling it attaches a new
-[handle](../explanation/glossary.md#handle): an independent box on the
-same data, which the child closes when it is done.
-`multiprocessing.shared_memory.SharedMemory` is sent the same way.
+This works however the child is started. With the `spawn` or `forkserver`
+start method, `multiprocessing` pickles the arguments, but the pickle holds
+only the box's name and which box it is, not its values (see
+[`SharedBox`][sharedbox.SharedBox]). Unpickling it in the child opens a new
+[handle](../explanation/glossary.md#handle): a separate box object on the same data, which the
+child closes when it's done. `multiprocessing.shared_memory.SharedMemory`
+travels the same way.
 
-With the `fork` start method nothing is pickled: the child uses the
+With the `fork` start method nothing is pickled at all: the child uses the
 parent's box object, which keeps working after the fork.
 
 ## 2. In a pool, attach once per worker
 
-Each unpickle opens the [segment](../explanation/glossary.md#segment) again, so a box passed with every task is
-opened once per task. Pass the box's name to the pool's initializer
-instead, and attach there:
+Each time a box is unpickled, the child opens its [segment](../explanation/glossary.md#segment)
+again. If you pass the box with every task of a pool, it gets opened once
+per task, which is wasted work. Pass the box's name to the pool's
+initializer instead, and attach there, once per worker:
 
 ```{.python}
 --8<-- "docs/examples/send_a_box_to_another_process.py:pool"
@@ -45,22 +48,24 @@ instead, and attach there:
 ## 3. Choose the start method
 
 Windows only has `spawn`. On Linux the default is `fork` before
-Python 3.14 and `forkserver` from 3.14 on. Ask for one with
+Python 3.14 and `forkserver` from 3.14 on. To choose one yourself, use
 `multiprocessing.get_context`, as the script does.
 
-Use `spawn` or `forkserver` when the box has callbacks connected to its
-[`events`][sharedbox.SharedBox.events]. A child forked while a callback
-runs can hang, and a forked child forwards nothing from
-[`follow`][sharedbox.BoxEvents.follow] until it calls `follow` again.
+!!! warning "Forking a box with callbacks can hang"
+    If the box has callbacks connected to its
+    [`events`][sharedbox.SharedBox.events], a child forked while a callback
+    runs can hang, and a forked child forwards nothing from
+    [`follow`][sharedbox.BoxEvents.follow] until it calls `follow` again.
+    Use `spawn` or `forkserver` for such a box.
 
-## Do not store a pickle
+## Keeping a pickle for later
 
-A pickled box names a box that exists now; it does not hold the values.
-Loading it after the box was removed raises
+A pickled box only says which box it is; it doesn't hold the values, so it's
+no good for saving them. Loading it after the box was removed raises
 [`SegmentNotFoundError`][sharedbox.SegmentNotFoundError], and loading it
 after a new box was created under the same name raises
 [`SchemaMismatchError`][sharedbox.SchemaMismatchError]. To keep the values,
-store a [`snapshot`][sharedbox.SharedBox.snapshot].
+store a [`snapshot`][sharedbox.SharedBox.snapshot] instead.
 
 ??? example "The whole script"
 
