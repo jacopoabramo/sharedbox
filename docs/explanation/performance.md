@@ -57,7 +57,9 @@ with `struct` and no lock packs or unpacks the same values in 60 ns and
 
 Reading a 1 MiB array field took 190 us and writing one took 19 us. The
 numbers come from the same `benchbox ops` run. A read is
-slower because it allocates a new array each time. A box has one write lock,
+slower because it allocates a new array each time;
+[`read_into`][sharedbox.SharedBox.read_into] copies into an array you
+already have instead. A box has one write lock,
 so while a large value is written, reads and writes of every other field of
 that box wait; keeping a large array in a box of its own avoids that.
 
