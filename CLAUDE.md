@@ -33,9 +33,10 @@ sharedbox/
 |   |-- py.typed
 |   |-- benchmarks/            the benchbox command (extra: benchmarks)
 |   |   |-- cli.py             entry point; exits with an install hint without Typer
-|   |   |-- _app.py            Typer commands: ops, roundtrip, size, plot, all
+|   |   |-- _app.py            Typer commands: ops, roundtrip, contention, size, plot, all
 |   |   |-- ops.py             pyperf timings of single operations, against the stdlib
 |   |   |-- roundtrip.py       cross-process round trip percentiles
+|   |   |-- contention.py      throughput and percentiles with several writer and reader processes
 |   |   |-- plot.py            SVG charts of the ops and roundtrip results (matplotlib)
 |   |   |-- size.py            wheel and extension size (standard library only)
 |   |   `-- size_diff.py       wheel size table against main, for CI (standard library only)
@@ -51,6 +52,7 @@ sharedbox/
 |-- tests/                     pytest; many tests spawn processes
 |   |-- crossproc.py           helpers that run a box in another process
 |   |-- forged_types.py        builds segments with forged description tables
+|   |-- test_benchbox_contention.py  benchbox contention, a short run
 |   |-- test_benchbox_plot.py  benchbox plot; skipped without matplotlib and pyperf
 |   |-- test_capsule.py        __sharedbox_box__, and the C consumer in tests/cpp/consumer/
 |   |-- test_doc_examples.py   runs each docs/examples/*.py script
@@ -78,6 +80,8 @@ sharedbox/
 |-- .github/workflows/check-docs.yaml    builds the site and runs check_xrefs.py
 |-- .github/workflows/publish-docs.yaml  deploys the checked site to GitHub Pages
 |-- .github/workflows/codspeed.yml  benchmarks on CodSpeed
+|-- .github/workflows/contention.yaml  benchbox contention on Linux and Windows, for pull requests
+|                              that touch the native code, and by hand
 |-- CMakeLists.txt             sharedbox::headers, sharedbox::c, extension build
 |-- stubtest-allowlist.txt     stubtest exceptions for nanobind types
 |-- .clang-format              clang-format style for the C and C++ sources

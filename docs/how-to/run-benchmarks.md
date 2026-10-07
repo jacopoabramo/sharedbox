@@ -5,7 +5,8 @@ icon: lucide/wrench
 # How to run the benchmarks
 
 The `benchbox` command measures sharedbox on your own machine: single
-operations, change notification between two processes, and wheel size.
+operations, change notification between two processes, several processes
+sharing one value, and wheel size.
 
 ## Before you start
 
@@ -50,6 +51,35 @@ prints the 50th, 90th and 99th percentile and the maximum, in
 microseconds, for [`watch`][sharedbox.SharedBox.watch], `mp.Event`,
 `mp.Pipe` and a loop polling `SharedMemory`, which keeps one CPU core busy
 on each side.
+
+## Time several processes sharing one value
+
+```bash
+benchbox contention
+```
+
+`contention` starts several writer and reader processes at once and times
+every operation each of them runs, so its numbers show how much the
+processes slow each other down. A writer stores an `int` and a reader reads
+it. For each combination of writer and reader counts, it prints the
+throughput of the writers together and of the readers together, in millions
+of operations per second, and the 50th and 99th percentile time of one
+operation, in nanoseconds. Each time includes reading the clock once.
+
+It runs four contenders: a box whose writers all write the same
+[field](../explanation/glossary.md#field), a box where each writer writes a
+field of its own, `mp.Value`, and `SharedMemory` with `struct` and a `Lock`.
+A box has one lock for its whole record, so the second contender shows
+whether writers to different fields still wait for each other.
+
+By default it runs 1, 2 and 4 writers, each with 0 and 2 readers, and every
+process runs 100,000 operations. `--writers` and `--readers` take one count
+and can be repeated, `--ops` sets the operations per process, `--json` also
+writes the results to a file, and `--markdown` prints a Markdown table:
+
+```bash
+benchbox contention --writers 1 --writers 8 --readers 0 --ops 50000
+```
 
 ## Measure wheel size
 

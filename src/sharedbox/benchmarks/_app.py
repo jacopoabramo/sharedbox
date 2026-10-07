@@ -13,7 +13,7 @@ from typing import Annotated
 
 import typer
 
-from sharedbox.benchmarks import INSTALL_HINT, roundtrip, size
+from sharedbox.benchmarks import INSTALL_HINT, contention, roundtrip, size
 
 if sys.platform == "win32":
     import winreg
@@ -91,6 +91,42 @@ def roundtrip_command(
     """Time a change sent to another process and answered back."""
     results = roundtrip.run(roundtrip.Options(samples, warmup, timeout))
     typer.echo(roundtrip.to_text(results))
+
+
+@app.command("contention")
+def contention_command(
+    writers: Annotated[
+        list[int] | None,
+        typer.Option(min=1, help="Writer processes; repeat to run several counts."),
+    ] = None,
+    readers: Annotated[
+        list[int] | None,
+        typer.Option(min=0, help="Reader processes; repeat to run several counts."),
+    ] = None,
+    ops: Annotated[
+        int, typer.Option(min=1, help="Operations each process runs.")
+    ] = contention.OPS,
+    timeout: Annotated[
+        float, typer.Option(min=0.001, help="Seconds to wait for each process.")
+    ] = contention.TIMEOUT,
+    output: JsonOption = None,
+    markdown: Annotated[
+        bool, typer.Option("--markdown", help="Print a Markdown table.")
+    ] = False,
+) -> None:
+    """Time writes and reads while several processes share one value."""
+    opts = contention.Options(
+        tuple(writers or contention.WRITERS),
+        tuple(readers or contention.READERS),
+        ops,
+        timeout,
+    )
+    results = contention.run(opts)
+    if output is not None:
+        output.write_text(json.dumps(results, indent=2))
+    typer.echo(
+        contention.to_markdown(results) if markdown else contention.to_text(results)
+    )
 
 
 @app.command("size")

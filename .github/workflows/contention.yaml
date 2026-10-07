@@ -1,0 +1,45 @@
+name: Contention
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - include/sharedbox/**
+      - src/sharedbox/_native/**
+      - src/sharedbox/benchmarks/contention.py
+      - .github/workflows/contention.yaml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  contention:
+    name: Contention on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-latest, windows-latest ]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: astral-sh/setup-uv@v7
+
+      - name: Install the project
+        run: uv sync --frozen --python 3.12
+
+      - name: Run benchbox contention
+        shell: bash
+        run: |
+          cores=$(uv run --no-sync python -c "import os; print(os.cpu_count())")
+          echo "### Contention on ${{ matrix.os }}, $cores logical cores" >> "$GITHUB_STEP_SUMMARY"
+          uv run --no-sync benchbox contention --json contention.json --markdown >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: contention-${{ matrix.os }}
+          path: contention.json
