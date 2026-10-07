@@ -1,4 +1,5 @@
 import multiprocessing as mp
+import time
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Annotated
@@ -145,3 +146,43 @@ def test_a_field_named_read_into_is_refused() -> None:
     """Refuse a subclass field named read_into, as other method names are."""
     with pytest.raises(TypeError, match="read_into clash with SharedBox methods"):
         type("Clash", (SharedBox,), {"__annotations__": {"read_into": int}})
+
+
+class Uniform(SharedBox):
+    image: Annotated[np.ndarray, Shape(512, 512), DType("float32")] = np.zeros(
+        (512, 512), np.float32
+    )
+    small: Annotated[np.ndarray, Shape(64), DType("int64")] = np.zeros(64, np.int64)
+
+
+def write_uniform(box: Uniform, seconds: float) -> None:
+    deadline = time.monotonic() + seconds
+    k = 0
+    while time.monotonic() < deadline:
+        k += 1
+        box.update(
+            image=np.full((512, 512), k, np.float32), small=np.full(64, k, np.int64)
+        )
+    box.close()
+
+
+def test_read_into_returns_one_complete_write_while_another_process_writes(
+    unique_name: str,
+) -> None:
+    """Fill out with a single write while another process keeps writing, for a 1 MiB and a small field."""
+    image = np.empty((512, 512), np.float32)
+    small = np.empty(64, np.int64)
+    with Uniform.create(unique_name) as box:
+        child = mp.get_context("spawn").Process(target=write_uniform, args=(box, 1.0))
+        child.start()
+        reads = torn = 0
+        while child.is_alive():
+            box.read_into("image", image)
+            box.read_into("small", small)
+            reads += 1
+            torn += image.min() != image.max() or small.min() != small.max()
+        child.join(60)
+        assert child.exitcode == 0
+        assert reads > 0
+        assert torn == 0
+    Uniform.unlink(unique_name)
