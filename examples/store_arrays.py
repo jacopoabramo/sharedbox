@@ -23,6 +23,12 @@ sensor.frame = np.full((4, 6), 7, np.uint8)
 print(int(sensor.frame.sum()))  # 168
 # --8<-- [end:write]
 
+# --8<-- [start:read-into]
+frame = np.empty((4, 6), np.uint8)
+sensor.read_into("frame", frame)
+print(int(frame.sum()))  # 168
+# --8<-- [end:read-into]
+
 # --8<-- [start:any-library]
 raw = sensor.raw
 print(np.from_dlpack(raw))  # [0. 0. 0.]

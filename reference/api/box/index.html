@@ -2228,6 +2228,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#sharedbox.SharedBox.read_into" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;read_into
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#sharedbox.SharedBox.watch" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -3291,6 +3302,17 @@
     <span class="md-ellipsis">
       <span class="md-typeset">
         <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;snapshot
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sharedbox.SharedBox.read_into" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;read_into
       </span>
     </span>
   </a>
@@ -4500,6 +4522,126 @@ created again.</p>
               <div class="doc-md-description">
                 <p>With <code>follow</code>, if no class defined in this process has the
 schema hash of a box referred to.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="sharedbox.SharedBox.read_into" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <span class="doc doc-object-name doc-function-name">read_into</span>
+
+
+<a href="#sharedbox.SharedBox.read_into" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">read_into</span><span class="p">(</span><span class="n">field</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">out</span><span class="p">:</span> <span class="n">A</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">A</span>
+</span></code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Copy an array field into <code>out</code> and return <code>out</code>.</p>
+<p>The copy holds one complete write, as a read does, but goes into
+memory the caller already has, so nothing is allocated.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>out</code>
+            </td>
+            <td>
+                  <code><span title="sharedbox._box.A">A</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>A writable, C-contiguous array in <abbr title="Central processing unit. The processor that runs a program.">CPU</abbr> memory with the field's
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;DType&lt;/span&gt;
+
+
+  &lt;span class=&quot;doc doc-labels&quot;&gt;
+      &lt;small class=&quot;doc doc-label doc-label-dataclass&quot;&gt;&lt;code&gt;dataclass&lt;/code&gt;&lt;/small&gt;
+  &lt;/span&gt;" href="../arrays/#sharedbox.DType"><code>DType</code></a> and <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;Shape&lt;/span&gt;
+
+
+  &lt;span class=&quot;doc doc-labels&quot;&gt;
+      &lt;small class=&quot;doc doc-label doc-label-dataclass&quot;&gt;&lt;code&gt;dataclass&lt;/code&gt;&lt;/small&gt;
+  &lt;/span&gt;" href="../arrays/#sharedbox.Shape"><code>Shape</code></a>. Its
+contents are unspecified if the call raises.</p>
+              </div>
+            </td>
+            <td>
+                <em>required</em>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+<p><span class="doc-section-title">Raises:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-external" href="https://docs.python.org/3/builtins/exceptions.html#TypeError">TypeError</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If the field is not an array field, or <code>out</code> is not a writable,
+C-contiguous array in <abbr title="Central processing unit. The processor that runs a program.">CPU</abbr> memory.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-external" href="https://docs.python.org/3/builtins/exceptions.html#ValueError">ValueError</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If the box has no such field, or <code>out</code> has another dtype or
+shape.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;LockTimeoutError&lt;/span&gt; (&lt;code&gt;sharedbox._native.LockTimeoutError&lt;/code&gt;)" href="../errors/#sharedbox.LockTimeoutError">LockTimeoutError</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If another writer holds the lock longer than the lock timeout.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;BoxClosedError&lt;/span&gt; (&lt;code&gt;sharedbox._native.BoxClosedError&lt;/code&gt;)" href="../errors/#sharedbox.BoxClosedError">BoxClosedError</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If the box is closed.</p>
               </div>
             </td>
           </tr>

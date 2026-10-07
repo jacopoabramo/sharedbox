@@ -3177,7 +3177,9 @@ with <code>struct</code> and no lock packs or unpacks the same values in 60 ns a
 <h2 id="large-values">Large values<a class="headerlink" href="#large-values" title="Permanent link">&para;</a></h2>
 <p>Reading a 1 MiB array field took 190 us and writing one took 19 us. The
 numbers come from the same <code>benchbox ops</code> run. A read is
-slower because it allocates a new array each time. A box has one write lock,
+slower because it allocates a new array each time;
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;read_into&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.read_into"><code>read_into</code></a> copies into an array you
+already have instead. A box has one write lock,
 so while a large value is written, reads and writes of every other field of
 that box wait; keeping a large array in a box of its own avoids that.</p>
 <h2 id="a-change-sent-to-another-process">A change sent to another process<a class="headerlink" href="#a-change-sent-to-another-process" title="Permanent link">&para;</a></h2>
