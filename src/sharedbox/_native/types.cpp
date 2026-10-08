@@ -664,10 +664,22 @@ nb::object Types::decode_from(const detail::type_ref &t, const std::byte *data, 
         nb::object list = nb::steal(PyList_New(length));
         if (!list.is_valid())
             throw nb::python_error();
-        for (std::uint32_t i = 0; i < length; ++i) {
-            nb::object element =
-                decode_from(first.type, data + node.slots + std::size_t{i} * node.stride, t.node, 0, where);
-            PyList_SetItem(list.ptr(), static_cast<Py_ssize_t>(i), element.release().ptr());
+        // Converting int and float elements here skips a decode_from call per element.
+        if (first.type.kind == kind_int || first.type.kind == kind_float) {
+            for (std::uint32_t i = 0; i < length; ++i) {
+                const std::byte *slot = data + node.slots + std::size_t{i} * node.stride;
+                PyObject *element = first.type.kind == kind_int ? PyLong_FromLongLong(load<long long>(slot))
+                                                                : PyFloat_FromDouble(load<double>(slot));
+                if (element == nullptr)
+                    throw nb::python_error();
+                PyList_SetItem(list.ptr(), static_cast<Py_ssize_t>(i), element);
+            }
+        } else {
+            for (std::uint32_t i = 0; i < length; ++i) {
+                nb::object element =
+                    decode_from(first.type, data + node.slots + std::size_t{i} * node.stride, t.node, 0, where);
+                PyList_SetItem(list.ptr(), static_cast<Py_ssize_t>(i), element.release().ptr());
+            }
         }
         if (n.cls == reinterpret_cast<PyObject *>(&PyList_Type))
             return list;

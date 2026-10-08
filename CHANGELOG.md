@@ -23,6 +23,8 @@ Dates are marked as `DD-MM-YYYY`
 
 - `SharedBox`: a field named `read_into` raises `TypeError`.
 - `SharedBox`: a field named `writing` raises `TypeError`.
+- `SharedBox`: reading a list, tuple, set or frozenset field of `int` or
+  `float` takes about 100 ns less for 16 elements on Windows.
 
 ## [0.4.1] - 07-10-2026
 
