@@ -3,7 +3,7 @@
 `sharedbox` gives Python processes a record that lives in shared memory.
 `SharedBox` is a base class: a subclass's annotated fields are stored in one
 named segment that every process can open. The segment is a plain named
-mapping laid out by `include/sharedbox/sharedbox.hpp` (C++20, header-only),
+mapping laid out by `include/sharedbox/box.hpp` and `core.hpp` (C++20, header-only),
 which the nanobind extension runs on; `sharedbox_c.h` is a minimal C
 interface to the same header. Boost is not used. The Python side decides
 the layout and the native module converts values.
@@ -13,7 +13,9 @@ the layout and the native module converts values.
 ```text
 sharedbox/
 |-- include/sharedbox/
-|   |-- sharedbox.hpp          layout 2.0 (and 1.0 reading) and its protocols: create, publish, open, lock, read, write, description table, waiter slots, capsule handle
+|   |-- core.hpp               what every segment kind uses: result and error, liveness, names, mappings, the type codec
+|   |-- box.hpp                layout 2.0 (and 1.0 reading) of a box and its protocols: create, publish, open, lock, read, write, waiter slots, capsule handle
+|   |-- sharedbox.hpp          includes every kind; the header consumers include
 |   |-- sharedbox_c.h          minimal C interface: sbx_open, sbx_import, sbx_read, sbx_write, sbx_schema_hash, sbx_release, sbx_field_desc, typed sbx_read_* and sbx_write_*
 |   `-- sharedbox_c.cpp        its implementation, compiled by the consumer (CMake target sharedbox::c)
 |-- cmake/
@@ -133,7 +135,7 @@ Layout 2.0, from offset 0:
 values are in the record; attach waits for it. Attach accepts
 `layout_major` 1 and 2 and refuses another, checks every geometry field
 against the mapping size, copies the field table and uses only the copy.
-`static_assert`s in `sharedbox.hpp` check every `sizeof` and `offsetof`.
+`static_assert`s in `core.hpp` and `box.hpp` check every `sizeof` and `offsetof`.
 
 ### Record encoding
 

@@ -111,9 +111,15 @@ def consumer(tmp_path_factory: pytest.TempPathFactory) -> ctypes.CDLL:
 
 
 def test_get_include_holds_the_headers() -> None:
-    """Check that get_include points to a folder with the three sharedbox sources."""
+    """Check that get_include points to a folder with every sharedbox header and the C source."""
     folder = Path(sharedbox.get_include()) / "sharedbox"
-    for name in ("sharedbox.hpp", "sharedbox_c.h", "sharedbox_c.cpp"):
+    for name in (
+        "core.hpp",
+        "box.hpp",
+        "sharedbox.hpp",
+        "sharedbox_c.h",
+        "sharedbox_c.cpp",
+    ):
         assert (folder / name).is_file()
 
 
