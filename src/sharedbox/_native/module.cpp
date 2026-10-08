@@ -101,6 +101,72 @@ std::uint64_t stored_ref_id(const Segment &s, std::uint32_t index) {
     return create_id;
 }
 
+// The last value decoded from one field and the write count it was decoded at.
+struct CachedValue {
+    nb::ft_mutex lock;
+    std::uint64_t version = 0;
+    PyObject *value = nullptr;
+};
+
+// The values a box's reads decoded from fields whose values cannot be changed, one slot per field.
+// A box keeps it in its _values slot rather than in its Segment: the box's finalizer holds the
+// Segment, so a value that refers back to the box would keep the box alive from there.
+class ValueCache {
+public:
+    explicit ValueCache(std::uint32_t fields) : slots_(std::make_unique<CachedValue[]>(fields)), count_(fields) {}
+    ~ValueCache() { clear(); }
+    ValueCache(const ValueCache &) = delete;
+    ValueCache &operator=(const ValueCache &) = delete;
+
+    CachedValue &slot(std::uint32_t index) {
+        sharedbox::check_index(index, count_);
+        return slots_[index];
+    }
+
+    // A value's __del__ may read a field again, so each reference is dropped after its slot is unlocked.
+    void clear() {
+        for (std::uint32_t i = 0; i < count_; ++i) {
+            PyObject *old = nullptr;
+            {
+                nb::ft_lock_guard guard(slots_[i].lock);
+                old = std::exchange(slots_[i].value, nullptr);
+            }
+            Py_XDECREF(old);
+        }
+    }
+
+private:
+    std::unique_ptr<CachedValue[]> slots_;
+    std::uint32_t count_;
+};
+
+// A reusable field's value: the one cache holds while the field's write count still equals the count
+// it was decoded at, else a new decode, which replaces it. Decoding runs Python code (a record's
+// __post_init__ may read this field), so no slot lock is held across it.
+nb::object get_reusable(const Segment &s, ValueCache &cache, std::uint32_t index, const sharedbox::Types *types) {
+    CachedValue &slot = cache.slot(index);
+    const std::uint64_t now = s.version(index);
+    {
+        nb::ft_lock_guard guard(slot.lock);
+        if (slot.value != nullptr && slot.version == now)
+            return nb::borrow(slot.value);
+    }
+    sharedbox::FieldRead read;
+    s.read(index, read);
+    nb::object value = decode_read(types, index, read);
+    PyObject *old = nullptr;
+    {
+        nb::ft_lock_guard guard(slot.lock);
+        // A thread that decoded an older version never puts it back over a newer one.
+        if (slot.value == nullptr || read.version >= slot.version) {
+            old = std::exchange(slot.value, Py_NewRef(value.ptr()));
+            slot.version = read.version;
+        }
+    }
+    Py_XDECREF(old);
+    return value;
+}
+
 void set_one(Segment &s, std::uint32_t index, nb::handle value, const sharedbox::Types *types) {
     sharedbox::check_index(index, s.field_count());
     sharedbox::EncodeBuffer buffer;
@@ -112,6 +178,7 @@ void set_one(Segment &s, std::uint32_t index, nb::handle value, const sharedbox:
 
 // Both set in NB_MODULE.
 PyTypeObject *segment_type = nullptr;
+PyTypeObject *value_cache_type = nullptr;
 PyObject *reraise = nullptr;
 thread_local std::exception_ptr pending;
 
@@ -141,6 +208,11 @@ struct Field {
     // The class's Types, or None; t points into it.
     nb::object types;
     const sharedbox::Types *t;
+    // SharedBox's _values slot and the function that reads it; set only when reads of this field
+    // reuse their values.
+    nb::object values_slot;
+    descrgetfunc read_values;
+    bool reusable;
 };
 
 // A new reference to the Segment in box's _segment slot, or nullptr with an exception set: the
@@ -156,6 +228,18 @@ PyObject *segment_of(PyObject *segment_slot, descrgetfunc read_slot, PyObject *b
     return segment;
 }
 
+// A new reference to the ValueCache in box's _values slot, or nullptr with an exception set, as
+// segment_of gives the Segment.
+PyObject *values_of(PyObject *values_slot, descrgetfunc read_slot, PyObject *box) {
+    PyObject *values = read_slot(values_slot, box, reinterpret_cast<PyObject *>(Py_TYPE(box)));
+    if (values != nullptr && (Py_TYPE(values) != value_cache_type || !nb::inst_ready(values))) {
+        Py_DECREF(values);
+        PyErr_SetString(PyExc_TypeError, "_values does not hold a ValueCache");
+        return nullptr;
+    }
+    return values;
+}
+
 PyObject *field_get(PyObject *self, PyObject *box, PyObject *) noexcept {
     if (box == nullptr || box == Py_None)
         return Py_NewRef(self);
@@ -166,7 +250,13 @@ PyObject *field_get(PyObject *self, PyObject *box, PyObject *) noexcept {
     if (!segment.is_valid())
         return nullptr;
     try {
-        return get(*nb::inst_ptr<Segment>(segment), f.index, f.t).release().ptr();
+        const Segment &s = *nb::inst_ptr<Segment>(segment);
+        if (!f.reusable)
+            return get(s, f.index, f.t).release().ptr();
+        const nb::object values = nb::steal(values_of(f.values_slot.ptr(), f.read_values, box));
+        if (!values.is_valid())
+            return nullptr;
+        return get_reusable(s, *nb::inst_ptr<ValueCache>(values), f.index, f.t).release().ptr();
     } catch (...) {
         set_error();
         return nullptr;
@@ -205,6 +295,7 @@ int field_traverse(PyObject *self, visitproc visit, void *arg) {
     Py_VISIT(f.spec.ptr());
     Py_VISIT(f.segment_slot.ptr());
     Py_VISIT(f.types.ptr());
+    Py_VISIT(f.values_slot.ptr());
     return 0;
 }
 
@@ -925,17 +1016,30 @@ NB_MODULE(_native, m) {
     nb::class_<Field>(m, "Field", nb::type_slots(field_slots))
         .def(
             "__init__",
-            [](Field *self, nb::object spec, nb::object segment_slot, nb::object types) {
+            [](Field *self, nb::object spec, nb::object segment_slot, nb::object types, nb::object values_slot) {
                 auto read_slot =
                     reinterpret_cast<descrgetfunc>(PyType_GetSlot(Py_TYPE(segment_slot.ptr()), Py_tp_descr_get));
                 if (read_slot == nullptr)
                     throw nb::type_error("segment_slot must be a descriptor");
                 const auto index = nb::cast<std::uint32_t>(spec.attr("index"));
                 const sharedbox::Types *t = types_of(types);
-                new (self) Field{std::move(spec), index, std::move(segment_slot), read_slot, std::move(types), t};
+                const bool reusable = t != nullptr && !values_slot.is_none() && t->field_reusable(index);
+                descrgetfunc read_values = nullptr;
+                if (reusable) {
+                    read_values = reinterpret_cast<descrgetfunc>(
+                        PyType_GetSlot(Py_TYPE(values_slot.ptr()), Py_tp_descr_get));
+                    if (read_values == nullptr)
+                        throw nb::type_error("values_slot must be a descriptor");
+                }
+                new (self) Field{std::move(spec),  index, std::move(segment_slot), read_slot,
+                                 std::move(types), t,     std::move(values_slot),  read_values,
+                                 reusable};
             },
-            "spec"_a, "segment_slot"_a, "types"_a = nb::none())
+            "spec"_a, "segment_slot"_a, "types"_a = nb::none(), "values_slot"_a = nb::none())
         .def_ro("spec", &Field::spec);
+
+    nb::class_<ValueCache>(m, "ValueCache").def(nb::init<std::uint32_t>(), "fields"_a);
+    value_cache_type = reinterpret_cast<PyTypeObject *>(nb::type<ValueCache>().ptr());
 
     nb::class_<sharedbox::Types>(m, "Types", nb::type_slots(types_slots))
         .def(
@@ -943,11 +1047,13 @@ NB_MODULE(_native, m) {
             [](sharedbox::Types *self,
                const std::vector<std::tuple<std::uint32_t, std::uint32_t, std::uint32_t>> &fields,
                std::vector<std::string> labels, nb::bytes table, const nb::dict &info,
-               const std::vector<std::pair<std::int64_t, std::uint32_t>> &bytearrays) {
+               const std::vector<std::pair<std::int64_t, std::uint32_t>> &bytearrays,
+               const std::vector<std::uint32_t> &reusable) {
                 new (self) sharedbox::Types(fields, std::move(labels), std::string(table.c_str(), table.size()),
-                                            info, bytearrays);
+                                            info, bytearrays, reusable);
             },
-            "fields"_a, "labels"_a, "table"_a, "info"_a, "bytearrays"_a)
+            "fields"_a, "labels"_a, "table"_a, "info"_a, "bytearrays"_a,
+            "reusable"_a = std::vector<std::uint32_t>())
         .def_prop_ro("table",
                      [](const sharedbox::Types &t) { return nb::bytes(t.table().data(), t.table().size()); })
         .def(

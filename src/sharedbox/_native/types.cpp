@@ -193,7 +193,8 @@ const Types &need(const Types *types, std::uint32_t index) {
 
 Types::Types(const std::vector<std::tuple<std::uint32_t, std::uint32_t, std::uint32_t>> &fields,
              std::vector<std::string> labels, std::string table, const nb::dict &info,
-             const std::vector<std::pair<std::int64_t, std::uint32_t>> &bytearrays)
+             const std::vector<std::pair<std::int64_t, std::uint32_t>> &bytearrays,
+             const std::vector<std::uint32_t> &reusable)
     : labels_(std::move(labels)), table_(std::move(table)) {
     check_names(labels_, fields.size());
     std::vector<std::uint32_t> entries;
@@ -233,6 +234,11 @@ Types::Types(const std::vector<std::tuple<std::uint32_t, std::uint32_t, std::uin
         bytearrays_.push_back(bytearray_key(container, member));
     }
     std::sort(bytearrays_.begin(), bytearrays_.end());
+    reusable_.resize(fields.size());
+    for (const std::uint32_t index : reusable) {
+        check_index(index, fields.size());
+        reusable_[index] = true;
+    }
 }
 
 const detail::type_ref &Types::field(std::uint32_t index) const {

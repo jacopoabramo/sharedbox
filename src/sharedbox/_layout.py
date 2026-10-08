@@ -487,6 +487,12 @@ def build_layout(cls: type, identity: str | None = None) -> Layout:
         bytes(table.data),
         table.info,
         table.bytearrays,
+        # A value of kind 0 to 5 costs no more to build than the check that would reuse it.
+        [
+            s.index
+            for s in specs
+            if s.type is not None and s.type.reusable and s.type.code > CODES["ref"]
+        ],
     )
     return Layout(
         tuple(specs),
