@@ -151,7 +151,7 @@ dev = [
     "tox-uv-bare>=1.36",
 ]
 docs = [
-    "markdown-d2>=0.3.0",
+    "markdown-d2>=0.4.1",
     "mkdocstrings-python>=2.0.9",
     "zensical>=0.0.67",
 ]
