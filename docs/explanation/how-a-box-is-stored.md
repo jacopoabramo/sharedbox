@@ -31,36 +31,69 @@ never attaches to a block that another program created first.
 
 ## A fixed layout: header, field table, record
 
-Inside the block, everything has a fixed place, in this order. Point at a
-part to read what it holds:
+Inside the block, everything has a fixed place. Here is the memory of the
+tutorial's `Motor` box, with its `int`, its `bool` and its 32-byte `str`,
+after the second process set `position` to 10. The left column is the
+address, the right one what is stored there; point at a part to read more:
 
-```d2 title="Inside a segment"
+```d2 title="The memory of a Motor box"
 ...@diagrams/style
 grid-columns: 1
 vertical-gap: 0
-header: "header, 128 bytes" {
-  class: step
-  tooltip: "Line 0 is written once at creation: the magic word, the layout version, the field count, the schema hash and where the record starts. Line 1 changes with every write and wait: the sequence counter, the writer's pid and the wake-up word."
+header: "header  0x000 - 0x07F" {
+  shape: sql_table
+  tooltip: Line 0, up to 0x03F, is written once when the box is created. Line 1, from 0x040, changes with every write and wait.
+  "0x000": "magic  \"SHREDBX1\", written last"
+  "0x008": "layout  2.0"
+  "0x00C": "field_count  3"
+  "0x00E": "waiter_slots  64"
+  "0x010": "schema_hash"
+  "0x018": "record_size  48"
+  "0x01C": "record  0x6C0"
+  "0x020": "tail  0x080"
+  "0x024": "size  0x1000"
+  "0x028": "create_id, creator start and pid"
+  "0x03C": "types_size  0"
+  "0x040": "seq  2, even: no write running"
+  "0x048": "writer_pid  0"
+  "0x04C": "wake_word, waiters"
+  "0x058": "creator_pidns, then reserved"
 }
-table: "field table: offset, size and kind of each field" {
-  class: step
-  tooltip: One 8-byte entry per field. A process that opens the box copies this table once and uses only its copy.
+fields: "field table  0x080 - 0x097" {
+  shape: sql_table
+  tooltip: One 8-byte entry per field in declaration order. Each gives the offset in the record and, in one u32, the kind code and the size. A process that opens the box copies this table once.
+  "0x080": "position  +0x00, int, 8"
+  "0x088": "enabled  +0x2C, bool, 1"
+  "0x090": "label  +0x08, str, 32"
 }
-counts: "write count of each field" {
-  class: step
-  tooltip: One counter per field, raised by every write to it, so a watcher can tell which fields changed.
+counts: "write counts  0x098 - 0x0AF" {
+  shape: sql_table
+  tooltip: One u64 per field, raised by every write to it, so a watcher can tell which fields changed.
+  "0x098": "position  1"
+  "0x0A0": "enabled  0"
+  "0x0A8": "label  0"
 }
-slots: "waiter slots" {
-  class: step
-  tooltip: One slot per thread waiting for changes, recording which process holds it.
+slots: "waiter slots  0x0B0 - 0x6AF" {
+  shape: sql_table
+  tooltip: 64 slots of 24 bytes, one per thread waiting for changes. Each records the owner's start time, pid namespace and pid, and an interrupt flag. The space up to 0x6C0 is padding.
+  "0x0B0": "slot 0  start, pidns, pid, interrupt"
+  "0x0C8": "slot 1"
+  "...": "slots 2 to 63"
+  "0x6B0": "padding to a 64-byte boundary"
 }
-descriptions: "descriptions of the field types" {
-  class: step
-  tooltip: For enums, records, collections and arrays, how their values are laid out. Empty when every field is a plain number or text.
+record: "record  0x6C0 - 0x6EF" {
+  shape: sql_table
+  tooltip: The field values, ordered by alignment, largest first. Every value is little-endian.
+  "0x6C0": "position = 10 | 0A 00 00 00 00 00 00 00"
+  "0x6C8": "label length = 6 | 06 00 00 00"
+  "0x6CC": "label = \"x-axis\" | 78 2D 61 78 69 73, then unused"
+  "0x6EC": "enabled = False | 00"
+  "0x6ED": "padding to 48 bytes"
 }
-record: "record: the field values" {
-  class: current
-  tooltip: Starts on a 64-byte boundary. Fields are ordered by alignment, largest first, so no space is lost to padding.
+rest: "unused  0x6F0 - 0xFFF" {
+  shape: sql_table
+  tooltip: The mapping is rounded up to whole 4 KiB pages.
+  "0x6F0": "rest of the first 4 KiB page"
 }
 ```
 

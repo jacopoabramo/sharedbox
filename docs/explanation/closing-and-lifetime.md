@@ -19,43 +19,98 @@ data. Step through the life of one segment that two processes use:
 
 ```d2 title="The life of a segment"
 ...@diagrams/style
-grid-rows: 1
-horizontal-gap: 40
-created: "A creates the box" {
-  class: current
-  tooltip: A creates the segment under a name and holds one handle on it.
+label: "A creates the segment under a name and holds one handle on it."
+grid-columns: 1
+vertical-gap: 30
+pic: "" {
+  style.stroke-width: 0
+  style.fill: transparent
+  grid-rows: 1
+  horizontal-gap: 40
+  created: "A creates the box" {class: current}
+  shared: "B attaches" {class: step}
+  a_closed: "A closes" {class: step}
+  unlinked: "A unlinks the name" {class: step}
+  freed: "B closes: memory freed" {class: step}
+  created -> shared -> a_closed -> unlinked -> freed
 }
-shared: "B attaches" {class: step}
-a_closed: "A closes" {class: step}
-unlinked: "A unlinks the name" {class: step}
-freed: "B closes: memory freed" {class: step}
-created -> shared -> a_closed -> unlinked -> freed
+code: "" {
+  style.stroke-width: 0
+  style.fill: transparent
+  grid-columns: 2
+  horizontal-gap: 60
+  a: |python
+    1 -> box = Motor(1, False, "x-axis")
+    2    box.close()
+    3    Motor.unlink()
+  |
+  b: |python
+    1    box = Motor.attach()
+    2    box.close()
+  |
+}
 scenarios: {
   shared: {
-    created.class: done
-    shared.class: current
-    shared.tooltip: B opens the segment by name and gets its own handle on the same memory.
+    label: "B opens the segment by name and gets its own handle on the same memory."
+    pic.created.class: done
+    pic.shared.class: current
+    code.a: |python
+      1    box = Motor(1, False, "x-axis")
+      2    box.close()
+      3    Motor.unlink()
+    |
+    code.b: |python
+      1 -> box = Motor.attach()
+      2    box.close()
+    |
   }
   a_closed: {
-    created.class: done
-    shared.class: done
-    a_closed.class: current
-    a_closed.tooltip: A's handle is gone, but the data stays, because B still uses it.
+    label: "A's handle is gone, but the data stays, because B still uses it."
+    pic.created.class: done
+    pic.shared.class: done
+    pic.a_closed.class: current
+    code.a: |python
+      1    box = Motor(1, False, "x-axis")
+      2 -> box.close()
+      3    Motor.unlink()
+    |
+    code.b: |python
+      1    box = Motor.attach()
+      2    box.close()
+    |
   }
   unlinked: {
-    created.class: done
-    shared.class: done
-    a_closed.class: done
-    unlinked.class: current
-    unlinked.tooltip: On Linux the name disappears, like deleting an open file, and nobody new can attach. On Windows there is nothing to remove, and unlink does nothing.
+    label: "On Linux the name disappears, like deleting an open file, and nobody new can attach. On Windows unlink does nothing."
+    pic.created.class: done
+    pic.shared.class: done
+    pic.a_closed.class: done
+    pic.unlinked.class: current
+    code.a: |python
+      1    box = Motor(1, False, "x-axis")
+      2    box.close()
+      3 -> Motor.unlink()
+    |
+    code.b: |python
+      1    box = Motor.attach()
+      2    box.close()
+    |
   }
   freed: {
-    created.class: done
-    shared.class: done
-    a_closed.class: done
-    unlinked.class: done
-    freed.class: current
-    freed.tooltip: The last handle is closed, so the system frees the memory. On Linux that happens only if the name was unlinked first.
+    label: "B closes the last handle, so the system frees the memory. On Linux that happens only if the name was unlinked first."
+    pic.created.class: done
+    pic.shared.class: done
+    pic.a_closed.class: done
+    pic.unlinked.class: done
+    pic.freed.class: current
+    code.a: |python
+      1    box = Motor(1, False, "x-axis")
+      2    box.close()
+      3    Motor.unlink()
+    |
+    code.b: |python
+      1    box = Motor.attach()
+      2 -> box.close()
+    |
   }
 }
 ```

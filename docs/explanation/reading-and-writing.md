@@ -42,55 +42,138 @@ shape to read what it does:
 
 ```d2 title="A read that meets a write"
 ...@diagrams/style
-grid-rows: 2
-grid-columns: 3
-horizontal-gap: 150
-vertical-gap: 70
-writer: "writer" {
-  class: process
-  tooltip: Any process that assigns a field or calls update.
+label: "The reader notes the counter: 4 is even, so no write is running."
+grid-columns: 1
+vertical-gap: 30
+lock: "" {
+  style.stroke-width: 0
+  style.fill: transparent
+  grid-rows: 2
+  grid-columns: 3
+  horizontal-gap: 110
+  vertical-gap: 40
+  writer: "writer" {
+    class: process
+    tooltip: Any process that assigns a field or calls update.
+  }
+  seq: "seq = 4" {
+    class: current
+    tooltip: The counter in the header. Even means no write is running, odd means one is.
+  }
+  reader: "reader" {
+    class: process
+    tooltip: Any process reading a field. It never changes the counter, so it never holds up a writer.
+  }
+  g1: {class: gap}
+  record: "record" {
+    class: file
+    tooltip: The bytes of every field, which readers copy and writers overwrite.
+  }
+  g2: {class: gap}
+  reader -> seq: "notes 4"
+  writer -> seq: "swaps 4 for 5" {style.opacity: 0}
+  writer -> record: "writes" {style.opacity: 0}
+  reader -> record: "copies" {style.opacity: 0}
 }
-seq: "seq = 4" {
-  class: current
-  tooltip: The counter in the header. Even means no write is running, odd means one is.
+code: "" {
+  style.stroke-width: 0
+  style.fill: transparent
+  grid-columns: 2
+  horizontal-gap: 60
+  writer: |cpp
+    1    s = seq;
+    2    cas(seq, s, s + 1);
+    3    copy(values, record);
+    4    cas(seq, s + 1, s + 2);
+  |
+  reader: |cpp
+    1 -> s = seq;
+    2    copy(record, out);
+    3    if (seq != s) retry;
+  |
 }
-reader: "reader" {
-  class: process
-  tooltip: Any process reading a field. It never changes the counter, so it never holds up a writer.
-}
-g1: {class: gap}
-record: "record" {
-  class: file
-  tooltip: The bytes of every field, which readers copy and writers overwrite.
-}
-g2: {class: gap}
-reader -> seq: "notes 4"
-writer -> seq: "swaps 4 for 5" {style.opacity: 0}
-writer -> record: "writes" {style.opacity: 0}
-reader -> record: "copies" {style.opacity: 0}
 steps: {
   1: {
-    seq.label: "seq = 5"
-    (writer -> seq)[0].style.opacity: 1
+    label: "A writer takes the lock by swapping 4 for 5 in one atomic step."
+    lock.seq.label: "seq = 5"
+    (lock.writer -> lock.seq)[0].style.opacity: 1
+    code.writer: |cpp
+      1    s = seq;
+      2 -> cas(seq, s, s + 1);
+      3    copy(values, record);
+      4    cas(seq, s + 1, s + 2);
+    |
+    code.reader: |cpp
+      1 -> s = seq;
+      2    copy(record, out);
+      3    if (seq != s) retry;
+    |
   }
   2: {
-    (writer -> record)[0].style.opacity: 1
-    (reader -> record)[0].style.opacity: 1
-    record.tooltip: The reader may copy some old and some new bytes here.
+    label: "The writer copies its values in while the reader copies the record out, so the reader's copy may mix old and new bytes."
+    (lock.writer -> lock.record)[0].style.opacity: 1
+    (lock.reader -> lock.record)[0].style.opacity: 1
+    code.writer: |cpp
+      1    s = seq;
+      2    cas(seq, s, s + 1);
+      3 -> copy(values, record);
+      4    cas(seq, s + 1, s + 2);
+    |
+    code.reader: |cpp
+      1    s = seq;
+      2 -> copy(record, out);
+      3    if (seq != s) retry;
+    |
   }
   3: {
-    seq.label: "seq = 6"
-    (writer -> seq)[0].label: "sets 6"
+    label: "The writer releases the lock by setting the counter to 6."
+    lock.seq.label: "seq = 6"
+    (lock.writer -> lock.seq)[0].label: "sets 6"
+    code.writer: |cpp
+      1    s = seq;
+      2    cas(seq, s, s + 1);
+      3    copy(values, record);
+      4 -> cas(seq, s + 1, s + 2);
+    |
+    code.reader: |cpp
+      1    s = seq;
+      2 -> copy(record, out);
+      3    if (seq != s) retry;
+    |
   }
   4: {
-    (reader -> seq)[0].label: "now 6: retry"
-    reader.class: failed
+    label: "The reader looks at the counter again: 6, not the 4 it noted, so it throws its copy away and starts over."
+    (lock.reader -> lock.seq)[0].label: "now 6: retry"
+    lock.reader.class: failed
+    code.writer: |cpp
+      1    s = seq;
+      2    cas(seq, s, s + 1);
+      3    copy(values, record);
+      4    cas(seq, s + 1, s + 2);
+    |
+    code.reader: |cpp
+      1    s = seq;
+      2    copy(record, out);
+      3 -> if (seq != s) retry;
+    |
   }
   5: {
-    (reader -> seq)[0].label: "still 6: done"
-    reader.class: process
-    (writer -> seq)[0].style.opacity: 0
-    (writer -> record)[0].style.opacity: 0
+    label: "On the next try the counter is 6 before and after the copy, so the copy holds one whole write."
+    (lock.reader -> lock.seq)[0].label: "still 6: done"
+    lock.reader.class: process
+    (lock.writer -> lock.seq)[0].style.opacity: 0
+    (lock.writer -> lock.record)[0].style.opacity: 0
+    code.writer: |cpp
+      1    s = seq;
+      2    cas(seq, s, s + 1);
+      3    copy(values, record);
+      4    cas(seq, s + 1, s + 2);
+    |
+    code.reader: |cpp
+      1    s = seq;
+      2    copy(record, out);
+      3 -> if (seq != s) retry;
+    |
   }
 }
 ```

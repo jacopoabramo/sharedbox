@@ -39,33 +39,63 @@ each one goes:
 
 ```d2 title="Where the bytes go"
 ...@diagrams/style
-direction: right
-yours: "your array" {class: step}
-field: "field in the box" {class: hardware}
-fresh: "new array" {
-  class: step
-  tooltip: A plain read gets fresh memory every time, which on Windows costs far more than the copy itself.
+label: "A write copies your array into the field. A plain read copies the field into a new array, which needs fresh memory every time."
+grid-columns: 1
+vertical-gap: 30
+pic: "" {
+  style.stroke-width: 0
+  style.fill: transparent
+  grid-columns: 3
+  horizontal-gap: 160
+  yours: "your array" {class: step}
+  field: "field in the box" {class: hardware}
+  fresh: "new array" {class: step}
+  yours -> field: "write: one copy"
+  field -> fresh: "read: one copy"
+  field -> yours: "read_into: one copy" {style.opacity: 0}
 }
-yours -> field: "write: one copy"
-field -> fresh: "read: new memory, one copy"
-field -> yours: "read_into: one copy, no new memory" {style.opacity: 0}
+code: "" {
+  style.stroke-width: 0
+  style.fill: transparent
+  code: |python
+    1 -> sensor.frame = np.full((4, 6), 7, np.uint8)
+    2 -> frame = sensor.frame
+    3    sensor.read_into("frame", frame)
+    4    with sensor.writing("frame") as frame:
+    5        frame[0, :] = 255
+  |
+}
 scenarios: {
   read_into: {
-    fresh.style.opacity: 0.3
-    (field -> fresh)[0].style.opacity: 0.3
-    (yours -> field)[0].style.opacity: 0.3
-    (field -> yours)[0].style.opacity: 1
-    (field -> yours)[0].style.stroke-width: 4
-    yours.tooltip: An array you already have, filled by read_into.
+    label: "read_into copies the field into an array you already have, so no new memory is needed."
+    pic.fresh.style.opacity: 0.3
+    (pic.field -> pic.fresh)[0].style.opacity: 0.3
+    (pic.yours -> pic.field)[0].style.opacity: 0
+    (pic.field -> pic.yours)[0].style.opacity: 1
+    (pic.field -> pic.yours)[0].style.stroke-width: 4
+    code.code: |python
+      1    sensor.frame = np.full((4, 6), 7, np.uint8)
+      2    frame = sensor.frame
+      3 -> sensor.read_into("frame", frame)
+      4    with sensor.writing("frame") as frame:
+      5        frame[0, :] = 255
+    |
   }
   writing: {
-    yours.style.opacity: 0.3
-    fresh.style.opacity: 0.3
-    (field -> fresh)[0].style.opacity: 0.3
-    (yours -> field)[0].style.opacity: 0.3
-    field.label: "field in the box,\nfilled in place"
-    field.style.stroke-width: 4
-    field.tooltip: writing hands you the field itself, so your code writes the bytes where they live and no copy is made.
+    label: "writing hands you the field itself. Your code changes the bytes where they live, so nothing is copied."
+    pic.yours.style.opacity: 0.3
+    pic.fresh.style.opacity: 0.3
+    (pic.field -> pic.fresh)[0].style.opacity: 0.3
+    (pic.yours -> pic.field)[0].style.opacity: 0.3
+    pic.field.label: "field in the box,\nfilled in place"
+    pic.field.style.stroke-width: 4
+    code.code: |python
+      1    sensor.frame = np.full((4, 6), 7, np.uint8)
+      2    frame = sensor.frame
+      3    sensor.read_into("frame", frame)
+      4 -> with sensor.writing("frame") as frame:
+      5 ->     frame[0, :] = 255
+    |
   }
 }
 ```
