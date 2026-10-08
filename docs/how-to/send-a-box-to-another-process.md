@@ -22,17 +22,41 @@ Hand the box to the new process like any other argument:
 ```
 
 This works however the child is started. `multiprocessing` can start a
-child in three ways, its start methods: `spawn` and `forkserver` start a
-fresh Python and send it the arguments as a pickle, while `fork` copies the
-running process. With `spawn` or `forkserver`, the pickle of a box holds
-only its name and the numbers that tell it apart from other boxes, not its
-values (see [`SharedBox`][sharedbox.SharedBox]). Unpickling it in the child opens a new
-[handle](../explanation/glossary.md#handle): a separate box object on the same data, which the
-child closes when it's done. `multiprocessing.shared_memory.SharedMemory`
-travels the same way.
+child in three ways, its start methods; switch between them to see what the
+child gets:
 
-With the `fork` start method nothing is pickled at all: the child uses the
-parent's box object, which keeps working after the fork.
+```d2 title="What the child gets"
+...@diagrams/style
+direction: right
+parent: "parent's box" {class: step}
+pickle: "pickle: name and ids" {
+  class: file
+  tooltip: Only the box's name and the numbers that tell it apart from other boxes, not its values.
+}
+child: "child's box" {
+  class: step
+  tooltip: A new handle on the same data, which the child closes when it's done.
+}
+data: "shared memory" {class: hardware}
+parent -> pickle: "spawn, forkserver"
+pickle -> child: "unpickled"
+parent -> data
+child -> data
+scenarios: {
+  fork: {
+    pickle.style.opacity: 0.3
+    (parent -> pickle)[0].style.opacity: 0.3
+    (pickle -> child)[0].style.opacity: 0.3
+    child.label: "parent's box, copied"
+    child.tooltip: The child keeps using the parent's box object, which goes on working after the fork. Nothing is pickled.
+  }
+}
+```
+
+`multiprocessing.shared_memory.SharedMemory` travels the same way. See
+[`SharedBox`][sharedbox.SharedBox] for what the pickle holds, and the
+[handle](../explanation/glossary.md#handle) entry for what a second box
+object on the same data means.
 
 ## 2. In a pool, attach once per worker
 

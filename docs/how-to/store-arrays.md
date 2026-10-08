@@ -33,7 +33,42 @@ You assign and read an array field like any other:
 
 A write copies the array into the [box](../explanation/glossary.md#box), and a read copies it out
 into a new array, so changing your array afterwards never changes the box,
-and the other way round.
+and the other way round. For a large array, those copies and the new
+memory are what you pay for; switch between the three ways to see where
+each one goes:
+
+```d2 title="Where the bytes go"
+...@diagrams/style
+direction: right
+yours: "your array" {class: step}
+field: "field in the box" {class: hardware}
+fresh: "new array" {
+  class: step
+  tooltip: A plain read gets fresh memory every time, which on Windows costs far more than the copy itself.
+}
+yours -> field: "write: one copy"
+field -> fresh: "read: new memory, one copy"
+field -> yours: "read_into: one copy, no new memory" {style.opacity: 0}
+scenarios: {
+  read_into: {
+    fresh.style.opacity: 0.3
+    (field -> fresh)[0].style.opacity: 0.3
+    (yours -> field)[0].style.opacity: 0.3
+    (field -> yours)[0].style.opacity: 1
+    (field -> yours)[0].style.stroke-width: 4
+    yours.tooltip: An array you already have, filled by read_into.
+  }
+  writing: {
+    yours.style.opacity: 0.3
+    fresh.style.opacity: 0.3
+    (field -> fresh)[0].style.opacity: 0.3
+    (yours -> field)[0].style.opacity: 0.3
+    field.label: "field in the box,\nfilled in place"
+    field.style.stroke-width: 4
+    field.tooltip: writing hands you the field itself, so your code writes the bytes where they live and no copy is made.
+  }
+}
+```
 
 ## 3. Read into an array you already have
 
