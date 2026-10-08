@@ -1,5 +1,6 @@
 import os
 from collections.abc import Iterator
+from dataclasses import dataclass
 from itertools import count
 from typing import Annotated
 
@@ -19,6 +20,18 @@ class Record(SharedBox):
 
 class Samples(SharedBox):
     floats: Annotated[list[float], Capacity(16)]
+
+
+@dataclass(frozen=True)
+class Quad:
+    a: int
+    b: float
+    c: bool
+    d: int
+
+
+class Quads(SharedBox):
+    quad: Quad
 
 
 @pytest.fixture
@@ -71,3 +84,15 @@ def samples() -> Iterator[Samples]:
 
 def test_read_float_list(benchmark: BenchmarkFixture, samples: Samples) -> None:
     benchmark(getattr, samples, "floats")
+
+
+@pytest.fixture
+def quads() -> Iterator[Quads]:
+    name = f"bench-codspeed-{os.getpid()}-{next(NAMES)}"
+    with Quads.create(name, Quad(1, 1.5, True, 2)) as box:
+        yield box
+    Quads.unlink(name)
+
+
+def test_read_record(benchmark: BenchmarkFixture, quads: Quads) -> None:
+    benchmark(getattr, quads, "quad")
