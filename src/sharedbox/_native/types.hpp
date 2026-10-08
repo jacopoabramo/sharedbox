@@ -53,10 +53,11 @@ class Types {
 public:
     /// fields as Segment.create takes them; info maps a description's offset to its tuple; bytearrays
     /// lists (description offset, member) of each bytes member read back as bytearray, offset -1 for a
-    /// field.
+    /// field; reusable lists the fields whose values cannot be changed once read.
     Types(const std::vector<std::tuple<std::uint32_t, std::uint32_t, std::uint32_t>> &fields,
           std::vector<std::string> labels, std::string table, const nb::dict &info,
-          const std::vector<std::pair<std::int64_t, std::uint32_t>> &bytearrays);
+          const std::vector<std::pair<std::int64_t, std::uint32_t>> &bytearrays,
+          const std::vector<std::uint32_t> &reusable = {});
 
     const std::string &table() const { return table_; }
     std::size_t field_count() const { return labels_.size(); }
@@ -73,6 +74,9 @@ public:
 
     /// Whether field index is a bytes field read back as bytearray.
     bool field_is_bytearray(std::uint32_t index) const { return read_as_bytearray(field_container, index); }
+
+    /// Whether a read of field index may return the value an earlier read decoded.
+    bool field_reusable(std::uint32_t index) const { return index < reusable_.size() && reusable_[index]; }
 
     /// out as a writable destination for array field index. Raises TypeError unless the field is an array and
     /// out a writable C-contiguous array in CPU memory, and ValueError unless out has the field's dtype and
@@ -115,6 +119,7 @@ private:
     std::string table_;
     std::vector<NodeInfo> nodes_;
     std::vector<std::uint64_t> bytearrays_;
+    std::vector<bool> reusable_;
 };
 
 } // namespace sharedbox

@@ -655,12 +655,13 @@ def test_uninitialised_native_objects_raise_type_error() -> None:
     )
 
 
-def test_a_subclass_cannot_declare_its_own_segment_slot() -> None:
-    """Check that a subclass declaring a _segment slot raises TypeError."""
-    with pytest.raises(TypeError, match="_segment"):
+@pytest.mark.parametrize("slot", ["_segment", "_values"])
+def test_a_subclass_cannot_declare_a_slot_that_fields_read(slot: str) -> None:
+    """Check that a subclass declaring a _segment or _values slot raises TypeError."""
+    with pytest.raises(TypeError, match=slot):
 
         class Shadow(Point):
-            __slots__ = ("_segment",)
+            __slots__ = (slot,)
 
 
 RUN = f"{os.environ['SHAREDBOX_TEST_RUN']}{os.environ.get('PYTEST_XDIST_WORKER', '')}"

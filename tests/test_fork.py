@@ -6,6 +6,7 @@ import queue
 import sys
 import threading
 from collections.abc import Callable
+from dataclasses import dataclass
 from multiprocessing.process import BaseProcess
 from multiprocessing.queues import Queue
 from multiprocessing.synchronize import Event
@@ -40,6 +41,22 @@ class Wheel(SharedBox):
 
 class Cart(SharedBox):
     wheel: Wheel | None = None
+
+
+@dataclass(frozen=True)
+class Point:
+    x: float
+    y: float
+
+
+class Located(SharedBox):
+    point: Point = Point(0.0, 0.0)
+
+
+def read_point_after_write(box: Located, wrote: Event, out: "Queue[Point]") -> None:
+    assert wrote.wait(10)
+    out.put(box.point)
+    box.close()
 
 
 def read_wheel(cart: Cart, out: "Queue[str]") -> None:
@@ -147,6 +164,23 @@ def test_forked_child_watches_an_inherited_box(unique_name: str) -> None:
         box.value = 9
         assert out.get(timeout=10) == 9
         assert finish(child) == 0
+
+
+def test_forked_child_reads_a_write_the_parent_made_after_the_fork(
+    unique_name: str,
+) -> None:
+    """Check that a forked child that inherited a reused value reads the value its parent wrote after the fork."""
+    ctx = mp.get_context("fork")
+    wrote = ctx.Event()
+    out: Queue[Point] = ctx.Queue()
+    with Located.create(unique_name) as box:
+        assert box.point == Point(0.0, 0.0)
+        child = fork(read_point_after_write, box, wrote, out)
+        box.point = Point(1.0, 2.0)
+        wrote.set()
+        assert out.get(timeout=10) == Point(1.0, 2.0)
+        assert finish(child) == 0
+    Located.unlink(unique_name)
 
 
 @pytest.mark.skipif(not ROOT, reason="needs root to switch to another user")

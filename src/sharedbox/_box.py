@@ -44,6 +44,7 @@ from ._native import (
     SchemaMismatchError,
     Segment,
     SegmentNotFoundError,
+    ValueCache,
 )
 from ._native import Field as FieldDescriptor
 from ._refs import NAME, Reference, attach_reference, box_ref, register, stored
@@ -106,6 +107,7 @@ def reset_after_fork() -> None:
     """Make every box inherited through `fork` usable in the child."""
     for box in list(LIVE):
         box._segment._after_fork()
+        box._values._after_fork()
         box._watcher.after_fork()
         # Another thread of the parent may have held it at the fork.
         box._refs_lock = threading.Lock()
@@ -313,13 +315,14 @@ class SharedBoxMeta(type):
         **kwargs: Any,
     ) -> SharedBoxMeta:
         slots = namespace.setdefault("__slots__", ())
-        # A second _segment slot would hide the one every Field reads.
-        if any(isinstance(base, SharedBoxMeta) for base in bases) and "_segment" in (
-            (slots,) if isinstance(slots, str) else slots
-        ):
-            raise TypeError(
-                f"{cls_name}: __slots__ cannot name _segment, which SharedBox already has"
-            )
+        named = (slots,) if isinstance(slots, str) else slots
+        if any(isinstance(base, SharedBoxMeta) for base in bases):
+            # A second slot of either name would hide the one every Field reads.
+            for taken in ("_segment", "_values"):
+                if taken in named:
+                    raise TypeError(
+                        f"{cls_name}: __slots__ cannot name {taken}, which SharedBox already has"
+                    )
         cls = super().__new__(mcls, cls_name, bases, namespace, **kwargs)
         layout = cls.__dict__.get("__layout__")
         if layout is not None:
@@ -495,7 +498,7 @@ class SharedBox(metaclass=SharedBoxMeta):
         `follow`, `unfollow` or `nested`, a default of the wrong type, a
         positional field without a default after one with a default, an
         `InitVar` in a class without `__post_init__`, a reference to a
-        class that is not defined yet, `__slots__` that name `_segment`, or
+        class that is not defined yet, `__slots__` that name `_segment` or `_values`, or
         an `identity` that is not a non-empty string. When the class is
         called, for a missing, unknown or repeated value, or a value of
         the wrong type.
@@ -539,6 +542,7 @@ class SharedBox(metaclass=SharedBoxMeta):
         "_refs",
         "_refs_lock",
         "_segment",
+        "_values",
         "_watcher",
     )
 
@@ -610,6 +614,7 @@ class SharedBox(metaclass=SharedBoxMeta):
                 (p.name, p.kw_only) for p in base.__dict__.get("__sharedbox_init__", ())
             )
         segment_slot = SharedBox.__dict__["_segment"]
+        values_slot = SharedBox.__dict__["_values"]
         params: list[Field] = []
         for attr, hint in found:
             value = cls.__dict__.get(attr, MISSING)
@@ -666,7 +671,7 @@ class SharedBox(metaclass=SharedBoxMeta):
                 setattr(
                     cls,
                     attr,
-                    FieldDescriptor(spec, segment_slot, layout.types)
+                    FieldDescriptor(spec, segment_slot, layout.types, values_slot)
                     if spec.target is None
                     else Reference(spec),
                 )
@@ -777,6 +782,7 @@ class SharedBox(metaclass=SharedBoxMeta):
         return cls.__sharedbox_name__
 
     def _track(self) -> None:
+        self._values = ValueCache(len(type(self).__layout__.fields))
         self._refs: dict[int, RefEntry] = {}
         self._refs_lock = threading.Lock()
         # The finalizer may run on a thread that holds the watcher's lock, which the
@@ -1263,6 +1269,7 @@ class SharedBox(metaclass=SharedBoxMeta):
             except BaseException as exc:
                 # Keep closing the rest; the first failure is raised once every box is closed.
                 error = error or exc
+            box._values.clear()
             with box._refs_lock:
                 cached, box._refs = box._refs, {}
             boxes.extend(inner for _, inner, _ in cached.values())
