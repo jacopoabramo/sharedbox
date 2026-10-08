@@ -64,21 +64,46 @@ a killed process leaves a slot stuck or the count one too high.
 
 ## How changes reach callbacks
 
-The exact rules for when a signal of `events` fires are in the docstring of
-[`events`][sharedbox.SharedBox.events]. They all follow from how the
-watcher works:
+Step through one write reaching your callback, and point at a shape to
+read what it does:
 
-- The watcher thread is the one that wakes, so callbacks run on it, not on
-  the thread or in the process that wrote.
-- After waking, the watcher looks at the write count of each
-  [field](glossary.md#field) in the segment. For a field whose count
-  moved, it reads the current value and compares it with the value it saw
-  last. Several writes between two wake-ups therefore give one emission
-  with the latest value, and a write that leaves the value unchanged gives
-  none.
-- One watcher thread per box [handle](glossary.md#handle) serves both
-  `events` and `watch`, so a slow callback delays the `watch` iterators of
-  the same box.
+```d2 title="From a write to your callback"
+...@diagrams/style
+direction: right
+writer: "writer, any process" {
+  class: process
+  tooltip: Assigns a field or calls update. The write raises the field's write count.
+}
+segment: "segment" {
+  class: hardware
+  tooltip: Holds the values, a write count per field, and the waiter slots of the threads waiting for changes.
+}
+watcher: "watcher thread" {class: [process; hidden]}
+callbacks: "events callbacks" {class: [step; hidden]}
+watch: "watch iterators" {class: [step; hidden]}
+writer -> segment: "writes, wakes the slots"
+segment -> watcher: "wakes" {style.opacity: 0}
+watcher -> callbacks: "new, old" {style.opacity: 0}
+watcher -> watch: "new value" {style.opacity: 0}
+steps: {
+  1: {
+    watcher.class: process
+    watcher.tooltip: One thread per box handle, holding a waiter slot. It wakes on the write, compares each field's write count with the last it saw, and reads the fields whose count moved. Several writes between two wake-ups give one emission with the latest value, and a write that leaves the value unchanged gives none.
+    (segment -> watcher)[0].style.opacity: 1
+  }
+  2: {
+    callbacks.class: step
+    callbacks.tooltip: They run on the watcher thread, not in the process or the thread that wrote. The docstring of events lists when each signal fires.
+    watch.class: step
+    watch.tooltip: Served by the same thread, so a slow callback delays the watch iterators of the same box.
+    (watcher -> callbacks)[0].style.opacity: 1
+    (watcher -> watch)[0].style.opacity: 1
+  }
+}
+```
+
+The exact rules for when a signal fires are in the docstring of
+[`events`][sharedbox.SharedBox.events].
 
 `events` is an ordinary `SignalGroup` from the `psygnal` library, so all of
 `psygnal`'s own tools for controlling when callbacks run work on it:
