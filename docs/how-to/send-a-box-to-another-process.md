@@ -27,28 +27,55 @@ child gets:
 
 ```d2 title="What the child gets"
 ...@diagrams/style
-direction: right
-parent: "parent's box" {class: step}
-pickle: "pickle: name and ids" {
-  class: file
-  tooltip: Only the box's name and the numbers that tell it apart from other boxes, not its values.
+label: "With spawn or forkserver, the box travels as a pickle of its name and ids. The child unpickles it and opens the same shared memory."
+grid-columns: 1
+vertical-gap: 30
+pic: "" {
+  style.stroke-width: 0
+  style.fill: transparent
+  grid-rows: 2
+  grid-columns: 3
+  horizontal-gap: 110
+  vertical-gap: 60
+  parent: "parent's box" {class: step}
+  pickle: "pickle: name and ids" {
+    class: file
+    tooltip: Only the box's name and the numbers that tell it apart from other boxes, not its values.
+  }
+  child: "child's box" {
+    class: step
+    tooltip: A new handle on the same data, which the child closes when it's done.
+  }
+  g1: {class: gap}
+  data: "shared memory" {class: hardware}
+  g2: {class: gap}
+  parent -> pickle: "pickled"
+  pickle -> child: "unpickled"
+  parent -> data
+  child -> data
 }
-child: "child's box" {
-  class: step
-  tooltip: A new handle on the same data, which the child closes when it's done.
+code: "" {
+  style.stroke-width: 0
+  style.fill: transparent
+  code: |python
+    1 -> context = mp.get_context("spawn")
+    2    child = context.Process(target=report, args=(status,))
+    3    child.start()
+  |
 }
-data: "shared memory" {class: hardware}
-parent -> pickle: "spawn, forkserver"
-pickle -> child: "unpickled"
-parent -> data
-child -> data
 scenarios: {
   fork: {
-    pickle.style.opacity: 0.3
-    (parent -> pickle)[0].style.opacity: 0.3
-    (pickle -> child)[0].style.opacity: 0.3
-    child.label: "parent's box, copied"
-    child.tooltip: The child keeps using the parent's box object, which goes on working after the fork. Nothing is pickled.
+    label: "With fork, the child starts as a copy of the parent and keeps using the parent's box object. Nothing is pickled."
+    pic.pickle.style.opacity: 0.3
+    (pic.parent -> pic.pickle)[0].style.opacity: 0.3
+    (pic.pickle -> pic.child)[0].style.opacity: 0.3
+    pic.child.label: "parent's box, copied"
+    pic.child.tooltip: The parent's box object goes on working after the fork.
+    code.code: |python
+      1 -> context = mp.get_context("fork")
+      2    child = context.Process(target=report, args=(status,))
+      3    child.start()
+    |
   }
 }
 ```
