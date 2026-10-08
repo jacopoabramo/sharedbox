@@ -4,22 +4,50 @@ icon: lucide/lightbulb
 
 # Closing and lifetime
 
-This page explains how [`close`][sharedbox.SharedBox.close] stays safe
-while other threads still use a [box](glossary.md#box), and how long the
-shared memory itself lives.
+A [box](glossary.md#box) has two lifetimes: the Python object you use, and
+the shared memory behind it, which other processes may still be using. This
+page first explains how long that memory lives and who removes it, which is
+what you need day to day. Then it explains how
+[`close`][sharedbox.SharedBox.close] stays safe while other threads of your
+process are still using the box, which matters if you work on `sharedbox`
+itself or wonder why closing never crashes a running read.
+
+## Lifetime: the same rules as `multiprocessing.shared_memory`
+
+Closing a box only lets go of it in your process; it never destroys the
+data.
+[`unlink`][sharedbox.SharedBox.unlink] removes the name. On Linux it calls
+`shm_unlink`, which works like deleting an open file: processes that
+already have the block keep using it, and nobody new can open
+it.[^shm-unlink] On Windows there is nothing to remove; Windows frees the
+block when its last user closes it.[^create-file-mapping] This is how
+Python's `SharedMemory.close()` and `SharedMemory.unlink()`
+behave,[^shared-memory] so the two do not have to be learned separately.
+
+Because `unlink` removes the name for every process, only one process
+should call it, usually the one that created the box. `sharedbox` never
+unlinks anything by itself when your program exits, just like
+`SharedMemory(track=False)`. On Linux a segment that is never
+unlinked stays in `/dev/shm` until reboot, and creating a box under its
+name then raises [`SegmentExistsError`][sharedbox.SegmentExistsError].
+
+Leaving a `with` block closes a box, and so does garbage collection. The
+docstring of [`close`][sharedbox.SharedBox.close] says what happens in each
+case to writes not yet delivered and to forwarding the box started.
 
 ## Closing a box while other threads still use it
 
-One thread can call `close` and unmap the memory while another thread of
-the same process is copying from it. The free-threaded build has no global
+Within one process, one thread can call `close` and unmap the memory while
+another thread is still copying from it, and a careless design would crash
+there. The free-threaded build has no global
 interpreter lock (GIL),[^pep-703] and Python 3.14 is the first version
 where that build is supported rather than experimental.[^pep-779] A normal
 build does not prevent the race either: a read or write that waits for
 another writer's lock releases the GIL while it waits, so `close` can run
 in the meantime.
 
-Each open box therefore has a reader-writer lock that only protects its
-own lifetime.[^shared-mutex] Every operation holds it in shared mode;
+So each open box has a reader-writer lock that only guards its own
+lifetime.[^shared-mutex] Every operation holds it in shared mode;
 `close` takes it exclusively, so it waits until running operations finish.
 
 A wait for the write lock (see [Reading and
@@ -77,27 +105,6 @@ A capsule [handle](glossary.md#handle) made by
 [`__sharedbox_box__`][sharedbox.SharedBox.__sharedbox_box__] is a separate
 mapping of the same [segment](glossary.md#segment), so `close` never waits
 for it and never affects it.
-
-## Lifetime: the same rules as `multiprocessing.shared_memory`
-
-`close` only detaches this process, and never destroys the data.
-[`unlink`][sharedbox.SharedBox.unlink] removes the name. On Linux it calls
-`shm_unlink`, which works like deleting an open file: processes that
-already have the block keep using it, and nobody new can open
-it.[^shm-unlink] On Windows there is nothing to remove; Windows frees the
-block when its last user closes it.[^create-file-mapping] This is how
-Python's `SharedMemory.close()` and `SharedMemory.unlink()`
-behave,[^shared-memory] so the two do not have to be learned separately.
-
-Because `unlink` removes the name for every process, one process calls it,
-usually the one that created the box. sharedbox does not unlink anything at
-exit, like `SharedMemory(track=False)`. On Linux a segment that is never
-unlinked stays in `/dev/shm` until reboot, and creating a box under its
-name then raises [`SegmentExistsError`][sharedbox.SegmentExistsError].
-
-Leaving a `with` block closes a box, and so does garbage collection. The
-docstring of [`close`][sharedbox.SharedBox.close] says what happens in each
-case to writes not yet delivered and to forwarding the box started.
 
 ## Sources
 
