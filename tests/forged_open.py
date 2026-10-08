@@ -11,7 +11,7 @@ import uuid
 from collections.abc import Generator
 from multiprocessing.shared_memory import SharedMemory
 
-from hypothesis import given, settings
+from hypothesis import example, given, settings
 from hypothesis import strategies as st
 
 from sharedbox._layout import NativeField
@@ -81,8 +81,12 @@ def forged_open(edits: list[tuple[tuple[int, int], int, int]]) -> None:
 
 
 def main(examples: int) -> None:
+    # A field count lowered to one the mapping still fits passes every geometry check.
+    pinned = example([((0, 64), 12, 1)])
     given(EDITS)(
-        settings(max_examples=examples, deadline=None, database=None)(forged_open)
+        pinned(
+            settings(max_examples=examples, deadline=None, database=None)(forged_open)
+        )
     )()
 
 

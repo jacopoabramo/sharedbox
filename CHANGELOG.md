@@ -38,6 +38,11 @@ Dates are marked as `DD-MM-YYYY`
   validators run on the first read after each write instead of on every
   read.
 
+### Fixed
+
+- `SharedBox.attach`: a box whose header gives a field count other than the
+  class's raises `SchemaMismatchError` instead of `ValueError`.
+
 ## [0.4.1] - 07-10-2026
 
 ### Changed

@@ -140,7 +140,8 @@ class Segment:
         """Open an existing segment whose schema hash matches.
 
         With `types`, the segment's description table must also equal
-        `types.table`.
+        `types.table`. A segment whose field count differs from the number
+        of `names` raises `SchemaMismatchError`.
         """
 
     @staticmethod
