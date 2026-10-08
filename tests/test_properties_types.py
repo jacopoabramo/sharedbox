@@ -30,6 +30,7 @@ class Kinds(SharedBox):
     level: Level = Level.LOW
     pick: int | bool | float | Annotated[str, Capacity(8)] | None = None
     numbers: Annotated[list[int], Capacity(8)] = []
+    ratios: Annotated[tuple[float, ...], Capacity(8)] = ()
     table: Annotated[dict[Annotated[str, Capacity(4)], float], Capacity(4)] = {}
 
 
@@ -126,11 +127,13 @@ def test_enums_and_union_members_round_trip(
 
 @given(
     st.lists(st.integers(-(2**63), 2**63 - 1), max_size=8),
+    st.lists(st.floats(allow_nan=False), max_size=8).map(tuple),
     st.dictionaries(st.text(max_size=1), st.floats(allow_nan=False), max_size=4),
 )
 def test_collections_round_trip_from_empty_to_full(
-    box: Kinds, numbers: list[int], table: dict[str, float]
+    box: Kinds, numbers: list[int], ratios: tuple[float, ...], table: dict[str, float]
 ) -> None:
-    """Check that lists and dicts of every length up to their capacity read back equal."""
+    """Check that lists, tuples and dicts of every length up to their capacity read back equal."""
     assert_round_trip(box, "numbers", numbers)
+    assert_round_trip(box, "ratios", ratios)
     assert_round_trip(box, "table", table)
