@@ -4,28 +4,59 @@ icon: lucide/lightbulb
 
 # Field types
 
-A [field](glossary.md#field) can hold any of the types in the table below,
-and most of the types you'd put in a dataclass are there. Each one is
-stored in the [segment](glossary.md#segment) in a fixed number of bytes,
-which is why a value never needs more room than the field set aside when
-the [box](glossary.md#box) was created.
+A [field](glossary.md#field) can hold most of the types you'd put in a
+dataclass. Each one is stored in the [segment](glossary.md#segment) in a
+fixed number of bytes, which is why a value never needs more room than the
+field set aside when the [box](glossary.md#box) was created. Below, each
+type is shown with an example value and the exact bytes a box stores for
+it, lowest address first; `|` separates the parts of a value, and you can
+point at a table to read how its types are laid out:
 
-| Type | Stored as |
-| --- | --- |
-| `bool`, `int`, `float` | 1, 8 and 8 bytes |
-| `complex` | two 64-bit floats |
-| `Annotated[str, Capacity(n)]`, `bytes`, `bytearray` | a length, then up to `n` bytes |
-| `Annotated[Decimal, Capacity(n)]` | the text of `str(value)`, up to `n` bytes |
-| `date`, `time`, `datetime`, `timedelta` | 4, 16, 16 and 12 bytes |
-| `UUID` | its 16 bytes |
-| an `Enum` | the member's position |
-| a `Flag` or `IntFlag` | the combined bits |
-| a `Literal` | the value's position |
-| an optional `X` (`Optional[X]`), a union | a byte saying which member, then that member |
-| a dataclass, `NamedTuple`, tuple, `TypedDict`, attrs class, `msgspec.Struct` | its members, packed like fields |
-| a `list`, `set`, `frozenset`, `dict`, `tuple[T, ...]` with `Capacity(n)` | a length, then room for `n` elements |
-| an array with `Shape` and `DType` | its elements, in C order |
-| a `SharedBox` subclass, optional or not | a [reference](references.md) to that box |
+```d2 title="What each type stores"
+...@diagrams/style
+grid-columns: 1
+vertical-gap: 30
+numbers: "numbers and text" {
+  shape: sql_table
+  tooltip: Numbers are little-endian. Text and bytes start with a u32 length, then take their whole capacity whatever they hold.
+  "bool True": "01"
+  "int 10": "0A 00 00 00 00 00 00 00"
+  "float 1.5": "00 00 00 00 00 00 F8 3F"
+  "complex 1+2j": "1.0 as a float | 2.0 as a float"
+  "str \"été\", capacity 8": "05 00 00 00 | C3 A9 74 C3 A9 | 3 unused"
+  "bytes or bytearray b\"abc\"": "03 00 00 00 | 61 62 63 | unused"
+  "Decimal(\"1.50\")": "04 00 00 00 | 31 2E 35 30, the text"
+}
+times: "dates and times" {
+  shape: sql_table
+  tooltip: "A date is its day number, date.toordinal(). A time or datetime is microseconds, the UTC offset in minutes and flags (bit 0: naive, bit 1: fold), then 5 zero bytes. A UUID is its 16 bytes in network order."
+  "date 2026-10-08": "39 4A 0B 00, day 739897"
+  "time 09:30, naive": "00 96 7A F6 07 00 00 00 | 00 00 | 01 | 5 zeros"
+  "datetime 2026-10-08 09:30 UTC": "00 D6 2B E0 50 5D 06 00 | 00 00 | 00 | 5 zeros"
+  "timedelta 1 day, 30 s": "01 00 00 00 | 1E 00 00 00 | 00 00 00 00"
+  "UUID 12345678-1234-...": "12 34 56 78 12 34 56 78 ..., 16 bytes"
+}
+choices: "choices" {
+  shape: sql_table
+  tooltip: An enum member or a literal value is stored by its position, counting from 0. An optional or a union starts with a byte that says which member it holds, padded to the member's alignment.
+  "Enum member, 3rd": "02 00"
+  "Literal value, 3rd": "02 00"
+  "Flag or IntFlag A | C": "05 00 00 00 00 00 00 00"
+  "int | None = 5": "01 | 7 padding | 05 00 00 00 00 00 00 00"
+  "int | None = None": "00 | 7 padding | 8 zeros"
+  "int | str, a union": "member number | padding | that member"
+}
+containers: "records, collections and arrays" {
+  shape: sql_table
+  tooltip: A record keeps its members at fixed offsets, like a small box. A collection starts with its length, padded to its slots' alignment, then has room for every element up to its capacity. A reference field stores which box it points at, never that box's values.
+  "dataclass, NamedTuple, tuple, TypedDict, attrs, msgspec": "each member at its offset, packed like fields"
+  "list[int], capacity 3 = [7, 9]": "02 00 00 00 | 4 padding | 07 00 ... | 09 00 ... | 1 unused slot"
+  "set, frozenset, tuple[T, ...]": "as a list"
+  "dict": "as a list, with a key and value in each slot"
+  "array uint8, shape (2, 2)": "01 02 03 04, in C order"
+  "SharedBox subclass": "create id | schema hash | name, 144 bytes"
+}
+```
 
 `NewType`, `Final`, `Annotated` and `type` aliases work too: the box looks
 through them to the type they stand for.
