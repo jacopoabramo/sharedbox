@@ -17,6 +17,10 @@ class Record(SharedBox):
     s: Annotated[str, Capacity(32)]
 
 
+class Samples(SharedBox):
+    floats: Annotated[list[float], Capacity(16)]
+
+
 @pytest.fixture
 def box() -> Iterator[Record]:
     name = f"bench-codspeed-{os.getpid()}-{next(NAMES)}"
@@ -55,3 +59,15 @@ def test_native_set_int(benchmark: BenchmarkFixture, box: Record) -> None:
 
 def test_native_get_int(benchmark: BenchmarkFixture, box: Record) -> None:
     benchmark(box._segment.get, 0)
+
+
+@pytest.fixture
+def samples() -> Iterator[Samples]:
+    name = f"bench-codspeed-{os.getpid()}-{next(NAMES)}"
+    with Samples.create(name, [0.5] * 16) as box:
+        yield box
+    Samples.unlink(name)
+
+
+def test_read_float_list(benchmark: BenchmarkFixture, samples: Samples) -> None:
+    benchmark(getattr, samples, "floats")
