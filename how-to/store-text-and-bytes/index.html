@@ -3143,18 +3143,18 @@
 
 
 <h1 id="how-to-store-text-and-bytes">How to store text and bytes<a class="headerlink" href="#how-to-store-text-and-bytes" title="Permanent link">&para;</a></h1>
-<p>A <code>str</code> or <code>bytes</code> <a href="../../explanation/glossary/#field">field</a> needs a
-<a href="../../explanation/glossary/#capacity">capacity</a>: the most bytes it can
-hold. The <a href="../../explanation/glossary/#box">box</a> sets that room aside when it is created, so a value can never
-grow past it.</p>
+<p>Text and bytes vary in length, but every <a href="../../explanation/glossary/#field">field</a> of a
+<a href="../../explanation/glossary/#box">box</a> has a fixed size. So when you declare a <code>str</code> or <code>bytes</code>
+field, you also say how much room it gets, its <a href="../../explanation/glossary/#capacity">capacity</a>:
+the most bytes it can hold. This guide shows how to choose it and what
+happens when a value doesn't fit.</p>
 <h2 id="1-declare-the-field-with-a-capacity">1. Declare the field with a capacity<a class="headerlink" href="#1-declare-the-field-with-a-capacity" title="Permanent link">&para;</a></h2>
-<p>Put <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;Capacity&lt;/span&gt;
+<p>Wrap the type in <code>Annotated</code> and add a <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;Capacity&lt;/span&gt;
 
 
   &lt;span class=&quot;doc doc-labels&quot;&gt;
       &lt;small class=&quot;doc doc-label doc-label-dataclass&quot;&gt;&lt;code&gt;dataclass&lt;/code&gt;&lt;/small&gt;
-  &lt;/span&gt;" href="../../reference/api/box/#sharedbox.Capacity"><code>Capacity</code></a> in the annotation, inside
-<code>Annotated</code>:</p>
+  &lt;/span&gt;" href="../../reference/api/box/#sharedbox.Capacity"><code>Capacity</code></a>:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Annotated</span>
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>
 </span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sharedbox</span><span class="w"> </span><span class="kn">import</span> <span class="n">Capacity</span><span class="p">,</span> <span class="n">SharedBox</span>
@@ -3165,17 +3165,17 @@ grow past it.</p>
 </span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>    <span class="n">frame</span><span class="p">:</span> <span class="n">Annotated</span><span class="p">[</span><span class="nb">bytes</span><span class="p">,</span> <span class="n">Capacity</span><span class="p">(</span><span class="mi">1024</span><span class="p">)]</span> <span class="o">=</span> <span class="sa">b</span><span class="s2">""</span>
 </span></code></pre></div>
 <h2 id="2-write-and-read-values">2. Write and read values<a class="headerlink" href="#2-write-and-read-values" title="Permanent link">&para;</a></h2>
-<p>Assign and read the field as any other:</p>
+<p>From then on you use the field like any other attribute:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">camera</span> <span class="o">=</span> <span class="n">Camera</span><span class="p">()</span>
 </span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="n">camera</span><span class="o">.</span><span class="n">label</span> <span class="o">=</span> <span class="s2">"front"</span>
 </span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="n">camera</span><span class="o">.</span><span class="n">frame</span> <span class="o">=</span> <span class="nb">bytes</span><span class="p">(</span><span class="nb">range</span><span class="p">(</span><span class="mi">8</span><span class="p">))</span>
 </span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="nb">print</span><span class="p">(</span><span class="n">camera</span><span class="o">.</span><span class="n">label</span><span class="p">,</span> <span class="nb">len</span><span class="p">(</span><span class="n">camera</span><span class="o">.</span><span class="n">frame</span><span class="p">))</span>  <span class="c1"># front 8</span>
 </span></code></pre></div>
-<p>A <code>bytes</code> field also takes a <code>bytearray</code> or a <code>memoryview</code>, and reading it
-gives <code>bytes</code>.</p>
+<p>You can also assign a <code>bytearray</code> or a <code>memoryview</code> to a <code>bytes</code> field;
+reading it back always gives you <code>bytes</code>.</p>
 <h2 id="3-handle-a-value-that-is-too-long">3. Handle a value that is too long<a class="headerlink" href="#3-handle-a-value-that-is-too-long" title="Permanent link">&para;</a></h2>
-<p>A value longer than the capacity raises <code>ValueError</code>, and the field keeps
-its old value:</p>
+<p>If you assign a value longer than the capacity, you get a <code>ValueError</code> and
+the field keeps its old value, so a reader never sees half of it:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="k">try</span><span class="p">:</span>
 </span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>    <span class="n">camera</span><span class="o">.</span><span class="n">label</span> <span class="o">=</span> <span class="s2">"front camera, left side"</span>
 </span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="k">except</span> <span class="ne">ValueError</span> <span class="k">as</span> <span class="n">error</span><span class="p">:</span>
@@ -3183,15 +3183,17 @@ its old value:</p>
 </span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="nb">print</span><span class="p">(</span><span class="n">camera</span><span class="o">.</span><span class="n">label</span><span class="p">)</span>  <span class="c1"># front</span>
 </span></code></pre></div>
 <h2 id="4-count-bytes-not-characters">4. Count bytes, not characters<a class="headerlink" href="#4-count-bytes-not-characters" title="Permanent link">&para;</a></h2>
-<p>A capacity counts the bytes of the UTF-8 encoding, and a character takes 1
-to 4 of them:</p>
+<p>The capacity counts bytes of the UTF-8 encoding, not characters, and a
+character takes between 1 and 4 bytes. Text with accents or other scripts
+fills the room faster than it looks:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nb">print</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="s2">"été"</span><span class="p">),</span> <span class="nb">len</span><span class="p">(</span><span class="s2">"été"</span><span class="o">.</span><span class="n">encode</span><span class="p">()))</span>  <span class="c1"># 3 5</span>
 </span></code></pre></div>
-<p>For text of up to <code>n</code> characters in any language, give the field a
-capacity of <code>4 * n</code>. For text you know is ASCII, <code>n</code> is enough.</p>
+<p>To be sure <code>n</code> characters of any language fit, give the field a capacity of
+<code>4 * n</code>. If you know the text is plain ASCII, <code>n</code> is enough.</p>
 <h2 id="5-cut-a-value-to-fit">5. Cut a value to fit<a class="headerlink" href="#5-cut-a-value-to-fit" title="Permanent link">&para;</a></h2>
-<p>To store the start of a longer text instead of refusing it, cut its
-encoding to the capacity and drop a character the cut split in two:</p>
+<p>Sometimes you'd rather keep the start of a long text than refuse it. Cut
+its encoding to the capacity, and drop any character the cut split in two,
+as this helper does:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="k">def</span><span class="w"> </span><span class="nf">fit</span><span class="p">(</span><span class="n">text</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="n">size</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">str</span><span class="p">:</span>
 </span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>    <span class="k">return</span> <span class="n">text</span><span class="o">.</span><span class="n">encode</span><span class="p">()[:</span><span class="n">size</span><span class="p">]</span><span class="o">.</span><span class="n">decode</span><span class="p">(</span><span class="n">errors</span><span class="o">=</span><span class="s2">"ignore"</span><span class="p">)</span>
 </span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>

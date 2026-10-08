@@ -3143,13 +3143,15 @@
 
 
 <h1 id="how-to-set-defaults-and-check-values">How to set defaults and check values<a class="headerlink" href="#how-to-set-defaults-and-check-values" title="Permanent link">&para;</a></h1>
-<p>A <code>SharedBox</code> subclass takes its <a href="../../explanation/glossary/#field">field</a>
-values as a dataclass does, and the same tools set defaults and check
-values: <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-function&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;field&lt;/span&gt;" href="../../reference/api/box/#sharedbox.field"><code>field</code></a>, <code>dataclasses.KW_ONLY</code>,
-<code>dataclasses.InitVar</code> and <code>__post_init__</code>.</p>
+<p>If you know dataclasses, you already know how to set defaults and check
+values on a box. A <code>SharedBox</code> subclass takes its <a href="../../explanation/glossary/#field">field</a> values
+the way a dataclass does, and it understands the same tools:
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-function&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;field&lt;/span&gt;" href="../../reference/api/box/#sharedbox.field"><code>field</code></a>, <code>dataclasses.KW_ONLY</code>, <code>dataclasses.InitVar</code>
+and <code>__post_init__</code>.</p>
 <h2 id="give-a-field-a-default">Give a field a default<a class="headerlink" href="#give-a-field-a-default" title="Permanent link">&para;</a></h2>
-<p>A plain value after <code>=</code> is the default. For a value computed each time a
-<a href="../../explanation/glossary/#box">box</a> is created, use <code>field(default_factory=...)</code>:</p>
+<p>A plain value after <code>=</code> is the default. If the default has to be worked out
+each time a <a href="../../explanation/glossary/#box">box</a> is created, such as the current time, use
+<code>field(default_factory=...)</code>:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">KW_ONLY</span><span class="p">,</span> <span class="n">InitVar</span>
 </span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
@@ -3165,10 +3167,11 @@ values: <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-sy
 </span><span id="__span-0-13"><a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">pump</span><span class="o">.</span><span class="n">flow</span><span class="p">,</span> <span class="n">pump</span><span class="o">.</span><span class="n">started</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">)</span>  <span class="c1"># 0.0 True</span>
 </span><span id="__span-0-14"><a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="n">Pump</span><span class="o">.</span><span class="n">unlink</span><span class="p">()</span>
 </span></code></pre></div>
-<p>The factory's result is stored like any other value, so it must be one of
-the types a box holds: a factory cannot give a field a list.</p>
+<p>The factory's result is stored like any other value, so it has to be a type
+the field can hold.</p>
 <h2 id="make-fields-keyword-only">Make fields keyword-only<a class="headerlink" href="#make-fields-keyword-only" title="Permanent link">&para;</a></h2>
-<p>Fields after a <code>KW_ONLY</code> annotation must be passed by name:</p>
+<p>Fields after a <code>KW_ONLY</code> annotation have to be passed by name, which keeps
+long constructor calls readable:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="k">class</span><span class="w"> </span><span class="nc">Valve</span><span class="p">(</span><span class="n">SharedBox</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">"example-valve"</span><span class="p">):</span>
 </span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>    <span class="n">opening</span><span class="p">:</span> <span class="nb">float</span>
 </span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>    <span class="n">_</span><span class="p">:</span> <span class="n">KW_ONLY</span>
@@ -3180,11 +3183,12 @@ the types a box holds: a factory cannot give a field a list.</p>
 </span><span id="__span-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">valve</span><span class="p">)</span>  <span class="c1"># Valve(opening=0.2, limit=1.0, closing_time=2.0)</span>
 </span><span id="__span-1-10"><a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="n">Valve</span><span class="o">.</span><span class="n">unlink</span><span class="p">()</span>
 </span></code></pre></div>
-<p>For every field of a class, pass <code>kw_only=True</code> in the class statement
-instead; for one field, use <code>field(kw_only=True)</code>. A keyword-only field
-with a default may come before a positional field without one.</p>
+<p>To make every field of a class keyword-only, pass <code>kw_only=True</code> in the
+class statement instead, and for a single field use <code>field(kw_only=True)</code>.
+Because keyword-only fields are passed by name, one with a default may even
+come before a positional field without one.</p>
 <h2 id="check-values-when-the-box-is-created">Check values when the box is created<a class="headerlink" href="#check-values-when-the-box-is-created" title="Permanent link">&para;</a></h2>
-<p>Define <code>__post_init__</code> and raise when a value is wrong:</p>
+<p>Define <code>__post_init__</code> and raise an exception when a value is wrong:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="k">class</span><span class="w"> </span><span class="nc">Heater</span><span class="p">(</span><span class="n">SharedBox</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">"example-heater"</span><span class="p">):</span>
 </span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>    <span class="n">target</span><span class="p">:</span> <span class="nb">float</span>
 </span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>    <span class="n">limit</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">80.0</span>
@@ -3202,21 +3206,27 @@ with a default may come before a positional field without one.</p>
 </span><span id="__span-2-15"><a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">heater</span><span class="o">.</span><span class="n">target</span><span class="p">)</span>  <span class="c1"># 60.0</span>
 </span><span id="__span-2-16"><a id="__codelineno-2-16" name="__codelineno-2-16" href="#__codelineno-2-16"></a><span class="n">Heater</span><span class="o">.</span><span class="n">unlink</span><span class="p">()</span>
 </span></code></pre></div>
-<p><code>__post_init__</code> runs after the values are written and before any other
-process can open the box. When it raises, the box is removed without ever
-being published, so no process sees the wrong values and the name is free
-again. The docstring of <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;SharedBox&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox"><code>SharedBox</code></a> has the details.</p>
-<p><code>__post_init__</code> runs only when the box is created, not when a field is
-assigned later, and not in a process that
+<p><code>__post_init__</code> runs after the values are written but before any other
+process can open the box. If it raises, the box is removed before any other
+process could open it, so nobody reads the wrong values, and the name is
+free for your next try straight away. The docstring of <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;SharedBox&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox"><code>SharedBox</code></a>
+has the details.</p>
+<div class="admonition warning">
+<p class="admonition-title">Later writes are not checked</p>
+<p><code>__post_init__</code> runs once, when the box is created. It doesn't run when
+you assign a field later, or in a process that
 <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;attach&lt;/span&gt;
 
 
   &lt;span class=&quot;doc doc-labels&quot;&gt;
       &lt;small class=&quot;doc doc-label doc-label-classmethod&quot;&gt;&lt;code&gt;classmethod&lt;/code&gt;&lt;/small&gt;
-  &lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.attach">attaches</a> the box.</p>
+  &lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.attach">attaches</a> the box. Check later values where
+you write them.</p>
+</div>
 <h2 id="take-an-argument-that-is-not-stored">Take an argument that is not stored<a class="headerlink" href="#take-an-argument-that-is-not-stored" title="Permanent link">&para;</a></h2>
-<p>An <code>InitVar</code> field is a constructor argument that <code>__post_init__</code> receives
-and the box does not store:</p>
+<p>Sometimes the constructor needs a value only to work out the fields, not to
+keep. Declare it as an <code>InitVar</code>: <code>__post_init__</code> receives it, and the box
+doesn't store it:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="k">class</span><span class="w"> </span><span class="nc">Scale</span><span class="p">(</span><span class="n">SharedBox</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">"example-scale"</span><span class="p">):</span>
 </span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>    <span class="n">grams</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.0</span>
 </span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>    <span class="n">kilograms</span><span class="p">:</span> <span class="n">InitVar</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.0</span>
@@ -3230,8 +3240,9 @@ and the box does not store:</p>
 </span><span id="__span-3-11"><a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a><span class="n">Scale</span><span class="o">.</span><span class="n">unlink</span><span class="p">()</span>
 </span></code></pre></div>
 <h2 id="describe-a-field">Describe a field<a class="headerlink" href="#describe-a-field" title="Permanent link">&para;</a></h2>
-<p><code>metadata</code> and <code>doc</code> stay in Python and are never stored in the box.
-Read them back with <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-function&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;fields&lt;/span&gt;" href="../../reference/api/box/#sharedbox.fields"><code>fields</code></a>:</p>
+<p>You can attach notes to a field with <code>metadata</code> and <code>doc</code>. They stay in
+Python and are never stored in the box, and you read them back with
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-function&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;fields&lt;/span&gt;" href="../../reference/api/box/#sharedbox.fields"><code>fields</code></a>:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="k">class</span><span class="w"> </span><span class="nc">Stage</span><span class="p">(</span><span class="n">SharedBox</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">"example-stage"</span><span class="p">):</span>
 </span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>    <span class="n">position</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span>
 </span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>        <span class="n">default</span><span class="o">=</span><span class="mf">0.0</span><span class="p">,</span> <span class="n">metadata</span><span class="o">=</span><span class="p">{</span><span class="s2">"unit"</span><span class="p">:</span> <span class="s2">"mm"</span><span class="p">},</span> <span class="n">doc</span><span class="o">=</span><span class="s2">"Distance from home."</span>

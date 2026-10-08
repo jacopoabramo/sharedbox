@@ -3099,15 +3099,18 @@
 
 
 <h1 id="how-a-box-is-stored">How a box is stored<a class="headerlink" href="#how-a-box-is-stored" title="Permanent link">&para;</a></h1>
-<p>This page describes where a <a href="../glossary/#box">box</a> lives in memory, how its
-values are stored, and how two processes check that they agree on what the
-bytes mean. <a href="../../reference/segment-layout/">Segment layout</a> gives every
-offset and protocol.</p>
+<p>When you write <code>motor.position = 10</code>, the number has to end up somewhere
+every process can see, in a form every process understands. This page
+explains where a <a href="../glossary/#box">box</a> lives in memory, how its values are
+stored, and how two processes make sure they agree on what the bytes mean.
+<a href="../../reference/segment-layout/">Segment layout</a> has every offset and step
+in full.</p>
 <h2 id="one-named-mapping-per-box">One named mapping per box<a class="headerlink" href="#one-named-mapping-per-box" title="Permanent link">&para;</a></h2>
 <p>Every box lives in one block of memory that the operating system lets
 several processes map at the same time, its
-<a href="../glossary/#segment">segment</a>. The block has a name, and any process that
-knows the name can open it.<sup id="fnref:shm-open"><a class="footnote-ref" href="#fn:shm-open">1</a></sup></p>
+<a href="../glossary/#segment">segment</a>. The block has a name, so any process that
+knows the name can open it, which is how a second process finds your
+box.<sup id="fnref:shm-open"><a class="footnote-ref" href="#fn:shm-open">1</a></sup></p>
 <p>On Linux it is a <abbr title="Portable Operating System Interface. The standard that Linux and other Unix-like systems follow.">POSIX</abbr> shared memory object, <code>/dev/shm/sharedbox.&lt;name&gt;</code>,
 created with mode <code>0600</code>, readable and writable by its owner
 only.<sup id="fnref2:shm-open"><a class="footnote-ref" href="#fn:shm-open">1</a></sup> On Windows it is a file mapping backed by the page file,
@@ -3118,23 +3121,548 @@ Windows.<sup id="fnref:shared-memory"><a class="footnote-ref" href="#fn:shared-m
 never attaches to a block that another program created first.
 <a href="../../reference/segment-layout/#names">Names</a> lists every object name.</p>
 <h2 id="a-fixed-layout-header-field-table-record">A fixed layout: header, field table, record<a class="headerlink" href="#a-fixed-layout-header-field-table-record" title="Permanent link">&para;</a></h2>
-<p>The mapping starts with a 128-byte header. Then come a table with one entry
-per <a href="../glossary/#field">field</a>, one write count per field, the
-<a href="../glossary/#waiter-slot">waiter slots</a>, and the record that holds the
-field values, 64-byte aligned. <a href="../../reference/segment-layout/#layout">Layout</a>
-gives every offset.</p>
-<p>Each field has a fixed place and a fixed size in the record. Fields are
-packed by descending alignment, not declaration order. The values passed to
-<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;create&lt;/span&gt;
+<p>Inside the block, everything has a fixed place, in this order. Point at a
+part to read what it holds:</p>
+<style data-markdown-d2>.markdown-d2 { margin: 1em 0; }
+.markdown-d2-light > svg, .markdown-d2-dark > svg { display: block; max-width: 100%; height: auto; margin: 0 auto; }
+.markdown-d2 .markdown-d2-dark, .markdown-d2-dialog .markdown-d2-dark { display: none; }
+[data-md-color-scheme="slate"] .markdown-d2 .markdown-d2-dark, [data-md-color-scheme="slate"] .markdown-d2-dialog .markdown-d2-dark { display: block; }
+[data-md-color-scheme="slate"] .markdown-d2 .markdown-d2-light, [data-md-color-scheme="slate"] .markdown-d2-dialog .markdown-d2-light { display: none; }
+.markdown-d2.markdown-d2-ready { display: grid; grid-template-columns: minmax(0, 1fr); }
+.markdown-d2.markdown-d2-ready > .markdown-d2-controls { grid-row: 1; }
+.markdown-d2.markdown-d2-ready > .markdown-d2-board { grid-area: 2 / 1; }
+.markdown-d2.markdown-d2-ready > .markdown-d2-board:not(.markdown-d2-current) { visibility: hidden; }
+.markdown-d2 .markdown-d2-board + .markdown-d2-board { margin-top: 1em; }
+.markdown-d2.markdown-d2-ready .markdown-d2-board + .markdown-d2-board { margin-top: 0; }
+.markdown-d2-controls { display: flex; gap: 0.5em; align-items: center; justify-content: center; margin-bottom: 0.5em; }
+.markdown-d2-controls button { display: inline-flex; align-items: center; justify-content: center; min-width: 2em; height: 2em; font: inherit; cursor: pointer; }
+.markdown-d2-controls button svg { width: 1.2em; height: 1.2em; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.markdown-d2-dialog { width: 95vw; height: 95vh; max-width: none; max-height: none; padding: 0; overflow: hidden; }
+.markdown-d2-dialog .markdown-d2-stage { width: 100%; height: calc(100% - 3em); overflow: hidden; cursor: grab; touch-action: none; }
+.markdown-d2-dialog .markdown-d2-view { transform-origin: 0 0; }
+.markdown-d2-dialog .markdown-d2-controls { height: 3em; margin: 0; }
+.markdown-d2-error { border: 2px solid #c62828; padding: 0.5em 1em; color: #c62828; }
+.markdown-d2 svg.d2-svg > g, .markdown-d2-dialog svg.d2-svg > g { transition: opacity 0.15s; }
+.markdown-d2-focus > g:not(.markdown-d2-hovered):not(.appendix-icon) { opacity: 0.3; }
+.markdown-d2-tooltip { position: fixed; z-index: 10; max-width: 22rem; padding: 0.4em 0.6em; border-radius: 4px; font-size: 0.8rem; line-height: 1.4; pointer-events: none; background: var(--md-default-fg-color, #1e1e2e); color: var(--md-default-bg-color, #ffffff); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3); }
+.markdown-d2-tooltip[hidden] { display: none; }
+@media (prefers-reduced-motion: reduce) { .markdown-d2 svg.d2-svg > g, .markdown-d2-dialog svg.d2-svg > g { transition: none; } }
+</style><script data-markdown-d2>"use strict";
+const ZOOM_STEP = 1.25;
+const SVG = "http://www.w3.org/2000/svg";
+const ICONS = {
+    previous: "M15 6l-6 6 6 6",
+    next: "M9 6l6 6-6 6",
+    fullScreen: "M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5",
+    zoomIn: "M12 5v14M5 12h14",
+    zoomOut: "M5 12h14",
+    close: "M6 6l12 12M18 6 6 18",
+};
+function icon(name) {
+    const svg = document.createElementNS(SVG, "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("aria-hidden", "true");
+    const path = document.createElementNS(SVG, "path");
+    path.setAttribute("d", ICONS[name]);
+    svg.append(path);
+    return svg;
+}
+function button(label, content, onClick) {
+    const element = document.createElement("button");
+    element.type = "button";
+    element.append(typeof content === "string" ? icon(content) : content.text);
+    element.setAttribute("aria-label", label);
+    element.addEventListener("click", onClick);
+    return element;
+}
+const DURATION = { fade: 250, morph: 450 };
+function visibleSvg(container) {
+    for (const variant of container.querySelectorAll(":scope > .markdown-d2-light, :scope > .markdown-d2-dark")) {
+        if (getComputedStyle(variant).display !== "none")
+            return variant.querySelector("svg");
+    }
+    return null;
+}
+function shapes(svg) {
+    const found = new Map();
+    for (const group of svg.querySelectorAll("g[class]:not(.shape)")) {
+        const name = group.getAttribute("class");
+        if (name && !found.has(name))
+            found.set(name, group);
+    }
+    return found;
+}
+function measure(container) {
+    const svg = visibleSvg(container);
+    const rects = new Map();
+    for (const [name, group] of svg ? shapes(svg) : [])
+        rects.set(name, group.getBoundingClientRect());
+    return rects;
+}
+function play(transition, container, before) {
+    const svg = visibleSvg(container);
+    if (!svg || transition === "none" || matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        return;
+    }
+    const fadeIn = (element, duration) => {
+        element.animate([{ opacity: 0 }, { opacity: 1 }], { duration, easing: "ease-out" });
+    };
+    if (transition === "fade") {
+        fadeIn(svg, DURATION.fade);
+        return;
+    }
+    const units = svg.viewBox.baseVal.width / svg.getBoundingClientRect().width || 1;
+    for (const [name, group] of shapes(svg)) {
+        const old = before.get(name);
+        const now = group.getBoundingClientRect();
+        if (!old) {
+            fadeIn(group, DURATION.morph);
+            continue;
+        }
+        const x = (old.left - now.left) * units;
+        const y = (old.top - now.top) * units;
+        const scaleX = old.width && now.width ? old.width / now.width : 1;
+        const scaleY = old.height && now.height ? old.height / now.height : 1;
+        if (x === 0 && y === 0 && scaleX === 1 && scaleY === 1)
+            continue;
+        group.style.transformBox = "fill-box";
+        group.style.transformOrigin = "0 0";
+        group.animate([
+            { transform: `translate(${x}px, ${y}px) scale(${scaleX}, ${scaleY})` },
+            { transform: "none" },
+        ], { duration: DURATION.morph, easing: "ease-in-out" });
+    }
+}
+function tooltipBox(host) {
+    const found = host.querySelector(":scope > .markdown-d2-tooltip");
+    if (found)
+        return found;
+    const box = document.createElement("div");
+    box.className = "markdown-d2-tooltip";
+    box.setAttribute("role", "tooltip");
+    box.hidden = true;
+    host.append(box);
+    return box;
+}
+function hoverable(container, host) {
+    for (const title of Array.from(container.querySelectorAll("svg.d2-svg > g > title"))) {
+        const group = title.parentElement;
+        if (group)
+            group.dataset.tooltip = title.textContent ?? "";
+        title.remove();
+    }
+    const box = tooltipBox(host);
+    let hovered = null;
+    const clear = () => {
+        hovered?.classList.remove("markdown-d2-hovered");
+        hovered?.ownerSVGElement?.classList.remove("markdown-d2-focus");
+        hovered = null;
+        box.hidden = true;
+    };
+    container.addEventListener("pointerover", (event) => {
+        const target = event.target instanceof Element ? event.target : null;
+        let group = target?.closest("svg.d2-svg > g") ?? null;
+        if (group?.classList.contains("appendix-icon")) {
+            const text = group.dataset.tooltip;
+            group =
+                Array.from(group.parentElement?.children ?? []).find((sibling) => sibling instanceof SVGGElement &&
+                    !sibling.classList.contains("appendix-icon") &&
+                    sibling.dataset.tooltip === text) ?? group;
+        }
+        if (group === hovered)
+            return;
+        clear();
+        if (!group)
+            return;
+        hovered = group;
+        group.classList.add("markdown-d2-hovered");
+        group.ownerSVGElement?.classList.add("markdown-d2-focus");
+        const text = group.dataset.tooltip;
+        if (text) {
+            box.textContent = text;
+            box.hidden = false;
+        }
+    });
+    container.addEventListener("pointermove", (event) => {
+        if (box.hidden)
+            return;
+        const left = Math.min(event.clientX + 14, window.innerWidth - box.offsetWidth - 8);
+        box.style.left = `${Math.max(left, 8)}px`;
+        box.style.top = `${event.clientY + 18}px`;
+    });
+    container.addEventListener("pointerleave", clear);
+}
+function stepControls(boards, onStep) {
+    let current = 0;
+    const counter = document.createElement("span");
+    counter.className = "markdown-d2-counter";
+    counter.setAttribute("aria-live", "polite");
+    const show = (index) => {
+        current = (index + boards.length) % boards.length;
+        const name = boards[current]?.dataset.name;
+        counter.textContent = `${current + 1} / ${boards.length}${name ? ` (${name})` : ""}`;
+        onStep(current);
+    };
+    const controls = document.createElement("div");
+    controls.className = "markdown-d2-controls";
+    if (boards.length > 1) {
+        controls.append(button("Previous step", "previous", () => show(current - 1)), counter, button("Next step", "next", () => show(current + 1)));
+    }
+    return { controls, show, current: () => current };
+}
+function stepWithKeys(element, steps) {
+    element.addEventListener("keydown", (event) => {
+        if (event.key === "ArrowLeft")
+            steps.show(steps.current() - 1);
+        if (event.key === "ArrowRight")
+            steps.show(steps.current() + 1);
+    });
+}
+function setUpFigure(figure) {
+    if (figure.dataset.ready)
+        return;
+    figure.dataset.ready = "true";
+    figure.classList.add("markdown-d2-ready");
+    figure.tabIndex = 0;
+    const boards = Array.from(figure.querySelectorAll(":scope > .markdown-d2-board"));
+    const transition = (figure.dataset.transition ?? "none");
+    const steps = stepControls(boards, (current) => {
+        const old = figure.querySelector(":scope > .markdown-d2-current");
+        const before = old ? measure(old) : null;
+        for (const [i, board] of boards.entries()) {
+            board.classList.toggle("markdown-d2-current", i === current);
+        }
+        const now = boards[current];
+        if (before && now && old !== now)
+            play(transition, now, before);
+    });
+    if (boards.length > 1)
+        stepWithKeys(figure, steps);
+    steps.controls.append(button("Open full screen", "fullScreen", () => openDialog(boards, steps.current(), transition, steps.show)));
+    figure.prepend(steps.controls);
+    hoverable(figure, document.body);
+    steps.show(0);
+}
+function openDialog(boards, start, transition, onStep) {
+    const dialog = document.createElement("dialog");
+    dialog.className = "markdown-d2-dialog";
+    const stage = document.createElement("div");
+    stage.className = "markdown-d2-stage";
+    const view = document.createElement("div");
+    view.className = "markdown-d2-view";
+    stage.append(view);
+    let scale = 1;
+    let x = 0;
+    let y = 0;
+    const apply = () => {
+        view.style.transform = `translate(${x}px, ${y}px) scale(${scale})`;
+    };
+    const zoom = (factor, originX, originY) => {
+        x = originX - (originX - x) * factor;
+        y = originY - (originY - y) * factor;
+        scale *= factor;
+        apply();
+    };
+    stage.addEventListener("wheel", (event) => {
+        event.preventDefault();
+        const box = stage.getBoundingClientRect();
+        zoom(event.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP, event.clientX - box.left, event.clientY - box.top);
+    });
+    let dragging = null;
+    stage.addEventListener("pointerdown", (event) => {
+        dragging = { x: event.clientX - x, y: event.clientY - y };
+        stage.setPointerCapture(event.pointerId);
+    });
+    stage.addEventListener("pointermove", (event) => {
+        if (!dragging)
+            return;
+        x = event.clientX - dragging.x;
+        y = event.clientY - dragging.y;
+        apply();
+    });
+    stage.addEventListener("pointerup", () => (dragging = null));
+    const steps = stepControls(boards, (current) => {
+        const before = view.childElementCount ? measure(view) : null;
+        view.replaceChildren(...Array.from(boards[current]?.children ?? [], (child) => child.cloneNode(true)));
+        if (before)
+            play(transition, view, before);
+        onStep(current);
+    });
+    if (boards.length > 1)
+        stepWithKeys(dialog, steps);
+    steps.controls.append(button("Zoom in", "zoomIn", () => zoom(ZOOM_STEP, 0, 0)), button("Zoom out", "zoomOut", () => zoom(1 / ZOOM_STEP, 0, 0)), button("Reset zoom", { text: "1:1" }, () => {
+        scale = 1;
+        x = 0;
+        y = 0;
+        apply();
+    }), button("Close", "close", () => dialog.close()));
+    dialog.append(steps.controls, stage);
+    hoverable(view, dialog);
+    dialog.addEventListener("close", () => dialog.remove());
+    document.body.append(dialog);
+    steps.show(start);
+    apply();
+    dialog.showModal();
+}
+function setUpFigures() {
+    document.querySelectorAll("figure.markdown-d2").forEach(setUpFigure);
+}
+(function start() {
+    if (window.markdownD2Ready)
+        return;
+    window.markdownD2Ready = true;
+    if (window.document$)
+        window.document$.subscribe(setUpFigures);
+    else if (document.readyState === "loading")
+        document.addEventListener("DOMContentLoaded", setUpFigures);
+    else
+        setUpFigures();
+})();
+</script><figure class="markdown-d2" data-transition="morph" aria-label="Inside a segment"><div class="markdown-d2-board" data-step="1" data-name=""><div class="markdown-d2-light"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" data-d2-version="v0.9.0" preserveAspectRatio="xMinYMin meet" width="577" height="621" viewBox="0 0 577 621"><svg class="d2-3090675141 d2-svg" width="577" height="621" viewBox="-102 -118 577 621"><rect x="-102" y="-118" width="577" height="621" rx="0" fill="#FFFFFF" class=" fill-N7" stroke-width="0" /><style type="text/css"><![CDATA[
+.appendix-icon {
+	filter: drop-shadow(0px 0px 32px rgba(31, 36, 58, 0.1));
+}
+.d2-3090675141 .text-bold {
+	font-family: "d2-3090675141-font-bold";
+}
+@font-face {
+	font-family: d2-3090675141-font-bold;
+	src: url("data:application/font-woff;base64,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");
+}]]></style><style type="text/css"><![CDATA[.shape {
+  shape-rendering: geometricPrecision;
+  stroke-linejoin: round;
+}
+.connection {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.blend {
+  mix-blend-mode: multiply;
+  opacity: 0.5;
+}
+
+		.d2-3090675141 .fill-N1{fill:#0A0F25;}
+		.d2-3090675141 .fill-N7{fill:#FFFFFF;}
+		.d2-3090675141 .fill-B6{fill:#F7F8FE;}
+		.d2-3090675141 .stroke-B1{stroke:#0D32B2;}
+		.d2-3090675141 .stroke-B2{stroke:#0D32B2;}.appendix text.text{fill:#0A0F25}.md{--color-fg-default:#0A0F25;--color-fg-muted:#676C7E;--color-fg-subtle:#9499AB;--color-canvas-default:#FFFFFF;--color-canvas-subtle:#EEF1F8;--color-border-default:#0D32B2;--color-border-muted:#0D32B2;--color-neutral-muted:#EEF1F8;--color-accent-fg:#0D32B2;--color-accent-emphasis:#0D32B2;--color-attention-subtle:#676C7E;--color-danger-fg:red;}.light-code{display: block}.dark-code{display: none}]]></style><defs>
+	<filter id="shadow-filter-1" width="200%" height="200%" x="-50%" y="-50%">
+		<feGaussianBlur stdDeviation="1.7 " in="SourceGraphic"></feGaussianBlur>
+		<feFlood flood-color="#3d4574" flood-opacity="0.4" result="ShadowFeFlood" in="SourceGraphic"></feFlood>
+		<feComposite in="ShadowFeFlood" in2="SourceAlpha" operator="in" result="ShadowFeComposite"></feComposite>
+		<feOffset dx="3" dy="5" result="ShadowFeOffset" in="ShadowFeComposite"></feOffset>
+		<feBlend in="SourceGraphic" in2="ShadowFeOffset" mode="normal" result="ShadowFeBlend"></feBlend>
+	</filter>
+</defs><g class="aGVhZGVy step"><g class="shape" ><rect x="0" y="0" width="355" height="66" rx="6" stroke="#0D32B2" fill="#F7F8FE" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="177.5" y="38.5" fill="#0A0F25" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">header, 128 bytes</text><title>Line 0 is written once at creation: the magic word, the layout version, the field count, the schema hash and where the record starts. Line 1 changes with every write and wait: the sequence counter, the writer&#39;s pid and the wake-up word.</title></g><g class="dGFibGU= step"><g class="shape" ><rect x="0" y="66" width="355" height="66" rx="6" stroke="#0D32B2" fill="#F7F8FE" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="177.5" y="104.5" fill="#0A0F25" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">field table: offset, size and kind of each field</text><title>One 8-byte entry per field. A process that opens the box copies this table once and uses only its copy.</title></g><g class="Y291bnRz step"><g class="shape" ><rect x="0" y="132" width="355" height="66" rx="6" stroke="#0D32B2" fill="#F7F8FE" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="177.5" y="170.5" fill="#0A0F25" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">write count of each field</text><title>One counter per field, raised by every write to it, so a watcher can tell which fields changed.</title></g><g class="c2xvdHM= step"><g class="shape" ><rect x="0" y="198" width="355" height="66" rx="6" stroke="#0D32B2" fill="#F7F8FE" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="177.5" y="236.5" fill="#0A0F25" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">waiter slots</text><title>One slot per thread waiting for changes, recording which process holds it.</title></g><g class="ZGVzY3JpcHRpb25z step"><g class="shape" ><rect x="0" y="264" width="355" height="66" rx="6" stroke="#0D32B2" fill="#F7F8FE" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="177.5" y="302.5" fill="#0A0F25" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">descriptions of the field types</text><title>For enums, records, collections and arrays, how their values are laid out. Empty when every field is a plain number or text.</title></g><g class="cmVjb3Jk current"><g class="shape" filter="url(#shadow-filter-1)" ><rect x="0" y="330" width="355" height="66" rx="6" stroke="#0D32B2" fill="#F7F8FE" class=" stroke-B1 fill-B6" style="stroke-width:4;" /></g><text x="177.5" y="368.5" fill="#0A0F25" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">record: the field values</text><title>Starts on a 64-byte boundary. Fields are ordered by alignment, largest first, so no space is lost to padding.</title></g><g transform="translate(339 -16)" class="appendix-icon"><title>Line 0 is written once at creation: the magic word, the layout version, the field count, the schema hash and where the record starts. Line 1 changes with every write and wait: the sequence counter, the writer&#39;s pid and the wake-up word.</title><svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_3427_35082111-d2-3090675141-NBSWCZDFOI-1)">
+<path d="M16 31.1109C24.3456 31.1109 31.1111 24.3454 31.1111 15.9998C31.1111 7.65415 24.3456 0.888672 16 0.888672C7.65436 0.888672 0.888885 7.65415 0.888885 15.9998C0.888885 24.3454 7.65436 31.1109 16 31.1109Z" fill="white" stroke="#DEE1EB"/>
+<path d="M16 26C21.5228 26 26 21.5228 26 16C26 10.4772 21.5228 6 16 6C10.4772 6 6 10.4772 6 16C6 21.5228 10.4772 26 16 26Z" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 19.998V15.998" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 12H16.0098" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<defs>
+<clipPath id="clip0_3427_35082111-d2-3090675141-NBSWCZDFOI-1">
+<rect width="32" height="32" fill="white"/>
+</clipPath>
+</defs>
+</svg>
+</g><g transform="translate(339 50)" class="appendix-icon"><title>One 8-byte entry per field. A process that opens the box copies this table once and uses only its copy.</title><svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_3427_35082111-d2-3090675141-ORQWE3DF-1)">
+<path d="M16 31.1109C24.3456 31.1109 31.1111 24.3454 31.1111 15.9998C31.1111 7.65415 24.3456 0.888672 16 0.888672C7.65436 0.888672 0.888885 7.65415 0.888885 15.9998C0.888885 24.3454 7.65436 31.1109 16 31.1109Z" fill="white" stroke="#DEE1EB"/>
+<path d="M16 26C21.5228 26 26 21.5228 26 16C26 10.4772 21.5228 6 16 6C10.4772 6 6 10.4772 6 16C6 21.5228 10.4772 26 16 26Z" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 19.998V15.998" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 12H16.0098" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<defs>
+<clipPath id="clip0_3427_35082111-d2-3090675141-ORQWE3DF-1">
+<rect width="32" height="32" fill="white"/>
+</clipPath>
+</defs>
+</svg>
+</g><g transform="translate(339 116)" class="appendix-icon"><title>One counter per field, raised by every write to it, so a watcher can tell which fields changed.</title><svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_3427_35082111-d2-3090675141-MNXXK3TUOM-1)">
+<path d="M16 31.1109C24.3456 31.1109 31.1111 24.3454 31.1111 15.9998C31.1111 7.65415 24.3456 0.888672 16 0.888672C7.65436 0.888672 0.888885 7.65415 0.888885 15.9998C0.888885 24.3454 7.65436 31.1109 16 31.1109Z" fill="white" stroke="#DEE1EB"/>
+<path d="M16 26C21.5228 26 26 21.5228 26 16C26 10.4772 21.5228 6 16 6C10.4772 6 6 10.4772 6 16C6 21.5228 10.4772 26 16 26Z" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 19.998V15.998" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 12H16.0098" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<defs>
+<clipPath id="clip0_3427_35082111-d2-3090675141-MNXXK3TUOM-1">
+<rect width="32" height="32" fill="white"/>
+</clipPath>
+</defs>
+</svg>
+</g><g transform="translate(339 182)" class="appendix-icon"><title>One slot per thread waiting for changes, recording which process holds it.</title><svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_3427_35082111-d2-3090675141-ONWG65DT-1)">
+<path d="M16 31.1109C24.3456 31.1109 31.1111 24.3454 31.1111 15.9998C31.1111 7.65415 24.3456 0.888672 16 0.888672C7.65436 0.888672 0.888885 7.65415 0.888885 15.9998C0.888885 24.3454 7.65436 31.1109 16 31.1109Z" fill="white" stroke="#DEE1EB"/>
+<path d="M16 26C21.5228 26 26 21.5228 26 16C26 10.4772 21.5228 6 16 6C10.4772 6 6 10.4772 6 16C6 21.5228 10.4772 26 16 26Z" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 19.998V15.998" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 12H16.0098" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<defs>
+<clipPath id="clip0_3427_35082111-d2-3090675141-ONWG65DT-1">
+<rect width="32" height="32" fill="white"/>
+</clipPath>
+</defs>
+</svg>
+</g><g transform="translate(339 248)" class="appendix-icon"><title>For enums, records, collections and arrays, how their values are laid out. Empty when every field is a plain number or text.</title><svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_3427_35082111-d2-3090675141-MRSXGY3SNFYHI2LPNZZQ-1)">
+<path d="M16 31.1109C24.3456 31.1109 31.1111 24.3454 31.1111 15.9998C31.1111 7.65415 24.3456 0.888672 16 0.888672C7.65436 0.888672 0.888885 7.65415 0.888885 15.9998C0.888885 24.3454 7.65436 31.1109 16 31.1109Z" fill="white" stroke="#DEE1EB"/>
+<path d="M16 26C21.5228 26 26 21.5228 26 16C26 10.4772 21.5228 6 16 6C10.4772 6 6 10.4772 6 16C6 21.5228 10.4772 26 16 26Z" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 19.998V15.998" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 12H16.0098" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<defs>
+<clipPath id="clip0_3427_35082111-d2-3090675141-MRSXGY3SNFYHI2LPNZZQ-1">
+<rect width="32" height="32" fill="white"/>
+</clipPath>
+</defs>
+</svg>
+</g><g transform="translate(339 314)" class="appendix-icon"><title>Starts on a 64-byte boundary. Fields are ordered by alignment, largest first, so no space is lost to padding.</title><svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_3427_35082111-d2-3090675141-OJSWG33SMQ-1)">
+<path d="M16 31.1109C24.3456 31.1109 31.1111 24.3454 31.1111 15.9998C31.1111 7.65415 24.3456 0.888672 16 0.888672C7.65436 0.888672 0.888885 7.65415 0.888885 15.9998C0.888885 24.3454 7.65436 31.1109 16 31.1109Z" fill="white" stroke="#DEE1EB"/>
+<path d="M16 26C21.5228 26 26 21.5228 26 16C26 10.4772 21.5228 6 16 6C10.4772 6 6 10.4772 6 16C6 21.5228 10.4772 26 16 26Z" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 19.998V15.998" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 12H16.0098" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<defs>
+<clipPath id="clip0_3427_35082111-d2-3090675141-OJSWG33SMQ-1">
+<rect width="32" height="32" fill="white"/>
+</clipPath>
+</defs>
+</svg>
+</g><mask id="d2-3090675141-1" maskUnits="userSpaceOnUse" x="-102" y="-118" width="577" height="621">
+<rect x="-102" y="-118" width="577" height="621" fill="white"></rect>
+
+</mask></svg></svg></div><div class="markdown-d2-dark"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" data-d2-version="v0.9.0" preserveAspectRatio="xMinYMin meet" width="577" height="621" viewBox="0 0 577 621"><svg class="d2-3224896093 d2-svg" width="577" height="621" viewBox="-102 -118 577 621"><rect x="-102" y="-118" width="577" height="621" rx="0" fill="#1E1E2E" class=" fill-N7" stroke-width="0" /><style type="text/css"><![CDATA[
+.appendix-icon {
+	filter: drop-shadow(0px 0px 32px rgba(31, 36, 58, 0.1));
+}
+.d2-3224896093 .text-bold {
+	font-family: "d2-3224896093-font-bold";
+}
+@font-face {
+	font-family: d2-3224896093-font-bold;
+	src: url("data:application/font-woff;base64,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");
+}]]></style><style type="text/css"><![CDATA[.shape {
+  shape-rendering: geometricPrecision;
+  stroke-linejoin: round;
+}
+.connection {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.blend {
+  mix-blend-mode: multiply;
+  opacity: 0.5;
+}
+
+		.d2-3224896093 .fill-N1{fill:#CDD6F4;}
+		.d2-3224896093 .fill-N7{fill:#1E1E2E;}
+		.d2-3224896093 .fill-B6{fill:#313244;}
+		.d2-3224896093 .stroke-B1{stroke:#CBA6f7;}
+		.d2-3224896093 .stroke-B2{stroke:#CBA6f7;}.appendix text.text{fill:#CDD6F4}.md{--color-fg-default:#CDD6F4;--color-fg-muted:#BAC2DE;--color-fg-subtle:#A6ADC8;--color-canvas-default:#1E1E2E;--color-canvas-subtle:#313244;--color-border-default:#CBA6f7;--color-border-muted:#CBA6f7;--color-neutral-muted:#313244;--color-accent-fg:#CBA6f7;--color-accent-emphasis:#CBA6f7;--color-attention-subtle:#BAC2DE;--color-danger-fg:red;}.light-code{display: none}.dark-code{display: block}]]></style><defs>
+	<filter id="shadow-filter-2" width="200%" height="200%" x="-50%" y="-50%">
+		<feGaussianBlur stdDeviation="1.7 " in="SourceGraphic"></feGaussianBlur>
+		<feFlood flood-color="#3d4574" flood-opacity="0.4" result="ShadowFeFlood" in="SourceGraphic"></feFlood>
+		<feComposite in="ShadowFeFlood" in2="SourceAlpha" operator="in" result="ShadowFeComposite"></feComposite>
+		<feOffset dx="3" dy="5" result="ShadowFeOffset" in="ShadowFeComposite"></feOffset>
+		<feBlend in="SourceGraphic" in2="ShadowFeOffset" mode="normal" result="ShadowFeBlend"></feBlend>
+	</filter>
+</defs><g class="aGVhZGVy step"><g class="shape" ><rect x="0" y="0" width="355" height="66" rx="6" stroke="#CBA6f7" fill="#313244" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="177.5" y="38.5" fill="#CDD6F4" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">header, 128 bytes</text><title>Line 0 is written once at creation: the magic word, the layout version, the field count, the schema hash and where the record starts. Line 1 changes with every write and wait: the sequence counter, the writer&#39;s pid and the wake-up word.</title></g><g class="dGFibGU= step"><g class="shape" ><rect x="0" y="66" width="355" height="66" rx="6" stroke="#CBA6f7" fill="#313244" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="177.5" y="104.5" fill="#CDD6F4" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">field table: offset, size and kind of each field</text><title>One 8-byte entry per field. A process that opens the box copies this table once and uses only its copy.</title></g><g class="Y291bnRz step"><g class="shape" ><rect x="0" y="132" width="355" height="66" rx="6" stroke="#CBA6f7" fill="#313244" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="177.5" y="170.5" fill="#CDD6F4" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">write count of each field</text><title>One counter per field, raised by every write to it, so a watcher can tell which fields changed.</title></g><g class="c2xvdHM= step"><g class="shape" ><rect x="0" y="198" width="355" height="66" rx="6" stroke="#CBA6f7" fill="#313244" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="177.5" y="236.5" fill="#CDD6F4" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">waiter slots</text><title>One slot per thread waiting for changes, recording which process holds it.</title></g><g class="ZGVzY3JpcHRpb25z step"><g class="shape" ><rect x="0" y="264" width="355" height="66" rx="6" stroke="#CBA6f7" fill="#313244" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="177.5" y="302.5" fill="#CDD6F4" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">descriptions of the field types</text><title>For enums, records, collections and arrays, how their values are laid out. Empty when every field is a plain number or text.</title></g><g class="cmVjb3Jk current"><g class="shape" filter="url(#shadow-filter-2)" ><rect x="0" y="330" width="355" height="66" rx="6" stroke="#CBA6f7" fill="#313244" class=" stroke-B1 fill-B6" style="stroke-width:4;" /></g><text x="177.5" y="368.5" fill="#CDD6F4" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">record: the field values</text><title>Starts on a 64-byte boundary. Fields are ordered by alignment, largest first, so no space is lost to padding.</title></g><g transform="translate(339 -16)" class="appendix-icon"><title>Line 0 is written once at creation: the magic word, the layout version, the field count, the schema hash and where the record starts. Line 1 changes with every write and wait: the sequence counter, the writer&#39;s pid and the wake-up word.</title><svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_3427_35082111-d2-3224896093-NBSWCZDFOI-2)">
+<path d="M16 31.1109C24.3456 31.1109 31.1111 24.3454 31.1111 15.9998C31.1111 7.65415 24.3456 0.888672 16 0.888672C7.65436 0.888672 0.888885 7.65415 0.888885 15.9998C0.888885 24.3454 7.65436 31.1109 16 31.1109Z" fill="white" stroke="#DEE1EB"/>
+<path d="M16 26C21.5228 26 26 21.5228 26 16C26 10.4772 21.5228 6 16 6C10.4772 6 6 10.4772 6 16C6 21.5228 10.4772 26 16 26Z" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 19.998V15.998" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 12H16.0098" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<defs>
+<clipPath id="clip0_3427_35082111-d2-3224896093-NBSWCZDFOI-2">
+<rect width="32" height="32" fill="white"/>
+</clipPath>
+</defs>
+</svg>
+</g><g transform="translate(339 50)" class="appendix-icon"><title>One 8-byte entry per field. A process that opens the box copies this table once and uses only its copy.</title><svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_3427_35082111-d2-3224896093-ORQWE3DF-2)">
+<path d="M16 31.1109C24.3456 31.1109 31.1111 24.3454 31.1111 15.9998C31.1111 7.65415 24.3456 0.888672 16 0.888672C7.65436 0.888672 0.888885 7.65415 0.888885 15.9998C0.888885 24.3454 7.65436 31.1109 16 31.1109Z" fill="white" stroke="#DEE1EB"/>
+<path d="M16 26C21.5228 26 26 21.5228 26 16C26 10.4772 21.5228 6 16 6C10.4772 6 6 10.4772 6 16C6 21.5228 10.4772 26 16 26Z" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 19.998V15.998" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 12H16.0098" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<defs>
+<clipPath id="clip0_3427_35082111-d2-3224896093-ORQWE3DF-2">
+<rect width="32" height="32" fill="white"/>
+</clipPath>
+</defs>
+</svg>
+</g><g transform="translate(339 116)" class="appendix-icon"><title>One counter per field, raised by every write to it, so a watcher can tell which fields changed.</title><svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_3427_35082111-d2-3224896093-MNXXK3TUOM-2)">
+<path d="M16 31.1109C24.3456 31.1109 31.1111 24.3454 31.1111 15.9998C31.1111 7.65415 24.3456 0.888672 16 0.888672C7.65436 0.888672 0.888885 7.65415 0.888885 15.9998C0.888885 24.3454 7.65436 31.1109 16 31.1109Z" fill="white" stroke="#DEE1EB"/>
+<path d="M16 26C21.5228 26 26 21.5228 26 16C26 10.4772 21.5228 6 16 6C10.4772 6 6 10.4772 6 16C6 21.5228 10.4772 26 16 26Z" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 19.998V15.998" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 12H16.0098" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<defs>
+<clipPath id="clip0_3427_35082111-d2-3224896093-MNXXK3TUOM-2">
+<rect width="32" height="32" fill="white"/>
+</clipPath>
+</defs>
+</svg>
+</g><g transform="translate(339 182)" class="appendix-icon"><title>One slot per thread waiting for changes, recording which process holds it.</title><svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_3427_35082111-d2-3224896093-ONWG65DT-2)">
+<path d="M16 31.1109C24.3456 31.1109 31.1111 24.3454 31.1111 15.9998C31.1111 7.65415 24.3456 0.888672 16 0.888672C7.65436 0.888672 0.888885 7.65415 0.888885 15.9998C0.888885 24.3454 7.65436 31.1109 16 31.1109Z" fill="white" stroke="#DEE1EB"/>
+<path d="M16 26C21.5228 26 26 21.5228 26 16C26 10.4772 21.5228 6 16 6C10.4772 6 6 10.4772 6 16C6 21.5228 10.4772 26 16 26Z" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 19.998V15.998" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 12H16.0098" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<defs>
+<clipPath id="clip0_3427_35082111-d2-3224896093-ONWG65DT-2">
+<rect width="32" height="32" fill="white"/>
+</clipPath>
+</defs>
+</svg>
+</g><g transform="translate(339 248)" class="appendix-icon"><title>For enums, records, collections and arrays, how their values are laid out. Empty when every field is a plain number or text.</title><svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_3427_35082111-d2-3224896093-MRSXGY3SNFYHI2LPNZZQ-2)">
+<path d="M16 31.1109C24.3456 31.1109 31.1111 24.3454 31.1111 15.9998C31.1111 7.65415 24.3456 0.888672 16 0.888672C7.65436 0.888672 0.888885 7.65415 0.888885 15.9998C0.888885 24.3454 7.65436 31.1109 16 31.1109Z" fill="white" stroke="#DEE1EB"/>
+<path d="M16 26C21.5228 26 26 21.5228 26 16C26 10.4772 21.5228 6 16 6C10.4772 6 6 10.4772 6 16C6 21.5228 10.4772 26 16 26Z" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 19.998V15.998" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 12H16.0098" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<defs>
+<clipPath id="clip0_3427_35082111-d2-3224896093-MRSXGY3SNFYHI2LPNZZQ-2">
+<rect width="32" height="32" fill="white"/>
+</clipPath>
+</defs>
+</svg>
+</g><g transform="translate(339 314)" class="appendix-icon"><title>Starts on a 64-byte boundary. Fields are ordered by alignment, largest first, so no space is lost to padding.</title><svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_3427_35082111-d2-3224896093-OJSWG33SMQ-2)">
+<path d="M16 31.1109C24.3456 31.1109 31.1111 24.3454 31.1111 15.9998C31.1111 7.65415 24.3456 0.888672 16 0.888672C7.65436 0.888672 0.888885 7.65415 0.888885 15.9998C0.888885 24.3454 7.65436 31.1109 16 31.1109Z" fill="white" stroke="#DEE1EB"/>
+<path d="M16 26C21.5228 26 26 21.5228 26 16C26 10.4772 21.5228 6 16 6C10.4772 6 6 10.4772 6 16C6 21.5228 10.4772 26 16 26Z" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 19.998V15.998" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 12H16.0098" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<defs>
+<clipPath id="clip0_3427_35082111-d2-3224896093-OJSWG33SMQ-2">
+<rect width="32" height="32" fill="white"/>
+</clipPath>
+</defs>
+</svg>
+</g><mask id="d2-3224896093-2" maskUnits="userSpaceOnUse" x="-102" y="-118" width="577" height="621">
+<rect x="-102" y="-118" width="577" height="621" fill="white"></rect>
+
+</mask></svg></svg></div></div><figcaption>Inside a segment</figcaption></figure>
+<p><a href="../../reference/segment-layout/#layout">Layout</a> gives every offset. The
+values you pass to <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;create&lt;/span&gt;
 
 
   &lt;span class=&quot;doc doc-labels&quot;&gt;
       &lt;small class=&quot;doc doc-label doc-label-classmethod&quot;&gt;&lt;code&gt;classmethod&lt;/code&gt;&lt;/small&gt;
-  &lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.create"><code>create</code></a> are written into the record before
-the header's <code>magic</code> word is set, so an attaching process never sees a
-record before every field holds its starting value.</p>
-<p>sharedbox uses fixed places instead of something more flexible, such as a
-dictionary stored in shared memory, for three reasons:</p>
+  &lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.create"><code>create</code></a> are in the record
+before the header's <code>magic</code> word is set, and a process that attaches waits
+for that word, so it never sees a <a href="../glossary/#field">field</a> before it
+holds its starting value.</p>
+<p>Fixed places might look rigid next to something like a dictionary kept in
+shared memory, but they buy three things:</p>
 <ul>
 <li>Reading or writing a field is one copy of a known number of bytes to or
   from a known address. There is no structure to walk and nothing to
@@ -3147,16 +3675,19 @@ dictionary stored in shared memory, for three reasons:</p>
   refused: the <a href="../glossary/#schema-hash">schema hash</a> in the header must
   match the hash the opener computes from its own class.</li>
 </ul>
-<p>The record's position is stored as an offset rather than as an address,
-because each process maps the block at a different address.</p>
+<p>The record's position is stored as a distance from the start of the block,
+not as an address, because each process maps the block at a different
+address.</p>
 <h2 id="how-values-are-stored">How values are stored<a class="headerlink" href="#how-values-are-stored" title="Permanent link">&para;</a></h2>
-<p>Values are stored as fixed-size bytes: numbers packed the way <code>struct</code>
-packs them, text as UTF-8. Stored bytes are never unpickled or executed.
+<p>Every value is turned into a fixed number of bytes: numbers packed the way
+<code>struct</code> packs them, text as UTF-8. Reading turns the bytes back into a
+value, and nothing stored is ever unpickled or run as code.
 The table in <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;SharedBox&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox"><code>SharedBox</code></a> lists the stored size of
 each field type, and <a href="../../reference/segment-layout/#layout">Layout</a> the
 bytes of each kind.</p>
-<p>Because a value is copied into the record, a box holds only the stored
-types, listed in <a href="../field-types/">Field types</a>, and not arbitrary objects.
+<p>Because each value is copied into the record as bytes, a box can only hold
+the types it knows how to store, listed in <a href="../field-types/">Field types</a>,
+and not any Python object.
 A field takes the room of its <a href="../glossary/#capacity">capacity</a> whatever it
 holds.
 <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;Capacity&lt;/span&gt;
@@ -3166,41 +3697,44 @@ holds.
       &lt;small class=&quot;doc doc-label doc-label-dataclass&quot;&gt;&lt;code&gt;dataclass&lt;/code&gt;&lt;/small&gt;
   &lt;/span&gt;" href="../../reference/api/box/#sharedbox.Capacity"><code>Capacity</code></a> goes inside <code>Annotated</code> because it belongs
 to the stored type, not to the field's options.</p>
-<p>Each field is an attribute of the class that reads and writes the record.
-A plain class attribute with the same name in a subclass would hide that
-attribute, so a subclass cannot set one on an inherited field; it declares
-the field again with an annotation instead (see
-<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-function&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;field&lt;/span&gt;" href="../../reference/api/box/#sharedbox.field"><code>field</code></a>).</p>
+<p>Each field is an attribute of the class, and reading or writing that
+attribute is what reaches into the record. A plain class attribute with the
+same name in a subclass would hide it, so a subclass can't simply assign a
+new default to an inherited field; it declares the field again with an
+annotation instead (see <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-function&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;field&lt;/span&gt;" href="../../reference/api/box/#sharedbox.field"><code>field</code></a>).</p>
 <p>Two box objects on the same segment share one record, so they always hold
-the same values. Comparing boxes by their values would therefore say
-nothing, and boxes compare equal only when they are the same object.</p>
+the same values, and comparing them by value would tell you nothing. So <code>==</code>
+on two boxes is <code>True</code> only when both are the same Python object, just as
+<code>is</code> would be.</p>
 <h2 id="the-schema-hash">The schema hash<a class="headerlink" href="#the-schema-hash" title="Permanent link">&para;</a></h2>
-<p>The field table tells the C++ side each field's offset, capacity and kind,
-but nothing in it says which field is called <code>position</code>, or whether the
-attaching class declares the field at offset 16 as an <code>int</code> or a <code>float</code>.
-Only the class knows that. So when two processes open the same block,
-something has to confirm they agree on the meaning of every byte;
-otherwise one process would read another's <code>float</code> as an <code>int</code> and get
-wrong values with no error.</p>
-<p>The schema hash is the first 8 bytes of SHA-256 over the class's
-<a href="../glossary/#identity">identity</a> and each field's name and type text.
+<p>Imagine one process declares the field at offset 16 as a <code>float</code> and
+another, running older code, as an <code>int</code>. The second would read the first
+one's numbers as nonsense, with no error to warn it. The field table can't
+catch that: it gives each field's offset, capacity and kind, but not which
+field is called <code>position</code>, and only the classes know what the fields
+mean. So when a process opens a block, something has to confirm that its
+class agrees with the creator's about every byte.</p>
+<p>That something is the <a href="../glossary/#schema-hash">schema hash</a>: a fingerprint
+of the class's <a href="../glossary/#identity">identity</a> and each field's name and
+type, stored in the header by the process that creates the box.
 <a href="../../reference/segment-layout/#schema-identity">Schema identity</a> has the
-exact text and a test vector. The identity is <code>module.qualname</code> unless the
-class sets <code>identity=</code>. The attaching process compares the header's hash
-with its own class's after the layout checks and before it reads any field.</p>
-<p>Anything that changes the meaning of the bytes changes the hash and makes
+exact text that is hashed and a worked example. A process that attaches
+works out the hash from its own class and compares it with the header's
+before it reads any field.</p>
+<p>So anything that changes the meaning of the bytes changes the hash, and
 <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;attach&lt;/span&gt;
 
 
   &lt;span class=&quot;doc doc-labels&quot;&gt;
       &lt;small class=&quot;doc doc-label doc-label-classmethod&quot;&gt;&lt;code&gt;classmethod&lt;/code&gt;&lt;/small&gt;
-  &lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.attach"><code>attach</code></a> raise
-<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;SchemaMismatchError&lt;/span&gt;" href="../../reference/api/errors/#sharedbox.SchemaMismatchError"><code>SchemaMismatchError</code></a>: a field added,
-removed, renamed, reordered or given another type or capacity, and the
-identity changed (by default, the class moved to another module or
-renamed). A change that leaves the bytes' meaning alone does not: a new
-method, a docstring, a default value.</p>
-<p>What the schema hash is not:</p>
+  &lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.attach"><code>attach</code></a> raises
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;SchemaMismatchError&lt;/span&gt;" href="../../reference/api/errors/#sharedbox.SchemaMismatchError"><code>SchemaMismatchError</code></a> instead of reading
+nonsense. That covers adding, removing, renaming or reordering a field,
+changing its type or capacity, and changing the identity (which by default
+happens when you move or rename the class). Changes that leave the bytes'
+meaning alone don't affect it: a new method, a docstring, a different
+default value.</p>
+<p>It helps to know what the schema hash doesn't do:</p>
 <ul>
 <li>It is not a check of who created the block. Any process that can write
   the block can write any hash into the header. It protects against

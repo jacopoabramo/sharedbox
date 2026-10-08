@@ -3024,8 +3024,11 @@
 
 
 <h1 id="c-and-c-interface">C and C++ interface<a class="headerlink" href="#c-and-c-interface" title="Permanent link">&para;</a></h1>
-<p>sharedbox installs two headers with its wheel, in the folder that
-<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-function&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;get_include&lt;/span&gt;" href="../api/library-authors/#sharedbox.get_include"><code>get_include</code></a> returns:</p>
+<p>C and C++ code reaches a box through two headers that come with the
+<code>sharedbox</code> wheel, in the folder that <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-function&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;get_include&lt;/span&gt;" href="../api/library-authors/#sharedbox.get_include"><code>get_include</code></a>
+returns. This page says where each one is specified; to get started, follow
+<a href="../../how-to/accept-a-box-in-cpp/">How to accept a box in a C++ extension</a>
+instead.</p>
 <table>
 <thead>
 <tr>
@@ -3057,10 +3060,10 @@ returns, is specified in
 <a href="../segment-layout/#the-pycapsule-interface">The PyCapsule interface</a>. The
 CMake targets are in <a href="../segment-layout/#build-and-packaging">Build and packaging</a>.</p>
 <h2 id="thread-safety">Thread safety<a class="headerlink" href="#thread-safety" title="Permanent link">&para;</a></h2>
-<p>Calls from several threads on one <a href="../../explanation/glossary/#handle">handle</a>
-follow the same rules for an <code>sbx_handle</code> and the C functions as for
-<code>sharedbox::handle</code>. The rules are listed in
-<a href="../segment-layout/#sharedboxhpp"><code>sharedbox.hpp</code></a>.</p>
+<p>Which calls you may make from several threads on one
+<a href="../../explanation/glossary/#handle">handle</a> is the same whether you use
+<code>sharedbox::handle</code> or an <code>sbx_handle</code> with the C functions. The rules are
+listed in <a href="../segment-layout/#sharedboxhpp"><code>sharedbox.hpp</code></a>.</p>
 <h2 id="errors">Errors<a class="headerlink" href="#errors" title="Permanent link">&para;</a></h2>
 <ul>
 <li><a href="../segment-layout/#implementation-language">Implementation language</a>:

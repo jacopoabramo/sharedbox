@@ -3129,26 +3129,28 @@
 
 
 <h1 id="how-to-accept-a-box-in-a-c-extension">How to accept a box in a C extension<a class="headerlink" href="#how-to-accept-a-box-in-a-c-extension" title="Permanent link">&para;</a></h1>
-<p>A C extension takes a <a href="../../explanation/glossary/#box">box</a> from Python
-the same way a C++ one does, through the minimal C interface
-<code>sharedbox/sharedbox_c.h</code>. This guide shows only what differs from
-<a href="../accept-a-box-in-cpp/">How to accept a box in a C++ extension</a>, and uses
+<p>A C extension can take a <a href="../../explanation/glossary/#box">box</a> from Python just as a C++ one
+does, through the C interface <code>sharedbox/sharedbox_c.h</code>. Most of the work is
+the same, so this guide only shows what differs from
+<a href="../accept-a-box-in-cpp/">How to accept a box in a C++ extension</a>. It uses
 the same <code>Frame</code> class and constants as
 <a href="../accept-a-box-in-cpp/#know-the-box-you-expect">that guide</a>.</p>
 <h2 id="before-you-start">Before you start<a class="headerlink" href="#before-you-start" title="Permanent link">&para;</a></h2>
 <div class="admonition note">
 <p class="admonition-title">What you need</p>
-<p>A C compiler and a C++20 compiler on Windows or Linux.
+<p>A C compiler and a C++20 compiler on Windows or Linux. You need both
+because the C interface is itself written in C++;
 <a href="../accept-a-box-in-cpp/#build-against-the-header">Build against the header</a>
-says why C code needs the C++ compiler too.</p>
+explains how it gets compiled into your extension.</p>
 </div>
 <h2 id="build-against-the-header">Build against the header<a class="headerlink" href="#build-against-the-header" title="Permanent link">&para;</a></h2>
 <p>Follow <a href="../accept-a-box-in-cpp/#build-against-the-header">Build against the header</a>
-in the C++ guide, and with CMake link <code>sharedbox::c</code>.</p>
+in the C++ guide, and with CMake link <code>sharedbox::c</code> instead of
+<code>sharedbox::headers</code>.</p>
 <h2 id="take-the-box-from-the-capsule">Take the box from the capsule<a class="headerlink" href="#take-the-box-from-the-capsule" title="Permanent link">&para;</a></h2>
-<p><code>sbx_import</code> takes the capsule's
-<a href="../../explanation/glossary/#handle">handle</a> into <code>own</code>, and <code>sbx_release</code>
-releases it:</p>
+<p>In C, <code>sbx_import</code> moves the capsule's <a href="../../explanation/glossary/#handle">handle</a> into a
+variable of your own, here <code>own</code>, and <code>sbx_release</code> lets go of it when
+you're done:</p>
 <div class="language-c highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;Python.h&gt;</span>
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;sharedbox/sharedbox_c.h&gt;</span>
 </span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
@@ -3169,7 +3171,7 @@ releases it:</p>
 </span><span id="__span-0-18"><a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a><span class="w">        </span><span class="n">PyCapsule_SetName</span><span class="p">(</span><span class="n">capsule</span><span class="p">,</span><span class="w"> </span><span class="s">"used_sharedbox_box"</span><span class="p">);</span>
 </span><span id="__span-0-19"><a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a><span class="w">    </span><span class="n">Py_DECREF</span><span class="p">(</span><span class="n">capsule</span><span class="p">);</span>
 </span><span id="__span-0-20"><a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">rc</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="n">SBX_OK</span><span class="p">)</span>
-</span><span id="__span-0-21"><a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a><span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">PyErr_Format</span><span class="p">(</span><span class="n">PyExc_ValueError</span><span class="p">,</span><span class="w"> </span><span class="s">"not a sharedbox layout 1.x box: %d"</span><span class="p">,</span><span class="w"> </span><span class="n">rc</span><span class="p">);</span>
+</span><span id="__span-0-21"><a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a><span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">PyErr_Format</span><span class="p">(</span><span class="n">PyExc_ValueError</span><span class="p">,</span><span class="w"> </span><span class="s">"not a box sharedbox_c.h can open: %d"</span><span class="p">,</span><span class="w"> </span><span class="n">rc</span><span class="p">);</span>
 </span><span id="__span-0-22"><a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">sbx_schema_hash</span><span class="p">(</span><span class="o">&amp;</span><span class="n">own</span><span class="p">)</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="n">FRAME_SCHEMA</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
 </span><span id="__span-0-23"><a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a><span class="w">        </span><span class="n">sbx_release</span><span class="p">(</span><span class="o">&amp;</span><span class="n">own</span><span class="p">);</span>
 </span><span id="__span-0-24"><a id="__codelineno-0-24" name="__codelineno-0-24" href="#__codelineno-0-24"></a><span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">PyErr_Format</span><span class="p">(</span><span class="n">PyExc_TypeError</span><span class="p">,</span><span class="w"> </span><span class="s">"expected a Frame box"</span><span class="p">);</span>
@@ -3183,12 +3185,21 @@ releases it:</p>
 </span><span id="__span-0-32"><a id="__codelineno-0-32" name="__codelineno-0-32" href="#__codelineno-0-32"></a><span class="p">}</span>
 </span></code></pre></div>
 <h2 id="what-the-c-interface-leaves-out">What the C interface leaves out<a class="headerlink" href="#what-the-c-interface-leaves-out" title="Permanent link">&para;</a></h2>
-<p><code>sharedbox_c.h</code> is minimal and may be removed in a future major version.
-It has six functions: <code>sbx_open</code>, <code>sbx_import</code>, <code>sbx_read</code>, <code>sbx_write</code>,
-<code>sbx_schema_hash</code> and <code>sbx_release</code>. Waiting for changes, creating a box,
-<code>force_unlock</code> and <code>unlink</code> are in the C++ <abbr title="Application programming interface. The functions and classes a library offers to code that uses it.">API</abbr> only.</p>
-<p><a href="https://github.com/jacopoabramo/sharedbox/blob/main/tests/cpp/consumer/"><code>tests/cpp/consumer/</code></a>
-is a C library built this way against an installed wheel.</p>
+<p><code>sharedbox_c.h</code> covers reading and writing, and little else. It opens or
+imports a box (<code>sbx_open</code>, <code>sbx_import</code>), checks its schema hash
+(<code>sbx_schema_hash</code>), reads and writes a field's bytes (<code>sbx_read</code>,
+<code>sbx_write</code>) and releases the box (<code>sbx_release</code>). For fields of the
+described types it also has <code>sbx_field_desc</code>, which gives you a field's kind
+code and description, a typed <code>sbx_read_*</code> and <code>sbx_write_*</code> pair for
+dates, times, datetimes, timedeltas, UUIDs, complex numbers, flags and the
+position of an enum member or literal value, and <code>sbx_read_present</code>, which
+tells you whether an optional field holds a value.</p>
+<p>Waiting for changes, creating a box, <code>force_unlock</code> and <code>unlink</code> are only
+in the C++ <abbr title="Application programming interface. The functions and classes a library offers to code that uses it.">API</abbr>, and <code>sharedbox_c.h</code> may be removed in a future major
+version, so prefer <code>sharedbox.hpp</code> when you can use C++.</p>
+<p>For a complete example, see
+<a href="https://github.com/jacopoabramo/sharedbox/blob/main/tests/cpp/consumer/"><code>tests/cpp/consumer/</code></a>,
+a C library built this way against an installed wheel.</p>
 <h2 id="next-steps">Next steps<a class="headerlink" href="#next-steps" title="Permanent link">&para;</a></h2>
 <ul>
 <li><a href="../../reference/cpp-and-c-api/">C and C++ interface</a>: which calls may

@@ -3127,22 +3127,22 @@
 
 
 <h1 id="sharing-a-record-between-processes">Sharing a record between processes<a class="headerlink" href="#sharing-a-record-between-processes" title="Permanent link">&para;</a></h1>
-<p>In this tutorial you define a record with three
-<a href="../../explanation/glossary/#field">fields</a>, create it in shared memory, and
-change one field from a second process. Such a record is a
-<a href="../../explanation/glossary/#box">box</a>.</p>
+<p>In this tutorial you build a small script in which two processes share one
+record: the first creates it, the second changes a value in it, and the
+first reads the change. Such a record is a <a href="../../explanation/glossary/#box">box</a>, and on the way
+you meet the three calls you will use most: <code>create</code>, <code>attach</code> and <code>close</code>.</p>
 <h2 id="before-you-start">Before you start<a class="headerlink" href="#before-you-start" title="Permanent link">&para;</a></h2>
 <div class="admonition note">
 <p class="admonition-title">What you need</p>
 <p>Python 3.11 or newer on Windows or Linux, and
 <a href="https://docs.astral.sh/uv/"><code>uv</code></a>.</p>
 </div>
-<p>Make a project folder and add sharedbox to it:</p>
+<p>Make a project folder and add <code>sharedbox</code> to it:</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>uv<span class="w"> </span>init<span class="w"> </span>--bare<span class="w"> </span>--pin-python<span class="w"> </span>--python<span class="w"> </span><span class="m">3</span>.11
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>uv<span class="w"> </span>add<span class="w"> </span>sharedbox
 </span></code></pre></div>
-<p>In the folder, make an empty file called <code>motor.py</code>. Start it with these
-imports:</p>
+<p>In the folder, create an empty file called <code>motor.py</code> and start it with
+these imports:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">multiprocessing</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">mp</span>
 </span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="kn">import</span><span class="w"> </span><span class="nn">queue</span>
 </span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="kn">import</span><span class="w"> </span><span class="nn">time</span>
@@ -3150,21 +3150,28 @@ imports:</p>
 </span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>
 </span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sharedbox</span><span class="w"> </span><span class="kn">import</span> <span class="n">Capacity</span><span class="p">,</span> <span class="n">SharedBox</span>
 </span></code></pre></div>
-<p>The <a href="../refer-to-another-box/">third tutorial</a> uses <code>queue</code> and <code>time</code>.</p>
+<p>You won't need <code>queue</code> and <code>time</code> until the
+<a href="../refer-to-another-box/">third tutorial</a>, but adding them now saves you
+coming back to this line.</p>
 <h2 id="1-define-the-record">1. Define the record<a class="headerlink" href="#1-define-the-record" title="Permanent link">&para;</a></h2>
-<p>Add a class below the imports:</p>
+<p>Below the imports, describe the record as a class:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="k">class</span><span class="w"> </span><span class="nc">Motor</span><span class="p">(</span><span class="n">SharedBox</span><span class="p">):</span>
 </span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>    <span class="n">position</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span>
 </span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>    <span class="n">enabled</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
 </span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>    <span class="n">label</span><span class="p">:</span> <span class="n">Annotated</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Capacity</span><span class="p">(</span><span class="mi">32</span><span class="p">)]</span> <span class="o">=</span> <span class="s2">""</span>
 </span></code></pre></div>
-<p><code>Motor</code> is a subclass of <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;SharedBox&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox"><code>SharedBox</code></a>. Each annotated
-attribute is a field, and the value after <code>=</code> is its default. A <code>str</code>
-field needs a <a href="../../explanation/glossary/#capacity">capacity</a>: the most
-bytes it can hold, here 32. <a href="../../explanation/how-a-box-is-stored/">How a box is stored</a>
-explains why every field has a fixed size.</p>
+<p>This reads like a dataclass, and it works like one: each annotated
+attribute is a <a href="../../explanation/glossary/#field">field</a>, and the value after <code>=</code> is its default.
+The difference is that <code>Motor</code> subclasses
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;SharedBox&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox"><code>SharedBox</code></a>, so its fields live in shared memory
+instead of inside one Python object.</p>
+<p>Text needs a size limit, its <a href="../../explanation/glossary/#capacity">capacity</a>: <code>label</code> holds at most
+32 bytes. Every field has a fixed size so that all processes agree on where
+each value sits; <a href="../../explanation/how-a-box-is-stored/">How a box is stored</a>
+explains why that matters.</p>
 <h2 id="2-change-it-from-another-process">2. Change it from another process<a class="headerlink" href="#2-change-it-from-another-process" title="Permanent link">&para;</a></h2>
-<p>Add a function that opens the box and writes one field:</p>
+<p>Next, add the function the second process will run. It opens the box,
+writes one field and lets go:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="k">def</span><span class="w"> </span><span class="nf">move</span><span class="p">(</span><span class="n">position</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 </span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>    <span class="n">motor</span> <span class="o">=</span> <span class="n">Motor</span><span class="o">.</span><span class="n">attach</span><span class="p">(</span><span class="s2">"tutorial-motor"</span><span class="p">)</span>
 </span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>    <span class="n">motor</span><span class="o">.</span><span class="n">position</span> <span class="o">=</span> <span class="n">position</span>
@@ -3175,13 +3182,15 @@ explains why every field has a fixed size.</p>
 
   &lt;span class=&quot;doc doc-labels&quot;&gt;
       &lt;small class=&quot;doc doc-label doc-label-classmethod&quot;&gt;&lt;code&gt;classmethod&lt;/code&gt;&lt;/small&gt;
-  &lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.attach"><code>attach</code></a> opens the box called
-<code>tutorial-motor</code>, which another process creates. Setting <code>position</code> writes
-the value into shared memory. <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;close&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.close"><code>close</code></a> closes
-this process's <a href="../../explanation/glossary/#handle">handle</a> on the box; the
-box itself stays.</p>
+  &lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.attach"><code>attach</code></a> opens the box named
+<code>tutorial-motor</code>, which the first process creates in the next step. Setting
+<code>motor.position</code> writes the new value straight into shared memory, where
+every process can see it. <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;close&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.close"><code>close</code></a> then drops
+this process's <a href="../../explanation/glossary/#handle">handle</a> on the box, and the box itself stays
+for the processes still using it.</p>
 <h2 id="3-create-the-box">3. Create the box<a class="headerlink" href="#3-create-the-box" title="Permanent link">&para;</a></h2>
-<p>Add the function that creates the box and starts the second process:</p>
+<p>Now add the function the first process runs. It creates the box, starts the
+second process and reads what that process wrote:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="k">def</span><span class="w"> </span><span class="nf">share</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 </span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>    <span class="k">with</span> <span class="n">Motor</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="s2">"tutorial-motor"</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s2">"x-axis"</span><span class="p">)</span> <span class="k">as</span> <span class="n">motor</span><span class="p">:</span>
 </span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>        <span class="n">other</span> <span class="o">=</span> <span class="n">mp</span><span class="o">.</span><span class="n">Process</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="n">move</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="p">(</span><span class="mi">10</span><span class="p">,))</span>
@@ -3195,44 +3204,48 @@ box itself stays.</p>
 
   &lt;span class=&quot;doc doc-labels&quot;&gt;
       &lt;small class=&quot;doc doc-label doc-label-classmethod&quot;&gt;&lt;code&gt;classmethod&lt;/code&gt;&lt;/small&gt;
-  &lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.create"><code>create</code></a> makes a new
-<a href="../../explanation/glossary/#segment">segment</a> of shared memory under the
-name it is given, and takes field values as calling the class does;
-<code>position</code> and <code>enabled</code> keep their defaults. The <code>with</code> block closes the
-box at its end, and <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-attribute&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-attribute-name&quot;&gt;unlink&lt;/span&gt;
+  &lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.create"><code>create</code></a> puts the box in a new
+<a href="../../explanation/glossary/#segment">segment</a> of shared memory under the name you give it. It
+takes field values the way calling the class does, so here you set <code>label</code>
+and leave <code>position</code> and <code>enabled</code> at their defaults.</p>
+<p>The second process runs <code>move(10)</code>. Once <code>join</code> returns, that process has
+finished, so reading <code>motor.position</code> finds the value it wrote.</p>
+<p>When the <code>with</code> block ends it closes the box, and
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-attribute&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-attribute-name&quot;&gt;unlink&lt;/span&gt;
 
 
   &lt;span class=&quot;doc doc-labels&quot;&gt;
       &lt;small class=&quot;doc doc-label doc-label-class-attribute&quot;&gt;&lt;code&gt;class-attribute&lt;/code&gt;&lt;/small&gt;
       &lt;small class=&quot;doc doc-label doc-label-instance-attribute&quot;&gt;&lt;code&gt;instance-attribute&lt;/code&gt;&lt;/small&gt;
-  &lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.unlink"><code>unlink</code></a> removes the
-name, so the next run can create it again.
-<a href="../../how-to/name-a-box/">How to name a box</a> shows the other ways to
-choose the name.</p>
-<p>The second process runs <code>move(10)</code>. After <code>join</code>, reading <code>motor.position</code>
-reads the segment again and finds the value that process wrote.</p>
+  &lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.unlink"><code>unlink</code></a> removes the name, so the next run
+can create the box again. <a href="../../how-to/name-a-box/">How to name a box</a>
+shows other ways to choose a name.</p>
 <h2 id="4-run-it">4. Run it<a class="headerlink" href="#4-run-it" title="Permanent link">&para;</a></h2>
 <p>Add these lines at the end of the file:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">"__main__"</span><span class="p">:</span>
 </span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>    <span class="n">share</span><span class="p">()</span>
 </span></code></pre></div>
-<p>The second process may import the script to find <code>move</code>, and the <code>if</code>
-keeps it from calling <code>share()</code> too. Run the script:</p>
+<p>You need them because, depending on your system, the second process starts a
+fresh Python that imports your script to find <code>move</code>. Without the <code>if</code>, that
+import would call <code>share()</code> again and try to create the box a second time.
+Now run the script:</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>uv<span class="w"> </span>run<span class="w"> </span>motor.py
 </span></code></pre></div>
+<p>You should see:</p>
 <div class="language-text highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>position set by the other process: 10
 </span></code></pre></div>
 <h2 id="what-you-built">What you built<a class="headerlink" href="#what-you-built" title="Permanent link">&para;</a></h2>
-<p>A record in shared memory that two processes read and write: one created
-it, the other changed a field, and the first read the change.</p>
+<p>You have a record in shared memory that two processes read and write: the
+first created it, the second changed <code>position</code>, and the first read the
+new value.</p>
 <h2 id="next-steps">Next steps<a class="headerlink" href="#next-steps" title="Permanent link">&para;</a></h2>
 <ul>
-<li><a href="../react-to-changes/">Reacting to changes</a> is the next tutorial: the
-  first process sees the write as it happens, instead of reading it
-  afterwards.</li>
-<li><a href="../../explanation/how-a-box-is-stored/">How a box is stored</a> explains
-  what the segment holds.</li>
-<li><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;SharedBox&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox"><code>SharedBox</code></a> lists the types a field can have.</li>
+<li><a href="../react-to-changes/">Reacting to changes</a> is next: instead of reading
+  the value after the other process ends, the first process sees each
+  change the moment it happens.</li>
+<li><a href="../../explanation/how-a-box-is-stored/">How a box is stored</a> shows what
+  the shared memory holds.</li>
+<li><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;SharedBox&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox"><code>SharedBox</code></a> lists every type a field can have.</li>
 </ul>
 
 

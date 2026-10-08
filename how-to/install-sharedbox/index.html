@@ -3103,8 +3103,8 @@
 
 
 <h1 id="how-to-install-sharedbox">How to install sharedbox<a class="headerlink" href="#how-to-install-sharedbox" title="Permanent link">&para;</a></h1>
-<p>PyPI has compiled wheels of sharedbox, so installing it needs no
-compiler.</p>
+<p><code>sharedbox</code> comes as ready-built packages (wheels) on PyPI, so you can
+install it without a compiler.</p>
 <h2 id="before-you-start">Before you start<a class="headerlink" href="#before-you-start" title="Permanent link">&para;</a></h2>
 <div class="admonition note">
 <p class="admonition-title">What you need</p>
@@ -3119,8 +3119,8 @@ supported.</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>pip<span class="w"> </span>install<span class="w"> </span>sharedbox
 </span></code></pre></div>
 <h2 id="which-wheel-you-get">Which wheel you get<a class="headerlink" href="#which-wheel-you-get" title="Permanent link">&para;</a></h2>
-<p>Each platform has three wheels, and the installer picks the one that
-matches your Python:</p>
+<p>You don't have to choose a wheel yourself: each platform has three, and the
+installer picks the one that matches your Python.</p>
 <table>
 <thead>
 <tr>
@@ -3143,12 +3143,13 @@ matches your Python:</p>
 </tr>
 </tbody>
 </table>
-<p>They are built for Windows x64 and for Linux x86_64, with glibc and with
-musl. <a href="../../explanation/how-the-module-is-built/">How the module is built</a>
+<p>They are built for Windows x64 and for Linux x86_64, both for the common
+glibc-based distributions and for musl-based ones such as Alpine.
+<a href="../../explanation/how-the-module-is-built/">How the module is built</a>
 explains why there are three.</p>
 <h2 id="add-the-benchmark-command">Add the benchmark command<a class="headerlink" href="#add-the-benchmark-command" title="Permanent link">&para;</a></h2>
-<p>The <code>benchmarks</code> extra installs the <code>benchbox</code> command, which measures
-sharedbox on your own machine:</p>
+<p>If you want to measure <code>sharedbox</code> on your own machine, install the
+<code>benchmarks</code> extra, which adds the <code>benchbox</code> command:</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>uv<span class="w"> </span>add<span class="w"> </span><span class="s2">"sharedbox[benchmarks]"</span>
 </span></code></pre></div>
 <p>or, with pip:</p>

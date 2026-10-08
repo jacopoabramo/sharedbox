@@ -1783,10 +1783,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#closing-a-box-while-other-threads-still-use-it" class="md-nav__link">
+  <a href="#lifetime-the-same-rules-as-multiprocessingshared_memory" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Closing a box while other threads still use it
+        Lifetime: the same rules as <code>multiprocessing.shared_memory</code>
       </span>
     </span>
   </a>
@@ -1794,10 +1794,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#lifetime-the-same-rules-as-multiprocessingshared_memory" class="md-nav__link">
+  <a href="#closing-a-box-while-other-threads-still-use-it" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Lifetime: the same rules as <code>multiprocessing.shared_memory</code>
+        Closing a box while other threads still use it
       </span>
     </span>
   </a>
@@ -2922,10 +2922,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#closing-a-box-while-other-threads-still-use-it" class="md-nav__link">
+  <a href="#lifetime-the-same-rules-as-multiprocessingshared_memory" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Closing a box while other threads still use it
+        Lifetime: the same rules as <code>multiprocessing.shared_memory</code>
       </span>
     </span>
   </a>
@@ -2933,10 +2933,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#lifetime-the-same-rules-as-multiprocessingshared_memory" class="md-nav__link">
+  <a href="#closing-a-box-while-other-threads-still-use-it" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        Lifetime: the same rules as <code>multiprocessing.shared_memory</code>
+        Closing a box while other threads still use it
       </span>
     </span>
   </a>
@@ -3055,19 +3055,960 @@
 
 
 <h1 id="closing-and-lifetime">Closing and lifetime<a class="headerlink" href="#closing-and-lifetime" title="Permanent link">&para;</a></h1>
-<p>This page explains how <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;close&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.close"><code>close</code></a> stays safe
-while other threads still use a <a href="../glossary/#box">box</a>, and how long the
-shared memory itself lives.</p>
+<p>A <a href="../glossary/#box">box</a> has two lifetimes: the Python object you use, and
+the shared memory behind it, which other processes may still be using. This
+page first explains how long that memory lives and who removes it, which is
+what you need day to day. Then it explains how
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;close&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.close"><code>close</code></a> stays safe while other threads of your
+process are still using the box, which matters if you work on <code>sharedbox</code>
+itself or wonder why closing never crashes a running read.</p>
+<h2 id="lifetime-the-same-rules-as-multiprocessingshared_memory">Lifetime: the same rules as <code>multiprocessing.shared_memory</code><a class="headerlink" href="#lifetime-the-same-rules-as-multiprocessingshared_memory" title="Permanent link">&para;</a></h2>
+<p>Closing a box only lets go of it in your process; it never destroys the
+data. Step through the life of one segment that two processes use:</p>
+<style data-markdown-d2>.markdown-d2 { margin: 1em 0; }
+.markdown-d2-light > svg, .markdown-d2-dark > svg { display: block; max-width: 100%; height: auto; margin: 0 auto; }
+.markdown-d2 .markdown-d2-dark, .markdown-d2-dialog .markdown-d2-dark { display: none; }
+[data-md-color-scheme="slate"] .markdown-d2 .markdown-d2-dark, [data-md-color-scheme="slate"] .markdown-d2-dialog .markdown-d2-dark { display: block; }
+[data-md-color-scheme="slate"] .markdown-d2 .markdown-d2-light, [data-md-color-scheme="slate"] .markdown-d2-dialog .markdown-d2-light { display: none; }
+.markdown-d2.markdown-d2-ready { display: grid; grid-template-columns: minmax(0, 1fr); }
+.markdown-d2.markdown-d2-ready > .markdown-d2-controls { grid-row: 1; }
+.markdown-d2.markdown-d2-ready > .markdown-d2-board { grid-area: 2 / 1; }
+.markdown-d2.markdown-d2-ready > .markdown-d2-board:not(.markdown-d2-current) { visibility: hidden; }
+.markdown-d2 .markdown-d2-board + .markdown-d2-board { margin-top: 1em; }
+.markdown-d2.markdown-d2-ready .markdown-d2-board + .markdown-d2-board { margin-top: 0; }
+.markdown-d2-controls { display: flex; gap: 0.5em; align-items: center; justify-content: center; margin-bottom: 0.5em; }
+.markdown-d2-controls button { display: inline-flex; align-items: center; justify-content: center; min-width: 2em; height: 2em; font: inherit; cursor: pointer; }
+.markdown-d2-controls button svg { width: 1.2em; height: 1.2em; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.markdown-d2-dialog { width: 95vw; height: 95vh; max-width: none; max-height: none; padding: 0; overflow: hidden; }
+.markdown-d2-dialog .markdown-d2-stage { width: 100%; height: calc(100% - 3em); overflow: hidden; cursor: grab; touch-action: none; }
+.markdown-d2-dialog .markdown-d2-view { transform-origin: 0 0; }
+.markdown-d2-dialog .markdown-d2-controls { height: 3em; margin: 0; }
+.markdown-d2-error { border: 2px solid #c62828; padding: 0.5em 1em; color: #c62828; }
+.markdown-d2 svg.d2-svg > g, .markdown-d2-dialog svg.d2-svg > g { transition: opacity 0.15s; }
+.markdown-d2-focus > g:not(.markdown-d2-hovered):not(.appendix-icon) { opacity: 0.3; }
+.markdown-d2-tooltip { position: fixed; z-index: 10; max-width: 22rem; padding: 0.4em 0.6em; border-radius: 4px; font-size: 0.8rem; line-height: 1.4; pointer-events: none; background: var(--md-default-fg-color, #1e1e2e); color: var(--md-default-bg-color, #ffffff); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3); }
+.markdown-d2-tooltip[hidden] { display: none; }
+@media (prefers-reduced-motion: reduce) { .markdown-d2 svg.d2-svg > g, .markdown-d2-dialog svg.d2-svg > g { transition: none; } }
+</style><script data-markdown-d2>"use strict";
+const ZOOM_STEP = 1.25;
+const SVG = "http://www.w3.org/2000/svg";
+const ICONS = {
+    previous: "M15 6l-6 6 6 6",
+    next: "M9 6l6 6-6 6",
+    fullScreen: "M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5",
+    zoomIn: "M12 5v14M5 12h14",
+    zoomOut: "M5 12h14",
+    close: "M6 6l12 12M18 6 6 18",
+};
+function icon(name) {
+    const svg = document.createElementNS(SVG, "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("aria-hidden", "true");
+    const path = document.createElementNS(SVG, "path");
+    path.setAttribute("d", ICONS[name]);
+    svg.append(path);
+    return svg;
+}
+function button(label, content, onClick) {
+    const element = document.createElement("button");
+    element.type = "button";
+    element.append(typeof content === "string" ? icon(content) : content.text);
+    element.setAttribute("aria-label", label);
+    element.addEventListener("click", onClick);
+    return element;
+}
+const DURATION = { fade: 250, morph: 450 };
+function visibleSvg(container) {
+    for (const variant of container.querySelectorAll(":scope > .markdown-d2-light, :scope > .markdown-d2-dark")) {
+        if (getComputedStyle(variant).display !== "none")
+            return variant.querySelector("svg");
+    }
+    return null;
+}
+function shapes(svg) {
+    const found = new Map();
+    for (const group of svg.querySelectorAll("g[class]:not(.shape)")) {
+        const name = group.getAttribute("class");
+        if (name && !found.has(name))
+            found.set(name, group);
+    }
+    return found;
+}
+function measure(container) {
+    const svg = visibleSvg(container);
+    const rects = new Map();
+    for (const [name, group] of svg ? shapes(svg) : [])
+        rects.set(name, group.getBoundingClientRect());
+    return rects;
+}
+function play(transition, container, before) {
+    const svg = visibleSvg(container);
+    if (!svg || transition === "none" || matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        return;
+    }
+    const fadeIn = (element, duration) => {
+        element.animate([{ opacity: 0 }, { opacity: 1 }], { duration, easing: "ease-out" });
+    };
+    if (transition === "fade") {
+        fadeIn(svg, DURATION.fade);
+        return;
+    }
+    const units = svg.viewBox.baseVal.width / svg.getBoundingClientRect().width || 1;
+    for (const [name, group] of shapes(svg)) {
+        const old = before.get(name);
+        const now = group.getBoundingClientRect();
+        if (!old) {
+            fadeIn(group, DURATION.morph);
+            continue;
+        }
+        const x = (old.left - now.left) * units;
+        const y = (old.top - now.top) * units;
+        const scaleX = old.width && now.width ? old.width / now.width : 1;
+        const scaleY = old.height && now.height ? old.height / now.height : 1;
+        if (x === 0 && y === 0 && scaleX === 1 && scaleY === 1)
+            continue;
+        group.style.transformBox = "fill-box";
+        group.style.transformOrigin = "0 0";
+        group.animate([
+            { transform: `translate(${x}px, ${y}px) scale(${scaleX}, ${scaleY})` },
+            { transform: "none" },
+        ], { duration: DURATION.morph, easing: "ease-in-out" });
+    }
+}
+function tooltipBox(host) {
+    const found = host.querySelector(":scope > .markdown-d2-tooltip");
+    if (found)
+        return found;
+    const box = document.createElement("div");
+    box.className = "markdown-d2-tooltip";
+    box.setAttribute("role", "tooltip");
+    box.hidden = true;
+    host.append(box);
+    return box;
+}
+function hoverable(container, host) {
+    for (const title of Array.from(container.querySelectorAll("svg.d2-svg > g > title"))) {
+        const group = title.parentElement;
+        if (group)
+            group.dataset.tooltip = title.textContent ?? "";
+        title.remove();
+    }
+    const box = tooltipBox(host);
+    let hovered = null;
+    const clear = () => {
+        hovered?.classList.remove("markdown-d2-hovered");
+        hovered?.ownerSVGElement?.classList.remove("markdown-d2-focus");
+        hovered = null;
+        box.hidden = true;
+    };
+    container.addEventListener("pointerover", (event) => {
+        const target = event.target instanceof Element ? event.target : null;
+        let group = target?.closest("svg.d2-svg > g") ?? null;
+        if (group?.classList.contains("appendix-icon")) {
+            const text = group.dataset.tooltip;
+            group =
+                Array.from(group.parentElement?.children ?? []).find((sibling) => sibling instanceof SVGGElement &&
+                    !sibling.classList.contains("appendix-icon") &&
+                    sibling.dataset.tooltip === text) ?? group;
+        }
+        if (group === hovered)
+            return;
+        clear();
+        if (!group)
+            return;
+        hovered = group;
+        group.classList.add("markdown-d2-hovered");
+        group.ownerSVGElement?.classList.add("markdown-d2-focus");
+        const text = group.dataset.tooltip;
+        if (text) {
+            box.textContent = text;
+            box.hidden = false;
+        }
+    });
+    container.addEventListener("pointermove", (event) => {
+        if (box.hidden)
+            return;
+        const left = Math.min(event.clientX + 14, window.innerWidth - box.offsetWidth - 8);
+        box.style.left = `${Math.max(left, 8)}px`;
+        box.style.top = `${event.clientY + 18}px`;
+    });
+    container.addEventListener("pointerleave", clear);
+}
+function stepControls(boards, onStep) {
+    let current = 0;
+    const counter = document.createElement("span");
+    counter.className = "markdown-d2-counter";
+    counter.setAttribute("aria-live", "polite");
+    const show = (index) => {
+        current = (index + boards.length) % boards.length;
+        const name = boards[current]?.dataset.name;
+        counter.textContent = `${current + 1} / ${boards.length}${name ? ` (${name})` : ""}`;
+        onStep(current);
+    };
+    const controls = document.createElement("div");
+    controls.className = "markdown-d2-controls";
+    if (boards.length > 1) {
+        controls.append(button("Previous step", "previous", () => show(current - 1)), counter, button("Next step", "next", () => show(current + 1)));
+    }
+    return { controls, show, current: () => current };
+}
+function stepWithKeys(element, steps) {
+    element.addEventListener("keydown", (event) => {
+        if (event.key === "ArrowLeft")
+            steps.show(steps.current() - 1);
+        if (event.key === "ArrowRight")
+            steps.show(steps.current() + 1);
+    });
+}
+function setUpFigure(figure) {
+    if (figure.dataset.ready)
+        return;
+    figure.dataset.ready = "true";
+    figure.classList.add("markdown-d2-ready");
+    figure.tabIndex = 0;
+    const boards = Array.from(figure.querySelectorAll(":scope > .markdown-d2-board"));
+    const transition = (figure.dataset.transition ?? "none");
+    const steps = stepControls(boards, (current) => {
+        const old = figure.querySelector(":scope > .markdown-d2-current");
+        const before = old ? measure(old) : null;
+        for (const [i, board] of boards.entries()) {
+            board.classList.toggle("markdown-d2-current", i === current);
+        }
+        const now = boards[current];
+        if (before && now && old !== now)
+            play(transition, now, before);
+    });
+    if (boards.length > 1)
+        stepWithKeys(figure, steps);
+    steps.controls.append(button("Open full screen", "fullScreen", () => openDialog(boards, steps.current(), transition, steps.show)));
+    figure.prepend(steps.controls);
+    hoverable(figure, document.body);
+    steps.show(0);
+}
+function openDialog(boards, start, transition, onStep) {
+    const dialog = document.createElement("dialog");
+    dialog.className = "markdown-d2-dialog";
+    const stage = document.createElement("div");
+    stage.className = "markdown-d2-stage";
+    const view = document.createElement("div");
+    view.className = "markdown-d2-view";
+    stage.append(view);
+    let scale = 1;
+    let x = 0;
+    let y = 0;
+    const apply = () => {
+        view.style.transform = `translate(${x}px, ${y}px) scale(${scale})`;
+    };
+    const zoom = (factor, originX, originY) => {
+        x = originX - (originX - x) * factor;
+        y = originY - (originY - y) * factor;
+        scale *= factor;
+        apply();
+    };
+    stage.addEventListener("wheel", (event) => {
+        event.preventDefault();
+        const box = stage.getBoundingClientRect();
+        zoom(event.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP, event.clientX - box.left, event.clientY - box.top);
+    });
+    let dragging = null;
+    stage.addEventListener("pointerdown", (event) => {
+        dragging = { x: event.clientX - x, y: event.clientY - y };
+        stage.setPointerCapture(event.pointerId);
+    });
+    stage.addEventListener("pointermove", (event) => {
+        if (!dragging)
+            return;
+        x = event.clientX - dragging.x;
+        y = event.clientY - dragging.y;
+        apply();
+    });
+    stage.addEventListener("pointerup", () => (dragging = null));
+    const steps = stepControls(boards, (current) => {
+        const before = view.childElementCount ? measure(view) : null;
+        view.replaceChildren(...Array.from(boards[current]?.children ?? [], (child) => child.cloneNode(true)));
+        if (before)
+            play(transition, view, before);
+        onStep(current);
+    });
+    if (boards.length > 1)
+        stepWithKeys(dialog, steps);
+    steps.controls.append(button("Zoom in", "zoomIn", () => zoom(ZOOM_STEP, 0, 0)), button("Zoom out", "zoomOut", () => zoom(1 / ZOOM_STEP, 0, 0)), button("Reset zoom", { text: "1:1" }, () => {
+        scale = 1;
+        x = 0;
+        y = 0;
+        apply();
+    }), button("Close", "close", () => dialog.close()));
+    dialog.append(steps.controls, stage);
+    hoverable(view, dialog);
+    dialog.addEventListener("close", () => dialog.remove());
+    document.body.append(dialog);
+    steps.show(start);
+    apply();
+    dialog.showModal();
+}
+function setUpFigures() {
+    document.querySelectorAll("figure.markdown-d2").forEach(setUpFigure);
+}
+(function start() {
+    if (window.markdownD2Ready)
+        return;
+    window.markdownD2Ready = true;
+    if (window.document$)
+        window.document$.subscribe(setUpFigures);
+    else if (document.readyState === "loading")
+        document.addEventListener("DOMContentLoaded", setUpFigures);
+    else
+        setUpFigures();
+})();
+</script><figure class="markdown-d2" data-transition="morph" aria-label="The life of a segment"><div class="markdown-d2-board" data-step="1" data-name=""><div class="markdown-d2-light"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" data-d2-version="v0.9.0" preserveAspectRatio="xMinYMin meet" width="1139" height="293" viewBox="0 0 1139 293"><svg class="d2-3316600462 d2-svg" width="1139" height="293" viewBox="-102 -120 1139 293"><rect x="-102" y="-120" width="1139" height="293" rx="0" fill="#FFFFFF" class=" fill-N7" stroke-width="0" /><style type="text/css"><![CDATA[
+.appendix-icon {
+	filter: drop-shadow(0px 0px 32px rgba(31, 36, 58, 0.1));
+}
+.d2-3316600462 .text-bold {
+	font-family: "d2-3316600462-font-bold";
+}
+@font-face {
+	font-family: d2-3316600462-font-bold;
+	src: url("data:application/font-woff;base64,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");
+}]]></style><style type="text/css"><![CDATA[.shape {
+  shape-rendering: geometricPrecision;
+  stroke-linejoin: round;
+}
+.connection {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.blend {
+  mix-blend-mode: multiply;
+  opacity: 0.5;
+}
+
+		.d2-3316600462 .fill-N1{fill:#0A0F25;}
+		.d2-3316600462 .fill-N7{fill:#FFFFFF;}
+		.d2-3316600462 .fill-B1{fill:#0D32B2;}
+		.d2-3316600462 .fill-B6{fill:#F7F8FE;}
+		.d2-3316600462 .stroke-B1{stroke:#0D32B2;}
+		.d2-3316600462 .stroke-B2{stroke:#0D32B2;}.appendix text.text{fill:#0A0F25}.md{--color-fg-default:#0A0F25;--color-fg-muted:#676C7E;--color-fg-subtle:#9499AB;--color-canvas-default:#FFFFFF;--color-canvas-subtle:#EEF1F8;--color-border-default:#0D32B2;--color-border-muted:#0D32B2;--color-neutral-muted:#EEF1F8;--color-accent-fg:#0D32B2;--color-accent-emphasis:#0D32B2;--color-attention-subtle:#676C7E;--color-danger-fg:red;}.light-code{display: block}.dark-code{display: none}]]></style><defs>
+	<filter id="shadow-filter-1" width="200%" height="200%" x="-50%" y="-50%">
+		<feGaussianBlur stdDeviation="1.7 " in="SourceGraphic"></feGaussianBlur>
+		<feFlood flood-color="#3d4574" flood-opacity="0.4" result="ShadowFeFlood" in="SourceGraphic"></feFlood>
+		<feComposite in="ShadowFeFlood" in2="SourceAlpha" operator="in" result="ShadowFeComposite"></feComposite>
+		<feOffset dx="3" dy="5" result="ShadowFeOffset" in="ShadowFeComposite"></feOffset>
+		<feBlend in="SourceGraphic" in2="ShadowFeOffset" mode="normal" result="ShadowFeBlend"></feBlend>
+	</filter>
+</defs><g class="Y3JlYXRlZA== current"><g class="shape" filter="url(#shadow-filter-1)" ><rect x="0" y="0" width="167" height="66" rx="6" stroke="#0D32B2" fill="#F7F8FE" class=" stroke-B1 fill-B6" style="stroke-width:4;" /></g><text x="83.5" y="38.5" fill="#0A0F25" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">A creates the box</text><title>A creates the segment under a name and holds one handle on it.</title></g><g class="c2hhcmVk step"><g class="shape" ><rect x="207" y="0" width="118" height="66" rx="6" stroke="#0D32B2" fill="#F7F8FE" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="266" y="38.5" fill="#0A0F25" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">B attaches</text></g><g class="YV9jbG9zZWQ= step"><g class="shape" ><rect x="365" y="0" width="102" height="66" rx="6" stroke="#0D32B2" fill="#F7F8FE" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="416" y="38.5" fill="#0A0F25" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">A closes</text></g><g class="dW5saW5rZWQ= step"><g class="shape" ><rect x="507" y="0" width="180" height="66" rx="6" stroke="#0D32B2" fill="#F7F8FE" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="597" y="38.5" fill="#0A0F25" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">A unlinks the name</text></g><g class="ZnJlZWQ= step"><g class="shape" ><rect x="727" y="0" width="209" height="66" rx="6" stroke="#0D32B2" fill="#F7F8FE" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="831.5" y="38.5" fill="#0A0F25" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">B closes: memory freed</text></g><g class="KGNyZWF0ZWQgLSZndDsgc2hhcmVkKVswXQ=="><marker id="mk-d2-3316600462-3488378134-1" markerWidth="10" markerHeight="12" refX="7" refY="6" viewBox="0 0 10 12" orient="auto" markerUnits="userSpaceOnUse"> <polygon points="0,0 10,6 0,12" fill="#0D32B2" class="connection fill-B1" stroke-width="2" /> </marker><path d="M 170 33 L 203 33" stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-3316600462-3488378134-1)" mask="url(#d2-3316600462-1)" /></g><g class="KHNoYXJlZCAtJmd0OyBhX2Nsb3NlZClbMF0="><path d="M 327 33 L 361 33" stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-3316600462-3488378134-1)" mask="url(#d2-3316600462-1)" /></g><g class="KGFfY2xvc2VkIC0mZ3Q7IHVubGlua2VkKVswXQ=="><path d="M 469 33 L 503 33" stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-3316600462-3488378134-1)" mask="url(#d2-3316600462-1)" /></g><g class="KHVubGlua2VkIC0mZ3Q7IGZyZWVkKVswXQ=="><path d="M 688.5 33 L 723.5 33" stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-3316600462-3488378134-1)" mask="url(#d2-3316600462-1)" /></g><g transform="translate(151 -16)" class="appendix-icon"><title>A creates the segment under a name and holds one handle on it.</title><svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_3427_35082111-d2-3316600462-MNZGKYLUMVSA-1)">
+<path d="M16 31.1109C24.3456 31.1109 31.1111 24.3454 31.1111 15.9998C31.1111 7.65415 24.3456 0.888672 16 0.888672C7.65436 0.888672 0.888885 7.65415 0.888885 15.9998C0.888885 24.3454 7.65436 31.1109 16 31.1109Z" fill="white" stroke="#DEE1EB"/>
+<path d="M16 26C21.5228 26 26 21.5228 26 16C26 10.4772 21.5228 6 16 6C10.4772 6 6 10.4772 6 16C6 21.5228 10.4772 26 16 26Z" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 19.998V15.998" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 12H16.0098" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<defs>
+<clipPath id="clip0_3427_35082111-d2-3316600462-MNZGKYLUMVSA-1">
+<rect width="32" height="32" fill="white"/>
+</clipPath>
+</defs>
+</svg>
+</g><mask id="d2-3316600462-1" maskUnits="userSpaceOnUse" x="-102" y="-120" width="1139" height="293">
+<rect x="-102" y="-120" width="1139" height="293" fill="white"></rect>
+
+</mask></svg></svg></div><div class="markdown-d2-dark"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" data-d2-version="v0.9.0" preserveAspectRatio="xMinYMin meet" width="1139" height="293" viewBox="0 0 1139 293"><svg class="d2-3182379510 d2-svg" width="1139" height="293" viewBox="-102 -120 1139 293"><rect x="-102" y="-120" width="1139" height="293" rx="0" fill="#1E1E2E" class=" fill-N7" stroke-width="0" /><style type="text/css"><![CDATA[
+.appendix-icon {
+	filter: drop-shadow(0px 0px 32px rgba(31, 36, 58, 0.1));
+}
+.d2-3182379510 .text-bold {
+	font-family: "d2-3182379510-font-bold";
+}
+@font-face {
+	font-family: d2-3182379510-font-bold;
+	src: url("data:application/font-woff;base64,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");
+}]]></style><style type="text/css"><![CDATA[.shape {
+  shape-rendering: geometricPrecision;
+  stroke-linejoin: round;
+}
+.connection {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.blend {
+  mix-blend-mode: multiply;
+  opacity: 0.5;
+}
+
+		.d2-3182379510 .fill-N1{fill:#CDD6F4;}
+		.d2-3182379510 .fill-N7{fill:#1E1E2E;}
+		.d2-3182379510 .fill-B1{fill:#CBA6f7;}
+		.d2-3182379510 .fill-B6{fill:#313244;}
+		.d2-3182379510 .stroke-B1{stroke:#CBA6f7;}
+		.d2-3182379510 .stroke-B2{stroke:#CBA6f7;}.appendix text.text{fill:#CDD6F4}.md{--color-fg-default:#CDD6F4;--color-fg-muted:#BAC2DE;--color-fg-subtle:#A6ADC8;--color-canvas-default:#1E1E2E;--color-canvas-subtle:#313244;--color-border-default:#CBA6f7;--color-border-muted:#CBA6f7;--color-neutral-muted:#313244;--color-accent-fg:#CBA6f7;--color-accent-emphasis:#CBA6f7;--color-attention-subtle:#BAC2DE;--color-danger-fg:red;}.light-code{display: none}.dark-code{display: block}]]></style><defs>
+	<filter id="shadow-filter-2" width="200%" height="200%" x="-50%" y="-50%">
+		<feGaussianBlur stdDeviation="1.7 " in="SourceGraphic"></feGaussianBlur>
+		<feFlood flood-color="#3d4574" flood-opacity="0.4" result="ShadowFeFlood" in="SourceGraphic"></feFlood>
+		<feComposite in="ShadowFeFlood" in2="SourceAlpha" operator="in" result="ShadowFeComposite"></feComposite>
+		<feOffset dx="3" dy="5" result="ShadowFeOffset" in="ShadowFeComposite"></feOffset>
+		<feBlend in="SourceGraphic" in2="ShadowFeOffset" mode="normal" result="ShadowFeBlend"></feBlend>
+	</filter>
+</defs><g class="Y3JlYXRlZA== current"><g class="shape" filter="url(#shadow-filter-2)" ><rect x="0" y="0" width="167" height="66" rx="6" stroke="#CBA6f7" fill="#313244" class=" stroke-B1 fill-B6" style="stroke-width:4;" /></g><text x="83.5" y="38.5" fill="#CDD6F4" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">A creates the box</text><title>A creates the segment under a name and holds one handle on it.</title></g><g class="c2hhcmVk step"><g class="shape" ><rect x="207" y="0" width="118" height="66" rx="6" stroke="#CBA6f7" fill="#313244" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="266" y="38.5" fill="#CDD6F4" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">B attaches</text></g><g class="YV9jbG9zZWQ= step"><g class="shape" ><rect x="365" y="0" width="102" height="66" rx="6" stroke="#CBA6f7" fill="#313244" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="416" y="38.5" fill="#CDD6F4" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">A closes</text></g><g class="dW5saW5rZWQ= step"><g class="shape" ><rect x="507" y="0" width="180" height="66" rx="6" stroke="#CBA6f7" fill="#313244" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="597" y="38.5" fill="#CDD6F4" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">A unlinks the name</text></g><g class="ZnJlZWQ= step"><g class="shape" ><rect x="727" y="0" width="209" height="66" rx="6" stroke="#CBA6f7" fill="#313244" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="831.5" y="38.5" fill="#CDD6F4" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">B closes: memory freed</text></g><g class="KGNyZWF0ZWQgLSZndDsgc2hhcmVkKVswXQ=="><marker id="mk-d2-3182379510-3488378134-2" markerWidth="10" markerHeight="12" refX="7" refY="6" viewBox="0 0 10 12" orient="auto" markerUnits="userSpaceOnUse"> <polygon points="0,0 10,6 0,12" fill="#CBA6f7" class="connection fill-B1" stroke-width="2" /> </marker><path d="M 170 33 L 203 33" stroke="#CBA6f7" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-3182379510-3488378134-2)" mask="url(#d2-3182379510-2)" /></g><g class="KHNoYXJlZCAtJmd0OyBhX2Nsb3NlZClbMF0="><path d="M 327 33 L 361 33" stroke="#CBA6f7" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-3182379510-3488378134-2)" mask="url(#d2-3182379510-2)" /></g><g class="KGFfY2xvc2VkIC0mZ3Q7IHVubGlua2VkKVswXQ=="><path d="M 469 33 L 503 33" stroke="#CBA6f7" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-3182379510-3488378134-2)" mask="url(#d2-3182379510-2)" /></g><g class="KHVubGlua2VkIC0mZ3Q7IGZyZWVkKVswXQ=="><path d="M 688.5 33 L 723.5 33" stroke="#CBA6f7" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-3182379510-3488378134-2)" mask="url(#d2-3182379510-2)" /></g><g transform="translate(151 -16)" class="appendix-icon"><title>A creates the segment under a name and holds one handle on it.</title><svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_3427_35082111-d2-3182379510-MNZGKYLUMVSA-2)">
+<path d="M16 31.1109C24.3456 31.1109 31.1111 24.3454 31.1111 15.9998C31.1111 7.65415 24.3456 0.888672 16 0.888672C7.65436 0.888672 0.888885 7.65415 0.888885 15.9998C0.888885 24.3454 7.65436 31.1109 16 31.1109Z" fill="white" stroke="#DEE1EB"/>
+<path d="M16 26C21.5228 26 26 21.5228 26 16C26 10.4772 21.5228 6 16 6C10.4772 6 6 10.4772 6 16C6 21.5228 10.4772 26 16 26Z" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 19.998V15.998" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 12H16.0098" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<defs>
+<clipPath id="clip0_3427_35082111-d2-3182379510-MNZGKYLUMVSA-2">
+<rect width="32" height="32" fill="white"/>
+</clipPath>
+</defs>
+</svg>
+</g><mask id="d2-3182379510-2" maskUnits="userSpaceOnUse" x="-102" y="-120" width="1139" height="293">
+<rect x="-102" y="-120" width="1139" height="293" fill="white"></rect>
+
+</mask></svg></svg></div></div><div class="markdown-d2-board" data-step="2" data-name="scenarios.shared"><div class="markdown-d2-light"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" data-d2-version="v0.9.0" preserveAspectRatio="xMinYMin meet" width="1138" height="293" viewBox="0 0 1138 293"><svg class="d2-2426751504 d2-svg" width="1138" height="293" viewBox="-101 -120 1138 293"><rect x="-101" y="-120" width="1138" height="293" rx="0" fill="#FFFFFF" class=" fill-N7" stroke-width="0" /><style type="text/css"><![CDATA[
+.appendix-icon {
+	filter: drop-shadow(0px 0px 32px rgba(31, 36, 58, 0.1));
+}
+.d2-2426751504 .text-bold {
+	font-family: "d2-2426751504-font-bold";
+}
+@font-face {
+	font-family: d2-2426751504-font-bold;
+	src: url("data:application/font-woff;base64,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");
+}]]></style><style type="text/css"><![CDATA[.shape {
+  shape-rendering: geometricPrecision;
+  stroke-linejoin: round;
+}
+.connection {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.blend {
+  mix-blend-mode: multiply;
+  opacity: 0.5;
+}
+
+		.d2-2426751504 .fill-N1{fill:#0A0F25;}
+		.d2-2426751504 .fill-N7{fill:#FFFFFF;}
+		.d2-2426751504 .fill-B1{fill:#0D32B2;}
+		.d2-2426751504 .fill-B6{fill:#F7F8FE;}
+		.d2-2426751504 .stroke-B1{stroke:#0D32B2;}
+		.d2-2426751504 .stroke-B2{stroke:#0D32B2;}.appendix text.text{fill:#0A0F25}.md{--color-fg-default:#0A0F25;--color-fg-muted:#676C7E;--color-fg-subtle:#9499AB;--color-canvas-default:#FFFFFF;--color-canvas-subtle:#EEF1F8;--color-border-default:#0D32B2;--color-border-muted:#0D32B2;--color-neutral-muted:#EEF1F8;--color-accent-fg:#0D32B2;--color-accent-emphasis:#0D32B2;--color-attention-subtle:#676C7E;--color-danger-fg:red;}.light-code{display: block}.dark-code{display: none}]]></style><defs>
+	<filter id="shadow-filter-3" width="200%" height="200%" x="-50%" y="-50%">
+		<feGaussianBlur stdDeviation="1.7 " in="SourceGraphic"></feGaussianBlur>
+		<feFlood flood-color="#3d4574" flood-opacity="0.4" result="ShadowFeFlood" in="SourceGraphic"></feFlood>
+		<feComposite in="ShadowFeFlood" in2="SourceAlpha" operator="in" result="ShadowFeComposite"></feComposite>
+		<feOffset dx="3" dy="5" result="ShadowFeOffset" in="ShadowFeComposite"></feOffset>
+		<feBlend in="SourceGraphic" in2="ShadowFeOffset" mode="normal" result="ShadowFeBlend"></feBlend>
+	</filter>
+</defs><g class="Y3JlYXRlZA== done" style='opacity:0.4'><g class="shape" ><rect x="0" y="0" width="167" height="66" rx="6" stroke="#0D32B2" fill="#F7F8FE" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="83.5" y="38.5" fill="#0A0F25" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">A creates the box</text><title>A creates the segment under a name and holds one handle on it.</title></g><g class="c2hhcmVk current"><g class="shape" filter="url(#shadow-filter-3)" ><rect x="207" y="0" width="118" height="66" rx="6" stroke="#0D32B2" fill="#F7F8FE" class=" stroke-B1 fill-B6" style="stroke-width:4;" /></g><text x="266" y="38.5" fill="#0A0F25" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">B attaches</text><title>B opens the segment by name and gets its own handle on the same memory.</title></g><g class="YV9jbG9zZWQ= step"><g class="shape" ><rect x="365" y="0" width="102" height="66" rx="6" stroke="#0D32B2" fill="#F7F8FE" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="416" y="38.5" fill="#0A0F25" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">A closes</text></g><g class="dW5saW5rZWQ= step"><g class="shape" ><rect x="507" y="0" width="180" height="66" rx="6" stroke="#0D32B2" fill="#F7F8FE" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="597" y="38.5" fill="#0A0F25" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">A unlinks the name</text></g><g class="ZnJlZWQ= step"><g class="shape" ><rect x="727" y="0" width="209" height="66" rx="6" stroke="#0D32B2" fill="#F7F8FE" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="831.5" y="38.5" fill="#0A0F25" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">B closes: memory freed</text></g><g class="KGNyZWF0ZWQgLSZndDsgc2hhcmVkKVswXQ=="><marker id="mk-d2-2426751504-3488378134-3" markerWidth="10" markerHeight="12" refX="7" refY="6" viewBox="0 0 10 12" orient="auto" markerUnits="userSpaceOnUse"> <polygon points="0,0 10,6 0,12" fill="#0D32B2" class="connection fill-B1" stroke-width="2" /> </marker><path d="M 169 33 L 202 33" stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-2426751504-3488378134-3)" mask="url(#d2-2426751504-3)" /></g><g class="KHNoYXJlZCAtJmd0OyBhX2Nsb3NlZClbMF0="><path d="M 328 33 L 361 33" stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-2426751504-3488378134-3)" mask="url(#d2-2426751504-3)" /></g><g class="KGFfY2xvc2VkIC0mZ3Q7IHVubGlua2VkKVswXQ=="><path d="M 469 33 L 503 33" stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-2426751504-3488378134-3)" mask="url(#d2-2426751504-3)" /></g><g class="KHVubGlua2VkIC0mZ3Q7IGZyZWVkKVswXQ=="><path d="M 688.5 33 L 723.5 33" stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-2426751504-3488378134-3)" mask="url(#d2-2426751504-3)" /></g><g transform="translate(151 -16)" class="appendix-icon"><title>A creates the segment under a name and holds one handle on it.</title><svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_3427_35082111-d2-2426751504-MNZGKYLUMVSA-3)">
+<path d="M16 31.1109C24.3456 31.1109 31.1111 24.3454 31.1111 15.9998C31.1111 7.65415 24.3456 0.888672 16 0.888672C7.65436 0.888672 0.888885 7.65415 0.888885 15.9998C0.888885 24.3454 7.65436 31.1109 16 31.1109Z" fill="white" stroke="#DEE1EB"/>
+<path d="M16 26C21.5228 26 26 21.5228 26 16C26 10.4772 21.5228 6 16 6C10.4772 6 6 10.4772 6 16C6 21.5228 10.4772 26 16 26Z" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 19.998V15.998" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 12H16.0098" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<defs>
+<clipPath id="clip0_3427_35082111-d2-2426751504-MNZGKYLUMVSA-3">
+<rect width="32" height="32" fill="white"/>
+</clipPath>
+</defs>
+</svg>
+</g><g transform="translate(309 -16)" class="appendix-icon"><title>B opens the segment by name and gets its own handle on the same memory.</title><svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_3427_35082111-d2-2426751504-ONUGC4TFMQ-3)">
+<path d="M16 31.1109C24.3456 31.1109 31.1111 24.3454 31.1111 15.9998C31.1111 7.65415 24.3456 0.888672 16 0.888672C7.65436 0.888672 0.888885 7.65415 0.888885 15.9998C0.888885 24.3454 7.65436 31.1109 16 31.1109Z" fill="white" stroke="#DEE1EB"/>
+<path d="M16 26C21.5228 26 26 21.5228 26 16C26 10.4772 21.5228 6 16 6C10.4772 6 6 10.4772 6 16C6 21.5228 10.4772 26 16 26Z" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 19.998V15.998" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 12H16.0098" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<defs>
+<clipPath id="clip0_3427_35082111-d2-2426751504-ONUGC4TFMQ-3">
+<rect width="32" height="32" fill="white"/>
+</clipPath>
+</defs>
+</svg>
+</g><mask id="d2-2426751504-3" maskUnits="userSpaceOnUse" x="-101" y="-120" width="1138" height="293">
+<rect x="-101" y="-120" width="1138" height="293" fill="white"></rect>
+
+</mask></svg></svg></div><div class="markdown-d2-dark"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" data-d2-version="v0.9.0" preserveAspectRatio="xMinYMin meet" width="1138" height="293" viewBox="0 0 1138 293"><svg class="d2-2560972456 d2-svg" width="1138" height="293" viewBox="-101 -120 1138 293"><rect x="-101" y="-120" width="1138" height="293" rx="0" fill="#1E1E2E" class=" fill-N7" stroke-width="0" /><style type="text/css"><![CDATA[
+.appendix-icon {
+	filter: drop-shadow(0px 0px 32px rgba(31, 36, 58, 0.1));
+}
+.d2-2560972456 .text-bold {
+	font-family: "d2-2560972456-font-bold";
+}
+@font-face {
+	font-family: d2-2560972456-font-bold;
+	src: url("data:application/font-woff;base64,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");
+}]]></style><style type="text/css"><![CDATA[.shape {
+  shape-rendering: geometricPrecision;
+  stroke-linejoin: round;
+}
+.connection {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.blend {
+  mix-blend-mode: multiply;
+  opacity: 0.5;
+}
+
+		.d2-2560972456 .fill-N1{fill:#CDD6F4;}
+		.d2-2560972456 .fill-N7{fill:#1E1E2E;}
+		.d2-2560972456 .fill-B1{fill:#CBA6f7;}
+		.d2-2560972456 .fill-B6{fill:#313244;}
+		.d2-2560972456 .stroke-B1{stroke:#CBA6f7;}
+		.d2-2560972456 .stroke-B2{stroke:#CBA6f7;}.appendix text.text{fill:#CDD6F4}.md{--color-fg-default:#CDD6F4;--color-fg-muted:#BAC2DE;--color-fg-subtle:#A6ADC8;--color-canvas-default:#1E1E2E;--color-canvas-subtle:#313244;--color-border-default:#CBA6f7;--color-border-muted:#CBA6f7;--color-neutral-muted:#313244;--color-accent-fg:#CBA6f7;--color-accent-emphasis:#CBA6f7;--color-attention-subtle:#BAC2DE;--color-danger-fg:red;}.light-code{display: none}.dark-code{display: block}]]></style><defs>
+	<filter id="shadow-filter-4" width="200%" height="200%" x="-50%" y="-50%">
+		<feGaussianBlur stdDeviation="1.7 " in="SourceGraphic"></feGaussianBlur>
+		<feFlood flood-color="#3d4574" flood-opacity="0.4" result="ShadowFeFlood" in="SourceGraphic"></feFlood>
+		<feComposite in="ShadowFeFlood" in2="SourceAlpha" operator="in" result="ShadowFeComposite"></feComposite>
+		<feOffset dx="3" dy="5" result="ShadowFeOffset" in="ShadowFeComposite"></feOffset>
+		<feBlend in="SourceGraphic" in2="ShadowFeOffset" mode="normal" result="ShadowFeBlend"></feBlend>
+	</filter>
+</defs><g class="Y3JlYXRlZA== done" style='opacity:0.4'><g class="shape" ><rect x="0" y="0" width="167" height="66" rx="6" stroke="#CBA6f7" fill="#313244" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="83.5" y="38.5" fill="#CDD6F4" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">A creates the box</text><title>A creates the segment under a name and holds one handle on it.</title></g><g class="c2hhcmVk current"><g class="shape" filter="url(#shadow-filter-4)" ><rect x="207" y="0" width="118" height="66" rx="6" stroke="#CBA6f7" fill="#313244" class=" stroke-B1 fill-B6" style="stroke-width:4;" /></g><text x="266" y="38.5" fill="#CDD6F4" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">B attaches</text><title>B opens the segment by name and gets its own handle on the same memory.</title></g><g class="YV9jbG9zZWQ= step"><g class="shape" ><rect x="365" y="0" width="102" height="66" rx="6" stroke="#CBA6f7" fill="#313244" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="416" y="38.5" fill="#CDD6F4" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">A closes</text></g><g class="dW5saW5rZWQ= step"><g class="shape" ><rect x="507" y="0" width="180" height="66" rx="6" stroke="#CBA6f7" fill="#313244" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="597" y="38.5" fill="#CDD6F4" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">A unlinks the name</text></g><g class="ZnJlZWQ= step"><g class="shape" ><rect x="727" y="0" width="209" height="66" rx="6" stroke="#CBA6f7" fill="#313244" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="831.5" y="38.5" fill="#CDD6F4" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">B closes: memory freed</text></g><g class="KGNyZWF0ZWQgLSZndDsgc2hhcmVkKVswXQ=="><marker id="mk-d2-2560972456-3488378134-4" markerWidth="10" markerHeight="12" refX="7" refY="6" viewBox="0 0 10 12" orient="auto" markerUnits="userSpaceOnUse"> <polygon points="0,0 10,6 0,12" fill="#CBA6f7" class="connection fill-B1" stroke-width="2" /> </marker><path d="M 169 33 L 202 33" stroke="#CBA6f7" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-2560972456-3488378134-4)" mask="url(#d2-2560972456-4)" /></g><g class="KHNoYXJlZCAtJmd0OyBhX2Nsb3NlZClbMF0="><path d="M 328 33 L 361 33" stroke="#CBA6f7" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-2560972456-3488378134-4)" mask="url(#d2-2560972456-4)" /></g><g class="KGFfY2xvc2VkIC0mZ3Q7IHVubGlua2VkKVswXQ=="><path d="M 469 33 L 503 33" stroke="#CBA6f7" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-2560972456-3488378134-4)" mask="url(#d2-2560972456-4)" /></g><g class="KHVubGlua2VkIC0mZ3Q7IGZyZWVkKVswXQ=="><path d="M 688.5 33 L 723.5 33" stroke="#CBA6f7" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-2560972456-3488378134-4)" mask="url(#d2-2560972456-4)" /></g><g transform="translate(151 -16)" class="appendix-icon"><title>A creates the segment under a name and holds one handle on it.</title><svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_3427_35082111-d2-2560972456-MNZGKYLUMVSA-4)">
+<path d="M16 31.1109C24.3456 31.1109 31.1111 24.3454 31.1111 15.9998C31.1111 7.65415 24.3456 0.888672 16 0.888672C7.65436 0.888672 0.888885 7.65415 0.888885 15.9998C0.888885 24.3454 7.65436 31.1109 16 31.1109Z" fill="white" stroke="#DEE1EB"/>
+<path d="M16 26C21.5228 26 26 21.5228 26 16C26 10.4772 21.5228 6 16 6C10.4772 6 6 10.4772 6 16C6 21.5228 10.4772 26 16 26Z" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 19.998V15.998" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 12H16.0098" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<defs>
+<clipPath id="clip0_3427_35082111-d2-2560972456-MNZGKYLUMVSA-4">
+<rect width="32" height="32" fill="white"/>
+</clipPath>
+</defs>
+</svg>
+</g><g transform="translate(309 -16)" class="appendix-icon"><title>B opens the segment by name and gets its own handle on the same memory.</title><svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_3427_35082111-d2-2560972456-ONUGC4TFMQ-4)">
+<path d="M16 31.1109C24.3456 31.1109 31.1111 24.3454 31.1111 15.9998C31.1111 7.65415 24.3456 0.888672 16 0.888672C7.65436 0.888672 0.888885 7.65415 0.888885 15.9998C0.888885 24.3454 7.65436 31.1109 16 31.1109Z" fill="white" stroke="#DEE1EB"/>
+<path d="M16 26C21.5228 26 26 21.5228 26 16C26 10.4772 21.5228 6 16 6C10.4772 6 6 10.4772 6 16C6 21.5228 10.4772 26 16 26Z" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 19.998V15.998" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 12H16.0098" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<defs>
+<clipPath id="clip0_3427_35082111-d2-2560972456-ONUGC4TFMQ-4">
+<rect width="32" height="32" fill="white"/>
+</clipPath>
+</defs>
+</svg>
+</g><mask id="d2-2560972456-4" maskUnits="userSpaceOnUse" x="-101" y="-120" width="1138" height="293">
+<rect x="-101" y="-120" width="1138" height="293" fill="white"></rect>
+
+</mask></svg></svg></div></div><div class="markdown-d2-board" data-step="3" data-name="scenarios.a_closed"><div class="markdown-d2-light"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" data-d2-version="v0.9.0" preserveAspectRatio="xMinYMin meet" width="1138" height="293" viewBox="0 0 1138 293"><svg class="d2-3645880360 d2-svg" width="1138" height="293" viewBox="-101 -120 1138 293"><rect x="-101" y="-120" width="1138" height="293" rx="0" fill="#FFFFFF" class=" fill-N7" stroke-width="0" /><style type="text/css"><![CDATA[
+.appendix-icon {
+	filter: drop-shadow(0px 0px 32px rgba(31, 36, 58, 0.1));
+}
+.d2-3645880360 .text-bold {
+	font-family: "d2-3645880360-font-bold";
+}
+@font-face {
+	font-family: d2-3645880360-font-bold;
+	src: url("data:application/font-woff;base64,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");
+}]]></style><style type="text/css"><![CDATA[.shape {
+  shape-rendering: geometricPrecision;
+  stroke-linejoin: round;
+}
+.connection {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.blend {
+  mix-blend-mode: multiply;
+  opacity: 0.5;
+}
+
+		.d2-3645880360 .fill-N1{fill:#0A0F25;}
+		.d2-3645880360 .fill-N7{fill:#FFFFFF;}
+		.d2-3645880360 .fill-B1{fill:#0D32B2;}
+		.d2-3645880360 .fill-B6{fill:#F7F8FE;}
+		.d2-3645880360 .stroke-B1{stroke:#0D32B2;}
+		.d2-3645880360 .stroke-B2{stroke:#0D32B2;}.appendix text.text{fill:#0A0F25}.md{--color-fg-default:#0A0F25;--color-fg-muted:#676C7E;--color-fg-subtle:#9499AB;--color-canvas-default:#FFFFFF;--color-canvas-subtle:#EEF1F8;--color-border-default:#0D32B2;--color-border-muted:#0D32B2;--color-neutral-muted:#EEF1F8;--color-accent-fg:#0D32B2;--color-accent-emphasis:#0D32B2;--color-attention-subtle:#676C7E;--color-danger-fg:red;}.light-code{display: block}.dark-code{display: none}]]></style><defs>
+	<filter id="shadow-filter-5" width="200%" height="200%" x="-50%" y="-50%">
+		<feGaussianBlur stdDeviation="1.7 " in="SourceGraphic"></feGaussianBlur>
+		<feFlood flood-color="#3d4574" flood-opacity="0.4" result="ShadowFeFlood" in="SourceGraphic"></feFlood>
+		<feComposite in="ShadowFeFlood" in2="SourceAlpha" operator="in" result="ShadowFeComposite"></feComposite>
+		<feOffset dx="3" dy="5" result="ShadowFeOffset" in="ShadowFeComposite"></feOffset>
+		<feBlend in="SourceGraphic" in2="ShadowFeOffset" mode="normal" result="ShadowFeBlend"></feBlend>
+	</filter>
+</defs><g class="Y3JlYXRlZA== done" style='opacity:0.4'><g class="shape" ><rect x="0" y="0" width="167" height="66" rx="6" stroke="#0D32B2" fill="#F7F8FE" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="83.5" y="38.5" fill="#0A0F25" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">A creates the box</text><title>A creates the segment under a name and holds one handle on it.</title></g><g class="c2hhcmVk done" style='opacity:0.4'><g class="shape" ><rect x="207" y="0" width="118" height="66" rx="6" stroke="#0D32B2" fill="#F7F8FE" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="266" y="38.5" fill="#0A0F25" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">B attaches</text></g><g class="YV9jbG9zZWQ= current"><g class="shape" filter="url(#shadow-filter-5)" ><rect x="365" y="0" width="102" height="66" rx="6" stroke="#0D32B2" fill="#F7F8FE" class=" stroke-B1 fill-B6" style="stroke-width:4;" /></g><text x="416" y="38.5" fill="#0A0F25" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">A closes</text><title>A&#39;s handle is gone, but the data stays, because B still uses it.</title></g><g class="dW5saW5rZWQ= step"><g class="shape" ><rect x="507" y="0" width="180" height="66" rx="6" stroke="#0D32B2" fill="#F7F8FE" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="597" y="38.5" fill="#0A0F25" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">A unlinks the name</text></g><g class="ZnJlZWQ= step"><g class="shape" ><rect x="727" y="0" width="209" height="66" rx="6" stroke="#0D32B2" fill="#F7F8FE" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="831.5" y="38.5" fill="#0A0F25" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">B closes: memory freed</text></g><g class="KGNyZWF0ZWQgLSZndDsgc2hhcmVkKVswXQ=="><marker id="mk-d2-3645880360-3488378134-5" markerWidth="10" markerHeight="12" refX="7" refY="6" viewBox="0 0 10 12" orient="auto" markerUnits="userSpaceOnUse"> <polygon points="0,0 10,6 0,12" fill="#0D32B2" class="connection fill-B1" stroke-width="2" /> </marker><path d="M 169 33 L 203 33" stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-3645880360-3488378134-5)" mask="url(#d2-3645880360-5)" /></g><g class="KHNoYXJlZCAtJmd0OyBhX2Nsb3NlZClbMF0="><path d="M 327 33 L 360 33" stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-3645880360-3488378134-5)" mask="url(#d2-3645880360-5)" /></g><g class="KGFfY2xvc2VkIC0mZ3Q7IHVubGlua2VkKVswXQ=="><path d="M 470 33 L 503 33" stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-3645880360-3488378134-5)" mask="url(#d2-3645880360-5)" /></g><g class="KHVubGlua2VkIC0mZ3Q7IGZyZWVkKVswXQ=="><path d="M 688.5 33 L 723.5 33" stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-3645880360-3488378134-5)" mask="url(#d2-3645880360-5)" /></g><g transform="translate(151 -16)" class="appendix-icon"><title>A creates the segment under a name and holds one handle on it.</title><svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_3427_35082111-d2-3645880360-MNZGKYLUMVSA-5)">
+<path d="M16 31.1109C24.3456 31.1109 31.1111 24.3454 31.1111 15.9998C31.1111 7.65415 24.3456 0.888672 16 0.888672C7.65436 0.888672 0.888885 7.65415 0.888885 15.9998C0.888885 24.3454 7.65436 31.1109 16 31.1109Z" fill="white" stroke="#DEE1EB"/>
+<path d="M16 26C21.5228 26 26 21.5228 26 16C26 10.4772 21.5228 6 16 6C10.4772 6 6 10.4772 6 16C6 21.5228 10.4772 26 16 26Z" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 19.998V15.998" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 12H16.0098" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<defs>
+<clipPath id="clip0_3427_35082111-d2-3645880360-MNZGKYLUMVSA-5">
+<rect width="32" height="32" fill="white"/>
+</clipPath>
+</defs>
+</svg>
+</g><g transform="translate(451 -16)" class="appendix-icon"><title>A&#39;s handle is gone, but the data stays, because B still uses it.</title><svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_3427_35082111-d2-3645880360-MFPWG3DPONSWI-5)">
+<path d="M16 31.1109C24.3456 31.1109 31.1111 24.3454 31.1111 15.9998C31.1111 7.65415 24.3456 0.888672 16 0.888672C7.65436 0.888672 0.888885 7.65415 0.888885 15.9998C0.888885 24.3454 7.65436 31.1109 16 31.1109Z" fill="white" stroke="#DEE1EB"/>
+<path d="M16 26C21.5228 26 26 21.5228 26 16C26 10.4772 21.5228 6 16 6C10.4772 6 6 10.4772 6 16C6 21.5228 10.4772 26 16 26Z" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 19.998V15.998" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 12H16.0098" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<defs>
+<clipPath id="clip0_3427_35082111-d2-3645880360-MFPWG3DPONSWI-5">
+<rect width="32" height="32" fill="white"/>
+</clipPath>
+</defs>
+</svg>
+</g><mask id="d2-3645880360-5" maskUnits="userSpaceOnUse" x="-101" y="-120" width="1138" height="293">
+<rect x="-101" y="-120" width="1138" height="293" fill="white"></rect>
+
+</mask></svg></svg></div><div class="markdown-d2-dark"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" data-d2-version="v0.9.0" preserveAspectRatio="xMinYMin meet" width="1138" height="293" viewBox="0 0 1138 293"><svg class="d2-3511659408 d2-svg" width="1138" height="293" viewBox="-101 -120 1138 293"><rect x="-101" y="-120" width="1138" height="293" rx="0" fill="#1E1E2E" class=" fill-N7" stroke-width="0" /><style type="text/css"><![CDATA[
+.appendix-icon {
+	filter: drop-shadow(0px 0px 32px rgba(31, 36, 58, 0.1));
+}
+.d2-3511659408 .text-bold {
+	font-family: "d2-3511659408-font-bold";
+}
+@font-face {
+	font-family: d2-3511659408-font-bold;
+	src: url("data:application/font-woff;base64,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");
+}]]></style><style type="text/css"><![CDATA[.shape {
+  shape-rendering: geometricPrecision;
+  stroke-linejoin: round;
+}
+.connection {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.blend {
+  mix-blend-mode: multiply;
+  opacity: 0.5;
+}
+
+		.d2-3511659408 .fill-N1{fill:#CDD6F4;}
+		.d2-3511659408 .fill-N7{fill:#1E1E2E;}
+		.d2-3511659408 .fill-B1{fill:#CBA6f7;}
+		.d2-3511659408 .fill-B6{fill:#313244;}
+		.d2-3511659408 .stroke-B1{stroke:#CBA6f7;}
+		.d2-3511659408 .stroke-B2{stroke:#CBA6f7;}.appendix text.text{fill:#CDD6F4}.md{--color-fg-default:#CDD6F4;--color-fg-muted:#BAC2DE;--color-fg-subtle:#A6ADC8;--color-canvas-default:#1E1E2E;--color-canvas-subtle:#313244;--color-border-default:#CBA6f7;--color-border-muted:#CBA6f7;--color-neutral-muted:#313244;--color-accent-fg:#CBA6f7;--color-accent-emphasis:#CBA6f7;--color-attention-subtle:#BAC2DE;--color-danger-fg:red;}.light-code{display: none}.dark-code{display: block}]]></style><defs>
+	<filter id="shadow-filter-6" width="200%" height="200%" x="-50%" y="-50%">
+		<feGaussianBlur stdDeviation="1.7 " in="SourceGraphic"></feGaussianBlur>
+		<feFlood flood-color="#3d4574" flood-opacity="0.4" result="ShadowFeFlood" in="SourceGraphic"></feFlood>
+		<feComposite in="ShadowFeFlood" in2="SourceAlpha" operator="in" result="ShadowFeComposite"></feComposite>
+		<feOffset dx="3" dy="5" result="ShadowFeOffset" in="ShadowFeComposite"></feOffset>
+		<feBlend in="SourceGraphic" in2="ShadowFeOffset" mode="normal" result="ShadowFeBlend"></feBlend>
+	</filter>
+</defs><g class="Y3JlYXRlZA== done" style='opacity:0.4'><g class="shape" ><rect x="0" y="0" width="167" height="66" rx="6" stroke="#CBA6f7" fill="#313244" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="83.5" y="38.5" fill="#CDD6F4" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">A creates the box</text><title>A creates the segment under a name and holds one handle on it.</title></g><g class="c2hhcmVk done" style='opacity:0.4'><g class="shape" ><rect x="207" y="0" width="118" height="66" rx="6" stroke="#CBA6f7" fill="#313244" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="266" y="38.5" fill="#CDD6F4" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">B attaches</text></g><g class="YV9jbG9zZWQ= current"><g class="shape" filter="url(#shadow-filter-6)" ><rect x="365" y="0" width="102" height="66" rx="6" stroke="#CBA6f7" fill="#313244" class=" stroke-B1 fill-B6" style="stroke-width:4;" /></g><text x="416" y="38.5" fill="#CDD6F4" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">A closes</text><title>A&#39;s handle is gone, but the data stays, because B still uses it.</title></g><g class="dW5saW5rZWQ= step"><g class="shape" ><rect x="507" y="0" width="180" height="66" rx="6" stroke="#CBA6f7" fill="#313244" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="597" y="38.5" fill="#CDD6F4" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">A unlinks the name</text></g><g class="ZnJlZWQ= step"><g class="shape" ><rect x="727" y="0" width="209" height="66" rx="6" stroke="#CBA6f7" fill="#313244" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="831.5" y="38.5" fill="#CDD6F4" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">B closes: memory freed</text></g><g class="KGNyZWF0ZWQgLSZndDsgc2hhcmVkKVswXQ=="><marker id="mk-d2-3511659408-3488378134-6" markerWidth="10" markerHeight="12" refX="7" refY="6" viewBox="0 0 10 12" orient="auto" markerUnits="userSpaceOnUse"> <polygon points="0,0 10,6 0,12" fill="#CBA6f7" class="connection fill-B1" stroke-width="2" /> </marker><path d="M 169 33 L 203 33" stroke="#CBA6f7" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-3511659408-3488378134-6)" mask="url(#d2-3511659408-6)" /></g><g class="KHNoYXJlZCAtJmd0OyBhX2Nsb3NlZClbMF0="><path d="M 327 33 L 360 33" stroke="#CBA6f7" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-3511659408-3488378134-6)" mask="url(#d2-3511659408-6)" /></g><g class="KGFfY2xvc2VkIC0mZ3Q7IHVubGlua2VkKVswXQ=="><path d="M 470 33 L 503 33" stroke="#CBA6f7" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-3511659408-3488378134-6)" mask="url(#d2-3511659408-6)" /></g><g class="KHVubGlua2VkIC0mZ3Q7IGZyZWVkKVswXQ=="><path d="M 688.5 33 L 723.5 33" stroke="#CBA6f7" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-3511659408-3488378134-6)" mask="url(#d2-3511659408-6)" /></g><g transform="translate(151 -16)" class="appendix-icon"><title>A creates the segment under a name and holds one handle on it.</title><svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_3427_35082111-d2-3511659408-MNZGKYLUMVSA-6)">
+<path d="M16 31.1109C24.3456 31.1109 31.1111 24.3454 31.1111 15.9998C31.1111 7.65415 24.3456 0.888672 16 0.888672C7.65436 0.888672 0.888885 7.65415 0.888885 15.9998C0.888885 24.3454 7.65436 31.1109 16 31.1109Z" fill="white" stroke="#DEE1EB"/>
+<path d="M16 26C21.5228 26 26 21.5228 26 16C26 10.4772 21.5228 6 16 6C10.4772 6 6 10.4772 6 16C6 21.5228 10.4772 26 16 26Z" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 19.998V15.998" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 12H16.0098" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<defs>
+<clipPath id="clip0_3427_35082111-d2-3511659408-MNZGKYLUMVSA-6">
+<rect width="32" height="32" fill="white"/>
+</clipPath>
+</defs>
+</svg>
+</g><g transform="translate(451 -16)" class="appendix-icon"><title>A&#39;s handle is gone, but the data stays, because B still uses it.</title><svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_3427_35082111-d2-3511659408-MFPWG3DPONSWI-6)">
+<path d="M16 31.1109C24.3456 31.1109 31.1111 24.3454 31.1111 15.9998C31.1111 7.65415 24.3456 0.888672 16 0.888672C7.65436 0.888672 0.888885 7.65415 0.888885 15.9998C0.888885 24.3454 7.65436 31.1109 16 31.1109Z" fill="white" stroke="#DEE1EB"/>
+<path d="M16 26C21.5228 26 26 21.5228 26 16C26 10.4772 21.5228 6 16 6C10.4772 6 6 10.4772 6 16C6 21.5228 10.4772 26 16 26Z" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 19.998V15.998" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 12H16.0098" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<defs>
+<clipPath id="clip0_3427_35082111-d2-3511659408-MFPWG3DPONSWI-6">
+<rect width="32" height="32" fill="white"/>
+</clipPath>
+</defs>
+</svg>
+</g><mask id="d2-3511659408-6" maskUnits="userSpaceOnUse" x="-101" y="-120" width="1138" height="293">
+<rect x="-101" y="-120" width="1138" height="293" fill="white"></rect>
+
+</mask></svg></svg></div></div><div class="markdown-d2-board" data-step="4" data-name="scenarios.unlinked"><div class="markdown-d2-light"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" data-d2-version="v0.9.0" preserveAspectRatio="xMinYMin meet" width="1138" height="293" viewBox="0 0 1138 293"><svg class="d2-3977460875 d2-svg" width="1138" height="293" viewBox="-101 -120 1138 293"><rect x="-101" y="-120" width="1138" height="293" rx="0" fill="#FFFFFF" class=" fill-N7" stroke-width="0" /><style type="text/css"><![CDATA[
+.appendix-icon {
+	filter: drop-shadow(0px 0px 32px rgba(31, 36, 58, 0.1));
+}
+.d2-3977460875 .text-bold {
+	font-family: "d2-3977460875-font-bold";
+}
+@font-face {
+	font-family: d2-3977460875-font-bold;
+	src: url("data:application/font-woff;base64,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");
+}]]></style><style type="text/css"><![CDATA[.shape {
+  shape-rendering: geometricPrecision;
+  stroke-linejoin: round;
+}
+.connection {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.blend {
+  mix-blend-mode: multiply;
+  opacity: 0.5;
+}
+
+		.d2-3977460875 .fill-N1{fill:#0A0F25;}
+		.d2-3977460875 .fill-N7{fill:#FFFFFF;}
+		.d2-3977460875 .fill-B1{fill:#0D32B2;}
+		.d2-3977460875 .fill-B6{fill:#F7F8FE;}
+		.d2-3977460875 .stroke-B1{stroke:#0D32B2;}
+		.d2-3977460875 .stroke-B2{stroke:#0D32B2;}.appendix text.text{fill:#0A0F25}.md{--color-fg-default:#0A0F25;--color-fg-muted:#676C7E;--color-fg-subtle:#9499AB;--color-canvas-default:#FFFFFF;--color-canvas-subtle:#EEF1F8;--color-border-default:#0D32B2;--color-border-muted:#0D32B2;--color-neutral-muted:#EEF1F8;--color-accent-fg:#0D32B2;--color-accent-emphasis:#0D32B2;--color-attention-subtle:#676C7E;--color-danger-fg:red;}.light-code{display: block}.dark-code{display: none}]]></style><defs>
+	<filter id="shadow-filter-7" width="200%" height="200%" x="-50%" y="-50%">
+		<feGaussianBlur stdDeviation="1.7 " in="SourceGraphic"></feGaussianBlur>
+		<feFlood flood-color="#3d4574" flood-opacity="0.4" result="ShadowFeFlood" in="SourceGraphic"></feFlood>
+		<feComposite in="ShadowFeFlood" in2="SourceAlpha" operator="in" result="ShadowFeComposite"></feComposite>
+		<feOffset dx="3" dy="5" result="ShadowFeOffset" in="ShadowFeComposite"></feOffset>
+		<feBlend in="SourceGraphic" in2="ShadowFeOffset" mode="normal" result="ShadowFeBlend"></feBlend>
+	</filter>
+</defs><g class="Y3JlYXRlZA== done" style='opacity:0.4'><g class="shape" ><rect x="0" y="0" width="167" height="66" rx="6" stroke="#0D32B2" fill="#F7F8FE" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="83.5" y="38.5" fill="#0A0F25" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">A creates the box</text><title>A creates the segment under a name and holds one handle on it.</title></g><g class="c2hhcmVk done" style='opacity:0.4'><g class="shape" ><rect x="207" y="0" width="118" height="66" rx="6" stroke="#0D32B2" fill="#F7F8FE" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="266" y="38.5" fill="#0A0F25" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">B attaches</text></g><g class="YV9jbG9zZWQ= done" style='opacity:0.4'><g class="shape" ><rect x="365" y="0" width="102" height="66" rx="6" stroke="#0D32B2" fill="#F7F8FE" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="416" y="38.5" fill="#0A0F25" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">A closes</text></g><g class="dW5saW5rZWQ= current"><g class="shape" filter="url(#shadow-filter-7)" ><rect x="507" y="0" width="180" height="66" rx="6" stroke="#0D32B2" fill="#F7F8FE" class=" stroke-B1 fill-B6" style="stroke-width:4;" /></g><text x="597" y="38.5" fill="#0A0F25" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">A unlinks the name</text><title>On Linux the name disappears, like deleting an open file, and nobody new can attach. On Windows there is nothing to remove, and unlink does nothing.</title></g><g class="ZnJlZWQ= step"><g class="shape" ><rect x="727" y="0" width="209" height="66" rx="6" stroke="#0D32B2" fill="#F7F8FE" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="831.5" y="38.5" fill="#0A0F25" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">B closes: memory freed</text></g><g class="KGNyZWF0ZWQgLSZndDsgc2hhcmVkKVswXQ=="><marker id="mk-d2-3977460875-3488378134-7" markerWidth="10" markerHeight="12" refX="7" refY="6" viewBox="0 0 10 12" orient="auto" markerUnits="userSpaceOnUse"> <polygon points="0,0 10,6 0,12" fill="#0D32B2" class="connection fill-B1" stroke-width="2" /> </marker><path d="M 169 33 L 203 33" stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-3977460875-3488378134-7)" mask="url(#d2-3977460875-7)" /></g><g class="KHNoYXJlZCAtJmd0OyBhX2Nsb3NlZClbMF0="><path d="M 327 33 L 361 33" stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-3977460875-3488378134-7)" mask="url(#d2-3977460875-7)" /></g><g class="KGFfY2xvc2VkIC0mZ3Q7IHVubGlua2VkKVswXQ=="><path d="M 469 33 L 502 33" stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-3977460875-3488378134-7)" mask="url(#d2-3977460875-7)" /></g><g class="KHVubGlua2VkIC0mZ3Q7IGZyZWVkKVswXQ=="><path d="M 689.5 33 L 723.5 33" stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-3977460875-3488378134-7)" mask="url(#d2-3977460875-7)" /></g><g transform="translate(151 -16)" class="appendix-icon"><title>A creates the segment under a name and holds one handle on it.</title><svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_3427_35082111-d2-3977460875-MNZGKYLUMVSA-7)">
+<path d="M16 31.1109C24.3456 31.1109 31.1111 24.3454 31.1111 15.9998C31.1111 7.65415 24.3456 0.888672 16 0.888672C7.65436 0.888672 0.888885 7.65415 0.888885 15.9998C0.888885 24.3454 7.65436 31.1109 16 31.1109Z" fill="white" stroke="#DEE1EB"/>
+<path d="M16 26C21.5228 26 26 21.5228 26 16C26 10.4772 21.5228 6 16 6C10.4772 6 6 10.4772 6 16C6 21.5228 10.4772 26 16 26Z" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 19.998V15.998" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 12H16.0098" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<defs>
+<clipPath id="clip0_3427_35082111-d2-3977460875-MNZGKYLUMVSA-7">
+<rect width="32" height="32" fill="white"/>
+</clipPath>
+</defs>
+</svg>
+</g><g transform="translate(671 -16)" class="appendix-icon"><title>On Linux the name disappears, like deleting an open file, and nobody new can attach. On Windows there is nothing to remove, and unlink does nothing.</title><svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_3427_35082111-d2-3977460875-OVXGY2LONNSWI-7)">
+<path d="M16 31.1109C24.3456 31.1109 31.1111 24.3454 31.1111 15.9998C31.1111 7.65415 24.3456 0.888672 16 0.888672C7.65436 0.888672 0.888885 7.65415 0.888885 15.9998C0.888885 24.3454 7.65436 31.1109 16 31.1109Z" fill="white" stroke="#DEE1EB"/>
+<path d="M16 26C21.5228 26 26 21.5228 26 16C26 10.4772 21.5228 6 16 6C10.4772 6 6 10.4772 6 16C6 21.5228 10.4772 26 16 26Z" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 19.998V15.998" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 12H16.0098" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<defs>
+<clipPath id="clip0_3427_35082111-d2-3977460875-OVXGY2LONNSWI-7">
+<rect width="32" height="32" fill="white"/>
+</clipPath>
+</defs>
+</svg>
+</g><mask id="d2-3977460875-7" maskUnits="userSpaceOnUse" x="-101" y="-120" width="1138" height="293">
+<rect x="-101" y="-120" width="1138" height="293" fill="white"></rect>
+
+</mask></svg></svg></div><div class="markdown-d2-dark"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" data-d2-version="v0.9.0" preserveAspectRatio="xMinYMin meet" width="1138" height="293" viewBox="0 0 1138 293"><svg class="d2-3843239923 d2-svg" width="1138" height="293" viewBox="-101 -120 1138 293"><rect x="-101" y="-120" width="1138" height="293" rx="0" fill="#1E1E2E" class=" fill-N7" stroke-width="0" /><style type="text/css"><![CDATA[
+.appendix-icon {
+	filter: drop-shadow(0px 0px 32px rgba(31, 36, 58, 0.1));
+}
+.d2-3843239923 .text-bold {
+	font-family: "d2-3843239923-font-bold";
+}
+@font-face {
+	font-family: d2-3843239923-font-bold;
+	src: url("data:application/font-woff;base64,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");
+}]]></style><style type="text/css"><![CDATA[.shape {
+  shape-rendering: geometricPrecision;
+  stroke-linejoin: round;
+}
+.connection {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.blend {
+  mix-blend-mode: multiply;
+  opacity: 0.5;
+}
+
+		.d2-3843239923 .fill-N1{fill:#CDD6F4;}
+		.d2-3843239923 .fill-N7{fill:#1E1E2E;}
+		.d2-3843239923 .fill-B1{fill:#CBA6f7;}
+		.d2-3843239923 .fill-B6{fill:#313244;}
+		.d2-3843239923 .stroke-B1{stroke:#CBA6f7;}
+		.d2-3843239923 .stroke-B2{stroke:#CBA6f7;}.appendix text.text{fill:#CDD6F4}.md{--color-fg-default:#CDD6F4;--color-fg-muted:#BAC2DE;--color-fg-subtle:#A6ADC8;--color-canvas-default:#1E1E2E;--color-canvas-subtle:#313244;--color-border-default:#CBA6f7;--color-border-muted:#CBA6f7;--color-neutral-muted:#313244;--color-accent-fg:#CBA6f7;--color-accent-emphasis:#CBA6f7;--color-attention-subtle:#BAC2DE;--color-danger-fg:red;}.light-code{display: none}.dark-code{display: block}]]></style><defs>
+	<filter id="shadow-filter-8" width="200%" height="200%" x="-50%" y="-50%">
+		<feGaussianBlur stdDeviation="1.7 " in="SourceGraphic"></feGaussianBlur>
+		<feFlood flood-color="#3d4574" flood-opacity="0.4" result="ShadowFeFlood" in="SourceGraphic"></feFlood>
+		<feComposite in="ShadowFeFlood" in2="SourceAlpha" operator="in" result="ShadowFeComposite"></feComposite>
+		<feOffset dx="3" dy="5" result="ShadowFeOffset" in="ShadowFeComposite"></feOffset>
+		<feBlend in="SourceGraphic" in2="ShadowFeOffset" mode="normal" result="ShadowFeBlend"></feBlend>
+	</filter>
+</defs><g class="Y3JlYXRlZA== done" style='opacity:0.4'><g class="shape" ><rect x="0" y="0" width="167" height="66" rx="6" stroke="#CBA6f7" fill="#313244" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="83.5" y="38.5" fill="#CDD6F4" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">A creates the box</text><title>A creates the segment under a name and holds one handle on it.</title></g><g class="c2hhcmVk done" style='opacity:0.4'><g class="shape" ><rect x="207" y="0" width="118" height="66" rx="6" stroke="#CBA6f7" fill="#313244" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="266" y="38.5" fill="#CDD6F4" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">B attaches</text></g><g class="YV9jbG9zZWQ= done" style='opacity:0.4'><g class="shape" ><rect x="365" y="0" width="102" height="66" rx="6" stroke="#CBA6f7" fill="#313244" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="416" y="38.5" fill="#CDD6F4" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">A closes</text></g><g class="dW5saW5rZWQ= current"><g class="shape" filter="url(#shadow-filter-8)" ><rect x="507" y="0" width="180" height="66" rx="6" stroke="#CBA6f7" fill="#313244" class=" stroke-B1 fill-B6" style="stroke-width:4;" /></g><text x="597" y="38.5" fill="#CDD6F4" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">A unlinks the name</text><title>On Linux the name disappears, like deleting an open file, and nobody new can attach. On Windows there is nothing to remove, and unlink does nothing.</title></g><g class="ZnJlZWQ= step"><g class="shape" ><rect x="727" y="0" width="209" height="66" rx="6" stroke="#CBA6f7" fill="#313244" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="831.5" y="38.5" fill="#CDD6F4" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">B closes: memory freed</text></g><g class="KGNyZWF0ZWQgLSZndDsgc2hhcmVkKVswXQ=="><marker id="mk-d2-3843239923-3488378134-8" markerWidth="10" markerHeight="12" refX="7" refY="6" viewBox="0 0 10 12" orient="auto" markerUnits="userSpaceOnUse"> <polygon points="0,0 10,6 0,12" fill="#CBA6f7" class="connection fill-B1" stroke-width="2" /> </marker><path d="M 169 33 L 203 33" stroke="#CBA6f7" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-3843239923-3488378134-8)" mask="url(#d2-3843239923-8)" /></g><g class="KHNoYXJlZCAtJmd0OyBhX2Nsb3NlZClbMF0="><path d="M 327 33 L 361 33" stroke="#CBA6f7" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-3843239923-3488378134-8)" mask="url(#d2-3843239923-8)" /></g><g class="KGFfY2xvc2VkIC0mZ3Q7IHVubGlua2VkKVswXQ=="><path d="M 469 33 L 502 33" stroke="#CBA6f7" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-3843239923-3488378134-8)" mask="url(#d2-3843239923-8)" /></g><g class="KHVubGlua2VkIC0mZ3Q7IGZyZWVkKVswXQ=="><path d="M 689.5 33 L 723.5 33" stroke="#CBA6f7" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-3843239923-3488378134-8)" mask="url(#d2-3843239923-8)" /></g><g transform="translate(151 -16)" class="appendix-icon"><title>A creates the segment under a name and holds one handle on it.</title><svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_3427_35082111-d2-3843239923-MNZGKYLUMVSA-8)">
+<path d="M16 31.1109C24.3456 31.1109 31.1111 24.3454 31.1111 15.9998C31.1111 7.65415 24.3456 0.888672 16 0.888672C7.65436 0.888672 0.888885 7.65415 0.888885 15.9998C0.888885 24.3454 7.65436 31.1109 16 31.1109Z" fill="white" stroke="#DEE1EB"/>
+<path d="M16 26C21.5228 26 26 21.5228 26 16C26 10.4772 21.5228 6 16 6C10.4772 6 6 10.4772 6 16C6 21.5228 10.4772 26 16 26Z" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 19.998V15.998" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 12H16.0098" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<defs>
+<clipPath id="clip0_3427_35082111-d2-3843239923-MNZGKYLUMVSA-8">
+<rect width="32" height="32" fill="white"/>
+</clipPath>
+</defs>
+</svg>
+</g><g transform="translate(671 -16)" class="appendix-icon"><title>On Linux the name disappears, like deleting an open file, and nobody new can attach. On Windows there is nothing to remove, and unlink does nothing.</title><svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_3427_35082111-d2-3843239923-OVXGY2LONNSWI-8)">
+<path d="M16 31.1109C24.3456 31.1109 31.1111 24.3454 31.1111 15.9998C31.1111 7.65415 24.3456 0.888672 16 0.888672C7.65436 0.888672 0.888885 7.65415 0.888885 15.9998C0.888885 24.3454 7.65436 31.1109 16 31.1109Z" fill="white" stroke="#DEE1EB"/>
+<path d="M16 26C21.5228 26 26 21.5228 26 16C26 10.4772 21.5228 6 16 6C10.4772 6 6 10.4772 6 16C6 21.5228 10.4772 26 16 26Z" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 19.998V15.998" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 12H16.0098" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<defs>
+<clipPath id="clip0_3427_35082111-d2-3843239923-OVXGY2LONNSWI-8">
+<rect width="32" height="32" fill="white"/>
+</clipPath>
+</defs>
+</svg>
+</g><mask id="d2-3843239923-8" maskUnits="userSpaceOnUse" x="-101" y="-120" width="1138" height="293">
+<rect x="-101" y="-120" width="1138" height="293" fill="white"></rect>
+
+</mask></svg></svg></div></div><div class="markdown-d2-board" data-step="5" data-name="scenarios.freed"><div class="markdown-d2-light"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" data-d2-version="v0.9.0" preserveAspectRatio="xMinYMin meet" width="1157" height="293" viewBox="0 0 1157 293"><svg class="d2-1781438948 d2-svg" width="1157" height="293" viewBox="-101 -120 1157 293"><rect x="-101" y="-120" width="1157" height="293" rx="0" fill="#FFFFFF" class=" fill-N7" stroke-width="0" /><style type="text/css"><![CDATA[
+.appendix-icon {
+	filter: drop-shadow(0px 0px 32px rgba(31, 36, 58, 0.1));
+}
+.d2-1781438948 .text-bold {
+	font-family: "d2-1781438948-font-bold";
+}
+@font-face {
+	font-family: d2-1781438948-font-bold;
+	src: url("data:application/font-woff;base64,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");
+}]]></style><style type="text/css"><![CDATA[.shape {
+  shape-rendering: geometricPrecision;
+  stroke-linejoin: round;
+}
+.connection {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.blend {
+  mix-blend-mode: multiply;
+  opacity: 0.5;
+}
+
+		.d2-1781438948 .fill-N1{fill:#0A0F25;}
+		.d2-1781438948 .fill-N7{fill:#FFFFFF;}
+		.d2-1781438948 .fill-B1{fill:#0D32B2;}
+		.d2-1781438948 .fill-B6{fill:#F7F8FE;}
+		.d2-1781438948 .stroke-B1{stroke:#0D32B2;}
+		.d2-1781438948 .stroke-B2{stroke:#0D32B2;}.appendix text.text{fill:#0A0F25}.md{--color-fg-default:#0A0F25;--color-fg-muted:#676C7E;--color-fg-subtle:#9499AB;--color-canvas-default:#FFFFFF;--color-canvas-subtle:#EEF1F8;--color-border-default:#0D32B2;--color-border-muted:#0D32B2;--color-neutral-muted:#EEF1F8;--color-accent-fg:#0D32B2;--color-accent-emphasis:#0D32B2;--color-attention-subtle:#676C7E;--color-danger-fg:red;}.light-code{display: block}.dark-code{display: none}]]></style><defs>
+	<filter id="shadow-filter-9" width="200%" height="200%" x="-50%" y="-50%">
+		<feGaussianBlur stdDeviation="1.7 " in="SourceGraphic"></feGaussianBlur>
+		<feFlood flood-color="#3d4574" flood-opacity="0.4" result="ShadowFeFlood" in="SourceGraphic"></feFlood>
+		<feComposite in="ShadowFeFlood" in2="SourceAlpha" operator="in" result="ShadowFeComposite"></feComposite>
+		<feOffset dx="3" dy="5" result="ShadowFeOffset" in="ShadowFeComposite"></feOffset>
+		<feBlend in="SourceGraphic" in2="ShadowFeOffset" mode="normal" result="ShadowFeBlend"></feBlend>
+	</filter>
+</defs><g class="Y3JlYXRlZA== done" style='opacity:0.4'><g class="shape" ><rect x="0" y="0" width="167" height="66" rx="6" stroke="#0D32B2" fill="#F7F8FE" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="83.5" y="38.5" fill="#0A0F25" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">A creates the box</text><title>A creates the segment under a name and holds one handle on it.</title></g><g class="c2hhcmVk done" style='opacity:0.4'><g class="shape" ><rect x="207" y="0" width="118" height="66" rx="6" stroke="#0D32B2" fill="#F7F8FE" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="266" y="38.5" fill="#0A0F25" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">B attaches</text></g><g class="YV9jbG9zZWQ= done" style='opacity:0.4'><g class="shape" ><rect x="365" y="0" width="102" height="66" rx="6" stroke="#0D32B2" fill="#F7F8FE" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="416" y="38.5" fill="#0A0F25" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">A closes</text></g><g class="dW5saW5rZWQ= done" style='opacity:0.4'><g class="shape" ><rect x="507" y="0" width="180" height="66" rx="6" stroke="#0D32B2" fill="#F7F8FE" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="597" y="38.5" fill="#0A0F25" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">A unlinks the name</text></g><g class="ZnJlZWQ= current"><g class="shape" filter="url(#shadow-filter-9)" ><rect x="727" y="0" width="209" height="66" rx="6" stroke="#0D32B2" fill="#F7F8FE" class=" stroke-B1 fill-B6" style="stroke-width:4;" /></g><text x="831.5" y="38.5" fill="#0A0F25" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">B closes: memory freed</text><title>The last handle is closed, so the system frees the memory. On Linux that happens only if the name was unlinked first.</title></g><g class="KGNyZWF0ZWQgLSZndDsgc2hhcmVkKVswXQ=="><marker id="mk-d2-1781438948-3488378134-9" markerWidth="10" markerHeight="12" refX="7" refY="6" viewBox="0 0 10 12" orient="auto" markerUnits="userSpaceOnUse"> <polygon points="0,0 10,6 0,12" fill="#0D32B2" class="connection fill-B1" stroke-width="2" /> </marker><path d="M 169 33 L 203 33" stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-1781438948-3488378134-9)" mask="url(#d2-1781438948-9)" /></g><g class="KHNoYXJlZCAtJmd0OyBhX2Nsb3NlZClbMF0="><path d="M 327 33 L 361 33" stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-1781438948-3488378134-9)" mask="url(#d2-1781438948-9)" /></g><g class="KGFfY2xvc2VkIC0mZ3Q7IHVubGlua2VkKVswXQ=="><path d="M 469 33 L 503 33" stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-1781438948-3488378134-9)" mask="url(#d2-1781438948-9)" /></g><g class="KHVubGlua2VkIC0mZ3Q7IGZyZWVkKVswXQ=="><path d="M 688.5 33 L 722.5 33" stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-1781438948-3488378134-9)" mask="url(#d2-1781438948-9)" /></g><g transform="translate(151 -16)" class="appendix-icon"><title>A creates the segment under a name and holds one handle on it.</title><svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_3427_35082111-d2-1781438948-MNZGKYLUMVSA-9)">
+<path d="M16 31.1109C24.3456 31.1109 31.1111 24.3454 31.1111 15.9998C31.1111 7.65415 24.3456 0.888672 16 0.888672C7.65436 0.888672 0.888885 7.65415 0.888885 15.9998C0.888885 24.3454 7.65436 31.1109 16 31.1109Z" fill="white" stroke="#DEE1EB"/>
+<path d="M16 26C21.5228 26 26 21.5228 26 16C26 10.4772 21.5228 6 16 6C10.4772 6 6 10.4772 6 16C6 21.5228 10.4772 26 16 26Z" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 19.998V15.998" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 12H16.0098" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<defs>
+<clipPath id="clip0_3427_35082111-d2-1781438948-MNZGKYLUMVSA-9">
+<rect width="32" height="32" fill="white"/>
+</clipPath>
+</defs>
+</svg>
+</g><g transform="translate(920 -16)" class="appendix-icon"><title>The last handle is closed, so the system frees the memory. On Linux that happens only if the name was unlinked first.</title><svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_3427_35082111-d2-1781438948-MZZGKZLE-9)">
+<path d="M16 31.1109C24.3456 31.1109 31.1111 24.3454 31.1111 15.9998C31.1111 7.65415 24.3456 0.888672 16 0.888672C7.65436 0.888672 0.888885 7.65415 0.888885 15.9998C0.888885 24.3454 7.65436 31.1109 16 31.1109Z" fill="white" stroke="#DEE1EB"/>
+<path d="M16 26C21.5228 26 26 21.5228 26 16C26 10.4772 21.5228 6 16 6C10.4772 6 6 10.4772 6 16C6 21.5228 10.4772 26 16 26Z" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 19.998V15.998" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 12H16.0098" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<defs>
+<clipPath id="clip0_3427_35082111-d2-1781438948-MZZGKZLE-9">
+<rect width="32" height="32" fill="white"/>
+</clipPath>
+</defs>
+</svg>
+</g><mask id="d2-1781438948-9" maskUnits="userSpaceOnUse" x="-101" y="-120" width="1157" height="293">
+<rect x="-101" y="-120" width="1157" height="293" fill="white"></rect>
+
+</mask></svg></svg></div><div class="markdown-d2-dark"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" data-d2-version="v0.9.0" preserveAspectRatio="xMinYMin meet" width="1157" height="293" viewBox="0 0 1157 293"><svg class="d2-1647217996 d2-svg" width="1157" height="293" viewBox="-101 -120 1157 293"><rect x="-101" y="-120" width="1157" height="293" rx="0" fill="#1E1E2E" class=" fill-N7" stroke-width="0" /><style type="text/css"><![CDATA[
+.appendix-icon {
+	filter: drop-shadow(0px 0px 32px rgba(31, 36, 58, 0.1));
+}
+.d2-1647217996 .text-bold {
+	font-family: "d2-1647217996-font-bold";
+}
+@font-face {
+	font-family: d2-1647217996-font-bold;
+	src: url("data:application/font-woff;base64,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");
+}]]></style><style type="text/css"><![CDATA[.shape {
+  shape-rendering: geometricPrecision;
+  stroke-linejoin: round;
+}
+.connection {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.blend {
+  mix-blend-mode: multiply;
+  opacity: 0.5;
+}
+
+		.d2-1647217996 .fill-N1{fill:#CDD6F4;}
+		.d2-1647217996 .fill-N7{fill:#1E1E2E;}
+		.d2-1647217996 .fill-B1{fill:#CBA6f7;}
+		.d2-1647217996 .fill-B6{fill:#313244;}
+		.d2-1647217996 .stroke-B1{stroke:#CBA6f7;}
+		.d2-1647217996 .stroke-B2{stroke:#CBA6f7;}.appendix text.text{fill:#CDD6F4}.md{--color-fg-default:#CDD6F4;--color-fg-muted:#BAC2DE;--color-fg-subtle:#A6ADC8;--color-canvas-default:#1E1E2E;--color-canvas-subtle:#313244;--color-border-default:#CBA6f7;--color-border-muted:#CBA6f7;--color-neutral-muted:#313244;--color-accent-fg:#CBA6f7;--color-accent-emphasis:#CBA6f7;--color-attention-subtle:#BAC2DE;--color-danger-fg:red;}.light-code{display: none}.dark-code{display: block}]]></style><defs>
+	<filter id="shadow-filter-10" width="200%" height="200%" x="-50%" y="-50%">
+		<feGaussianBlur stdDeviation="1.7 " in="SourceGraphic"></feGaussianBlur>
+		<feFlood flood-color="#3d4574" flood-opacity="0.4" result="ShadowFeFlood" in="SourceGraphic"></feFlood>
+		<feComposite in="ShadowFeFlood" in2="SourceAlpha" operator="in" result="ShadowFeComposite"></feComposite>
+		<feOffset dx="3" dy="5" result="ShadowFeOffset" in="ShadowFeComposite"></feOffset>
+		<feBlend in="SourceGraphic" in2="ShadowFeOffset" mode="normal" result="ShadowFeBlend"></feBlend>
+	</filter>
+</defs><g class="Y3JlYXRlZA== done" style='opacity:0.4'><g class="shape" ><rect x="0" y="0" width="167" height="66" rx="6" stroke="#CBA6f7" fill="#313244" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="83.5" y="38.5" fill="#CDD6F4" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">A creates the box</text><title>A creates the segment under a name and holds one handle on it.</title></g><g class="c2hhcmVk done" style='opacity:0.4'><g class="shape" ><rect x="207" y="0" width="118" height="66" rx="6" stroke="#CBA6f7" fill="#313244" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="266" y="38.5" fill="#CDD6F4" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">B attaches</text></g><g class="YV9jbG9zZWQ= done" style='opacity:0.4'><g class="shape" ><rect x="365" y="0" width="102" height="66" rx="6" stroke="#CBA6f7" fill="#313244" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="416" y="38.5" fill="#CDD6F4" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">A closes</text></g><g class="dW5saW5rZWQ= done" style='opacity:0.4'><g class="shape" ><rect x="507" y="0" width="180" height="66" rx="6" stroke="#CBA6f7" fill="#313244" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="597" y="38.5" fill="#CDD6F4" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">A unlinks the name</text></g><g class="ZnJlZWQ= current"><g class="shape" filter="url(#shadow-filter-10)" ><rect x="727" y="0" width="209" height="66" rx="6" stroke="#CBA6f7" fill="#313244" class=" stroke-B1 fill-B6" style="stroke-width:4;" /></g><text x="831.5" y="38.5" fill="#CDD6F4" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">B closes: memory freed</text><title>The last handle is closed, so the system frees the memory. On Linux that happens only if the name was unlinked first.</title></g><g class="KGNyZWF0ZWQgLSZndDsgc2hhcmVkKVswXQ=="><marker id="mk-d2-1647217996-3488378134-10" markerWidth="10" markerHeight="12" refX="7" refY="6" viewBox="0 0 10 12" orient="auto" markerUnits="userSpaceOnUse"> <polygon points="0,0 10,6 0,12" fill="#CBA6f7" class="connection fill-B1" stroke-width="2" /> </marker><path d="M 169 33 L 203 33" stroke="#CBA6f7" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-1647217996-3488378134-10)" mask="url(#d2-1647217996-10)" /></g><g class="KHNoYXJlZCAtJmd0OyBhX2Nsb3NlZClbMF0="><path d="M 327 33 L 361 33" stroke="#CBA6f7" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-1647217996-3488378134-10)" mask="url(#d2-1647217996-10)" /></g><g class="KGFfY2xvc2VkIC0mZ3Q7IHVubGlua2VkKVswXQ=="><path d="M 469 33 L 503 33" stroke="#CBA6f7" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-1647217996-3488378134-10)" mask="url(#d2-1647217996-10)" /></g><g class="KHVubGlua2VkIC0mZ3Q7IGZyZWVkKVswXQ=="><path d="M 688.5 33 L 722.5 33" stroke="#CBA6f7" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-1647217996-3488378134-10)" mask="url(#d2-1647217996-10)" /></g><g transform="translate(151 -16)" class="appendix-icon"><title>A creates the segment under a name and holds one handle on it.</title><svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_3427_35082111-d2-1647217996-MNZGKYLUMVSA-10)">
+<path d="M16 31.1109C24.3456 31.1109 31.1111 24.3454 31.1111 15.9998C31.1111 7.65415 24.3456 0.888672 16 0.888672C7.65436 0.888672 0.888885 7.65415 0.888885 15.9998C0.888885 24.3454 7.65436 31.1109 16 31.1109Z" fill="white" stroke="#DEE1EB"/>
+<path d="M16 26C21.5228 26 26 21.5228 26 16C26 10.4772 21.5228 6 16 6C10.4772 6 6 10.4772 6 16C6 21.5228 10.4772 26 16 26Z" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 19.998V15.998" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 12H16.0098" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<defs>
+<clipPath id="clip0_3427_35082111-d2-1647217996-MNZGKYLUMVSA-10">
+<rect width="32" height="32" fill="white"/>
+</clipPath>
+</defs>
+</svg>
+</g><g transform="translate(920 -16)" class="appendix-icon"><title>The last handle is closed, so the system frees the memory. On Linux that happens only if the name was unlinked first.</title><svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_3427_35082111-d2-1647217996-MZZGKZLE-10)">
+<path d="M16 31.1109C24.3456 31.1109 31.1111 24.3454 31.1111 15.9998C31.1111 7.65415 24.3456 0.888672 16 0.888672C7.65436 0.888672 0.888885 7.65415 0.888885 15.9998C0.888885 24.3454 7.65436 31.1109 16 31.1109Z" fill="white" stroke="#DEE1EB"/>
+<path d="M16 26C21.5228 26 26 21.5228 26 16C26 10.4772 21.5228 6 16 6C10.4772 6 6 10.4772 6 16C6 21.5228 10.4772 26 16 26Z" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 19.998V15.998" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 12H16.0098" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<defs>
+<clipPath id="clip0_3427_35082111-d2-1647217996-MZZGKZLE-10">
+<rect width="32" height="32" fill="white"/>
+</clipPath>
+</defs>
+</svg>
+</g><mask id="d2-1647217996-10" maskUnits="userSpaceOnUse" x="-101" y="-120" width="1157" height="293">
+<rect x="-101" y="-120" width="1157" height="293" fill="white"></rect>
+
+</mask></svg></svg></div></div><figcaption>The life of a segment</figcaption></figure>
+<p>This is how Python's <code>SharedMemory.close()</code> and <code>SharedMemory.unlink()</code>
+behave,<sup id="fnref:shared-memory"><a class="footnote-ref" href="#fn:shared-memory">7</a></sup><sup id="fnref:shm-unlink"><a class="footnote-ref" href="#fn:shm-unlink">5</a></sup><sup id="fnref:create-file-mapping"><a class="footnote-ref" href="#fn:create-file-mapping">6</a></sup> so the two don't
+have to be learned separately.</p>
+<p>Because <code>unlink</code> removes the name for every process, only one process
+should call it, usually the one that created the box. <code>sharedbox</code> never
+unlinks anything by itself when your program exits, just like
+<code>SharedMemory(track=False)</code>. On Linux a segment that is never
+unlinked stays in <code>/dev/shm</code> until reboot, and creating a box under its
+name then raises <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;SegmentExistsError&lt;/span&gt;" href="../../reference/api/errors/#sharedbox.SegmentExistsError"><code>SegmentExistsError</code></a>.</p>
+<p>Leaving a <code>with</code> block closes a box, and so does garbage collection. The
+docstring of <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;close&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.close"><code>close</code></a> says what happens in each
+case to writes not yet delivered and to forwarding the box started.</p>
 <h2 id="closing-a-box-while-other-threads-still-use-it">Closing a box while other threads still use it<a class="headerlink" href="#closing-a-box-while-other-threads-still-use-it" title="Permanent link">&para;</a></h2>
-<p>One thread can call <code>close</code> and unmap the memory while another thread of
-the same process is copying from it. The free-threaded build has no global
+<p>This section is for the curious and for people working on <code>sharedbox</code>
+itself; you don't need it to use a box. Within one process, one thread can
+call <code>close</code> and unmap the memory while another thread is still copying
+from it, and a careless design would crash there. The free-threaded build has no global
 interpreter lock (<abbr title="Global interpreter lock. The lock that lets only one thread of a CPython process run Python code at a time.">GIL</abbr>),<sup id="fnref:pep-703"><a class="footnote-ref" href="#fn:pep-703">1</a></sup> and Python 3.14 is the first version
 where that build is supported rather than experimental.<sup id="fnref:pep-779"><a class="footnote-ref" href="#fn:pep-779">2</a></sup> A normal
 build does not prevent the race either: a read or write that waits for
 another writer's lock releases the <abbr title="Global interpreter lock. The lock that lets only one thread of a CPython process run Python code at a time.">GIL</abbr> while it waits, so <code>close</code> can run
 in the meantime.</p>
-<p>Each open box therefore has a reader-writer lock that only protects its
-own lifetime.<sup id="fnref:shared-mutex"><a class="footnote-ref" href="#fn:shared-mutex">3</a></sup> Every operation holds it in shared mode;
+<p>So each open box has a reader-writer lock that only guards its own
+lifetime.<sup id="fnref:shared-mutex"><a class="footnote-ref" href="#fn:shared-mutex">3</a></sup> Every operation holds it in shared mode;
 <code>close</code> takes it exclusively, so it waits until running operations finish.</p>
 <p>A wait for the write lock (see <a href="../reading-and-writing/#the-write-lock-a-sequence-counter">Reading and
 writing</a>), or for
@@ -3105,44 +4046,24 @@ would then deadlock, and the code rules out both:</p>
 </span><span id="__span-0-14"><a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="w">        </span><span class="k">return</span><span class="p">;</span>
 </span><span id="__span-0-15"><a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="n">unique_lock</span><span class="w"> </span><span class="nf">guard</span><span class="p">(</span><span class="n">impl_</span><span class="o">-&gt;</span><span class="n">lifetime</span><span class="p">);</span><span class="w">   </span><span class="c1">// wait for calls already running</span>
 </span><span id="__span-0-16"><a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a><span class="w">    </span><span class="n">impl_</span><span class="o">-&gt;</span><span class="n">box</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">handle</span><span class="p">();</span><span class="w">                     </span><span class="c1">// then release the handle</span>
-</span><span id="__span-0-17"><a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a><span class="p">}</span>
+</span><span id="__span-0-17"><a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a><span class="w">    </span><span class="n">impl_</span><span class="o">-&gt;</span><span class="n">writer</span><span class="p">.</span><span class="n">reset</span><span class="p">();</span><span class="w">                     </span><span class="c1">// and the handle writing() maps</span>
+</span><span id="__span-0-18"><a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a><span class="p">}</span>
 </span></code></pre></div>
-<p><code>close</code> stores <code>closed</code> before it asks for the exclusive lock. A call that
-cannot get the shared lock, because <code>close</code> holds it or waits for it,
-raises <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;BoxClosedError&lt;/span&gt;" href="../../reference/api/errors/#sharedbox.BoxClosedError"><code>BoxClosedError</code></a> instead of waiting. On
-Linux the standard reader-writer lock lets new readers in ahead of a
-waiting writer.<sup id="fnref:rwlock"><a class="footnote-ref" href="#fn:rwlock">4</a></sup> A call that gets in after <code>closed</code> is stored
-raises <code>BoxClosedError</code> at once and lets go, so new calls hold the lock
-only for that check.</p>
+<p><code>close</code> stores <code>closed</code> before it asks for the exclusive lock, so a call
+that can't get the shared lock, because <code>close</code> holds it or waits for it,
+raises <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;BoxClosedError&lt;/span&gt;" href="../../reference/api/errors/#sharedbox.BoxClosedError"><code>BoxClosedError</code></a> instead of waiting.
+The C++ standard allows a reader-writer lock either to queue new readers
+behind a waiting writer, the case above, or to let them in first, and on
+Linux it lets them in first.<sup id="fnref:rwlock"><a class="footnote-ref" href="#fn:rwlock">4</a></sup> A call that gets in that way after
+<code>closed</code> is stored still raises <code>BoxClosedError</code> at once and lets go, so
+new calls hold the lock only long enough for that check, and <code>close</code> is
+never kept waiting by them.</p>
 <p>This lock is only about one box object inside one process. The
 <a href="../glossary/#sequence-lock">sequence lock</a> is what coordinates processes.</p>
 <p>A capsule <a href="../glossary/#handle">handle</a> made by
 <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;__sharedbox_box__&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.__sharedbox_box__"><code>__sharedbox_box__</code></a> is a separate
 mapping of the same <a href="../glossary/#segment">segment</a>, so <code>close</code> never waits
 for it and never affects it.</p>
-<h2 id="lifetime-the-same-rules-as-multiprocessingshared_memory">Lifetime: the same rules as <code>multiprocessing.shared_memory</code><a class="headerlink" href="#lifetime-the-same-rules-as-multiprocessingshared_memory" title="Permanent link">&para;</a></h2>
-<p><code>close</code> only detaches this process, and never destroys the data.
-<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-attribute&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-attribute-name&quot;&gt;unlink&lt;/span&gt;
-
-
-  &lt;span class=&quot;doc doc-labels&quot;&gt;
-      &lt;small class=&quot;doc doc-label doc-label-class-attribute&quot;&gt;&lt;code&gt;class-attribute&lt;/code&gt;&lt;/small&gt;
-      &lt;small class=&quot;doc doc-label doc-label-instance-attribute&quot;&gt;&lt;code&gt;instance-attribute&lt;/code&gt;&lt;/small&gt;
-  &lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.unlink"><code>unlink</code></a> removes the name. On Linux it calls
-<code>shm_unlink</code>, which works like deleting an open file: processes that
-already have the block keep using it, and nobody new can open
-it.<sup id="fnref:shm-unlink"><a class="footnote-ref" href="#fn:shm-unlink">5</a></sup> On Windows there is nothing to remove; Windows frees the
-block when its last user closes it.<sup id="fnref:create-file-mapping"><a class="footnote-ref" href="#fn:create-file-mapping">6</a></sup> This is how
-Python's <code>SharedMemory.close()</code> and <code>SharedMemory.unlink()</code>
-behave,<sup id="fnref:shared-memory"><a class="footnote-ref" href="#fn:shared-memory">7</a></sup> so the two do not have to be learned separately.</p>
-<p>Because <code>unlink</code> removes the name for every process, one process calls it,
-usually the one that created the box. sharedbox does not unlink anything at
-exit, like <code>SharedMemory(track=False)</code>. On Linux a segment that is never
-unlinked stays in <code>/dev/shm</code> until reboot, and creating a box under its
-name then raises <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;SegmentExistsError&lt;/span&gt;" href="../../reference/api/errors/#sharedbox.SegmentExistsError"><code>SegmentExistsError</code></a>.</p>
-<p>Leaving a <code>with</code> block closes a box, and so does garbage collection. The
-docstring of <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;close&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.close"><code>close</code></a> says what happens in each
-case to writes not yet delivered and to forwarding the box started.</p>
 <h2 id="sources">Sources<a class="headerlink" href="#sources" title="Permanent link">&para;</a></h2>
 <div class="footnote">
 <hr />

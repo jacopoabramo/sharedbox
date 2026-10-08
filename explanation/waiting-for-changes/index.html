@@ -3077,85 +3077,893 @@
 
 
 <h1 id="waiting-for-changes">Waiting for changes<a class="headerlink" href="#waiting-for-changes" title="Permanent link">&para;</a></h1>
-<p><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-attribute&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-attribute-name&quot;&gt;events&lt;/span&gt;
+<p>When you connect a callback to <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-attribute&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-attribute-name&quot;&gt;events&lt;/span&gt;
 
 
   &lt;span class=&quot;doc doc-labels&quot;&gt;
       &lt;small class=&quot;doc doc-label doc-label-property&quot;&gt;&lt;code&gt;property&lt;/code&gt;&lt;/small&gt;
-  &lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.events"><code>events</code></a> and
-<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;watch&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.watch"><code>watch</code></a> need a way to sleep until another
-process writes. Checking in a loop would waste <abbr title="Central processing unit. The processor that runs a program.">CPU</abbr>, and sleeping for a fixed
-time would add delay. Each waiting thread therefore holds a
-<a href="../glossary/#waiter-slot">waiter slot</a> in the
-<a href="../glossary/#segment">segment</a>, and a write wakes the slots that are
-occupied. This page explains how the wake-up works, why changes reach
-callbacks the way they do, and what following
+  &lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.events"><code>events</code></a> or
+loop over <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;watch&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.watch"><code>watch</code></a>, something has to sleep
+until another process writes, then wake up at once. Checking in a loop
+would burn <abbr title="Central processing unit. The processor that runs a program.">CPU</abbr>, and sleeping for a fixed time would add delay. Instead,
+each waiting thread holds a <a href="../glossary/#waiter-slot">waiter slot</a> in the
+<a href="../glossary/#segment">segment</a>, and every write wakes the slots that are
+taken. This page explains how that wake-up works, why your callbacks are
+called the way they are, and what following
 <a href="../glossary/#reference-field">reference fields</a> costs.</p>
 <h2 id="waking-a-process">Waking a process<a class="headerlink" href="#waking-a-process" title="Permanent link">&para;</a></h2>
-<ul>
-<li>A <a href="../glossary/#box">box</a> has a fixed number of slots, set by its
-  <code>max_waiters</code> class keyword (see <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;SharedBox&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox"><code>SharedBox</code></a>), and
-  shared by every process. Each waiting <a href="../glossary/#watcher">watcher</a>
-  holds one. A slot records its owner's pid, start time and pid namespace.</li>
-<li>Linux wakes through one futex word in the header:<sup id="fnref2:futex"><a class="footnote-ref" href="#fn:futex">1</a></sup> a waiter
-  sleeps with <code>FUTEX_WAIT</code> while <code>wake_word</code> still holds the value it read,
-  and a writer increments the word and calls <code>FUTEX_WAKE</code> once for
-  everybody. Windows has <code>WaitOnAddress</code>, but it only works between threads
-  of one process,<sup id="fnref:wait-on-address"><a class="footnote-ref" href="#fn:wait-on-address">2</a></sup> so each slot gets its own auto-reset
-  event, <code>Local\sharedbox.&lt;name&gt;.w&lt;i&gt;</code>,<sup id="fnref:create-event"><a class="footnote-ref" href="#fn:create-event">3</a></sup> and a writer sets
-  the event of every occupied slot. On both systems a write to a box nobody
-  waits on makes no system call to wake anyone: the writer reads <code>waiters</code>
-  and stops at 0.</li>
-<li>A slot held by a process that was killed is freed by the next register
-  or attach, except in the cases listed under <a href="../../reference/segment-layout/#waiter-slots">Waiter
-  slots</a>. That process checks
-  each occupied slot's owner as <a href="../checking-a-process-is-alive/">Checking a process is
-  alive</a> describes. A slot recorded in
-  another pid namespace is never freed, because its pid cannot be checked
-  from here.</li>
-<li>The Python watcher waits in steps of at most 1 s. The step is not a poll
-  for changes: writes and an interrupt wake it at once. After each step the
-  watcher checks that its slot still records its own pid, start time and
-  namespace, and claims a new slot if not. What it does while every slot is
-  taken is described under <code>max_waiters</code> in
-  <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;SharedBox&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox"><code>SharedBox</code></a>.</li>
-<li><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;close&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.close"><code>close</code></a> interrupts its own watcher: it sets
-  the interrupt flag of the watcher's slot and wakes that slot, so the
-  watcher thread returns at once instead of at the end of its step.</li>
-</ul>
+<p>A <a href="../glossary/#box">box</a> has a fixed number of slots, set by its
+<code>max_waiters</code> class keyword (see <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;SharedBox&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox"><code>SharedBox</code></a>) and
+shared by every process. Each waiting <a href="../glossary/#watcher">watcher</a> holds
+one, and the slot records which process owns it: its pid, start time and
+pid namespace.</p>
+<p>How a write wakes the waiters depends on the system. Linux has one futex
+word in the header:<sup id="fnref:futex"><a class="footnote-ref" href="#fn:futex">1</a></sup> a waiter sleeps with <code>FUTEX_WAIT</code> for as long
+as <code>wake_word</code> still holds the value it read, and a writer increments the
+word and calls <code>FUTEX_WAKE</code> once for everybody. Windows has a similar call,
+<code>WaitOnAddress</code>, but it only works between threads of one
+process,<sup id="fnref:wait-on-address"><a class="footnote-ref" href="#fn:wait-on-address">2</a></sup> so there each slot gets its own auto-reset
+event, <code>Local\sharedbox.&lt;name&gt;.w&lt;i&gt;</code>,<sup id="fnref:create-event"><a class="footnote-ref" href="#fn:create-event">3</a></sup> and a writer sets the
+event of every taken slot. Either way, a write to a box nobody waits on
+costs no system call: the writer sees that <code>waiters</code> is 0 and stops.</p>
+<p>A process can be killed while it holds a slot, so the next process that
+registers or attaches checks each taken slot's owner, as
+<a href="../checking-a-process-is-alive/">Checking a process is alive</a> describes,
+and frees the slots of owners that are gone. The few exceptions are listed
+under <a href="../../reference/segment-layout/#waiter-slots">Waiter slots</a>. A slot
+recorded in another pid namespace is never freed, because its pid can't be
+checked from here.</p>
+<p>The Python watcher waits in steps of at most 1 s, yet it still notices a
+write at once, because a write or an interrupt wakes it in the middle of a
+step. The steps are there for a different reason: after each one, the
+watcher checks that its slot still records its own process, and claims a
+new slot if not. What it does while every slot
+is taken is described under <code>max_waiters</code> in
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;SharedBox&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox"><code>SharedBox</code></a>. When you call
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;close&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.close"><code>close</code></a>, it sets the interrupt flag of its own
+watcher's slot and wakes that slot, so the watcher thread returns at once
+instead of at the end of its step.</p>
 <p>A wake-up is never lost. On Linux the waiter reads <code>wake_word</code> before it
 reads the generation, and the writer changes the generation before
 <code>wake_word</code>. If a write lands between the waiter's two reads, <code>wake_word</code>
-no longer matches and the wait returns at once.<sup id="fnref:futex"><a class="footnote-ref" href="#fn:futex">1</a></sup> On Windows each
+no longer matches and the wait returns at once.<sup id="fnref2:futex"><a class="footnote-ref" href="#fn:futex">1</a></sup> On Windows each
 event belongs to one slot, so one waiter cannot take the wake-up meant for
 another.</p>
 <p><a href="../../reference/segment-layout/#waiter-slots">Waiter slots</a> gives the order of
 the stores that claim, free and release a slot, and the few steps at which
 a killed process leaves a slot stuck or the count one too high.</p>
 <h2 id="how-changes-reach-callbacks">How changes reach callbacks<a class="headerlink" href="#how-changes-reach-callbacks" title="Permanent link">&para;</a></h2>
-<p>The rules for when a signal of <code>events</code> is emitted are in the docstring of
+<p>Step through one write reaching your callback, and point at a shape to
+read what it does:</p>
+<style data-markdown-d2>.markdown-d2 { margin: 1em 0; }
+.markdown-d2-light > svg, .markdown-d2-dark > svg { display: block; max-width: 100%; height: auto; margin: 0 auto; }
+.markdown-d2 .markdown-d2-dark, .markdown-d2-dialog .markdown-d2-dark { display: none; }
+[data-md-color-scheme="slate"] .markdown-d2 .markdown-d2-dark, [data-md-color-scheme="slate"] .markdown-d2-dialog .markdown-d2-dark { display: block; }
+[data-md-color-scheme="slate"] .markdown-d2 .markdown-d2-light, [data-md-color-scheme="slate"] .markdown-d2-dialog .markdown-d2-light { display: none; }
+.markdown-d2.markdown-d2-ready { display: grid; grid-template-columns: minmax(0, 1fr); }
+.markdown-d2.markdown-d2-ready > .markdown-d2-controls { grid-row: 1; }
+.markdown-d2.markdown-d2-ready > .markdown-d2-board { grid-area: 2 / 1; }
+.markdown-d2.markdown-d2-ready > .markdown-d2-board:not(.markdown-d2-current) { visibility: hidden; }
+.markdown-d2 .markdown-d2-board + .markdown-d2-board { margin-top: 1em; }
+.markdown-d2.markdown-d2-ready .markdown-d2-board + .markdown-d2-board { margin-top: 0; }
+.markdown-d2-controls { display: flex; gap: 0.5em; align-items: center; justify-content: center; margin-bottom: 0.5em; }
+.markdown-d2-controls button { display: inline-flex; align-items: center; justify-content: center; min-width: 2em; height: 2em; font: inherit; cursor: pointer; }
+.markdown-d2-controls button svg { width: 1.2em; height: 1.2em; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.markdown-d2-dialog { width: 95vw; height: 95vh; max-width: none; max-height: none; padding: 0; overflow: hidden; }
+.markdown-d2-dialog .markdown-d2-stage { width: 100%; height: calc(100% - 3em); overflow: hidden; cursor: grab; touch-action: none; }
+.markdown-d2-dialog .markdown-d2-view { transform-origin: 0 0; }
+.markdown-d2-dialog .markdown-d2-controls { height: 3em; margin: 0; }
+.markdown-d2-error { border: 2px solid #c62828; padding: 0.5em 1em; color: #c62828; }
+.markdown-d2 svg.d2-svg > g, .markdown-d2-dialog svg.d2-svg > g { transition: opacity 0.15s; }
+.markdown-d2-focus > g:not(.markdown-d2-hovered):not(.appendix-icon) { opacity: 0.3; }
+.markdown-d2-tooltip { position: fixed; z-index: 10; max-width: 22rem; padding: 0.4em 0.6em; border-radius: 4px; font-size: 0.8rem; line-height: 1.4; pointer-events: none; background: var(--md-default-fg-color, #1e1e2e); color: var(--md-default-bg-color, #ffffff); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3); }
+.markdown-d2-tooltip[hidden] { display: none; }
+@media (prefers-reduced-motion: reduce) { .markdown-d2 svg.d2-svg > g, .markdown-d2-dialog svg.d2-svg > g { transition: none; } }
+</style><script data-markdown-d2>"use strict";
+const ZOOM_STEP = 1.25;
+const SVG = "http://www.w3.org/2000/svg";
+const ICONS = {
+    previous: "M15 6l-6 6 6 6",
+    next: "M9 6l6 6-6 6",
+    fullScreen: "M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5",
+    zoomIn: "M12 5v14M5 12h14",
+    zoomOut: "M5 12h14",
+    close: "M6 6l12 12M18 6 6 18",
+};
+function icon(name) {
+    const svg = document.createElementNS(SVG, "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("aria-hidden", "true");
+    const path = document.createElementNS(SVG, "path");
+    path.setAttribute("d", ICONS[name]);
+    svg.append(path);
+    return svg;
+}
+function button(label, content, onClick) {
+    const element = document.createElement("button");
+    element.type = "button";
+    element.append(typeof content === "string" ? icon(content) : content.text);
+    element.setAttribute("aria-label", label);
+    element.addEventListener("click", onClick);
+    return element;
+}
+const DURATION = { fade: 250, morph: 450 };
+function visibleSvg(container) {
+    for (const variant of container.querySelectorAll(":scope > .markdown-d2-light, :scope > .markdown-d2-dark")) {
+        if (getComputedStyle(variant).display !== "none")
+            return variant.querySelector("svg");
+    }
+    return null;
+}
+function shapes(svg) {
+    const found = new Map();
+    for (const group of svg.querySelectorAll("g[class]:not(.shape)")) {
+        const name = group.getAttribute("class");
+        if (name && !found.has(name))
+            found.set(name, group);
+    }
+    return found;
+}
+function measure(container) {
+    const svg = visibleSvg(container);
+    const rects = new Map();
+    for (const [name, group] of svg ? shapes(svg) : [])
+        rects.set(name, group.getBoundingClientRect());
+    return rects;
+}
+function play(transition, container, before) {
+    const svg = visibleSvg(container);
+    if (!svg || transition === "none" || matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        return;
+    }
+    const fadeIn = (element, duration) => {
+        element.animate([{ opacity: 0 }, { opacity: 1 }], { duration, easing: "ease-out" });
+    };
+    if (transition === "fade") {
+        fadeIn(svg, DURATION.fade);
+        return;
+    }
+    const units = svg.viewBox.baseVal.width / svg.getBoundingClientRect().width || 1;
+    for (const [name, group] of shapes(svg)) {
+        const old = before.get(name);
+        const now = group.getBoundingClientRect();
+        if (!old) {
+            fadeIn(group, DURATION.morph);
+            continue;
+        }
+        const x = (old.left - now.left) * units;
+        const y = (old.top - now.top) * units;
+        const scaleX = old.width && now.width ? old.width / now.width : 1;
+        const scaleY = old.height && now.height ? old.height / now.height : 1;
+        if (x === 0 && y === 0 && scaleX === 1 && scaleY === 1)
+            continue;
+        group.style.transformBox = "fill-box";
+        group.style.transformOrigin = "0 0";
+        group.animate([
+            { transform: `translate(${x}px, ${y}px) scale(${scaleX}, ${scaleY})` },
+            { transform: "none" },
+        ], { duration: DURATION.morph, easing: "ease-in-out" });
+    }
+}
+function tooltipBox(host) {
+    const found = host.querySelector(":scope > .markdown-d2-tooltip");
+    if (found)
+        return found;
+    const box = document.createElement("div");
+    box.className = "markdown-d2-tooltip";
+    box.setAttribute("role", "tooltip");
+    box.hidden = true;
+    host.append(box);
+    return box;
+}
+function hoverable(container, host) {
+    for (const title of Array.from(container.querySelectorAll("svg.d2-svg > g > title"))) {
+        const group = title.parentElement;
+        if (group)
+            group.dataset.tooltip = title.textContent ?? "";
+        title.remove();
+    }
+    const box = tooltipBox(host);
+    let hovered = null;
+    const clear = () => {
+        hovered?.classList.remove("markdown-d2-hovered");
+        hovered?.ownerSVGElement?.classList.remove("markdown-d2-focus");
+        hovered = null;
+        box.hidden = true;
+    };
+    container.addEventListener("pointerover", (event) => {
+        const target = event.target instanceof Element ? event.target : null;
+        let group = target?.closest("svg.d2-svg > g") ?? null;
+        if (group?.classList.contains("appendix-icon")) {
+            const text = group.dataset.tooltip;
+            group =
+                Array.from(group.parentElement?.children ?? []).find((sibling) => sibling instanceof SVGGElement &&
+                    !sibling.classList.contains("appendix-icon") &&
+                    sibling.dataset.tooltip === text) ?? group;
+        }
+        if (group === hovered)
+            return;
+        clear();
+        if (!group)
+            return;
+        hovered = group;
+        group.classList.add("markdown-d2-hovered");
+        group.ownerSVGElement?.classList.add("markdown-d2-focus");
+        const text = group.dataset.tooltip;
+        if (text) {
+            box.textContent = text;
+            box.hidden = false;
+        }
+    });
+    container.addEventListener("pointermove", (event) => {
+        if (box.hidden)
+            return;
+        const left = Math.min(event.clientX + 14, window.innerWidth - box.offsetWidth - 8);
+        box.style.left = `${Math.max(left, 8)}px`;
+        box.style.top = `${event.clientY + 18}px`;
+    });
+    container.addEventListener("pointerleave", clear);
+}
+function stepControls(boards, onStep) {
+    let current = 0;
+    const counter = document.createElement("span");
+    counter.className = "markdown-d2-counter";
+    counter.setAttribute("aria-live", "polite");
+    const show = (index) => {
+        current = (index + boards.length) % boards.length;
+        const name = boards[current]?.dataset.name;
+        counter.textContent = `${current + 1} / ${boards.length}${name ? ` (${name})` : ""}`;
+        onStep(current);
+    };
+    const controls = document.createElement("div");
+    controls.className = "markdown-d2-controls";
+    if (boards.length > 1) {
+        controls.append(button("Previous step", "previous", () => show(current - 1)), counter, button("Next step", "next", () => show(current + 1)));
+    }
+    return { controls, show, current: () => current };
+}
+function stepWithKeys(element, steps) {
+    element.addEventListener("keydown", (event) => {
+        if (event.key === "ArrowLeft")
+            steps.show(steps.current() - 1);
+        if (event.key === "ArrowRight")
+            steps.show(steps.current() + 1);
+    });
+}
+function setUpFigure(figure) {
+    if (figure.dataset.ready)
+        return;
+    figure.dataset.ready = "true";
+    figure.classList.add("markdown-d2-ready");
+    figure.tabIndex = 0;
+    const boards = Array.from(figure.querySelectorAll(":scope > .markdown-d2-board"));
+    const transition = (figure.dataset.transition ?? "none");
+    const steps = stepControls(boards, (current) => {
+        const old = figure.querySelector(":scope > .markdown-d2-current");
+        const before = old ? measure(old) : null;
+        for (const [i, board] of boards.entries()) {
+            board.classList.toggle("markdown-d2-current", i === current);
+        }
+        const now = boards[current];
+        if (before && now && old !== now)
+            play(transition, now, before);
+    });
+    if (boards.length > 1)
+        stepWithKeys(figure, steps);
+    steps.controls.append(button("Open full screen", "fullScreen", () => openDialog(boards, steps.current(), transition, steps.show)));
+    figure.prepend(steps.controls);
+    hoverable(figure, document.body);
+    steps.show(0);
+}
+function openDialog(boards, start, transition, onStep) {
+    const dialog = document.createElement("dialog");
+    dialog.className = "markdown-d2-dialog";
+    const stage = document.createElement("div");
+    stage.className = "markdown-d2-stage";
+    const view = document.createElement("div");
+    view.className = "markdown-d2-view";
+    stage.append(view);
+    let scale = 1;
+    let x = 0;
+    let y = 0;
+    const apply = () => {
+        view.style.transform = `translate(${x}px, ${y}px) scale(${scale})`;
+    };
+    const zoom = (factor, originX, originY) => {
+        x = originX - (originX - x) * factor;
+        y = originY - (originY - y) * factor;
+        scale *= factor;
+        apply();
+    };
+    stage.addEventListener("wheel", (event) => {
+        event.preventDefault();
+        const box = stage.getBoundingClientRect();
+        zoom(event.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP, event.clientX - box.left, event.clientY - box.top);
+    });
+    let dragging = null;
+    stage.addEventListener("pointerdown", (event) => {
+        dragging = { x: event.clientX - x, y: event.clientY - y };
+        stage.setPointerCapture(event.pointerId);
+    });
+    stage.addEventListener("pointermove", (event) => {
+        if (!dragging)
+            return;
+        x = event.clientX - dragging.x;
+        y = event.clientY - dragging.y;
+        apply();
+    });
+    stage.addEventListener("pointerup", () => (dragging = null));
+    const steps = stepControls(boards, (current) => {
+        const before = view.childElementCount ? measure(view) : null;
+        view.replaceChildren(...Array.from(boards[current]?.children ?? [], (child) => child.cloneNode(true)));
+        if (before)
+            play(transition, view, before);
+        onStep(current);
+    });
+    if (boards.length > 1)
+        stepWithKeys(dialog, steps);
+    steps.controls.append(button("Zoom in", "zoomIn", () => zoom(ZOOM_STEP, 0, 0)), button("Zoom out", "zoomOut", () => zoom(1 / ZOOM_STEP, 0, 0)), button("Reset zoom", { text: "1:1" }, () => {
+        scale = 1;
+        x = 0;
+        y = 0;
+        apply();
+    }), button("Close", "close", () => dialog.close()));
+    dialog.append(steps.controls, stage);
+    hoverable(view, dialog);
+    dialog.addEventListener("close", () => dialog.remove());
+    document.body.append(dialog);
+    steps.show(start);
+    apply();
+    dialog.showModal();
+}
+function setUpFigures() {
+    document.querySelectorAll("figure.markdown-d2").forEach(setUpFigure);
+}
+(function start() {
+    if (window.markdownD2Ready)
+        return;
+    window.markdownD2Ready = true;
+    if (window.document$)
+        window.document$.subscribe(setUpFigures);
+    else if (document.readyState === "loading")
+        document.addEventListener("DOMContentLoaded", setUpFigures);
+    else
+        setUpFigures();
+})();
+</script><figure class="markdown-d2" data-transition="morph" aria-label="From a write to your callback"><div class="markdown-d2-board" data-step="1" data-name=""><div class="markdown-d2-light"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" data-d2-version="v0.9.0" preserveAspectRatio="xMinYMin meet" width="1731" height="394" viewBox="0 0 1731 394"><svg class="d2-2074922336 d2-svg" width="1731" height="394" viewBox="-101 -101 1731 394"><rect x="-101" y="-101" width="1731" height="394" rx="0" fill="#FFFFFF" class=" fill-N7" stroke-width="0" /><style type="text/css"><![CDATA[
+.appendix-icon {
+	filter: drop-shadow(0px 0px 32px rgba(31, 36, 58, 0.1));
+}
+.d2-2074922336 .text-bold {
+	font-family: "d2-2074922336-font-bold";
+}
+@font-face {
+	font-family: d2-2074922336-font-bold;
+	src: url("data:application/font-woff;base64,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");
+}
+.d2-2074922336 .text-italic {
+	font-family: "d2-2074922336-font-italic";
+}
+@font-face {
+	font-family: d2-2074922336-font-italic;
+	src: url("data:application/font-woff;base64,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");
+}]]></style><style type="text/css"><![CDATA[.shape {
+  shape-rendering: geometricPrecision;
+  stroke-linejoin: round;
+}
+.connection {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.blend {
+  mix-blend-mode: multiply;
+  opacity: 0.5;
+}
+
+		.d2-2074922336 .fill-N1{fill:#0A0F25;}
+		.d2-2074922336 .fill-N2{fill:#676C7E;}
+		.d2-2074922336 .fill-N5{fill:#DEE1EB;}
+		.d2-2074922336 .fill-N7{fill:#FFFFFF;}
+		.d2-2074922336 .fill-B1{fill:#0D32B2;}
+		.d2-2074922336 .fill-B6{fill:#F7F8FE;}
+		.d2-2074922336 .fill-AA4{fill:#EDF0FD;}
+		.d2-2074922336 .stroke-B1{stroke:#0D32B2;}
+		.d2-2074922336 .stroke-B2{stroke:#0D32B2;}.appendix text.text{fill:#0A0F25}.md{--color-fg-default:#0A0F25;--color-fg-muted:#676C7E;--color-fg-subtle:#9499AB;--color-canvas-default:#FFFFFF;--color-canvas-subtle:#EEF1F8;--color-border-default:#0D32B2;--color-border-muted:#0D32B2;--color-neutral-muted:#EEF1F8;--color-accent-fg:#0D32B2;--color-accent-emphasis:#0D32B2;--color-attention-subtle:#676C7E;--color-danger-fg:red;}.light-code{display: block}.dark-code{display: none}]]></style><g class="d3JpdGVy process"><g class="shape" ><path d="M 61 62 L 0 96 L 61 131 L 182 131 L 242 96 L 182 62 Z" stroke="#0D32B2" fill="#DEE1EB" class=" stroke-B1 fill-N5" style="stroke-width:2;" /></g><text x="121" y="102" fill="#0A0F25" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">writer, any process</text><title>Assigns a field or calls update. The write raises the field&#39;s write count.</title></g><g class="c2VnbWVudA== hardware"><g class="shape" ><path d="M 576 61 C 576 37 624 37 630 37 C 635 37 683 37 683 61 V 131 C 683 155 635 155 630 155 C 624 155 576 155 576 131 V 61 Z" stroke="#0D32B2" fill="#EDF0FD" class=" stroke-B1 fill-AA4" style="stroke-width:2;" /><path d="M 576 61 C 576 85 624 85 630 85 C 635 85 683 85 683 61" stroke="#0D32B2" fill="#EDF0FD" class=" stroke-B1 fill-AA4" style="stroke-width:2;" /></g><text x="629.5" y="113.5" fill="#0A0F25" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">segment</text><title>Holds the values, a write count per field, and the waiter slots of the threads waiting for changes.</title></g><g class="d2F0Y2hlcg== process hidden" style='opacity:0'><g class="shape" ><path d="M 962 62 L 912 96 L 962 131 L 1063 131 L 1113 96 L 1063 62 Z" stroke="#0D32B2" fill="#DEE1EB" class=" stroke-B1 fill-N5" style="stroke-width:2;" /></g></g><g class="Y2FsbGJhY2tz step hidden" style='opacity:0'><g class="shape" ><rect x="1367" y="126" width="162" height="66" rx="6" stroke="#0D32B2" fill="#F7F8FE" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g></g><g class="d2F0Y2g= step hidden" style='opacity:0'><g class="shape" ><rect x="1371" y="0" width="154" height="66" rx="6" stroke="#0D32B2" fill="#F7F8FE" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g></g><g class="KHdyaXRlciAtJmd0OyBzZWdtZW50KVswXQ=="><marker id="mk-d2-2074922336-3488378134-1" markerWidth="10" markerHeight="12" refX="7" refY="6" viewBox="0 0 10 12" orient="auto" markerUnits="userSpaceOnUse"> <polygon points="0,0 10,6 0,12" fill="#0D32B2" class="connection fill-B1" stroke-width="2" /> </marker><path d="M 244 96 C 375.600006 96 442.399994 96 572 96" stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-2074922336-3488378134-1)" mask="url(#d2-2074922336-1)" /><text x="409.5" y="102" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px">writes, wakes the slots</text></g><g class="KHNlZ21lbnQgLSZndDsgd2F0Y2hlcilbMF0=" style='opacity:0'><path d="M 685 96 C 774.599976 96 820.400024 96 908 96" stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-2074922336-3488378134-1)" mask="url(#d2-2074922336-1)" /><text x="798" y="102" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px">wakes</text></g><g class="KHdhdGNoZXIgLSZndDsgY2FsbGJhY2tzKVswXQ==" style='opacity:0'><path d="M 1085.928095 116.531462 C 1208.800049 150.399994 1265.400024 159 1363 159" stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-2074922336-3488378134-1)" mask="url(#d2-2074922336-1)" /><text x="1223" y="158" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px">new, old</text></g><g class="KHdhdGNoZXIgLSZndDsgd2F0Y2gpWzBd" style='opacity:0'><path d="M 1085.928094 75.468538 C 1208.800049 41.599998 1266.199951 33 1367 33" stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-2074922336-3488378134-1)" mask="url(#d2-2074922336-1)" /><text x="1225.5" y="45" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px">new value</text></g><g transform="translate(166 46)" class="appendix-icon"><title>Assigns a field or calls update. The write raises the field&#39;s write count.</title><svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_3427_35082111-d2-2074922336-O5ZGS5DFOI-1)">
+<path d="M16 31.1109C24.3456 31.1109 31.1111 24.3454 31.1111 15.9998C31.1111 7.65415 24.3456 0.888672 16 0.888672C7.65436 0.888672 0.888885 7.65415 0.888885 15.9998C0.888885 24.3454 7.65436 31.1109 16 31.1109Z" fill="white" stroke="#DEE1EB"/>
+<path d="M16 26C21.5228 26 26 21.5228 26 16C26 10.4772 21.5228 6 16 6C10.4772 6 6 10.4772 6 16C6 21.5228 10.4772 26 16 26Z" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 19.998V15.998" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 12H16.0098" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<defs>
+<clipPath id="clip0_3427_35082111-d2-2074922336-O5ZGS5DFOI-1">
+<rect width="32" height="32" fill="white"/>
+</clipPath>
+</defs>
+</svg>
+</g><g transform="translate(658 30)" class="appendix-icon"><title>Holds the values, a write count per field, and the waiter slots of the threads waiting for changes.</title><svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_3427_35082111-d2-2074922336-ONSWO3LFNZ2A-1)">
+<path d="M16 31.1109C24.3456 31.1109 31.1111 24.3454 31.1111 15.9998C31.1111 7.65415 24.3456 0.888672 16 0.888672C7.65436 0.888672 0.888885 7.65415 0.888885 15.9998C0.888885 24.3454 7.65436 31.1109 16 31.1109Z" fill="white" stroke="#DEE1EB"/>
+<path d="M16 26C21.5228 26 26 21.5228 26 16C26 10.4772 21.5228 6 16 6C10.4772 6 6 10.4772 6 16C6 21.5228 10.4772 26 16 26Z" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 19.998V15.998" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 12H16.0098" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<defs>
+<clipPath id="clip0_3427_35082111-d2-2074922336-ONSWO3LFNZ2A-1">
+<rect width="32" height="32" fill="white"/>
+</clipPath>
+</defs>
+</svg>
+</g><mask id="d2-2074922336-1" maskUnits="userSpaceOnUse" x="-101" y="-101" width="1731" height="394">
+<rect x="-101" y="-101" width="1731" height="394" fill="white"></rect>
+<rect x="334" y="86" width="151" height="21" fill="black"></rect>
+<rect x="775" y="86" width="46" height="21" fill="black"></rect>
+<rect x="1193" y="142" width="60" height="21" fill="black"></rect>
+<rect x="1190" y="29" width="71" height="21" fill="black"></rect>
+</mask></svg></svg></div><div class="markdown-d2-dark"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" data-d2-version="v0.9.0" preserveAspectRatio="xMinYMin meet" width="1731" height="394" viewBox="0 0 1731 394"><svg class="d2-2209143288 d2-svg" width="1731" height="394" viewBox="-101 -101 1731 394"><rect x="-101" y="-101" width="1731" height="394" rx="0" fill="#1E1E2E" class=" fill-N7" stroke-width="0" /><style type="text/css"><![CDATA[
+.appendix-icon {
+	filter: drop-shadow(0px 0px 32px rgba(31, 36, 58, 0.1));
+}
+.d2-2209143288 .text-bold {
+	font-family: "d2-2209143288-font-bold";
+}
+@font-face {
+	font-family: d2-2209143288-font-bold;
+	src: url("data:application/font-woff;base64,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");
+}
+.d2-2209143288 .text-italic {
+	font-family: "d2-2209143288-font-italic";
+}
+@font-face {
+	font-family: d2-2209143288-font-italic;
+	src: url("data:application/font-woff;base64,d09GRgABAAAAAA3sAAoAAAAAFcgAARhRAAAAAAAAAAAAAAAAAAAAAAAAAABPUy8yAAAA9AAAAGAAAABgW1SVeGNtYXAAAAFUAAAAmAAAAMQDeQO7Z2x5ZgAAAewAAAdmAAAKWIrwprNoZWFkAAAJVAAAADYAAAA2G7Ur2mhoZWEAAAmMAAAAJAAAACQLeAjGaG10eAAACbAAAACIAAAAiDnKA/Zsb2NhAAAKOAAAAEYAAABGMGAt1m1heHAAAAqAAAAAIAAAACAAOgD2bmFtZQAACqAAAAMrAAAIMgntVzNwb3N0AAANzAAAACAAAAAg/8YAMgADAeEBkAAFAAACigJY//EASwKKAlgARAFeADIBIwAAAgsFAwMEAwkCBCAAAHcAAAADAAAAAAAAAABBREJPAAEAIP//Au7/BgAAA9gBESAAAZMAAAAAAeYClAAAACAAA3icdM05TgIBGEDhb5xxG0cddx3XzsaY6A3sPIAXsCQ0hIZwHJYDUJJQcRRaGhIqup9ACB155Vc8JFIJCpkhKqVU7s27D5++/fj1p6ahpR3B1r429q+uubKYxCLmMYtpjGMUg+hHL7rRWR92lXj14tmjJ3tSmX0HDh05ljtROHXmXOnCpSvXbty6c+9BxRIAAP//AwCIzyMfeJx8Vlts2+YVPucnTfoiXyRKVMToYumnSFumJVu0RCu2JN8t21ISO3HqJLbjZG2WdNmgLc2wIs2SpUBRdFvmAX3JXjpgF3TNW/K0lxTICsxYFmADsiHDLkDb1SmSFW0FI1iLmRooObach74QPwj857uccz4S6kAGIN8ibwIDDdAKDnAB6EKQYXTDoG5GV1XK84YqCLx8Fdeu/owdPfZRx8+/0ALs5A9+M/OflRvkzc1zeGXp8mXz+OsvvPDc48dmBP/6GACAlO8C4F/IKjSAHUDgdVVRVMpxiLpAVcp/uO93jWwjy0q6+Ud8/lh+1vHxWXy5WOx7sT/1dXOWrG4W790DQKAA5CxZhSaLm84EBZ2hQpChr+7vx47+wqv7s+aDDFk1H6Nrs4j95hogLAGQBFkF3rpDjSBPmV9fuN2Md5vfvUAKo6ObtyocQS1v4H+xBE4LxR1SEn0ZosdFt27oDDUox6nxpGEoCg21EJdTvDWU16aXdTVtZ4XMyWw9SxccygFZc8W98mgi0Gs7Pj/x8qLeEUybUi4cG4rG/qaEIlNL8Wy6ihcob+BnZA1clvPukKJSngo6z+vJpB4XXc4WosYzJNGn0BDH86L4SE3bGWf2WkEViXy4uwKfkEcT/p7O0CyNOnVbRzBN1m6v+LqOHbGghyJTS3omHQk/VEKAEC5v4E0sgXeXOt4SxHEup6jHk4ab4x4ceF4rnExog2K3oPh6jiRT+9qTYkgq2E4vjZ2fj4U8PW7XWHF0ZEKyx53hbe+IWqNlx7uvNm+fg2lTCqtb7u0PP+ue2n7i9mb/s/aRipZ3sQQShGvxRJeT44Oc+FQLoyeTib6Kwn8fOds9s9hjDPttdeZ7De2jEV/K7ffNXi8TxtFJE8u2F0+OF+e06MG4V2/JHgx77LorgOGmPc3e3sA8IHQB4I/JfXBX5ihLKm3a8o/ndZ4yXfPZpuG21v1pKeLY27jXHuyst5+yfW0e307VzU4fam4y+MZ416GMuWB5hmUZS1iCAEQrGlSjytvgOFrroM5wHLPLvRu9R6jsHe/ITLd4lMOx9MGuqcVeJWNnhOxp4XyKzoa6xF4vHdb9sX8ovoQ7lB86o2hH5kdfOhq35pE5cRqDXZE/KaHOiYWegQGrhwgBAHxA1sBj6auZQ56hgmWjNYZM4Fqhp43tnNMyifpMfpBlc95cdJysPU7T2HB/QDb/gJpzT/NMJGq+XS5bNeFLcpMo0A4AHARzO1ifkDWwVbAYC0+gKs8HrhVWyBcLdy7sXypKZM30Id41P/rkOxcBQStvwJdkDRyWW4k+Q7CMcTm3Wv3NYe5i4RKineF4bBRtWbuHfGPzp3wD40AywLLbuOQRliBSwd2S6N4Syu1SWiv6ZJZnlUPKvt662EI4nWTZTCHNspOunDZueTAh5rrGcX1K7jU6NH243+531vqwc9rW/gBLsKeWw7M2W4idc9FdLlcQnjV5J7v+jiVoBV/tPlRDxKr6dMnvH1jWppfjB05oM8uR7lk9GbcetjPHx8/PR6vPoZHi2MjkaHFsZMKqXX5S1vEzLFV3m69h3EJoJbV4YVdONb6R5ZjwfLQSUHFlUCCOwK9qc+oeuTUU6N5a8MCZtxC3gkr5OBzcmY9XsARtNR65eeWpN02sL9/tce1tk+R8II3rS1q6Yaw+O2DeAyz/r7yBl7AEau1WJfoUVVESfbVL63KKbtHqO/eL3iVPj3tIiaQ7+6MpbUqLTnujgh5UepPtmb6eOVtfhxLoiFJJDUiZzq7hsOzvcErdAb/iCA1q3WNhi/NgeQMXyLntfE0aAs0SvZIMNfn626E+FlOTTXl5eO9F26UU4w21SE32tpgt290qNaMjVffaaxnzkcPh9zfWGXyrVbu/vIGf4jp4dmrvTL+wFbE3ticz55vUxvPWR6njsG3EsAcETJr3BY81MrhgStNUr/o8AIDv4zo0A+iMLoiiW09aBfHqZF5mOZa1y8JPCuYmrpsP6QyVp2T0mFL17gQA+T2uQ/CZuzsnhjLV7zzPnKX5NkRkW/e2XZmxE4Jsi9R2OffPEy2Vt77W7+K6+UFoLBQaC6G/5iRhI83Jco6aTwDLd8ox/BDXQQLgK7219Bu7mLcQrrG9xeNwhIc9jkN5pa6eYe1hx4/y5geegdyfeT7VkI5TfGh+GixQmg+hffPzWEGrapIA8Ar5fuX/wrD+FpKGzui81PzDlW83zhsDL121DeG/4rbQ5p0hACw/AcD3yBsWH2pkmK0lULcXhA/yjfUr15ZjeqJ9OKRqz/XMLUTmXjmETlt09uKpo1FtMBjoUTqPjiWWV4q5EYuDu7wBr8M5i0O115Va3IToUb3inrDNK0qaT/RoFv775UVYhXPWnvBqMmnQmgvOpliKJ6Kf+iTvsV9GHYOyJHpU2T9VrGq9gu/A5+QtqAMQDEPn+Svu1hkhgu9cX1y8Xs0puIfrwFR2kAmcLJzC9UrzESbJDNwkNy2OQg3k9wQ/dTt9lMy4RU9wj+hp/z8AAAD//wMAqLkcWwAAAAEAAAABGFGbkjSrXw889QABA+gAAAAA2F2gzAAAAADdZi83/r3+3QgdA8kAAgADAAIAAAAAAAAAAQAAA9j+7wAACED+vf28CB0D6ADC/9EAAAAAAAAAAAAAACICdAAkAMgAAAH+/8sCbgAjAf4AXQIZACcCGAAfAbMAJQIXACcB4QAlARoAKwITAAECCwAfAO0AHwHcAB8A+AAsAx8AHwINAB8CAwAnAhf/9gFWAB8Bkv/8AUUAPAIQADgBwAA7AsMARgHA/8IB4AAaAeD/9gDyABcA8v/hAPIAgADtAB8AAABHAAAALgAuAFIAbACAALgA8AEeAVYBkAG4AgACKgI2AlACcgK0At4DDANGA2QDoAPOA/oEGARSBIIEmgTEBNoE+AUIBRYFLAAAAAEAAAAiAIwADABmAAcAAQAAAAAAAAAAAAAAAAAEAAN4nJyU3W4aVxSFP2KgTf8uKitybqxzmUrO4EZxlMRX4zpWRkWQMqQ/UlVpgDEgYGbEDDjOE/S6b9G3yFUfo09R9bramw1hIqtWUBRrDWf/rLP22gfY51/2qFTvAn/Vl4YrHNZ/NnyHL+pNw3uc1T8zXOWo9rfhGoPaW8N1HtQ6hj/hXfUPw5/yuPqb4bscVC8Mf86j6r7hL/cc/xj+ise8W+EKPOV3wxUOyAzfYZ9fDe9xD6tZqXKPY8M1vubQcJ1DoMuYgiljEoY4LhkzZMGcmJyQmDljLokZ4AjwmVLorwmRIsfwxl8jQgrmRFpxRIFjSsiUiJyRVXyrWSmvtKP0mSuSbj4FIyJ6mjEhIsGRMiQlIWaidQoKMp7ToEFOX/lmFOR45IyZ4pEyZ0iDNhc06TJiTI7jQisJs5CUSwquiLS/swhRpk9MQm6sFiQMlKdTfrFmBzRxtMk0drtys1ThCMePmi3cJMbxLZ7+d1vMyn3XbCKWqqdo2GOqPK90giNVXPr6/KC44DluJ33KTG7XaKDsZNZjeix0/jI/yRMmCc4d4BOqg0J3H8eZfgeEqshPBHR5SZvXdPXbp0MHnxZdAl5obpsOju9o0+JcMwLFq7MLdUyLX3B8T6AxUjs2fURz+XpDZu4W7uIMuceMTLdAZiz3F+fHO01YdigtuSNXV/R1jyRS9kBUkT2LGJorMnXFTLVceyM3/QbmCDktdLbvz2UblrZ76y2+JtUddiyMk0xuxei2qXofeOZK/3lEDEjpaUSflBkNCq71bq+IWDDFca4+fqlbUuBvcqTPtbokZqYMAhKtMyfTv5H5JjTu/ZLvnb0lsnkz3dHJ5la7dJHKydaMXqt667PQVI63JtCwqaaWIxOWyqubivcl2ivxD9X9ub5uKQ8JtK5Msn/jK3DMM044ZaRdpHrCcnMmr4REnKoCE2KNkjfzjWr1CI8TPJ5wwgnPePKBlms2zvi4Ep/t/j7nnNHm9NbbrGLbnPGiVO3/O/+pbI/1Po6Hm6+nO0/zwUe49huOSu9mR18D2aClVXu/HS0iZsLFHWxr4e7j/QcAAP//AwByoVFAAAADAAD/9QAA/84AMgAAAAAAAAAAAAAAAAAAAAAAAAAA");
+}]]></style><style type="text/css"><![CDATA[.shape {
+  shape-rendering: geometricPrecision;
+  stroke-linejoin: round;
+}
+.connection {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.blend {
+  mix-blend-mode: multiply;
+  opacity: 0.5;
+}
+
+		.d2-2209143288 .fill-N1{fill:#CDD6F4;}
+		.d2-2209143288 .fill-N2{fill:#BAC2DE;}
+		.d2-2209143288 .fill-N5{fill:#45475A;}
+		.d2-2209143288 .fill-N7{fill:#1E1E2E;}
+		.d2-2209143288 .fill-B1{fill:#CBA6f7;}
+		.d2-2209143288 .fill-B6{fill:#313244;}
+		.d2-2209143288 .fill-AA4{fill:#45475A;}
+		.d2-2209143288 .stroke-B1{stroke:#CBA6f7;}
+		.d2-2209143288 .stroke-B2{stroke:#CBA6f7;}.appendix text.text{fill:#CDD6F4}.md{--color-fg-default:#CDD6F4;--color-fg-muted:#BAC2DE;--color-fg-subtle:#A6ADC8;--color-canvas-default:#1E1E2E;--color-canvas-subtle:#313244;--color-border-default:#CBA6f7;--color-border-muted:#CBA6f7;--color-neutral-muted:#313244;--color-accent-fg:#CBA6f7;--color-accent-emphasis:#CBA6f7;--color-attention-subtle:#BAC2DE;--color-danger-fg:red;}.light-code{display: none}.dark-code{display: block}]]></style><g class="d3JpdGVy process"><g class="shape" ><path d="M 61 62 L 0 96 L 61 131 L 182 131 L 242 96 L 182 62 Z" stroke="#CBA6f7" fill="#45475A" class=" stroke-B1 fill-N5" style="stroke-width:2;" /></g><text x="121" y="102" fill="#CDD6F4" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">writer, any process</text><title>Assigns a field or calls update. The write raises the field&#39;s write count.</title></g><g class="c2VnbWVudA== hardware"><g class="shape" ><path d="M 576 61 C 576 37 624 37 630 37 C 635 37 683 37 683 61 V 131 C 683 155 635 155 630 155 C 624 155 576 155 576 131 V 61 Z" stroke="#CBA6f7" fill="#45475A" class=" stroke-B1 fill-AA4" style="stroke-width:2;" /><path d="M 576 61 C 576 85 624 85 630 85 C 635 85 683 85 683 61" stroke="#CBA6f7" fill="#45475A" class=" stroke-B1 fill-AA4" style="stroke-width:2;" /></g><text x="629.5" y="113.5" fill="#CDD6F4" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">segment</text><title>Holds the values, a write count per field, and the waiter slots of the threads waiting for changes.</title></g><g class="d2F0Y2hlcg== process hidden" style='opacity:0'><g class="shape" ><path d="M 962 62 L 912 96 L 962 131 L 1063 131 L 1113 96 L 1063 62 Z" stroke="#CBA6f7" fill="#45475A" class=" stroke-B1 fill-N5" style="stroke-width:2;" /></g></g><g class="Y2FsbGJhY2tz step hidden" style='opacity:0'><g class="shape" ><rect x="1367" y="126" width="162" height="66" rx="6" stroke="#CBA6f7" fill="#313244" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g></g><g class="d2F0Y2g= step hidden" style='opacity:0'><g class="shape" ><rect x="1371" y="0" width="154" height="66" rx="6" stroke="#CBA6f7" fill="#313244" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g></g><g class="KHdyaXRlciAtJmd0OyBzZWdtZW50KVswXQ=="><marker id="mk-d2-2209143288-3488378134-2" markerWidth="10" markerHeight="12" refX="7" refY="6" viewBox="0 0 10 12" orient="auto" markerUnits="userSpaceOnUse"> <polygon points="0,0 10,6 0,12" fill="#CBA6f7" class="connection fill-B1" stroke-width="2" /> </marker><path d="M 244 96 C 375.600006 96 442.399994 96 572 96" stroke="#CBA6f7" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-2209143288-3488378134-2)" mask="url(#d2-2209143288-2)" /><text x="409.5" y="102" fill="#BAC2DE" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px">writes, wakes the slots</text></g><g class="KHNlZ21lbnQgLSZndDsgd2F0Y2hlcilbMF0=" style='opacity:0'><path d="M 685 96 C 774.599976 96 820.400024 96 908 96" stroke="#CBA6f7" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-2209143288-3488378134-2)" mask="url(#d2-2209143288-2)" /><text x="798" y="102" fill="#BAC2DE" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px">wakes</text></g><g class="KHdhdGNoZXIgLSZndDsgY2FsbGJhY2tzKVswXQ==" style='opacity:0'><path d="M 1085.928095 116.531462 C 1208.800049 150.399994 1265.400024 159 1363 159" stroke="#CBA6f7" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-2209143288-3488378134-2)" mask="url(#d2-2209143288-2)" /><text x="1223" y="158" fill="#BAC2DE" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px">new, old</text></g><g class="KHdhdGNoZXIgLSZndDsgd2F0Y2gpWzBd" style='opacity:0'><path d="M 1085.928094 75.468538 C 1208.800049 41.599998 1266.199951 33 1367 33" stroke="#CBA6f7" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-2209143288-3488378134-2)" mask="url(#d2-2209143288-2)" /><text x="1225.5" y="45" fill="#BAC2DE" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px">new value</text></g><g transform="translate(166 46)" class="appendix-icon"><title>Assigns a field or calls update. The write raises the field&#39;s write count.</title><svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_3427_35082111-d2-2209143288-O5ZGS5DFOI-2)">
+<path d="M16 31.1109C24.3456 31.1109 31.1111 24.3454 31.1111 15.9998C31.1111 7.65415 24.3456 0.888672 16 0.888672C7.65436 0.888672 0.888885 7.65415 0.888885 15.9998C0.888885 24.3454 7.65436 31.1109 16 31.1109Z" fill="white" stroke="#DEE1EB"/>
+<path d="M16 26C21.5228 26 26 21.5228 26 16C26 10.4772 21.5228 6 16 6C10.4772 6 6 10.4772 6 16C6 21.5228 10.4772 26 16 26Z" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 19.998V15.998" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 12H16.0098" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<defs>
+<clipPath id="clip0_3427_35082111-d2-2209143288-O5ZGS5DFOI-2">
+<rect width="32" height="32" fill="white"/>
+</clipPath>
+</defs>
+</svg>
+</g><g transform="translate(658 30)" class="appendix-icon"><title>Holds the values, a write count per field, and the waiter slots of the threads waiting for changes.</title><svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_3427_35082111-d2-2209143288-ONSWO3LFNZ2A-2)">
+<path d="M16 31.1109C24.3456 31.1109 31.1111 24.3454 31.1111 15.9998C31.1111 7.65415 24.3456 0.888672 16 0.888672C7.65436 0.888672 0.888885 7.65415 0.888885 15.9998C0.888885 24.3454 7.65436 31.1109 16 31.1109Z" fill="white" stroke="#DEE1EB"/>
+<path d="M16 26C21.5228 26 26 21.5228 26 16C26 10.4772 21.5228 6 16 6C10.4772 6 6 10.4772 6 16C6 21.5228 10.4772 26 16 26Z" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 19.998V15.998" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 12H16.0098" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<defs>
+<clipPath id="clip0_3427_35082111-d2-2209143288-ONSWO3LFNZ2A-2">
+<rect width="32" height="32" fill="white"/>
+</clipPath>
+</defs>
+</svg>
+</g><mask id="d2-2209143288-2" maskUnits="userSpaceOnUse" x="-101" y="-101" width="1731" height="394">
+<rect x="-101" y="-101" width="1731" height="394" fill="white"></rect>
+<rect x="334" y="86" width="151" height="21" fill="black"></rect>
+<rect x="775" y="86" width="46" height="21" fill="black"></rect>
+<rect x="1193" y="142" width="60" height="21" fill="black"></rect>
+<rect x="1190" y="29" width="71" height="21" fill="black"></rect>
+</mask></svg></svg></div></div><div class="markdown-d2-board" data-step="2" data-name="steps.1"><div class="markdown-d2-light"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" data-d2-version="v0.9.0" preserveAspectRatio="xMinYMin meet" width="1731" height="394" viewBox="0 0 1731 394"><svg class="d2-1903823411 d2-svg" width="1731" height="394" viewBox="-101 -101 1731 394"><rect x="-101" y="-101" width="1731" height="394" rx="0" fill="#FFFFFF" class=" fill-N7" stroke-width="0" /><style type="text/css"><![CDATA[
+.appendix-icon {
+	filter: drop-shadow(0px 0px 32px rgba(31, 36, 58, 0.1));
+}
+.d2-1903823411 .text-bold {
+	font-family: "d2-1903823411-font-bold";
+}
+@font-face {
+	font-family: d2-1903823411-font-bold;
+	src: url("data:application/font-woff;base64,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");
+}
+.d2-1903823411 .text-italic {
+	font-family: "d2-1903823411-font-italic";
+}
+@font-face {
+	font-family: d2-1903823411-font-italic;
+	src: url("data:application/font-woff;base64,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");
+}]]></style><style type="text/css"><![CDATA[.shape {
+  shape-rendering: geometricPrecision;
+  stroke-linejoin: round;
+}
+.connection {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.blend {
+  mix-blend-mode: multiply;
+  opacity: 0.5;
+}
+
+		.d2-1903823411 .fill-N1{fill:#0A0F25;}
+		.d2-1903823411 .fill-N2{fill:#676C7E;}
+		.d2-1903823411 .fill-N5{fill:#DEE1EB;}
+		.d2-1903823411 .fill-N7{fill:#FFFFFF;}
+		.d2-1903823411 .fill-B1{fill:#0D32B2;}
+		.d2-1903823411 .fill-B6{fill:#F7F8FE;}
+		.d2-1903823411 .fill-AA4{fill:#EDF0FD;}
+		.d2-1903823411 .stroke-B1{stroke:#0D32B2;}
+		.d2-1903823411 .stroke-B2{stroke:#0D32B2;}.appendix text.text{fill:#0A0F25}.md{--color-fg-default:#0A0F25;--color-fg-muted:#676C7E;--color-fg-subtle:#9499AB;--color-canvas-default:#FFFFFF;--color-canvas-subtle:#EEF1F8;--color-border-default:#0D32B2;--color-border-muted:#0D32B2;--color-neutral-muted:#EEF1F8;--color-accent-fg:#0D32B2;--color-accent-emphasis:#0D32B2;--color-attention-subtle:#676C7E;--color-danger-fg:red;}.light-code{display: block}.dark-code{display: none}]]></style><g class="d3JpdGVy process"><g class="shape" ><path d="M 61 62 L 0 96 L 61 131 L 182 131 L 242 96 L 182 62 Z" stroke="#0D32B2" fill="#DEE1EB" class=" stroke-B1 fill-N5" style="stroke-width:2;" /></g><text x="121" y="102" fill="#0A0F25" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">writer, any process</text><title>Assigns a field or calls update. The write raises the field&#39;s write count.</title></g><g class="c2VnbWVudA== hardware"><g class="shape" ><path d="M 576 61 C 576 37 624 37 630 37 C 635 37 683 37 683 61 V 131 C 683 155 635 155 630 155 C 624 155 576 155 576 131 V 61 Z" stroke="#0D32B2" fill="#EDF0FD" class=" stroke-B1 fill-AA4" style="stroke-width:2;" /><path d="M 576 61 C 576 85 624 85 630 85 C 635 85 683 85 683 61" stroke="#0D32B2" fill="#EDF0FD" class=" stroke-B1 fill-AA4" style="stroke-width:2;" /></g><text x="629.5" y="113.5" fill="#0A0F25" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">segment</text><title>Holds the values, a write count per field, and the waiter slots of the threads waiting for changes.</title></g><g class="d2F0Y2hlcg== process"><g class="shape" ><path d="M 962 62 L 912 96 L 962 131 L 1063 131 L 1113 96 L 1063 62 Z" stroke="#0D32B2" fill="#DEE1EB" class=" stroke-B1 fill-N5" style="stroke-width:2;" /></g><text x="1012.5" y="102" fill="#0A0F25" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">watcher thread</text><title>One thread per box handle, holding a waiter slot. It wakes on the write, compares each field&#39;s write count with the last it saw, and reads the fields whose count moved. Several writes between two wake-ups give one emission with the latest value, and a write that leaves the value unchanged gives none.</title></g><g class="Y2FsbGJhY2tz step hidden" style='opacity:0'><g class="shape" ><rect x="1367" y="126" width="162" height="66" rx="6" stroke="#0D32B2" fill="#F7F8FE" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g></g><g class="d2F0Y2g= step hidden" style='opacity:0'><g class="shape" ><rect x="1371" y="0" width="154" height="66" rx="6" stroke="#0D32B2" fill="#F7F8FE" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g></g><g class="KHdyaXRlciAtJmd0OyBzZWdtZW50KVswXQ=="><marker id="mk-d2-1903823411-3488378134-3" markerWidth="10" markerHeight="12" refX="7" refY="6" viewBox="0 0 10 12" orient="auto" markerUnits="userSpaceOnUse"> <polygon points="0,0 10,6 0,12" fill="#0D32B2" class="connection fill-B1" stroke-width="2" /> </marker><path d="M 244 96 C 375.600006 96 442.399994 96 572 96" stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-1903823411-3488378134-3)" mask="url(#d2-1903823411-3)" /><text x="409.5" y="102" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px">writes, wakes the slots</text></g><g class="KHNlZ21lbnQgLSZndDsgd2F0Y2hlcilbMF0="><path d="M 685 96 C 774.599976 96 820.400024 96 908 96" stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-1903823411-3488378134-3)" mask="url(#d2-1903823411-3)" /><text x="798" y="102" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px">wakes</text></g><g class="KHdhdGNoZXIgLSZndDsgY2FsbGJhY2tzKVswXQ==" style='opacity:0'><path d="M 1085.928095 116.531462 C 1208.800049 150.399994 1265.400024 159 1363 159" stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-1903823411-3488378134-3)" mask="url(#d2-1903823411-3)" /><text x="1223" y="158" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px">new, old</text></g><g class="KHdhdGNoZXIgLSZndDsgd2F0Y2gpWzBd" style='opacity:0'><path d="M 1085.928094 75.468538 C 1208.800049 41.599998 1266.199951 33 1367 33" stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-1903823411-3488378134-3)" mask="url(#d2-1903823411-3)" /><text x="1225.5" y="45" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px">new value</text></g><g transform="translate(166 46)" class="appendix-icon"><title>Assigns a field or calls update. The write raises the field&#39;s write count.</title><svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_3427_35082111-d2-1903823411-O5ZGS5DFOI-3)">
+<path d="M16 31.1109C24.3456 31.1109 31.1111 24.3454 31.1111 15.9998C31.1111 7.65415 24.3456 0.888672 16 0.888672C7.65436 0.888672 0.888885 7.65415 0.888885 15.9998C0.888885 24.3454 7.65436 31.1109 16 31.1109Z" fill="white" stroke="#DEE1EB"/>
+<path d="M16 26C21.5228 26 26 21.5228 26 16C26 10.4772 21.5228 6 16 6C10.4772 6 6 10.4772 6 16C6 21.5228 10.4772 26 16 26Z" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 19.998V15.998" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 12H16.0098" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<defs>
+<clipPath id="clip0_3427_35082111-d2-1903823411-O5ZGS5DFOI-3">
+<rect width="32" height="32" fill="white"/>
+</clipPath>
+</defs>
+</svg>
+</g><g transform="translate(658 30)" class="appendix-icon"><title>Holds the values, a write count per field, and the waiter slots of the threads waiting for changes.</title><svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_3427_35082111-d2-1903823411-ONSWO3LFNZ2A-3)">
+<path d="M16 31.1109C24.3456 31.1109 31.1111 24.3454 31.1111 15.9998C31.1111 7.65415 24.3456 0.888672 16 0.888672C7.65436 0.888672 0.888885 7.65415 0.888885 15.9998C0.888885 24.3454 7.65436 31.1109 16 31.1109Z" fill="white" stroke="#DEE1EB"/>
+<path d="M16 26C21.5228 26 26 21.5228 26 16C26 10.4772 21.5228 6 16 6C10.4772 6 6 10.4772 6 16C6 21.5228 10.4772 26 16 26Z" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 19.998V15.998" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 12H16.0098" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<defs>
+<clipPath id="clip0_3427_35082111-d2-1903823411-ONSWO3LFNZ2A-3">
+<rect width="32" height="32" fill="white"/>
+</clipPath>
+</defs>
+</svg>
+</g><g transform="translate(1047 46)" class="appendix-icon"><title>One thread per box handle, holding a waiter slot. It wakes on the write, compares each field&#39;s write count with the last it saw, and reads the fields whose count moved. Several writes between two wake-ups give one emission with the latest value, and a write that leaves the value unchanged gives none.</title><svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_3427_35082111-d2-1903823411-O5QXIY3IMVZA-3)">
+<path d="M16 31.1109C24.3456 31.1109 31.1111 24.3454 31.1111 15.9998C31.1111 7.65415 24.3456 0.888672 16 0.888672C7.65436 0.888672 0.888885 7.65415 0.888885 15.9998C0.888885 24.3454 7.65436 31.1109 16 31.1109Z" fill="white" stroke="#DEE1EB"/>
+<path d="M16 26C21.5228 26 26 21.5228 26 16C26 10.4772 21.5228 6 16 6C10.4772 6 6 10.4772 6 16C6 21.5228 10.4772 26 16 26Z" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 19.998V15.998" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 12H16.0098" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<defs>
+<clipPath id="clip0_3427_35082111-d2-1903823411-O5QXIY3IMVZA-3">
+<rect width="32" height="32" fill="white"/>
+</clipPath>
+</defs>
+</svg>
+</g><mask id="d2-1903823411-3" maskUnits="userSpaceOnUse" x="-101" y="-101" width="1731" height="394">
+<rect x="-101" y="-101" width="1731" height="394" fill="white"></rect>
+<rect x="334" y="86" width="151" height="21" fill="black"></rect>
+<rect x="775" y="86" width="46" height="21" fill="black"></rect>
+<rect x="1193" y="142" width="60" height="21" fill="black"></rect>
+<rect x="1190" y="29" width="71" height="21" fill="black"></rect>
+</mask></svg></svg></div><div class="markdown-d2-dark"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" data-d2-version="v0.9.0" preserveAspectRatio="xMinYMin meet" width="1731" height="394" viewBox="0 0 1731 394"><svg class="d2-2038044363 d2-svg" width="1731" height="394" viewBox="-101 -101 1731 394"><rect x="-101" y="-101" width="1731" height="394" rx="0" fill="#1E1E2E" class=" fill-N7" stroke-width="0" /><style type="text/css"><![CDATA[
+.appendix-icon {
+	filter: drop-shadow(0px 0px 32px rgba(31, 36, 58, 0.1));
+}
+.d2-2038044363 .text-bold {
+	font-family: "d2-2038044363-font-bold";
+}
+@font-face {
+	font-family: d2-2038044363-font-bold;
+	src: url("data:application/font-woff;base64,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");
+}
+.d2-2038044363 .text-italic {
+	font-family: "d2-2038044363-font-italic";
+}
+@font-face {
+	font-family: d2-2038044363-font-italic;
+	src: url("data:application/font-woff;base64,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");
+}]]></style><style type="text/css"><![CDATA[.shape {
+  shape-rendering: geometricPrecision;
+  stroke-linejoin: round;
+}
+.connection {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.blend {
+  mix-blend-mode: multiply;
+  opacity: 0.5;
+}
+
+		.d2-2038044363 .fill-N1{fill:#CDD6F4;}
+		.d2-2038044363 .fill-N2{fill:#BAC2DE;}
+		.d2-2038044363 .fill-N5{fill:#45475A;}
+		.d2-2038044363 .fill-N7{fill:#1E1E2E;}
+		.d2-2038044363 .fill-B1{fill:#CBA6f7;}
+		.d2-2038044363 .fill-B6{fill:#313244;}
+		.d2-2038044363 .fill-AA4{fill:#45475A;}
+		.d2-2038044363 .stroke-B1{stroke:#CBA6f7;}
+		.d2-2038044363 .stroke-B2{stroke:#CBA6f7;}.appendix text.text{fill:#CDD6F4}.md{--color-fg-default:#CDD6F4;--color-fg-muted:#BAC2DE;--color-fg-subtle:#A6ADC8;--color-canvas-default:#1E1E2E;--color-canvas-subtle:#313244;--color-border-default:#CBA6f7;--color-border-muted:#CBA6f7;--color-neutral-muted:#313244;--color-accent-fg:#CBA6f7;--color-accent-emphasis:#CBA6f7;--color-attention-subtle:#BAC2DE;--color-danger-fg:red;}.light-code{display: none}.dark-code{display: block}]]></style><g class="d3JpdGVy process"><g class="shape" ><path d="M 61 62 L 0 96 L 61 131 L 182 131 L 242 96 L 182 62 Z" stroke="#CBA6f7" fill="#45475A" class=" stroke-B1 fill-N5" style="stroke-width:2;" /></g><text x="121" y="102" fill="#CDD6F4" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">writer, any process</text><title>Assigns a field or calls update. The write raises the field&#39;s write count.</title></g><g class="c2VnbWVudA== hardware"><g class="shape" ><path d="M 576 61 C 576 37 624 37 630 37 C 635 37 683 37 683 61 V 131 C 683 155 635 155 630 155 C 624 155 576 155 576 131 V 61 Z" stroke="#CBA6f7" fill="#45475A" class=" stroke-B1 fill-AA4" style="stroke-width:2;" /><path d="M 576 61 C 576 85 624 85 630 85 C 635 85 683 85 683 61" stroke="#CBA6f7" fill="#45475A" class=" stroke-B1 fill-AA4" style="stroke-width:2;" /></g><text x="629.5" y="113.5" fill="#CDD6F4" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">segment</text><title>Holds the values, a write count per field, and the waiter slots of the threads waiting for changes.</title></g><g class="d2F0Y2hlcg== process"><g class="shape" ><path d="M 962 62 L 912 96 L 962 131 L 1063 131 L 1113 96 L 1063 62 Z" stroke="#CBA6f7" fill="#45475A" class=" stroke-B1 fill-N5" style="stroke-width:2;" /></g><text x="1012.5" y="102" fill="#CDD6F4" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">watcher thread</text><title>One thread per box handle, holding a waiter slot. It wakes on the write, compares each field&#39;s write count with the last it saw, and reads the fields whose count moved. Several writes between two wake-ups give one emission with the latest value, and a write that leaves the value unchanged gives none.</title></g><g class="Y2FsbGJhY2tz step hidden" style='opacity:0'><g class="shape" ><rect x="1367" y="126" width="162" height="66" rx="6" stroke="#CBA6f7" fill="#313244" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g></g><g class="d2F0Y2g= step hidden" style='opacity:0'><g class="shape" ><rect x="1371" y="0" width="154" height="66" rx="6" stroke="#CBA6f7" fill="#313244" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g></g><g class="KHdyaXRlciAtJmd0OyBzZWdtZW50KVswXQ=="><marker id="mk-d2-2038044363-3488378134-4" markerWidth="10" markerHeight="12" refX="7" refY="6" viewBox="0 0 10 12" orient="auto" markerUnits="userSpaceOnUse"> <polygon points="0,0 10,6 0,12" fill="#CBA6f7" class="connection fill-B1" stroke-width="2" /> </marker><path d="M 244 96 C 375.600006 96 442.399994 96 572 96" stroke="#CBA6f7" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-2038044363-3488378134-4)" mask="url(#d2-2038044363-4)" /><text x="409.5" y="102" fill="#BAC2DE" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px">writes, wakes the slots</text></g><g class="KHNlZ21lbnQgLSZndDsgd2F0Y2hlcilbMF0="><path d="M 685 96 C 774.599976 96 820.400024 96 908 96" stroke="#CBA6f7" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-2038044363-3488378134-4)" mask="url(#d2-2038044363-4)" /><text x="798" y="102" fill="#BAC2DE" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px">wakes</text></g><g class="KHdhdGNoZXIgLSZndDsgY2FsbGJhY2tzKVswXQ==" style='opacity:0'><path d="M 1085.928095 116.531462 C 1208.800049 150.399994 1265.400024 159 1363 159" stroke="#CBA6f7" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-2038044363-3488378134-4)" mask="url(#d2-2038044363-4)" /><text x="1223" y="158" fill="#BAC2DE" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px">new, old</text></g><g class="KHdhdGNoZXIgLSZndDsgd2F0Y2gpWzBd" style='opacity:0'><path d="M 1085.928094 75.468538 C 1208.800049 41.599998 1266.199951 33 1367 33" stroke="#CBA6f7" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-2038044363-3488378134-4)" mask="url(#d2-2038044363-4)" /><text x="1225.5" y="45" fill="#BAC2DE" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px">new value</text></g><g transform="translate(166 46)" class="appendix-icon"><title>Assigns a field or calls update. The write raises the field&#39;s write count.</title><svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_3427_35082111-d2-2038044363-O5ZGS5DFOI-4)">
+<path d="M16 31.1109C24.3456 31.1109 31.1111 24.3454 31.1111 15.9998C31.1111 7.65415 24.3456 0.888672 16 0.888672C7.65436 0.888672 0.888885 7.65415 0.888885 15.9998C0.888885 24.3454 7.65436 31.1109 16 31.1109Z" fill="white" stroke="#DEE1EB"/>
+<path d="M16 26C21.5228 26 26 21.5228 26 16C26 10.4772 21.5228 6 16 6C10.4772 6 6 10.4772 6 16C6 21.5228 10.4772 26 16 26Z" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 19.998V15.998" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 12H16.0098" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<defs>
+<clipPath id="clip0_3427_35082111-d2-2038044363-O5ZGS5DFOI-4">
+<rect width="32" height="32" fill="white"/>
+</clipPath>
+</defs>
+</svg>
+</g><g transform="translate(658 30)" class="appendix-icon"><title>Holds the values, a write count per field, and the waiter slots of the threads waiting for changes.</title><svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_3427_35082111-d2-2038044363-ONSWO3LFNZ2A-4)">
+<path d="M16 31.1109C24.3456 31.1109 31.1111 24.3454 31.1111 15.9998C31.1111 7.65415 24.3456 0.888672 16 0.888672C7.65436 0.888672 0.888885 7.65415 0.888885 15.9998C0.888885 24.3454 7.65436 31.1109 16 31.1109Z" fill="white" stroke="#DEE1EB"/>
+<path d="M16 26C21.5228 26 26 21.5228 26 16C26 10.4772 21.5228 6 16 6C10.4772 6 6 10.4772 6 16C6 21.5228 10.4772 26 16 26Z" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 19.998V15.998" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 12H16.0098" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<defs>
+<clipPath id="clip0_3427_35082111-d2-2038044363-ONSWO3LFNZ2A-4">
+<rect width="32" height="32" fill="white"/>
+</clipPath>
+</defs>
+</svg>
+</g><g transform="translate(1047 46)" class="appendix-icon"><title>One thread per box handle, holding a waiter slot. It wakes on the write, compares each field&#39;s write count with the last it saw, and reads the fields whose count moved. Several writes between two wake-ups give one emission with the latest value, and a write that leaves the value unchanged gives none.</title><svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_3427_35082111-d2-2038044363-O5QXIY3IMVZA-4)">
+<path d="M16 31.1109C24.3456 31.1109 31.1111 24.3454 31.1111 15.9998C31.1111 7.65415 24.3456 0.888672 16 0.888672C7.65436 0.888672 0.888885 7.65415 0.888885 15.9998C0.888885 24.3454 7.65436 31.1109 16 31.1109Z" fill="white" stroke="#DEE1EB"/>
+<path d="M16 26C21.5228 26 26 21.5228 26 16C26 10.4772 21.5228 6 16 6C10.4772 6 6 10.4772 6 16C6 21.5228 10.4772 26 16 26Z" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 19.998V15.998" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 12H16.0098" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<defs>
+<clipPath id="clip0_3427_35082111-d2-2038044363-O5QXIY3IMVZA-4">
+<rect width="32" height="32" fill="white"/>
+</clipPath>
+</defs>
+</svg>
+</g><mask id="d2-2038044363-4" maskUnits="userSpaceOnUse" x="-101" y="-101" width="1731" height="394">
+<rect x="-101" y="-101" width="1731" height="394" fill="white"></rect>
+<rect x="334" y="86" width="151" height="21" fill="black"></rect>
+<rect x="775" y="86" width="46" height="21" fill="black"></rect>
+<rect x="1193" y="142" width="60" height="21" fill="black"></rect>
+<rect x="1190" y="29" width="71" height="21" fill="black"></rect>
+</mask></svg></svg></div></div><div class="markdown-d2-board" data-step="3" data-name="steps.2"><div class="markdown-d2-light"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" data-d2-version="v0.9.0" preserveAspectRatio="xMinYMin meet" width="1748" height="411" viewBox="0 0 1748 411"><svg class="d2-35040765 d2-svg" width="1748" height="411" viewBox="-101 -118 1748 411"><rect x="-101" y="-118" width="1748" height="411" rx="0" fill="#FFFFFF" class=" fill-N7" stroke-width="0" /><style type="text/css"><![CDATA[
+.appendix-icon {
+	filter: drop-shadow(0px 0px 32px rgba(31, 36, 58, 0.1));
+}
+.d2-35040765 .text-bold {
+	font-family: "d2-35040765-font-bold";
+}
+@font-face {
+	font-family: d2-35040765-font-bold;
+	src: url("data:application/font-woff;base64,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");
+}
+.d2-35040765 .text-italic {
+	font-family: "d2-35040765-font-italic";
+}
+@font-face {
+	font-family: d2-35040765-font-italic;
+	src: url("data:application/font-woff;base64,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");
+}]]></style><style type="text/css"><![CDATA[.shape {
+  shape-rendering: geometricPrecision;
+  stroke-linejoin: round;
+}
+.connection {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.blend {
+  mix-blend-mode: multiply;
+  opacity: 0.5;
+}
+
+		.d2-35040765 .fill-N1{fill:#0A0F25;}
+		.d2-35040765 .fill-N2{fill:#676C7E;}
+		.d2-35040765 .fill-N5{fill:#DEE1EB;}
+		.d2-35040765 .fill-N7{fill:#FFFFFF;}
+		.d2-35040765 .fill-B1{fill:#0D32B2;}
+		.d2-35040765 .fill-B6{fill:#F7F8FE;}
+		.d2-35040765 .fill-AA4{fill:#EDF0FD;}
+		.d2-35040765 .stroke-B1{stroke:#0D32B2;}
+		.d2-35040765 .stroke-B2{stroke:#0D32B2;}.appendix text.text{fill:#0A0F25}.md{--color-fg-default:#0A0F25;--color-fg-muted:#676C7E;--color-fg-subtle:#9499AB;--color-canvas-default:#FFFFFF;--color-canvas-subtle:#EEF1F8;--color-border-default:#0D32B2;--color-border-muted:#0D32B2;--color-neutral-muted:#EEF1F8;--color-accent-fg:#0D32B2;--color-accent-emphasis:#0D32B2;--color-attention-subtle:#676C7E;--color-danger-fg:red;}.light-code{display: block}.dark-code{display: none}]]></style><g class="d3JpdGVy process"><g class="shape" ><path d="M 61 62 L 0 96 L 61 131 L 182 131 L 242 96 L 182 62 Z" stroke="#0D32B2" fill="#DEE1EB" class=" stroke-B1 fill-N5" style="stroke-width:2;" /></g><text x="121" y="102" fill="#0A0F25" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">writer, any process</text><title>Assigns a field or calls update. The write raises the field&#39;s write count.</title></g><g class="c2VnbWVudA== hardware"><g class="shape" ><path d="M 576 61 C 576 37 624 37 630 37 C 635 37 683 37 683 61 V 131 C 683 155 635 155 630 155 C 624 155 576 155 576 131 V 61 Z" stroke="#0D32B2" fill="#EDF0FD" class=" stroke-B1 fill-AA4" style="stroke-width:2;" /><path d="M 576 61 C 576 85 624 85 630 85 C 635 85 683 85 683 61" stroke="#0D32B2" fill="#EDF0FD" class=" stroke-B1 fill-AA4" style="stroke-width:2;" /></g><text x="629.5" y="113.5" fill="#0A0F25" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">segment</text><title>Holds the values, a write count per field, and the waiter slots of the threads waiting for changes.</title></g><g class="d2F0Y2hlcg== process"><g class="shape" ><path d="M 962 62 L 912 96 L 962 131 L 1063 131 L 1113 96 L 1063 62 Z" stroke="#0D32B2" fill="#DEE1EB" class=" stroke-B1 fill-N5" style="stroke-width:2;" /></g><text x="1012.5" y="102" fill="#0A0F25" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">watcher thread</text><title>One thread per box handle, holding a waiter slot. It wakes on the write, compares each field&#39;s write count with the last it saw, and reads the fields whose count moved. Several writes between two wake-ups give one emission with the latest value, and a write that leaves the value unchanged gives none.</title></g><g class="Y2FsbGJhY2tz step"><g class="shape" ><rect x="1367" y="126" width="162" height="66" rx="6" stroke="#0D32B2" fill="#F7F8FE" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="1448" y="164.5" fill="#0A0F25" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">events callbacks</text><title>They run on the watcher thread, not in the process or the thread that wrote. The docstring of events lists when each signal fires.</title></g><g class="d2F0Y2g= step"><g class="shape" ><rect x="1371" y="0" width="154" height="66" rx="6" stroke="#0D32B2" fill="#F7F8FE" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="1448" y="38.5" fill="#0A0F25" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">watch iterators</text><title>Served by the same thread, so a slow callback delays the watch iterators of the same box.</title></g><g class="KHdyaXRlciAtJmd0OyBzZWdtZW50KVswXQ=="><marker id="mk-d2-35040765-3488378134-5" markerWidth="10" markerHeight="12" refX="7" refY="6" viewBox="0 0 10 12" orient="auto" markerUnits="userSpaceOnUse"> <polygon points="0,0 10,6 0,12" fill="#0D32B2" class="connection fill-B1" stroke-width="2" /> </marker><path d="M 244 96 C 375.600006 96 442.399994 96 572 96" stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-35040765-3488378134-5)" mask="url(#d2-35040765-5)" /><text x="409.5" y="102" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px">writes, wakes the slots</text></g><g class="KHNlZ21lbnQgLSZndDsgd2F0Y2hlcilbMF0="><path d="M 685 96 C 774.599976 96 820.400024 96 908 96" stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-35040765-3488378134-5)" mask="url(#d2-35040765-5)" /><text x="798" y="102" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px">wakes</text></g><g class="KHdhdGNoZXIgLSZndDsgY2FsbGJhY2tzKVswXQ=="><path d="M 1085.928095 116.531462 C 1208.800049 150.399994 1265.400024 159 1363 159" stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-35040765-3488378134-5)" mask="url(#d2-35040765-5)" /><text x="1223" y="158" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px">new, old</text></g><g class="KHdhdGNoZXIgLSZndDsgd2F0Y2gpWzBd"><path d="M 1085.928094 75.468538 C 1208.800049 41.599998 1266.199951 33 1367 33" stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-35040765-3488378134-5)" mask="url(#d2-35040765-5)" /><text x="1225.5" y="45" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px">new value</text></g><g transform="translate(166 46)" class="appendix-icon"><title>Assigns a field or calls update. The write raises the field&#39;s write count.</title><svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_3427_35082111-d2-35040765-O5ZGS5DFOI-5)">
+<path d="M16 31.1109C24.3456 31.1109 31.1111 24.3454 31.1111 15.9998C31.1111 7.65415 24.3456 0.888672 16 0.888672C7.65436 0.888672 0.888885 7.65415 0.888885 15.9998C0.888885 24.3454 7.65436 31.1109 16 31.1109Z" fill="white" stroke="#DEE1EB"/>
+<path d="M16 26C21.5228 26 26 21.5228 26 16C26 10.4772 21.5228 6 16 6C10.4772 6 6 10.4772 6 16C6 21.5228 10.4772 26 16 26Z" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 19.998V15.998" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 12H16.0098" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<defs>
+<clipPath id="clip0_3427_35082111-d2-35040765-O5ZGS5DFOI-5">
+<rect width="32" height="32" fill="white"/>
+</clipPath>
+</defs>
+</svg>
+</g><g transform="translate(658 30)" class="appendix-icon"><title>Holds the values, a write count per field, and the waiter slots of the threads waiting for changes.</title><svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_3427_35082111-d2-35040765-ONSWO3LFNZ2A-5)">
+<path d="M16 31.1109C24.3456 31.1109 31.1111 24.3454 31.1111 15.9998C31.1111 7.65415 24.3456 0.888672 16 0.888672C7.65436 0.888672 0.888885 7.65415 0.888885 15.9998C0.888885 24.3454 7.65436 31.1109 16 31.1109Z" fill="white" stroke="#DEE1EB"/>
+<path d="M16 26C21.5228 26 26 21.5228 26 16C26 10.4772 21.5228 6 16 6C10.4772 6 6 10.4772 6 16C6 21.5228 10.4772 26 16 26Z" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 19.998V15.998" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 12H16.0098" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<defs>
+<clipPath id="clip0_3427_35082111-d2-35040765-ONSWO3LFNZ2A-5">
+<rect width="32" height="32" fill="white"/>
+</clipPath>
+</defs>
+</svg>
+</g><g transform="translate(1047 46)" class="appendix-icon"><title>One thread per box handle, holding a waiter slot. It wakes on the write, compares each field&#39;s write count with the last it saw, and reads the fields whose count moved. Several writes between two wake-ups give one emission with the latest value, and a write that leaves the value unchanged gives none.</title><svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_3427_35082111-d2-35040765-O5QXIY3IMVZA-5)">
+<path d="M16 31.1109C24.3456 31.1109 31.1111 24.3454 31.1111 15.9998C31.1111 7.65415 24.3456 0.888672 16 0.888672C7.65436 0.888672 0.888885 7.65415 0.888885 15.9998C0.888885 24.3454 7.65436 31.1109 16 31.1109Z" fill="white" stroke="#DEE1EB"/>
+<path d="M16 26C21.5228 26 26 21.5228 26 16C26 10.4772 21.5228 6 16 6C10.4772 6 6 10.4772 6 16C6 21.5228 10.4772 26 16 26Z" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 19.998V15.998" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 12H16.0098" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<defs>
+<clipPath id="clip0_3427_35082111-d2-35040765-O5QXIY3IMVZA-5">
+<rect width="32" height="32" fill="white"/>
+</clipPath>
+</defs>
+</svg>
+</g><g transform="translate(1513 110)" class="appendix-icon"><title>They run on the watcher thread, not in the process or the thread that wrote. The docstring of events lists when each signal fires.</title><svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_3427_35082111-d2-35040765-MNQWY3DCMFRWW4Y-5)">
+<path d="M16 31.1109C24.3456 31.1109 31.1111 24.3454 31.1111 15.9998C31.1111 7.65415 24.3456 0.888672 16 0.888672C7.65436 0.888672 0.888885 7.65415 0.888885 15.9998C0.888885 24.3454 7.65436 31.1109 16 31.1109Z" fill="white" stroke="#DEE1EB"/>
+<path d="M16 26C21.5228 26 26 21.5228 26 16C26 10.4772 21.5228 6 16 6C10.4772 6 6 10.4772 6 16C6 21.5228 10.4772 26 16 26Z" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 19.998V15.998" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 12H16.0098" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<defs>
+<clipPath id="clip0_3427_35082111-d2-35040765-MNQWY3DCMFRWW4Y-5">
+<rect width="32" height="32" fill="white"/>
+</clipPath>
+</defs>
+</svg>
+</g><g transform="translate(1509 -16)" class="appendix-icon"><title>Served by the same thread, so a slow callback delays the watch iterators of the same box.</title><svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_3427_35082111-d2-35040765-O5QXIY3I-5)">
+<path d="M16 31.1109C24.3456 31.1109 31.1111 24.3454 31.1111 15.9998C31.1111 7.65415 24.3456 0.888672 16 0.888672C7.65436 0.888672 0.888885 7.65415 0.888885 15.9998C0.888885 24.3454 7.65436 31.1109 16 31.1109Z" fill="white" stroke="#DEE1EB"/>
+<path d="M16 26C21.5228 26 26 21.5228 26 16C26 10.4772 21.5228 6 16 6C10.4772 6 6 10.4772 6 16C6 21.5228 10.4772 26 16 26Z" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 19.998V15.998" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 12H16.0098" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<defs>
+<clipPath id="clip0_3427_35082111-d2-35040765-O5QXIY3I-5">
+<rect width="32" height="32" fill="white"/>
+</clipPath>
+</defs>
+</svg>
+</g><mask id="d2-35040765-5" maskUnits="userSpaceOnUse" x="-101" y="-118" width="1748" height="411">
+<rect x="-101" y="-118" width="1748" height="411" fill="white"></rect>
+<rect x="334" y="86" width="151" height="21" fill="black"></rect>
+<rect x="775" y="86" width="46" height="21" fill="black"></rect>
+<rect x="1193" y="142" width="60" height="21" fill="black"></rect>
+<rect x="1190" y="29" width="71" height="21" fill="black"></rect>
+</mask></svg></svg></div><div class="markdown-d2-dark"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" data-d2-version="v0.9.0" preserveAspectRatio="xMinYMin meet" width="1748" height="411" viewBox="0 0 1748 411"><svg class="d2-4195787109 d2-svg" width="1748" height="411" viewBox="-101 -118 1748 411"><rect x="-101" y="-118" width="1748" height="411" rx="0" fill="#1E1E2E" class=" fill-N7" stroke-width="0" /><style type="text/css"><![CDATA[
+.appendix-icon {
+	filter: drop-shadow(0px 0px 32px rgba(31, 36, 58, 0.1));
+}
+.d2-4195787109 .text-bold {
+	font-family: "d2-4195787109-font-bold";
+}
+@font-face {
+	font-family: d2-4195787109-font-bold;
+	src: url("data:application/font-woff;base64,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");
+}
+.d2-4195787109 .text-italic {
+	font-family: "d2-4195787109-font-italic";
+}
+@font-face {
+	font-family: d2-4195787109-font-italic;
+	src: url("data:application/font-woff;base64,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");
+}]]></style><style type="text/css"><![CDATA[.shape {
+  shape-rendering: geometricPrecision;
+  stroke-linejoin: round;
+}
+.connection {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.blend {
+  mix-blend-mode: multiply;
+  opacity: 0.5;
+}
+
+		.d2-4195787109 .fill-N1{fill:#CDD6F4;}
+		.d2-4195787109 .fill-N2{fill:#BAC2DE;}
+		.d2-4195787109 .fill-N5{fill:#45475A;}
+		.d2-4195787109 .fill-N7{fill:#1E1E2E;}
+		.d2-4195787109 .fill-B1{fill:#CBA6f7;}
+		.d2-4195787109 .fill-B6{fill:#313244;}
+		.d2-4195787109 .fill-AA4{fill:#45475A;}
+		.d2-4195787109 .stroke-B1{stroke:#CBA6f7;}
+		.d2-4195787109 .stroke-B2{stroke:#CBA6f7;}.appendix text.text{fill:#CDD6F4}.md{--color-fg-default:#CDD6F4;--color-fg-muted:#BAC2DE;--color-fg-subtle:#A6ADC8;--color-canvas-default:#1E1E2E;--color-canvas-subtle:#313244;--color-border-default:#CBA6f7;--color-border-muted:#CBA6f7;--color-neutral-muted:#313244;--color-accent-fg:#CBA6f7;--color-accent-emphasis:#CBA6f7;--color-attention-subtle:#BAC2DE;--color-danger-fg:red;}.light-code{display: none}.dark-code{display: block}]]></style><g class="d3JpdGVy process"><g class="shape" ><path d="M 61 62 L 0 96 L 61 131 L 182 131 L 242 96 L 182 62 Z" stroke="#CBA6f7" fill="#45475A" class=" stroke-B1 fill-N5" style="stroke-width:2;" /></g><text x="121" y="102" fill="#CDD6F4" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">writer, any process</text><title>Assigns a field or calls update. The write raises the field&#39;s write count.</title></g><g class="c2VnbWVudA== hardware"><g class="shape" ><path d="M 576 61 C 576 37 624 37 630 37 C 635 37 683 37 683 61 V 131 C 683 155 635 155 630 155 C 624 155 576 155 576 131 V 61 Z" stroke="#CBA6f7" fill="#45475A" class=" stroke-B1 fill-AA4" style="stroke-width:2;" /><path d="M 576 61 C 576 85 624 85 630 85 C 635 85 683 85 683 61" stroke="#CBA6f7" fill="#45475A" class=" stroke-B1 fill-AA4" style="stroke-width:2;" /></g><text x="629.5" y="113.5" fill="#CDD6F4" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">segment</text><title>Holds the values, a write count per field, and the waiter slots of the threads waiting for changes.</title></g><g class="d2F0Y2hlcg== process"><g class="shape" ><path d="M 962 62 L 912 96 L 962 131 L 1063 131 L 1113 96 L 1063 62 Z" stroke="#CBA6f7" fill="#45475A" class=" stroke-B1 fill-N5" style="stroke-width:2;" /></g><text x="1012.5" y="102" fill="#CDD6F4" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">watcher thread</text><title>One thread per box handle, holding a waiter slot. It wakes on the write, compares each field&#39;s write count with the last it saw, and reads the fields whose count moved. Several writes between two wake-ups give one emission with the latest value, and a write that leaves the value unchanged gives none.</title></g><g class="Y2FsbGJhY2tz step"><g class="shape" ><rect x="1367" y="126" width="162" height="66" rx="6" stroke="#CBA6f7" fill="#313244" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="1448" y="164.5" fill="#CDD6F4" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">events callbacks</text><title>They run on the watcher thread, not in the process or the thread that wrote. The docstring of events lists when each signal fires.</title></g><g class="d2F0Y2g= step"><g class="shape" ><rect x="1371" y="0" width="154" height="66" rx="6" stroke="#CBA6f7" fill="#313244" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="1448" y="38.5" fill="#CDD6F4" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">watch iterators</text><title>Served by the same thread, so a slow callback delays the watch iterators of the same box.</title></g><g class="KHdyaXRlciAtJmd0OyBzZWdtZW50KVswXQ=="><marker id="mk-d2-4195787109-3488378134-6" markerWidth="10" markerHeight="12" refX="7" refY="6" viewBox="0 0 10 12" orient="auto" markerUnits="userSpaceOnUse"> <polygon points="0,0 10,6 0,12" fill="#CBA6f7" class="connection fill-B1" stroke-width="2" /> </marker><path d="M 244 96 C 375.600006 96 442.399994 96 572 96" stroke="#CBA6f7" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-4195787109-3488378134-6)" mask="url(#d2-4195787109-6)" /><text x="409.5" y="102" fill="#BAC2DE" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px">writes, wakes the slots</text></g><g class="KHNlZ21lbnQgLSZndDsgd2F0Y2hlcilbMF0="><path d="M 685 96 C 774.599976 96 820.400024 96 908 96" stroke="#CBA6f7" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-4195787109-3488378134-6)" mask="url(#d2-4195787109-6)" /><text x="798" y="102" fill="#BAC2DE" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px">wakes</text></g><g class="KHdhdGNoZXIgLSZndDsgY2FsbGJhY2tzKVswXQ=="><path d="M 1085.928095 116.531462 C 1208.800049 150.399994 1265.400024 159 1363 159" stroke="#CBA6f7" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-4195787109-3488378134-6)" mask="url(#d2-4195787109-6)" /><text x="1223" y="158" fill="#BAC2DE" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px">new, old</text></g><g class="KHdhdGNoZXIgLSZndDsgd2F0Y2gpWzBd"><path d="M 1085.928094 75.468538 C 1208.800049 41.599998 1266.199951 33 1367 33" stroke="#CBA6f7" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-4195787109-3488378134-6)" mask="url(#d2-4195787109-6)" /><text x="1225.5" y="45" fill="#BAC2DE" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px">new value</text></g><g transform="translate(166 46)" class="appendix-icon"><title>Assigns a field or calls update. The write raises the field&#39;s write count.</title><svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_3427_35082111-d2-4195787109-O5ZGS5DFOI-6)">
+<path d="M16 31.1109C24.3456 31.1109 31.1111 24.3454 31.1111 15.9998C31.1111 7.65415 24.3456 0.888672 16 0.888672C7.65436 0.888672 0.888885 7.65415 0.888885 15.9998C0.888885 24.3454 7.65436 31.1109 16 31.1109Z" fill="white" stroke="#DEE1EB"/>
+<path d="M16 26C21.5228 26 26 21.5228 26 16C26 10.4772 21.5228 6 16 6C10.4772 6 6 10.4772 6 16C6 21.5228 10.4772 26 16 26Z" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 19.998V15.998" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 12H16.0098" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<defs>
+<clipPath id="clip0_3427_35082111-d2-4195787109-O5ZGS5DFOI-6">
+<rect width="32" height="32" fill="white"/>
+</clipPath>
+</defs>
+</svg>
+</g><g transform="translate(658 30)" class="appendix-icon"><title>Holds the values, a write count per field, and the waiter slots of the threads waiting for changes.</title><svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_3427_35082111-d2-4195787109-ONSWO3LFNZ2A-6)">
+<path d="M16 31.1109C24.3456 31.1109 31.1111 24.3454 31.1111 15.9998C31.1111 7.65415 24.3456 0.888672 16 0.888672C7.65436 0.888672 0.888885 7.65415 0.888885 15.9998C0.888885 24.3454 7.65436 31.1109 16 31.1109Z" fill="white" stroke="#DEE1EB"/>
+<path d="M16 26C21.5228 26 26 21.5228 26 16C26 10.4772 21.5228 6 16 6C10.4772 6 6 10.4772 6 16C6 21.5228 10.4772 26 16 26Z" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 19.998V15.998" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 12H16.0098" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<defs>
+<clipPath id="clip0_3427_35082111-d2-4195787109-ONSWO3LFNZ2A-6">
+<rect width="32" height="32" fill="white"/>
+</clipPath>
+</defs>
+</svg>
+</g><g transform="translate(1047 46)" class="appendix-icon"><title>One thread per box handle, holding a waiter slot. It wakes on the write, compares each field&#39;s write count with the last it saw, and reads the fields whose count moved. Several writes between two wake-ups give one emission with the latest value, and a write that leaves the value unchanged gives none.</title><svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_3427_35082111-d2-4195787109-O5QXIY3IMVZA-6)">
+<path d="M16 31.1109C24.3456 31.1109 31.1111 24.3454 31.1111 15.9998C31.1111 7.65415 24.3456 0.888672 16 0.888672C7.65436 0.888672 0.888885 7.65415 0.888885 15.9998C0.888885 24.3454 7.65436 31.1109 16 31.1109Z" fill="white" stroke="#DEE1EB"/>
+<path d="M16 26C21.5228 26 26 21.5228 26 16C26 10.4772 21.5228 6 16 6C10.4772 6 6 10.4772 6 16C6 21.5228 10.4772 26 16 26Z" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 19.998V15.998" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 12H16.0098" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<defs>
+<clipPath id="clip0_3427_35082111-d2-4195787109-O5QXIY3IMVZA-6">
+<rect width="32" height="32" fill="white"/>
+</clipPath>
+</defs>
+</svg>
+</g><g transform="translate(1513 110)" class="appendix-icon"><title>They run on the watcher thread, not in the process or the thread that wrote. The docstring of events lists when each signal fires.</title><svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_3427_35082111-d2-4195787109-MNQWY3DCMFRWW4Y-6)">
+<path d="M16 31.1109C24.3456 31.1109 31.1111 24.3454 31.1111 15.9998C31.1111 7.65415 24.3456 0.888672 16 0.888672C7.65436 0.888672 0.888885 7.65415 0.888885 15.9998C0.888885 24.3454 7.65436 31.1109 16 31.1109Z" fill="white" stroke="#DEE1EB"/>
+<path d="M16 26C21.5228 26 26 21.5228 26 16C26 10.4772 21.5228 6 16 6C10.4772 6 6 10.4772 6 16C6 21.5228 10.4772 26 16 26Z" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 19.998V15.998" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 12H16.0098" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<defs>
+<clipPath id="clip0_3427_35082111-d2-4195787109-MNQWY3DCMFRWW4Y-6">
+<rect width="32" height="32" fill="white"/>
+</clipPath>
+</defs>
+</svg>
+</g><g transform="translate(1509 -16)" class="appendix-icon"><title>Served by the same thread, so a slow callback delays the watch iterators of the same box.</title><svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_3427_35082111-d2-4195787109-O5QXIY3I-6)">
+<path d="M16 31.1109C24.3456 31.1109 31.1111 24.3454 31.1111 15.9998C31.1111 7.65415 24.3456 0.888672 16 0.888672C7.65436 0.888672 0.888885 7.65415 0.888885 15.9998C0.888885 24.3454 7.65436 31.1109 16 31.1109Z" fill="white" stroke="#DEE1EB"/>
+<path d="M16 26C21.5228 26 26 21.5228 26 16C26 10.4772 21.5228 6 16 6C10.4772 6 6 10.4772 6 16C6 21.5228 10.4772 26 16 26Z" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 19.998V15.998" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 12H16.0098" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<defs>
+<clipPath id="clip0_3427_35082111-d2-4195787109-O5QXIY3I-6">
+<rect width="32" height="32" fill="white"/>
+</clipPath>
+</defs>
+</svg>
+</g><mask id="d2-4195787109-6" maskUnits="userSpaceOnUse" x="-101" y="-118" width="1748" height="411">
+<rect x="-101" y="-118" width="1748" height="411" fill="white"></rect>
+<rect x="334" y="86" width="151" height="21" fill="black"></rect>
+<rect x="775" y="86" width="46" height="21" fill="black"></rect>
+<rect x="1193" y="142" width="60" height="21" fill="black"></rect>
+<rect x="1190" y="29" width="71" height="21" fill="black"></rect>
+</mask></svg></svg></div></div><figcaption>From a write to your callback</figcaption></figure>
+<p>The exact rules for when a signal fires are in the docstring of
 <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-attribute&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-attribute-name&quot;&gt;events&lt;/span&gt;
 
 
   &lt;span class=&quot;doc doc-labels&quot;&gt;
       &lt;small class=&quot;doc doc-label doc-label-property&quot;&gt;&lt;code&gt;property&lt;/code&gt;&lt;/small&gt;
-  &lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.events"><code>events</code></a>. They follow from how the watcher
-works:</p>
-<ul>
-<li>The watcher thread is the one that wakes, so callbacks run on it, not on
-  the thread or in the process that wrote.</li>
-<li>After waking, the watcher looks at the write count of each
-  <a href="../glossary/#field">field</a> in the segment. For a field whose count
-  moved, it reads the current value and compares it with the value it saw
-  last. Several writes between two wake-ups therefore give one emission
-  with the latest value, and a write that leaves the value unchanged gives
-  none.</li>
-<li>One watcher thread per box <a href="../glossary/#handle">handle</a> serves both
-  <code>events</code> and <code>watch</code>, so a slow callback delays the <code>watch</code> iterators of
-  the same box.</li>
-</ul>
-<p><code>events</code> is an ordinary psygnal <code>SignalGroup</code>, so psygnal's own tools for
-controlling emissions apply to it:</p>
+  &lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.events"><code>events</code></a>.</p>
+<p><code>events</code> is an ordinary <code>SignalGroup</code> from the <code>psygnal</code> library, so all of
+<code>psygnal</code>'s own tools for controlling when callbacks run work on it:</p>
 <ul>
 <li><code>psygnal.qt.start_emitting_from_queue()</code> starts a Qt timer on the calling
   thread that runs callbacks connected with <code>thread="main"</code>, so a Qt
@@ -3194,12 +4002,13 @@ controlling emissions apply to it:</p>
 </span></code></pre></div>
 <h2 id="forwarding-costs">Forwarding costs<a class="headerlink" href="#forwarding-costs" title="Permanent link">&para;</a></h2>
 <p><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;follow&lt;/span&gt;" href="../../reference/api/events/#sharedbox.BoxEvents.follow"><code>follow</code></a> waits for changes in each followed
-box the same way <code>events</code> does: it attaches its own handle to the box,
-and that handle's watcher takes one waiter slot in the box and one thread
-in the following process, at every level of a chain. The slot counts
-against that box's <code>max_waiters</code>, and on Linux each handle also takes a file descriptor. <code>follow()</code> over a
-wide graph can take every waiter slot of a box, and a watcher that finds
-none checks for changes once a second.</p>
+box the same way <code>events</code> does: it opens its own handle on the box, and
+that handle's watcher takes one waiter slot in the box and one thread in
+your process, at every level of a chain. The slot counts against that
+box's <code>max_waiters</code>, and on Linux each handle also takes a file descriptor.
+So <code>follow()</code> over a wide graph can take every waiter slot of a box, and a
+watcher that finds none left falls back to checking for changes once a
+second.</p>
 <p>One thread waiting on several boxes at once (<code>futex_waitv</code> on Linux,
 <code>WaitForMultipleObjects</code> on Windows) would need new native code, and is
 left until numbers like the ones below show that the thread count matters.</p>

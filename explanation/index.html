@@ -2927,43 +2927,43 @@
 
 
 <h1 id="explanations">Explanations<a class="headerlink" href="#explanations" title="Permanent link">&para;</a></h1>
-<p>These pages explain how sharedbox stores a <a href="glossary/#box">box</a> in shared
-memory, and why it is built that way. The byte layout and the protocols
-themselves are specified in <a href="../reference/segment-layout/">Segment layout</a>;
-these pages give the reasons behind them and describe how the Python
-extension uses
-<a href="https://github.com/jacopoabramo/sharedbox/blob/main/include/sharedbox/sharedbox.hpp"><code>sharedbox.hpp</code></a>.
-The words they use are defined in the <a href="glossary/">glossary</a>, which is
-listed under Reference.</p>
-<p>The Python side decides which <a href="glossary/#field">fields</a> a box has and
-where each one lives. The C++ side owns the shared memory, converts values
-to and from their stored bytes, and makes sure a reader never sees a
-half-finished write.</p>
+<p>You can use <code>sharedbox</code> without reading any of these pages. Read them when
+you want to know what happens inside a <a href="glossary/#box">box</a>: how it is
+kept in shared memory, how several processes can read and write it at once
+without getting in each other's way, and why it was built that way. Every
+word they use is defined in the <a href="glossary/">glossary</a>.</p>
+<p>The work is split between two halves. The Python side decides which
+<a href="glossary/#field">fields</a> a box has and where each one sits. The C++ side,
+<a href="https://github.com/jacopoabramo/sharedbox/blob/main/include/sharedbox/sharedbox.hpp"><code>sharedbox.hpp</code></a>,
+owns the shared memory, turns values into stored bytes and back, and makes
+sure a reader never sees a half-finished write. These pages explain the
+reasons; the exact byte layout and steps are written down in
+<a href="../reference/segment-layout/">Segment layout</a>.</p>
 <ul>
-<li><a href="when-to-use-sharedbox/">When to use sharedbox</a>: a box against an
-  ordinary object shared between threads</li>
-<li><a href="how-a-box-is-stored/">How a box is stored</a>: the named mapping, its
-  layout, and the <a href="glossary/#schema-hash">schema hash</a></li>
+<li><a href="when-to-use-sharedbox/">When to use sharedbox</a>: when a box is the
+  right tool, and when an ordinary object shared between threads is
+  simpler</li>
+<li><a href="how-a-box-is-stored/">How a box is stored</a>: what the shared memory
+  holds, and how a process checks it agrees with the box's layout</li>
 <li><a href="field-types/">Field types</a>: the types a field can hold and how each
   is stored</li>
-<li><a href="reading-and-writing/">Reading and writing</a>: the copied layout and the
-  <a href="glossary/#sequence-lock">sequence lock</a></li>
-<li><a href="waiting-for-changes/">Waiting for changes</a>:
-  <a href="glossary/#waiter-slot">waiter slots</a>, how changes reach callbacks,
-  and what following costs</li>
+<li><a href="reading-and-writing/">Reading and writing</a>: how a reader never sees
+  half a write, through the <a href="glossary/#sequence-lock">sequence lock</a></li>
+<li><a href="waiting-for-changes/">Waiting for changes</a>: how a change in one
+  process reaches callbacks in another, and what following boxes costs</li>
 <li><a href="references/">Reference fields</a>: what a
   <a href="glossary/#reference-field">reference field</a> stores and why it can
   break</li>
-<li><a href="closing-and-lifetime/">Closing and lifetime</a>: closing a box other
-  threads use, and when the memory goes away</li>
+<li><a href="closing-and-lifetime/">Closing and lifetime</a>: what closing a box
+  does, and when its memory goes away</li>
 <li><a href="checking-a-process-is-alive/">Checking a process is alive</a>: telling a
   running process from one that exited</li>
-<li><a href="how-the-module-is-built/">How the module is built</a>: one build line for
-  three kinds of wheel</li>
-<li><a href="performance/">How fast a box is</a>: sharedbox timed against the
-  standard library, in two charts</li>
-<li><a href="limits/">Limits</a>: platforms, file descriptors, threads, and what a box
-  cannot hold</li>
+<li><a href="how-the-module-is-built/">How the module is built</a>: how one build
+  makes the three kinds of wheel</li>
+<li><a href="performance/">How fast a box is</a>: <code>sharedbox</code> timed against the
+  standard library</li>
+<li><a href="limits/">Limits</a>: the platforms, how many boxes and threads you can
+  have, and what a box can't hold</li>
 </ul>
 
 

@@ -3121,12 +3121,13 @@
 
 
 <h1 id="how-to-clean-up-segments">How to clean up segments<a class="headerlink" href="#how-to-clean-up-segments" title="Permanent link">&para;</a></h1>
-<p>A <a href="../../explanation/glossary/#box">box</a> is in shared memory, which outlives
-the Python object you use it through. Close each box a process opens, and
-remove the <a href="../../explanation/glossary/#segment">segment</a>'s name once no
-process needs the box any more.</p>
+<p>A <a href="../../explanation/glossary/#box">box</a> lives in shared memory, and that memory outlives the Python
+object you use it through. So cleaning up takes two steps: each process
+closes the boxes it opened, and once no process needs a box any more, you
+remove the name of its <a href="../../explanation/glossary/#segment">segment</a>. This guide also shows how to
+recover when a process crashed before cleaning up.</p>
 <h2 id="1-close-each-box-you-open">1. Close each box you open<a class="headerlink" href="#1-close-each-box-you-open" title="Permanent link">&para;</a></h2>
-<p>Leave a <code>with</code> block, or call <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;close&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.close"><code>close</code></a>:</p>
+<p>Leave a <code>with</code> block, or call <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;close&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.close"><code>close</code></a> yourself:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sharedbox</span><span class="w"> </span><span class="kn">import</span> <span class="n">LockTimeoutError</span><span class="p">,</span> <span class="n">SharedBox</span>
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>
 </span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
@@ -3139,11 +3140,15 @@ process needs the box any more.</p>
 </span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="n">job</span><span class="o">.</span><span class="n">done</span> <span class="o">=</span> <span class="kc">True</span>
 </span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a><span class="n">job</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
 </span></code></pre></div>
-<p><code>close</code> detaches this process's <a href="../../explanation/glossary/#handle">handle</a>
-and stops its <a href="../../explanation/glossary/#watcher">watcher</a> thread; the
-data stays for the other processes. Call it yourself when a callback
-refers to the box, as the <code>lambda</code> above does: that callback keeps the box
-alive until <code>close</code>.</p>
+<p><code>close</code> lets go of this process's <a href="../../explanation/glossary/#handle">handle</a> and stops its
+<a href="../../explanation/glossary/#watcher">watcher</a> thread, while the data stays for the other
+processes.</p>
+<div class="admonition warning">
+<p class="admonition-title">A callback that uses the box keeps it open</p>
+<p>A callback that refers to the box, as the <code>lambda</code> above does, keeps the
+box alive, so garbage collection never closes it for you. Call <code>close</code>
+yourself on such a box.</p>
+</div>
 <h2 id="2-remove-the-name">2. Remove the name<a class="headerlink" href="#2-remove-the-name" title="Permanent link">&para;</a></h2>
 <p><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-attribute&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-attribute-name&quot;&gt;unlink&lt;/span&gt;
 
@@ -3152,34 +3157,35 @@ alive until <code>close</code>.</p>
       &lt;small class=&quot;doc doc-label doc-label-class-attribute&quot;&gt;&lt;code&gt;class-attribute&lt;/code&gt;&lt;/small&gt;
       &lt;small class=&quot;doc doc-label doc-label-instance-attribute&quot;&gt;&lt;code&gt;instance-attribute&lt;/code&gt;&lt;/small&gt;
   &lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.unlink"><code>unlink</code></a> removes the name, so no process can
-attach the box after that:</p>
+attach the box from then on:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">Job</span><span class="o">.</span><span class="n">unlink</span><span class="p">()</span>
 </span></code></pre></div>
 <p>Call it once, from the process that created the box;
 <a href="../../explanation/closing-and-lifetime/#lifetime-the-same-rules-as-multiprocessingshared_memory">Closing and lifetime</a>
 says why. On Linux the segment stays until it is unlinked. On Windows
-<code>unlink</code> does nothing, and the segment goes away when its last handle is
-closed, so the same code runs on both.</p>
+<code>unlink</code> does nothing, because the segment goes away by itself when its last
+handle is closed. Either way you write the same code, and it works on both.</p>
 <h2 id="remove-a-segment-left-by-a-crash">Remove a segment left by a crash<a class="headerlink" href="#remove-a-segment-left-by-a-crash" title="Permanent link">&para;</a></h2>
-<p>On Linux, a process that crashed before <code>unlink</code> leaves its segment behind
-as a file in <code>/dev/shm</code>. List them:</p>
+<p>On Linux, a process that crashed before calling <code>unlink</code> leaves its segment
+behind as a file in <code>/dev/shm</code>. You can list them:</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>ls<span class="w"> </span>/dev/shm/sharedbox.*
 </span></code></pre></div>
-<p>Creating a box under a name that is left over raises
+<p>If you try to create a box under a name that is left over, you get
 <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;SegmentExistsError&lt;/span&gt;" href="../../reference/api/errors/#sharedbox.SegmentExistsError"><code>SegmentExistsError</code></a>, and its message says
-whether the creator is still running. Remove it with <code>unlink</code> and the
-name after <code>sharedbox.</code>, for example <code>Job.unlink("job-1")</code>, or delete the
-file.</p>
+whether the process that created it is still running. If it isn't, remove
+the segment with <code>unlink</code> and the part of the file name after <code>sharedbox.</code>,
+for example <code>Job.unlink("job-1")</code>, or simply delete the file.</p>
 <p>On Windows nothing is left behind: a segment goes away with the last
 process that has it open.</p>
 <h2 id="release-a-lock-left-by-a-crash">Release a lock left by a crash<a class="headerlink" href="#release-a-lock-left-by-a-crash" title="Permanent link">&para;</a></h2>
-<p>A process that dies in the middle of a write leaves the box's write lock
-taken. Every later read and write then waits for the class's
-<code>lock_timeout</code> and raises <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;LockTimeoutError&lt;/span&gt;" href="../../reference/api/errors/#sharedbox.LockTimeoutError"><code>LockTimeoutError</code></a>,
-whose message names the process that holds the lock. Once you know that
-process is no longer running, call
-<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;force_unlock&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.force_unlock"><code>force_unlock</code></a> on a box attached to the
-same segment, then write again:</p>
+<p>Only one process can write to a box at a time, so a writer holds the box's
+write lock while it writes. A process that dies in the middle of a write
+leaves that lock taken. From then on, every read and write waits for the class's
+<code>lock_timeout</code> and then raises
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;LockTimeoutError&lt;/span&gt;" href="../../reference/api/errors/#sharedbox.LockTimeoutError"><code>LockTimeoutError</code></a>, whose message names the
+process that holds the lock. Once you know that process is gone, call
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;force_unlock&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.force_unlock"><code>force_unlock</code></a> on any box attached to
+the same segment, then write again:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">job</span> <span class="o">=</span> <span class="n">Job</span><span class="o">.</span><span class="n">attach</span><span class="p">()</span>
 </span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="k">try</span><span class="p">:</span>
 </span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>    <span class="n">job</span><span class="o">.</span><span class="n">done</span> <span class="o">=</span> <span class="kc">False</span>
@@ -3191,10 +3197,17 @@ same segment, then write again:</p>
 </span><span id="__span-3-9"><a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>    <span class="n">job</span><span class="o">.</span><span class="n">done</span> <span class="o">=</span> <span class="kc">False</span>
 </span><span id="__span-3-10"><a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="nb">print</span><span class="p">(</span><span class="n">job</span><span class="o">.</span><span class="n">done</span><span class="p">)</span>  <span class="c1"># False</span>
 </span></code></pre></div>
-<p>The write that timed out did not happen, so the field still holds its old
-value until you write it again.
-<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;force_unlock&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.force_unlock"><code>force_unlock</code></a> says what happens if the
-writer is still running.</p>
+<p>The write that timed out didn't happen, so the field keeps its old value
+until you write it again.</p>
+<div class="admonition warning">
+<p class="admonition-title">Only unlock a lock whose owner is gone</p>
+<p><code>force_unlock</code> doesn't check that the process holding the lock has
+stopped. If it is still running, its half-finished write becomes
+visible to readers. Check the process id (pid) in the error message
+first, with <code>ps -p &lt;pid&gt;</code> on Linux or <code>tasklist /FI "PID eq &lt;pid&gt;"</code> on
+Windows; <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;force_unlock&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.force_unlock"><code>force_unlock</code></a> has the
+details.</p>
+</div>
 <details class="example">
 <summary>The whole script</summary>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="sd">"""The script of the guide "How to clean up segments"."""</span>

@@ -3121,18 +3121,20 @@
 
 
 <h1 id="how-to-name-a-box">How to name a box<a class="headerlink" href="#how-to-name-a-box" title="Permanent link">&para;</a></h1>
-<p>Every <a href="../../explanation/glossary/#box">box</a> lives in a
-<a href="../../explanation/glossary/#segment">segment</a> with a name, and a second
-process opens the box by that name. You can let the class choose the name,
-give the class a fixed name, or name each box when you create it.</p>
+<p>A second process finds a <a href="../../explanation/glossary/#box">box</a> by its name, so every box needs
+one. You can let the class pick the name for you, give the class a fixed
+name, or name each box when you create it. Pick the first unless one of the
+others fits better: it needs no setup and works in every process that
+imports the class.</p>
 <h2 id="let-the-class-name-the-box">Let the class name the box<a class="headerlink" href="#let-the-class-name-the-box" title="Permanent link">&para;</a></h2>
-<p>Calling the class creates a box under the class's name, and
-<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;attach&lt;/span&gt;
+<p>When you call the class, it creates a box under a name it works out
+itself, and <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;attach&lt;/span&gt;
 
 
   &lt;span class=&quot;doc doc-labels&quot;&gt;
       &lt;small class=&quot;doc doc-label doc-label-classmethod&quot;&gt;&lt;code&gt;classmethod&lt;/code&gt;&lt;/small&gt;
-  &lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.attach"><code>attach</code></a> without a name opens it:</p>
+  &lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.attach"><code>attach</code></a> with no name opens that
+same box:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sharedbox</span><span class="w"> </span><span class="kn">import</span> <span class="n">SegmentExistsError</span><span class="p">,</span> <span class="n">SharedBox</span>
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>
 </span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
@@ -3144,18 +3146,23 @@ give the class a fixed name, or name each box when you create it.</p>
 </span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="n">same</span> <span class="o">=</span> <span class="n">Motor</span><span class="o">.</span><span class="n">attach</span><span class="p">()</span>
 </span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a><span class="nb">print</span><span class="p">(</span><span class="n">same</span><span class="o">.</span><span class="n">name</span> <span class="o">==</span> <span class="n">motor</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>  <span class="c1"># True</span>
 </span></code></pre></div>
-<p>The name is a hash of the class's
-<a href="../../explanation/glossary/#identity">identity</a>, which is its
-<code>module.qualname</code> unless the class sets the <code>identity</code> keyword, as <code>Motor</code>
-does here. Every process that imports the class computes the same name, so
-none of them has to pass it around.</p>
-<p>Set <code>identity</code> when the class may move to another module or get another
-name: the identity stays, and so does the name of the box. Changing the
-identity itself gives a new name and a new
-<a href="../../explanation/glossary/#schema-hash">schema hash</a>, and processes that
-still use the old one cannot attach.</p>
+<p>The name comes from the class's <a href="../../explanation/glossary/#identity">identity</a>: normally where
+the class is defined, <code>module.qualname</code>, or the <code>identity</code> keyword if the
+class sets one, as <code>Motor</code> does here. Every process that imports the class
+works out the same name, so you never have to pass it around.</p>
+<p>Set <code>identity</code> when you might move the class to another module or rename
+it. With <code>identity</code> set, moving or renaming the class doesn't change its
+identity, so the box keeps its name and running processes still find it.</p>
+<div class="admonition warning">
+<p class="admonition-title">Changing the identity cuts off running processes</p>
+<p>A new identity gives the box a new name and a new
+<a href="../../explanation/glossary/#schema-hash">schema hash</a>, so a process still running the old code
+can no longer attach. Change it only when you can restart every process
+that uses the box.</p>
+</div>
 <h2 id="give-the-class-a-fixed-name">Give the class a fixed name<a class="headerlink" href="#give-the-class-a-fixed-name" title="Permanent link">&para;</a></h2>
-<p>The <code>name</code> keyword replaces the hash with a name you choose:</p>
+<p>If you'd rather see a name you recognise, set the <code>name</code> keyword on the
+class:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="k">class</span><span class="w"> </span><span class="nc">Settings</span><span class="p">(</span><span class="n">SharedBox</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">"example-settings"</span><span class="p">):</span>
 </span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>    <span class="n">rate</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">20.0</span>
 </span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>
@@ -3163,35 +3170,36 @@ still use the old one cannot attach.</p>
 </span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="n">settings</span> <span class="o">=</span> <span class="n">Settings</span><span class="p">()</span>
 </span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="nb">print</span><span class="p">(</span><span class="n">settings</span><span class="o">.</span><span class="n">name</span><span class="p">)</span>  <span class="c1"># example-settings</span>
 </span></code></pre></div>
-<p>A readable name is easier to find, for example in <code>/dev/shm</code> on Linux.
-<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;SharedBox&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox"><code>SharedBox</code></a> lists the characters a name may hold.</p>
+<p>A readable name is easier to spot, for example when you list <code>/dev/shm</code> on
+Linux to see which boxes exist. <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;SharedBox&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox"><code>SharedBox</code></a> lists the
+characters a name may use.</p>
 <h2 id="name-each-box-when-you-create-it">Name each box when you create it<a class="headerlink" href="#name-each-box-when-you-create-it" title="Permanent link">&para;</a></h2>
-<p>When one class describes several boxes, give each its own name with
+<p>When you need several boxes of the same class, say one per motor, give
+each its own name when you create it with
 <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;create&lt;/span&gt;
 
 
   &lt;span class=&quot;doc doc-labels&quot;&gt;
       &lt;small class=&quot;doc doc-label doc-label-classmethod&quot;&gt;&lt;code&gt;classmethod&lt;/code&gt;&lt;/small&gt;
-  &lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.create"><code>create</code></a>, and pass the same name to
-<code>attach</code>:</p>
+  &lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.create"><code>create</code></a>, and pass the same name to <code>attach</code>:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">x_axis</span> <span class="o">=</span> <span class="n">Motor</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="s2">"example-x-axis"</span><span class="p">)</span>
 </span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="n">y_axis</span> <span class="o">=</span> <span class="n">Motor</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="s2">"example-y-axis"</span><span class="p">,</span> <span class="mi">5</span><span class="p">)</span>
 </span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="n">y_view</span> <span class="o">=</span> <span class="n">Motor</span><span class="o">.</span><span class="n">attach</span><span class="p">(</span><span class="s2">"example-y-axis"</span><span class="p">)</span>
 </span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="nb">print</span><span class="p">(</span><span class="n">y_view</span><span class="o">.</span><span class="n">position</span><span class="p">)</span>  <span class="c1"># 5</span>
 </span></code></pre></div>
-<p><code>create</code> takes the <a href="../../explanation/glossary/#field">field</a> values after the name, as calling
-the class does.</p>
+<p>After the name, <code>create</code> takes the <a href="../../explanation/glossary/#field">field</a> values just like
+calling the class does.</p>
 <h2 id="if-the-name-is-taken">If the name is taken<a class="headerlink" href="#if-the-name-is-taken" title="Permanent link">&para;</a></h2>
-<p>Creating a box under a name that is already in use raises
-<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;SegmentExistsError&lt;/span&gt;" href="../../reference/api/errors/#sharedbox.SegmentExistsError"><code>SegmentExistsError</code></a>:</p>
+<p>You can't create a box under a name that is already in use; you get
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;SegmentExistsError&lt;/span&gt;" href="../../reference/api/errors/#sharedbox.SegmentExistsError"><code>SegmentExistsError</code></a> instead:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="k">try</span><span class="p">:</span>
 </span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>    <span class="n">Motor</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="s2">"example-x-axis"</span><span class="p">)</span>
 </span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="k">except</span> <span class="n">SegmentExistsError</span> <span class="k">as</span> <span class="n">error</span><span class="p">:</span>
 </span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">error</span><span class="p">)</span>  <span class="c1"># a segment named 'example-x-axis' already exists; its creator, ...</span>
 </span></code></pre></div>
-<p>The message says why the name is taken: its creator may still be running,
-or on Linux the box may be left over from a process that crashed. Choose
-another name, or remove the old box as
+<p>The message tells you why the name is taken: either the process that
+created it is still running, or, on Linux, the box was left behind by a
+process that crashed. Pick another name, or remove the old box as
 <a href="../clean-up-segments/#remove-a-segment-left-by-a-crash">How to clean up segments</a>
 shows.</p>
 <details class="example">

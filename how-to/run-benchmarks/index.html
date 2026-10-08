@@ -3191,9 +3191,11 @@
 
 
 <h1 id="how-to-run-the-benchmarks">How to run the benchmarks<a class="headerlink" href="#how-to-run-the-benchmarks" title="Permanent link">&para;</a></h1>
-<p>The <code>benchbox</code> command measures sharedbox on your own machine: single
-operations, change notification between two processes, several processes
-sharing one value, and wheel size.</p>
+<p>Numbers measured on someone else's machine only go so far. The <code>benchbox</code>
+command measures <code>sharedbox</code> on yours, next to the ways the standard
+library shares data between processes: single reads and writes, how fast a
+change reaches another process, several processes sharing one value, and
+the size of the installed package.</p>
 <h2 id="before-you-start">Before you start<a class="headerlink" href="#before-you-start" title="Permanent link">&para;</a></h2>
 <p>Install the <code>benchmarks</code> extra, as
 <a href="../install-sharedbox/#add-the-benchmark-command">How to install sharedbox</a>

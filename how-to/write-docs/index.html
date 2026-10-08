@@ -2835,6 +2835,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#draw-what-a-picture-shows-better" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Draw what a picture shows better
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#put-the-page-in-the-right-section" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -3024,6 +3035,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#draw-what-a-picture-shows-better" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Draw what a picture shows better
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#put-the-page-in-the-right-section" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -3195,22 +3217,65 @@
 
 
 <h1 id="how-to-write-documentation">How to write documentation<a class="headerlink" href="#how-to-write-documentation" title="Permanent link">&para;</a></h1>
-<p>These rules apply to every page under <code>docs/</code> and to every docstring, since
-the <abbr title="Application programming interface. The functions and classes a library offers to code that uses it.">API</abbr> reference pages are made from docstrings.</p>
+<p>Good documentation reads as if someone who knows <code>sharedbox</code> were sitting
+next to you and explaining it. These rules are how the pages get there.
+They apply to every page under <code>docs/</code> and to every docstring, since the
+<abbr title="Application programming interface. The functions and classes a library offers to code that uses it.">API</abbr> reference pages are made from docstrings.</p>
 <h2 id="write-for-a-reader-who-is-new-to-this">Write for a reader who is new to this<a class="headerlink" href="#write-for-a-reader-who-is-new-to-this" title="Permanent link">&para;</a></h2>
-<p>Picture a reader who knows some Python and nothing about shared memory.</p>
+<p>Picture a reader around 15 years old who knows some Python and nothing
+about shared memory, and write as if you were explaining in person.</p>
 <ul>
-<li>Keep sentences short, with one idea each.</li>
-<li>Use the active voice: "the watcher calls the callback", not "the callback
+<li>Talk to the reader as "you", and name who does what: "you assign the
+  field", "the watcher calls the callback". Active voice, not "the callback
   is called".</li>
-<li>Say what a thing does before saying why.</li>
-<li>Show a short code example when it is clearer than a paragraph.</li>
+<li>Open each section and each paragraph with its point, framed as what the
+  reader gets out of it. Start a sentence from something the reader
+  already knows and end it on the new part, so each sentence picks up where
+  the last one stopped.</li>
+<li>Keep most sentences short but vary their length, and join ideas that
+  depend on each other with "so", "because" or "which means" instead of
+  leaving a list of separate facts. Contractions are fine.</li>
+<li>Say each point once. Don't open a paragraph with a label ("The cache is
+  the store") before saying what the thing does.</li>
+<li>
+<p>Put a catch the reader can run into in a warning box. Its title names
+  what goes wrong, and its last sentence says what to do:</p>
+<div class="language-markdown highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>!!! warning "Callbacks run on another thread"
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    A callback runs on the watcher thread, not on your main thread. ...
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    Connect it with <span class="sb">`thread="main"`</span> to run it on your main thread.
+</span></code></pre></div>
+</li>
+<li>
+<p>Show a short code example when it is clearer than a paragraph.</p>
+</li>
 </ul>
+<table>
+<thead>
+<tr>
+<th>stiff</th>
+<th>friendly</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>close</code> detaches this process's handle.</td>
+<td><code>close</code> lets go of the box in your process, and the other processes keep it.</td>
+</tr>
+<tr>
+<td>A value longer than the capacity raises <code>ValueError</code>.</td>
+<td>If you assign a value longer than the capacity, you get a <code>ValueError</code> and the field keeps its old value.</td>
+</tr>
+<tr>
+<td>Following moves to the new box shortly after the assignment.</td>
+<td>A background thread switches to the new box shortly after you assign it, so a write made before then is missed.</td>
+</tr>
+</tbody>
+</table>
 <h2 id="define-each-term-once">Define each term once<a class="headerlink" href="#define-each-term-once" title="Permanent link">&para;</a></h2>
 <p>Every technical word, such as box, segment, capacity or waiter slot, has
 one plain definition in the <a href="../../explanation/glossary/">glossary</a>. A page
 links the word to its glossary entry the first time it uses it:</p>
-<div class="language-markdown highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>A [<span class="nt">box</span>](<span class="na">../explanation/glossary.md#box</span>) lives in one segment.
+<div class="language-markdown highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>A [<span class="nt">box</span>](<span class="na">../explanation/glossary.md#box</span>) lives in one segment.
 </span></code></pre></div>
 <p>Never write a second definition somewhere else. If a word needs explaining
 and is not in the glossary yet, add it there first.</p>
@@ -3225,6 +3290,11 @@ breaking X", "easy to misuse", "fully supported", "the code that connects X
 to Y".</p>
 <p>Other rules:</p>
 <ul>
+<li>Library and package names are code spans every time you mention them,
+  <code>sharedbox</code> included: <code>psygnal</code>, <code>numpy</code>, <code>nanobind</code>.</li>
+<li>Headings name the topic in a few words ("Unexpected exits"); a question
+  works on a page of limits. Steps in a how-to or tutorial say what the
+  reader does ("Add the field").</li>
 <li>No em dashes or en dashes. Use a hyphen, a comma, or two sentences.</li>
 <li>Write arrows as <code>-&gt;</code>, not as a special character.</li>
 <li>No sales words ("powerful", "seamless") and no closing summary sentence.</li>
@@ -3233,6 +3303,34 @@ to Y".</p>
 once more against these rules, and fix what you find: inflated claims,
 sales words, vague sources, lists of three made up for rhythm, filler
 phrases and dashes.</p>
+<h2 id="draw-what-a-picture-shows-better">Draw what a picture shows better<a class="headerlink" href="#draw-what-a-picture-shows-better" title="Permanent link">&para;</a></h2>
+<p>A diagram replaces the paragraphs it can show: how data moves, the steps of
+a protocol, the parts of something. Keep in the text only what a picture
+can't say: why, the exceptions, and links. Diagrams are D2 in <code>d2</code> fences,
+which <code>markdown-d2</code> draws when the site is built:</p>
+<div class="language-markdown highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="sb">```d2</span><span class="w"> </span>title="One box, two processes"
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="s">...@diagrams/style</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="s">parent: "parent process" {class: process}</span>
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="s">box: "the box" {</span>
+</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="s">  class: hardware</span>
+</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="s">  tooltip: One named block of shared memory.</span>
+</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="s">}</span>
+</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="s">parent -&gt; box: "creates"</span>
+</span><span id="__span-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="sb">```</span>
+</span></code></pre></div>
+<ul>
+<li>Start every diagram with <code>...@diagrams/style</code> and give shapes its classes
+  (<code>step</code>, <code>current</code>, <code>done</code>, <code>failed</code>, <code>process</code>, <code>hardware</code>, <code>file</code>,
+  <code>note</code>, <code>gap</code>, <code>hidden</code>) instead of colours of your own, so the light and
+  dark themes both work.</li>
+<li>Give every diagram a <code>title</code>: it is the caption and what screen readers
+  announce.</li>
+<li>Keep labels to a few words, and put the explanation in a <code>tooltip</code>, which
+  the reader opens by pointing at the shape.</li>
+<li>Show a process as boards the reader steps through: <code>steps</code> to build a
+  picture up, <code>scenarios</code> to highlight one part of a fixed picture.</li>
+<li>Check every board in both themes on the built site, not only the source.</li>
+</ul>
 <h2 id="put-the-page-in-the-right-section">Put the page in the right section<a class="headerlink" href="#put-the-page-in-the-right-section" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
@@ -3282,7 +3380,7 @@ Fix a wrong <abbr title="Application programming interface. The functions and cl
 <li>Link to another object with a Markdown cross-reference, never a
   reStructuredText role such as <code>:class:</code>:</li>
 </ul>
-<div class="language-markdown highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a>Open it with [<span class="sb">`attach`</span>][sharedbox.SharedBox.attach].
+<div class="language-markdown highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>Open it with [<span class="sb">`attach`</span>][sharedbox.SharedBox.attach].
 </span></code></pre></div>
 <p><code>ruff</code> checks the docstring format of the modules in <code>src/sharedbox</code>; see
 <a href="../run-commit-checks/">How to run the commit checks</a>.</p>
@@ -3321,7 +3419,7 @@ left as it is, and two runs at the same time then use the same segment.</p>
 uses, to remove their segments on Linux after the run. Add a new
 <code>tutorial-</code> name there.</p>
 <h2 id="check-the-build">Check the build<a class="headerlink" href="#check-the-build" title="Permanent link">&para;</a></h2>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>uv<span class="w"> </span>run<span class="w"> </span>tox<span class="w"> </span>-e<span class="w"> </span>docs
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>uv<span class="w"> </span>run<span class="w"> </span>tox<span class="w"> </span>-e<span class="w"> </span>docs
 </span></code></pre></div>
 <p>This builds the site and then checks that every cross-reference found its
 target, every included script part was read, and every link to a part of

@@ -3106,9 +3106,9 @@
 
 <h1 id="reacting-to-changes">Reacting to changes<a class="headerlink" href="#reacting-to-changes" title="Permanent link">&para;</a></h1>
 <p>In <a href="../share-a-record/">Sharing a record between processes</a>, the first
-process read the new position after the second process had ended. In this
-tutorial it sees the change as it happens, in two ways: a callback, and a
-loop over the values written.</p>
+process only learned the new position after the second process had ended.
+In this tutorial you make it notice the change the moment it happens, in two
+ways: with a callback, and with a loop that waits for each new value.</p>
 <h2 id="before-you-start">Before you start<a class="headerlink" href="#before-you-start" title="Permanent link">&para;</a></h2>
 <div class="admonition note">
 <p class="admonition-title">What you need</p>
@@ -3130,26 +3130,28 @@ loop over the values written.</p>
 </span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>    <span class="nb">print</span><span class="p">(</span><span class="s2">"watched"</span><span class="p">,</span> <span class="n">watched</span><span class="p">)</span>
 </span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>    <span class="n">Motor</span><span class="o">.</span><span class="n">unlink</span><span class="p">(</span><span class="s2">"tutorial-motor"</span><span class="p">)</span>
 </span></code></pre></div>
-<p><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-attribute&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-attribute-name&quot;&gt;events&lt;/span&gt;
+<p>It listens in two ways at once. The first is
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-attribute&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-attribute-name&quot;&gt;events&lt;/span&gt;
 
 
   &lt;span class=&quot;doc doc-labels&quot;&gt;
       &lt;small class=&quot;doc doc-label doc-label-property&quot;&gt;&lt;code&gt;property&lt;/code&gt;&lt;/small&gt;
-  &lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.events"><code>events</code></a> has one psygnal signal per
-<a href="../../explanation/glossary/#field">field</a>.
-The lambda connected to <code>events.position</code> runs each time any process
-changes <code>position</code>, with the new and the old value.
-<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;watch&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.watch"><code>watch</code></a> returns an iterator over the values
-written to <code>position</code> from now on, and <code>next</code> waits for the first of them.</p>
-<p>The <a href="../../explanation/glossary/#box">box</a>'s
-<a href="../../explanation/glossary/#watcher">watcher</a> serves both: a
-background thread that waits for writes from any process. While it
-waits, it holds one of the box's
-<a href="../../explanation/glossary/#waiter-slot">waiter slots</a>.
+  &lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.events"><code>events</code></a>, which has one signal per
+<a href="../../explanation/glossary/#field">field</a>. The signals come from <code>psygnal</code>,
+a small library for callbacks: the lambda you connect to <code>events.position</code>
+runs each time any process changes <code>position</code>, and gets the new and the old
+value. The second is
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;watch&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.watch"><code>watch</code></a>, which gives you an iterator over the
+values written to <code>position</code> from now on, so <code>next</code> waits for the first
+one.</p>
+<p>Both rely on the <a href="../../explanation/glossary/#box">box</a>'s <a href="../../explanation/glossary/#watcher">watcher</a>, a background
+thread that waits for writes from any process. While it waits, it holds
+one of the box's <a href="../../explanation/glossary/#waiter-slot">waiter slots</a>;
 <a href="../../explanation/waiting-for-changes/">Waiting for changes</a> explains how a
-write wakes it.</p>
+write wakes it up.</p>
 <h2 id="2-run-it">2. Run it<a class="headerlink" href="#2-run-it" title="Permanent link">&para;</a></h2>
-<p>Add the highlighted line at the end of the file:</p>
+<p>In the <code>if</code> block at the end of the file, add the highlighted line, so the
+script runs the new function after the old one:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">"__main__"</span><span class="p">:</span>
 </span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>    <span class="n">share</span><span class="p">()</span>
 </span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="hll">    <span class="n">react</span><span class="p">()</span>
@@ -3157,21 +3159,28 @@ write wakes it.</p>
 <p>Run the script:</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>uv<span class="w"> </span>run<span class="w"> </span>motor.py
 </span></code></pre></div>
+<p>You should see the first tutorial's line, then the two new ones:</p>
 <div class="language-text highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>position set by the other process: 10
 </span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>position 0 -&gt; 20
 </span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>watched 20
 </span></code></pre></div>
-<p>The callback runs on the watcher thread and <code>next</code> returns on the main
-thread, so both could print at the same moment. The script prints the
-watched value after the <code>with</code> block instead: closing the box waits for the
-watcher thread, so the callback has printed by then.</p>
-<p>A program that must handle a change on its main thread, such as one with a
-window, connects the callback with <code>thread="main"</code>. psygnal then queues each
-call, and the main thread runs the queued calls when it calls
-<code>psygnal.emit_queued()</code>.</p>
+<p>The callback runs on the watcher thread, while <code>next</code> returns on your main
+thread, so the two could print at the same moment and mix their lines. That
+is why the script prints the watched value only after the <code>with</code> block:
+closing the box stops the watcher thread and waits for it to finish, and
+since the callback runs on that thread, it has printed by then.</p>
+<div class="admonition warning">
+<p class="admonition-title">Callbacks run on another thread</p>
+<p>A callback runs on the watcher thread, not on your main thread. If your
+program must handle changes on its main thread, for example because it
+has a window, connect the callback with <code>thread="main"</code>. <code>psygnal</code> then
+queues each call, and your main thread runs the queued calls whenever it
+calls <code>psygnal.emit_queued()</code>.</p>
+</div>
 <h2 id="3-wait-in-asyncio-code">3. Wait in asyncio code<a class="headerlink" href="#3-wait-in-asyncio-code" title="Permanent link">&para;</a></h2>
-<p><code>watch</code> also works with <code>async for</code>, which waits without blocking the event
-loop. This example is a separate script, <code>sensor.py</code>:</p>
+<p>If your program uses <code>asyncio</code>, <code>watch</code> works with <code>async for</code> too, and
+waits without blocking the event loop. Try it in a separate script,
+<code>sensor.py</code>:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">asyncio</span>
 </span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>
 </span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sharedbox</span><span class="w"> </span><span class="kn">import</span> <span class="n">SharedBox</span>
@@ -3203,17 +3212,25 @@ loop. This example is a separate script, <code>sensor.py</code>:</p>
 </span><span id="__span-4-29"><a id="__codelineno-4-29" name="__codelineno-4-29" href="#__codelineno-4-29"></a>
 </span><span id="__span-4-30"><a id="__codelineno-4-30" name="__codelineno-4-30" href="#__codelineno-4-30"></a><span class="n">asyncio</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">main</span><span class="p">())</span>
 </span></code></pre></div>
+<p>Run it with <code>uv run sensor.py</code>, and it prints each value as the writer
+stores it:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>1.0
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>2.0
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>3.0
+</span></code></pre></div>
 <p><code>Sensor()</code> creates the box under a name taken from the class, and
-<code>Sensor.attach()</code> opens it by that name. The writer here is a task in the
-same process; a writer in another process wakes the loop the same way.</p>
+<code>Sensor.attach()</code> opens it by that same name. To keep the example short, the
+writer is a task in the same process, but a writer in another process wakes
+the loop in exactly the same way.</p>
 <h2 id="what-you-built">What you built<a class="headerlink" href="#what-you-built" title="Permanent link">&para;</a></h2>
-<p>A box that reports each write from another process as it happens, to a
-callback and to a loop.</p>
+<p>You have a box that tells you about each write from another process as it
+happens, both through a callback and through a loop you can also use in
+<code>asyncio</code> code.</p>
 <h2 id="next-steps">Next steps<a class="headerlink" href="#next-steps" title="Permanent link">&para;</a></h2>
 <ul>
-<li><a href="../refer-to-another-box/">Referring to another box</a> is the next
-  tutorial: a box that refers to a motor, and a callback that follows the
-  reference.</li>
+<li><a href="../refer-to-another-box/">Referring to another box</a> is next: a box that
+  points at a motor, and a callback that follows it to whichever motor it
+  points at.</li>
 <li><a href="../../explanation/waiting-for-changes/">Waiting for changes</a> explains the
   watcher and the rules for when a callback runs.</li>
 <li><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;FieldWatch&lt;/span&gt;" href="../../reference/api/events/#sharedbox.FieldWatch"><code>FieldWatch</code></a> and

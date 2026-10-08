@@ -2135,6 +2135,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#shared-memory" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Shared memory
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#waiter-slot" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -3156,6 +3167,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#shared-memory" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Shared memory
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#waiter-slot" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -3266,95 +3288,109 @@
 
 
 <h1 id="glossary">Glossary<a class="headerlink" href="#glossary" title="Permanent link">&para;</a></h1>
-<p>This glossary explains the terms used across the documentation. Each term
-is defined once, here, and other pages link to it the first time they use
-it.</p>
-<p>Acronyms also appear as tooltips across the site: hover a dotted-underlined
-word to read it.</p>
+<p>Each word on this page has its meaning written down once, here, and every
+other page links to it the first time it uses the word. If a page uses a
+word you don't know, its link brings you to this page.</p>
+<p>Acronyms are explained in tooltips across the site: hover over a word with
+a dotted underline to read what it stands for.</p>
 <h3 id="box">Box<a class="headerlink" href="#box" title="Permanent link">&para;</a></h3>
-<p>A box is a record whose <a href="#field">fields</a> live in one
-<a href="#segment">segment</a> of shared memory, described by a subclass of
-<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;SharedBox&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox"><code>SharedBox</code></a>. Every process that opens the segment
-reads and writes the same values. In Python, a box is also the object that
-gives access to the record, and several such objects, in one process or
-many, can be <a href="#handle">handles</a> on the same segment.</p>
+<p>A box is a record that several processes share. You describe it with a
+subclass of <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;SharedBox&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox"><code>SharedBox</code></a>, and its <a href="#field">fields</a>
+live in one <a href="#segment">segment</a> of <a href="#shared-memory">shared memory</a>, so every
+process that opens the segment reads and writes the same values. In Python,
+"box" also means the object you use to reach that record; several such
+objects, in one process or in many, can be <a href="#handle">handles</a> on the same
+segment.</p>
 <h3 id="capacity">Capacity<a class="headerlink" href="#capacity" title="Permanent link">&para;</a></h3>
-<p>The capacity of a <code>str</code>, <code>bytes</code>, <code>bytearray</code> or <code>Decimal</code> <a href="#field">field</a>
-is the most bytes it can hold, and of a list, set or dict field the most
-elements. It is set with <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;Capacity&lt;/span&gt;
+<p>A capacity is how much room a field of varying size gets, since every field
+has a fixed size. For <code>str</code>, <code>bytes</code>, <code>bytearray</code> and <code>Decimal</code> it is the
+most bytes the value can take, and for a list, set or dict the most
+elements. You set it with <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;Capacity&lt;/span&gt;
 
 
   &lt;span class=&quot;doc doc-labels&quot;&gt;
       &lt;small class=&quot;doc doc-label doc-label-dataclass&quot;&gt;&lt;code&gt;dataclass&lt;/code&gt;&lt;/small&gt;
   &lt;/span&gt;" href="../../reference/api/box/#sharedbox.Capacity"><code>Capacity</code></a> inside
-<code>Annotated</code>. For text it counts bytes, not characters. The field takes
-that much room in the record whatever it holds.</p>
+<code>Annotated</code>. For text it counts bytes, not characters, and the field takes
+up all that room whatever it holds.</p>
 <h3 id="create-id">Create id<a class="headerlink" href="#create-id" title="Permanent link">&para;</a></h3>
-<p>A create id is a random number drawn when a <a href="#box">box</a> is created and kept
-in its header; it is never 0. A <a href="#reference-field">reference field</a> and a
-pickled box store it, so a process can tell the box from one created later
-under the same name. See <a href="../references/#broken-references">Reference fields</a>.</p>
+<p>A create id is a random number a <a href="#box">box</a> gets when it is created, never
+0, kept with the box. It tells two boxes apart that had the same name at
+different times: a <a href="#reference-field">reference field</a> and a pickled box
+store it, so they can notice that the box they knew was removed and a new
+one created under its name. See
+<a href="../references/#broken-references">Reference fields</a>.</p>
 <h3 id="description">Description<a class="headerlink" href="#description" title="Permanent link">&para;</a></h3>
-<p>The bytes in a <a href="#segment">segment</a> that say how a value of a type is laid
-out, for a type whose kind alone does not say: an enum's members, a
-record's members and names, a list's capacity, an array's shape and
-element type.</p>
+<p>A description is the extra information a <a href="#segment">segment</a> keeps for a
+type whose name alone doesn't say how its values are laid out: an enum's
+members, a record's members and their names, a list's capacity, or an
+array's shape and element type.</p>
 <h3 id="field">Field<a class="headerlink" href="#field" title="Permanent link">&para;</a></h3>
-<p>A field is a public annotation of a <code>SharedBox</code> subclass with one of the
-types a box can store. Each field has a fixed place and a fixed size in the
-record of the <a href="#segment">segment</a>. See
+<p>A field is one value of a box, declared as a public annotation of a
+<code>SharedBox</code> subclass with a type a box can store. Each field has a fixed
+place and a fixed size in the <a href="#segment">segment</a>. See
 <a href="../how-a-box-is-stored/">How a box is stored</a>.</p>
 <h3 id="handle">Handle<a class="headerlink" href="#handle" title="Permanent link">&para;</a></h3>
-<p>A handle is one open mapping of a <a href="#segment">segment</a>: a box object in
-Python, or the capsule handle that
+<p>A handle is one way in to a <a href="#segment">segment</a>, held by one user: a box
+object in Python, or the handle in the capsule that
 <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;__sharedbox_box__&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.__sharedbox_box__"><code>__sharedbox_box__</code></a> gives a C or
-C++ library. Closing a handle detaches only that handle. See
+C++ library. Each handle has the segment mapped into its process on its
+own, so closing one handle leaves the others working. See
 <a href="../closing-and-lifetime/">Closing and lifetime</a>.</p>
 <h3 id="identity">Identity<a class="headerlink" href="#identity" title="Permanent link">&para;</a></h3>
-<p>The identity of a <code>SharedBox</code> class is the string that names it across
-processes: its <code>module.qualname</code>, unless the class sets the <code>identity</code>
-class keyword. It
-enters the <a href="#schema-hash">schema hash</a>, and names the <a href="#box">box</a> when the
-class sets no <code>name</code>.</p>
+<p>The identity of a <code>SharedBox</code> class is the string that names the class the
+same way in every process. It is the class's <code>module.qualname</code>, unless the
+class sets the <code>identity</code> keyword. The box's default name and its
+<a href="#schema-hash">schema hash</a> are both worked out from it.</p>
 <h3 id="reference-field">Reference field<a class="headerlink" href="#reference-field" title="Permanent link">&para;</a></h3>
 <p>A reference field is a <a href="#field">field</a> annotated with another <code>SharedBox</code>
-subclass, or with that class <code>| None</code>. It stores which box it refers to:
-the box's name, <a href="#schema-hash">schema hash</a> and <a href="#create-id">create id</a>.
-The other box keeps its own segment, lock and lifetime. See
-<a href="../references/">Reference fields</a>.</p>
+subclass, or with that class <code>| None</code>, so one box can point at another. It
+stores which box it points at, not that box's values: the box's name,
+<a href="#schema-hash">schema hash</a> and <a href="#create-id">create id</a>. The other box keeps
+its own segment, lock and lifetime. See <a href="../references/">Reference fields</a>.</p>
 <h3 id="schema-hash">Schema hash<a class="headerlink" href="#schema-hash" title="Permanent link">&para;</a></h3>
-<p>The schema hash is the first 8 bytes of SHA-256 over a class's
-<a href="#identity">identity</a> and each field's name, kind and capacity. It is kept
-in the header of the <a href="#segment">segment</a>, and a process that attaches must
-compute the same value from its own class. See
-<a href="../how-a-box-is-stored/#the-schema-hash">How a box is stored</a>.</p>
+<p>A schema hash is a short fingerprint of a box's layout: a number worked
+out from the class's <a href="#identity">identity</a> and each field's name, type and
+capacity (the first 8 bytes of a SHA-256 hash of them). The
+<a href="#segment">segment</a> keeps it, and a process that attaches works it out
+again from its own class. If the two differ, the classes don't describe the
+same layout, and the attach is refused instead of reading the wrong bytes.
+See <a href="../how-a-box-is-stored/#the-schema-hash">How a box is stored</a>.</p>
 <h3 id="segment">Segment<a class="headerlink" href="#segment" title="Permanent link">&para;</a></h3>
-<p>A segment is the block of shared memory that holds one <a href="#box">box</a>: a
-header, a table of the fields, the <a href="#waiter-slot">waiter slots</a> and the
-record of values. It has a name, <code>sharedbox.&lt;name&gt;</code>, by which any process
-can open it. See <a href="../how-a-box-is-stored/">How a box is stored</a>.</p>
+<p>A segment is the block of <a href="#shared-memory">shared memory</a> that holds one
+<a href="#box">box</a>. Besides the values, it holds a header, a table of the fields
+and the <a href="#waiter-slot">waiter slots</a>. It has a name, <code>sharedbox.&lt;name&gt;</code>, by
+which any process can open it. See
+<a href="../how-a-box-is-stored/">How a box is stored</a>.</p>
 <h3 id="sequence-lock">Sequence lock<a class="headerlink" href="#sequence-lock" title="Permanent link">&para;</a></h3>
-<p>The sequence lock is the write lock of a <a href="#box">box</a>: a counter in the
-header that is even when no write runs and odd while one does. A writer
-makes the counter odd, copies, and makes it even again. A reader takes no
-lock: it copies and tries again if the counter moved. See
+<p>The sequence lock is how a <a href="#box">box</a> keeps readers from seeing half a
+write. It is a counter in the segment that is even when no write is running
+and odd while one is. A writer makes the counter odd, copies its values,
+and makes it even again. A reader doesn't lock anything: it copies, and if
+the counter moved in the meantime, it copies again. See
 <a href="../reading-and-writing/">Reading and writing</a>.</p>
+<h3 id="shared-memory">Shared memory<a class="headerlink" href="#shared-memory" title="Permanent link">&para;</a></h3>
+<p>Shared memory is memory the operating system lets several processes use at
+the same time, so a value one process writes there is immediately there for
+the others to read, without being sent. Each <a href="#box">box</a> is kept in a block
+of it, its <a href="#segment">segment</a>.</p>
 <h3 id="waiter-slot">Waiter slot<a class="headerlink" href="#waiter-slot" title="Permanent link">&para;</a></h3>
 <p>A waiter slot is an entry in a <a href="#segment">segment</a> that a waiting thread
-holds, so a write knows whom to wake: a box's <a href="#watcher">watcher</a>, or a C++
-program that called <code>register_waiter</code>. It records its owner's pid, start
-time and pid namespace. A box has a fixed number of slots, shared by every
-process. See <a href="../waiting-for-changes/">Waiting for changes</a>.</p>
+holds, so that a write knows whom to wake up. The thread is a box's
+<a href="#watcher">watcher</a>, or a C++ program that called <code>register_waiter</code>. The
+slot records which process holds it, so a slot left behind by a process
+that crashed can be freed again. A box has a fixed number of slots, shared
+by every process. See <a href="../waiting-for-changes/">Waiting for changes</a>.</p>
 <h3 id="watcher">Watcher<a class="headerlink" href="#watcher" title="Permanent link">&para;</a></h3>
-<p>A watcher is the background thread of a box <a href="#handle">handle</a> that waits
-for writes from any process. It runs the callbacks of
+<p>A watcher is a background thread of a box <a href="#handle">handle</a> that waits for
+writes from any process. It runs the callbacks you connect to
 <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-attribute&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-attribute-name&quot;&gt;events&lt;/span&gt;
 
 
   &lt;span class=&quot;doc doc-labels&quot;&gt;
       &lt;small class=&quot;doc doc-label doc-label-property&quot;&gt;&lt;code&gt;property&lt;/code&gt;&lt;/small&gt;
-  &lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.events"><code>events</code></a> and serves the iterators of
-<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;watch&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.watch"><code>watch</code></a>, and holds one
+  &lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.events"><code>events</code></a> and delivers the values that
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;watch&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.watch"><code>watch</code></a> gives you, and it holds one
 <a href="#waiter-slot">waiter slot</a> while it waits. See
 <a href="../waiting-for-changes/">Waiting for changes</a>.</p>
 

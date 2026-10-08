@@ -3143,10 +3143,11 @@
 
 
 <h1 id="field-types">Field types<a class="headerlink" href="#field-types" title="Permanent link">&para;</a></h1>
-<p>A <a href="../glossary/#field">field</a> can hold any of the types below. Each is
+<p>A <a href="../glossary/#field">field</a> can hold any of the types in the table below,
+and most of the types you'd put in a dataclass are there. Each one is
 stored in the <a href="../glossary/#segment">segment</a> in a fixed number of bytes,
-so a value never needs more room than the field set aside when the
-<a href="../glossary/#box">box</a> was created.</p>
+which is why a value never needs more room than the field set aside when
+the <a href="../glossary/#box">box</a> was created.</p>
 <table>
 <thead>
 <tr>
@@ -3213,44 +3214,49 @@ so a value never needs more room than the field set aside when the
 </tr>
 </tbody>
 </table>
-<p><code>NewType</code>, <code>Final</code>, <code>Annotated</code> and <code>type</code> aliases are read through to the
-type they stand for.</p>
+<p><code>NewType</code>, <code>Final</code>, <code>Annotated</code> and <code>type</code> aliases work too: the box looks
+through them to the type they stand for.</p>
 <h2 id="what-the-segment-says-about-a-type">What the segment says about a type<a class="headerlink" href="#what-the-segment-says-about-a-type" title="Permanent link">&para;</a></h2>
-<p>A type whose layout its kind does not fix, such as an enum, a record or a
-list, has a <a href="../glossary/#description">description</a> in the segment: its
-members, names, capacity or shape. C and C++ programs read a field of any
-type through it; see the
-<a href="../../reference/segment-layout/#descriptions">segment layout</a>. The
-<a href="../glossary/#schema-hash">schema hash</a> covers these descriptions, so a
-class whose enum gains a member, or whose record changes a member's type,
-no longer attaches to boxes made with the old one. It does not cover how
-Python reads a value back: a record class's name, <code>list</code> against
-<code>tuple[T, ...]</code>, or <code>set</code> against <code>frozenset</code>.</p>
+<p>For a plain <code>int</code>, the kind alone says how the bytes are laid out. For an
+enum, a record or a list it doesn't, so the segment also keeps a
+<a href="../glossary/#description">description</a> of the type: its members, their
+names, a capacity or a shape. That's what lets a C or C++ program read a
+field of any type; the <a href="../../reference/segment-layout/#descriptions">segment layout</a>
+spells it out.</p>
+<p>The <a href="../glossary/#schema-hash">schema hash</a> covers these descriptions, so if
+an enum gains a member or a record member changes type, the new class no
+longer attaches to boxes made with the old one. It doesn't cover choices
+that only affect what Python builds when it reads a value back: a record
+class's name, <code>list</code> or <code>tuple[T, ...]</code>, <code>set</code> or <code>frozenset</code>.</p>
 <h2 id="a-read-builds-a-new-value">A read builds a new value<a class="headerlink" href="#a-read-builds-a-new-value" title="Permanent link">&para;</a></h2>
-<p>Every read decodes the stored bytes into a new object. Changing a list,
-a record or an array read from a box changes only that object; assign it
-back to store it. A record is rebuilt by calling its class, so its
-<code>__post_init__</code>, converters and validators run on every read.</p>
+<p>Every read turns the stored bytes into a new object. So if you change a
+list, a record or an array you read from a box, you only change that
+object; to store the change, assign it back. A record is rebuilt by calling
+its class, which means its <code>__post_init__</code>, converters and validators run on
+every read.</p>
 <h2 id="dates-and-times">Dates and times<a class="headerlink" href="#dates-and-times" title="Permanent link">&para;</a></h2>
-<p>A <code>datetime</code> or <code>time</code> is naive or has a fixed offset from <abbr title="Coordinated Universal Time. The time standard that offsets such as +02:00 are measured from.">UTC</abbr>. An aware
-value is stored by its offset at that moment, in whole minutes, and comes
-back with a <code>datetime.timezone</code> of that offset: a named zone such as a
-<code>ZoneInfo</code> is not kept. A <code>time</code> needs a <code>tzinfo</code> that gives an offset
-without a date. A <code>date</code> field refuses a <code>datetime</code>, which would lose its
-time of day.</p>
+<p>A <code>datetime</code> or <code>time</code> is either naive or keeps a fixed offset from <abbr title="Coordinated Universal Time. The time standard that offsets such as +02:00 are measured from.">UTC</abbr>.
+If yours has a time zone, the box stores its offset at that moment, in
+whole minutes, and gives it back with a <code>datetime.timezone</code> of that offset,
+so a named zone such as a <code>ZoneInfo</code> comes back as a plain offset. A <code>time</code>
+needs a <code>tzinfo</code> that can give an offset without a date. A <code>date</code> field
+refuses a <code>datetime</code>, since storing it would lose the time of day.</p>
 <h2 id="enums-and-literals">Enums and literals<a class="headerlink" href="#enums-and-literals" title="Permanent link">&para;</a></h2>
 <p>An enum member is stored by its position in the class, so reading gives
-back the member itself and <code>is</code> comparisons work. Changing the order of
-members changes what stored positions mean, and the schema hash changes
-with it. A <code>Literal</code> field keeps the value and its type apart: in
-<code>Literal[1, True]</code>, <code>1</code> and <code>True</code> are two values.</p>
+you back the member itself and <code>is</code> comparisons work. Reordering the
+members changes what the stored positions mean, so the schema hash changes
+with it and old boxes won't attach. In a <code>Literal</code> field, values of
+different types count as different values even when Python would call them
+equal: in <code>Literal[1, True]</code>, <code>1</code> and <code>True</code> are two separate values, and
+each reads back as itself.</p>
 <h2 id="unions">Unions<a class="headerlink" href="#unions" title="Permanent link">&para;</a></h2>
-<p>A union stores which member it holds. A value whose type is exactly one
-member's type goes to that member; otherwise the most specific member that
-takes it is used, so <code>bool</code> comes before <code>int</code>. <code>float | int</code> keeps <code>3</code>
-an <code>int</code>. Two members that take values of the same class, such as
-<code>list[int] | list[str]</code>, raise <code>TypeError</code> when the class is defined,
-since the stored value could not tell them apart.</p>
+<p>A union stores which of its members it holds, so a value comes back as the
+type you wrote. A value whose type is exactly one member's type goes to that
+member; otherwise the most specific member that takes it wins, so <code>bool</code>
+comes before <code>int</code>, and <code>float | int</code> keeps <code>3</code> an <code>int</code>. Two members that
+take values of the same class, such as <code>list[int] | list[str]</code>, are refused
+with <code>TypeError</code> when you define the class, because the box couldn't tell
+which one a stored value belongs to.</p>
 <h2 id="when-a-field-counts-as-changed">When a field counts as changed<a class="headerlink" href="#when-a-field-counts-as-changed" title="Permanent link">&para;</a></h2>
 <p><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-attribute&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-attribute-name&quot;&gt;events&lt;/span&gt;
 
@@ -3258,15 +3264,18 @@ since the stored value could not tell them apart.</p>
   &lt;span class=&quot;doc doc-labels&quot;&gt;
       &lt;small class=&quot;doc doc-label doc-label-property&quot;&gt;&lt;code&gt;property&lt;/code&gt;&lt;/small&gt;
   &lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.events"><code>events</code></a> and
-<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;watch&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.watch"><code>watch</code></a> report a change when a field's
-stored bytes change. Writing <code>NaN</code> again reports nothing, <code>-0.0</code> after
-<code>0.0</code> reports a change, and so does <code>True</code> after <code>1</code> in an <code>int | bool</code>
-field.</p>
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;watch&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.watch"><code>watch</code></a> compare stored bytes, not Python
+values, to decide whether a field changed. That gives a few surprises:
+writing <code>NaN</code> again reports nothing, while <code>-0.0</code> after <code>0.0</code> reports a
+change, and so does <code>True</code> after <code>1</code> in an <code>int | bool</code> field.</p>
 <h2 id="large-values">Large values<a class="headerlink" href="#large-values" title="Permanent link">&para;</a></h2>
-<p>A box has one write lock. While a large array is copied in or out, every
-other read and write of that box waits, and the copy runs with the <abbr title="Global interpreter lock. The lock that lets only one thread of a CPython process run Python code at a time.">GIL</abbr>
-released. <a href="../performance/#large-values">How fast a box is</a> gives the copy
-cost; a large array is best kept in a box of its own.</p>
+<p>A box has one write lock, so while a large array is copied in or out,
+every other read and write of that box waits. The copy itself runs with
+the <abbr title="Global interpreter lock. The lock that lets only one thread of a CPython process run Python code at a time.">GIL</abbr> released, so your other threads keep going. Keep a large array in a
+box of its own, so small fields don't wait behind it.
+<a href="../performance/#large-values">How fast a box is</a> gives the cost of the
+copy, and <a href="../../how-to/store-arrays/">How to store arrays</a> shows how to
+read into an array you already have.</p>
 
 
 

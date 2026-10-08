@@ -3121,10 +3121,11 @@
 
 
 <h1 id="how-to-follow-a-whole-reference-graph">How to follow a whole reference graph<a class="headerlink" href="#how-to-follow-a-whole-reference-graph" title="Permanent link">&para;</a></h1>
-<p>A <a href="../../explanation/glossary/#box">box</a> whose <a href="../../explanation/glossary/#reference-field">reference fields</a>
-lead to other boxes, which have reference fields of their own, forms a
-graph. This guide listens to changes anywhere in that graph with one
-callback.</p>
+<p>Boxes can point at boxes that point at further boxes: a stage at a motor, the
+motor at an encoder. When a <a href="../../explanation/glossary/#box">box</a>'s
+<a href="../../explanation/glossary/#reference-field">reference fields</a> lead on like this, they form a
+graph. This guide shows how one callback can hear about a change anywhere in
+it.</p>
 <h2 id="before-you-start">Before you start<a class="headerlink" href="#before-you-start" title="Permanent link">&para;</a></h2>
 <div class="admonition note">
 <p class="admonition-title">What you need</p>
@@ -3150,11 +3151,11 @@ motor, which refers to an encoder:</p>
 </span></code></pre></div>
 </div>
 <p><a href="../../tutorials/refer-to-another-box/">Referring to another box</a> follows a
-single reference field; this guide follows all of them.</p>
+single reference field; here you follow all of them at once.</p>
 <h2 id="1-follow-every-reference">1. Follow every reference<a class="headerlink" href="#1-follow-every-reference" title="Permanent link">&para;</a></h2>
-<p>The script creates an encoder, a motor that refers to it and a stage that
-refers to the motor. Call <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;follow&lt;/span&gt;" href="../../reference/api/events/#sharedbox.BoxEvents.follow"><code>follow</code></a> on the
-stage's events without a field, then connect to the
+<p>The script creates an encoder, a motor that points at it and a stage that
+points at the motor. Call <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;follow&lt;/span&gt;" href="../../reference/api/events/#sharedbox.BoxEvents.follow"><code>follow</code></a> on the
+stage's events without naming a field, then connect to the
 <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-attribute&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-attribute-name&quot;&gt;nested&lt;/span&gt;
 
 
@@ -3169,21 +3170,23 @@ stage's events without a field, then connect to the
 </span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="n">motor</span><span class="o">.</span><span class="n">position</span> <span class="o">=</span> <span class="mi">7</span>
 </span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="nb">print</span><span class="p">(</span><span class="n">changes</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="mi">5</span><span class="p">))</span>  <span class="c1"># (('motor', 'position'), 7)</span>
 </span></code></pre></div>
-<p><code>nested</code> is emitted as <code>(path, new, old)</code>, where <code>path</code> holds the field
-names from the stage to the field that changed. When any process assigns
-another box to a reference field, following moves to the new box.</p>
-<p>The callbacks run on background threads, one per followed box. Take the
-values to your own thread, as the queue does here, or connect with
-<code>thread="main"</code> as the docstring of
-<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-attribute&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-attribute-name&quot;&gt;events&lt;/span&gt;
+<p>Your callback gets <code>(path, new, old)</code>, where <code>path</code> lists the field names
+on the way from the stage to the field that changed. When any process points
+a reference field at a different box, the following moves to the new box by
+itself.</p>
+<p>The callbacks run on background threads, one for each box you follow. Hand
+the values over to your own thread, as the queue does here, or connect with
+<code>thread="main"</code>, as the docstring of <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-attribute&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-attribute-name&quot;&gt;events&lt;/span&gt;
 
 
   &lt;span class=&quot;doc doc-labels&quot;&gt;
       &lt;small class=&quot;doc doc-label doc-label-property&quot;&gt;&lt;code&gt;property&lt;/code&gt;&lt;/small&gt;
-  &lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.events"><code>events</code></a> describes.</p>
+  &lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.events"><code>events</code></a>
+describes.</p>
 <h2 id="2-follow-one-path-instead">2. Follow one path instead<a class="headerlink" href="#2-follow-one-path-instead" title="Permanent link">&para;</a></h2>
-<p>To listen to one box deep in the graph, call <code>follow</code> with a field at each
-level. Each call returns the signals of the class the field refers to:</p>
+<p>If you only care about one box deep in the graph, call <code>follow</code> with a
+field at each level instead. Each call gives you the signals of the class
+that field points at:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">stage</span><span class="o">.</span><span class="n">events</span><span class="o">.</span><span class="n">unfollow</span><span class="p">()</span>
 </span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="n">counts</span><span class="p">:</span> <span class="n">queue</span><span class="o">.</span><span class="n">Queue</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="n">queue</span><span class="o">.</span><span class="n">Queue</span><span class="p">()</span>
 </span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="n">encoder_events</span> <span class="o">=</span> <span class="n">stage</span><span class="o">.</span><span class="n">events</span><span class="o">.</span><span class="n">follow</span><span class="p">(</span><span class="s2">"motor"</span><span class="p">)</span><span class="o">.</span><span class="n">follow</span><span class="p">(</span><span class="s2">"encoder"</span><span class="p">)</span>
@@ -3192,13 +3195,13 @@ level. Each call returns the signals of the class the field refers to:</p>
 </span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="nb">print</span><span class="p">(</span><span class="n">counts</span><span class="o">.</span><span class="n">get</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="mi">5</span><span class="p">))</span>  <span class="c1"># 4</span>
 </span></code></pre></div>
 <h2 id="3-stop-following">3. Stop following<a class="headerlink" href="#3-stop-following" title="Permanent link">&para;</a></h2>
-<p><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;unfollow&lt;/span&gt;" href="../../reference/api/events/#sharedbox.BoxEvents.unfollow"><code>unfollow</code></a> with a field stops what
-<code>follow</code> with that field started; without a field it stops everything, as
-the script does before step 2. Closing the box also stops all following.</p>
-<p>Each followed box takes one
-<a href="../../explanation/glossary/#waiter-slot">waiter slot</a> and one thread;
-<a href="../../explanation/limits/#following-boxes">Limits</a> says what that costs
-for a large graph.</p>
+<p><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;unfollow&lt;/span&gt;" href="../../reference/api/events/#sharedbox.BoxEvents.unfollow"><code>unfollow</code></a> with a field stops what <code>follow</code>
+with that field started, and without a field it stops everything, as the
+script does before step 2. Closing the box stops all following too.</p>
+<p>Following isn't free: each box you follow takes one
+<a href="../../explanation/glossary/#waiter-slot">waiter slot</a> and one thread.
+<a href="../../explanation/limits/#following-boxes">Limits</a> says what that adds up
+to for a large graph.</p>
 <details class="example">
 <summary>The whole script</summary>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="sd">"""The script of the guide "How to follow a whole reference graph"."""</span>

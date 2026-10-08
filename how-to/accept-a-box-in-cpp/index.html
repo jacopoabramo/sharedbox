@@ -3151,19 +3151,20 @@
 
 
 <h1 id="how-to-accept-a-box-in-a-c-extension">How to accept a box in a C++ extension<a class="headerlink" href="#how-to-accept-a-box-in-a-c-extension" title="Permanent link">&para;</a></h1>
-<p>A Python user hands your extension the <a href="../../explanation/glossary/#box">box</a>
-object itself:</p>
+<p>If you write a C++ extension, say a camera driver, your users can hand it a
+<a href="../../explanation/glossary/#box">box</a> directly, and your code reads and writes the same fields
+their Python code does:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="k">with</span> <span class="n">Frame</span><span class="p">()</span> <span class="k">as</span> <span class="n">frame</span><span class="p">:</span>
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="n">camera</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">frame</span><span class="p">)</span>            <span class="c1"># camera: an extension that supports sharedbox</span>
 </span></code></pre></div>
-<p>Your extension then reads and writes the box through the header-only C++20
-library <code>sharedbox/sharedbox.hpp</code>, which sharedbox installs with its wheel.
-Your extension links no library from sharedbox. The extension gets its own
-<a href="../../explanation/glossary/#handle">handle</a> on the
-<a href="../../explanation/glossary/#segment">segment</a>, so closing or unlinking the
-box in Python does not affect it.</p>
-<p>For C code, see <a href="../accept-a-box-in-c/">How to accept a box in a C extension</a>.
-For a program with no Python, see
+<p>Your extension reads and writes the box through <code>sharedbox/sharedbox.hpp</code>, a
+header-only C++20 library that comes with the <code>sharedbox</code> wheel, so you
+don't link any library from <code>sharedbox</code>. Your extension gets its own
+<a href="../../explanation/glossary/#handle">handle</a> on the <a href="../../explanation/glossary/#segment">segment</a>, which means it keeps
+working even if the Python side closes or unlinks the box.</p>
+<p>Writing C instead? See
+<a href="../accept-a-box-in-c/">How to accept a box in a C extension</a>. For a program
+that has no Python at all, see
 <a href="../open-a-box-from-a-program/">How to open a box from a program</a>.</p>
 <h2 id="before-you-start">Before you start<a class="headerlink" href="#before-you-start" title="Permanent link">&para;</a></h2>
 <div class="admonition note">
@@ -3172,7 +3173,8 @@ For a program with no Python, see
 your extension is built.</p>
 </div>
 <h2 id="know-the-box-you-expect">Know the box you expect<a class="headerlink" href="#know-the-box-you-expect" title="Permanent link">&para;</a></h2>
-<p>The examples on these pages use this class:</p>
+<p>Your code has to know which kind of box it accepts. The examples on these
+pages use this class:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sharedbox</span><span class="w"> </span><span class="kn">import</span> <span class="n">SharedBox</span>
 </span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>
 </span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>
@@ -3180,8 +3182,7 @@ your extension is built.</p>
 </span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>    <span class="n">exposure</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.01</span>
 </span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>    <span class="n">count</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span>
 </span></code></pre></div>
-<p>Your code needs two values computed from the class and kept as
-constants:</p>
+<p>From it you work out two values once and keep them as constants:</p>
 <ul>
 <li>The <a href="../../explanation/glossary/#schema-hash">schema hash</a>: the first 8
   bytes of SHA-256 over <code>camera/frame/1|exposure:float:8|count:int:8</code>,
@@ -3190,61 +3191,77 @@ constants:</p>
   of SHA-256 over the <a href="../../explanation/glossary/#identity">identity</a>
   <code>camera/frame/1</code>. For <code>Frame</code> it is <code>d8dfe7af542f1d91</code>.</li>
 </ul>
-<p><code>sharedbox.hpp</code> does not compute SHA-256, so compute both with your own
-library, or once in Python. <a href="../../explanation/how-a-box-is-stored/#the-schema-hash">The schema hash</a>
-explains what the hashed text holds.</p>
-<p>A <a href="../../explanation/glossary/#field">field</a> is addressed by its position
-in declaration order: <code>exposure</code> is field 0, <code>count</code> is field 1.</p>
-<h2 id="declare-the-parameter">Declare the parameter<a class="headerlink" href="#declare-the-parameter" title="Permanent link">&para;</a></h2>
-<p>In the stubs of your extension, annotate the box parameter with
-<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;SupportsSharedBox&lt;/span&gt;" href="../../reference/api/library-authors/#sharedbox.SupportsSharedBox"><code>SupportsSharedBox</code></a>:</p>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sharedbox</span><span class="w"> </span><span class="kn">import</span> <span class="n">SupportsSharedBox</span>
+<p><code>sharedbox.hpp</code> doesn't compute SHA-256, so work both out once, for
+example in Python, and paste the results into your code:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">hashlib</span>
 </span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>
-</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="k">def</span><span class="w"> </span><span class="nf">run</span><span class="p">(</span><span class="n">frame</span><span class="p">:</span> <span class="n">SupportsSharedBox</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span> <span class="o">...</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="n">identity</span> <span class="o">=</span> <span class="sa">b</span><span class="s2">"camera/frame/1"</span>
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="n">schema</span> <span class="o">=</span> <span class="sa">b</span><span class="s2">"camera/frame/1|exposure:float:8|count:int:8"</span>
+</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="nb">print</span><span class="p">(</span><span class="n">hashlib</span><span class="o">.</span><span class="n">sha256</span><span class="p">(</span><span class="n">identity</span><span class="p">)</span><span class="o">.</span><span class="n">hexdigest</span><span class="p">()[:</span><span class="mi">16</span><span class="p">])</span>        <span class="c1"># d8dfe7af542f1d91</span>
+</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="n">digest</span> <span class="o">=</span> <span class="n">hashlib</span><span class="o">.</span><span class="n">sha256</span><span class="p">(</span><span class="n">schema</span><span class="p">)</span><span class="o">.</span><span class="n">digest</span><span class="p">()</span>
+</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="nb">print</span><span class="p">(</span><span class="nb">hex</span><span class="p">(</span><span class="nb">int</span><span class="o">.</span><span class="n">from_bytes</span><span class="p">(</span><span class="n">digest</span><span class="p">[:</span><span class="mi">8</span><span class="p">],</span> <span class="s2">"little"</span><span class="p">)))</span>        <span class="c1"># 0x544efbe0815c923d</span>
+</span></code></pre></div>
+<p><a href="../../explanation/how-a-box-is-stored/#the-schema-hash">The schema hash</a>
+explains how to write the hashed text for your own class.</p>
+<p>In C++ you name a <a href="../../explanation/glossary/#field">field</a> by its position in the class, counting
+from 0: <code>exposure</code> is field 0 and <code>count</code> is field 1.</p>
+<h2 id="declare-the-parameter">Declare the parameter<a class="headerlink" href="#declare-the-parameter" title="Permanent link">&para;</a></h2>
+<p>So that type checkers know your function takes a box, annotate the
+parameter with <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;SupportsSharedBox&lt;/span&gt;" href="../../reference/api/library-authors/#sharedbox.SupportsSharedBox"><code>SupportsSharedBox</code></a> in your
+extension's stubs:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sharedbox</span><span class="w"> </span><span class="kn">import</span> <span class="n">SupportsSharedBox</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="k">def</span><span class="w"> </span><span class="nf">run</span><span class="p">(</span><span class="n">frame</span><span class="p">:</span> <span class="n">SupportsSharedBox</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span> <span class="o">...</span>
 </span></code></pre></div>
 <h2 id="build-against-the-header">Build against the header<a class="headerlink" href="#build-against-the-header" title="Permanent link">&para;</a></h2>
-<p>Add <code>sharedbox</code> to <code>[build-system] requires</code> and build as C++20. Then do
-one of the following:</p>
+<p>Add <code>sharedbox</code> to <code>[build-system] requires</code> and build as C++20. Then point
+your build at the header in one of two ways:</p>
 <ul>
 <li>Put <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-function&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;get_include&lt;/span&gt;" href="../../reference/api/library-authors/#sharedbox.get_include"><code>sharedbox.get_include()</code></a> on the include
   path.</li>
 <li>With CMake, add <code>Path(sharedbox.get_include()).parent</code> to
-  <code>CMAKE_PREFIX_PATH</code>, call <code>find_package(sharedbox 0.3 CONFIG REQUIRED)</code>
+  <code>CMAKE_PREFIX_PATH</code>, call <code>find_package(sharedbox 0.4 CONFIG REQUIRED)</code>
   and link <code>sharedbox::headers</code> (C++) or <code>sharedbox::c</code> (C). The version
   is optional. Before 1.0 a request accepts only the same minor version,
-  so <code>0.3</code> accepts 0.3.0 and later 0.3 releases but not 0.4.</li>
+  so <code>0.4</code> accepts 0.4.0 and later 0.4 releases but not 0.5.</li>
 </ul>
 <p><code>sharedbox::c</code> compiles <code>sharedbox_c.cpp</code> into the target that links it,
-so the project must enable the CXX language as well as C; configure stops
-with a message if it does not. On Linux both targets link <code>rt</code> and
+so your project has to enable the CXX language as well as C; if it doesn't,
+configure stops with a message saying so. On Linux both targets link <code>rt</code> and
 <code>Threads::Threads</code>, on Windows <code>bcrypt</code>.</p>
-<p>On Windows <code>sharedbox.hpp</code> includes <code>windows.h</code> and <code>bcrypt.h</code>. It
-includes <code>windows.h</code> in its lean form and without the <code>min</code> and <code>max</code>
-macros: unless you defined them already, it defines <code>WIN32_LEAN_AND_MEAN</code>
-and <code>NOMINMAX</code> before that include and removes them at its end. Code that
-needs the full <code>windows.h</code> or the <code>min</code> and <code>max</code> macros must include
+<div class="admonition warning">
+<p class="admonition-title">The header trims <code>windows.h</code></p>
+<p>On Windows, <code>sharedbox.hpp</code> includes <code>windows.h</code> and <code>bcrypt.h</code>, with
+<code>windows.h</code> in its lean form and without the <code>min</code> and <code>max</code> macros:
+unless you defined them already, it defines <code>WIN32_LEAN_AND_MEAN</code> and
+<code>NOMINMAX</code> before the include and removes them afterwards. If your code
+needs the full <code>windows.h</code> or the <code>min</code> and <code>max</code> macros, include
 <code>windows.h</code> before <code>sharedbox.hpp</code>.</p>
-<p>The header declares its C++ names in <code>sharedbox::v2</code>, an inline
-namespace, so code still writes <code>sharedbox::handle</code>. The inline namespace
-changes when the header's C++ interface changes incompatibly, so libraries
-built against headers with different inline namespaces can be linked into
-one program. The C functions <code>sbx_*</code> keep their names across versions.
-Names in <code>sharedbox::detail</code> are internal and may change in any release
-without a new inline namespace.</p>
-<p>On Linux, when two shared libraries built against different releases of
-the header are loaded into one program, the dynamic linker uses one copy of
-each inline function and variable for both, even where the two copies
-differ. A shared library that uses <code>sharedbox::headers</code> or <code>sharedbox::c</code>
-should build with hidden visibility, so its copies stay private to it:</p>
-<div class="language-cmake highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nb">set_target_properties</span><span class="p">(</span><span class="s">reader</span><span class="w"> </span><span class="s">PROPERTIES</span>
-</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">    </span><span class="s">C_VISIBILITY_PRESET</span><span class="w"> </span><span class="s">hidden</span>
-</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">    </span><span class="s">CXX_VISIBILITY_PRESET</span><span class="w"> </span><span class="s">hidden</span>
-</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">    </span><span class="s">VISIBILITY_INLINES_HIDDEN</span><span class="w"> </span><span class="s">ON</span><span class="p">)</span>
+</div>
+<p>You write <code>sharedbox::handle</code>, but the header actually declares its C++
+names in an inline namespace, <code>sharedbox::v2</code>. That namespace changes
+whenever the C++ interface changes incompatibly, so libraries built against
+different versions of the header can still be linked into one program. The
+C functions <code>sbx_*</code> keep their names across versions. Names in
+<code>sharedbox::detail</code> are internal and may change in any release.</p>
+<div class="admonition warning">
+<p class="admonition-title">Build shared libraries with hidden visibility on Linux</p>
+<p>When two shared libraries built against different releases of the
+header are loaded into one program, the Linux dynamic linker uses one
+copy of each inline function and variable for both, even where the two
+differ. Build a shared library that uses <code>sharedbox::headers</code> or
+<code>sharedbox::c</code> with hidden visibility, so its copies stay private to it:</p>
+<div class="language-cmake highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="nb">set_target_properties</span><span class="p">(</span><span class="s">reader</span><span class="w"> </span><span class="s">PROPERTIES</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">    </span><span class="s">C_VISIBILITY_PRESET</span><span class="w"> </span><span class="s">hidden</span>
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="w">    </span><span class="s">CXX_VISIBILITY_PRESET</span><span class="w"> </span><span class="s">hidden</span>
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="w">    </span><span class="s">VISIBILITY_INLINES_HIDDEN</span><span class="w"> </span><span class="s">ON</span><span class="p">)</span>
 </span></code></pre></div>
+</div>
 <p><code>sharedbox_c.h</code> declares the <code>sbx_*</code> functions with hidden visibility on
 GCC and Clang outside Windows, so each library keeps its own copy of them
 whatever its target settings.</p>
 <h2 id="take-the-box-from-the-capsule">Take the box from the capsule<a class="headerlink" href="#take-the-box-from-the-capsule" title="Permanent link">&para;</a></h2>
+<p>With the build set up, taking the box is four steps:</p>
 <ol>
 <li>Call <code>__sharedbox_box__</code> on the object you were given.</li>
 <li>Take the handle out of the capsule with
@@ -3252,40 +3269,41 @@ whatever its target settings.</p>
 <li>Rename the capsule <code>"used_sharedbox_box"</code>.</li>
 <li>Compare the schema hash with the one you expect.</li>
 </ol>
-<div class="language-cpp highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;Python.h&gt;</span>
-</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;sharedbox/sharedbox.hpp&gt;</span>
-</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>
-</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="k">constexpr</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">uint64_t</span><span class="w"> </span><span class="n">FRAME_SCHEMA</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mh">0x544efbe0815c923d</span><span class="p">;</span>
-</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>
-</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="k">static</span><span class="w"> </span><span class="n">PyObject</span><span class="w"> </span><span class="o">*</span><span class="nf">run</span><span class="p">(</span><span class="n">PyObject</span><span class="w"> </span><span class="o">*</span><span class="p">,</span><span class="w"> </span><span class="n">PyObject</span><span class="w"> </span><span class="o">*</span><span class="n">frame</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-</span><span id="__span-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a><span class="w">    </span><span class="n">PyObject</span><span class="w"> </span><span class="o">*</span><span class="n">capsule</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">PyObject_CallMethod</span><span class="p">(</span><span class="n">frame</span><span class="p">,</span><span class="w"> </span><span class="s">"__sharedbox_box__"</span><span class="p">,</span><span class="w"> </span><span class="nb">nullptr</span><span class="p">);</span>
-</span><span id="__span-4-8"><a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">capsule</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="nb">nullptr</span><span class="p">)</span>
-</span><span id="__span-4-9"><a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a><span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="nb">nullptr</span><span class="p">;</span>
-</span><span id="__span-4-10"><a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a><span class="w">    </span><span class="k">auto</span><span class="w"> </span><span class="o">*</span><span class="n">given</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">static_cast</span><span class="o">&lt;</span><span class="n">sbx_handle</span><span class="w"> </span><span class="o">*&gt;</span><span class="p">(</span><span class="n">PyCapsule_GetPointer</span><span class="p">(</span><span class="n">capsule</span><span class="p">,</span><span class="w"> </span><span class="s">"sharedbox_box"</span><span class="p">));</span>
-</span><span id="__span-4-11"><a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">given</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="nb">nullptr</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
-</span><span id="__span-4-12"><a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a><span class="w">        </span><span class="n">Py_DECREF</span><span class="p">(</span><span class="n">capsule</span><span class="p">);</span>
-</span><span id="__span-4-13"><a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a><span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="nb">nullptr</span><span class="p">;</span>
-</span><span id="__span-4-14"><a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a><span class="w">    </span><span class="p">}</span>
-</span><span id="__span-4-15"><a id="__codelineno-4-15" name="__codelineno-4-15" href="#__codelineno-4-15"></a><span class="w">    </span><span class="n">sharedbox</span><span class="o">::</span><span class="n">result</span><span class="o">&lt;</span><span class="n">sharedbox</span><span class="o">::</span><span class="n">handle</span><span class="o">&gt;</span><span class="w"> </span><span class="n">box</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">sharedbox</span><span class="o">::</span><span class="n">handle</span><span class="o">::</span><span class="n">from_capsule</span><span class="p">(</span><span class="n">given</span><span class="p">);</span>
-</span><span id="__span-4-16"><a id="__codelineno-4-16" name="__codelineno-4-16" href="#__codelineno-4-16"></a><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">box</span><span class="p">)</span>
-</span><span id="__span-4-17"><a id="__codelineno-4-17" name="__codelineno-4-17" href="#__codelineno-4-17"></a><span class="w">        </span><span class="n">PyCapsule_SetName</span><span class="p">(</span><span class="n">capsule</span><span class="p">,</span><span class="w"> </span><span class="s">"used_sharedbox_box"</span><span class="p">);</span>
-</span><span id="__span-4-18"><a id="__codelineno-4-18" name="__codelineno-4-18" href="#__codelineno-4-18"></a><span class="w">    </span><span class="n">Py_DECREF</span><span class="p">(</span><span class="n">capsule</span><span class="p">);</span>
-</span><span id="__span-4-19"><a id="__codelineno-4-19" name="__codelineno-4-19" href="#__codelineno-4-19"></a><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">box</span><span class="p">)</span>
-</span><span id="__span-4-20"><a id="__codelineno-4-20" name="__codelineno-4-20" href="#__codelineno-4-20"></a><span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">PyErr_Format</span><span class="p">(</span><span class="n">PyExc_ValueError</span><span class="p">,</span><span class="w"> </span><span class="s">"not a sharedbox layout 1.x box"</span><span class="p">);</span>
-</span><span id="__span-4-21"><a id="__codelineno-4-21" name="__codelineno-4-21" href="#__codelineno-4-21"></a><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">box</span><span class="o">-&gt;</span><span class="n">schema_hash</span><span class="p">()</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="n">FRAME_SCHEMA</span><span class="p">)</span>
-</span><span id="__span-4-22"><a id="__codelineno-4-22" name="__codelineno-4-22" href="#__codelineno-4-22"></a><span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">PyErr_Format</span><span class="p">(</span><span class="n">PyExc_TypeError</span><span class="p">,</span><span class="w"> </span><span class="s">"expected a Frame box"</span><span class="p">);</span>
-</span><span id="__span-4-23"><a id="__codelineno-4-23" name="__codelineno-4-23" href="#__codelineno-4-23"></a><span class="w">    </span><span class="c1">// box is independent of the Python box from here on, and may move to another thread.</span>
-</span><span id="__span-4-24"><a id="__codelineno-4-24" name="__codelineno-4-24" href="#__codelineno-4-24"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="kt">int64_t</span><span class="w"> </span><span class="n">count</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span>
-</span><span id="__span-4-25"><a id="__codelineno-4-25" name="__codelineno-4-25" href="#__codelineno-4-25"></a><span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="k">auto</span><span class="w"> </span><span class="n">read</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">box</span><span class="o">-&gt;</span><span class="n">read</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">as_writable_bytes</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="n">span</span><span class="p">(</span><span class="o">&amp;</span><span class="n">count</span><span class="p">,</span><span class="w"> </span><span class="mi">1</span><span class="p">)));</span>
-</span><span id="__span-4-26"><a id="__codelineno-4-26" name="__codelineno-4-26" href="#__codelineno-4-26"></a><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">read</span><span class="p">)</span>
-</span><span id="__span-4-27"><a id="__codelineno-4-27" name="__codelineno-4-27" href="#__codelineno-4-27"></a><span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">PyErr_Format</span><span class="p">(</span><span class="n">PyExc_RuntimeError</span><span class="p">,</span><span class="w"> </span><span class="s">"read failed: %d"</span><span class="p">,</span><span class="w"> </span><span class="k">static_cast</span><span class="o">&lt;</span><span class="kt">int</span><span class="o">&gt;</span><span class="p">(</span><span class="n">read</span><span class="p">.</span><span class="n">error</span><span class="p">()));</span>
-</span><span id="__span-4-28"><a id="__codelineno-4-28" name="__codelineno-4-28" href="#__codelineno-4-28"></a><span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="n">PyLong_FromLongLong</span><span class="p">(</span><span class="n">count</span><span class="p">);</span>
-</span><span id="__span-4-29"><a id="__codelineno-4-29" name="__codelineno-4-29" href="#__codelineno-4-29"></a><span class="p">}</span>
+<div class="language-cpp highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;Python.h&gt;</span>
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="cp">#include</span><span class="w"> </span><span class="cpf">&lt;sharedbox/sharedbox.hpp&gt;</span>
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>
+</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="k">constexpr</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">uint64_t</span><span class="w"> </span><span class="n">FRAME_SCHEMA</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mh">0x544efbe0815c923d</span><span class="p">;</span>
+</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>
+</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="k">static</span><span class="w"> </span><span class="n">PyObject</span><span class="w"> </span><span class="o">*</span><span class="nf">run</span><span class="p">(</span><span class="n">PyObject</span><span class="w"> </span><span class="o">*</span><span class="p">,</span><span class="w"> </span><span class="n">PyObject</span><span class="w"> </span><span class="o">*</span><span class="n">frame</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="w">    </span><span class="n">PyObject</span><span class="w"> </span><span class="o">*</span><span class="n">capsule</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">PyObject_CallMethod</span><span class="p">(</span><span class="n">frame</span><span class="p">,</span><span class="w"> </span><span class="s">"__sharedbox_box__"</span><span class="p">,</span><span class="w"> </span><span class="nb">nullptr</span><span class="p">);</span>
+</span><span id="__span-5-8"><a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">capsule</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="nb">nullptr</span><span class="p">)</span>
+</span><span id="__span-5-9"><a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="nb">nullptr</span><span class="p">;</span>
+</span><span id="__span-5-10"><a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="w">    </span><span class="k">auto</span><span class="w"> </span><span class="o">*</span><span class="n">given</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="k">static_cast</span><span class="o">&lt;</span><span class="n">sbx_handle</span><span class="w"> </span><span class="o">*&gt;</span><span class="p">(</span><span class="n">PyCapsule_GetPointer</span><span class="p">(</span><span class="n">capsule</span><span class="p">,</span><span class="w"> </span><span class="s">"sharedbox_box"</span><span class="p">));</span>
+</span><span id="__span-5-11"><a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">given</span><span class="w"> </span><span class="o">==</span><span class="w"> </span><span class="nb">nullptr</span><span class="p">)</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-5-12"><a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a><span class="w">        </span><span class="n">Py_DECREF</span><span class="p">(</span><span class="n">capsule</span><span class="p">);</span>
+</span><span id="__span-5-13"><a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a><span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="nb">nullptr</span><span class="p">;</span>
+</span><span id="__span-5-14"><a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a><span class="w">    </span><span class="p">}</span>
+</span><span id="__span-5-15"><a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a><span class="w">    </span><span class="n">sharedbox</span><span class="o">::</span><span class="n">result</span><span class="o">&lt;</span><span class="n">sharedbox</span><span class="o">::</span><span class="n">handle</span><span class="o">&gt;</span><span class="w"> </span><span class="n">box</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">sharedbox</span><span class="o">::</span><span class="n">handle</span><span class="o">::</span><span class="n">from_capsule</span><span class="p">(</span><span class="n">given</span><span class="p">);</span>
+</span><span id="__span-5-16"><a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">box</span><span class="p">)</span>
+</span><span id="__span-5-17"><a id="__codelineno-5-17" name="__codelineno-5-17" href="#__codelineno-5-17"></a><span class="w">        </span><span class="n">PyCapsule_SetName</span><span class="p">(</span><span class="n">capsule</span><span class="p">,</span><span class="w"> </span><span class="s">"used_sharedbox_box"</span><span class="p">);</span>
+</span><span id="__span-5-18"><a id="__codelineno-5-18" name="__codelineno-5-18" href="#__codelineno-5-18"></a><span class="w">    </span><span class="n">Py_DECREF</span><span class="p">(</span><span class="n">capsule</span><span class="p">);</span>
+</span><span id="__span-5-19"><a id="__codelineno-5-19" name="__codelineno-5-19" href="#__codelineno-5-19"></a><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">box</span><span class="p">)</span>
+</span><span id="__span-5-20"><a id="__codelineno-5-20" name="__codelineno-5-20" href="#__codelineno-5-20"></a><span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">PyErr_Format</span><span class="p">(</span><span class="n">PyExc_ValueError</span><span class="p">,</span><span class="w"> </span><span class="s">"not a box this sharedbox.hpp can open"</span><span class="p">);</span>
+</span><span id="__span-5-21"><a id="__codelineno-5-21" name="__codelineno-5-21" href="#__codelineno-5-21"></a><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="n">box</span><span class="o">-&gt;</span><span class="n">schema_hash</span><span class="p">()</span><span class="w"> </span><span class="o">!=</span><span class="w"> </span><span class="n">FRAME_SCHEMA</span><span class="p">)</span>
+</span><span id="__span-5-22"><a id="__codelineno-5-22" name="__codelineno-5-22" href="#__codelineno-5-22"></a><span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">PyErr_Format</span><span class="p">(</span><span class="n">PyExc_TypeError</span><span class="p">,</span><span class="w"> </span><span class="s">"expected a Frame box"</span><span class="p">);</span>
+</span><span id="__span-5-23"><a id="__codelineno-5-23" name="__codelineno-5-23" href="#__codelineno-5-23"></a><span class="w">    </span><span class="c1">// box is independent of the Python box from here on, and may move to another thread.</span>
+</span><span id="__span-5-24"><a id="__codelineno-5-24" name="__codelineno-5-24" href="#__codelineno-5-24"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="kt">int64_t</span><span class="w"> </span><span class="n">count</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span>
+</span><span id="__span-5-25"><a id="__codelineno-5-25" name="__codelineno-5-25" href="#__codelineno-5-25"></a><span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="k">auto</span><span class="w"> </span><span class="n">read</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">box</span><span class="o">-&gt;</span><span class="n">read</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">as_writable_bytes</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="n">span</span><span class="p">(</span><span class="o">&amp;</span><span class="n">count</span><span class="p">,</span><span class="w"> </span><span class="mi">1</span><span class="p">)));</span>
+</span><span id="__span-5-26"><a id="__codelineno-5-26" name="__codelineno-5-26" href="#__codelineno-5-26"></a><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">read</span><span class="p">)</span>
+</span><span id="__span-5-27"><a id="__codelineno-5-27" name="__codelineno-5-27" href="#__codelineno-5-27"></a><span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">PyErr_Format</span><span class="p">(</span><span class="n">PyExc_RuntimeError</span><span class="p">,</span><span class="w"> </span><span class="s">"read failed: %d"</span><span class="p">,</span><span class="w"> </span><span class="k">static_cast</span><span class="o">&lt;</span><span class="kt">int</span><span class="o">&gt;</span><span class="p">(</span><span class="n">read</span><span class="p">.</span><span class="n">error</span><span class="p">()));</span>
+</span><span id="__span-5-28"><a id="__codelineno-5-28" name="__codelineno-5-28" href="#__codelineno-5-28"></a><span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="n">PyLong_FromLongLong</span><span class="p">(</span><span class="n">count</span><span class="p">);</span>
+</span><span id="__span-5-29"><a id="__codelineno-5-29" name="__codelineno-5-29" href="#__codelineno-5-29"></a><span class="p">}</span>
 </span></code></pre></div>
-<p><code>from_capsule</code> checks the segment the handle points to, as an attach does.
-On success it takes over the capsule's handle, and destroying <code>box</code>
-releases it. When it fails, the capsule keeps its handle and releases it
-when the capsule is garbage collected.</p>
+<p><code>from_capsule</code> checks the segment the handle points to, just as an attach
+does. If the check passes, <code>box</code> takes over the capsule's handle and
+releases it when <code>box</code> is destroyed. If it fails, the capsule keeps its
+handle and releases it when the capsule is garbage collected, so nothing
+leaks either way.</p>
 <h2 id="next-steps">Next steps<a class="headerlink" href="#next-steps" title="Permanent link">&para;</a></h2>
 <ul>
 <li><a href="../../reference/cpp-and-c-api/">C and C++ interface</a>: which calls may

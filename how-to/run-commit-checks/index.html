@@ -3167,10 +3167,11 @@
 
 
 <h1 id="how-to-run-the-commit-checks">How to run the commit checks<a class="headerlink" href="#how-to-run-the-commit-checks" title="Permanent link">&para;</a></h1>
-<p>sharedbox checks formatting and lint with <a href="https://prek.j178.dev"><code>prek</code></a>,
-which runs the hooks listed in <code>prek.toml</code> at the project root. The same
-hooks run on every commit once installed, in <code>uv run tox -e lint</code>, and in
-<abbr title="Continuous integration. The builds and tests GitHub runs on pushes and pull requests to the main branch.">CI</abbr>.</p>
+<p>Formatting and lint mistakes are cheap to fix before you commit and
+annoying to fix after <abbr title="Continuous integration. The builds and tests GitHub runs on pushes and pull requests to the main branch.">CI</abbr> finds them. <code>sharedbox</code> checks them with
+<a href="https://prek.j178.dev"><code>prek</code></a>, which runs the hooks listed in <code>prek.toml</code>
+at the project root. Once you install them, the same hooks run on every
+commit, in <code>uv run tox -e lint</code>, and in <abbr title="Continuous integration. The builds and tests GitHub runs on pushes and pull requests to the main branch.">CI</abbr>.</p>
 <h2 id="before-you-start">Before you start<a class="headerlink" href="#before-you-start" title="Permanent link">&para;</a></h2>
 <p><a href="../set-up-development/">Set up a development environment</a>. <code>prek</code>, <code>ruff</code>
 and <code>clang-format</code> are in the <code>lint</code> dependency group, which <code>uv sync</code>

@@ -3121,22 +3121,20 @@
 
 
 <h1 id="how-to-store-lists-sets-and-dicts">How to store lists, sets and dicts<a class="headerlink" href="#how-to-store-lists-sets-and-dicts" title="Permanent link">&para;</a></h1>
-<p>A <code>list</code>, <code>tuple[T, ...]</code>, <code>set</code>, <code>frozenset</code> or <code>dict</code>
-<a href="../../explanation/glossary/#field">field</a>, or one annotated with
-<code>Sequence</code>, <code>Set</code> or <code>Mapping</code> from <code>collections.abc</code>, holds up to a fixed
-number of elements. The <a href="../../explanation/glossary/#box">box</a> sets aside
-room for all of them when it is created.</p>
+<p>A <a href="../../explanation/glossary/#field">field</a> can hold a <code>list</code>, a <code>tuple[T, ...]</code>, a <code>set</code>, a
+<code>frozenset</code> or a <code>dict</code>, or anything you annotate as <code>Sequence</code>, <code>Set</code> or
+<code>Mapping</code> from <code>collections.abc</code>. Because the <a href="../../explanation/glossary/#box">box</a> sets aside room
+for the field when it is created, you say up front how many elements it can
+hold at most.</p>
 <h2 id="1-declare-the-field-with-a-capacity-in-elements">1. Declare the field with a capacity in elements<a class="headerlink" href="#1-declare-the-field-with-a-capacity-in-elements" title="Permanent link">&para;</a></h2>
-<p><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;Capacity&lt;/span&gt;
+<p>On a collection, <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;Capacity&lt;/span&gt;
 
 
   &lt;span class=&quot;doc doc-labels&quot;&gt;
       &lt;small class=&quot;doc doc-label doc-label-dataclass&quot;&gt;&lt;code&gt;dataclass&lt;/code&gt;&lt;/small&gt;
-  &lt;/span&gt;" href="../../reference/api/box/#sharedbox.Capacity"><code>Capacity</code></a> on a collection counts elements. An
-element that needs a capacity of its own, such as a <code>str</code>, gets it inside.
-Set elements and dict keys must have a type that is hashable when read
-back: a <code>list</code>, <code>set</code>, <code>dict</code>, <code>bytearray</code>, <code>TypedDict</code> or record class
-that is not frozen raises <code>TypeError</code> when the class is defined.</p>
+  &lt;/span&gt;" href="../../reference/api/box/#sharedbox.Capacity"><code>Capacity</code></a> counts elements, not
+bytes. If the elements need a capacity of their own, such as text, put it on
+the element type inside:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Annotated</span>
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>
 </span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sharedbox</span><span class="w"> </span><span class="kn">import</span> <span class="n">Capacity</span><span class="p">,</span> <span class="n">SharedBox</span><span class="p">,</span> <span class="n">field</span>
@@ -3149,30 +3147,38 @@ that is not frozen raises <code>TypeError</code> when the class is defined.</p>
 </span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>    <span class="n">tags</span><span class="p">:</span> <span class="n">Annotated</span><span class="p">[</span><span class="nb">frozenset</span><span class="p">[</span><span class="n">Annotated</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Capacity</span><span class="p">(</span><span class="mi">8</span><span class="p">)]],</span> <span class="n">Capacity</span><span class="p">(</span><span class="mi">4</span><span class="p">)]</span> <span class="o">=</span> <span class="nb">frozenset</span><span class="p">()</span>
 </span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>    <span class="n">plays</span><span class="p">:</span> <span class="n">Annotated</span><span class="p">[</span><span class="nb">dict</span><span class="p">[</span><span class="n">Title</span><span class="p">,</span> <span class="nb">int</span><span class="p">],</span> <span class="n">Capacity</span><span class="p">(</span><span class="mi">8</span><span class="p">)]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">dict</span><span class="p">)</span>
 </span></code></pre></div>
+<p>Set elements and dict keys are read back into a new set or dict, so their
+type has to be hashable, meaning Python can use it as a set element or dict
+key. A <code>list</code>, <code>set</code>, <code>dict</code>, <code>bytearray</code>, <code>TypedDict</code>
+or record class that isn't frozen can't be a set element or a dict key, and
+the box class raises <code>TypeError</code> when you define it.</p>
 <h2 id="2-write-and-read-the-collection">2. Write and read the collection<a class="headerlink" href="#2-write-and-read-the-collection" title="Permanent link">&para;</a></h2>
+<p>You assign and read a collection field like any other:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">playlist</span> <span class="o">=</span> <span class="n">Playlist</span><span class="p">()</span>
 </span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="n">playlist</span><span class="o">.</span><span class="n">tracks</span> <span class="o">=</span> <span class="p">(</span><span class="s2">"intro"</span><span class="p">,</span> <span class="s2">"theme"</span><span class="p">)</span>
 </span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="n">playlist</span><span class="o">.</span><span class="n">plays</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"intro"</span><span class="p">:</span> <span class="mi">3</span><span class="p">}</span>
 </span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="nb">print</span><span class="p">(</span><span class="n">playlist</span><span class="o">.</span><span class="n">tracks</span><span class="p">,</span> <span class="n">playlist</span><span class="o">.</span><span class="n">plays</span><span class="p">)</span>  <span class="c1"># ('intro', 'theme') {'intro': 3}</span>
 </span></code></pre></div>
-<p>A read returns a new collection of the declared type; a <code>Sequence</code> reads
-back as a <code>list</code>, a <code>Set</code> as a <code>set</code> and a <code>Mapping</code> as a <code>dict</code>. A set is
-stored in its iteration order and a dict in insertion order.</p>
+<p>Every read gives you a new collection of the declared type. A field
+annotated as <code>Sequence</code> comes back as a <code>list</code>, a <code>Set</code> as a <code>set</code> and a
+<code>Mapping</code> as a <code>dict</code>. Order is kept: a set in the order you iterated it, a
+dict in insertion order.</p>
 <h2 id="3-add-an-element">3. Add an element<a class="headerlink" href="#3-add-an-element" title="Permanent link">&para;</a></h2>
-<p>Changing a collection read from the box changes only that copy. Build the
-new collection and assign it:</p>
+<p>A collection you read is a copy, so appending to it changes nothing in the
+box. Build the new collection and assign it back:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">playlist</span><span class="o">.</span><span class="n">tracks</span> <span class="o">=</span> <span class="p">(</span><span class="o">*</span><span class="n">playlist</span><span class="o">.</span><span class="n">tracks</span><span class="p">,</span> <span class="s2">"outro"</span><span class="p">)</span>
 </span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nb">print</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">playlist</span><span class="o">.</span><span class="n">tracks</span><span class="p">))</span>  <span class="c1"># 3</span>
 </span></code></pre></div>
-<p>Annotating the field with <code>tuple[T, ...]</code> or <code>Sequence[T]</code> lets a type
-checker point out an <code>append</code> that would change only the copy.</p>
+<p>If you annotate the field as <code>tuple[T, ...]</code> or <code>Sequence[T]</code>, a type
+checker will point out an <code>append</code> that would only change the copy.</p>
 <h2 id="4-handle-a-collection-that-is-too-large">4. Handle a collection that is too large<a class="headerlink" href="#4-handle-a-collection-that-is-too-large" title="Permanent link">&para;</a></h2>
+<p>Assigning more elements than the capacity raises <code>ValueError</code>, and the field
+keeps its old value:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="k">try</span><span class="p">:</span>
 </span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>    <span class="n">playlist</span><span class="o">.</span><span class="n">tags</span> <span class="o">=</span> <span class="nb">frozenset</span><span class="p">({</span><span class="s2">"a"</span><span class="p">,</span> <span class="s2">"b"</span><span class="p">,</span> <span class="s2">"c"</span><span class="p">,</span> <span class="s2">"d"</span><span class="p">,</span> <span class="s2">"e"</span><span class="p">})</span>
 </span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="k">except</span> <span class="ne">ValueError</span> <span class="k">as</span> <span class="n">error</span><span class="p">:</span>
 </span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">error</span><span class="p">)</span>  <span class="c1"># Playlist.tags holds at most 4 elements; the value has 5</span>
 </span></code></pre></div>
-<p>The field keeps its old value.</p>
 <details class="example">
 <summary>The whole script</summary>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="sd">"""The script of the guide "How to store lists, sets and dicts"."""</span>

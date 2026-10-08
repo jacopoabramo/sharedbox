@@ -3235,8 +3235,13 @@
 
 
 <h1 id="how-to-run-the-tests">How to run the tests<a class="headerlink" href="#how-to-run-the-tests" title="Permanent link">&para;</a></h1>
-<p>Run the Python tests, the type checks, the C++ tests of the header and the
-longer property and stress runs.</p>
+<p>Before you open a pull request, you'll want to know your change didn't
+break anything. This guide shows how to run each kind of check: the Python
+tests, the type checks, the C++ tests of the header, and the longer property
+and stress runs. Locally you usually run the Python tests and the type
+checks. On every pull request <abbr title="Continuous integration. The builds and tests GitHub runs on pushes and pull requests to the main branch.">CI</abbr> runs the tests again against each wheel,
+along with the C++ tests, and it runs the stress tests when someone starts
+it by hand.</p>
 <h2 id="before-you-start">Before you start<a class="headerlink" href="#before-you-start" title="Permanent link">&para;</a></h2>
 <p><a href="../set-up-development/">Set up a development environment</a>. Run <code>uv sync</code>
 after changing any C++ file, so the tests use the new extension.</p>

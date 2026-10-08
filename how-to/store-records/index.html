@@ -3143,12 +3143,13 @@
 
 
 <h1 id="how-to-store-records">How to store records<a class="headerlink" href="#how-to-store-records" title="Permanent link">&para;</a></h1>
-<p>A <a href="../../explanation/glossary/#field">field</a> can hold a whole record: a
-dataclass, a <code>NamedTuple</code>, a fixed-length tuple, a <code>TypedDict</code>, an attrs
-class or a <code>msgspec.Struct</code>. Each member needs a type a field could have
-on its own, a <a href="../../explanation/glossary/#capacity">capacity</a> included
-where it needs one.</p>
+<p>When several values belong together, such as an x and a y, you can keep them
+in one <a href="../../explanation/glossary/#field">field</a> as a record: a dataclass, a <code>NamedTuple</code>, a
+fixed-length tuple, a <code>TypedDict</code>, an <code>attrs</code> class or a <code>msgspec.Struct</code>.
+Each member can have any type a field could have on its own, so a text
+member needs its <a href="../../explanation/glossary/#capacity">capacity</a> too.</p>
 <h2 id="1-declare-the-record-and-the-field">1. Declare the record and the field<a class="headerlink" href="#1-declare-the-record-and-the-field" title="Permanent link">&para;</a></h2>
+<p>Define the record class as usual, then use it as a field's type:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">dataclasses</span><span class="w"> </span><span class="kn">import</span> <span class="n">dataclass</span>
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">from</span><span class="w"> </span><span class="nn">typing</span><span class="w"> </span><span class="kn">import</span> <span class="n">Annotated</span><span class="p">,</span> <span class="n">NamedTuple</span><span class="p">,</span> <span class="n">NotRequired</span><span class="p">,</span> <span class="n">TypedDict</span>
 </span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
@@ -3177,38 +3178,45 @@ where it needs one.</p>
 </span><span id="__span-0-26"><a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a>    <span class="n">settings</span><span class="p">:</span> <span class="n">Settings</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="k">lambda</span><span class="p">:</span> <span class="p">{</span><span class="s2">"speed"</span><span class="p">:</span> <span class="mf">1.0</span><span class="p">})</span>
 </span></code></pre></div>
 <h2 id="2-write-and-read-the-whole-record">2. Write and read the whole record<a class="headerlink" href="#2-write-and-read-the-whole-record" title="Permanent link">&para;</a></h2>
-<p>Assigning writes every member at once; reading builds a new instance of
-the class:</p>
+<p>When you assign a record, every member is written at once, so a reader sees
+all of the new values or none of them. Reading builds a new instance of the
+class:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">stage</span> <span class="o">=</span> <span class="n">Stage</span><span class="p">()</span>
 </span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="n">stage</span><span class="o">.</span><span class="n">position</span> <span class="o">=</span> <span class="n">Position</span><span class="p">(</span><span class="mf">1.5</span><span class="p">,</span> <span class="o">-</span><span class="mf">2.0</span><span class="p">)</span>
 </span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="nb">print</span><span class="p">(</span><span class="n">stage</span><span class="o">.</span><span class="n">position</span><span class="p">)</span>  <span class="c1"># Position(x=1.5, y=-2.0)</span>
 </span></code></pre></div>
-<p>A read calls the class's constructor, so <code>__post_init__</code>, attrs
-converters and validators run on every read. They must give the same value
-when they run again on a value they already produced.</p>
+<div class="admonition warning">
+<p class="admonition-title">Your constructor runs on every read</p>
+<p>Each read calls the class's constructor, so <code>__post_init__</code>, <code>attrs</code>
+converters and validators run every time. Make sure running them a
+second time changes nothing: a converter that rounds a float, for
+example, must leave an already rounded float as it is, or a read won't
+match what you wrote.</p>
+</div>
 <h2 id="3-change-one-member">3. Change one member<a class="headerlink" href="#3-change-one-member" title="Permanent link">&para;</a></h2>
-<p>A record read from the <a href="../../explanation/glossary/#box">box</a> is a copy:
-changing it changes nothing in the box. Read it, make the new record and
-assign it back:</p>
+<p>A record you read from the <a href="../../explanation/glossary/#box">box</a> is a copy, so changing it
+changes nothing in the box. To change one member, read the record, make a
+new one with the change, and assign it back:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="n">stage</span><span class="o">.</span><span class="n">limits</span> <span class="o">=</span> <span class="n">stage</span><span class="o">.</span><span class="n">limits</span><span class="o">.</span><span class="n">_replace</span><span class="p">(</span><span class="n">high</span><span class="o">=</span><span class="mi">50</span><span class="p">)</span>
 </span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nb">print</span><span class="p">(</span><span class="n">stage</span><span class="o">.</span><span class="n">limits</span><span class="p">)</span>  <span class="c1"># Limits(low=0, high=50)</span>
 </span></code></pre></div>
-<p>A frozen dataclass or a <code>NamedTuple</code> makes the copy read-only, which
-turns a forgotten assignment into an error.</p>
+<p>If you use a frozen dataclass or a <code>NamedTuple</code>, the copy is read-only, so
+forgetting to assign it back gives you an error instead of a silent no-op.</p>
 <h2 id="4-leave-out-a-typeddict-key">4. Leave out a <code>TypedDict</code> key<a class="headerlink" href="#4-leave-out-a-typeddict-key" title="Permanent link">&para;</a></h2>
-<p>A key marked <code>NotRequired</code> may be missing; it is missing again when the
-record is read back:</p>
+<p>A key marked <code>NotRequired</code> can be left out, and it is left out again when you
+read the record back:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nb">print</span><span class="p">(</span><span class="n">stage</span><span class="o">.</span><span class="n">settings</span><span class="p">)</span>  <span class="c1"># {'speed': 1.0}</span>
 </span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="n">stage</span><span class="o">.</span><span class="n">settings</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"speed"</span><span class="p">:</span> <span class="mf">2.0</span><span class="p">,</span> <span class="s2">"note"</span><span class="p">:</span> <span class="s2">"slow down"</span><span class="p">}</span>
 </span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="nb">print</span><span class="p">(</span><span class="n">stage</span><span class="o">.</span><span class="n">settings</span><span class="p">[</span><span class="s2">"note"</span><span class="p">])</span>  <span class="c1"># slow down</span>
 </span></code></pre></div>
-<p>A mapping with a key the <code>TypedDict</code> does not declare, or without a
+<p>Assigning a mapping with a key the <code>TypedDict</code> doesn't declare, or without a
 required key, raises <code>TypeError</code>.</p>
 <h2 id="what-a-record-cannot-hold">What a record cannot hold<a class="headerlink" href="#what-a-record-cannot-hold" title="Permanent link">&para;</a></h2>
-<p>A class definition raises <code>TypeError</code> for a record that a read could not
-rebuild: a dataclass or attrs field with <code>init=False</code>, an <code>InitVar</code>
-without a default, or a generic record class. A record cannot hold a
-<a href="../../explanation/glossary/#reference-field">reference field</a>.</p>
+<p>A read has to rebuild the record from its stored members, so a record that
+can't be rebuilt that way is refused with <code>TypeError</code> as soon as you define
+the box class. That covers a dataclass or <code>attrs</code> field with <code>init=False</code>,
+an <code>InitVar</code> without a default, and a generic record class. A record also
+can't hold a <a href="../../explanation/glossary/#reference-field">reference field</a>.</p>
 <details class="example">
 <summary>The whole script</summary>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="sd">"""The script of the guide "How to store records"."""</span>

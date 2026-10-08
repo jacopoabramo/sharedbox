@@ -3105,10 +3105,11 @@
 
 
 <h1 id="referring-to-another-box">Referring to another box<a class="headerlink" href="#referring-to-another-box" title="Permanent link">&para;</a></h1>
-<p>A <a href="../../explanation/glossary/#box">box</a> can refer to another box. In this
-tutorial a <code>Stage</code> refers to one <code>Motor</code>, a callback follows changes inside
-whichever motor the stage refers to, and the stage then switches to a
-second motor.</p>
+<p>A <a href="../../explanation/glossary/#box">box</a> can point at another box, the way an attribute of one
+Python object can hold another object. In this tutorial you make a <code>Stage</code>
+that points at a <code>Motor</code>, connect a callback that hears about changes inside
+whichever motor the stage points at, and then switch the stage to a second
+motor.</p>
 <h2 id="before-you-start">Before you start<a class="headerlink" href="#before-you-start" title="Permanent link">&para;</a></h2>
 <div class="admonition note">
 <p class="admonition-title">What you need</p>
@@ -3119,11 +3120,12 @@ second motor.</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="k">class</span><span class="w"> </span><span class="nc">Stage</span><span class="p">(</span><span class="n">SharedBox</span><span class="p">):</span>
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="n">motor</span><span class="p">:</span> <span class="n">Motor</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
 </span></code></pre></div>
-<p><code>motor</code> is a <a href="../../explanation/glossary/#reference-field">reference field</a>:
-it stores which <code>Motor</code> the stage refers to, not the motor's values. The
-motor keeps its own shared memory. <code>| None</code> lets the field be empty, which
-is its default here. <a href="../../explanation/references/">Reference fields</a> explains
-what the field stores.</p>
+<p>The <code>motor</code> field doesn't copy a motor's values into the stage. It is a
+<a href="../../explanation/glossary/#reference-field">reference field</a>: it stores which <code>Motor</code> the stage
+points at, and the motor keeps its values in its own shared memory. The
+<code>| None</code> lets the field be empty, which is also its default here.
+<a href="../../explanation/references/">Reference fields</a> explains what exactly the
+field stores.</p>
 <h2 id="2-follow-the-motor">2. Follow the motor<a class="headerlink" href="#2-follow-the-motor" title="Permanent link">&para;</a></h2>
 <p>Add this function below <code>Stage</code>:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="k">def</span><span class="w"> </span><span class="nf">follow</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
@@ -3145,17 +3147,25 @@ what the field stores.</p>
 </span><span id="__span-1-17"><a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a>    <span class="n">Motor</span><span class="o">.</span><span class="n">unlink</span><span class="p">(</span><span class="s2">"tutorial-x"</span><span class="p">)</span>
 </span><span id="__span-1-18"><a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a>    <span class="n">Motor</span><span class="o">.</span><span class="n">unlink</span><span class="p">(</span><span class="s2">"tutorial-y"</span><span class="p">)</span>
 </span></code></pre></div>
-<p>The function creates two motors, <code>x</code> and <code>y</code>, and a stage that refers to
-<code>x</code>. <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;follow&lt;/span&gt;" href="../../reference/api/events/#sharedbox.BoxEvents.follow"><code>events.follow("motor")</code></a> returns the
-signals of <code>Motor</code>, emitted for whichever motor <code>stage.motor</code> refers to
-when the change happens. The callback runs on a background thread, so it
-puts each new position on a queue, and the main thread takes it from there.</p>
-<p>Assigning <code>y</code> to <code>stage.motor</code> moves the forwarding from <code>x</code> to <code>y</code>. That
-happens on a background thread shortly after the assignment, and the
-callback does not see a write to <code>y</code> made before then. The script waits
-half a second before it writes to <code>y</code>.</p>
+<p>The function creates two motors, <code>x</code> and <code>y</code>, and a stage that points at
+<code>x</code>. <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;follow&lt;/span&gt;" href="../../reference/api/events/#sharedbox.BoxEvents.follow"><code>events.follow("motor")</code></a> gives you
+signals like a motor's own <code>events</code>, and each one fires when the motor that
+<code>stage.motor</code> currently points at changes. The callback runs on a
+background thread, and printing from two threads at once can mix their
+lines, so the callback only puts each new position on a queue. The main
+thread takes the positions from there and prints them.</p>
+<p>Assigning <code>y</code> to <code>stage.motor</code> makes the callback follow <code>y</code> instead of
+<code>x</code>.</p>
+<div class="admonition warning">
+<p class="admonition-title">The switch to a new box takes a moment</p>
+<p>After you assign <code>y</code> to <code>stage.motor</code>, a background thread moves the
+following from <code>x</code> to <code>y</code>, shortly after the assignment returns. A write
+to <code>y</code> made before that is missed by the callback. That is why the
+script waits half a second before it writes to <code>y</code>; in your own code,
+leave the same gap or don't rely on that first write.</p>
+</div>
 <h2 id="3-run-it">3. Run it<a class="headerlink" href="#3-run-it" title="Permanent link">&para;</a></h2>
-<p>Add the highlighted line at the end of the file:</p>
+<p>In the <code>if</code> block at the end of the file, add the highlighted line:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="k">if</span> <span class="vm">__name__</span> <span class="o">==</span> <span class="s2">"__main__"</span><span class="p">:</span>
 </span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>    <span class="n">share</span><span class="p">()</span>
 </span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>    <span class="n">react</span><span class="p">()</span>
@@ -3164,6 +3174,8 @@ half a second before it writes to <code>y</code>.</p>
 <p>Run the script:</p>
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>uv<span class="w"> </span>run<span class="w"> </span>motor.py
 </span></code></pre></div>
+<p>The last two lines are new: the callback heard the write to <code>x</code>, then the
+write to <code>y</code>:</p>
 <div class="language-text highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>position set by the other process: 10
 </span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>position 0 -&gt; 20
 </span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>watched 20
@@ -3171,17 +3183,17 @@ half a second before it writes to <code>y</code>.</p>
 </span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>motor position 7
 </span></code></pre></div>
 <h2 id="what-you-built">What you built<a class="headerlink" href="#what-you-built" title="Permanent link">&para;</a></h2>
-<p>A stage that refers to a motor, and a callback that follows the stage to
-whichever motor it refers to, before and after the reference changes.</p>
+<p>You have a stage that points at a motor, and a callback that keeps hearing
+about the stage's motor even after you point the stage at a different one.</p>
 <h2 id="next-steps">Next steps<a class="headerlink" href="#next-steps" title="Permanent link">&para;</a></h2>
 <ul>
-<li><a href="../../how-to/follow-a-whole-reference-graph/">How to follow a whole reference graph</a>:
-  <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;follow&lt;/span&gt;" href="../../reference/api/events/#sharedbox.BoxEvents.follow"><code>follow</code></a> called without a field follows
-  every box the stage reaches through its reference fields.</li>
+<li><a href="../../how-to/follow-a-whole-reference-graph/">How to follow a whole reference graph</a>
+  shows how to follow every box the stage reaches, not just one field, by
+  calling <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;follow&lt;/span&gt;" href="../../reference/api/events/#sharedbox.BoxEvents.follow"><code>follow</code></a> without a field name.</li>
 <li><a href="../../explanation/references/">Reference fields</a> explains what a reference
-  stores and why it can break.</li>
+  stores and how it can break.</li>
 <li><a href="../../explanation/limits/#following-boxes">Limits</a> says what following
-  costs: one thread per followed box.</li>
+  costs: one thread for each box you follow.</li>
 </ul>
 <details class="example">
 <summary>The whole script</summary>

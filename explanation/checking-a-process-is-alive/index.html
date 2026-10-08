@@ -3055,33 +3055,484 @@
 
 
 <h1 id="checking-a-process-is-alive">Checking a process is alive<a class="headerlink" href="#checking-a-process-is-alive" title="Permanent link">&para;</a></h1>
-<p>sharedbox sometimes has to decide whether a process recorded in a
-<a href="../glossary/#segment">segment</a> is still running. This page explains how it
-decides, and where the answer is used.</p>
+<p>Sometimes <code>sharedbox</code> has to answer a simple-sounding question: is the
+process recorded in a <a href="../glossary/#segment">segment</a> still running? The
+answer decides whether a crashed waiter's slot can be freed, and what an
+error message tells you about who holds a name. This page explains how it
+answers, and why the obvious check isn't enough.</p>
 <h2 id="a-pid-and-a-start-time">A pid and a start time<a class="headerlink" href="#a-pid-and-a-start-time" title="Permanent link">&para;</a></h2>
-<p>A process id alone does not identify a process: once a process exits, the
-operating system can give its pid to a new one. <code>sharedbox.hpp</code> therefore
-names a process by its pid and its start time, the way psutil tells a
-process from a later one with the same pid.<sup id="fnref:psutil"><a class="footnote-ref" href="#fn:psutil">1</a></sup> On Windows the start
+<p>The obvious check would be "is there a process with this process id
+(pid)?", but that isn't enough: once a process exits, the operating system
+can give its pid to a new one. So <code>sharedbox.hpp</code> names a process by its
+pid and its start time, the way the <code>psutil</code> library tells a process from a
+later one with the same pid.<sup id="fnref:psutil"><a class="footnote-ref" href="#fn:psutil">1</a></sup> On Windows the start
 time is the creation time from <code>GetProcessTimes</code>. On Linux it is field 22
 of <code>/proc/&lt;pid&gt;/stat</code>.<sup id="fnref:proc-stat"><a class="footnote-ref" href="#fn:proc-stat">2</a></sup> <code>process_alive()</code> reads the start time
-of whatever process has the pid now and decides:</p>
-<ul>
-<li>No process has the pid: dead.</li>
-<li>A process has the pid but started at another time: dead, because the pid
-  was reused.</li>
-<li>A process has the pid but its start time cannot be read, because it
-  belongs to another user or <code>/proc</code> is mounted with <code>hidepid</code>: alive. The
-  process exists, and nothing shows it is a different one. The same holds
-  when the recorded start time is the one that could not be read.</li>
-<li>On Linux, a zombie (state <code>Z</code> or <code>X</code> in <code>/proc/&lt;pid&gt;/stat</code>) is dead. It
-  has exited and keeps its <code>/proc</code> entry only until its parent reaps
-  it.<sup id="fnref2:proc-stat"><a class="footnote-ref" href="#fn:proc-stat">2</a></sup></li>
-</ul>
-<p>On Linux a pid means something only inside its pid namespace, so
-<a href="../glossary/#waiter-slot">waiter slots</a> and the creator fields of the
-header also record the namespace. A process in another namespace, or one
-whose namespace is unknown, is never judged dead.</p>
+of whatever process has the pid now and decides like this:</p>
+<style data-markdown-d2>.markdown-d2 { margin: 1em 0; }
+.markdown-d2-light > svg, .markdown-d2-dark > svg { display: block; max-width: 100%; height: auto; margin: 0 auto; }
+.markdown-d2 .markdown-d2-dark, .markdown-d2-dialog .markdown-d2-dark { display: none; }
+[data-md-color-scheme="slate"] .markdown-d2 .markdown-d2-dark, [data-md-color-scheme="slate"] .markdown-d2-dialog .markdown-d2-dark { display: block; }
+[data-md-color-scheme="slate"] .markdown-d2 .markdown-d2-light, [data-md-color-scheme="slate"] .markdown-d2-dialog .markdown-d2-light { display: none; }
+.markdown-d2.markdown-d2-ready { display: grid; grid-template-columns: minmax(0, 1fr); }
+.markdown-d2.markdown-d2-ready > .markdown-d2-controls { grid-row: 1; }
+.markdown-d2.markdown-d2-ready > .markdown-d2-board { grid-area: 2 / 1; }
+.markdown-d2.markdown-d2-ready > .markdown-d2-board:not(.markdown-d2-current) { visibility: hidden; }
+.markdown-d2 .markdown-d2-board + .markdown-d2-board { margin-top: 1em; }
+.markdown-d2.markdown-d2-ready .markdown-d2-board + .markdown-d2-board { margin-top: 0; }
+.markdown-d2-controls { display: flex; gap: 0.5em; align-items: center; justify-content: center; margin-bottom: 0.5em; }
+.markdown-d2-controls button { display: inline-flex; align-items: center; justify-content: center; min-width: 2em; height: 2em; font: inherit; cursor: pointer; }
+.markdown-d2-controls button svg { width: 1.2em; height: 1.2em; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; }
+.markdown-d2-dialog { width: 95vw; height: 95vh; max-width: none; max-height: none; padding: 0; overflow: hidden; }
+.markdown-d2-dialog .markdown-d2-stage { width: 100%; height: calc(100% - 3em); overflow: hidden; cursor: grab; touch-action: none; }
+.markdown-d2-dialog .markdown-d2-view { transform-origin: 0 0; }
+.markdown-d2-dialog .markdown-d2-controls { height: 3em; margin: 0; }
+.markdown-d2-error { border: 2px solid #c62828; padding: 0.5em 1em; color: #c62828; }
+.markdown-d2 svg.d2-svg > g, .markdown-d2-dialog svg.d2-svg > g { transition: opacity 0.15s; }
+.markdown-d2-focus > g:not(.markdown-d2-hovered):not(.appendix-icon) { opacity: 0.3; }
+.markdown-d2-tooltip { position: fixed; z-index: 10; max-width: 22rem; padding: 0.4em 0.6em; border-radius: 4px; font-size: 0.8rem; line-height: 1.4; pointer-events: none; background: var(--md-default-fg-color, #1e1e2e); color: var(--md-default-bg-color, #ffffff); box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3); }
+.markdown-d2-tooltip[hidden] { display: none; }
+@media (prefers-reduced-motion: reduce) { .markdown-d2 svg.d2-svg > g, .markdown-d2-dialog svg.d2-svg > g { transition: none; } }
+</style><script data-markdown-d2>"use strict";
+const ZOOM_STEP = 1.25;
+const SVG = "http://www.w3.org/2000/svg";
+const ICONS = {
+    previous: "M15 6l-6 6 6 6",
+    next: "M9 6l6 6-6 6",
+    fullScreen: "M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5",
+    zoomIn: "M12 5v14M5 12h14",
+    zoomOut: "M5 12h14",
+    close: "M6 6l12 12M18 6 6 18",
+};
+function icon(name) {
+    const svg = document.createElementNS(SVG, "svg");
+    svg.setAttribute("viewBox", "0 0 24 24");
+    svg.setAttribute("aria-hidden", "true");
+    const path = document.createElementNS(SVG, "path");
+    path.setAttribute("d", ICONS[name]);
+    svg.append(path);
+    return svg;
+}
+function button(label, content, onClick) {
+    const element = document.createElement("button");
+    element.type = "button";
+    element.append(typeof content === "string" ? icon(content) : content.text);
+    element.setAttribute("aria-label", label);
+    element.addEventListener("click", onClick);
+    return element;
+}
+const DURATION = { fade: 250, morph: 450 };
+function visibleSvg(container) {
+    for (const variant of container.querySelectorAll(":scope > .markdown-d2-light, :scope > .markdown-d2-dark")) {
+        if (getComputedStyle(variant).display !== "none")
+            return variant.querySelector("svg");
+    }
+    return null;
+}
+function shapes(svg) {
+    const found = new Map();
+    for (const group of svg.querySelectorAll("g[class]:not(.shape)")) {
+        const name = group.getAttribute("class");
+        if (name && !found.has(name))
+            found.set(name, group);
+    }
+    return found;
+}
+function measure(container) {
+    const svg = visibleSvg(container);
+    const rects = new Map();
+    for (const [name, group] of svg ? shapes(svg) : [])
+        rects.set(name, group.getBoundingClientRect());
+    return rects;
+}
+function play(transition, container, before) {
+    const svg = visibleSvg(container);
+    if (!svg || transition === "none" || matchMedia("(prefers-reduced-motion: reduce)").matches) {
+        return;
+    }
+    const fadeIn = (element, duration) => {
+        element.animate([{ opacity: 0 }, { opacity: 1 }], { duration, easing: "ease-out" });
+    };
+    if (transition === "fade") {
+        fadeIn(svg, DURATION.fade);
+        return;
+    }
+    const units = svg.viewBox.baseVal.width / svg.getBoundingClientRect().width || 1;
+    for (const [name, group] of shapes(svg)) {
+        const old = before.get(name);
+        const now = group.getBoundingClientRect();
+        if (!old) {
+            fadeIn(group, DURATION.morph);
+            continue;
+        }
+        const x = (old.left - now.left) * units;
+        const y = (old.top - now.top) * units;
+        const scaleX = old.width && now.width ? old.width / now.width : 1;
+        const scaleY = old.height && now.height ? old.height / now.height : 1;
+        if (x === 0 && y === 0 && scaleX === 1 && scaleY === 1)
+            continue;
+        group.style.transformBox = "fill-box";
+        group.style.transformOrigin = "0 0";
+        group.animate([
+            { transform: `translate(${x}px, ${y}px) scale(${scaleX}, ${scaleY})` },
+            { transform: "none" },
+        ], { duration: DURATION.morph, easing: "ease-in-out" });
+    }
+}
+function tooltipBox(host) {
+    const found = host.querySelector(":scope > .markdown-d2-tooltip");
+    if (found)
+        return found;
+    const box = document.createElement("div");
+    box.className = "markdown-d2-tooltip";
+    box.setAttribute("role", "tooltip");
+    box.hidden = true;
+    host.append(box);
+    return box;
+}
+function hoverable(container, host) {
+    for (const title of Array.from(container.querySelectorAll("svg.d2-svg > g > title"))) {
+        const group = title.parentElement;
+        if (group)
+            group.dataset.tooltip = title.textContent ?? "";
+        title.remove();
+    }
+    const box = tooltipBox(host);
+    let hovered = null;
+    const clear = () => {
+        hovered?.classList.remove("markdown-d2-hovered");
+        hovered?.ownerSVGElement?.classList.remove("markdown-d2-focus");
+        hovered = null;
+        box.hidden = true;
+    };
+    container.addEventListener("pointerover", (event) => {
+        const target = event.target instanceof Element ? event.target : null;
+        let group = target?.closest("svg.d2-svg > g") ?? null;
+        if (group?.classList.contains("appendix-icon")) {
+            const text = group.dataset.tooltip;
+            group =
+                Array.from(group.parentElement?.children ?? []).find((sibling) => sibling instanceof SVGGElement &&
+                    !sibling.classList.contains("appendix-icon") &&
+                    sibling.dataset.tooltip === text) ?? group;
+        }
+        if (group === hovered)
+            return;
+        clear();
+        if (!group)
+            return;
+        hovered = group;
+        group.classList.add("markdown-d2-hovered");
+        group.ownerSVGElement?.classList.add("markdown-d2-focus");
+        const text = group.dataset.tooltip;
+        if (text) {
+            box.textContent = text;
+            box.hidden = false;
+        }
+    });
+    container.addEventListener("pointermove", (event) => {
+        if (box.hidden)
+            return;
+        const left = Math.min(event.clientX + 14, window.innerWidth - box.offsetWidth - 8);
+        box.style.left = `${Math.max(left, 8)}px`;
+        box.style.top = `${event.clientY + 18}px`;
+    });
+    container.addEventListener("pointerleave", clear);
+}
+function stepControls(boards, onStep) {
+    let current = 0;
+    const counter = document.createElement("span");
+    counter.className = "markdown-d2-counter";
+    counter.setAttribute("aria-live", "polite");
+    const show = (index) => {
+        current = (index + boards.length) % boards.length;
+        const name = boards[current]?.dataset.name;
+        counter.textContent = `${current + 1} / ${boards.length}${name ? ` (${name})` : ""}`;
+        onStep(current);
+    };
+    const controls = document.createElement("div");
+    controls.className = "markdown-d2-controls";
+    if (boards.length > 1) {
+        controls.append(button("Previous step", "previous", () => show(current - 1)), counter, button("Next step", "next", () => show(current + 1)));
+    }
+    return { controls, show, current: () => current };
+}
+function stepWithKeys(element, steps) {
+    element.addEventListener("keydown", (event) => {
+        if (event.key === "ArrowLeft")
+            steps.show(steps.current() - 1);
+        if (event.key === "ArrowRight")
+            steps.show(steps.current() + 1);
+    });
+}
+function setUpFigure(figure) {
+    if (figure.dataset.ready)
+        return;
+    figure.dataset.ready = "true";
+    figure.classList.add("markdown-d2-ready");
+    figure.tabIndex = 0;
+    const boards = Array.from(figure.querySelectorAll(":scope > .markdown-d2-board"));
+    const transition = (figure.dataset.transition ?? "none");
+    const steps = stepControls(boards, (current) => {
+        const old = figure.querySelector(":scope > .markdown-d2-current");
+        const before = old ? measure(old) : null;
+        for (const [i, board] of boards.entries()) {
+            board.classList.toggle("markdown-d2-current", i === current);
+        }
+        const now = boards[current];
+        if (before && now && old !== now)
+            play(transition, now, before);
+    });
+    if (boards.length > 1)
+        stepWithKeys(figure, steps);
+    steps.controls.append(button("Open full screen", "fullScreen", () => openDialog(boards, steps.current(), transition, steps.show)));
+    figure.prepend(steps.controls);
+    hoverable(figure, document.body);
+    steps.show(0);
+}
+function openDialog(boards, start, transition, onStep) {
+    const dialog = document.createElement("dialog");
+    dialog.className = "markdown-d2-dialog";
+    const stage = document.createElement("div");
+    stage.className = "markdown-d2-stage";
+    const view = document.createElement("div");
+    view.className = "markdown-d2-view";
+    stage.append(view);
+    let scale = 1;
+    let x = 0;
+    let y = 0;
+    const apply = () => {
+        view.style.transform = `translate(${x}px, ${y}px) scale(${scale})`;
+    };
+    const zoom = (factor, originX, originY) => {
+        x = originX - (originX - x) * factor;
+        y = originY - (originY - y) * factor;
+        scale *= factor;
+        apply();
+    };
+    stage.addEventListener("wheel", (event) => {
+        event.preventDefault();
+        const box = stage.getBoundingClientRect();
+        zoom(event.deltaY < 0 ? ZOOM_STEP : 1 / ZOOM_STEP, event.clientX - box.left, event.clientY - box.top);
+    });
+    let dragging = null;
+    stage.addEventListener("pointerdown", (event) => {
+        dragging = { x: event.clientX - x, y: event.clientY - y };
+        stage.setPointerCapture(event.pointerId);
+    });
+    stage.addEventListener("pointermove", (event) => {
+        if (!dragging)
+            return;
+        x = event.clientX - dragging.x;
+        y = event.clientY - dragging.y;
+        apply();
+    });
+    stage.addEventListener("pointerup", () => (dragging = null));
+    const steps = stepControls(boards, (current) => {
+        const before = view.childElementCount ? measure(view) : null;
+        view.replaceChildren(...Array.from(boards[current]?.children ?? [], (child) => child.cloneNode(true)));
+        if (before)
+            play(transition, view, before);
+        onStep(current);
+    });
+    if (boards.length > 1)
+        stepWithKeys(dialog, steps);
+    steps.controls.append(button("Zoom in", "zoomIn", () => zoom(ZOOM_STEP, 0, 0)), button("Zoom out", "zoomOut", () => zoom(1 / ZOOM_STEP, 0, 0)), button("Reset zoom", { text: "1:1" }, () => {
+        scale = 1;
+        x = 0;
+        y = 0;
+        apply();
+    }), button("Close", "close", () => dialog.close()));
+    dialog.append(steps.controls, stage);
+    hoverable(view, dialog);
+    dialog.addEventListener("close", () => dialog.remove());
+    document.body.append(dialog);
+    steps.show(start);
+    apply();
+    dialog.showModal();
+}
+function setUpFigures() {
+    document.querySelectorAll("figure.markdown-d2").forEach(setUpFigure);
+}
+(function start() {
+    if (window.markdownD2Ready)
+        return;
+    window.markdownD2Ready = true;
+    if (window.document$)
+        window.document$.subscribe(setUpFigures);
+    else if (document.readyState === "loading")
+        document.addEventListener("DOMContentLoaded", setUpFigures);
+    else
+        setUpFigures();
+})();
+</script><figure class="markdown-d2" data-transition="morph" aria-label="Is the recorded process still running?"><div class="markdown-d2-board" data-step="1" data-name=""><div class="markdown-d2-light"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" data-d2-version="v0.9.0" preserveAspectRatio="xMinYMin meet" width="605" height="1022" viewBox="0 0 605 1022"><svg class="d2-1052742209 d2-svg" width="605" height="1022" viewBox="-102 -101 605 1022"><rect x="-102" y="-101" width="605" height="1022" rx="0" fill="#FFFFFF" class=" fill-N7" stroke-width="0" /><style type="text/css"><![CDATA[
+.appendix-icon {
+	filter: drop-shadow(0px 0px 32px rgba(31, 36, 58, 0.1));
+}
+.d2-1052742209 .text-bold {
+	font-family: "d2-1052742209-font-bold";
+}
+@font-face {
+	font-family: d2-1052742209-font-bold;
+	src: url("data:application/font-woff;base64,d09GRgABAAAAAA9gAAoAAAAAF1gAAguFAAAAAAAAAAAAAAAAAAAAAAAAAABPUy8yAAAA9AAAAGAAAABgXxHXrmNtYXAAAAFUAAAAswAAAQIE/QWsZ2x5ZgAAAggAAAiZAAALiCXHv0hoZWFkAAAKpAAAADYAAAA2G38e1GhoZWEAAArcAAAAJAAAACQKfwXoaG10eAAACwAAAACcAAAApEzZBsFsb2NhAAALnAAAAFQAAABUPLQ/sm1heHAAAAvwAAAAIAAAACAAQQD3bmFtZQAADBAAAAMvAAAIKgjwVkFwb3N0AAAPQAAAACAAAAAg/9EAMgADAioCvAAFAAACigJYAAAASwKKAlgAAAFeADIBKQAAAgsHAwMEAwICBGAAAvcAAAADAAAAAAAAAABBREJPACAAIP//Au7/BgAAA9gBESAAAZ8AAAAAAfAClAAAACAAA3icjM4rL4UBAIfx3+u8jttxv9+PazJGVMym2ATRNMHMFBN9H5dEs5lgPooiKIo58W87QRLOnvqEHwoVBWpKP1hVV6qqW7Nuw5ZtO3bt2Xfg0JFjp85duk74+zb/+U6cuXCV5D2NfKeRr3zmI295zUue85THPOQ+d7nNTVPRSoUli03ngmUr2lSU2lV16NSlW4+aXn36DRg0ZNiIUWPGTZg0ZdqMWXPm+QUAAP//AwBFMTKLAHicZFZrbCPVFT73euLZOJOHPZ4Z2/F74hnbSezY45nJw4lj4jjZYG8e2311s5tlVVHowmbLZpsAi+gP6AOCtsWrikJ5qAK1oKUSAlSgTasiFbpif1AtFKkq6rZFW4kfraFRVVFnXN1JNnG2f3Ij6875zved75xzoQlmAPBJfBEs0Azt4AAOQLGH7BFFlkVaV3RdFCy6jOz0DHYYLzwvx6hYjIoHnwjct7CAysfxxY27jpZPnvz3wtCQ8cybbxmPobNvAeD6FwB4DK9CM9gBWFqRJUkWrVYLq7CiLNLXOx5tb+1spRj3F1deufKj6LtRNJXNpk4rmbuNh/HqxtJTTwEAYCgD4BJeBdtmZkqa5zmn1SrKSlrT1IwkiWL5ja88Pjtz4USvt39/IrG/34tXCxfOnHl8Yjk6v2/fkQgAIBIHruFVsJhR7OUKXt1Y2vwd/RWvQtPm7yGuXEEYr25Uz+/g9+FVYMC5C1/k7EpazRD4a5PnisWl8dnJldFsAa/K89Olk8mP0dwdSpzEQNACgHvwKrgBFNaiCDwvKJqm64qFFbd0oemW1196fqBFaKVaOFvm6Rdfez7PCG1UC98yjKbR8P18JhDI8PcbvzTeeNij+P2K52EzdhcAqpk6g6KikBriUIjrQkHjv+gt4xoSj6Cfnz9i7D1PuMTr6+gDVAM3iABCWFIzmi5JYthKy5qmpHnOLpIa6WlNV61Wzsn/qjDzUAWLscBol5o8Nbhw+4qNCkzscUfYfdkAcyi373B7SHZxt/m6Tt9jfKJ4xXsE9pCt2+cSTO3y9XXM4zVwQgCgKSzJIi3aFY42wcwyymlNzYhhmuN5NB4a81HM2QrlK4Szh5PZhcOSdrAn5owyoaCK1y6VPL6Rr5cO3JtbKZa+1fueo22Tf30draEaeEwEQokEF2hCi3PySlrTBasVuccX85PfKCQmvONiUM3l+lwJdjBykBk+N7d/adgvLPhK+dEy134i2ElqhkGur6MaXgMWgje0MgPLqtKgkrQF8/n84tBCJtbvtlZWbJSniF2yg+12ilqSefTe2XMjXlfpxY2xlEdccbrfc7SNTewdB2zm/hdUAxcEdmVPpKFDPK+kSe4WJUNQUGDinlvG7hqaOJaksPGRrZhStZR0/MlX5Z6wxowszc0u5XKnCmykWVNCRzx+NBhTk4SLBcL1XkyjGiRhCKZMNpKa0VUTb+vQlLSgcOKWucMyIaUQSzitVgsp0hZRdvN/MSyZVz4fPN4/wXYGXZ7Y4HG1J/T6NN2cOaz7Ao5wbGb+tsL5KZ8s+3yyHEuPyhHFHWI6h696+nuyUao1GuhMd1COQnd2Osqcagk7B6a6bO086xgaU2YT6HI8Jsei0VjcqHS5hQ6LxeX2+ggfBHlSINNXoGz7ibOLdlMo2p6v0N5b07N7K76gN+rCa5eOuLtPHTOuoJAWdQvGK1Cvgw4AH+OrWAIZAGiIwiPbsf14DRiz2+2KrtCsKNNc/gL19HM/+8WzZ3J4zTj92yvGn34zcR+5X19HDrwG7aauql2xb5vud6Whir25ibY6mAhz9FYsbnwkOBC6u4km3wFYfKgGIROHzAPirl1M6O0zT/qumFLzbGgqNXNrxReM9JE/SVQdDfR2R8OpG/T6jFe2jhs6oRo4GzEadVqxUcHytlComvP37tJp06Omd9qh8/88apUbnIH43GKhsJjLnS4UTud6E4neRG/vVn8NL+2fOze8XB7Nl0ibkbTy9UnMoxqw4AcQdrIjsz0syQLH7owGQt+3V/7yHdkFLZj1NE1L2sHuuDP6Bv5pyiN+9+yBlVyne/r7qGt7MJjc0QVUA8cufWlph3lnSeK8Nleru8M77ETVQ+lUU9ODFBVLG9cAAVdfR8+iGnGHEJZknXQjISvJCaxmdoJxTl7wY85pvZr6qnRLOBcI+X0Jj38oeueBgUOBWzwZz8CAFByO3cFIgXl3p8DaedbGdA3Exg/KrsNOXna521rEgcTYsU1v2+vr6DReAsFUW1VFVdcVTuHEhmEG89OFkv2+5WXRx7htAqszXzt4+W7rQw+dfTcesVKnrMxmrGx9Hf0HVcF5kzftWyPsD7N7K/6gV+IrKy2WwBRz6hjKGH9WYx4fmjQ6xiM9gEgfoDqqQiuAsmt1vfqTi6M21kY1s7b8Yz9G1U8jZVkuRz41OkxsFwCuoiqEbvquIcLO7rt4/vE+q81K0a3N+oP9ze00RTfTye8sX+qlW2mKbqF7UPV6ZFKSpsTr5jkZuW50vCMWo9Gi+I6JR4q+jqqbO1ZuAKSFHZy2Jy4802PjbdQex57wE9/74TN9jMBQzc5mGeF/zHDdHNfNzdQ/m+N6OK6bnyNxmfoI2kBV6Gz0ga7vkqINr/Chdg/t2BOJ2uhfX5xocdioPfbm7GOXhP7pt63UGdTU5fOgv30YLkbECfFDo2XkwNbbQAJAr6Hq5v5mRTXEWRROev9NdOb9j6ZR4uw+4/dnSR5FAPRHfD+ph0JWkKppOhl+xUeWM5Phu5aX0eJRm9e5UVvejOsHQJ/gb4OX3B/BaqZhz5tdRrawwkVmHyimYmHdNZM8WcgdV4fmM64s/80vlR+4szeZkj3TaSV9dFhdXNQsTedJ3OH6OvwTXiZvGuKpzFbT/kBSFElSFEaVo6oalVVyN1EfQQAvkx4UZE2Tw2Gx4ZOSv38QYQqLmialM/Nv73PmI91RKTGVn1sBIDPaxEKfYRnCAKgAVnIChlh9Hb2AXwIPSAC6NGK5mV2bRaAbkJ608nLcF/F7u52z4slB7UDa3xP3UHkpnSY5/z2WV3u7+UDQ45yKpbtKQ5GBvqTe9a8dKoCgtX4Cafgd8n4UWMXSevnE5ecst9ee3Jo18AGq3nhb5iuoanQAqr+MB2A/vkq0sjekE0kkIpFEAg/ERTEeF8U4/A8AAP//AwCOmV1HAAAAAAEAAAACC4Ugz2cjXw889QABA+gAAAAA2F2ghAAAAADdZi82/jf+xAhtA/EAAQADAAIAAAAAAAAAAQAAA9j+7wAACJj+N/43CG0AAQAAAAAAAAAAAAAAAAAAACl4nATAMWrCUBzH8e//FwgtSdsU0tKlGcqjpRpdI5g3/Be3B4IunsXBG3gTF1cv4CA4eBuX+NGRJWdQHO7akmxCUk7SmqSOQt8EvTFSxO1GUORPOUGf/GiOW02ngFuDZxtcPa4xQRG3PW4nPmzHu2b0KiizJ74kXvVMaRd+VbFQRWMt0Vqm1hLtyr+teLEah+HwAAAA//8DAH8HFdkAAAAsACwAUAB0AIAAkACyAOAA9gEuAWABjAG+AfICWgJ8AogCoAK8Au4DEAM8A2wDjAPIA+4EEAQsBGQEkATABNQE7AUYBS4FTgVaBZQFogWuBcQAAQAAACkAkAAMAGMABwABAAAAAAAAAAAAAAAAAAQAA3icnJTPbhtlFMV/TmzTCsECRVW6ib4FiyK1Y1MlVdusJqRWRkRx8LggJIQ0tie25fHMyDN2Gp6ANW/BW3TFQ/AciDW619euXRAFK4p1Zub+Od+5537AAX+yT6V6H/itnhqucFS/NrzHvfqF4X1a9T3DVR7VfjdcY1BbGK7zea1j+CPeVn8xfI/j6o+G73NYbRn+mKfVA8Of7Dv+MPwpx7xd4go852fDFQ7JDe9xwA+G93mA1axUeUDTcI3PODJc5wjoMqYkYUzKEMcNY4bMmRFTEBIzY8wNMQMcAT4Jpb5NiRQ5hv/4NiKkZEakFUeUOBJCEiIKRlbxJ83KuNaO0memSLr5lIyI6GnGhIgUR8aQjJSYidYpKcl5SYMGBX3lm1NS4FEwJsEjY8aQBm1aXNJlxJgCR0srCbOQjBtKbom0v7MIUaZPTEphrOakDJSnU36xZgdc4miTa+xm5cutCo9xfKvZwk1iHF/i6b/bYLbdd8UmYqF6ioY9EuV5qxMcqeLS1+cbxSUvcTvps83kwxoNlJ3MekyPuc5f5id5wiTFuUN8QnVQ6B7iONPngFAV+Y6ALhe0eU1Xn306dPC5okvAK81t08HxFW2uONeMQPHyW0sdc8X3OL4m0BipHZs+ork8vSE3dwt3cYacY0quWyAzlvOL8+OdJiw7lG25o1BX9HWPJFL2QFSRPYsYmitydcVUtVx5ozD9BuYI+VrqbN99l21Y2O6ttviOTHfYMTdOMrklow9N1XvPM7f65xExIKOnEX0ypjQoudOzXRMxJ8Fxrj6+0C0p8dc50udOXRIzVQYBqdaZketvZL4JjXt/y/fO7hLZvKnu6GR9ql26SOV0Y0avVb3Vt9BUjjcm0LCpZpYjE5bKy5OK9yXa2+IfqvsLvd0ynnBGRsLgbzfAUzyaHHPCKSPtIJVTFnY7NPWGaPKCUz39hFij5L58ozpJhRM8nnHCCS949p6OKybOuLg1l83ePuec0eb0P51iGd/mjFfrd//e9Vdl2tSzOJ6sn57vPMVH/8OtX/B4677s6C0gm7Owau+24oqIqXBxh5tauId4fwEAAP//AwD0t09RAAADAAAAAAAA/84AMgAAAAAAAAAAAAAAAAAAAAAAAAAA");
+}
+.d2-1052742209 .text-italic {
+	font-family: "d2-1052742209-font-italic";
+}
+@font-face {
+	font-family: d2-1052742209-font-italic;
+	src: url("data:application/font-woff;base64,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");
+}]]></style><style type="text/css"><![CDATA[.shape {
+  shape-rendering: geometricPrecision;
+  stroke-linejoin: round;
+}
+.connection {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.blend {
+  mix-blend-mode: multiply;
+  opacity: 0.5;
+}
+
+		.d2-1052742209 .fill-N1{fill:#0A0F25;}
+		.d2-1052742209 .fill-N2{fill:#676C7E;}
+		.d2-1052742209 .fill-N7{fill:#FFFFFF;}
+		.d2-1052742209 .fill-B1{fill:#0D32B2;}
+		.d2-1052742209 .fill-B6{fill:#F7F8FE;}
+		.d2-1052742209 .stroke-B1{stroke:#0D32B2;}
+		.d2-1052742209 .stroke-B2{stroke:#0D32B2;}.appendix text.text{fill:#0A0F25}.md{--color-fg-default:#0A0F25;--color-fg-muted:#676C7E;--color-fg-subtle:#9499AB;--color-canvas-default:#FFFFFF;--color-canvas-subtle:#EEF1F8;--color-border-default:#0D32B2;--color-border-muted:#0D32B2;--color-neutral-muted:#EEF1F8;--color-accent-fg:#0D32B2;--color-accent-emphasis:#0D32B2;--color-attention-subtle:#676C7E;--color-danger-fg:red;}.light-code{display: block}.dark-code{display: none}]]></style><defs>
+	<filter id="shadow-filter-1" width="200%" height="200%" x="-50%" y="-50%">
+		<feGaussianBlur stdDeviation="1.7 " in="SourceGraphic"></feGaussianBlur>
+		<feFlood flood-color="#3d4574" flood-opacity="0.4" result="ShadowFeFlood" in="SourceGraphic"></feFlood>
+		<feComposite in="ShadowFeFlood" in2="SourceAlpha" operator="in" result="ShadowFeComposite"></feComposite>
+		<feOffset dx="3" dy="5" result="ShadowFeOffset" in="ShadowFeComposite"></feOffset>
+		<feBlend in="SourceGraphic" in2="ShadowFeOffset" mode="normal" result="ShadowFeBlend"></feBlend>
+	</filter>
+</defs><g class="cGlk step"><g class="shape" ><rect x="154" y="0" width="199" height="66" rx="6" stroke="#0D32B2" fill="#F7F8FE" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="253.5" y="38.5" fill="#0A0F25" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">a process has the pid?</text></g><g class="em9tYmll step"><g class="shape" ><rect x="95" y="187" width="184" height="66" rx="6" stroke="#0D32B2" fill="#F7F8FE" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="187" y="225.5" fill="#0A0F25" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">on Linux: a zombie?</text><title>A zombie, state Z or X in /proc/PID/stat, has exited and keeps its entry only until its parent collects it.</title></g><g class="cmVhZGFibGU= step"><g class="shape" ><rect x="26" y="374" width="188" height="66" rx="6" stroke="#0D32B2" fill="#F7F8FE" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="120" y="412.5" fill="#0A0F25" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">start time readable?</text><title>It is not when the process belongs to another user or /proc is mounted with hidepid.</title></g><g class="c2FtZQ== step"><g class="shape" ><rect x="104" y="561" width="163" height="66" rx="6" stroke="#0D32B2" fill="#F7F8FE" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="185.5" y="599.5" fill="#0A0F25" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">same start time?</text></g><g class="ZGVhZA== failed"><g class="shape" ><rect x="273" y="748" width="80" height="66" rx="6" stroke="#c62828" fill="#F7F8FE" class=" fill-B6" style="stroke-width:2;stroke-dasharray:8.000000,7.892511;" /></g><text x="313" y="786.5" fill="#c62828" class="text-bold" style="text-anchor:middle;font-size:16px">dead</text></g><g class="YWxpdmU= current"><g class="shape" filter="url(#shadow-filter-1)" ><rect x="0" y="748" width="79" height="66" rx="6" stroke="#0D32B2" fill="#F7F8FE" class=" stroke-B1 fill-B6" style="stroke-width:4;" /></g><text x="39.5" y="786.5" fill="#0A0F25" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">alive</text></g><g class="KHBpZCAtJmd0OyBkZWFkKVswXQ=="><marker id="mk-d2-1052742209-3488378134-1" markerWidth="10" markerHeight="12" refX="7" refY="6" viewBox="0 0 10 12" orient="auto" markerUnits="userSpaceOnUse"> <polygon points="0,0 10,6 0,12" fill="#0D32B2" class="connection fill-B1" stroke-width="2" /> </marker><path d="M 304.416883 66.605216 C 376.350006 114.300003 394.75 145.199997 394.75 173.25 C 394.75 201.300003 394.75 238.699997 394.75 266.75 C 394.75 294.799988 394.75 332.200012 394.75 360.25 C 394.75 388.299988 394.75 425.700012 394.75 453.75 C 394.75 481.799988 394.75 519.200012 394.75 547.25 C 394.75 575.299988 384.149994 699.700012 344.373489 745.480513" stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-1052742209-3488378134-1)" mask="url(#d2-1052742209-1)" /><text x="394.5" y="398" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px">no</text></g><g class="KHBpZCAtJmd0OyB6b21iaWUpWzBd"><path d="M 229.097686 67.134678 C 195.850006 114.300003 187.25 138.699997 187.25 183.5" stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-1052742209-3488378134-1)" mask="url(#d2-1052742209-1)" /><text x="193.5" y="127" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px">yes</text></g><g class="KHpvbWJpZSAtJmd0OyBkZWFkKVswXQ=="><path d="M 233.59763 253.703153 C 296.799988 301.299988 313 332.200012 313 360.25 C 313 388.299988 313 425.700012 313 453.75 C 313 481.799988 313 519.200012 313 547.25 C 313 575.299988 313 699.700012 313 744.5" stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-1052742209-3488378134-1)" mask="url(#d2-1052742209-1)" /><text x="313.5" y="488" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px">yes</text></g><g class="KHpvbWJpZSAtJmd0OyByZWFkYWJsZSlbMF0="><path d="M 162.097686 254.134678 C 128.850006 301.299988 120.25 325.700012 120.25 370.5" stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-1052742209-3488378134-1)" mask="url(#d2-1052742209-1)" /><text x="126.5" y="314" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px">no</text></g><g class="KHJlYWRhYmxlIC0mZ3Q7IGFsaXZlKVswXQ=="><path d="M 96.115796 441.147295 C 63.650002 488.299988 55.25 519.200012 55.25 547.25 C 55.25 575.299988 53.25 699.700012 46.058875 743.565862" stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-1052742209-3488378134-1)" mask="url(#d2-1052742209-1)" /><text x="55.5" y="594" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px">no</text></g><g class="KHJlYWRhYmxlIC0mZ3Q7IHNhbWUpWzBd"><path d="M 144.384204 441.147295 C 176.850006 488.299988 185.25 512.700012 185.25 557.5" stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-1052742209-3488378134-1)" mask="url(#d2-1052742209-1)" /><text x="179.5" y="501" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px">yes</text></g><g class="KHNhbWUgLSZndDsgYWxpdmUpWzBd"><path d="M 127.020653 627.504668 C 44.75 675.299988 25.75 699.700012 32.941125 743.565862" stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-1052742209-3488378134-1)" mask="url(#d2-1052742209-1)" /><text x="52.5" y="677" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px">yes</text></g><g class="KHNhbWUgLSZndDsgZGVhZClbMF0="><path d="M 185.25 628.5 C 185.25 675.299988 202.850006 700.299988 270.015056 749.147313" stroke="#0D32B2" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-1052742209-3488378134-1)" mask="url(#d2-1052742209-1)" /><text x="205.5" y="708" fill="#676C7E" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px">no, the pid was reused</text></g><g transform="translate(263 171)" class="appendix-icon"><title>A zombie, state Z or X in /proc/PID/stat, has exited and keeps its entry only until its parent collects it.</title><svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_3427_35082111-d2-1052742209-PJXW2YTJMU-1)">
+<path d="M16 31.1109C24.3456 31.1109 31.1111 24.3454 31.1111 15.9998C31.1111 7.65415 24.3456 0.888672 16 0.888672C7.65436 0.888672 0.888885 7.65415 0.888885 15.9998C0.888885 24.3454 7.65436 31.1109 16 31.1109Z" fill="white" stroke="#DEE1EB"/>
+<path d="M16 26C21.5228 26 26 21.5228 26 16C26 10.4772 21.5228 6 16 6C10.4772 6 6 10.4772 6 16C6 21.5228 10.4772 26 16 26Z" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 19.998V15.998" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 12H16.0098" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<defs>
+<clipPath id="clip0_3427_35082111-d2-1052742209-PJXW2YTJMU-1">
+<rect width="32" height="32" fill="white"/>
+</clipPath>
+</defs>
+</svg>
+</g><g transform="translate(198 358)" class="appendix-icon"><title>It is not when the process belongs to another user or /proc is mounted with hidepid.</title><svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_3427_35082111-d2-1052742209-OJSWCZDBMJWGK-1)">
+<path d="M16 31.1109C24.3456 31.1109 31.1111 24.3454 31.1111 15.9998C31.1111 7.65415 24.3456 0.888672 16 0.888672C7.65436 0.888672 0.888885 7.65415 0.888885 15.9998C0.888885 24.3454 7.65436 31.1109 16 31.1109Z" fill="white" stroke="#DEE1EB"/>
+<path d="M16 26C21.5228 26 26 21.5228 26 16C26 10.4772 21.5228 6 16 6C10.4772 6 6 10.4772 6 16C6 21.5228 10.4772 26 16 26Z" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 19.998V15.998" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 12H16.0098" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<defs>
+<clipPath id="clip0_3427_35082111-d2-1052742209-OJSWCZDBMJWGK-1">
+<rect width="32" height="32" fill="white"/>
+</clipPath>
+</defs>
+</svg>
+</g><mask id="d2-1052742209-1" maskUnits="userSpaceOnUse" x="-102" y="-101" width="605" height="1022">
+<rect x="-102" y="-101" width="605" height="1022" fill="white"></rect>
+<rect x="384" y="382" width="21" height="21" fill="black"></rect>
+<rect x="180" y="111" width="27" height="21" fill="black"></rect>
+<rect x="300" y="472" width="27" height="21" fill="black"></rect>
+<rect x="116" y="298" width="21" height="21" fill="black"></rect>
+<rect x="45" y="578" width="21" height="21" fill="black"></rect>
+<rect x="166" y="485" width="27" height="21" fill="black"></rect>
+<rect x="39" y="661" width="27" height="21" fill="black"></rect>
+<rect x="130" y="692" width="151" height="21" fill="black"></rect>
+</mask></svg></svg></div><div class="markdown-d2-dark"><svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" data-d2-version="v0.9.0" preserveAspectRatio="xMinYMin meet" width="605" height="1022" viewBox="0 0 605 1022"><svg class="d2-918521257 d2-svg" width="605" height="1022" viewBox="-102 -101 605 1022"><rect x="-102" y="-101" width="605" height="1022" rx="0" fill="#1E1E2E" class=" fill-N7" stroke-width="0" /><style type="text/css"><![CDATA[
+.appendix-icon {
+	filter: drop-shadow(0px 0px 32px rgba(31, 36, 58, 0.1));
+}
+.d2-918521257 .text-bold {
+	font-family: "d2-918521257-font-bold";
+}
+@font-face {
+	font-family: d2-918521257-font-bold;
+	src: url("data:application/font-woff;base64,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");
+}
+.d2-918521257 .text-italic {
+	font-family: "d2-918521257-font-italic";
+}
+@font-face {
+	font-family: d2-918521257-font-italic;
+	src: url("data:application/font-woff;base64,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");
+}]]></style><style type="text/css"><![CDATA[.shape {
+  shape-rendering: geometricPrecision;
+  stroke-linejoin: round;
+}
+.connection {
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+.blend {
+  mix-blend-mode: multiply;
+  opacity: 0.5;
+}
+
+		.d2-918521257 .fill-N1{fill:#CDD6F4;}
+		.d2-918521257 .fill-N2{fill:#BAC2DE;}
+		.d2-918521257 .fill-N7{fill:#1E1E2E;}
+		.d2-918521257 .fill-B1{fill:#CBA6f7;}
+		.d2-918521257 .fill-B6{fill:#313244;}
+		.d2-918521257 .stroke-B1{stroke:#CBA6f7;}
+		.d2-918521257 .stroke-B2{stroke:#CBA6f7;}.appendix text.text{fill:#CDD6F4}.md{--color-fg-default:#CDD6F4;--color-fg-muted:#BAC2DE;--color-fg-subtle:#A6ADC8;--color-canvas-default:#1E1E2E;--color-canvas-subtle:#313244;--color-border-default:#CBA6f7;--color-border-muted:#CBA6f7;--color-neutral-muted:#313244;--color-accent-fg:#CBA6f7;--color-accent-emphasis:#CBA6f7;--color-attention-subtle:#BAC2DE;--color-danger-fg:red;}.light-code{display: none}.dark-code{display: block}]]></style><defs>
+	<filter id="shadow-filter-2" width="200%" height="200%" x="-50%" y="-50%">
+		<feGaussianBlur stdDeviation="1.7 " in="SourceGraphic"></feGaussianBlur>
+		<feFlood flood-color="#3d4574" flood-opacity="0.4" result="ShadowFeFlood" in="SourceGraphic"></feFlood>
+		<feComposite in="ShadowFeFlood" in2="SourceAlpha" operator="in" result="ShadowFeComposite"></feComposite>
+		<feOffset dx="3" dy="5" result="ShadowFeOffset" in="ShadowFeComposite"></feOffset>
+		<feBlend in="SourceGraphic" in2="ShadowFeOffset" mode="normal" result="ShadowFeBlend"></feBlend>
+	</filter>
+</defs><g class="cGlk step"><g class="shape" ><rect x="154" y="0" width="199" height="66" rx="6" stroke="#CBA6f7" fill="#313244" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="253.5" y="38.5" fill="#CDD6F4" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">a process has the pid?</text></g><g class="em9tYmll step"><g class="shape" ><rect x="95" y="187" width="184" height="66" rx="6" stroke="#CBA6f7" fill="#313244" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="187" y="225.5" fill="#CDD6F4" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">on Linux: a zombie?</text><title>A zombie, state Z or X in /proc/PID/stat, has exited and keeps its entry only until its parent collects it.</title></g><g class="cmVhZGFibGU= step"><g class="shape" ><rect x="26" y="374" width="188" height="66" rx="6" stroke="#CBA6f7" fill="#313244" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="120" y="412.5" fill="#CDD6F4" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">start time readable?</text><title>It is not when the process belongs to another user or /proc is mounted with hidepid.</title></g><g class="c2FtZQ== step"><g class="shape" ><rect x="104" y="561" width="163" height="66" rx="6" stroke="#CBA6f7" fill="#313244" class=" stroke-B1 fill-B6" style="stroke-width:2;" /></g><text x="185.5" y="599.5" fill="#CDD6F4" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">same start time?</text></g><g class="ZGVhZA== failed"><g class="shape" ><rect x="273" y="748" width="80" height="66" rx="6" stroke="#c62828" fill="#313244" class=" fill-B6" style="stroke-width:2;stroke-dasharray:8.000000,7.892511;" /></g><text x="313" y="786.5" fill="#c62828" class="text-bold" style="text-anchor:middle;font-size:16px">dead</text></g><g class="YWxpdmU= current"><g class="shape" filter="url(#shadow-filter-2)" ><rect x="0" y="748" width="79" height="66" rx="6" stroke="#CBA6f7" fill="#313244" class=" stroke-B1 fill-B6" style="stroke-width:4;" /></g><text x="39.5" y="786.5" fill="#CDD6F4" class="text-bold fill-N1" style="text-anchor:middle;font-size:16px">alive</text></g><g class="KHBpZCAtJmd0OyBkZWFkKVswXQ=="><marker id="mk-d2-918521257-3488378134-2" markerWidth="10" markerHeight="12" refX="7" refY="6" viewBox="0 0 10 12" orient="auto" markerUnits="userSpaceOnUse"> <polygon points="0,0 10,6 0,12" fill="#CBA6f7" class="connection fill-B1" stroke-width="2" /> </marker><path d="M 304.416883 66.605216 C 376.350006 114.300003 394.75 145.199997 394.75 173.25 C 394.75 201.300003 394.75 238.699997 394.75 266.75 C 394.75 294.799988 394.75 332.200012 394.75 360.25 C 394.75 388.299988 394.75 425.700012 394.75 453.75 C 394.75 481.799988 394.75 519.200012 394.75 547.25 C 394.75 575.299988 384.149994 699.700012 344.373489 745.480513" stroke="#CBA6f7" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-918521257-3488378134-2)" mask="url(#d2-918521257-2)" /><text x="394.5" y="398" fill="#BAC2DE" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px">no</text></g><g class="KHBpZCAtJmd0OyB6b21iaWUpWzBd"><path d="M 229.097686 67.134678 C 195.850006 114.300003 187.25 138.699997 187.25 183.5" stroke="#CBA6f7" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-918521257-3488378134-2)" mask="url(#d2-918521257-2)" /><text x="193.5" y="127" fill="#BAC2DE" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px">yes</text></g><g class="KHpvbWJpZSAtJmd0OyBkZWFkKVswXQ=="><path d="M 233.59763 253.703153 C 296.799988 301.299988 313 332.200012 313 360.25 C 313 388.299988 313 425.700012 313 453.75 C 313 481.799988 313 519.200012 313 547.25 C 313 575.299988 313 699.700012 313 744.5" stroke="#CBA6f7" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-918521257-3488378134-2)" mask="url(#d2-918521257-2)" /><text x="313.5" y="488" fill="#BAC2DE" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px">yes</text></g><g class="KHpvbWJpZSAtJmd0OyByZWFkYWJsZSlbMF0="><path d="M 162.097686 254.134678 C 128.850006 301.299988 120.25 325.700012 120.25 370.5" stroke="#CBA6f7" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-918521257-3488378134-2)" mask="url(#d2-918521257-2)" /><text x="126.5" y="314" fill="#BAC2DE" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px">no</text></g><g class="KHJlYWRhYmxlIC0mZ3Q7IGFsaXZlKVswXQ=="><path d="M 96.115796 441.147295 C 63.650002 488.299988 55.25 519.200012 55.25 547.25 C 55.25 575.299988 53.25 699.700012 46.058875 743.565862" stroke="#CBA6f7" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-918521257-3488378134-2)" mask="url(#d2-918521257-2)" /><text x="55.5" y="594" fill="#BAC2DE" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px">no</text></g><g class="KHJlYWRhYmxlIC0mZ3Q7IHNhbWUpWzBd"><path d="M 144.384204 441.147295 C 176.850006 488.299988 185.25 512.700012 185.25 557.5" stroke="#CBA6f7" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-918521257-3488378134-2)" mask="url(#d2-918521257-2)" /><text x="179.5" y="501" fill="#BAC2DE" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px">yes</text></g><g class="KHNhbWUgLSZndDsgYWxpdmUpWzBd"><path d="M 127.020653 627.504668 C 44.75 675.299988 25.75 699.700012 32.941125 743.565862" stroke="#CBA6f7" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-918521257-3488378134-2)" mask="url(#d2-918521257-2)" /><text x="52.5" y="677" fill="#BAC2DE" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px">yes</text></g><g class="KHNhbWUgLSZndDsgZGVhZClbMF0="><path d="M 185.25 628.5 C 185.25 675.299988 202.850006 700.299988 270.015056 749.147313" stroke="#CBA6f7" fill="none" class="connection stroke-B1" style="stroke-width:2;" marker-end="url(#mk-d2-918521257-3488378134-2)" mask="url(#d2-918521257-2)" /><text x="205.5" y="708" fill="#BAC2DE" class="text-italic fill-N2" style="text-anchor:middle;font-size:16px">no, the pid was reused</text></g><g transform="translate(263 171)" class="appendix-icon"><title>A zombie, state Z or X in /proc/PID/stat, has exited and keeps its entry only until its parent collects it.</title><svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_3427_35082111-d2-918521257-PJXW2YTJMU-2)">
+<path d="M16 31.1109C24.3456 31.1109 31.1111 24.3454 31.1111 15.9998C31.1111 7.65415 24.3456 0.888672 16 0.888672C7.65436 0.888672 0.888885 7.65415 0.888885 15.9998C0.888885 24.3454 7.65436 31.1109 16 31.1109Z" fill="white" stroke="#DEE1EB"/>
+<path d="M16 26C21.5228 26 26 21.5228 26 16C26 10.4772 21.5228 6 16 6C10.4772 6 6 10.4772 6 16C6 21.5228 10.4772 26 16 26Z" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 19.998V15.998" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 12H16.0098" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<defs>
+<clipPath id="clip0_3427_35082111-d2-918521257-PJXW2YTJMU-2">
+<rect width="32" height="32" fill="white"/>
+</clipPath>
+</defs>
+</svg>
+</g><g transform="translate(198 358)" class="appendix-icon"><title>It is not when the process belongs to another user or /proc is mounted with hidepid.</title><svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g clip-path="url(#clip0_3427_35082111-d2-918521257-OJSWCZDBMJWGK-2)">
+<path d="M16 31.1109C24.3456 31.1109 31.1111 24.3454 31.1111 15.9998C31.1111 7.65415 24.3456 0.888672 16 0.888672C7.65436 0.888672 0.888885 7.65415 0.888885 15.9998C0.888885 24.3454 7.65436 31.1109 16 31.1109Z" fill="white" stroke="#DEE1EB"/>
+<path d="M16 26C21.5228 26 26 21.5228 26 16C26 10.4772 21.5228 6 16 6C10.4772 6 6 10.4772 6 16C6 21.5228 10.4772 26 16 26Z" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 19.998V15.998" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M16 12H16.0098" stroke="#2E3346" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</g>
+<defs>
+<clipPath id="clip0_3427_35082111-d2-918521257-OJSWCZDBMJWGK-2">
+<rect width="32" height="32" fill="white"/>
+</clipPath>
+</defs>
+</svg>
+</g><mask id="d2-918521257-2" maskUnits="userSpaceOnUse" x="-102" y="-101" width="605" height="1022">
+<rect x="-102" y="-101" width="605" height="1022" fill="white"></rect>
+<rect x="384" y="382" width="21" height="21" fill="black"></rect>
+<rect x="180" y="111" width="27" height="21" fill="black"></rect>
+<rect x="300" y="472" width="27" height="21" fill="black"></rect>
+<rect x="116" y="298" width="21" height="21" fill="black"></rect>
+<rect x="45" y="578" width="21" height="21" fill="black"></rect>
+<rect x="166" y="485" width="27" height="21" fill="black"></rect>
+<rect x="39" y="661" width="27" height="21" fill="black"></rect>
+<rect x="130" y="692" width="151" height="21" fill="black"></rect>
+</mask></svg></svg></div></div><figcaption>Is the recorded process still running?</figcaption></figure>
+<p>A recorded start time that couldn't be read is treated the same way: the
+process counts as alive.<sup id="fnref2:proc-stat"><a class="footnote-ref" href="#fn:proc-stat">2</a></sup></p>
+<p>On Linux there's one more catch: containers give their processes their own
+set of pids, called a pid namespace, so the same pid can mean different
+processes in different containers. That's why
+<a href="../glossary/#waiter-slot">waiter slots</a> and the header's creator fields also
+record the namespace, and a process in another namespace, or one whose
+namespace is unknown, is never judged dead.</p>
 <h2 id="where-the-check-is-used">Where the check is used<a class="headerlink" href="#where-the-check-is-used" title="Permanent link">&para;</a></h2>
 <ul>
 <li>Freeing the waiter slots of dead processes, as <a href="../waiting-for-changes/#waking-a-process">Waiting for
@@ -3094,8 +3545,10 @@ whose namespace is unknown, is never judged dead.</p>
   name that holds no published box is checked the same way. The docstring
   of <code>SegmentExistsError</code> lists the messages that result.</li>
 </ul>
-<p>Nothing is removed automatically, even when the creator has exited: other
-processes may still use a segment whose creator died.</p>
+<p>Even when the creator has exited, nothing is removed automatically, because
+other processes may still be using a segment whose creator died. Removing
+it is your call; <a href="../../how-to/clean-up-segments/">How to clean up segments</a>
+shows how.</p>
 <h2 id="sources">Sources<a class="headerlink" href="#sources" title="Permanent link">&para;</a></h2>
 <div class="footnote">
 <hr />

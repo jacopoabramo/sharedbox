@@ -3099,51 +3099,58 @@
 
 
 <h1 id="limits">Limits<a class="headerlink" href="#limits" title="Permanent link">&para;</a></h1>
-<p>This page lists what sharedbox does not do, and the limits that come from
-the operating system or from how a <a href="../glossary/#box">box</a> is built.</p>
+<p>Before you build on <code>sharedbox</code>, it's worth knowing where it stops. This
+page lists what it doesn't do, and the limits that come from the operating
+system or from how a <a href="../glossary/#box">box</a> is built.</p>
 <h2 id="platforms">Platforms<a class="headerlink" href="#platforms" title="Permanent link">&para;</a></h2>
-<p>sharedbox runs on Windows and Linux. macOS is not supported.</p>
-<p>On Windows the <a href="../glossary/#segment">segment</a> is freed with its last
-<a href="../glossary/#handle">handle</a>, and <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-attribute&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-attribute-name&quot;&gt;unlink&lt;/span&gt;
+<p><code>sharedbox</code> runs on Windows and Linux. macOS is not supported.</p>
+<p>On Windows the <a href="../glossary/#segment">segment</a> goes away when its last
+<a href="../glossary/#handle">handle</a> is closed, so
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-attribute&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-attribute-name&quot;&gt;unlink&lt;/span&gt;
 
 
   &lt;span class=&quot;doc doc-labels&quot;&gt;
       &lt;small class=&quot;doc doc-label doc-label-class-attribute&quot;&gt;&lt;code&gt;class-attribute&lt;/code&gt;&lt;/small&gt;
       &lt;small class=&quot;doc doc-label doc-label-instance-attribute&quot;&gt;&lt;code&gt;instance-attribute&lt;/code&gt;&lt;/small&gt;
-  &lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.unlink"><code>unlink</code></a>
-does nothing. A <code>lock_timeout</code> can expire late by up to one timer tick; the
-Notes of <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;SharedBox&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox"><code>SharedBox</code></a> give its length, and <a href="../reading-and-writing/#waiting-for-the-lock">Reading
-and writing</a> the measurements.</p>
-<p>On Linux the segment is created with mode <code>0600</code>, so only the same user can
-open it. Only <code>unlink</code> removes its name, and a segment that is never
-unlinked stays until reboot (see <a href="../closing-and-lifetime/#lifetime-the-same-rules-as-multiprocessingshared_memory">Closing and
-lifetime</a>).</p>
-<p>Releases up to 0.3.0rc0 named segments differently and used another
-layout, so they and this release do not see each other's boxes. Releases
-0.3.0 and 0.3.1 cannot open a box made with layout 2.0; this release opens
-the boxes of 0.3.0 and 0.3.1.</p>
+  &lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.unlink"><code>unlink</code></a> has nothing to do. A <code>lock_timeout</code>
+can also run out late, by up to one tick of the system timer; the Notes of
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;SharedBox&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox"><code>SharedBox</code></a> give how long that is, and
+<a href="../reading-and-writing/#waiting-for-the-lock">Reading and writing</a> the
+measurements.</p>
+<p>On Linux the segment is created with mode <code>0600</code>, so only processes of the
+same user can open it. Only <code>unlink</code> removes its name, so a segment nobody
+unlinks stays until the machine restarts (see
+<a href="../closing-and-lifetime/#lifetime-the-same-rules-as-multiprocessingshared_memory">Closing and lifetime</a>).</p>
+<p>If processes running different releases of <code>sharedbox</code> share boxes, check
+which ones can talk to each other. Releases up to 0.3.0rc0 named segments
+differently and used another layout, so they and later releases don't see
+each other's boxes at all. From 0.4.0 on, <code>sharedbox</code> opens boxes made by
+0.3.0 and 0.3.1, but those two releases can't open a box made by 0.4.0 or
+later.</p>
 <h2 id="open-boxes-and-file-descriptors">Open boxes and file descriptors<a class="headerlink" href="#open-boxes-and-file-descriptors" title="Permanent link">&para;</a></h2>
-<p>On Linux every open box keeps one file descriptor, so a process reaches the
-default limit of 1024 (<code>ulimit -n</code>) at about 1000 open boxes. Box objects
-made by reading a <a href="../glossary/#reference-field">reference field</a>, and the
-handles that forwarding attaches, count too.</p>
+<p>On Linux every open box keeps one file descriptor, and a process can have
+1024 of those by default (<code>ulimit -n</code>), so you run out at about 1000 open
+boxes. Boxes opened for you by reading a
+<a href="../glossary/#reference-field">reference field</a>, and the handles that
+following opens, count too.</p>
 <h2 id="following-boxes">Following boxes<a class="headerlink" href="#following-boxes" title="Permanent link">&para;</a></h2>
-<p><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;follow&lt;/span&gt;" href="../../reference/api/events/#sharedbox.BoxEvents.follow"><code>follow</code></a> takes, for each box it follows, one
+<p>Following adds up quickly. For each box it follows,
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;follow&lt;/span&gt;" href="../../reference/api/events/#sharedbox.BoxEvents.follow"><code>follow</code></a> takes one
 <a href="../glossary/#waiter-slot">waiter slot</a> in that box, and one handle and one
-<a href="../glossary/#watcher">watcher</a> thread in the following process. Following
-64 chains of 3 boxes runs 192 threads, and a wide graph can use up the
-waiter slots of a box. <a href="../waiting-for-changes/#forwarding-costs">Forwarding
+<a href="../glossary/#watcher">watcher</a> thread in your process. Following 64 chains
+of 3 boxes runs 192 threads, and a wide graph can use up all the waiter
+slots of a box. <a href="../waiting-for-changes/#forwarding-costs">Forwarding
 costs</a> has the measurements.</p>
 <h2 id="what-a-box-holds">What a box holds<a class="headerlink" href="#what-a-box-holds" title="Permanent link">&para;</a></h2>
 <p>A box holds the types listed in <a href="../field-types/">Field types</a>, and no
-other objects. The number of fields and the size of a capacity are
-limited: <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;SharedBox&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox"><code>SharedBox</code></a> and
+other objects. How many fields a box has and how big a capacity can be are
+limited too; <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;SharedBox&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox"><code>SharedBox</code></a> and
 <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;Capacity&lt;/span&gt;
 
 
   &lt;span class=&quot;doc doc-labels&quot;&gt;
       &lt;small class=&quot;doc doc-label doc-label-dataclass&quot;&gt;&lt;code&gt;dataclass&lt;/code&gt;&lt;/small&gt;
-  &lt;/span&gt;" href="../../reference/api/box/#sharedbox.Capacity"><code>Capacity</code></a> give the numbers. Also:</p>
+  &lt;/span&gt;" href="../../reference/api/box/#sharedbox.Capacity"><code>Capacity</code></a> give the numbers. The other limits are:</p>
 <ul>
 <li>A collection holds 1 to 1048576 elements.</li>
 <li>Types nest 16 levels deep.</li>
@@ -3153,8 +3160,11 @@ limited: <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-s
 <li>A record, arrays included, is less than 4 GiB.</li>
 </ul>
 <h2 id="one-lock-per-box">One lock per box<a class="headerlink" href="#one-lock-per-box" title="Permanent link">&para;</a></h2>
-<p>Writers take one lock per box and take turns, and readers never block
-writers. <a href="../reading-and-writing/">Reading and writing</a> explains why.</p>
+<p>All writers of a box share one lock and take turns, while readers never
+hold up a writer. In practice writers rarely wait for each other, because a
+write holds the lock only for the few nanoseconds it takes to copy the
+value. <a href="../reading-and-writing/">Reading and writing</a> explains how this
+works.</p>
 
 
 

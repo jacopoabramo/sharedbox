@@ -3632,13 +3632,16 @@
 
 
 <h1 id="segment-layout">Segment layout<a class="headerlink" href="#segment-layout" title="Permanent link">&para;</a></h1>
-<p>This page describes layout 2.0, which this version writes, and layout
-1.0, which 0.3 releases wrote and this version still opens. It describes
-how a box is stored in shared memory: the object names, the bytes of the
-mapping, and the protocols every process follows to read, write and wait.
-It is the contract between sharedbox and any other code that opens a box.
-<code>include/sharedbox/sharedbox.hpp</code> implements it, and the Python extension
-runs on that header.</p>
+<p>This page is the full contract for how a box is stored in shared memory:
+the names of the objects, every byte of the mapping, and the steps every
+process follows to read, write and wait. You need it if you write code that
+opens a box without <code>sharedbox.hpp</code>, or if you change <code>sharedbox</code> itself;
+to understand the ideas first, read
+<a href="../../explanation/how-a-box-is-stored/">How a box is stored</a>.
+<code>include/sharedbox/sharedbox.hpp</code> implements this contract, and the Python
+extension runs on that header.</p>
+<p>It describes layout 2.0, which <code>sharedbox</code> 0.4.0 and later write, and
+layout 1.0, which the 0.3 releases wrote and later releases still open.</p>
 <h2 id="goal">Goal<a class="headerlink" href="#goal" title="Permanent link">&para;</a></h2>
 <p>C++ and C code can use a sharedbox box, both as an extension loaded in a
 Python process and as a standalone program with no Python, without linking
