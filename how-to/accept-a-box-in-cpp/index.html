@@ -3220,10 +3220,10 @@ your build at the header in one of two ways:</p>
 <li>Put <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-function&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;get_include&lt;/span&gt;" href="../../reference/api/library-authors/#sharedbox.get_include"><code>sharedbox.get_include()</code></a> on the include
   path.</li>
 <li>With CMake, add <code>Path(sharedbox.get_include()).parent</code> to
-  <code>CMAKE_PREFIX_PATH</code>, call <code>find_package(sharedbox 0.4 CONFIG REQUIRED)</code>
+  <code>CMAKE_PREFIX_PATH</code>, call <code>find_package(sharedbox 0.5 CONFIG REQUIRED)</code>
   and link <code>sharedbox::headers</code> (C++) or <code>sharedbox::c</code> (C). The version
   is optional. Before 1.0 a request accepts only the same minor version,
-  so <code>0.4</code> accepts 0.4.0 and later 0.4 releases but not 0.5.</li>
+  so <code>0.5</code> accepts 0.5.0 and later 0.5 releases but not 0.6.</li>
 </ul>
 <p><code>sharedbox::c</code> compiles <code>sharedbox_c.cpp</code> into the target that links it,
 so your project has to enable the CXX language as well as C; if it doesn't,
