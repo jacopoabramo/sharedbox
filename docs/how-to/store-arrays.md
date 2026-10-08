@@ -4,16 +4,20 @@ icon: lucide/wrench
 
 # How to store arrays
 
-An array [field](../explanation/glossary.md#field) holds an array of a
-fixed shape and element type, from any library that exports its arrays
-through DLPack or the buffer protocol, in CPU memory.
+A box can hold arrays too, such as an image from a camera or a block of
+samples. An array [field](../explanation/glossary.md#field) has a fixed shape and element type,
+and it takes arrays from `numpy`, `torch` or any other library that can
+hand its arrays over through DLPack or the buffer protocol, as long as they
+are in CPU memory. This guide shows how to declare one, how to read and
+write it, and the two ways to save a copy when the arrays are large.
 
 ## 1. Declare the field with a shape and a dtype
 
-[`Shape`][sharedbox.Shape] and [`DType`][sharedbox.DType] go in the
-annotation. The annotated type decides what a read returns: a
-`numpy.ndarray`, a `torch.Tensor`, or with
-[`SupportsDLPack`][sharedbox.SupportsDLPack] sharedbox's own array object:
+Put a [`Shape`][sharedbox.Shape] and a [`DType`][sharedbox.DType] in the
+annotation. The type you annotate decides what a read gives you back: a
+`numpy.ndarray`, a `torch.Tensor`, or, with
+[`SupportsDLPack`][sharedbox.SupportsDLPack], an array object of
+`sharedbox`'s own that any DLPack library can take:
 
 ```{.python}
 --8<-- "docs/examples/store_arrays.py:declare"
@@ -21,28 +25,32 @@ annotation. The annotated type decides what a read returns: a
 
 ## 2. Write and read an array
 
+You assign and read an array field like any other:
+
 ```{.python}
 --8<-- "docs/examples/store_arrays.py:write"
 ```
 
-A write copies the array into the [box](../explanation/glossary.md#box),
-and a read copies it out into a new array, so the two never share memory.
+A write copies the array into the [box](../explanation/glossary.md#box), and a read copies it out
+into a new array, so changing your array afterwards never changes the box,
+and the other way round.
 
 ## 3. Read into an array you already have
 
-A read allocates a new array every time. To read the same field again and
-again, for example once per frame, pass an array you already have to
-[`read_into`][sharedbox.SharedBox.read_into], which copies the field into
-it and returns it:
+A plain read gets fresh memory for a new array every time. If you read the
+same field again and again, for example once per frame, pass an array you
+already have to [`read_into`][sharedbox.SharedBox.read_into] instead. It
+copies the field into that array and returns it:
 
 ```{.python}
 --8<-- "docs/examples/store_arrays.py:read-into"
 ```
 
-The array must be writable, C-contiguous, in CPU memory, and have the
-field's dtype and shape. On Windows, getting fresh memory for a large array
-costs more than copying into it, so reading into an array you keep is much
-faster there.
+The array has to be writable, laid out in one block in C order
+(C-contiguous), in CPU memory, and of the field's dtype and shape. On
+Windows, getting fresh memory for a large array costs far more than the
+copy itself, so reading into an array you keep is several times faster
+there.
 
 ## 4. Fill an array field in place
 
@@ -78,9 +86,9 @@ A `SupportsDLPack` field reads back an object any DLPack library imports:
 --8<-- "docs/examples/store_arrays.py:any-library"
 ```
 
-For an array type other than numpy's and torch's, call
-[`register_array_type`][sharedbox.register_array_type] with the type and
-its `from_dlpack` function before defining the class.
+To read fields back as an array type other than `numpy`'s and `torch`'s,
+call [`register_array_type`][sharedbox.register_array_type] with the type
+and its `from_dlpack` function before you define the box class.
 
 ## 6. Handle the wrong shape or dtype
 
@@ -88,9 +96,10 @@ its `from_dlpack` function before defining the class.
 --8<-- "docs/examples/store_arrays.py:wrong-shape"
 ```
 
-The wrong dtype, or a value that is not an array, raises `TypeError`.
-
-A large array costs a copy on every read and write; see
+If you assign an array of the wrong shape, you get a `ValueError`; the
+wrong dtype, or a value that isn't an array at all, raises `TypeError`.
+Either way the field keeps its old value. For what a large array costs to
+read and write, see
 [How fast a box is](../explanation/performance.md#large-values).
 
 ??? example "The whole script"
