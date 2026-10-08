@@ -30,11 +30,11 @@ class:
 
 !!! warning "Your constructor runs when a read builds the record"
     A read builds the record by calling its class, so `__post_init__`,
-    `attrs` converters and validators run on every read of a record you can
-    change, and on the first read after each write of a frozen one. Make
-    sure running them a second time changes nothing: a converter that
-    rounds a float, for example, must leave an already rounded float as it
-    is, or a read won't match what you wrote.
+    `attrs` converters and validators run on every read when the record's
+    class isn't frozen, and only on the first read after each write when it
+    is. Make sure running them a second time changes nothing: a converter
+    that rounds a float, for example, must leave an already rounded float as
+    it is, or a read won't match what you wrote.
 
 ## 3. Change one member
 
@@ -46,8 +46,9 @@ new one with the change, and assign it back:
 --8<-- "docs/examples/store_records.py:change-one-member"
 ```
 
-If you use a frozen dataclass or a `NamedTuple`, the record you read is read-only, so
-forgetting to assign it back gives you an error instead of a silent no-op.
+If you use a frozen dataclass or a `NamedTuple`, the record you read is
+read-only, so forgetting to assign it back gives you an error instead of a
+silent no-op.
 
 ## 4. Leave out a `TypedDict` key
 

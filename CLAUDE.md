@@ -284,11 +284,10 @@ if __name__ == "__main__":
     Motor.unlink()
 ```
 
-A read decodes the stored bytes; a value that cannot be changed (a frozen
-record, a tuple, a `datetime` and the like) is reused until its field is
-written. `update(**values)` writes
-several fields at once; `watch(field)` and `events` report changes from any
-process. C++ and C code take a box through `__sharedbox_box__` or open it by
+A read decodes the stored bytes; a value that cannot be changed (a
+`datetime`, or a frozen record, tuple or frozenset holding only such values)
+is reused until its field is written. `update(**values)` writes several
+fields at once; `watch(field)` and `events` report changes from any process. C++ and C code take a box through `__sharedbox_box__` or open it by
 name; see `docs/how-to/accept-a-box-in-cpp.md`,
 `docs/how-to/accept-a-box-in-c.md` and
 `docs/how-to/open-a-box-from-a-program.md`.

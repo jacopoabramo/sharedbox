@@ -83,14 +83,15 @@ one each time depends on whether you could change it. A list, a dict, a
 set, an array, a `TypedDict` or a record whose class isn't frozen comes back
 as a new object on every read, so changing the one you hold changes nothing
 in the box; to store the change, assign it back. A value you can't change,
-such as a `datetime`, a `Decimal`, a `UUID`, a tuple, a frozenset, an enum
-member or a record whose class is declared frozen, is built again only
-after a write to its field, and until then every read returns the same
-object, so `box.when is box.when` holds.
+such as a `datetime`, a `Decimal`, a `UUID` or an enum member, is built
+again only after a write to its field, and until then every read returns
+the same object, so `box.when is box.when` holds. A tuple, a frozenset or a
+record whose class is declared frozen counts only when everything it holds
+can't be changed either, so a tuple holding a list is built on every read.
 
 A record is built by calling its class, which means its `__post_init__`,
-converters and validators run on every read of a record you can change, and
-on the first read after each write of a frozen one.
+converters and validators run on every read when the record's class isn't
+frozen, and only on the first read after each write when it is.
 
 ## Dates and times
 

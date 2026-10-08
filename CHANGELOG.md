@@ -31,7 +31,9 @@ Dates are marked as `DD-MM-YYYY`
   frozenset, an enum, flag or literal, `complex`, `date`, `time`,
   `datetime`, `timedelta`, `UUID` or `Decimal`) returns the value the
   previous read built until the field is written: 40 ns instead of 540 ns
-  for a frozen dataclass of four fields on Windows.
+  for a frozen dataclass of four fields on Windows. A tuple, frozenset or
+  record qualifies only when its members are of these kinds or `bool`,
+  `int`, `float`, `str` or `bytes`.
 - `SharedBox`: a frozen record's `__post_init__`, attrs converters and
   validators run on the first read after each write instead of on every
   read.
