@@ -66,32 +66,90 @@ Step through what happens, and point at a shape to read more:
 
 ```d2 title="One box, two processes"
 ...@diagrams/style
-direction: left
-parent: "parent process" {
-  class: process
-  tooltip: Creates the box with Motor(1, False, "x-axis") and connects a callback to events.position.
+label: "The parent creates the box and connects a callback to position."
+grid-columns: 1
+vertical-gap: 30
+pic: "" {
+  style.stroke-width: 0
+  style.fill: transparent
+  grid-columns: 3
+  horizontal-gap: 160
+  parent: "parent process" {
+    class: process
+    tooltip: Creates the box with Motor(1, False, "x-axis") and connects a callback to events.position.
+  }
+  box: "the box\nin shared memory" {
+    class: hardware
+    tooltip: One named block of shared memory holding position, enabled and label. Every process that opens it reads and writes the same bytes.
+  }
+  child: "child process" {class: [process; hidden]}
+  parent -> box: "creates"
+  child -> box: "attaches by class" {style.opacity: 0}
+  child -> box: "position = 10" {style.opacity: 0}
+  box -> parent: "prints 1 -> 10" {style.opacity: 0}
 }
-box: "the box\nin shared memory" {
-  class: hardware
-  tooltip: One named block of shared memory holding position, enabled and label. Every process that opens it reads and writes the same bytes.
+code: "" {
+  style.stroke-width: 0
+  style.fill: transparent
+  grid-columns: 2
+  horizontal-gap: 60
+  parent: |python
+    1 -> with Motor(1, False, "x-axis") as motor:
+    2        motor.events.position.connect(lambda new, old: ...)
+    3        child.start()
+  |
+  child: |python
+    1    motor = Motor.attach()
+    2    motor.position = 10
+    3    motor.close()
+  |
 }
-child: "child process" {class: [process; hidden]}
-parent -> box: "creates"
-child -> box: "attaches by class" {style.opacity: 0}
-child -> box: "position = 10" {style.opacity: 0}
-box -> parent: "prints 1 -> 10" {style.opacity: 0}
 steps: {
   1: {
-    child.class: process
-    child.tooltip: Runs worker(). It is never handed the box. Motor.attach() works out the box's name from the class.
-    (child -> box)[0].style.opacity: 1
+    label: "The child starts and attaches to the box. Nobody hands it the box: Motor.attach() works out its name from the class."
+    pic.child.class: process
+    pic.child.tooltip: Runs worker() in a separate process.
+    (pic.child -> pic.box)[0].style.opacity: 1
+    code.parent: |python
+      1    with Motor(1, False, "x-axis") as motor:
+      2        motor.events.position.connect(lambda new, old: ...)
+      3 ->     child.start()
+    |
+    code.child: |python
+      1 -> motor = Motor.attach()
+      2    motor.position = 10
+      3    motor.close()
+    |
   }
   2: {
-    (child -> box)[1].style.opacity: 1
+    label: "The child writes position. The new value is in shared memory at once, for every process."
+    (pic.child -> pic.box)[0].style.opacity: 0
+    (pic.child -> pic.box)[1].style.opacity: 1
+    code.parent: |python
+      1    with Motor(1, False, "x-axis") as motor:
+      2        motor.events.position.connect(lambda new, old: ...)
+      3 ->     child.start()
+    |
+    code.child: |python
+      1    motor = Motor.attach()
+      2 -> motor.position = 10
+      3    motor.close()
+    |
   }
   3: {
-    (box -> parent)[0].style.opacity: 1
-    parent.tooltip: The parent's watcher thread wakes on the write and calls the callback with the new and old value.
+    label: "The parent's watcher thread wakes on the write and calls the callback, which prints 1 -> 10."
+    (pic.parent -> pic.box)[0].style.opacity: 0
+    (pic.box -> pic.parent)[0].style.opacity: 1
+    code.parent: |python
+      1    with Motor(1, False, "x-axis") as motor:
+      2 ->     motor.events.position.connect(lambda new, old: ...)
+      3        child.start()
+    |
+    code.child: |python
+      1    motor = Motor.attach()
+      2    motor.position = 10
+      3    motor.close()
+    |
   }
 }
 ```
