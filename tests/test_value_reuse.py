@@ -362,3 +362,15 @@ def test_a_reused_value_that_refers_to_its_box_is_collected(unique_name: str) ->
     gc.collect()
     assert gone() is None
     Holder.unlink(unique_name)
+
+
+def test_close_lets_go_of_a_value_a_last_event_callback_read(unique_name: str) -> None:
+    """Check that close() drops a value read by a callback that close() delivers."""
+    kept: list[weakref.ref[Owned]] = []
+    with Holder.create(unique_name, Owned(1)) as box:
+        box.events.owned.connect(lambda new, old: kept.append(weakref.ref(box.owned)))
+        box.owned = Owned(2)
+    gc.collect()
+    assert kept
+    assert all(ref() is None for ref in kept)
+    Holder.unlink(unique_name)

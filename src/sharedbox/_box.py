@@ -1264,12 +1264,12 @@ class SharedBox(metaclass=SharedBoxMeta):
             box = boxes.pop()
             if box._finalizer.detach() is None:
                 continue
-            box._values.clear()
             try:
                 release(box._watcher, box._segment, wait)
             except BaseException as exc:
                 # Keep closing the rest; the first failure is raised once every box is closed.
                 error = error or exc
+            box._values.clear()
             with box._refs_lock:
                 cached, box._refs = box._refs, {}
             boxes.extend(inner for _, inner, _ in cached.values())
