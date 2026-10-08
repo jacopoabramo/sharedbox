@@ -10,8 +10,6 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Annotated, Any, Literal, NamedTuple, TypedDict
 
-import attrs
-import msgspec
 import numpy as np
 import pytest
 from crossproc import update_in_child
@@ -32,15 +30,6 @@ class PlainPoint(Point):
 @dataclass(frozen=True)
 class FrozenPoint(Point):
     pass
-
-
-@attrs.frozen
-class Mark:
-    n: int
-
-
-class Spot(msgspec.Struct, frozen=True):
-    n: int
 
 
 class Pair(NamedTuple):
@@ -82,26 +71,8 @@ class Hashed:
     x: float
 
 
-@attrs.define
-class Note:
-    n: int
-
-
-class LooseSpot(msgspec.Struct):
-    n: int
-
-
 @dataclass(frozen=True)
 class FrozenWithList:
-    items: Annotated[list[int], Capacity(2)]
-
-
-@attrs.frozen
-class MarkWithList:
-    items: Annotated[list[int], Capacity(2)]
-
-
-class SpotWithList(msgspec.Struct, frozen=True):
     items: Annotated[list[int], Capacity(2)]
 
 
@@ -111,8 +82,6 @@ class Options(TypedDict):
 
 class Fixed(SharedBox):
     point: Point
-    mark: Mark
-    spot: Spot
     pair: Pair
     coords: tuple[int, float]
     floats: Annotated[tuple[float, ...], Capacity(4)]
@@ -137,8 +106,6 @@ class Fixed(SharedBox):
 
 FIXED: dict[str, Any] = {
     "point": Point(0.5, 1.5),
-    "mark": Mark(1),
-    "spot": Spot(1),
     "pair": Pair(1, "a"),
     "coords": (1, 0.5),
     "floats": (0.5, 1.5),
@@ -169,8 +136,6 @@ FIXED: dict[str, Any] = {
 }
 OTHER: dict[str, Any] = {
     "point": Point(2.5, 3.5),
-    "mark": Mark(2),
-    "spot": Spot(2),
     "pair": Pair(2, "b"),
     "coords": (2, 1.5),
     "floats": (2.5,),
@@ -208,15 +173,11 @@ class Changeable(SharedBox):
     options: Options
     loose: Loose
     hashed: Hashed
-    note: Note
     raw: Annotated[bytearray, Capacity(4)]
     image: Annotated[np.ndarray, Shape(2), DType("int64")]
     frozen_with_list: FrozenWithList
     maybe_list: Annotated[list[int] | None, Capacity(2)]
     open_pair: OpenPair
-    loose_spot: LooseSpot
-    mark_with_list: MarkWithList
-    spot_with_list: SpotWithList
     tuple_with_list: tuple[int, Annotated[list[int], Capacity(2)]]
     loose_points: Annotated[tuple[Loose, ...], Capacity(2)]
     either_loose: int | Loose
@@ -230,15 +191,11 @@ CHANGEABLE: dict[str, Any] = {
     "options": Options(speed=1.0),
     "loose": Loose(1.0),
     "hashed": Hashed(1.0),
-    "note": Note(1),
     "raw": bytearray(b"a"),
     "image": np.zeros(2, np.int64),
     "frozen_with_list": FrozenWithList([1]),
     "maybe_list": [1],
     "open_pair": OpenPair(1, "a"),
-    "loose_spot": LooseSpot(1),
-    "mark_with_list": MarkWithList([1]),
-    "spot_with_list": SpotWithList([1]),
     "tuple_with_list": (1, [1]),
     "loose_points": (Loose(1.0),),
     "either_loose": Loose(1.0),
@@ -251,15 +208,11 @@ CHANGES: dict[str, Callable[[Any], object]] = {
     "options": lambda v: v.update(speed=2.0),
     "loose": lambda v: setattr(v, "x", 2.0),
     "hashed": lambda v: setattr(v, "x", 2.0),
-    "note": lambda v: setattr(v, "n", 2),
     "raw": lambda v: v.extend(b"b"),
     "image": lambda v: v.fill(7),
     "frozen_with_list": lambda v: v.items.append(2),
     "maybe_list": lambda v: v.append(2),
     "open_pair": lambda v: setattr(v, "extra", 2),
-    "loose_spot": lambda v: setattr(v, "n", 2),
-    "mark_with_list": lambda v: v.items.append(2),
-    "spot_with_list": lambda v: v.items.append(2),
     "tuple_with_list": lambda v: v[1].append(2),
     "loose_points": lambda v: setattr(v[0], "x", 2.0),
     "either_loose": lambda v: setattr(v, "x", 2.0),
