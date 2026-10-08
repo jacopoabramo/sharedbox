@@ -1,5 +1,6 @@
 import pickle
 import uuid
+from dataclasses import dataclass
 from typing import Annotated, Any
 
 import pytest
@@ -22,11 +23,18 @@ from sharedbox import (
 )
 
 
+@dataclass(frozen=True)
+class Spot:
+    n: int
+    x: float
+
+
 class Model(SharedBox):
     a: int = 0
     b: float = 0.0
     s: Annotated[str, Capacity(8)] = ""
     flag: bool = False
+    spot: Spot = Spot(0, 0.0)
 
 
 VALUES: dict[str, st.SearchStrategy[Any]] = {
@@ -34,6 +42,9 @@ VALUES: dict[str, st.SearchStrategy[Any]] = {
     "b": st.floats(allow_nan=False),
     "s": st.text(max_size=8).filter(lambda t: len(t.encode()) <= 8),
     "flag": st.booleans(),
+    "spot": st.builds(
+        Spot, st.integers(-(2**63), 2**63 - 1), st.floats(allow_nan=False)
+    ),
 }
 FIELDS = list(VALUES)
 INDEX = {spec.name: spec.index for spec in Model.__layout__.fields}
@@ -55,7 +66,7 @@ class BoxMachine(RuleBasedStateMachine):
         """Create the box with a first handle and an empty model."""
         self.name = f"sbtest-{uuid.uuid4().hex[:16]}"
         self.handles = [Model.create(self.name)]
-        self.model = {"a": 0, "b": 0.0, "s": "", "flag": False}
+        self.model = {"a": 0, "b": 0.0, "s": "", "flag": False, "spot": Spot(0, 0.0)}
         self.versions = dict.fromkeys(FIELDS, 0)
 
     @precondition(lambda self: len(self.handles) < 4)

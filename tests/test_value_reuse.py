@@ -2,6 +2,8 @@ import datetime
 import decimal
 import enum
 import gc
+import threading
+import time
 import uuid
 import weakref
 from collections.abc import Callable
@@ -374,3 +376,83 @@ def test_close_lets_go_of_a_value_a_last_event_callback_read(unique_name: str) -
     assert kept
     assert all(ref() is None for ref in kept)
     Holder.unlink(unique_name)
+
+
+@dataclass(frozen=True)
+class Twin:
+    left: int
+    right: int
+
+
+class Twins(SharedBox):
+    twin: Twin = Twin(0, 0)
+
+
+def test_threads_reading_a_reused_field_see_whole_values_in_order(
+    unique_name: str,
+) -> None:
+    """Check that threads reading a reused record while another thread writes it see only written values, never older than one they saw before."""
+    stop = threading.Event()
+    wrong: list[Twin] = []
+    errors: list[Exception] = []
+    with Twins.create(unique_name) as box:
+
+        def write() -> None:
+            n = 0
+            try:
+                while not stop.is_set():
+                    n += 1
+                    box.twin = Twin(n, n)
+            except Exception as error:
+                errors.append(error)
+
+        def read() -> None:
+            last = 0
+            try:
+                while not stop.is_set():
+                    twin = box.twin
+                    if twin.left != twin.right or twin.left < last:
+                        wrong.append(twin)
+                    last = twin.left
+            except Exception as error:
+                errors.append(error)
+
+        threads = [threading.Thread(target=write)]
+        threads += [threading.Thread(target=read) for _ in range(3)]
+        for thread in threads:
+            thread.start()
+        time.sleep(0.5)
+        stop.set()
+        for thread in threads:
+            thread.join()
+    Twins.unlink(unique_name)
+    assert (errors, wrong) == ([], [])
+
+
+def test_closing_a_box_while_threads_read_a_reused_field_raises_only_box_closed_error(
+    unique_name: str,
+) -> None:
+    """Check that threads reading a reused field while the box closes get values or BoxClosedError and nothing else."""
+    errors: list[BaseException] = []
+    box = Twins.create(unique_name)
+    started = threading.Barrier(4)
+
+    def read() -> None:
+        started.wait()
+        try:
+            while True:
+                box.twin  # noqa: B018
+        except BoxClosedError:
+            pass
+        except BaseException as error:
+            errors.append(error)
+
+    threads = [threading.Thread(target=read) for _ in range(3)]
+    for thread in threads:
+        thread.start()
+    started.wait()
+    box.close()
+    for thread in threads:
+        thread.join(10)
+    Twins.unlink(unique_name)
+    assert errors == []
