@@ -4,11 +4,12 @@ icon: lucide/lightbulb
 
 # How fast a box is
 
-`benchbox` times sharedbox against the ways the Python standard library
-offers to share data between processes. The charts on this page come from
-one run of `benchbox all` followed by `benchbox plot`, on Windows 11 with
-an AMD Ryzen 9 7945HX, CPython 3.11 and a development version of
-sharedbox after 0.3.1.
+How much faster is a box than what the standard library already gives you?
+This page answers with measurements: `benchbox` times `sharedbox` against
+each way the standard library offers to share data between processes. The
+charts come from one run of `benchbox all` followed by `benchbox plot`, on
+Windows 11 with an AMD Ryzen 9 7945HX, CPython 3.11 and a development
+version of `sharedbox` after 0.3.1, so your own numbers will differ.
 [How to run the benchmarks](../how-to/run-benchmarks.md) shows how to make
 the same charts on your own machine.
 
@@ -55,13 +56,14 @@ with `struct` and no lock packs or unpacks the same values in 60 ns and
 
 ## Large values
 
-Reading a 1 MiB array field took 190 us and writing one took 19 us. The
-numbers come from the same `benchbox ops` run. A read is
-slower because it allocates a new array each time;
+In the same run, reading a 1 MiB array field took 190 us and writing one
+took 19 us. The read is slower because it gets fresh memory for a new array
+every time, which on Windows costs far more than the copy itself;
 [`read_into`][sharedbox.SharedBox.read_into] copies into an array you
-already have instead. A box has one write lock,
-so while a large value is written, reads and writes of every other field of
-that box wait; keeping a large array in a box of its own avoids that.
+already have instead, and costs about what a write does. A box has one
+write lock, so while a large value is being written, reads and writes of
+every other field of that box wait; keeping a large array in a box of its
+own avoids that.
 
 ## A change sent to another process
 
