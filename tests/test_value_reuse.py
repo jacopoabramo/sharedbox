@@ -21,6 +21,15 @@ class Point:
     y: float
 
 
+class PlainPoint(Point):
+    pass
+
+
+@dataclass(frozen=True)
+class FrozenPoint(Point):
+    pass
+
+
 @attrs.frozen
 class Mark:
     n: int
@@ -119,6 +128,7 @@ class Fixed(SharedBox):
     points: Annotated[tuple[Point, ...], Capacity(4)]
     grid: Annotated[frozenset[tuple[int, int]], Capacity(4)]
     mixed: tuple[Color, Perm, Literal["a", "b"], Annotated[bytes, Capacity(4)]]
+    frozen_child: FrozenPoint
 
 
 FIXED: dict[str, Any] = {
@@ -151,6 +161,7 @@ FIXED: dict[str, Any] = {
     "points": (Point(0.0, 1.0),),
     "grid": frozenset({(1, 2)}),
     "mixed": (Color.RED, Perm.R, "a", b"x"),
+    "frozen_child": FrozenPoint(0.5, 1.5),
 }
 OTHER: dict[str, Any] = {
     "point": Point(2.5, 3.5),
@@ -182,6 +193,7 @@ OTHER: dict[str, Any] = {
     "points": (Point(1.0, 2.0), Point(3.0, 4.0)),
     "grid": frozenset({(3, 4)}),
     "mixed": (Color.BLUE, Perm.R | Perm.W, "b", b"y"),
+    "frozen_child": FrozenPoint(2.5, 3.5),
 }
 
 
@@ -204,6 +216,7 @@ class Changeable(SharedBox):
     tuple_with_list: tuple[int, Annotated[list[int], Capacity(2)]]
     loose_points: Annotated[tuple[Loose, ...], Capacity(2)]
     either_loose: int | Loose
+    plain_point: PlainPoint
 
 
 CHANGEABLE: dict[str, Any] = {
@@ -225,6 +238,7 @@ CHANGEABLE: dict[str, Any] = {
     "tuple_with_list": (1, [1]),
     "loose_points": (Loose(1.0),),
     "either_loose": Loose(1.0),
+    "plain_point": PlainPoint(1.0, 2.0),
 }
 CHANGES: dict[str, Callable[[Any], object]] = {
     "numbers": lambda v: v.append(2),
@@ -245,6 +259,7 @@ CHANGES: dict[str, Callable[[Any], object]] = {
     "tuple_with_list": lambda v: v[1].append(2),
     "loose_points": lambda v: setattr(v[0], "x", 2.0),
     "either_loose": lambda v: setattr(v, "x", 2.0),
+    "plain_point": lambda v: setattr(v, "extra", 2),
 }
 
 

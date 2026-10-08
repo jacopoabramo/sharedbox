@@ -717,7 +717,11 @@ def frozen(hint: type, form: int) -> bool:
     if form != 0:
         return False
     if dataclasses.is_dataclass(hint):
-        return bool(hint.__dataclass_params__.frozen)  # type: ignore[attr-defined]
+        # A plain subclass inherits the parameters but its generated __setattr__ still lets
+        # it add attributes.
+        return "__dataclass_params__" in vars(hint) and bool(
+            hint.__dataclass_params__.frozen  # type: ignore[attr-defined]
+        )
     if hasattr(hint, "__attrs_attrs__"):
         # An attrs version without __attrs_props__ cannot say, so its classes count as changeable.
         props = getattr(hint, "__attrs_props__", None)
