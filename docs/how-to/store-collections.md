@@ -34,10 +34,14 @@ You assign and read a collection field like any other:
 --8<-- "docs/examples/store_collections.py:write"
 ```
 
-Every read gives you a new collection of the declared type. A field
-annotated as `Sequence` comes back as a `list`, a `Set` as a `set` and a
-`Mapping` as a `dict`. Order is kept: a set in the order you iterated it, a
-dict in insertion order.
+A read gives you a collection of the declared type. A field annotated as
+`Sequence` comes back as a `list`, a `Set` as a `set` and a `Mapping` as a
+`dict`, each a new object on every read. A `tuple[T, ...]` or a `frozenset`
+of values that can't be changed is the exception: you get the same object
+until the field is written (see
+[When a read builds a new value](../explanation/field-types.md#when-a-read-builds-a-new-value)).
+Order is kept: a set in the order you iterated it, a dict in insertion
+order.
 
 ## 3. Add an element
 

@@ -42,7 +42,8 @@ sharedbox/
 |   |   `-- size_diff.py       wheel size table against main, for CI (standard library only)
 |   `-- _native/
 |       |-- module.cpp         nanobind module: Segment, the Field descriptor, the BoxMethod type
-|       |                      (native update and snapshot) and the error classes
+|       |                      (native update and snapshot), ValueCache (values kept for reuse) and the
+|       |                      error classes
 |       |-- codec.{hpp,cpp}    converts field values to and from their stored bytes; encode_all
 |       |                      checks every value of an update before any is written,
 |       |                      with_record reads the whole record at once
@@ -287,9 +288,9 @@ if __name__ == "__main__":
 A read decodes the stored bytes; a value that cannot be changed (a
 `datetime`, or a frozen record, tuple or frozenset holding only such values)
 is reused until its field is written. `update(**values)` writes several
-fields at once; `watch(field)` and `events` report changes from any process. C++ and C code take a box through `__sharedbox_box__` or open it by
-name; see `docs/how-to/accept-a-box-in-cpp.md`,
-`docs/how-to/accept-a-box-in-c.md` and
+fields at once; `watch(field)` and `events` report changes from any process.
+C++ and C code take a box through `__sharedbox_box__` or open it by name; see
+`docs/how-to/accept-a-box-in-cpp.md`, `docs/how-to/accept-a-box-in-c.md` and
 `docs/how-to/open-a-box-from-a-program.md`.
 
 ## Docs

@@ -21,8 +21,9 @@ Define the record class as usual, then use it as a field's type:
 ## 2. Write and read the whole record
 
 When you assign a record, every member is written at once, so a reader sees
-all of the new values or none of them. Reading builds a new instance of the
-class:
+all of the new values or none of them. Reading gives you an instance of the
+class, a new one on every read unless the class is frozen (see
+[When a read builds a new value](../explanation/field-types.md#when-a-read-builds-a-new-value)):
 
 ```{.python}
 --8<-- "docs/examples/store_records.py:write"
