@@ -3159,10 +3159,14 @@ the box class raises <code>TypeError</code> when you define it.</p>
 </span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="n">playlist</span><span class="o">.</span><span class="n">plays</span> <span class="o">=</span> <span class="p">{</span><span class="s2">"intro"</span><span class="p">:</span> <span class="mi">3</span><span class="p">}</span>
 </span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="nb">print</span><span class="p">(</span><span class="n">playlist</span><span class="o">.</span><span class="n">tracks</span><span class="p">,</span> <span class="n">playlist</span><span class="o">.</span><span class="n">plays</span><span class="p">)</span>  <span class="c1"># ('intro', 'theme') {'intro': 3}</span>
 </span></code></pre></div>
-<p>Every read gives you a new collection of the declared type. A field
-annotated as <code>Sequence</code> comes back as a <code>list</code>, a <code>Set</code> as a <code>set</code> and a
-<code>Mapping</code> as a <code>dict</code>. Order is kept: a set in the order you iterated it, a
-dict in insertion order.</p>
+<p>A read gives you a collection of the declared type. A field annotated as
+<code>Sequence</code> comes back as a <code>list</code>, a <code>Set</code> as a <code>set</code> and a <code>Mapping</code> as a
+<code>dict</code>, each a new object on every read. A <code>tuple[T, ...]</code> or a <code>frozenset</code>
+of values that can't be changed is the exception: you get the same object
+until the field is written (see
+<a href="../../explanation/field-types/#when-a-read-builds-a-new-value">When a read builds a new value</a>).
+Order is kept: a set in the order you iterated it, a dict in insertion
+order.</p>
 <h2 id="3-add-an-element">3. Add an element<a class="headerlink" href="#3-add-an-element" title="Permanent link">&para;</a></h2>
 <p>A collection you read is a copy, so appending to it changes nothing in the
 box. Build the new collection and assign it back:</p>

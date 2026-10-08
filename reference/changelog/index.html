@@ -3570,6 +3570,17 @@ and this project adheres to <a href="https://semver.org/spec/v2.0.0.html">Semant
 <li><code>SharedBox</code>: reading a collection, tuple or record field whose members
   are <code>bool</code>, <code>int</code>, <code>float</code> or <code>str</code> takes less time: about 90 ns less
   for a list of 16 <code>float</code> on Windows.</li>
+<li><code>SharedBox</code>: reading a field whose value cannot be changed (a frozen
+  dataclass, attrs class or msgspec Struct, a NamedTuple, a tuple, a
+  frozenset, an enum, flag or literal, <code>complex</code>, <code>date</code>, <code>time</code>,
+  <code>datetime</code>, <code>timedelta</code>, <code>UUID</code> or <code>Decimal</code>) returns the value the
+  previous read built until the field is written: 40 ns instead of 540 ns
+  for a frozen dataclass of four fields on Windows. A tuple, frozenset or
+  record qualifies only when its members are of these kinds or <code>bool</code>,
+  <code>int</code>, <code>float</code>, <code>str</code> or <code>bytes</code>.</li>
+<li><code>SharedBox</code>: a frozen record's <code>__post_init__</code>, attrs converters and
+  validators run on the first read after each write instead of on every
+  read.</li>
 </ul>
 <h2 id="041-07-10-2026"><a href="https://github.com/jacopoabramo/sharedbox/compare/v0.4.0...v0.4.1">0.4.1</a> - 07-10-2026<a class="headerlink" href="#041-07-10-2026" title="Permanent link">&para;</a></h2>
 <h3 id="changed_1">Changed<a class="headerlink" href="#changed_1" title="Permanent link">&para;</a></h3>

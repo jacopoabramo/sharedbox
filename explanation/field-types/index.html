@@ -1678,10 +1678,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#a-read-builds-a-new-value" class="md-nav__link">
+  <a href="#when-a-read-builds-a-new-value" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        A read builds a new value
+        When a read builds a new value
       </span>
     </span>
   </a>
@@ -2977,10 +2977,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#a-read-builds-a-new-value" class="md-nav__link">
+  <a href="#when-a-read-builds-a-new-value" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        A read builds a new value
+        When a read builds a new value
       </span>
     </span>
   </a>
@@ -3631,12 +3631,20 @@ an enum gains a member or a record member changes type, the new class no
 longer attaches to boxes made with the old one. It doesn't cover choices
 that only affect what Python builds when it reads a value back: a record
 class's name, <code>list</code> or <code>tuple[T, ...]</code>, <code>set</code> or <code>frozenset</code>.</p>
-<h2 id="a-read-builds-a-new-value">A read builds a new value<a class="headerlink" href="#a-read-builds-a-new-value" title="Permanent link">&para;</a></h2>
-<p>Every read turns the stored bytes into a new object. So if you change a
-list, a record or an array you read from a box, you only change that
-object; to store the change, assign it back. A record is rebuilt by calling
-its class, which means its <code>__post_init__</code>, converters and validators run on
-every read.</p>
+<h2 id="when-a-read-builds-a-new-value">When a read builds a new value<a class="headerlink" href="#when-a-read-builds-a-new-value" title="Permanent link">&para;</a></h2>
+<p>A read turns the stored bytes into an object, and whether it builds a new
+one each time depends on whether you could change it. A list, a dict, a
+set, an array, a <code>TypedDict</code> or a record whose class isn't frozen comes back
+as a new object on every read, so changing the one you hold changes nothing
+in the box; to store the change, assign it back. A value you can't change,
+such as a <code>datetime</code>, a <code>Decimal</code>, a <code>UUID</code> or an enum member, is built
+again only after a write to its field, and until then every read returns
+the same object, so <code>box.when is box.when</code> holds. A tuple, a frozenset or a
+record whose class is declared frozen counts only when everything it holds
+can't be changed either, so a tuple holding a list is built on every read.</p>
+<p>A record is built by calling its class, which means its <code>__post_init__</code>,
+converters and validators run on every read when the record's class isn't
+frozen, and only on the first read after each write when it is.</p>
 <h2 id="dates-and-times">Dates and times<a class="headerlink" href="#dates-and-times" title="Permanent link">&para;</a></h2>
 <p>A <code>datetime</code> or <code>time</code> is either naive or keeps a fixed offset from <abbr title="Coordinated Universal Time. The time standard that offsets such as +02:00 are measured from.">UTC</abbr>.
 If yours has a time zone, the box stores its offset at that moment, in

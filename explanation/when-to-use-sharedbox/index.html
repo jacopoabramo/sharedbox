@@ -2939,9 +2939,11 @@
 <h1 id="when-to-use-sharedbox">When to use sharedbox<a class="headerlink" href="#when-to-use-sharedbox" title="Permanent link">&para;</a></h1>
 <p>Should you use a box, or would something simpler do? A
 <a href="../glossary/#box">box</a> is made for sharing a record between processes, and
-that has a price: every read and write turns the value into bytes in shared
-memory or back, which costs some tens to hundreds of nanoseconds, and every
-read gives you a copy.</p>
+that has a price: every write turns the value into bytes in shared memory,
+and a read turns the bytes back into a value unless the value can't be
+changed and an earlier read built it since the last write. That costs some
+tens to hundreds of nanoseconds, and a value you can change comes back as a
+copy.</p>
 <p>If all your code runs in threads of one process, you don't need to pay
 that price: threads can share ordinary Python objects, which is several
 times faster and works with any Python type. psygnal's <code>evented</code>
