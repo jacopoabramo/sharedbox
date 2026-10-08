@@ -3557,6 +3557,8 @@ and this project adheres to <a href="https://semver.org/spec/v2.0.0.html">Semant
 <ul>
 <li><code>SharedBox.read_into</code>: copies an array field into an array the caller
   passes and returns it, without allocating a new array.</li>
+<li><code>SharedBox.writing</code>: a context manager that holds the box's write lock
+  and yields an array field as an array to fill in place.</li>
 <li><code>benchbox contention</code>: times writes and reads of an <code>int</code> while several
   writer and reader processes share it, for a box, <code>mp.Value</code> and
   <code>SharedMemory</code> with a <code>Lock</code>.</li>
@@ -3564,6 +3566,7 @@ and this project adheres to <a href="https://semver.org/spec/v2.0.0.html">Semant
 <h3 id="changed">Changed<a class="headerlink" href="#changed" title="Permanent link">&para;</a></h3>
 <ul>
 <li><code>SharedBox</code>: a field named <code>read_into</code> raises <code>TypeError</code>.</li>
+<li><code>SharedBox</code>: a field named <code>writing</code> raises <code>TypeError</code>.</li>
 </ul>
 <h2 id="041-07-10-2026"><a href="https://github.com/jacopoabramo/sharedbox/compare/v0.4.0...v0.4.1">0.4.1</a> - 07-10-2026<a class="headerlink" href="#041-07-10-2026" title="Permanent link">&para;</a></h2>
 <h3 id="changed_1">Changed<a class="headerlink" href="#changed_1" title="Permanent link">&para;</a></h3>

@@ -2239,6 +2239,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#sharedbox.SharedBox.writing" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;writing
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#sharedbox.SharedBox.watch" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -3313,6 +3324,17 @@
     <span class="md-ellipsis">
       <span class="md-typeset">
         <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;read_into
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sharedbox.SharedBox.writing" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;writing
       </span>
     </span>
   </a>
@@ -4622,6 +4644,89 @@ C-contiguous array in <abbr title="Central processing unit. The processor that r
               <div class="doc-md-description">
                 <p>If the box has no such field, or <code>out</code> has another dtype or
 shape.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;LockTimeoutError&lt;/span&gt; (&lt;code&gt;sharedbox._native.LockTimeoutError&lt;/code&gt;)" href="../errors/#sharedbox.LockTimeoutError">LockTimeoutError</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If another writer holds the lock longer than the lock timeout.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;BoxClosedError&lt;/span&gt; (&lt;code&gt;sharedbox._native.BoxClosedError&lt;/code&gt;)" href="../errors/#sharedbox.BoxClosedError">BoxClosedError</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If the box is closed.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="sharedbox.SharedBox.writing" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <span class="doc doc-object-name doc-function-name">writing</span>
+
+
+<a href="#sharedbox.SharedBox.writing" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">writing</span><span class="p">(</span><span class="n">field</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Generator</span><span class="p">[</span><span class="n">Any</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">]</span>
+</span></code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Hold the box's write lock and yield the array field to fill in place.</p>
+<p>The block gets an array of the field's declared type that views the
+field in shared memory and holds its current value. Leaving the
+block releases the lock, counts the write and wakes watchers, also
+when the block raises, since the bytes have already changed.
+While the block runs, reads and writes of the box in every process
+wait for the lock, so keep it short. Writing a field of this box
+inside the block waits on that same lock and raises
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;LockTimeoutError&lt;/span&gt;" href="../errors/#sharedbox.LockTimeoutError"><code>LockTimeoutError</code></a>. The array keeps
+its own mapping, so using it after the box is closed cannot crash,
+but writing to it after the block takes no lock and tells no one.</p>
+
+
+<p><span class="doc-section-title">Raises:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-external" href="https://docs.python.org/3/builtins/exceptions.html#TypeError">TypeError</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If the field is not an array field.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-external" href="https://docs.python.org/3/builtins/exceptions.html#ValueError">ValueError</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If the box has no such field.</p>
               </div>
             </td>
           </tr>

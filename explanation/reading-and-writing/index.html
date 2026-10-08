@@ -3137,6 +3137,13 @@ guarantees that for atomic operations the processor performs directly,
 without a hidden lock inside the program:<sup id="fnref:lock-free"><a class="footnote-ref" href="#fn:lock-free">5</a></sup></p>
 <div class="language-cpp highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="k">static_assert</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="n">atomic_ref</span><span class="o">&lt;</span><span class="n">std</span><span class="o">::</span><span class="kt">uint64_t</span><span class="o">&gt;::</span><span class="n">is_always_lock_free</span><span class="p">);</span>
 </span></code></pre></div>
+<p><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;writing&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.writing"><code>writing</code></a> holds this same lock for as long
+as its block runs, so a reader that starts in the meantime keeps retrying
+until the block ends. If that takes longer than the reader's lock timeout,
+the reader gives up with <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;LockTimeoutError&lt;/span&gt;" href="../../reference/api/errors/#sharedbox.LockTimeoutError"><code>LockTimeoutError</code></a>.
+That trade is worth it for a large array a producer can fill in place,
+because it saves a full copy, but only while the block stays shorter than
+the readers' lock timeout.</p>
 <h2 id="waiting-for-the-lock">Waiting for the lock<a class="headerlink" href="#waiting-for-the-lock" title="Permanent link">&para;</a></h2>
 <p>A writer that waits too long, or a reader that keeps losing to writers,
 gives up after <code>lock_timeout</code> seconds with
