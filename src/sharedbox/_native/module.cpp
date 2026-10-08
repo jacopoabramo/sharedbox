@@ -170,8 +170,9 @@ nb::object get_reusable(const Segment &s, ValueCache &cache, std::uint32_t index
     PyObject *old = nullptr;
     {
         nb::ft_lock_guard guard(slot.lock);
-        // A thread that decoded an older version never puts it back over a newer one.
-        if (slot.value == nullptr || read.version >= slot.version) {
+        // A thread that decoded an older version never puts it back over a newer one, and none stores after
+        // close().
+        if (!s.closed() && (slot.value == nullptr || read.version >= slot.version)) {
             old = std::exchange(slot.value, Py_NewRef(value.ptr()));
             slot.version = read.version;
         }

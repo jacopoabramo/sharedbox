@@ -354,6 +354,29 @@ def test_close_lets_go_of_reused_values(unique_name: str) -> None:
     Holder.unlink(unique_name)
 
 
+def test_a_value_decoded_while_the_box_closes_is_not_kept(unique_name: str) -> None:
+    """Check that a read which closes the box while decoding leaves no value behind."""
+    boxes: list[SharedBox] = []
+
+    @dataclass(frozen=True)
+    class Closing:
+        n: int
+
+        def __post_init__(self) -> None:
+            while boxes:
+                boxes.pop().close()
+
+    class Closer(SharedBox):
+        value: Closing
+
+    box = Closer.create(unique_name, Closing(1))
+    boxes.append(box)
+    kept = weakref.ref(box.value)
+    gc.collect()
+    assert kept() is None
+    Closer.unlink(unique_name)
+
+
 def test_a_reused_value_that_refers_to_its_box_is_collected(unique_name: str) -> None:
     """Check that the cycle collector frees a box whose reused value refers back to it."""
     box = Holder.create(unique_name, Owned(1))
