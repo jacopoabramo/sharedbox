@@ -37,14 +37,69 @@ counter in the header does both. The technique is called a sequence
 lock:[^seqlock] the counter is even when no write is in progress and odd
 while one is running.
 
-A writer moves the counter from even to odd with one compare-and-swap,
-copies its bytes, and moves it to the next even value. A reader takes no
-lock: it notes the counter, copies, and checks that the counter did not
-move. If a write happened while the reader was copying, the reader throws
-its copy away and tries again.[^seqlock] A reader can therefore never
-return a mix of old and new bytes, and writes to several fields
-([`update(a=..., b=...)`][sharedbox.SharedBox.update]) are seen all at
-once or not at all. [Sequence
+Step through a write that lands in the middle of a read, and point at a
+shape to read what it does:
+
+```d2 title="A read that meets a write"
+...@diagrams/style
+grid-rows: 2
+grid-columns: 3
+horizontal-gap: 150
+vertical-gap: 70
+writer: "writer" {
+  class: process
+  tooltip: Any process that assigns a field or calls update.
+}
+seq: "seq = 4" {
+  class: current
+  tooltip: The counter in the header. Even means no write is running, odd means one is.
+}
+reader: "reader" {
+  class: process
+  tooltip: Any process reading a field. It never changes the counter, so it never holds up a writer.
+}
+g1: {class: gap}
+record: "record" {
+  class: file
+  tooltip: The bytes of every field, which readers copy and writers overwrite.
+}
+g2: {class: gap}
+reader -> seq: "notes 4"
+writer -> seq: "swaps 4 for 5" {style.opacity: 0}
+writer -> record: "writes" {style.opacity: 0}
+reader -> record: "copies" {style.opacity: 0}
+steps: {
+  1: {
+    seq.label: "seq = 5"
+    (writer -> seq)[0].style.opacity: 1
+  }
+  2: {
+    (writer -> record)[0].style.opacity: 1
+    (reader -> record)[0].style.opacity: 1
+    record.tooltip: The reader may copy some old and some new bytes here.
+  }
+  3: {
+    seq.label: "seq = 6"
+    (writer -> seq)[0].label: "sets 6"
+  }
+  4: {
+    (reader -> seq)[0].label: "now 6: retry"
+    reader.class: failed
+  }
+  5: {
+    (reader -> seq)[0].label: "still 6: done"
+    reader.class: process
+    (writer -> seq)[0].style.opacity: 0
+    (writer -> record)[0].style.opacity: 0
+  }
+}
+```
+
+Because the reader always checks the counter again after copying, it never
+returns a mix of old and new bytes,[^seqlock] and writes to several fields
+([`update(a=..., b=...)`][sharedbox.SharedBox.update]) are seen all at once
+or not at all. The writer takes the counter from even to odd with one
+compare-and-swap, so two writers can't both win. [Sequence
 lock](../reference/segment-layout.md#sequence-lock) gives the exact steps and
 orderings, including why the unlock is a compare-and-swap rather than a
 plain store.
