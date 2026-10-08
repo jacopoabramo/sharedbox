@@ -400,7 +400,10 @@ std::unique_ptr<Segment> Segment::attach(const std::string &name, const std::vec
             std::memcmp(stored.data(), types_table->data(), stored.size()) != 0)
             throw SchemaMismatch("segment '" + name + "' was created by a class whose field types differ");
     }
-    check_names(names, impl->box.field_count());
+    // The schema hash covers the field count, so only a damaged header gets here with another one.
+    if (names.size() != impl->box.field_count())
+        throw SchemaMismatch("segment '" + name + "' has " + std::to_string(impl->box.field_count()) +
+                             " fields, the class declares " + std::to_string(names.size()));
     // The header opens a field of a kind it does not know; this module can neither convert nor
     // check its value.
     for (std::uint16_t i = 0; i < impl->box.field_count(); ++i)
