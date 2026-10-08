@@ -27,9 +27,10 @@ unlinks stays until the machine restarts (see
 
 If processes running different releases of `sharedbox` share boxes, check
 which ones can talk to each other. Releases up to 0.3.0rc0 named segments
-differently and used another layout, so they and this release don't see
-each other's boxes at all. This release opens boxes made by 0.3.0 and
-0.3.1, but those two releases can't open a box made by this one.
+differently and used another layout, so they and later releases don't see
+each other's boxes at all. From 0.4.0 on, `sharedbox` opens boxes made by
+0.3.0 and 0.3.1, but those two releases can't open a box made by 0.4.0 or
+later.
 
 ## Open boxes and file descriptors
 

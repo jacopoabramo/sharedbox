@@ -4,8 +4,9 @@ icon: lucide/lightbulb
 
 # When to use sharedbox
 
-A [box](glossary.md#box) is made for sharing a record between processes.
-That has a price: every read and write turns the value into bytes in shared
+Should you use a box, or would something simpler do? A
+[box](glossary.md#box) is made for sharing a record between processes, and
+that has a price: every read and write turns the value into bytes in shared
 memory or back, which costs some tens to hundreds of nanoseconds, and every
 read gives you a copy.
 

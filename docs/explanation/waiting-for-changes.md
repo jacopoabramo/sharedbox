@@ -40,10 +40,11 @@ under [Waiter slots](../reference/segment-layout.md#waiter-slots). A slot
 recorded in another pid namespace is never freed, because its pid can't be
 checked from here.
 
-The Python watcher waits in steps of at most 1 s. That isn't polling for
-changes, since a write or an interrupt wakes it at once; the step is there
-so that after each one the watcher can check that its slot still records
-its own process, and claim a new slot if not. What it does while every slot
+The Python watcher waits in steps of at most 1 s, yet it still notices a
+write at once, because a write or an interrupt wakes it in the middle of a
+step. The steps are there for a different reason: after each one, the
+watcher checks that its slot still records its own process, and claims a
+new slot if not. What it does while every slot
 is taken is described under `max_waiters` in
 [`SharedBox`][sharedbox.SharedBox]. When you call
 [`close`][sharedbox.SharedBox.close], it sets the interrupt flag of its own

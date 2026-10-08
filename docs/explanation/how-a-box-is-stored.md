@@ -87,9 +87,9 @@ new default to an inherited field; it declares the field again with an
 annotation instead (see [`field`][sharedbox.field]).
 
 Two box objects on the same segment share one record, so they always hold
-the same values. Comparing two boxes by their values would always say
-"equal", which tells you nothing, so boxes are equal only when they are the
-same object.
+the same values, and comparing them by value would tell you nothing. So `==`
+on two boxes is `True` only when both are the same Python object, just as
+`is` would be.
 
 ## The schema hash
 

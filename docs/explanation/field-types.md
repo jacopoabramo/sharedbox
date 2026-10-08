@@ -67,9 +67,10 @@ refuses a `datetime`, since storing it would lose the time of day.
 An enum member is stored by its position in the class, so reading gives
 you back the member itself and `is` comparisons work. Reordering the
 members changes what the stored positions mean, so the schema hash changes
-with it and old boxes won't attach. A `Literal` field tells values of
-different types apart: in `Literal[1, True]`, `1` and `True` are two
-different values.
+with it and old boxes won't attach. In a `Literal` field, values of
+different types count as different values even when Python would call them
+equal: in `Literal[1, True]`, `1` and `True` are two separate values, and
+each reads back as itself.
 
 ## Unions
 

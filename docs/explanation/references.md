@@ -53,11 +53,14 @@ the first matching class "that is still alive".
 A reference can outlive the box it names. Another process may unlink that
 box, or unlink it and create a new one under the same name, and the name
 alone can't show the difference. That's why the create id is stored too.
-The first time a handle reads the field, it compares the stored create id
-with that of the box under that name now, and raises
+The first time your box object reads the field, it compares the stored
+create id with that of the box under that name now, and raises
 [`BrokenReferenceError`][sharedbox.BrokenReferenceError] if the box is gone
-or is a different one. After that, the handle keeps the box it opened and
-returns it without checking again; see [`SharedBox`][sharedbox.SharedBox].
+or is a different one. Once it has opened the other box, your box object
+keeps it open and hands you the same one on later reads, so it keeps working
+even if someone unlinks the name in the meantime; it only looks again when
+the field is pointed at a different box. See
+[`SharedBox`][sharedbox.SharedBox] for the details.
 
 A reference can break at any time, from another process, long after you
 called [`follow`][sharedbox.BoxEvents.follow], when there's no call of yours

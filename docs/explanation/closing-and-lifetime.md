@@ -37,9 +37,10 @@ case to writes not yet delivered and to forwarding the box started.
 
 ## Closing a box while other threads still use it
 
-Within one process, one thread can call `close` and unmap the memory while
-another thread is still copying from it, and a careless design would crash
-there. The free-threaded build has no global
+This section is for the curious and for people working on `sharedbox`
+itself; you don't need it to use a box. Within one process, one thread can
+call `close` and unmap the memory while another thread is still copying
+from it, and a careless design would crash there. The free-threaded build has no global
 interpreter lock (GIL),[^pep-703] and Python 3.14 is the first version
 where that build is supported rather than experimental.[^pep-779] A normal
 build does not prevent the race either: a read or write that waits for
@@ -90,13 +91,15 @@ void Segment::close() {                        // runs without the GIL
 }
 ```
 
-`close` stores `closed` before it asks for the exclusive lock. A call that
-cannot get the shared lock, because `close` holds it or waits for it,
-raises [`BoxClosedError`][sharedbox.BoxClosedError] instead of waiting. On
-Linux the standard reader-writer lock lets new readers in ahead of a
-waiting writer.[^rwlock] A call that gets in after `closed` is stored
-raises `BoxClosedError` at once and lets go, so new calls hold the lock
-only for that check.
+`close` stores `closed` before it asks for the exclusive lock, so a call
+that can't get the shared lock, because `close` holds it or waits for it,
+raises [`BoxClosedError`][sharedbox.BoxClosedError] instead of waiting.
+The C++ standard allows a reader-writer lock either to queue new readers
+behind a waiting writer, the case above, or to let them in first, and on
+Linux it lets them in first.[^rwlock] A call that gets in that way after
+`closed` is stored still raises `BoxClosedError` at once and lets go, so
+new calls hold the lock only long enough for that check, and `close` is
+never kept waiting by them.
 
 This lock is only about one box object inside one process. The
 [sequence lock](glossary.md#sequence-lock) is what coordinates processes.
