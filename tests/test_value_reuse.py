@@ -1,7 +1,9 @@
 import datetime
 import decimal
 import enum
+import gc
 import uuid
+import weakref
 from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Annotated, Any, Literal, NamedTuple, TypedDict
@@ -12,7 +14,7 @@ import numpy as np
 import pytest
 from crossproc import update_in_child
 
-from sharedbox import Capacity, DType, Shape, SharedBox
+from sharedbox import BoxClosedError, Capacity, DType, Shape, SharedBox
 
 
 @dataclass(frozen=True)
@@ -317,3 +319,46 @@ def test_two_boxes_of_one_class_keep_their_own_values(
         assert (a.point, b.point) == (FIXED["point"], OTHER["point"])
     Fixed.unlink(names("a"))
     Fixed.unlink(names("b"))
+
+
+@dataclass(frozen=True)
+class Owned:
+    n: int
+
+
+class Holder(SharedBox):
+    owned: Owned
+
+
+def test_a_closed_box_refuses_a_read_it_could_answer_from_reuse(
+    unique_name: str,
+) -> None:
+    """Check that reading a reused field after close() raises BoxClosedError."""
+    box = Fixed.create(unique_name, **FIXED)
+    box.point  # noqa: B018
+    box.close()
+    with pytest.raises(BoxClosedError):
+        box.point  # noqa: B018
+    Fixed.unlink(unique_name)
+
+
+def test_close_lets_go_of_reused_values(unique_name: str) -> None:
+    """Check that close() drops the values reads kept for reuse."""
+    with Holder.create(unique_name, Owned(1)) as box:
+        kept = weakref.ref(box.owned)
+        assert kept() is not None
+    gc.collect()
+    assert kept() is None
+    Holder.unlink(unique_name)
+
+
+def test_a_reused_value_that_refers_to_its_box_is_collected(unique_name: str) -> None:
+    """Check that the cycle collector frees a box whose reused value refers back to it."""
+    box = Holder.create(unique_name, Owned(1))
+    # A frozen dataclass without __slots__ still takes attributes through object.__setattr__.
+    object.__setattr__(box.owned, "box", box)
+    gone = weakref.ref(box)
+    del box
+    gc.collect()
+    assert gone() is None
+    Holder.unlink(unique_name)

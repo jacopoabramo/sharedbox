@@ -389,6 +389,10 @@ class ValueCache:
     """
 
     def __init__(self, fields: int) -> None: ...
+    def clear(self) -> None:
+        """Drop every value."""
+    def _after_fork(self) -> None:
+        """Make the locks a forked child inherited usable; call before another thread starts."""
 
 @final
 class BoxMethod:

@@ -107,6 +107,7 @@ def reset_after_fork() -> None:
     """Make every box inherited through `fork` usable in the child."""
     for box in list(LIVE):
         box._segment._after_fork()
+        box._values._after_fork()
         box._watcher.after_fork()
         # Another thread of the parent may have held it at the fork.
         box._refs_lock = threading.Lock()
@@ -1263,6 +1264,7 @@ class SharedBox(metaclass=SharedBoxMeta):
             box = boxes.pop()
             if box._finalizer.detach() is None:
                 continue
+            box._values.clear()
             try:
                 release(box._watcher, box._segment, wait)
             except BaseException as exc:

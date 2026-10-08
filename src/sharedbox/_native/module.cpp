@@ -135,6 +135,19 @@ public:
         }
     }
 
+    // The collector stops the other threads, one of which may hold a slot lock, so this takes none.
+    int traverse(visitproc visit, void *arg) const {
+        for (std::uint32_t i = 0; i < count_; ++i)
+            Py_VISIT(slots_[i].value);
+        return 0;
+    }
+
+    // fork() copies a slot lock another thread of the parent may hold, a thread the child does not have.
+    void after_fork() {
+        for (std::uint32_t i = 0; i < count_; ++i)
+            new (&slots_[i].lock) nb::ft_mutex();
+    }
+
 private:
     std::unique_ptr<CachedValue[]> slots_;
     std::uint32_t count_;
@@ -718,6 +731,23 @@ int types_clear(PyObject *self) {
     return 0;
 }
 
+int value_cache_traverse(PyObject *self, visitproc visit, void *arg) {
+    Py_VISIT(Py_TYPE(self));
+    if (!nb::inst_ready(self))
+        return 0;
+    return nb::inst_ptr<ValueCache>(self)->traverse(visit, arg);
+}
+
+int value_cache_clear(PyObject *self) {
+    if (nb::inst_ready(self))
+        nb::inst_ptr<ValueCache>(self)->clear();
+    return 0;
+}
+
+PyType_Slot value_cache_slots[] = {{Py_tp_traverse, reinterpret_cast<void *>(value_cache_traverse)},
+                                   {Py_tp_clear, reinterpret_cast<void *>(value_cache_clear)},
+                                   {0, nullptr}};
+
 PyType_Slot types_slots[] = {{Py_tp_traverse, reinterpret_cast<void *>(types_traverse)},
                              {Py_tp_clear, reinterpret_cast<void *>(types_clear)},
                              {0, nullptr}};
@@ -1038,7 +1068,10 @@ NB_MODULE(_native, m) {
             "spec"_a, "segment_slot"_a, "types"_a = nb::none(), "values_slot"_a = nb::none())
         .def_ro("spec", &Field::spec);
 
-    nb::class_<ValueCache>(m, "ValueCache").def(nb::init<std::uint32_t>(), "fields"_a);
+    nb::class_<ValueCache>(m, "ValueCache", nb::type_slots(value_cache_slots))
+        .def(nb::init<std::uint32_t>(), "fields"_a)
+        .def("clear", &ValueCache::clear)
+        .def("_after_fork", &ValueCache::after_fork);
     value_cache_type = reinterpret_cast<PyTypeObject *>(nb::type<ValueCache>().ptr());
 
     nb::class_<sharedbox::Types>(m, "Types", nb::type_slots(types_slots))
