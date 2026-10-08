@@ -30,7 +30,8 @@ which ones can talk to each other. Releases up to 0.3.0rc0 named segments
 differently and used another layout, so they and later releases don't see
 each other's boxes at all. From 0.4.0 on, `sharedbox` opens boxes made by
 0.3.0 and 0.3.1, but those two releases can't open a box made by 0.4.0 or
-later.
+later. Releases 0.4 and 0.5 write the same layout and open each other's
+boxes.
 
 ## Open boxes and file descriptors
 
