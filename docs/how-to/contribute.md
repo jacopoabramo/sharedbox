@@ -4,8 +4,9 @@ icon: lucide/heart-handshake
 
 # How to contribute
 
-These steps are for people changing sharedbox itself. If you want to use
-sharedbox in your own code, start with the
+Thanks for wanting to improve `sharedbox`. This page walks you through how
+a change gets from your idea into a release. If you only want to use
+`sharedbox` in your own code, start with the
 [tutorial](../tutorials/share-a-record.md) instead.
 
 ## How a change goes in

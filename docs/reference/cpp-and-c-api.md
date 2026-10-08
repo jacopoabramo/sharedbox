@@ -4,8 +4,11 @@ icon: lucide/file-code
 
 # C and C++ interface
 
-sharedbox installs two headers with its wheel, in the folder that
-[`get_include`][sharedbox.get_include] returns:
+C and C++ code reaches a box through two headers that come with the
+`sharedbox` wheel, in the folder that [`get_include`][sharedbox.get_include]
+returns. This page says where each one is specified; to get started, follow
+[How to accept a box in a C++ extension](../how-to/accept-a-box-in-cpp.md)
+instead.
 
 | Header | What it declares | Specified in |
 | --- | --- | --- |
@@ -20,10 +23,10 @@ CMake targets are in [Build and packaging](segment-layout.md#build-and-packaging
 
 ## Thread safety
 
-Calls from several threads on one [handle](../explanation/glossary.md#handle)
-follow the same rules for an `sbx_handle` and the C functions as for
-`sharedbox::handle`. The rules are listed in
-[`sharedbox.hpp`](segment-layout.md#sharedboxhpp).
+Which calls you may make from several threads on one
+[handle](../explanation/glossary.md#handle) is the same whether you use
+`sharedbox::handle` or an `sbx_handle` with the C functions. The rules are
+listed in [`sharedbox.hpp`](segment-layout.md#sharedboxhpp).
 
 ## Errors
 

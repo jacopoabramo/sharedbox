@@ -4,6 +4,9 @@ icon: lucide/book
 
 # How to build the docs
 
+When you change a page or a docstring, build the site to see what readers
+will see, and to catch broken links and cross-references before CI does.
+
 ## Before you start
 
 [Set up a development environment](set-up-development.md).

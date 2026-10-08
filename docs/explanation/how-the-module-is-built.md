@@ -4,15 +4,17 @@ icon: lucide/lightbulb
 
 # How the module is built
 
-The part of sharedbox that reads and writes shared memory is a compiled
-module, `sharedbox._native`. `update` and `snapshot` are native methods, set
-on each box class unless the class defines or inherits its own. This page
-explains how one build line gives a wheel for every supported Python.
+The part of `sharedbox` that reads and writes shared memory is compiled
+C++, in a module called `sharedbox._native`, and `update` and `snapshot`
+are compiled too unless your class defines or inherits its own. Compiled
+code has to be built for each Python version it runs on, which could mean a
+long list of builds. This page explains how one build line gives a wheel
+for every supported Python instead.
 
 ## One line, three wheels
 
-The module is built with nanobind, which connects C++ to Python, as C++20
-against `sharedbox::headers`, the CMake target of
+The module is built with `nanobind`, a library that connects C++ to Python,
+as C++20 against `sharedbox::headers`, the CMake target of
 [`include/sharedbox/sharedbox.hpp`](https://github.com/jacopoabramo/sharedbox/blob/main/include/sharedbox/sharedbox.hpp):
 
 ```cmake
@@ -23,33 +25,59 @@ nanobind_add_module(_native
     NB_DOMAIN sharedbox
     src/sharedbox/_native/codec.cpp
     src/sharedbox/_native/module.cpp
-    src/sharedbox/_native/segment.cpp)
+    src/sharedbox/_native/scalars.cpp
+    src/sharedbox/_native/segment.cpp
+    src/sharedbox/_native/types.cpp)
 target_link_libraries(_native PRIVATE sharedbox::headers)
 ```
 
-`STABLE_ABI` asks for a module that works on every later Python version
-without recompiling. nanobind supports this from Python 3.12,[^nanobind-cmake]
-so one wheel covers 3.12, 3.13, 3.14 and later. `FREE_THREADED` asks for a
-module that runs without the GIL; it only takes effect on free-threaded
-Python.[^nanobind-free-threaded] nanobind ignores whichever option does not
-fit the interpreter doing the build,[^nanobind-cmake][^nanobind-free-threaded]
-which is why one line produces all three wheels:
+`STABLE_ABI` asks for a module that keeps working on later Python versions
+without being rebuilt, which `nanobind` can do from Python
+3.12.[^nanobind-cmake] `FREE_THREADED` asks for a module that runs without
+the global interpreter lock (GIL), on the free-threaded Python that has
+none.[^nanobind-free-threaded] `nanobind` quietly ignores whichever option
+doesn't fit the Python doing the
+build,[^nanobind-cmake][^nanobind-free-threaded] so the same line, run on
+three Pythons, gives three wheels:
 
-| Wheel | Built on | Runs on |
-| --- | --- | --- |
-| `cp311-cp311` | CPython 3.11 | 3.11 only (the stable ABI needs 3.12) |
-| `cp312-abi3` | CPython 3.12 | every normal CPython from 3.12 |
-| `cp314-cp314t` | free-threaded CPython 3.14 | free-threaded 3.14 |
+```d2 title="One line, three wheels"
+...@diagrams/style
+direction: right
+line: "nanobind_add_module(\nSTABLE_ABI FREE_THREADED)" {class: file}
+p311: "CPython 3.11" {
+  class: process
+  tooltip: Too old for the stable ABI, so both options are ignored.
+}
+p312: "CPython 3.12" {
+  class: process
+  tooltip: Takes STABLE_ABI. FREE_THREADED does nothing on a Python with a GIL.
+}
+p314t: "free-threaded 3.14" {
+  class: process
+  tooltip: Takes FREE_THREADED. It can't load stable-ABI modules, so STABLE_ABI is ignored.
+}
+w311: "cp311-cp311\n3.11 only" {class: step}
+w312: "cp312-abi3\n3.12 and later" {class: current}
+w314t: "cp314-cp314t\nfree-threaded 3.14" {class: step}
+line -> p311
+line -> p312
+line -> p314t
+p311 -> w311
+p312 -> w312
+p314t -> w314t
+```
 
-Free-threaded Python cannot load stable-ABI modules.[^nanobind-free-threaded]
-A stable ABI for free-threaded builds (`abi3t`) starts with Python
-3.15.[^pep-803]
+The free-threaded build needs its own wheel because it can't load
+stable-ABI modules.[^nanobind-free-threaded] Python 3.15 starts a stable ABI
+for free-threaded builds (`abi3t`), which could later fold that wheel into
+the others.[^pep-803]
 
 ## The header in the wheel
 
-The build also installs `include/sharedbox/` and the CMake config into the
-wheel, so other extensions can compile against the same header.
-[`get_include`][sharedbox.get_include] returns the folder that holds it.
+The build also puts `include/sharedbox/` and the CMake config into the
+wheel, so your own extensions can compile against the very header the
+module was built with. [`get_include`][sharedbox.get_include] returns the
+folder that holds it.
 
 ## Sources
 

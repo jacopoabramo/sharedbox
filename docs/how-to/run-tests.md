@@ -4,8 +4,13 @@ icon: lucide/flask-conical
 
 # How to run the tests
 
-Run the Python tests, the type checks, the C++ tests of the header and the
-longer property and stress runs.
+Before you open a pull request, you'll want to know your change didn't
+break anything. This guide shows how to run each kind of check: the Python
+tests, the type checks, the C++ tests of the header, and the longer property
+and stress runs. Locally you usually run the Python tests and the type
+checks. On every pull request CI runs the tests again against each wheel,
+along with the C++ tests, and it runs the stress tests when someone starts
+it by hand.
 
 ## Before you start
 

@@ -4,13 +4,15 @@ icon: lucide/graduation-cap
 
 # Tutorials
 
-Three tutorials that build one script, `motor.py`, step by step. Follow them
-in order: each adds to the script of the one before.
+These three tutorials walk you through one script, `motor.py`, which grows a
+little with each page. Follow them in order, since each one adds to the
+script you finished in the one before.
 
 | Tutorial | You end with |
 | --- | --- |
 | [Sharing a record between processes](share-a-record.md) | a [box](../explanation/glossary.md#box) that one process creates and another changes |
 | [Reacting to changes](react-to-changes.md) | a callback and a loop that see each change as it happens |
-| [Referring to another box](refer-to-another-box.md) | a box that refers to another, and a callback that follows the reference |
+| [Referring to another box](refer-to-another-box.md) | a box that points at another, and a callback that follows it |
 
-The first tutorial lists [what you need](share-a-record.md#before-you-start).
+Start with [what you need](share-a-record.md#before-you-start), listed on the
+first tutorial.

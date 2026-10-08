@@ -4,10 +4,11 @@ icon: lucide/check-check
 
 # How to run the commit checks
 
-sharedbox checks formatting and lint with [`prek`](https://prek.j178.dev),
-which runs the hooks listed in `prek.toml` at the project root. The same
-hooks run on every commit once installed, in `uv run tox -e lint`, and in
-CI.
+Formatting and lint mistakes are cheap to fix before you commit and
+annoying to fix after CI finds them. `sharedbox` checks them with
+[`prek`](https://prek.j178.dev), which runs the hooks listed in `prek.toml`
+at the project root. Once you install them, the same hooks run on every
+commit, in `uv run tox -e lint`, and in CI.
 
 ## Before you start
 

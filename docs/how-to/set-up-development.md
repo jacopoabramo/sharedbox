@@ -4,7 +4,9 @@ icon: lucide/wrench
 
 # How to set up a development environment
 
-Get a copy of sharedbox you can change, build and test.
+To change `sharedbox`, you need your own copy that you can build and test.
+Setting it up takes one clone and one command, once you have the tools
+below.
 
 ## Before you start
 

@@ -4,111 +4,127 @@ icon: lucide/book-a
 
 # Glossary
 
-This glossary explains the terms used across the documentation. Each term
-is defined once, here, and other pages link to it the first time they use
-it.
+Each word on this page has its meaning written down once, here, and every
+other page links to it the first time it uses the word. If a page uses a
+word you don't know, its link brings you to this page.
 
-Acronyms also appear as tooltips across the site: hover a dotted-underlined
-word to read it.
+Acronyms are explained in tooltips across the site: hover over a word with
+a dotted underline to read what it stands for.
 
 ### Box
 
-A box is a record whose [fields](#field) live in one
-[segment](#segment) of shared memory, described by a subclass of
-[`SharedBox`][sharedbox.SharedBox]. Every process that opens the segment
-reads and writes the same values. In Python, a box is also the object that
-gives access to the record, and several such objects, in one process or
-many, can be [handles](#handle) on the same segment.
+A box is a record that several processes share. You describe it with a
+subclass of [`SharedBox`][sharedbox.SharedBox], and its [fields](#field)
+live in one [segment](#segment) of [shared memory](#shared-memory), so every
+process that opens the segment reads and writes the same values. In Python,
+"box" also means the object you use to reach that record; several such
+objects, in one process or in many, can be [handles](#handle) on the same
+segment.
 
 ### Capacity
 
-The capacity of a `str`, `bytes`, `bytearray` or `Decimal` [field](#field)
-is the most bytes it can hold, and of a list, set or dict field the most
-elements. It is set with [`Capacity`][sharedbox.Capacity] inside
-`Annotated`. For text it counts bytes, not characters. The field takes
-that much room in the record whatever it holds.
+A capacity is how much room a field of varying size gets, since every field
+has a fixed size. For `str`, `bytes`, `bytearray` and `Decimal` it is the
+most bytes the value can take, and for a list, set or dict the most
+elements. You set it with [`Capacity`][sharedbox.Capacity] inside
+`Annotated`. For text it counts bytes, not characters, and the field takes
+up all that room whatever it holds.
 
 ### Create id
 
-A create id is a random number drawn when a [box](#box) is created and kept
-in its header; it is never 0. A [reference field](#reference-field) and a
-pickled box store it, so a process can tell the box from one created later
-under the same name. See [Reference fields](references.md#broken-references).
+A create id is a random number a [box](#box) gets when it is created, never
+0, kept with the box. It tells two boxes apart that had the same name at
+different times: a [reference field](#reference-field) and a pickled box
+store it, so they can notice that the box they knew was removed and a new
+one created under its name. See
+[Reference fields](references.md#broken-references).
 
 ### Description
 
-The bytes in a [segment](#segment) that say how a value of a type is laid
-out, for a type whose kind alone does not say: an enum's members, a
-record's members and names, a list's capacity, an array's shape and
-element type.
+A description is the extra information a [segment](#segment) keeps for a
+type whose name alone doesn't say how its values are laid out: an enum's
+members, a record's members and their names, a list's capacity, or an
+array's shape and element type.
 
 ### Field
 
-A field is a public annotation of a `SharedBox` subclass with one of the
-types a box can store. Each field has a fixed place and a fixed size in the
-record of the [segment](#segment). See
+A field is one value of a box, declared as a public annotation of a
+`SharedBox` subclass with a type a box can store. Each field has a fixed
+place and a fixed size in the [segment](#segment). See
 [How a box is stored](how-a-box-is-stored.md).
 
 ### Handle
 
-A handle is one open mapping of a [segment](#segment): a box object in
-Python, or the capsule handle that
+A handle is one way in to a [segment](#segment), held by one user: a box
+object in Python, or the handle in the capsule that
 [`__sharedbox_box__`][sharedbox.SharedBox.__sharedbox_box__] gives a C or
-C++ library. Closing a handle detaches only that handle. See
+C++ library. Each handle has the segment mapped into its process on its
+own, so closing one handle leaves the others working. See
 [Closing and lifetime](closing-and-lifetime.md).
 
 ### Identity
 
-The identity of a `SharedBox` class is the string that names it across
-processes: its `module.qualname`, unless the class sets the `identity`
-class keyword. It
-enters the [schema hash](#schema-hash), and names the [box](#box) when the
-class sets no `name`.
+The identity of a `SharedBox` class is the string that names the class the
+same way in every process. It is the class's `module.qualname`, unless the
+class sets the `identity` keyword. The box's default name and its
+[schema hash](#schema-hash) are both worked out from it.
 
 ### Reference field
 
 A reference field is a [field](#field) annotated with another `SharedBox`
-subclass, or with that class `| None`. It stores which box it refers to:
-the box's name, [schema hash](#schema-hash) and [create id](#create-id).
-The other box keeps its own segment, lock and lifetime. See
-[Reference fields](references.md).
+subclass, or with that class `| None`, so one box can point at another. It
+stores which box it points at, not that box's values: the box's name,
+[schema hash](#schema-hash) and [create id](#create-id). The other box keeps
+its own segment, lock and lifetime. See [Reference fields](references.md).
 
 ### Schema hash
 
-The schema hash is the first 8 bytes of SHA-256 over a class's
-[identity](#identity) and each field's name, kind and capacity. It is kept
-in the header of the [segment](#segment), and a process that attaches must
-compute the same value from its own class. See
-[How a box is stored](how-a-box-is-stored.md#the-schema-hash).
+A schema hash is a short fingerprint of a box's layout: a number worked
+out from the class's [identity](#identity) and each field's name, type and
+capacity (the first 8 bytes of a SHA-256 hash of them). The
+[segment](#segment) keeps it, and a process that attaches works it out
+again from its own class. If the two differ, the classes don't describe the
+same layout, and the attach is refused instead of reading the wrong bytes.
+See [How a box is stored](how-a-box-is-stored.md#the-schema-hash).
 
 ### Segment
 
-A segment is the block of shared memory that holds one [box](#box): a
-header, a table of the fields, the [waiter slots](#waiter-slot) and the
-record of values. It has a name, `sharedbox.<name>`, by which any process
-can open it. See [How a box is stored](how-a-box-is-stored.md).
+A segment is the block of [shared memory](#shared-memory) that holds one
+[box](#box). Besides the values, it holds a header, a table of the fields
+and the [waiter slots](#waiter-slot). It has a name, `sharedbox.<name>`, by
+which any process can open it. See
+[How a box is stored](how-a-box-is-stored.md).
 
 ### Sequence lock
 
-The sequence lock is the write lock of a [box](#box): a counter in the
-header that is even when no write runs and odd while one does. A writer
-makes the counter odd, copies, and makes it even again. A reader takes no
-lock: it copies and tries again if the counter moved. See
+The sequence lock is how a [box](#box) keeps readers from seeing half a
+write. It is a counter in the segment that is even when no write is running
+and odd while one is. A writer makes the counter odd, copies its values,
+and makes it even again. A reader doesn't lock anything: it copies, and if
+the counter moved in the meantime, it copies again. See
 [Reading and writing](reading-and-writing.md).
+
+### Shared memory
+
+Shared memory is memory the operating system lets several processes use at
+the same time, so a value one process writes there is immediately there for
+the others to read, without being sent. Each [box](#box) is kept in a block
+of it, its [segment](#segment).
 
 ### Waiter slot
 
 A waiter slot is an entry in a [segment](#segment) that a waiting thread
-holds, so a write knows whom to wake: a box's [watcher](#watcher), or a C++
-program that called `register_waiter`. It records its owner's pid, start
-time and pid namespace. A box has a fixed number of slots, shared by every
-process. See [Waiting for changes](waiting-for-changes.md).
+holds, so that a write knows whom to wake up. The thread is a box's
+[watcher](#watcher), or a C++ program that called `register_waiter`. The
+slot records which process holds it, so a slot left behind by a process
+that crashed can be freed again. A box has a fixed number of slots, shared
+by every process. See [Waiting for changes](waiting-for-changes.md).
 
 ### Watcher
 
-A watcher is the background thread of a box [handle](#handle) that waits
-for writes from any process. It runs the callbacks of
-[`events`][sharedbox.SharedBox.events] and serves the iterators of
-[`watch`][sharedbox.SharedBox.watch], and holds one
+A watcher is a background thread of a box [handle](#handle) that waits for
+writes from any process. It runs the callbacks you connect to
+[`events`][sharedbox.SharedBox.events] and delivers the values that
+[`watch`][sharedbox.SharedBox.watch] gives you, and it holds one
 [waiter slot](#waiter-slot) while it waits. See
 [Waiting for changes](waiting-for-changes.md).

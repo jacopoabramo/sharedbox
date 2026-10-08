@@ -4,12 +4,15 @@ icon: lucide/lightbulb
 
 # When to use sharedbox
 
-A [box](glossary.md#box) is for sharing a record between processes. Every
-read and write encodes the value to or from bytes in shared memory, which
-costs a few hundred nanoseconds and means a read returns a copy.
+Should you use a box, or would something simpler do? A
+[box](glossary.md#box) is made for sharing a record between processes, and
+that has a price: every read and write turns the value into bytes in shared
+memory or back, which costs some tens to hundreds of nanoseconds, and every
+read gives you a copy.
 
-Threads of one process can share ordinary Python objects instead, which is
-several times faster and keeps any Python type. psygnal's `evented`
+If all your code runs in threads of one process, you don't need to pay
+that price: threads can share ordinary Python objects, which is several
+times faster and works with any Python type. psygnal's `evented`
 dataclasses give such an object the same `events` interface as a box, and a
 `threading.Lock` makes several changes appear at once, as
 [`update`][sharedbox.SharedBox.update] does:
