@@ -393,13 +393,16 @@ def test_threads_reading_a_reused_field_see_whole_values_in_order(
 ) -> None:
     """Check that threads reading a reused record while another thread writes it see only written values, never older than one they saw before."""
     stop = threading.Event()
+    started = threading.Barrier(4)
     wrong: list[Twin] = []
     errors: list[Exception] = []
+    seen: list[int] = []
     with Twins.create(unique_name) as box:
 
         def write() -> None:
             n = 0
             try:
+                started.wait()
                 while not stop.is_set():
                     n += 1
                     box.twin = Twin(n, n)
@@ -408,25 +411,33 @@ def test_threads_reading_a_reused_field_see_whole_values_in_order(
 
         def read() -> None:
             last = 0
+            distinct = 0
+            deadline = time.monotonic() + 10
             try:
-                while not stop.is_set():
+                started.wait()
+                while distinct < 20 and time.monotonic() < deadline:
                     twin = box.twin
                     if twin.left != twin.right or twin.left < last:
                         wrong.append(twin)
+                    if twin.left > last:
+                        distinct += 1
                     last = twin.left
             except Exception as error:
                 errors.append(error)
+            seen.append(distinct)
 
-        threads = [threading.Thread(target=write)]
-        threads += [threading.Thread(target=read) for _ in range(3)]
-        for thread in threads:
+        writer = threading.Thread(target=write)
+        readers = [threading.Thread(target=read) for _ in range(3)]
+        writer.start()
+        for thread in readers:
             thread.start()
-        time.sleep(0.5)
+        for thread in readers:
+            thread.join(15)
         stop.set()
-        for thread in threads:
-            thread.join()
+        writer.join(15)
     Twins.unlink(unique_name)
-    assert (errors, wrong) == ([], [])
+    assert not any(thread.is_alive() for thread in [writer, *readers])
+    assert (errors, wrong, seen) == ([], [], [20, 20, 20])
 
 
 def test_closing_a_box_while_threads_read_a_reused_field_raises_only_box_closed_error(
@@ -455,4 +466,5 @@ def test_closing_a_box_while_threads_read_a_reused_field_raises_only_box_closed_
     for thread in threads:
         thread.join(10)
     Twins.unlink(unique_name)
+    assert not any(thread.is_alive() for thread in threads)
     assert errors == []
