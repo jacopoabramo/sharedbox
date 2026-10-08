@@ -1,0 +1,47 @@
+name: Measure reused reads (temporary)
+
+on:
+  pull_request:
+    branches: [ main ]
+
+permissions:
+  contents: read
+
+jobs:
+  measure:
+    name: Reused reads on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-latest, windows-latest ]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: astral-sh/setup-uv@v7
+
+      - name: Install the branch and main side by side
+        shell: bash
+        run: |
+          git worktree add ../main origin/main
+          uv sync --frozen --python 3.12
+          (cd ../main && uv sync --frozen --python 3.12)
+
+      - name: Time reused reads, alternating main and the branch, three runs each
+        shell: bash
+        run: |
+          for i in 1 2 3; do
+            for side in main branch; do
+              dir=.
+              [ "$side" = main ] && dir=../main
+              echo "### Run $i, $side, on ${{ matrix.os }}" >> "$GITHUB_STEP_SUMMARY"
+              echo '```' >> "$GITHUB_STEP_SUMMARY"
+              for filter in "read record*" "write+read record*" "write record*" "read datetime*" "read int/SharedBox"; do
+                (cd "$dir" && uv run --no-sync benchbox ops --fast --quiet --filter "$filter") | tee -a "$GITHUB_STEP_SUMMARY"
+              done
+              echo '```' >> "$GITHUB_STEP_SUMMARY"
+            done
+          done
