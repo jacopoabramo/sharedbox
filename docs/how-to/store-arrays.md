@@ -63,13 +63,14 @@ saves you the extra copy. It gives you the field itself to fill:
 ```
 
 The array starts out holding the field's current value. When the block
-ends, the box counts the write and wakes everyone watching the field, even
-if the block stopped halfway with an exception.
+ends, the box counts the write and wakes everyone watching the field. That
+happens even if the block stops halfway with an exception, and then the
+field keeps whatever the block wrote before it stopped.
 
 !!! warning "Everyone else waits while the block runs"
     The block holds the box's write lock, so every read and write of the
     box waits until it ends, in every process. A reader that waits longer
-    than its lock timeout raises
+    than its lock timeout, 5 s unless the class sets `lock_timeout`, raises
     [`LockTimeoutError`][sharedbox.LockTimeoutError]. Do the slow work
     before the block, and keep the block itself short.
 

@@ -66,14 +66,15 @@ sharedbox does not use an ordinary mutex, for three reasons:
   every writer.
 - A process that dies holding a mutex leaves it held in a way other
   processes cannot always detect. A dead writer here leaves an odd counter
-  and its pid in `writer_pid`, which
-  [`force_unlock`][sharedbox.SharedBox.force_unlock] clears.
+  and its pid in `writer_pid`, so you can see who held the lock, and
+  [`force_unlock`][sharedbox.SharedBox.force_unlock] releases it.
 - Writers take turns. One lock per box is enough for records the size of a
   dataclass, and it is what lets `update` change several fields at once.
 
 The counter must be usable from several processes at once. C++ only
 guarantees that for atomic operations the processor performs directly,
-without a hidden lock inside the program:[^lock-free]
+without a hidden lock inside the program,[^lock-free] so the header
+checks at compile time that the counter's operations are of that kind:
 
 ```cpp
 static_assert(std::atomic_ref<std::uint64_t>::is_always_lock_free);
