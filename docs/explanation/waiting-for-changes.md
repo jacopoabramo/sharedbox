@@ -4,47 +4,51 @@ icon: lucide/lightbulb
 
 # Waiting for changes
 
-[`events`][sharedbox.SharedBox.events] and
-[`watch`][sharedbox.SharedBox.watch] need a way to sleep until another
-process writes. Checking in a loop would waste CPU, and sleeping for a fixed
-time would add delay. Each waiting thread therefore holds a
-[waiter slot](glossary.md#waiter-slot) in the
-[segment](glossary.md#segment), and a write wakes the slots that are
-occupied. This page explains how the wake-up works, why changes reach
-callbacks the way they do, and what following
+When you connect a callback to [`events`][sharedbox.SharedBox.events] or
+loop over [`watch`][sharedbox.SharedBox.watch], something has to sleep
+until another process writes, then wake up at once. Checking in a loop
+would burn CPU, and sleeping for a fixed time would add delay. Instead,
+each waiting thread holds a [waiter slot](glossary.md#waiter-slot) in the
+[segment](glossary.md#segment), and every write wakes the slots that are
+taken. This page explains how that wake-up works, why your callbacks are
+called the way they are, and what following
 [reference fields](glossary.md#reference-field) costs.
 
 ## Waking a process
 
-- A [box](glossary.md#box) has a fixed number of slots, set by its
-  `max_waiters` class keyword (see [`SharedBox`][sharedbox.SharedBox]), and
-  shared by every process. Each waiting [watcher](glossary.md#watcher)
-  holds one. A slot records its owner's pid, start time and pid namespace.
-- Linux wakes through one futex word in the header:[^futex] a waiter
-  sleeps with `FUTEX_WAIT` while `wake_word` still holds the value it read,
-  and a writer increments the word and calls `FUTEX_WAKE` once for
-  everybody. Windows has `WaitOnAddress`, but it only works between threads
-  of one process,[^wait-on-address] so each slot gets its own auto-reset
-  event, `Local\sharedbox.<name>.w<i>`,[^create-event] and a writer sets
-  the event of every occupied slot. On both systems a write to a box nobody
-  waits on makes no system call to wake anyone: the writer reads `waiters`
-  and stops at 0.
-- A slot held by a process that was killed is freed by the next register
-  or attach, except in the cases listed under [Waiter
-  slots](../reference/segment-layout.md#waiter-slots). That process checks
-  each occupied slot's owner as [Checking a process is
-  alive](checking-a-process-is-alive.md) describes. A slot recorded in
-  another pid namespace is never freed, because its pid cannot be checked
-  from here.
-- The Python watcher waits in steps of at most 1 s. The step is not a poll
-  for changes: writes and an interrupt wake it at once. After each step the
-  watcher checks that its slot still records its own pid, start time and
-  namespace, and claims a new slot if not. What it does while every slot is
-  taken is described under `max_waiters` in
-  [`SharedBox`][sharedbox.SharedBox].
-- [`close`][sharedbox.SharedBox.close] interrupts its own watcher: it sets
-  the interrupt flag of the watcher's slot and wakes that slot, so the
-  watcher thread returns at once instead of at the end of its step.
+A [box](glossary.md#box) has a fixed number of slots, set by its
+`max_waiters` class keyword (see [`SharedBox`][sharedbox.SharedBox]) and
+shared by every process. Each waiting [watcher](glossary.md#watcher) holds
+one, and the slot records which process owns it: its pid, start time and
+pid namespace.
+
+How a write wakes the waiters depends on the system. Linux has one futex
+word in the header:[^futex] a waiter sleeps with `FUTEX_WAIT` for as long
+as `wake_word` still holds the value it read, and a writer increments the
+word and calls `FUTEX_WAKE` once for everybody. Windows has a similar call,
+`WaitOnAddress`, but it only works between threads of one
+process,[^wait-on-address] so there each slot gets its own auto-reset
+event, `Local\sharedbox.<name>.w<i>`,[^create-event] and a writer sets the
+event of every taken slot. Either way, a write to a box nobody waits on
+costs no system call: the writer sees that `waiters` is 0 and stops.
+
+A process can be killed while it holds a slot, so the next process that
+registers or attaches checks each taken slot's owner, as
+[Checking a process is alive](checking-a-process-is-alive.md) describes,
+and frees the slots of owners that are gone. The few exceptions are listed
+under [Waiter slots](../reference/segment-layout.md#waiter-slots). A slot
+recorded in another pid namespace is never freed, because its pid can't be
+checked from here.
+
+The Python watcher waits in steps of at most 1 s. That isn't polling for
+changes, since a write or an interrupt wakes it at once; the step is there
+so that after each one the watcher can check that its slot still records
+its own process, and claim a new slot if not. What it does while every slot
+is taken is described under `max_waiters` in
+[`SharedBox`][sharedbox.SharedBox]. When you call
+[`close`][sharedbox.SharedBox.close], it sets the interrupt flag of its own
+watcher's slot and wakes that slot, so the watcher thread returns at once
+instead of at the end of its step.
 
 A wake-up is never lost. On Linux the waiter reads `wake_word` before it
 reads the generation, and the writer changes the generation before
@@ -59,9 +63,9 @@ a killed process leaves a slot stuck or the count one too high.
 
 ## How changes reach callbacks
 
-The rules for when a signal of `events` is emitted are in the docstring of
-[`events`][sharedbox.SharedBox.events]. They follow from how the watcher
-works:
+The exact rules for when a signal of `events` fires are in the docstring of
+[`events`][sharedbox.SharedBox.events]. They all follow from how the
+watcher works:
 
 - The watcher thread is the one that wakes, so callbacks run on it, not on
   the thread or in the process that wrote.
@@ -75,8 +79,8 @@ works:
   `events` and `watch`, so a slow callback delays the `watch` iterators of
   the same box.
 
-`events` is an ordinary psygnal `SignalGroup`, so psygnal's own tools for
-controlling emissions apply to it:
+`events` is an ordinary `SignalGroup` from the `psygnal` library, so all of
+`psygnal`'s own tools for controlling when callbacks run work on it:
 
 - `psygnal.qt.start_emitting_from_queue()` starts a Qt timer on the calling
   thread that runs callbacks connected with `thread="main"`, so a Qt
@@ -118,12 +122,13 @@ Pump.unlink()
 ## Forwarding costs
 
 [`follow`][sharedbox.BoxEvents.follow] waits for changes in each followed
-box the same way `events` does: it attaches its own handle to the box,
-and that handle's watcher takes one waiter slot in the box and one thread
-in the following process, at every level of a chain. The slot counts
-against that box's `max_waiters`, and on Linux each handle also takes a file descriptor. `follow()` over a
-wide graph can take every waiter slot of a box, and a watcher that finds
-none checks for changes once a second.
+box the same way `events` does: it opens its own handle on the box, and
+that handle's watcher takes one waiter slot in the box and one thread in
+your process, at every level of a chain. The slot counts against that
+box's `max_waiters`, and on Linux each handle also takes a file descriptor.
+So `follow()` over a wide graph can take every waiter slot of a box, and a
+watcher that finds none left falls back to checking for changes once a
+second.
 
 One thread waiting on several boxes at once (`futex_waitv` on Linux,
 `WaitForMultipleObjects` on Windows) would need new native code, and is
