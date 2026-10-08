@@ -20,7 +20,6 @@ namespace {
 // one program see one definition.
 #ifdef SBX_EXPECT_STD_EXPECTED
 static_assert(!std::is_same_v<result<int>, std::expected<int, sharedbox::error>>);
-static_assert(std::is_constructible_v<std::expected<int, sharedbox::error>, result<int>>);
 static_assert(std::is_constructible_v<result<int>, std::expected<int, sharedbox::error>>);
 #endif
 
@@ -142,3 +141,30 @@ TEST_CASE("os_failure captures the OS error of the failing call") {
 #endif
     CHECK(failed.error().code == status::os);
 }
+
+#ifdef SBX_EXPECT_STD_EXPECTED
+TEST_CASE("to_expected and the constructor from std::expected round-trip") {
+    const sharedbox::error bad{status::os, 5, 0};
+    const result<int> failed_int = sharedbox::unexpected(bad);
+    const result<int> back_int = sharedbox::to_expected(failed_int);
+    CHECK((!back_int && back_int.error().code == status::os && back_int.error().os == 5));
+
+    const result<bool> no = false;
+    const result<bool> yes = true;
+    const result<bool> failed_bool = sharedbox::unexpected(bad);
+    const result<bool> back_no = sharedbox::to_expected(no);
+    const result<bool> back_yes = sharedbox::to_expected(yes);
+    const result<bool> back_failed = sharedbox::to_expected(failed_bool);
+    CHECK((back_no && !*back_no));
+    CHECK((back_yes && *back_yes));
+    CHECK((!back_failed && back_failed.error().os == 5));
+
+    const result<std::unique_ptr<int>> back_ptr =
+        sharedbox::to_expected(result<std::unique_ptr<int>>(std::make_unique<int>(9)));
+    CHECK((back_ptr && **back_ptr == 9));
+
+    const result<void> back_ok = sharedbox::to_expected(result<void>());
+    const result<void> back_void = sharedbox::to_expected(result<void>(sharedbox::unexpected(bad)));
+    CHECK((back_ok && !back_void && back_void.error().os == 5));
+}
+#endif

@@ -363,7 +363,7 @@ template <class> inline constexpr bool is_result = false;
 template <class T> inline constexpr bool is_result<result<T>> = true;
 } // namespace detail
 
-// A value or an error status, with the part of the interface of std::expected<T, status> this library
+// A value or an error, with the part of the interface of std::expected<T, error> this library
 // uses. value() on an error terminates, where std::expected would throw.
 template <class T> class result {
 public:
@@ -378,15 +378,10 @@ public:
         : v_(std::in_place_index<0>, std::forward<U>(v)) {}
     constexpr result(unexpected e) : v_(std::in_place_index<1>, e) {}
 #if defined(__cpp_lib_expected) && __cpp_lib_expected >= 202211L
-    // For code that wants the standard type; result itself never aliases it, so a program may mix
-    // translation units built as C++20 and as C++23.
+    // result never aliases std::expected, so a program may mix translation units built as C++20 and as
+    // C++23; to_expected converts the other way.
     constexpr result(std::expected<T, sharedbox::error> e)
         : result(e ? result(std::move(*e)) : result(unexpected(e.error()))) {}
-    constexpr operator std::expected<T, sharedbox::error>() const & {
-        if (has_value())
-            return **this;
-        return std::unexpected(error());
-    }
 #endif
 
     constexpr bool has_value() const noexcept { return v_.index() == 0; }
@@ -464,15 +459,10 @@ public:
     constexpr result() noexcept = default;
     constexpr result(unexpected e) noexcept : has_value_(false), error_(e.error()) {}
 #if defined(__cpp_lib_expected) && __cpp_lib_expected >= 202211L
-    // For code that wants the standard type; result itself never aliases it, so a program may mix
-    // translation units built as C++20 and as C++23.
+    // result never aliases std::expected, so a program may mix translation units built as C++20 and as
+    // C++23; to_expected converts the other way.
     constexpr result(std::expected<void, sharedbox::error> e)
         : result(e ? result() : result(unexpected(e.error()))) {}
-    constexpr operator std::expected<void, sharedbox::error>() const & {
-        if (has_value())
-            return {};
-        return std::unexpected(error());
-    }
 #endif
 
     constexpr bool has_value() const noexcept { return has_value_; }
@@ -513,6 +503,19 @@ private:
     bool has_value_ = true;
     sharedbox::error error_{};
 };
+
+#if defined(__cpp_lib_expected) && __cpp_lib_expected >= 202211L
+// A free function because expected's own converting constructor would read a result<bool> through its
+// explicit operator bool, and a member conversion cannot move a move-only value.
+template <class T> constexpr std::expected<T, error> to_expected(result<T> r) {
+    if (!r)
+        return std::unexpected(r.error());
+    if constexpr (std::is_void_v<T>)
+        return {};
+    else
+        return *std::move(r);
+}
+#endif
 
 namespace detail {
 
@@ -1611,9 +1614,10 @@ inline result<os_mapping> map_open(std::string_view name, backoff &wait) noexcep
 
 #ifndef _WIN32
 // Fills buf from getrandom, or from /dev/urandom where the kernel is older than 3.17 or a seccomp
-// profile refuses getrandom.
-inline bool fill_random(unsigned char *buf, std::size_t size) noexcept {
+// profile refuses getrandom. Returns 0, or the errno of the failure (EIO for a read that returned 0).
+inline int fill_random(unsigned char *buf, std::size_t size) noexcept {
     std::size_t got = 0;
+    int err = 0;
     int fd = -1;
     while (got < size) {
         const ssize_t n = fd < 0 ? getrandom(buf + got, size - got, 0) : read(fd, buf + got, size - got);
@@ -1630,14 +1634,12 @@ inline bool fill_random(unsigned char *buf, std::size_t size) noexcept {
             if (fd >= 0)
                 continue;
         }
+        err = n < 0 ? errno : EIO;
         break;
     }
-    if (fd >= 0) {
-        const int failed = errno;
+    if (fd >= 0)
         close(fd);
-        errno = failed;
-    }
-    return got == size;
+    return err;
 }
 #endif
 
@@ -1648,11 +1650,12 @@ inline result<std::uint64_t> random_id() noexcept {
 #ifdef _WIN32
         const NTSTATUS rc =
             BCryptGenRandom(nullptr, reinterpret_cast<PUCHAR>(&id), sizeof id, BCRYPT_USE_SYSTEM_PREFERRED_RNG);
+        // BCryptGenRandom does not set GetLastError, so there is no OS code to keep.
         if (!BCRYPT_SUCCESS(rc))
-            return os_failure();
+            return unexpected(status::os);
 #else
-        if (!fill_random(reinterpret_cast<unsigned char *>(&id), sizeof id))
-            return os_failure();
+        if (const int err = fill_random(reinterpret_cast<unsigned char *>(&id), sizeof id); err != 0)
+            return unexpected(error{status::os, err, 0});
 #endif
     }
     return id;
@@ -2504,7 +2507,7 @@ inline std::uint64_t handle::size() const noexcept { return s_->size; }
 #ifndef _WIN32
     const detail::object_name path = detail::make_name("/", name, "");
     if (shm_unlink(path.data()) != 0)
-        return unexpected(errno == ENOENT ? status::not_found : status::os);
+        return errno == ENOENT ? unexpected(status::not_found) : detail::os_failure();
 #endif
     return {};
 }
