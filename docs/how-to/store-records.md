@@ -30,9 +30,10 @@ class:
 
 !!! warning "Your constructor runs on every read"
     Each read calls the class's constructor, so `__post_init__`, `attrs`
-    converters and validators run every time. Make sure they give back the
-    same value when they run on a value they produced before, or a read
-    won't match what you wrote.
+    converters and validators run every time. Make sure running them a
+    second time changes nothing: a converter that rounds a float, for
+    example, must leave an already rounded float as it is, or a read won't
+    match what you wrote.
 
 ## 3. Change one member
 

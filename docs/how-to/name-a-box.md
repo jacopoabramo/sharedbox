@@ -26,7 +26,8 @@ class sets one, as `Motor` does here. Every process that imports the class
 works out the same name, so you never have to pass it around.
 
 Set `identity` when you might move the class to another module or rename
-it. The identity stays the same, and so does the name of the box.
+it. With `identity` set, moving or renaming the class doesn't change its
+identity, so the box keeps its name and running processes still find it.
 
 !!! warning "Changing the identity cuts off running processes"
     A new identity gives the box a new name and a new

@@ -54,10 +54,21 @@ From it you work out two values once and keep them as constants:
   of SHA-256 over the [identity](../explanation/glossary.md#identity)
   `camera/frame/1`. For `Frame` it is `d8dfe7af542f1d91`.
 
-`sharedbox.hpp` doesn't compute SHA-256, so work both out with your own
-library, or once in Python.
+`sharedbox.hpp` doesn't compute SHA-256, so work both out once, for
+example in Python, and paste the results into your code:
+
+```python
+import hashlib
+
+identity = b"camera/frame/1"
+schema = b"camera/frame/1|exposure:float:8|count:int:8"
+print(hashlib.sha256(identity).hexdigest()[:16])        # d8dfe7af542f1d91
+digest = hashlib.sha256(schema).digest()
+print(hex(int.from_bytes(digest[:8], "little")))        # 0x544efbe0815c923d
+```
+
 [The schema hash](../explanation/how-a-box-is-stored.md#the-schema-hash)
-explains what the hashed text holds.
+explains how to write the hashed text for your own class.
 
 In C++ you name a [field](../explanation/glossary.md#field) by its position in the class, counting
 from 0: `exposure` is field 0 and `count` is field 1.

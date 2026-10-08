@@ -21,7 +21,8 @@ the element type inside:
 ```
 
 Set elements and dict keys are read back into a new set or dict, so their
-type has to be hashable. A `list`, `set`, `dict`, `bytearray`, `TypedDict`
+type has to be hashable, meaning Python can use it as a set element or dict
+key. A `list`, `set`, `dict`, `bytearray`, `TypedDict`
 or record class that isn't frozen can't be a set element or a dict key, and
 the box class raises `TypeError` when you define it.
 

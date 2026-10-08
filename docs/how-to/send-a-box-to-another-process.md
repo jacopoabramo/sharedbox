@@ -21,10 +21,12 @@ Hand the box to the new process like any other argument:
 --8<-- "docs/examples/send_a_box_to_another_process.py:main"
 ```
 
-This works however the child is started. With the `spawn` or `forkserver`
-start method, `multiprocessing` pickles the arguments, but the pickle holds
-only the box's name and which box it is, not its values (see
-[`SharedBox`][sharedbox.SharedBox]). Unpickling it in the child opens a new
+This works however the child is started. `multiprocessing` can start a
+child in three ways, its start methods: `spawn` and `forkserver` start a
+fresh Python and send it the arguments as a pickle, while `fork` copies the
+running process. With `spawn` or `forkserver`, the pickle of a box holds
+only its name and the numbers that tell it apart from other boxes, not its
+values (see [`SharedBox`][sharedbox.SharedBox]). Unpickling it in the child opens a new
 [handle](../explanation/glossary.md#handle): a separate box object on the same data, which the
 child closes when it's done. `multiprocessing.shared_memory.SharedMemory`
 travels the same way.

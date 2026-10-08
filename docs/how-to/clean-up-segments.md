@@ -62,8 +62,9 @@ process that has it open.
 
 ## Release a lock left by a crash
 
-A process that dies in the middle of a write leaves the box's write lock
-taken. From then on, every read and write waits for the class's
+Only one process can write to a box at a time, so a writer holds the box's
+write lock while it writes. A process that dies in the middle of a write
+leaves that lock taken. From then on, every read and write waits for the class's
 `lock_timeout` and then raises
 [`LockTimeoutError`][sharedbox.LockTimeoutError], whose message names the
 process that holds the lock. Once you know that process is gone, call
@@ -80,8 +81,10 @@ until you write it again.
 !!! warning "Only unlock a lock whose owner is gone"
     `force_unlock` doesn't check that the process holding the lock has
     stopped. If it is still running, its half-finished write becomes
-    visible to readers. Check the pid in the error message first;
-    [`force_unlock`][sharedbox.SharedBox.force_unlock] has the details.
+    visible to readers. Check the process id (pid) in the error message
+    first, with `ps -p <pid>` on Linux or `tasklist /FI "PID eq <pid>"` on
+    Windows; [`force_unlock`][sharedbox.SharedBox.force_unlock] has the
+    details.
 
 ??? example "The whole script"
 

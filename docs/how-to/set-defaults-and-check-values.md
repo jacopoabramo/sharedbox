@@ -34,8 +34,8 @@ long constructor calls readable:
 
 To make every field of a class keyword-only, pass `kw_only=True` in the
 class statement instead, and for a single field use `field(kw_only=True)`.
-A keyword-only field with a default may come before a positional field
-without one.
+Because keyword-only fields are passed by name, one with a default may even
+come before a positional field without one.
 
 ## Check values when the box is created
 
@@ -46,9 +46,9 @@ Define `__post_init__` and raise an exception when a value is wrong:
 ```
 
 `__post_init__` runs after the values are written but before any other
-process can open the box. If it raises, the box is removed before anyone
-sees it, so no process reads the wrong values and you can use the name
-again straight away. The docstring of [`SharedBox`][sharedbox.SharedBox]
+process can open the box. If it raises, the box is removed before any other
+process could open it, so nobody reads the wrong values, and the name is
+free for your next try straight away. The docstring of [`SharedBox`][sharedbox.SharedBox]
 has the details.
 
 !!! warning "Later writes are not checked"
