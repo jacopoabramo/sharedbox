@@ -93,10 +93,10 @@ your build at the header in one of two ways:
 - Put [`sharedbox.get_include()`][sharedbox.get_include] on the include
   path.
 - With CMake, add `Path(sharedbox.get_include()).parent` to
-  `CMAKE_PREFIX_PATH`, call `find_package(sharedbox 0.4 CONFIG REQUIRED)`
+  `CMAKE_PREFIX_PATH`, call `find_package(sharedbox 0.5 CONFIG REQUIRED)`
   and link `sharedbox::headers` (C++) or `sharedbox::c` (C). The version
   is optional. Before 1.0 a request accepts only the same minor version,
-  so `0.4` accepts 0.4.0 and later 0.4 releases but not 0.5.
+  so `0.5` accepts 0.5.0 and later 0.5 releases but not 0.6.
 
 `sharedbox::c` compiles `sharedbox_c.cpp` into the target that links it,
 so your project has to enable the CXX language as well as C; if it doesn't,

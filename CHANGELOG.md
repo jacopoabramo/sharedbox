@@ -9,6 +9,8 @@ Dates are marked as `DD-MM-YYYY`
 
 ## [Unreleased]
 
+## [0.5.0] - 09-10-2026
+
 ### Added
 
 - `SharedBox.read_into`: copies an array field into an array the caller
@@ -328,7 +330,8 @@ stage.events.nested.connect(lambda path, new, old: print(path, new))
 
 - Initial release
 
-[Unreleased]: https://github.com/jacopoabramo/sharedbox/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/jacopoabramo/sharedbox/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/jacopoabramo/sharedbox/compare/v0.4.1...v0.5.0
 [0.4.1]: https://github.com/jacopoabramo/sharedbox/compare/v0.4.0...v0.4.1
 [0.4.0]: https://github.com/jacopoabramo/sharedbox/compare/v0.3.1...v0.4.0
 [0.3.1]: https://github.com/jacopoabramo/sharedbox/compare/v0.3.0...v0.3.1
