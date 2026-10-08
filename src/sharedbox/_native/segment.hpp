@@ -1,5 +1,6 @@
 #pragma once
 
+#include <atomic>
 #include <cstddef>
 #include <cstdint>
 #include <memory>
@@ -75,6 +76,30 @@ struct FieldRead {
     std::unique_ptr<std::byte[]> large;
 };
 
+/// The write lock on one array field, taken on a second handle of the segment with its own mapping, so the
+/// field's bytes stay valid after the box is closed. end() releases the lock once; the destructor calls it if
+/// nothing did.
+class FieldWriter {
+public:
+    FieldWriter(std::shared_ptr<handle> box, field_write write) : box_(std::move(box)), write_(write) {}
+    ~FieldWriter() { end(); }
+    FieldWriter(const FieldWriter &) = delete;
+    FieldWriter &operator=(const FieldWriter &) = delete;
+
+    std::span<std::byte> bytes() const { return write_.bytes; }
+    /// The handle the lock was taken on; the array over bytes() keeps a copy of it.
+    const std::shared_ptr<handle> &box() const { return box_; }
+    void end() noexcept {
+        if (!ended_.exchange(true))
+            box_->end_write(write_);
+    }
+
+private:
+    std::shared_ptr<handle> box_;
+    field_write write_;
+    std::atomic<bool> ended_{false};
+};
+
 /// A named shared-memory segment holding one fixed-layout record.
 class Segment {
 public:
@@ -98,6 +123,9 @@ public:
     /// Copies the field's stored bytes, from one complete write, into out, which holds exactly as many bytes
     /// as the field; for an array field. Throws std::invalid_argument for another size.
     void read_into(std::uint32_t field, std::span<std::byte> out) const;
+    /// Takes the write lock on the segment's second handle, made on the first call, and returns the array
+    /// field's bytes to fill in place; the lock wait releases the GIL as other writes do.
+    std::unique_ptr<FieldWriter> begin_write(std::uint32_t field) const;
     /// Bytes of the record, the size of the buffer read_record fills.
     std::size_t record_size() const;
     /// Copies the whole record, every field from one moment, into out, which holds record_size() bytes;

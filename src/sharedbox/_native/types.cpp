@@ -810,8 +810,6 @@ void Types::copy_array(const nb::ndarray<nb::ro> &view, std::byte *out) {
 
 nb::object Types::decode_array(const detail::type_ref &t, const std::byte *data,
                                std::unique_ptr<std::byte[]> *owned) const {
-    const NodeInfo &n = nodes_[t.node];
-    const detail::type_node &node = tree_.node(t.node);
     std::unique_ptr<std::byte[]> buffer;
     if (owned != nullptr && owned->get() == data) {
         buffer = std::move(*owned);
@@ -824,16 +822,22 @@ nb::object Types::decode_array(const detail::type_ref &t, const std::byte *data,
             std::memcpy(buffer.get(), data, t.size);
         }
     }
+    std::byte *raw = buffer.get();
+    nb::capsule owner(raw, [](void *p) noexcept { delete[] static_cast<std::byte *>(p); });
+    // Released only once the capsule exists, so a failure to make it does not leak the buffer.
+    buffer.release();
+    return wrap_array(t, raw, owner);
+}
+
+nb::object Types::wrap_array(const detail::type_ref &t, std::byte *raw, nb::handle owner) const {
+    const NodeInfo &n = nodes_[t.node];
+    const detail::type_node &node = tree_.node(t.node);
     std::size_t shape[8];
     for (std::uint32_t i = 0; i < node.ndim; ++i)
         shape[i] = static_cast<std::size_t>(tree_.number(node.numbers + i));
     const nb::dlpack::dtype dtype = n.as_uint16
                                         ? nb::dlpack::dtype{1, 16, 1}
                                         : nb::dlpack::dtype{node.dtype.code, node.dtype.bits, node.dtype.lanes};
-    std::byte *raw = buffer.get();
-    nb::capsule owner(raw, [](void *p) noexcept { delete[] static_cast<std::byte *>(p); });
-    // Released only once the capsule exists, so a failure to make it does not leak the buffer.
-    buffer.release();
     // array_api makes a nanobind.nb_ndarray with __dlpack__; a framework-less ndarray casts to a bare capsule.
     nb::object array = nb::cast(nb::ndarray<nb::array_api>(raw, node.ndim, shape, owner, nullptr, dtype));
     if (n.cls == Py_None)
@@ -842,6 +846,13 @@ nb::object Types::decode_array(const detail::type_ref &t, const std::byte *data,
     if (made == nullptr)
         throw nb::python_error();
     return nb::steal(made);
+}
+
+nb::object Types::array_over(std::uint32_t index, std::byte *data, nb::handle owner) const {
+    const detail::type_ref &t = field(index);
+    if (t.kind != kind_array)
+        raise(PyExc_TypeError, labels_[index] + " is not an array field");
+    return wrap_array(t, data, owner);
 }
 
 bool Types::accepts(const detail::type_ref &t, PyObject *value) const {

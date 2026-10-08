@@ -85,6 +85,13 @@ def _process_alive(pid: int, start: int) -> bool:
     """Return True if a process with this pid and start time is running; for tests."""
 
 @disjoint_base
+class FieldWriter:
+    """The write lock taken by [`Segment.begin_write`][sharedbox._native.Segment.begin_write]."""
+
+    def end(self) -> None:
+        """Count the write, release the lock and wake waiters; later calls do nothing."""
+
+@disjoint_base
 class Segment:
     """A named shared-memory segment holding one fixed-layout record."""
 
@@ -154,6 +161,17 @@ class Segment:
 
     def get(self, field: int, types: Types | None = None) -> object:
         """Return the field's value; `(create_id, schema_hash, name)`, or None when empty, for a reference field."""
+
+    def begin_write(
+        self, field: int, types: Types | None = None
+    ) -> tuple[FieldWriter, object]:
+        """Take the write lock and return it with an array viewing the array field in shared memory.
+
+        Raises
+        ------
+        TypeError
+            If the field is not an array.
+        """
 
     def read_into(self, field: int, out: object, types: Types | None = None) -> None:
         """Copy an array field into `out`, a writable C-contiguous CPU array of the field's dtype and shape.

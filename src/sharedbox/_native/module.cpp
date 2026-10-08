@@ -673,6 +673,8 @@ NB_MODULE(_native, m) {
         [](std::uint32_t pid, std::uint64_t start) { return sharedbox::detail::process_alive(pid, start); },
         "pid"_a, "start"_a);
 
+    nb::class_<sharedbox::FieldWriter>(m, "FieldWriter").def("end", &sharedbox::FieldWriter::end);
+
     nb::class_<Segment>(m, "Segment")
         .def_static(
             "create",
@@ -725,6 +727,23 @@ NB_MODULE(_native, m) {
                 s.read_into(index, {static_cast<std::byte *>(view.data()), view.nbytes()});
             },
             "field"_a, "out"_a, "types"_a = nb::none())
+        .def(
+            "begin_write",
+            [](const Segment &s, std::uint32_t index, nb::handle types) {
+                const sharedbox::Types &t = sharedbox::need(types_of(types), index);
+                if (t.field(index).kind != sharedbox::kind_array)
+                    throw nb::type_error((t.label(index) + " is not an array field").c_str());
+                std::unique_ptr<sharedbox::FieldWriter> writer = s.begin_write(index);
+                auto keep = std::make_unique<std::shared_ptr<sharedbox::handle>>(writer->box());
+                nb::capsule owner(keep.get(), [](void *p) noexcept {
+                    delete static_cast<std::shared_ptr<sharedbox::handle> *>(p);
+                });
+                // Released only once the capsule exists, so a failure to make it does not leak the copy.
+                keep.release();
+                nb::object view = t.array_over(index, writer->bytes().data(), owner);
+                return nb::make_tuple(nb::cast(std::move(writer)), view);
+            },
+            "field"_a, "types"_a = nb::none())
         .def(
             "get_versioned",
             [](const Segment &s, std::uint32_t index, nb::handle types) {
