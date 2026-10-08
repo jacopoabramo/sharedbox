@@ -50,9 +50,35 @@ the first matching class "that is still alive".
 
 ## Broken references
 
-A reference can outlive the box it names. Another process may unlink that
-box, or unlink it and create a new one under the same name, and the name
-alone can't show the difference. That's why the create id is stored too.
+A reference can outlive the box it names, and the name alone can't show
+it. Step through a stage whose motor is replaced under the same name:
+
+```d2 title="A reference that breaks"
+...@diagrams/style
+direction: right
+stage: "stage.motor" {
+  class: step
+  tooltip: "The reference field stores the motor's name, schema hash and create id: here motor-x and create id 41."
+}
+motor: "motor-x\ncreate id 41" {
+  class: hardware
+  tooltip: The box the reference was made for.
+}
+stage -> motor: "points at"
+steps: {
+  1: {
+    motor.label: "motor-x\ncreate id 77"
+    motor.style.stroke-width: 4
+    motor.tooltip: Another process unlinked motor-x and created a new box under the same name, which got a new create id.
+  }
+  2: {
+    stage.class: failed
+    stage.tooltip: Reading the field compares the stored create id 41 with 77, and raises BrokenReferenceError instead of opening the wrong box.
+    (stage -> motor)[0].label: "41, not 77"
+  }
+}
+```
+
 The first time your box object reads the field, it compares the stored
 create id with that of the box under that name now, and raises
 [`BrokenReferenceError`][sharedbox.BrokenReferenceError] if the box is gone

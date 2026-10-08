@@ -19,18 +19,37 @@ pid and its start time, the way the `psutil` library tells a process from a
 later one with the same pid.[^psutil] On Windows the start
 time is the creation time from `GetProcessTimes`. On Linux it is field 22
 of `/proc/<pid>/stat`.[^proc-stat] `process_alive()` reads the start time
-of whatever process has the pid now and decides:
+of whatever process has the pid now and decides like this:
 
-- No process has the pid: dead.
-- A process has the pid but started at another time: dead, because the pid
-  was reused.
-- A process has the pid but its start time cannot be read, because it
-  belongs to another user or `/proc` is mounted with `hidepid`: alive. The
-  process exists, and nothing shows it is a different one. The same holds
-  when the recorded start time is the one that could not be read.
-- On Linux, a zombie (state `Z` or `X` in `/proc/<pid>/stat`) is dead. It
-  has exited and keeps its `/proc` entry only until its parent reaps
-  it.[^proc-stat]
+```d2 title="Is the recorded process still running?"
+...@diagrams/style
+direction: down
+pid: "a process has the pid?" {class: step}
+zombie: "on Linux: a zombie?" {
+  class: step
+  tooltip: A zombie, state Z or X in /proc/PID/stat, has exited and keeps its entry only until its parent collects it.
+}
+readable: "start time readable?" {
+  class: step
+  tooltip: It is not when the process belongs to another user or /proc is mounted with hidepid.
+}
+same: "same start time?" {class: step}
+dead: "dead" {class: failed}
+alive: "alive" {class: current}
+pid -> dead: "no"
+pid -> zombie: "yes"
+zombie -> dead: "yes"
+zombie -> readable: "no"
+readable -> alive: "no" {
+  tooltip: The process exists and nothing shows it is a different one, so it counts as alive.
+}
+readable -> same: "yes"
+same -> alive: "yes"
+same -> dead: "no, the pid was reused"
+```
+
+A recorded start time that couldn't be read is treated the same way: the
+process counts as alive.[^proc-stat]
 
 On Linux there's one more catch: containers give their processes their own
 set of pids, called a pid namespace, so the same pid can mean different
