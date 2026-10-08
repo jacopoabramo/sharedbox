@@ -69,35 +69,88 @@ read what it does:
 
 ```d2 title="From a write to your callback"
 ...@diagrams/style
-direction: right
-writer: "writer, any process" {
-  class: process
-  tooltip: Assigns a field or calls update. The write raises the field's write count.
+label: "A writer in any process assigns a field. The write raises the field's write count and wakes the threads waiting in the waiter slots."
+grid-columns: 1
+vertical-gap: 30
+pic: "" {
+  style.stroke-width: 0
+  style.fill: transparent
+  grid-rows: 2
+  grid-columns: 3
+  horizontal-gap: 110
+  vertical-gap: 60
+  writer: "writer, any process" {class: process}
+  segment: "segment" {
+    class: hardware
+    tooltip: Holds the values, a write count per field, and the waiter slots of the threads waiting for changes.
+  }
+  watcher: "watcher thread" {class: [process; hidden]}
+  g1: {class: gap}
+  callbacks: "events callbacks" {class: [step; hidden]}
+  watch: "watch iterators" {class: [step; hidden]}
+  writer -> segment: "writes, wakes"
+  segment -> watcher: "wakes" {style.opacity: 0}
+  watcher -> callbacks: "new, old" {style.opacity: 0}
+  watcher -> watch: "new value" {style.opacity: 0}
 }
-segment: "segment" {
-  class: hardware
-  tooltip: Holds the values, a write count per field, and the waiter slots of the threads waiting for changes.
+code: "" {
+  style.stroke-width: 0
+  style.fill: transparent
+  code: |python
+    1     # a writer, in any process
+    2  -> motor.position = 10
+    3     # the watcher thread of each box handle
+    4     while not stopped:
+    5         segment.wait(slot)
+    6         for field in fields:
+    7             if counts[field] == seen[field]:
+    8                 continue
+    9             new = read(field)
+    10            if new != old[field]:
+    11                events[field].emit(new, old[field])
+  |
 }
-watcher: "watcher thread" {class: [process; hidden]}
-callbacks: "events callbacks" {class: [step; hidden]}
-watch: "watch iterators" {class: [step; hidden]}
-writer -> segment: "writes, wakes the slots"
-segment -> watcher: "wakes" {style.opacity: 0}
-watcher -> callbacks: "new, old" {style.opacity: 0}
-watcher -> watch: "new value" {style.opacity: 0}
 steps: {
   1: {
-    watcher.class: process
-    watcher.tooltip: One thread per box handle, holding a waiter slot. It wakes on the write, compares each field's write count with the last it saw, and reads the fields whose count moved. Several writes between two wake-ups give one emission with the latest value, and a write that leaves the value unchanged gives none.
-    (segment -> watcher)[0].style.opacity: 1
+    label: "The watcher thread of each box handle wakes, compares each field's write count with the last one it saw, and reads only the fields whose count moved."
+    pic.watcher.class: process
+    pic.watcher.tooltip: One thread per box handle, holding a waiter slot. Several writes between two wake-ups give one emission with the latest value.
+    (pic.segment -> pic.watcher)[0].style.opacity: 1
+    code.code: |python
+      1     # a writer, in any process
+      2     motor.position = 10
+      3     # the watcher thread of each box handle
+      4     while not stopped:
+      5  ->     segment.wait(slot)
+      6         for field in fields:
+      7  ->         if counts[field] == seen[field]:
+      8                 continue
+      9  ->         new = read(field)
+      10            if new != old[field]:
+      11                events[field].emit(new, old[field])
+    |
   }
   2: {
-    callbacks.class: step
-    callbacks.tooltip: They run on the watcher thread, not in the process or the thread that wrote. The docstring of events lists when each signal fires.
-    watch.class: step
-    watch.tooltip: Served by the same thread, so a slow callback delays the watch iterators of the same box.
-    (watcher -> callbacks)[0].style.opacity: 1
-    (watcher -> watch)[0].style.opacity: 1
+    label: "It calls your events callbacks with the new and old value, on the watcher thread, and hands the new value to watch iterators. A write that leaves the value unchanged emits nothing."
+    pic.callbacks.class: step
+    pic.callbacks.tooltip: They run on the watcher thread, not in the process or the thread that wrote. The docstring of events lists when each signal fires.
+    pic.watch.class: step
+    pic.watch.tooltip: Served by the same thread, so a slow callback delays the watch iterators of the same box.
+    (pic.watcher -> pic.callbacks)[0].style.opacity: 1
+    (pic.watcher -> pic.watch)[0].style.opacity: 1
+    code.code: |python
+      1     # a writer, in any process
+      2     motor.position = 10
+      3     # the watcher thread of each box handle
+      4     while not stopped:
+      5         segment.wait(slot)
+      6         for field in fields:
+      7             if counts[field] == seen[field]:
+      8                 continue
+      9             new = read(field)
+      10 ->         if new != old[field]:
+      11 ->             events[field].emit(new, old[field])
+    |
   }
 }
 ```
