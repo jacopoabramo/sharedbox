@@ -31,19 +31,44 @@ never attaches to a block that another program created first.
 
 ## A fixed layout: header, field table, record
 
-Inside the block, everything has a fixed place. It starts with a 128-byte
-header. Then come a table with one entry per [field](glossary.md#field), a
-count of writes for each field, the
-[waiter slots](glossary.md#waiter-slot), and finally the record that holds
-the field values, starting on a 64-byte boundary. [Layout](../reference/segment-layout.md#layout)
-gives every offset.
+Inside the block, everything has a fixed place, in this order. Point at a
+part to read what it holds:
 
-Each field has a fixed place and a fixed size in the record. They are
-ordered by alignment, largest first, rather than in the order you declared
-them, so no space is lost to padding. The values you pass to
-[`create`][sharedbox.SharedBox.create] are written into the record before
-the header's `magic` word is set, and a process that attaches waits for that
-word, so it never sees a field before it holds its starting value.
+```d2 title="Inside a segment"
+...@diagrams/style
+grid-columns: 1
+vertical-gap: 0
+header: "header, 128 bytes" {
+  class: step
+  tooltip: "Line 0 is written once at creation: the magic word, the layout version, the field count, the schema hash and where the record starts. Line 1 changes with every write and wait: the sequence counter, the writer's pid and the wake-up word."
+}
+table: "field table: offset, size and kind of each field" {
+  class: step
+  tooltip: One 8-byte entry per field. A process that opens the box copies this table once and uses only its copy.
+}
+counts: "write count of each field" {
+  class: step
+  tooltip: One counter per field, raised by every write to it, so a watcher can tell which fields changed.
+}
+slots: "waiter slots" {
+  class: step
+  tooltip: One slot per thread waiting for changes, recording which process holds it.
+}
+descriptions: "descriptions of the field types" {
+  class: step
+  tooltip: For enums, records, collections and arrays, how their values are laid out. Empty when every field is a plain number or text.
+}
+record: "record: the field values" {
+  class: current
+  tooltip: Starts on a 64-byte boundary. Fields are ordered by alignment, largest first, so no space is lost to padding.
+}
+```
+
+[Layout](../reference/segment-layout.md#layout) gives every offset. The
+values you pass to [`create`][sharedbox.SharedBox.create] are in the record
+before the header's `magic` word is set, and a process that attaches waits
+for that word, so it never sees a [field](glossary.md#field) before it
+holds its starting value.
 
 Fixed places might look rigid next to something like a dictionary kept in
 shared memory, but they buy three things:

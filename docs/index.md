@@ -62,10 +62,39 @@ has a fixed size. Running the script prints:
 1 -> 10
 ```
 
-The child never receives the box from the parent: `Motor.attach()` finds it
-by the class alone. The parent learns about the change because
-`events.position.connect` asks for a callback whenever any process writes
-`position`.
+Step through what happens, and point at a shape to read more:
+
+```d2 title="One box, two processes"
+...@diagrams/style
+direction: left
+parent: "parent process" {
+  class: process
+  tooltip: Creates the box with Motor(1, False, "x-axis") and connects a callback to events.position.
+}
+box: "the box\nin shared memory" {
+  class: hardware
+  tooltip: One named block of shared memory holding position, enabled and label. Every process that opens it reads and writes the same bytes.
+}
+child: "child process" {class: [process; hidden]}
+parent -> box: "creates"
+child -> box: "attaches by class" {style.opacity: 0}
+child -> box: "position = 10" {style.opacity: 0}
+box -> parent: "prints 1 -> 10" {style.opacity: 0}
+steps: {
+  1: {
+    child.class: process
+    child.tooltip: Runs worker(). It is never handed the box. Motor.attach() works out the box's name from the class.
+    (child -> box)[0].style.opacity: 1
+  }
+  2: {
+    (child -> box)[1].style.opacity: 1
+  }
+  3: {
+    (box -> parent)[0].style.opacity: 1
+    parent.tooltip: The parent's watcher thread wakes on the write and calls the callback with the new and old value.
+  }
+}
+```
 
 ## Is it for you?
 
