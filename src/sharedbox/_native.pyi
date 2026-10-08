@@ -337,6 +337,7 @@ class Types:
         table: bytes,
         info: Mapping[int, tuple[object, ...]],
         bytearrays: Sequence[tuple[int, int]],
+        reusable: Sequence[int] = (),
     ) -> None: ...
     @property
     def table(self) -> bytes:
@@ -351,7 +352,11 @@ class Field:
     """Reads and writes one field of the box it is accessed through."""
 
     def __init__(
-        self, spec: FieldSpec, segment_slot: object, types: Types | None = None
+        self,
+        spec: FieldSpec,
+        segment_slot: object,
+        types: Types | None = None,
+        values_slot: object | None = None,
     ) -> None:
         """Read and write the field `spec` describes.
 
@@ -362,6 +367,10 @@ class Field:
             holding a box's segment.
         types
             The class's types, which a field of a kind above 5 needs.
+        values_slot
+            `SharedBox.__dict__["_values"]`, the descriptor of the slot
+            holding a box's [`ValueCache`][sharedbox._native.ValueCache];
+            without it, every read decodes a new value.
         """
 
     @property
@@ -371,6 +380,20 @@ class Field:
     @overload
     def __get__(self, box: object, owner: type | None = None, /) -> Any: ...
     def __set__(self, box: object, value: object, /) -> None: ...
+
+@disjoint_base
+class ValueCache:
+    """The values reads of one box decoded from fields whose values cannot be changed.
+
+    Each is kept with the field's write count at the time, and a read
+    returns it again while the count has not moved.
+    """
+
+    def __init__(self, fields: int) -> None: ...
+    def clear(self) -> None:
+        """Drop every value."""
+    def _after_fork(self) -> None:
+        """Make the locks a forked child inherited usable; call before another thread starts."""
 
 @final
 class BoxMethod:

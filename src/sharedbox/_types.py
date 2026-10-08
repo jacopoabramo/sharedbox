@@ -150,6 +150,8 @@ class TypeSpec:
     """Whether a value read back can be a set element or a dict key."""
     bytearray: bool = False
     """A bytes value read back as `bytearray`."""
+    reusable: bool = False
+    """Whether a value read back cannot be changed, so a later read may return it again."""
 
     @property
     def code(self) -> int:
@@ -177,7 +179,9 @@ class Member:
 def fixed(
     kind: str, size: int, alignment: int, cls: type, text: str | None = None
 ) -> TypeSpec:
-    return TypeSpec(kind, size, alignment, text or kind, match=(cls,), exact=cls)
+    return TypeSpec(
+        kind, size, alignment, text or kind, match=(cls,), exact=cls, reusable=True
+    )
 
 
 SCALARS: Final[dict[type, TypeSpec]] = {
@@ -431,6 +435,7 @@ def dispatch(
             exact=hint,
             hashable=hint is not bytearray,
             bytearray=hint is bytearray,
+            reusable=hint is not bytearray,
         )
     if is_collection(hint):
         return collection_spec(hint, where, capacity, depth, path)
@@ -487,6 +492,7 @@ def enum_spec(hint: type[enum.Enum], where: str) -> TypeSpec:
         info=(hint, members),
         match=(hint,),
         exact=hint,
+        reusable=True,
     )
 
 
@@ -513,6 +519,7 @@ def flag_spec(hint: type[enum.Flag], where: str) -> TypeSpec:
         info=(hint,),
         match=(hint,),
         exact=hint,
+        reusable=True,
     )
 
 
@@ -558,6 +565,7 @@ def literal_spec(hint: Any, where: str) -> TypeSpec:
         after=b"".join(parts),
         info=(values,),
         match=tuple(dict.fromkeys(type(value) for value in values)),
+        reusable=True,
     )
 
 
@@ -638,6 +646,7 @@ def union_spec(
         info=(tuple(order), tuple(m.exact for m in members)),
         match=tuple(dict.fromkeys(c for m in members for c in m.match)),
         hashable=all(m.hashable for m in members),
+        reusable=all(m.reusable for m in members),
     )
 
 
@@ -653,6 +662,7 @@ def optional_of(inner: TypeSpec) -> TypeSpec:
         count=1,
         match=(*inner.match, NoneType),
         hashable=inner.hashable,
+        reusable=inner.reusable,
     )
 
 
@@ -697,6 +707,26 @@ def lay_out(
         Member(offsets[i], spec, name) for i, (name, spec) in enumerate(items)
     )
     return members, round_up(end, a), a
+
+
+def frozen(hint: type, form: int) -> bool:
+    """Whether instances of the record class `hint` refuse every attribute assignment."""
+    if form == 1:
+        # A NamedTuple subclass that does not set __slots__ gives its instances a __dict__.
+        return hint.__dictoffset__ == 0
+    if form != 0:
+        return False
+    if dataclasses.is_dataclass(hint):
+        # A plain subclass inherits the parameters but its generated __setattr__ still lets
+        # it add attributes.
+        return "__dataclass_params__" in vars(hint) and bool(
+            hint.__dataclass_params__.frozen  # type: ignore[attr-defined]
+        )
+    if hasattr(hint, "__attrs_attrs__"):
+        # An attrs version without __attrs_props__ cannot say, so its classes count as changeable.
+        props = getattr(hint, "__attrs_props__", None)
+        return bool(getattr(props, "is_frozen", False))
+    return bool(getattr(hint.__struct_config__, "frozen", False))  # type: ignore[attr-defined]
 
 
 def record_spec(
@@ -791,6 +821,7 @@ def record_spec(
         match=(abc.Mapping,) if form == 3 else (hint,),
         exact=None if form == 3 else hint,
         hashable=hashable,
+        reusable=frozen(hint, form) and all(m.type.reusable for m in members),
     )
 
 
@@ -864,6 +895,7 @@ def tuple_spec(hint: Any, where: str, depth: int, path: frozenset[int]) -> TypeS
         match=(tuple,),
         exact=tuple,
         hashable=all(m.type.hashable for m in members),
+        reusable=all(m.type.reusable for m in members),
     )
 
 
@@ -947,6 +979,7 @@ def collection_spec(
         ),
         exact=read,
         hashable=read in (tuple, frozenset) and all(m.type.hashable for m in members),
+        reusable=read in (tuple, frozenset) and all(m.type.reusable for m in members),
     )
 
 

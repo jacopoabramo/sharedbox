@@ -311,6 +311,7 @@ BENCHMARKS: list[tuple[str, str, str, list[str]]] = [
     ("read datetime", "SharedBox", TYPED, ["typed.when"]),
     ("write record", "SharedBox", TYPED, ["typed.quad = QUAD"]),
     ("read record", "SharedBox", TYPED, ["typed.quad"]),
+    ("write+read record", "SharedBox", TYPED, ["typed.quad = QUAD", "typed.quad"]),
     ("write list16", "SharedBox", TYPED, ["typed.floats = FLOATS"]),
     ("read list16", "SharedBox", TYPED, ["typed.floats"]),
     ("write array 1 MiB", "SharedBox", TYPED, ["typed.image = IMAGE"]),

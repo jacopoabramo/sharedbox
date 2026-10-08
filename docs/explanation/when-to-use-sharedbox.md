@@ -6,9 +6,11 @@ icon: lucide/lightbulb
 
 Should you use a box, or would something simpler do? A
 [box](glossary.md#box) is made for sharing a record between processes, and
-that has a price: every read and write turns the value into bytes in shared
-memory or back, which costs some tens to hundreds of nanoseconds, and every
-read gives you a copy.
+that has a price: every write turns the value into bytes in shared memory,
+and a read turns the bytes back into a value unless the value can't be
+changed and an earlier read built it since the last write. That costs some
+tens to hundreds of nanoseconds, and a value you can change comes back as a
+copy.
 
 If all your code runs in threads of one process, you don't need to pay
 that price: threads can share ordinary Python objects, which is several
