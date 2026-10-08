@@ -4,23 +4,26 @@ icon: lucide/lightbulb
 
 # Reading and writing
 
-This page explains how a process reads and writes a [box](glossary.md#box)
-safely while other processes use the same
-[segment](glossary.md#segment): it never trusts the shared copy of the
-layout, and it takes a [sequence lock](glossary.md#sequence-lock) to write.
+Several processes reading and writing the same memory at once is how data
+gets mixed up: a reader can catch a writer halfway, or a buggy process can
+scribble over the layout everyone relies on. This page explains the two
+habits that keep a [box](glossary.md#box) safe while other processes use
+the same [segment](glossary.md#segment): a process never trusts the shared
+copy of the layout, and it writes only under a
+[sequence lock](glossary.md#sequence-lock).
 
 ## Never trust the shared copy of the layout
 
-Any process that can open the block can also write to it, including the
-header. If the code read a [field](glossary.md#field)'s offset from the
-header every time it copied data, another process could change that offset
-between the check and the copy and make this process read or write outside
-the block. This is the "time of check, time of use" mistake.[^toctou]
+Any process that can open the block can also write to it, header included.
+So if the code read a [field](glossary.md#field)'s offset from the header
+every time it copied data, another process could change that offset between
+the check and the copy, and make this process read or write outside the
+block. This mistake has a name, "time of check, time of use".[^toctou]
 
-So when a process opens an existing block, it copies line 0 of the header
-and the field table once, checks the copies against the size of the
-mapping as the OS reports it (`fstat` on Linux, `VirtualQuery` on Windows),
-and uses only the copies afterwards. The header's own `size` field must
+To rule it out, a process that opens an existing block copies line 0 of the
+header and the field table once, checks those copies against the size of
+the mapping as the operating system reports it (`fstat` on Linux,
+`VirtualQuery` on Windows), and from then on uses only its own copies. The header's own `size` field must
 match the mapping size, but the mapping size comes from the OS, not from
 the block. The same idea applies to values arriving from Python: the
 native write checks the size of every value before it takes the write
@@ -28,10 +31,11 @@ lock, so a bad value in a multi-field update changes nothing.
 
 ## The write lock: a sequence counter
 
-Readers should never block writers, and neither should need the operating
-system in the common case. A counter in the header provides this. The
-technique is known as a sequence lock:[^seqlock] the counter is even when
-no write is in progress and odd while a write is running.
+The lock has two jobs: a reader must never hold up a writer, and neither
+should need a call into the operating system in the usual case. A single
+counter in the header does both. The technique is called a sequence
+lock:[^seqlock] the counter is even when no write is in progress and odd
+while one is running.
 
 A writer moves the counter from even to odd with one compare-and-swap,
 copies its bytes, and moves it to the next even value. A reader takes no
@@ -85,11 +89,11 @@ the readers' lock timeout.
 
 ## Waiting for the lock
 
-A writer that waits too long, or a reader that keeps losing to writers,
-gives up after `lock_timeout` seconds with
-[`LockTimeoutError`][sharedbox.LockTimeoutError], naming the process id
-stored in `writer_pid`. That process may have died while holding the lock,
-and `force_unlock` releases it.
+A writer that waits too long for the lock, or a reader that keeps losing
+to writers, gives up after `lock_timeout` seconds with
+[`LockTimeoutError`][sharedbox.LockTimeoutError], whose message names the
+process stored in `writer_pid` as the lock's holder. That process may have
+died while holding the lock, and `force_unlock` releases it.
 
 The wait for the lock spins, then yields, then sleeps for a doubling
 interval of at most 1 ms. On Windows a sleep ends on a timer tick, so a

@@ -88,6 +88,7 @@ void Segment::close() {                        // runs without the GIL
         return;
     std::unique_lock guard(impl_->lifetime);   // wait for calls already running
     impl_->box = handle();                     // then release the handle
+    impl_->writer.reset();                     // and the handle writing() maps
 }
 ```
 
