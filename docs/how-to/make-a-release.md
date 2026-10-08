@@ -4,8 +4,10 @@ icon: lucide/package
 
 # How to make a release
 
-A release is a GitHub release. Publishing it starts CI, which builds the
-wheels, tests them and uploads them to PyPI.
+Releasing `sharedbox` means publishing a GitHub release; CI does the rest.
+Publishing it starts CI, which builds the wheels, tests them and uploads
+them to PyPI, so most of this guide is about getting the details right
+before you press the button.
 
 ## Before you start
 

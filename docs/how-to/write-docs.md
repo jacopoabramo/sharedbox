@@ -4,18 +4,44 @@ icon: lucide/pen-line
 
 # How to write documentation
 
-These rules apply to every page under `docs/` and to every docstring, since
-the API reference pages are made from docstrings.
+Good documentation reads as if someone who knows `sharedbox` were sitting
+next to you and explaining it. These rules are how the pages get there.
+They apply to every page under `docs/` and to every docstring, since the
+API reference pages are made from docstrings.
 
 ## Write for a reader who is new to this
 
-Picture a reader who knows some Python and nothing about shared memory.
+Picture a reader around 15 years old who knows some Python and nothing
+about shared memory, and write as if you were explaining in person.
 
-- Keep sentences short, with one idea each.
-- Use the active voice: "the watcher calls the callback", not "the callback
+- Talk to the reader as "you", and name who does what: "you assign the
+  field", "the watcher calls the callback". Active voice, not "the callback
   is called".
-- Say what a thing does before saying why.
+- Open each section and each paragraph with its point, framed as what the
+  reader gets out of it. Start a sentence from something the reader
+  already knows and end it on the new part, so each sentence picks up where
+  the last one stopped.
+- Keep most sentences short but vary their length, and join ideas that
+  depend on each other with "so", "because" or "which means" instead of
+  leaving a list of separate facts. Contractions are fine.
+- Say each point once. Don't open a paragraph with a label ("The cache is
+  the store") before saying what the thing does.
+- Put a catch the reader can run into in a warning box. Its title names
+  what goes wrong, and its last sentence says what to do:
+
+    ```markdown
+    !!! warning "Callbacks run on another thread"
+        A callback runs on the watcher thread, not on your main thread. ...
+        Connect it with `thread="main"` to run it on your main thread.
+    ```
+
 - Show a short code example when it is clearer than a paragraph.
+
+| stiff | friendly |
+| --- | --- |
+| `close` detaches this process's handle. | `close` lets go of the box in your process, and the other processes keep it. |
+| A value longer than the capacity raises `ValueError`. | If you assign a value longer than the capacity, you get a `ValueError` and the field keeps its old value. |
+| Following moves to the new box shortly after the assignment. | A background thread switches to the new box shortly after you assign it, so a write made before then is missed. |
 
 ## Define each term once
 
@@ -44,6 +70,11 @@ to Y".
 
 Other rules:
 
+- Library and package names are code spans every time you mention them,
+  `sharedbox` included: `psygnal`, `numpy`, `nanobind`.
+- Headings name the topic in a few words ("Unexpected exits"); a question
+  works on a page of limits. Steps in a how-to or tutorial say what the
+  reader does ("Add the field").
 - No em dashes or en dashes. Use a hyphen, a comma, or two sentences.
 - Write arrows as `->`, not as a special character.
 - No sales words ("powerful", "seamless") and no closing summary sentence.

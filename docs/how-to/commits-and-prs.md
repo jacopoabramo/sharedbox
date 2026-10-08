@@ -4,6 +4,10 @@ icon: lucide/git-pull-request
 
 # How to write commits and pull requests
 
+Commits and pull requests are read long after they are written, often by
+someone looking for when and why something changed. Keeping them short and
+in one shape makes that search easy.
+
 ## Commit messages
 
 A commit message is one line in the
