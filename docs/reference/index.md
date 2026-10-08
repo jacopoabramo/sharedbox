@@ -4,8 +4,10 @@ icon: lucide/book-open
 
 # Reference
 
-Facts to look up: the Python API, the layout of a box in memory, the C and
-C++ interface and the release notes.
+These pages are for looking things up once you know what you want: the
+exact Python API, the bytes of a box in memory, the C and C++ interface,
+and what changed in each release. To learn how to use `sharedbox`, start
+with the [tutorials](../tutorials/index.md) instead.
 
 - [Glossary](../explanation/glossary.md): the terms these pages use
 - [API](api/index.md): every name `sharedbox` exports

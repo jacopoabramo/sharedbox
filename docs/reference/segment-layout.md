@@ -4,13 +4,17 @@ icon: lucide/file-text
 
 # Segment layout
 
-This page describes layout 2.0, which this version writes, and layout
-1.0, which 0.3 releases wrote and this version still opens. It describes
-how a box is stored in shared memory: the object names, the bytes of the
-mapping, and the protocols every process follows to read, write and wait.
-It is the contract between sharedbox and any other code that opens a box.
-`include/sharedbox/sharedbox.hpp` implements it, and the Python extension
-runs on that header.
+This page is the full contract for how a box is stored in shared memory:
+the names of the objects, every byte of the mapping, and the steps every
+process follows to read, write and wait. You need it if you write code that
+opens a box without `sharedbox.hpp`, or if you change `sharedbox` itself;
+to understand the ideas first, read
+[How a box is stored](../explanation/how-a-box-is-stored.md).
+`include/sharedbox/sharedbox.hpp` implements this contract, and the Python
+extension runs on that header.
+
+It describes layout 2.0, which `sharedbox` 0.4.0 and later write, and
+layout 1.0, which the 0.3 releases wrote and later releases still open.
 
 ## Goal
 
