@@ -76,13 +76,21 @@ longer attaches to boxes made with the old one. It doesn't cover choices
 that only affect what Python builds when it reads a value back: a record
 class's name, `list` or `tuple[T, ...]`, `set` or `frozenset`.
 
-## A read builds a new value
+## When a read builds a new value
 
-Every read turns the stored bytes into a new object. So if you change a
-list, a record or an array you read from a box, you only change that
-object; to store the change, assign it back. A record is rebuilt by calling
-its class, which means its `__post_init__`, converters and validators run on
-every read.
+A read turns the stored bytes into an object, and whether it builds a new
+one each time depends on whether you could change it. A list, a dict, a
+set, an array, a `TypedDict` or a record whose class isn't frozen comes back
+as a new object on every read, so changing the one you hold changes nothing
+in the box; to store the change, assign it back. A value you can't change,
+such as a `datetime`, a `Decimal`, a `UUID`, a tuple, a frozenset, an enum
+member or a record whose class is declared frozen, is built again only
+after a write to its field, and until then every read returns the same
+object, so `box.when is box.when` holds.
+
+A record is built by calling its class, which means its `__post_init__`,
+converters and validators run on every read of a record you can change, and
+on the first read after each write of a frozen one.
 
 ## Dates and times
 

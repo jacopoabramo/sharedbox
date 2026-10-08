@@ -26,6 +26,15 @@ Dates are marked as `DD-MM-YYYY`
 - `SharedBox`: reading a collection, tuple or record field whose members
   are `bool`, `int`, `float` or `str` takes less time: about 90 ns less
   for a list of 16 `float` on Windows.
+- `SharedBox`: reading a field whose value cannot be changed (a frozen
+  dataclass, attrs class or msgspec Struct, a NamedTuple, a tuple, a
+  frozenset, an enum, flag or literal, `complex`, `date`, `time`,
+  `datetime`, `timedelta`, `UUID` or `Decimal`) returns the value the
+  previous read built until the field is written: 40 ns instead of 540 ns
+  for a frozen dataclass of four fields on Windows.
+- `SharedBox`: a frozen record's `__post_init__`, attrs converters and
+  validators run on the first read after each write instead of on every
+  read.
 
 ## [0.4.1] - 07-10-2026
 

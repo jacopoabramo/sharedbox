@@ -28,16 +28,17 @@ class:
 --8<-- "docs/examples/store_records.py:write"
 ```
 
-!!! warning "Your constructor runs on every read"
-    Each read calls the class's constructor, so `__post_init__`, `attrs`
-    converters and validators run every time. Make sure running them a
-    second time changes nothing: a converter that rounds a float, for
-    example, must leave an already rounded float as it is, or a read won't
-    match what you wrote.
+!!! warning "Your constructor runs when a read builds the record"
+    A read builds the record by calling its class, so `__post_init__`,
+    `attrs` converters and validators run on every read of a record you can
+    change, and on the first read after each write of a frozen one. Make
+    sure running them a second time changes nothing: a converter that
+    rounds a float, for example, must leave an already rounded float as it
+    is, or a read won't match what you wrote.
 
 ## 3. Change one member
 
-A record you read from the [box](../explanation/glossary.md#box) is a copy, so changing it
+Changing a record you read from the [box](../explanation/glossary.md#box)
 changes nothing in the box. To change one member, read the record, make a
 new one with the change, and assign it back:
 
@@ -45,7 +46,7 @@ new one with the change, and assign it back:
 --8<-- "docs/examples/store_records.py:change-one-member"
 ```
 
-If you use a frozen dataclass or a `NamedTuple`, the copy is read-only, so
+If you use a frozen dataclass or a `NamedTuple`, the record you read is read-only, so
 forgetting to assign it back gives you an error instead of a silent no-op.
 
 ## 4. Leave out a `TypedDict` key

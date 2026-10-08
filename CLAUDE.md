@@ -284,7 +284,9 @@ if __name__ == "__main__":
     Motor.unlink()
 ```
 
-Every read decodes a fresh value from the segment. `update(**values)` writes
+A read decodes the stored bytes; a value that cannot be changed (a frozen
+record, a tuple, a `datetime` and the like) is reused until its field is
+written. `update(**values)` writes
 several fields at once; `watch(field)` and `events` report changes from any
 process. C++ and C code take a box through `__sharedbox_box__` or open it by
 name; see `docs/how-to/accept-a-box-in-cpp.md`,
