@@ -4,8 +4,8 @@ icon: lucide/wrench
 
 # How to open a box from a program
 
-A C++ or C program with no Python opens a
-[box](../explanation/glossary.md#box) by its name. This guide reads,
+A C++ or C program doesn't need Python to use a [box](../explanation/glossary.md#box): it can
+open one by name, as long as some process created it. This guide reads,
 writes and waits for changes in the `Frame` box of
 [How to accept a box in a C++ extension](accept-a-box-in-cpp.md#know-the-box-you-expect),
 whose default name is `d8dfe7af542f1d91`.
@@ -18,7 +18,8 @@ whose default name is `d8dfe7af542f1d91`.
 
 ## Add sharedbox to the build
 
-Add the repository with CMake's `FetchContent`, and link
+Without Python there's no wheel to take the header from, so add the
+repository with CMake's `FetchContent` instead, and link
 `sharedbox::headers`, or `sharedbox::c` for a C program:
 
 ```cmake
@@ -32,10 +33,10 @@ target_link_libraries(reader PRIVATE sharedbox::headers)    # or sharedbox::c
 
 ## Open the box and use it
 
-Open the box by name, check its
-[schema hash](../explanation/glossary.md#schema-hash), then read, write or
-wait for changes. This program prints `count` after each of the next three
-writes, then sets it back to 0:
+Open the box by name and check its [schema hash](../explanation/glossary.md#schema-hash) to make
+sure it's the box you expect. Then you can read, write or wait for changes.
+This program prints `count` after each of the next three writes, then sets
+it back to 0:
 
 ```cpp
 #include <sharedbox/sharedbox.hpp>
@@ -71,14 +72,15 @@ int main() {
 ```
 
 A C program does the same with `sbx_open`, `sbx_schema_hash`, `sbx_read`,
-`sbx_write` and `sbx_release`, except for waiting, which
+`sbx_write` and `sbx_release`, but it can't wait for changes, which
 [the C interface leaves out](accept-a-box-in-c.md#what-the-c-interface-leaves-out).
 
 ## Create the box from C++
 
-`handle::create` makes a new box from C++, with the field table, record
-size, schema hash and [waiter slot](../explanation/glossary.md#waiter-slot)
-count the caller gives. Python attaches to it when its class has the same
+Your program can also be the one that creates the box. `handle::create`
+makes a new box from C++, with the field table, record size, schema hash
+and number of [waiter slots](../explanation/glossary.md#waiter-slot) you give it. Python code can
+then attach to it, as long as its class has the same
 [identity](../explanation/glossary.md#identity) and fields.
 
 ## Next steps
