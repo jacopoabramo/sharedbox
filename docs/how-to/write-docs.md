@@ -84,6 +84,37 @@ once more against these rules, and fix what you find: inflated claims,
 sales words, vague sources, lists of three made up for rhythm, filler
 phrases and dashes.
 
+## Draw what a picture shows better
+
+A diagram replaces the paragraphs it can show: how data moves, the steps of
+a protocol, the parts of something. Keep in the text only what a picture
+can't say: why, the exceptions, and links. Diagrams are D2 in `d2` fences,
+which `markdown-d2` draws when the site is built:
+
+````markdown
+```d2 title="One box, two processes"
+...@diagrams/style
+parent: "parent process" {class: process}
+box: "the box" {
+  class: hardware
+  tooltip: One named block of shared memory.
+}
+parent -> box: "creates"
+```
+````
+
+- Start every diagram with `...@diagrams/style` and give shapes its classes
+  (`step`, `current`, `done`, `failed`, `process`, `hardware`, `file`,
+  `note`, `gap`, `hidden`) instead of colours of your own, so the light and
+  dark themes both work.
+- Give every diagram a `title`: it is the caption and what screen readers
+  announce.
+- Keep labels to a few words, and put the explanation in a `tooltip`, which
+  the reader opens by pointing at the shape.
+- Show a process as boards the reader steps through: `steps` to build a
+  picture up, `scenarios` to highlight one part of a fixed picture.
+- Check every board in both themes on the built site, not only the source.
+
 ## Put the page in the right section
 
 | section | the reader wants to | example |
