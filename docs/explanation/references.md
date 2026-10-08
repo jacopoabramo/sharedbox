@@ -55,26 +55,64 @@ it. Step through a stage whose motor is replaced under the same name:
 
 ```d2 title="A reference that breaks"
 ...@diagrams/style
-direction: right
-stage: "stage.motor" {
-  class: step
-  tooltip: "The reference field stores the motor's name, schema hash and create id: here motor-x and create id 41."
+label: "The field stage.motor stores the name motor-x and the create id 41 of the box it points at."
+grid-columns: 1
+vertical-gap: 30
+pic: "" {
+  style.stroke-width: 0
+  style.fill: transparent
+  grid-columns: 2
+  horizontal-gap: 160
+  stage: "stage.motor" {
+    class: step
+    tooltip: "The reference field stores the motor's name, schema hash and create id."
+  }
+  motor: "motor-x\ncreate id 41" {
+    class: hardware
+    tooltip: The box the reference was made for.
+  }
+  stage -> motor: "points at"
 }
-motor: "motor-x\ncreate id 41" {
-  class: hardware
-  tooltip: The box the reference was made for.
+code: "" {
+  style.stroke-width: 0
+  style.fill: transparent
+  grid-columns: 2
+  horizontal-gap: 60
+  replacer: |python
+    1    Motor.unlink("motor-x")
+    2    Motor.create("motor-x")
+  |
+  reader: |python
+    1    stage = Stage.attach()
+    2    motor = stage.motor
+  |
 }
-stage -> motor: "points at"
 steps: {
   1: {
-    motor.label: "motor-x\ncreate id 77"
-    motor.style.stroke-width: 4
-    motor.tooltip: Another process unlinked motor-x and created a new box under the same name, which got a new create id.
+    label: "Another process unlinks motor-x and creates a new box under the same name. The new box gets create id 77."
+    pic.motor.label: "motor-x\ncreate id 77"
+    pic.motor.style.stroke-width: 4
+    code.replacer: |python
+      1 -> Motor.unlink("motor-x")
+      2 -> Motor.create("motor-x")
+    |
+    code.reader: |python
+      1    stage = Stage.attach()
+      2    motor = stage.motor
+    |
   }
   2: {
-    stage.class: failed
-    stage.tooltip: Reading the field compares the stored create id 41 with 77, and raises BrokenReferenceError instead of opening the wrong box.
-    (stage -> motor)[0].label: "41, not 77"
+    label: "A process that now reads stage.motor finds create id 77 where the field stored 41, so it raises BrokenReferenceError instead of opening the wrong box."
+    pic.stage.class: failed
+    (pic.stage -> pic.motor)[0].label: "41, not 77"
+    code.replacer: |python
+      1    Motor.unlink("motor-x")
+      2    Motor.create("motor-x")
+    |
+    code.reader: |python
+      1    stage = Stage.attach()
+      2 -> motor = stage.motor
+    |
   }
 }
 ```
