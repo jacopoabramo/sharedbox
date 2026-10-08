@@ -76,6 +76,28 @@ FieldDesc desc_of(const detail::type_ref &t) {
     return {0, detail::prefixed(t.kind) ? t.size - 4 : t.size, static_cast<FieldKind>(t.kind)};
 }
 
+// A bool, int, float or str stored at data, as a new reference, or nullptr with a Python error set.
+PyObject *decode_plain(const detail::type_ref &t, const std::byte *data, const std::string &name) {
+    switch (t.kind) {
+    case kind_bool: {
+        const auto bit = load<std::uint8_t>(data);
+        if (bit > 1)
+            corrupt(name);
+        return Py_NewRef(bit ? Py_True : Py_False);
+    }
+    case kind_int:
+        return PyLong_FromLongLong(load<long long>(data));
+    case kind_float:
+        return PyFloat_FromDouble(load<double>(data));
+    default: {
+        const auto length = load<std::uint32_t>(data);
+        if (length > t.size - 4)
+            corrupt(name);
+        return PyUnicode_DecodeUTF8(reinterpret_cast<const char *>(data + 4), length, "replace");
+    }
+    }
+}
+
 // The elements of a list, set or dict value, taken once: another thread changing the value while it is
 // encoded, or while the write waits for the lock on the free-threaded build, cannot change what is stored.
 nb::object snapshot(PyObject *value, std::uint8_t kind) {
@@ -608,6 +630,15 @@ nb::object Types::decode_from(const detail::type_ref &t, const std::byte *data, 
     }
     const NodeInfo &n = nodes_[t.node];
     const detail::type_node &node = tree_.node(t.node);
+    // A member of a collection or record as a new reference; a bool, int, float or str skips decode_from.
+    auto element = [&](const detail::type_ref &m, const std::byte *at, std::uint32_t index) -> PyObject * {
+        if (m.kind > kind_str)
+            return decode_from(m, at, t.node, index, where).release().ptr();
+        PyObject *value = decode_plain(m, at, where.name);
+        if (value == nullptr)
+            throw nb::python_error();
+        return value;
+    };
     switch (t.kind) {
     case kind_enum:
     case kind_literal: {
@@ -656,31 +687,17 @@ nb::object Types::decode_from(const detail::type_ref &t, const std::byte *data, 
             nb::dict out;
             for (std::uint32_t i = 0; i < length; ++i) {
                 const std::byte *slot = data + node.slots + std::size_t{i} * node.stride;
-                nb::object key = decode_from(first.type, slot, t.node, 0, where);
-                out[key] = decode_from(value_member.type, slot + value_member.offset, t.node, 1, where);
+                nb::object key = nb::steal(element(first.type, slot, 0));
+                out[key] = nb::steal(element(value_member.type, slot + value_member.offset, 1));
             }
             return out;
         }
         nb::object list = nb::steal(PyList_New(length));
         if (!list.is_valid())
             throw nb::python_error();
-        // Converting int and float elements here skips a decode_from call per element.
-        if (first.type.kind == kind_int || first.type.kind == kind_float) {
-            for (std::uint32_t i = 0; i < length; ++i) {
-                const std::byte *slot = data + node.slots + std::size_t{i} * node.stride;
-                PyObject *element = first.type.kind == kind_int ? PyLong_FromLongLong(load<long long>(slot))
-                                                                : PyFloat_FromDouble(load<double>(slot));
-                if (element == nullptr)
-                    throw nb::python_error();
-                PyList_SetItem(list.ptr(), static_cast<Py_ssize_t>(i), element);
-            }
-        } else {
-            for (std::uint32_t i = 0; i < length; ++i) {
-                nb::object element =
-                    decode_from(first.type, data + node.slots + std::size_t{i} * node.stride, t.node, 0, where);
-                PyList_SetItem(list.ptr(), static_cast<Py_ssize_t>(i), element.release().ptr());
-            }
-        }
+        for (std::uint32_t i = 0; i < length; ++i)
+            PyList_SetItem(list.ptr(), static_cast<Py_ssize_t>(i),
+                           element(first.type, data + node.slots + std::size_t{i} * node.stride, 0));
         if (n.cls == reinterpret_cast<PyObject *>(&PyList_Type))
             return list;
         PyObject *made = n.cls == reinterpret_cast<PyObject *>(&PyTuple_Type)       ? PyList_AsTuple(list.ptr())
@@ -700,7 +717,7 @@ nb::object Types::decode_from(const detail::type_ref &t, const std::byte *data, 
             for (std::uint32_t i = 0; i < node.count; ++i) {
                 const detail::type_member &m = member(i);
                 if (n.required[i]) {
-                    out[nb::handle(n.attrs[i])] = decode_from(m.type, data + m.offset, t.node, i, where);
+                    out[nb::handle(n.attrs[i])] = nb::steal(element(m.type, data + m.offset, i));
                     continue;
                 }
                 const auto present = load<std::uint8_t>(data + m.offset);
@@ -717,8 +734,7 @@ nb::object Types::decode_from(const detail::type_ref &t, const std::byte *data, 
         if (n.form == 0) {
             nb::dict kwargs;
             for (std::uint32_t i = 0; i < node.count; ++i)
-                kwargs[nb::handle(n.keywords[i])] =
-                    decode_from(member(i).type, data + member(i).offset, t.node, i, where);
+                kwargs[nb::handle(n.keywords[i])] = nb::steal(element(member(i).type, data + member(i).offset, i));
             PyObject *made = PyObject_Call(n.cls, nb::tuple().ptr(), kwargs.ptr());
             if (made == nullptr)
                 throw nb::python_error();
@@ -727,10 +743,9 @@ nb::object Types::decode_from(const detail::type_ref &t, const std::byte *data, 
         nb::object items = nb::steal(PyTuple_New(node.count));
         if (!items.is_valid())
             throw nb::python_error();
-        for (std::uint32_t i = 0; i < node.count; ++i) {
-            nb::object v = decode_from(member(i).type, data + member(i).offset, t.node, i, where);
-            PyTuple_SetItem(items.ptr(), static_cast<Py_ssize_t>(i), v.release().ptr());
-        }
+        for (std::uint32_t i = 0; i < node.count; ++i)
+            PyTuple_SetItem(items.ptr(), static_cast<Py_ssize_t>(i),
+                            element(member(i).type, data + member(i).offset, i));
         if (n.form == 2)
             return items;
         PyObject *made = PyObject_CallObject(n.cls, items.ptr());
