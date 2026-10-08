@@ -3567,6 +3567,9 @@ and this project adheres to <a href="https://semver.org/spec/v2.0.0.html">Semant
 <ul>
 <li><code>SharedBox</code>: a field named <code>read_into</code> raises <code>TypeError</code>.</li>
 <li><code>SharedBox</code>: a field named <code>writing</code> raises <code>TypeError</code>.</li>
+<li><code>SharedBox</code>: reading a collection, tuple or record field whose members
+  are <code>bool</code>, <code>int</code>, <code>float</code> or <code>str</code> takes less time: about 90 ns less
+  for a list of 16 <code>float</code> on Windows.</li>
 </ul>
 <h2 id="041-07-10-2026"><a href="https://github.com/jacopoabramo/sharedbox/compare/v0.4.0...v0.4.1">0.4.1</a> - 07-10-2026<a class="headerlink" href="#041-07-10-2026" title="Permanent link">&para;</a></h2>
 <h3 id="changed_1">Changed<a class="headerlink" href="#changed_1" title="Permanent link">&para;</a></h3>
