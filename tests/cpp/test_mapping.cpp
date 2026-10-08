@@ -26,7 +26,7 @@ sharedbox::result<handle> create(const std::string &name) {
 
 status open_status(const std::string &name, double timeout = 1.0) {
     const auto opened = handle::open(name, seconds(timeout));
-    return opened ? status::ok : opened.error();
+    return opened ? status::ok : opened.error().code;
 }
 
 header &header_of(const handle &h) { return *static_cast<header *>(h.base()); }
@@ -37,7 +37,7 @@ TEST_CASE("create open and unlink") {
     REQUIRE(owner.has_value());
     CHECK((owner->size() == 4096 && owner->minor_version() == 0));
     CHECK(header_of(*owner).record == 1728);
-    CHECK(create(name).error() == status::exists);
+    CHECK(create(name).error().code == status::exists);
     auto other = handle::open(name, seconds(1.0));
     CHECK(other.has_value());
     if (other) {
@@ -51,7 +51,7 @@ TEST_CASE("create open and unlink") {
     CHECK(sharedbox::unlink(name).has_value());
 #ifndef _WIN32
     CHECK(open_status(name, 0.1) == status::not_found);
-    CHECK(sharedbox::unlink(name).error() == status::not_found);
+    CHECK(sharedbox::unlink(name).error().code == status::not_found);
 #endif
 }
 
@@ -154,9 +154,9 @@ TEST_CASE("names") {
         CHECK(owner.has_value());
         static_cast<void>(sharedbox::unlink(longest));
     }
-    CHECK(create(longest + "n").error() == status::range);
-    CHECK(create("bad/name").error() == status::range);
-    CHECK(create("").error() == status::range);
+    CHECK(create(longest + "n").error().code == status::range);
+    CHECK(create("bad/name").error().code == status::range);
+    CHECK(create("").error().code == status::range);
     CHECK(open_status("bad name") == status::range);
 }
 
@@ -173,12 +173,12 @@ TEST_CASE("a foreign mapping is not a box") {
     const int foreign = shm_open(path.data(), O_CREAT | O_EXCL | O_RDWR, 0600);
     CHECK((foreign >= 0 && ftruncate(foreign, 4096) == 0));
 #endif
-    CHECK(create(name).error() == status::exists);
+    CHECK(create(name).error().code == status::exists);
     const auto start = std::chrono::steady_clock::now();
     CHECK(open_status(name, 0.2) == status::not_found);
     const double waited = seconds(std::chrono::steady_clock::now() - start).count();
     CHECK(waited >= 0.15);
-    CHECK(sharedbox::inspect(name).error() == status::not_found);
+    CHECK(sharedbox::inspect(name).error().code == status::not_found);
 #ifdef _WIN32
     CloseHandle(foreign);
 #else
@@ -218,7 +218,7 @@ TEST_CASE("open accepts a kind it does not know") {
     const char text[16] = "opaque bytes";
     const sharedbox::value value{1, std::as_bytes(std::span(text))};
     const auto written = opened->write({&value, 1}, seconds(1.0));
-    CHECK((!written && written.error() == status::range));
+    CHECK((!written && written.error().code == status::range));
     // Stands for a newer writer that knows kind 13.
     std::memcpy(static_cast<std::byte *>(owner->base()) + header_of(*owner).record + 9, text, 16);
     char back[16] = {};
@@ -261,24 +261,24 @@ TEST_CASE("a reference field holds a box_ref") {
     CHECK(std::string(back.name) == "motor");
     static_cast<void>(sharedbox::unlink(name));
     constexpr sharedbox::field_spec short_ref[1] = {{0, 143, sharedbox::kind_ref}};
-    CHECK(handle::create(name, short_ref, 144, 1, 1, {}).error() == status::range);
+    CHECK(handle::create(name, short_ref, 144, 1, 1, {}).error().code == status::range);
     constexpr sharedbox::field_spec unaligned_ref[1] = {{12, 144, sharedbox::kind_ref}};
-    CHECK(handle::create(name, unaligned_ref, 156, 1, 1, {}).error() == status::range);
+    CHECK(handle::create(name, unaligned_ref, 156, 1, 1, {}).error().code == status::range);
     constexpr sharedbox::field_spec unknown[1] = {{0, 8, 9}};
-    CHECK(handle::create(name, unknown, 8, 1, 1, {}).error() == status::range);
+    CHECK(handle::create(name, unknown, 8, 1, 1, {}).error().code == status::range);
 }
 
 TEST_CASE("create refuses bad fields") {
     const std::string name = unique("fields");
     constexpr sharedbox::field_spec overlapping[2] = {{0, 8, sharedbox::kind_int}, {4, 4, sharedbox::kind_bytes}};
-    CHECK(handle::create(name, overlapping, 16, 1, 64, {}).error() == status::range);
+    CHECK(handle::create(name, overlapping, 16, 1, 64, {}).error().code == status::range);
     constexpr sharedbox::field_spec past_end[1] = {{8, 8, sharedbox::kind_int}};
-    CHECK(handle::create(name, past_end, 8, 1, 64, {}).error() == status::range);
-    CHECK(handle::create(name, fields, 32, 1, 0, {}).error() == status::range);
-    CHECK(handle::create(name, fields, 32, 1, 4097, {}).error() == status::range);
+    CHECK(handle::create(name, past_end, 8, 1, 64, {}).error().code == status::range);
+    CHECK(handle::create(name, fields, 32, 1, 0, {}).error().code == status::range);
+    CHECK(handle::create(name, fields, 32, 1, 4097, {}).error().code == status::range);
     const std::byte seven[7] = {};
     const sharedbox::value short_int{0, seven};
-    CHECK(handle::create(name, fields, 32, 1, 64, {&short_int, 1}).error() == status::range);
+    CHECK(handle::create(name, fields, 32, 1, 64, {&short_int, 1}).error().code == status::range);
     CHECK(open_status(name, 0.1) == status::not_found);
 }
 
@@ -290,18 +290,18 @@ TEST_CASE("create_unpublished is opened only after publish") {
     auto owner = handle::create_unpublished(name, fields, 32, 0x5EED, 64, {&value, 1});
     REQUIRE(owner.has_value());
     CHECK(open_status(name, 0.1) == status::not_found);
-    CHECK(sharedbox::inspect(name).error() == status::not_found);
-    CHECK(create(name).error() == status::exists);
+    CHECK(sharedbox::inspect(name).error().code == status::not_found);
+    CHECK(create(name).error().code == status::exists);
     status seen = status::os;
     std::thread opener([&] { seen = open_status(name, 5.0); });
     std::this_thread::sleep_for(std::chrono::milliseconds(100));
     CHECK(owner->publish().has_value());
     opener.join();
     CHECK(seen == status::ok);
-    CHECK(owner->publish().error() == status::range);
+    CHECK(owner->publish().error().code == status::range);
     auto other = handle::open(name, seconds(1.0));
     REQUIRE(other.has_value());
-    CHECK(other->publish().error() == status::range);
+    CHECK(other->publish().error().code == status::range);
     std::int64_t stored = 0;
     std::memcpy(&stored, static_cast<const std::byte *>(other->base()) + 1728, sizeof stored);
     CHECK(stored == 42);

@@ -265,7 +265,7 @@ TEST_CASE("create refuses a table that does not check") {
     const field_spec fields[1] = {{0, 0, kind_enum}};
     const auto created = handle::create(unique("types-bad"), fields, 8, 1, 4, {}, t.span());
     REQUIRE_FALSE(created);
-    CHECK(created.error() == status::range);
+    CHECK(created.error().code == status::range);
 }
 
 TEST_CASE("layout 1.0 refuses a described kind") {
@@ -281,13 +281,13 @@ TEST_CASE("layout 1.0 refuses a described kind") {
         std::memcpy(bytes + header_size, &stored, sizeof stored);
         const auto opened = handle::open(name, seconds(1.0));
         REQUIRE_FALSE(opened);
-        CHECK(opened.error() == status::corrupt);
+        CHECK(opened.error().code == status::corrupt);
         static_cast<void>(unlink(name));
     }
     SUBCASE("on create") {
         const field_spec bad[1] = {{0, 8, kind_enum}};
         const auto created = detail::create_impl(name, bad, 8, 1, 4, {}, {}, 1, true);
         REQUIRE_FALSE(created);
-        CHECK(created.error() == status::range);
+        CHECK(created.error().code == status::range);
     }
 }

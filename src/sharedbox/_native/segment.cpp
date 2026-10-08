@@ -4,7 +4,6 @@
 
 #include <algorithm>
 #include <atomic>
-#include <cerrno>
 #include <cmath>
 #include <cstring>
 #include <iterator>
@@ -93,7 +92,7 @@ std::string exists_message(const std::string &name, const std::vector<std::strin
 #endif
     const result<header> seen = inspect(name);
     if (!seen) {
-        if (seen.error() != status::not_found)
+        if (seen.error().code != status::not_found)
             return taken;
         // Zero creator fields mean shared memory made by other software.
         if (const std::optional<header> creating = unpublished_header(name);
@@ -130,16 +129,13 @@ std::string exists_message(const std::string &name, const std::vector<std::strin
 #endif
 }
 
-// Reads the OS error first, before building the message can change it.
-[[noreturn]] void throw_status(status code, const std::string &name) {
+[[noreturn]] void throw_status(const error &e, const std::string &name) {
 #ifdef _WIN32
-    const int os_error = static_cast<int>(GetLastError());
     const std::error_category &category = std::system_category();
 #else
-    const int os_error = errno;
     const std::error_category &category = std::generic_category();
 #endif
-    switch (code) {
+    switch (e.code) {
     case status::exists:
         throw SegmentExists("a segment named '" + name + "' already exists");
     case status::not_found:
@@ -149,10 +145,10 @@ std::string exists_message(const std::string &name, const std::vector<std::strin
     case status::range:
         throw std::invalid_argument("box '" + name + "': a field, size or name is out of range");
     case status::os:
-        throw std::system_error(os_error, category, "box '" + name + "'");
+        throw std::system_error(e.os, category, "box '" + name + "'");
     default:
         throw std::runtime_error("box '" + name + "': sharedbox.hpp returned " +
-                                 std::to_string(static_cast<int>(code)));
+                                 std::to_string(static_cast<int>(e.code)));
     }
 }
 
@@ -217,14 +213,14 @@ struct Segment::Impl {
         box.set_wait_hooks(before_wait, after_wait);
     }
 
-    [[noreturn]] void fail(status code) const {
-        if (code == status::lock_timeout)
+    [[noreturn]] void fail(const error &e) const {
+        if (e.code == status::lock_timeout)
             throw LockTimeout("box '" + name + "' is locked by pid " + std::to_string(box.writer_pid()) +
                               "; call force_unlock() if that process is gone");
-        if (code == status::no_slot)
+        if (e.code == status::no_slot)
             throw NoWaiterSlot("all " + std::to_string(box.waiter_slots()) + " waiter slots of box '" + name +
                                "' are in use");
-        throw_status(code, name);
+        throw_status(e, name);
     }
 
     template <class T> T check(result<T> &&got) const {
@@ -314,7 +310,7 @@ struct Segment::Impl {
         const result<void> written = total >= detail::large_copy ? box.write_large(values, seconds(lock_timeout))
                                                                  : box.write(values, seconds(lock_timeout));
         // write checks the values too; this finds which one, for the message.
-        if (!written && written.error() == status::range)
+        if (!written && written.error().code == status::range)
             check_values(fields, values);
         check(result<void>(written));
     }
@@ -367,7 +363,7 @@ std::unique_ptr<Segment> Segment::create(const std::string &name, const std::vec
     const auto size = static_cast<std::uint32_t>(record_size);
     result<handle> made = detail::create_impl(name, table, size, schema_hash, waiter_slots, initial,
                                               bytes_of(types_table), major, publish);
-    if (!made && made.error() == status::exists)
+    if (!made && made.error().code == status::exists)
         throw SegmentExists(exists_message(name, names));
     impl->box = impl->check(std::move(made));
     impl->bind();
@@ -384,7 +380,7 @@ std::unique_ptr<Segment> Segment::attach(const std::string &name, const std::vec
     impl->lock_timeout = lock_timeout;
     // A creator that has not published the box within 1 s is not coming back.
     result<handle> opened = handle::open(name, seconds((std::min)(lock_timeout, 1.0)));
-    if (!opened && opened.error() == status::layout) {
+    if (!opened && opened.error().code == status::layout) {
         const result<header> seen = inspect(name);
         const std::string version =
             seen ? std::to_string(seen->layout_major) + "." + std::to_string(seen->layout_minor)
@@ -513,9 +509,9 @@ std::uint64_t Segment::wait(std::uint64_t last_generation, double timeout,
     const result<wake> woken = impl_->box.wait(held, last_generation, seconds(timeout));
     if (!slot)
         impl_->box.release_waiter(held);
-    if (!woken && woken.error() == status::range)
+    if (!woken && woken.error().code == status::range)
         throw std::invalid_argument("waiter slot " + std::to_string(held) + " is not held by this box");
-    if (!woken && woken.error() != status::timeout)
+    if (!woken && woken.error().code != status::timeout)
         impl_->fail(woken.error());
     return impl_->box.generation();
 }
@@ -597,13 +593,13 @@ void Segment::close() {
 
 void Segment::unlink(const std::string &name) {
     const result<void> removed = sharedbox::unlink(name);
-    const int error = errno;
     if (removed)
         return;
-    if (removed.error() == status::not_found)
+    if (removed.error().code == status::not_found)
         throw SegmentMissing("no segment named '" + name + "'");
-    if (removed.error() == status::os)
-        throw std::system_error(error, std::generic_category(), "cannot unlink segment '" + name + "'");
+    if (removed.error().code == status::os)
+        throw std::system_error(removed.error().os, std::generic_category(),
+                                "cannot unlink segment '" + name + "'");
     throw_status(removed.error(), name);
 }
 

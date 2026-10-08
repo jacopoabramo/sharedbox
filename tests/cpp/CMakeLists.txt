@@ -37,7 +37,7 @@ foreach(target IN LISTS sbx_tests)
     add_executable(${target} ${target}.cpp)
 endforeach()
 
-# The same test again where the standard library has std::expected, which result then names.
+# The same test again where the standard library has std::expected, to check the conversions.
 if("cxx_std_23" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
     add_executable(test_result_cxx23 test_result.cpp)
     set_target_properties(test_result_cxx23 PROPERTIES CXX_STANDARD 23)

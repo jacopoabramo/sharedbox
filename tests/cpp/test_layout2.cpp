@@ -19,7 +19,7 @@ header &header_of(const handle &h) { return *static_cast<header *>(h.base()); }
 
 status open_status(const std::string &name) {
     const auto opened = handle::open(name, seconds(0.2));
-    return opened ? status::ok : opened.error();
+    return opened ? status::ok : opened.error().code;
 }
 
 } // namespace
@@ -121,6 +121,6 @@ TEST_CASE("a record that, with the tail before it, passes the mapping limit is r
     const auto made =
         handle::create(name, fields, static_cast<std::uint32_t>(sharedbox::max_mapping_size - 8), 1, 64, {});
     REQUIRE_FALSE(made.has_value());
-    CHECK(made.error() == status::range);
+    CHECK(made.error().code == status::range);
     CHECK(open_status(name) == status::not_found);
 }

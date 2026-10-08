@@ -2,8 +2,7 @@
 // use them.
 //
 // C++20, header-only, 64-bit little-endian targets, no exceptions. Names in sharedbox::detail are
-// internal and may change in any release. Every translation unit of a program must see the same
-// definition of sharedbox::result, so build them all as C++20 or all as C++23.
+// internal and may change in any release.
 #ifndef SHAREDBOX_SHAREDBOX_HPP
 #define SHAREDBOX_SHAREDBOX_HPP
 
@@ -78,7 +77,7 @@ namespace sharedbox {
 // Renamed when this header's C++ interface changes incompatibly, so code built against headers with
 // different inline namespaces can be linked into one program without their names colliding. Names in
 // detail may change without a rename, so a shared library should build with hidden visibility.
-inline namespace v2 {
+inline namespace v3 {
 
 inline constexpr std::uint16_t layout_major = 2;
 inline constexpr std::uint16_t layout_minor = 0;
@@ -144,6 +143,7 @@ enum class status : int {
     no_slot = -8,
     range = -9,
     os = -10,
+    kind_mismatch = -11,
 };
 
 // A field as create takes it and field() returns it; kind is one of the kind_ constants.
@@ -332,23 +332,27 @@ static_assert(SBX_E_NOT_FOUND == int(status::not_found) && SBX_E_LAYOUT == int(s
 static_assert(SBX_E_SCHEMA == int(status::schema) && SBX_E_CORRUPT == int(status::corrupt));
 static_assert(SBX_E_LOCK_TIMEOUT == int(status::lock_timeout) && SBX_E_TIMEOUT == int(status::timeout));
 static_assert(SBX_E_NO_SLOT == int(status::no_slot) && SBX_E_RANGE == int(status::range));
-static_assert(SBX_E_OS == int(status::os));
+static_assert(SBX_E_OS == int(status::os) && SBX_E_KIND == int(status::kind_mismatch));
 
-#if defined(__cpp_lib_expected) && __cpp_lib_expected >= 202211L
+// Why a call failed: the status, the OS error (errno or GetLastError()) read where the OS call failed,
+// and what the call found when that is the reason: the magic for kind_mismatch, major << 16 | minor
+// for layout.
+struct error {
+    status code = status::ok;
+    std::int32_t os = 0;
+    std::uint64_t found = 0;
+};
+static_assert(sizeof(error) == 16 && std::is_trivially_copyable_v<error>);
 
-template <class T> using result = std::expected<T, status>;
-using unexpected = std::unexpected<status>;
-
-#else
-
-// The error of a result, as std::unexpected<status> is on C++23.
+// The error of a result, as std::unexpected<error> is on C++23.
 class unexpected {
 public:
-    constexpr explicit unexpected(status e) noexcept : error_(e) {}
-    constexpr status error() const noexcept { return error_; }
+    constexpr explicit unexpected(status code) noexcept : error_{code, 0, 0} {}
+    constexpr explicit unexpected(sharedbox::error e) noexcept : error_(e) {}
+    constexpr const sharedbox::error &error() const noexcept { return error_; }
 
 private:
-    status error_;
+    sharedbox::error error_;
 };
 
 template <class T> class result;
@@ -364,7 +368,7 @@ template <class T> inline constexpr bool is_result<result<T>> = true;
 template <class T> class result {
 public:
     using value_type = T;
-    using error_type = status;
+    using error_type = sharedbox::error;
 
     template <class U = T>
         requires(std::is_constructible_v<T, U> && !std::is_same_v<std::remove_cvref_t<U>, result> &&
@@ -373,6 +377,17 @@ public:
     constexpr explicit(!std::is_convertible_v<U, T>) result(U &&v)
         : v_(std::in_place_index<0>, std::forward<U>(v)) {}
     constexpr result(unexpected e) : v_(std::in_place_index<1>, e) {}
+#if defined(__cpp_lib_expected) && __cpp_lib_expected >= 202211L
+    // For code that wants the standard type; result itself never aliases it, so a program may mix
+    // translation units built as C++20 and as C++23.
+    constexpr result(std::expected<T, sharedbox::error> e)
+        : result(e ? result(std::move(*e)) : result(unexpected(e.error()))) {}
+    constexpr operator std::expected<T, sharedbox::error>() const & {
+        if (has_value())
+            return **this;
+        return std::unexpected(error());
+    }
+#endif
 
     constexpr bool has_value() const noexcept { return v_.index() == 0; }
     constexpr explicit operator bool() const noexcept { return has_value(); }
@@ -384,7 +399,7 @@ public:
     constexpr T &value() & { return checked(), **this; }
     constexpr const T &value() const & { return checked(), **this; }
     constexpr T &&value() && { return checked(), std::move(**this); }
-    constexpr status error() const noexcept { return std::get_if<1>(&v_)->error(); }
+    constexpr const sharedbox::error &error() const noexcept { return std::get_if<1>(&v_)->error(); }
     template <class U> constexpr T value_or(U &&fallback) const & {
         static_assert(std::is_convertible_v<U, T>, "sharedbox::result: value_or needs a value convertible to T");
         return has_value() ? **this : static_cast<T>(std::forward<U>(fallback));
@@ -400,13 +415,15 @@ public:
     template <class F> constexpr auto transform(F &&f) const & { return map(*this, std::forward<F>(f)); }
     template <class F> constexpr auto transform(F &&f) && { return map(std::move(*this), std::forward<F>(f)); }
     template <class F> constexpr result or_else(F &&f) const & {
-        static_assert(std::is_same_v<std::remove_cvref_t<std::invoke_result_t<F, status>>, result>,
-                      "sharedbox::result: or_else must return the same result type");
+        static_assert(
+            std::is_same_v<std::remove_cvref_t<std::invoke_result_t<F, const sharedbox::error &>>, result>,
+            "sharedbox::result: or_else must return the same result type");
         return has_value() ? result(**this) : std::forward<F>(f)(error());
     }
     template <class F> constexpr result or_else(F &&f) && {
-        static_assert(std::is_same_v<std::remove_cvref_t<std::invoke_result_t<F, status>>, result>,
-                      "sharedbox::result: or_else must return the same result type");
+        static_assert(
+            std::is_same_v<std::remove_cvref_t<std::invoke_result_t<F, const sharedbox::error &>>, result>,
+            "sharedbox::result: or_else must return the same result type");
         return has_value() ? result(std::move(**this)) : std::forward<F>(f)(error());
     }
 
@@ -442,10 +459,21 @@ private:
 template <> class result<void> {
 public:
     using value_type = void;
-    using error_type = status;
+    using error_type = sharedbox::error;
 
     constexpr result() noexcept = default;
     constexpr result(unexpected e) noexcept : has_value_(false), error_(e.error()) {}
+#if defined(__cpp_lib_expected) && __cpp_lib_expected >= 202211L
+    // For code that wants the standard type; result itself never aliases it, so a program may mix
+    // translation units built as C++20 and as C++23.
+    constexpr result(std::expected<void, sharedbox::error> e)
+        : result(e ? result() : result(unexpected(e.error()))) {}
+    constexpr operator std::expected<void, sharedbox::error>() const & {
+        if (has_value())
+            return {};
+        return std::unexpected(error());
+    }
+#endif
 
     constexpr bool has_value() const noexcept { return has_value_; }
     constexpr explicit operator bool() const noexcept { return has_value(); }
@@ -454,7 +482,7 @@ public:
         if (!has_value())
             std::terminate();
     }
-    constexpr status error() const noexcept { return error_; }
+    constexpr const sharedbox::error &error() const noexcept { return error_; }
     template <class F> constexpr auto and_then(F &&f) const {
         using R = std::remove_cvref_t<std::invoke_result_t<F>>;
         if (has_value())
@@ -475,17 +503,16 @@ public:
         }
     }
     template <class F> constexpr result or_else(F &&f) const {
-        static_assert(std::is_same_v<std::remove_cvref_t<std::invoke_result_t<F, status>>, result>,
-                      "sharedbox::result: or_else must return the same result type");
+        static_assert(
+            std::is_same_v<std::remove_cvref_t<std::invoke_result_t<F, const sharedbox::error &>>, result>,
+            "sharedbox::result: or_else must return the same result type");
         return has_value() ? *this : std::forward<F>(f)(error_);
     }
 
 private:
     bool has_value_ = true;
-    status error_ = status::ok;
+    sharedbox::error error_{};
 };
-
-#endif
 
 namespace detail {
 
@@ -1406,26 +1433,16 @@ inline wide_name make_wide_name(std::string_view name, const char *suffix) noexc
 }
 #endif
 
-// Keeps the OS error of a failed call across the cleanup that follows it.
-class keep_os_error {
-public:
+// The OS error of the call that just failed, read before any cleanup can change it.
+inline unexpected os_failure() noexcept {
 #ifdef _WIN32
-    keep_os_error() noexcept : error_(GetLastError()) {}
-    ~keep_os_error() { SetLastError(error_); }
-
-private:
-    DWORD error_;
+    return unexpected(error{status::os, static_cast<std::int32_t>(GetLastError()), 0});
 #else
-    keep_os_error() noexcept : error_(errno) {}
-    ~keep_os_error() { errno = error_; }
-
-private:
-    int error_;
+    return unexpected(error{status::os, errno, 0});
 #endif
-};
+}
 
-// One view of a named mapping and the OS handle it came from; the destructor unmaps and closes both,
-// keeping the OS error of whatever failed before.
+// One view of a named mapping and the OS handle it came from; the destructor unmaps and closes both.
 class os_mapping {
 public:
     os_mapping() noexcept = default;
@@ -1439,7 +1456,6 @@ public:
     void reset() noexcept {
         if (base_ == nullptr)
             return;
-        keep_os_error keep;
 #ifdef _WIN32
         UnmapViewOfFile(base_);
         CloseHandle(os_);
@@ -1512,32 +1528,32 @@ inline result<os_mapping> map_create(std::string_view name, std::uint64_t size) 
                                         static_cast<DWORD>(size >> 32), static_cast<DWORD>(size), wide.data());
     // ERROR_INVALID_HANDLE: another kind of object already has the name.
     if (mapping == nullptr)
-        return unexpected(GetLastError() == ERROR_INVALID_HANDLE ? status::exists : status::os);
+        return GetLastError() == ERROR_INVALID_HANDLE ? unexpected(status::exists) : os_failure();
     if (GetLastError() == ERROR_ALREADY_EXISTS) {
         CloseHandle(mapping);
         return unexpected(status::exists);
     }
     void *view = MapViewOfFile(mapping, FILE_MAP_READ | FILE_MAP_WRITE, 0, 0, 0);
     if (view == nullptr) {
-        keep_os_error keep;
+        const unexpected failed = os_failure();
         CloseHandle(mapping);
-        return unexpected(status::os);
+        return failed;
     }
     return os_mapping::adopt(mapping, view, size);
 #else
     const object_name path = make_name("/", name, "");
     const int fd = shm_open(path.data(), O_CREAT | O_EXCL | O_RDWR, 0600);
     if (fd < 0)
-        return unexpected(errno == EEXIST ? status::exists : status::os);
+        return errno == EEXIST ? unexpected(status::exists) : os_failure();
     if (allocate(fd, size) == 0) {
         void *view = mmap(nullptr, static_cast<std::size_t>(size), PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
         if (view != MAP_FAILED)
             return os_mapping::adopt(fd, view, size);
     }
-    keep_os_error keep;
+    const unexpected failed = os_failure();
     close(fd);
     shm_unlink(path.data());
-    return unexpected(status::os);
+    return failed;
 #endif
 }
 
@@ -1550,29 +1566,30 @@ inline result<os_mapping> map_open(std::string_view name, backoff &wait) noexcep
     HANDLE mapping = OpenFileMappingW(FILE_MAP_READ | FILE_MAP_WRITE, FALSE, wide.data());
     if (mapping == nullptr) {
         const DWORD e = GetLastError();
-        return unexpected(e == ERROR_FILE_NOT_FOUND || e == ERROR_INVALID_HANDLE ? status::not_found : status::os);
+        return e == ERROR_FILE_NOT_FOUND || e == ERROR_INVALID_HANDLE ? unexpected(status::not_found)
+                                                                      : os_failure();
     }
     void *view = MapViewOfFile(mapping, FILE_MAP_READ | FILE_MAP_WRITE, 0, 0, 0);
     MEMORY_BASIC_INFORMATION info;
     if (view == nullptr || VirtualQuery(view, &info, sizeof info) == 0) {
-        keep_os_error keep;
+        const unexpected failed = os_failure();
         if (view != nullptr)
             UnmapViewOfFile(view);
         CloseHandle(mapping);
-        return unexpected(status::os);
+        return failed;
     }
     return os_mapping::adopt(mapping, view, static_cast<std::uint64_t>(info.RegionSize));
 #else
     const object_name path = make_name("/", name, "");
     const int fd = shm_open(path.data(), O_RDWR, 0);
     if (fd < 0)
-        return unexpected(errno == ENOENT ? status::not_found : status::os);
+        return errno == ENOENT ? unexpected(status::not_found) : os_failure();
     struct stat st;
     for (;;) {
         if (fstat(fd, &st) != 0) {
-            keep_os_error keep;
+            const unexpected failed = os_failure();
             close(fd);
-            return unexpected(status::os);
+            return failed;
         }
         if (static_cast<std::uint64_t>(st.st_size) >= page_size)
             break;
@@ -1584,9 +1601,9 @@ inline result<os_mapping> map_open(std::string_view name, backoff &wait) noexcep
     }
     void *view = mmap(nullptr, static_cast<std::size_t>(st.st_size), PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
     if (view == MAP_FAILED) {
-        keep_os_error keep;
+        const unexpected failed = os_failure();
         close(fd);
-        return unexpected(status::os);
+        return failed;
     }
     return os_mapping::adopt(fd, view, static_cast<std::uint64_t>(st.st_size));
 #endif
@@ -1616,8 +1633,9 @@ inline bool fill_random(unsigned char *buf, std::size_t size) noexcept {
         break;
     }
     if (fd >= 0) {
-        keep_os_error keep;
+        const int failed = errno;
         close(fd);
+        errno = failed;
     }
     return got == size;
 }
@@ -1631,10 +1649,10 @@ inline result<std::uint64_t> random_id() noexcept {
         const NTSTATUS rc =
             BCryptGenRandom(nullptr, reinterpret_cast<PUCHAR>(&id), sizeof id, BCRYPT_USE_SYSTEM_PREFERRED_RNG);
         if (!BCRYPT_SUCCESS(rc))
-            return unexpected(status::os);
+            return os_failure();
 #else
         if (!fill_random(reinterpret_cast<unsigned char *>(&id), sizeof id))
-            return unexpected(status::os);
+            return os_failure();
 #endif
     }
     return id;
@@ -2997,10 +3015,10 @@ inline result<std::uint16_t> handle::register_waiter() {
 #ifdef _WIN32
         HANDLE e = detail::event(s, i);
         if (e == nullptr) {
-            detail::keep_os_error keep;
+            const unexpected failed = detail::os_failure();
             detail::owned_clear(s, i);
             detail::free_slot(s, i);
-            return unexpected(status::os);
+            return failed;
         }
         // Drops a wake-up meant for an earlier owner of the slot.
         ResetEvent(e);
@@ -3092,10 +3110,10 @@ inline result<wake> handle::wait(std::uint16_t slot, std::uint64_t last_generati
         static_cast<void>(word);
         HANDLE e = detail::event(s, slot);
         if (e == nullptr)
-            return unexpected(status::os);
+            return detail::os_failure();
         const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(remaining).count();
         if (WaitForSingleObject(e, static_cast<DWORD>(ms) + 1) == WAIT_FAILED)
-            return unexpected(status::os);
+            return detail::os_failure();
 #else
         const auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(remaining).count();
         timespec ts{};
@@ -3114,7 +3132,7 @@ inline result<void> handle::interrupt(std::uint16_t slot) {
 #ifdef _WIN32
     HANDLE e = detail::event(s, slot);
     if (e == nullptr)
-        return unexpected(status::os);
+        return detail::os_failure();
     SetEvent(e);
 #else
     detail::atomic(s.hdr->wake_word).fetch_add(1, std::memory_order_seq_cst);
@@ -3191,22 +3209,22 @@ inline result<handle> handle::duplicate() const {
     HANDLE os = nullptr;
     if (!DuplicateHandle(GetCurrentProcess(), src.map.os(), GetCurrentProcess(), &os, 0, FALSE,
                          DUPLICATE_SAME_ACCESS))
-        return unexpected(status::os);
+        return detail::os_failure();
     void *base = MapViewOfFile(os, FILE_MAP_READ | FILE_MAP_WRITE, 0, 0, 0);
     if (base == nullptr) {
-        detail::keep_os_error keep;
+        const unexpected failed = detail::os_failure();
         CloseHandle(os);
-        return unexpected(status::os);
+        return failed;
     }
 #else
     const int os = fcntl(src.map.os(), F_DUPFD_CLOEXEC, 0);
     if (os < 0)
-        return unexpected(status::os);
+        return detail::os_failure();
     void *base = mmap(nullptr, static_cast<std::size_t>(src.size), PROT_READ | PROT_WRITE, MAP_SHARED, os, 0);
     if (base == MAP_FAILED) {
-        detail::keep_os_error keep;
+        const unexpected failed = detail::os_failure();
         close(os);
-        return unexpected(status::os);
+        return failed;
     }
 #endif
     detail::os_mapping map = detail::os_mapping::adopt(os, base, src.size);
@@ -3233,7 +3251,7 @@ inline sbx_handle *handle::to_capsule() && {
     return out.release();
 }
 
-} // namespace v2
+} // namespace v3
 } // namespace sharedbox
 
 #undef SHAREDBOX_HOT

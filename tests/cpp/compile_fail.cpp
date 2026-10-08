@@ -13,7 +13,7 @@ struct only_explicit_int {
 int main() {
     const sharedbox::result<int> r = 1;
 #if defined(SBX_FAIL_or_else_type)
-    (void)r.or_else([](sharedbox::status) { return 0; });
+    (void)r.or_else([](const sharedbox::error &) { return 0; });
 #elif defined(SBX_FAIL_transform_reference)
     static int x = 0;
     (void)r.transform([](int) -> int & { return x; });

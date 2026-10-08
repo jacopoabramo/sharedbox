@@ -51,12 +51,12 @@ TEST_CASE("datetime values round trip and bad stored values are refused") {
     REQUIRE(back.has_value());
     CHECK((back->micros == aware.micros && back->offset == 60 && !back->naive));
     CHECK(back->local().time_since_epoch() - back->utc().time_since_epoch() == minutes(60));
-    CHECK(decode_datetime(datetime_bytes(0, 0, 4)).error() == status::corrupt);
-    CHECK(decode_datetime(datetime_bytes(0, 1440, 0)).error() == status::corrupt);
-    CHECK(decode_datetime(datetime_bytes(0, 30, 1)).error() == status::corrupt);
-    CHECK(decode_datetime(datetime_bytes(253402300800000000, 0, 1)).error() == status::corrupt);
+    CHECK(decode_datetime(datetime_bytes(0, 0, 4)).error().code == status::corrupt);
+    CHECK(decode_datetime(datetime_bytes(0, 1440, 0)).error().code == status::corrupt);
+    CHECK(decode_datetime(datetime_bytes(0, 30, 1)).error().code == status::corrupt);
+    CHECK(decode_datetime(datetime_bytes(253402300800000000, 0, 1)).error().code == status::corrupt);
     CHECK(encode_datetime({253402300800000000, 0, true, false}, out) == status::range);
-    CHECK(decode_datetime(std::span(out).first(12)).error() == status::range);
+    CHECK(decode_datetime(std::span(out).first(12)).error().code == status::range);
 }
 
 TEST_CASE("dates, times and timedeltas keep their ranges") {
@@ -68,7 +68,7 @@ TEST_CASE("dates, times and timedeltas keep their ranges") {
     CHECK(encode_date(sys_days(year{10000} / January / 1), date) == status::range);
     ordinal = 0;
     std::memcpy(date.data(), &ordinal, 4);
-    CHECK(decode_date(date).error() == status::corrupt);
+    CHECK(decode_date(date).error().code == status::corrupt);
 
     std::array<std::byte, 16> time{};
     CHECK(encode_time({microseconds(micros_per_day), 0, true, false}, time) == status::range);
@@ -109,14 +109,14 @@ TEST_CASE("positions, tags, presence and lengths stay below their counts") {
     pos[0] = std::byte{2};
     const auto position = decode_position(view, pos);
     REQUIRE_FALSE(position);
-    CHECK(position.error() == status::corrupt);
+    CHECK(position.error().code == status::corrupt);
     const std::array<std::byte, 1> two{std::byte{2}};
     const auto present = decode_present(two);
     REQUIRE_FALSE(present);
-    CHECK(present.error() == status::corrupt);
+    CHECK(present.error().code == status::corrupt);
     const auto flag = decode_bool(two);
     REQUIRE_FALSE(flag);
-    CHECK(flag.error() == status::corrupt);
+    CHECK(flag.error().code == status::corrupt);
 
     const type_view either = box->field_type(1);
     std::array<std::byte, 16> tagged{};
@@ -125,7 +125,7 @@ TEST_CASE("positions, tags, presence and lengths stay below their counts") {
     tagged[0] = std::byte{2};
     const auto tag = decode_tag(either, tagged);
     REQUIRE_FALSE(tag);
-    CHECK(tag.error() == status::corrupt);
+    CHECK(tag.error().code == status::corrupt);
 
     const type_view list = box->field_type(2);
     std::array<std::byte, 32> items{};
@@ -135,12 +135,12 @@ TEST_CASE("positions, tags, presence and lengths stay below their counts") {
     // Three elements need 32 bytes; 24 cannot hold them.
     const auto short_bytes = decode_length(list, std::span<const std::byte>(items.data(), 24));
     REQUIRE_FALSE(short_bytes);
-    CHECK(short_bytes.error() == status::corrupt);
+    CHECK(short_bytes.error().code == status::corrupt);
     const std::uint32_t four = 4;
     std::memcpy(items.data(), &four, 4);
     const auto too_long = decode_length(list, items);
     REQUIRE_FALSE(too_long);
-    CHECK(too_long.error() == status::corrupt);
+    CHECK(too_long.error().code == status::corrupt);
     static_cast<void>(unlink(name));
 }
 
@@ -166,11 +166,11 @@ TEST_CASE("a list field takes its length and used slots, and read_used copies on
     // A length past the capacity, and bytes that do not match the length, are refused.
     const std::uint32_t four = 4;
     std::memcpy(bytes, &four, 4);
-    CHECK(box->write({&v, 1}, sharedbox::seconds(1.0)).error() == status::range);
+    CHECK(box->write({&v, 1}, sharedbox::seconds(1.0)).error().code == status::range);
     const std::uint32_t two = 2;
     std::memcpy(bytes, &two, 4);
-    CHECK(box->write({&v, 1}, sharedbox::seconds(1.0)).error() == status::range);
-    CHECK(box->read_used(1, got).error() == status::range);
+    CHECK(box->write({&v, 1}, sharedbox::seconds(1.0)).error().code == status::range);
+    CHECK(box->read_used(1, got).error().code == status::range);
     static_cast<void>(unlink(name));
 }
 
