@@ -6,6 +6,7 @@ a record, a list and an array time SharedBox alone; they have no
 standard-library counterpart. `mp.Value/Array` takes one lock per value, so
 its "update two fields" and "read all" rows take two or three locks one after
 the other.
+The row `watched write int` writes while another process has a watcher open.
 Rows under `split` isolate the native segment's typed `set`/`get`,
 which convert the Python value in the native module, against the raw
 `_write`/`_read` calls that move already-encoded bytes.
@@ -23,6 +24,7 @@ import struct
 from dataclasses import dataclass
 from fnmatch import fnmatchcase
 from multiprocessing.shared_memory import ShareableList, SharedMemory
+from multiprocessing.synchronize import Event
 from typing import Annotated, Any
 
 import numpy as np
@@ -65,6 +67,42 @@ def open_box() -> tuple[Any, ...]:
     atexit.register(Record.unlink, name)
     atexit.register(box.close)
     return box, box._segment, INT.pack(1)
+
+
+def ignore(new: int, old: int) -> None:
+    """Receive a change of `a` and do nothing with it."""
+
+
+def watch(name: str, ready: Event, stop: Event) -> None:
+    """Watch field `a` of the box `name` until `stop` is set."""
+    box = Record.attach(name)
+    box.events.a.connect(ignore)
+    ready.set()
+    stop.wait()
+    box.close()
+
+
+def open_watched() -> tuple[Any, ...]:
+    name = f"bench-ops-watched-{os.getpid()}"
+    box = Record.create(name, 0, 0.0, "")
+    ctx = mp.get_context("spawn")
+    ready, stop = ctx.Event(), ctx.Event()
+    child = ctx.Process(target=watch, args=(name, ready, stop))
+    child.start()
+
+    def stop_child() -> None:
+        stop.set()
+        child.join(10)
+        if child.is_alive():
+            child.terminate()
+            child.join()
+
+    atexit.register(Record.unlink, name)
+    atexit.register(box.close)
+    atexit.register(stop_child)
+    if not ready.wait(30):
+        raise TimeoutError("the watching process did not start")
+    return (box,)
 
 
 def open_ref() -> tuple[Any, ...]:
@@ -137,6 +175,7 @@ def open_typed() -> tuple[Any, ...]:
 
 OPENERS = {
     "box": open_box,
+    "watched": open_watched,
     "ref": open_ref,
     "shm": open_shm,
     "values": open_values,
@@ -154,6 +193,7 @@ def resources(kind: str) -> tuple[Any, ...]:
 
 
 BOX = "box, seg, raw_a = resources('box')"
+WATCHED = "box, = resources('watched')"
 REF = "holder, = resources('ref')"
 SHM = "buf, lock = resources('shm')"
 VALUES = "a, b, s = resources('values')"
@@ -163,6 +203,7 @@ TYPED = "typed, = resources('typed')"
 
 BENCHMARKS: list[tuple[str, str, str, list[str]]] = [
     ("write int", "SharedBox", BOX, ["box.a = 1"]),
+    ("watched write int", "SharedBox", WATCHED, ["box.a = 1"]),
     ("write int", "SharedMemory+struct", SHM, ["INT.pack_into(buf, 0, 1)"]),
     (
         "write int",

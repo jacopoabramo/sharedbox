@@ -73,9 +73,12 @@ jobs:
           print("| benchmark | base | head | head / base |")
           print("| --- | --- | --- | --- |")
           for name in sorted({name for name, _ in means}):
-              base = statistics.median(means[name, "base"])
-              head = statistics.median(means[name, "head"])
-              print(f"| {name} | {base * 1e9:.1f} ns | {head * 1e9:.1f} ns | {head / base:.3f} |")
+              base = statistics.median(means.get((name, "base"), [0.0]))
+              head = statistics.median(means.get((name, "head"), [0.0]))
+              # A row added or removed by the pull request has times on one side only.
+              cells = [f"{v * 1e9:.1f} ns" if v else "-" for v in (base, head)]
+              ratio = f"{head / base:.3f}" if base and head else "-"
+              print(f"| {name} | {cells[0]} | {cells[1]} | {ratio} |")
           EOF
 
       - uses: actions/upload-artifact@v7
