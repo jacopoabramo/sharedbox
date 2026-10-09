@@ -75,6 +75,12 @@ def print_table(
 def main(folder: Path) -> None:
     print(machine())
     print()
+    print(
+        "The runners have 4 cores, so rows with 4 readers oversubscribe the CPU "
+        "and are noisy. A ratio above 1 is better for items/s and received/s; "
+        "below 1 is better for p50 us."
+    )
+    print()
     print_table(
         folder,
         "Throughput, items received per second",
