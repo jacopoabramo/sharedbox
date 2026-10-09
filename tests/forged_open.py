@@ -39,7 +39,7 @@ REGIONS = [
     (0, 64),
     (64, 64),
     (128, len(FIELDS) * 8),
-    (128 + len(FIELDS) * 16, SLOTS * 24),
+    (128 + len(FIELDS) * 16, SLOTS * 32),
 ]
 
 

@@ -33,7 +33,7 @@ def own_pidns() -> int:
 
 def slot_offset(slot: int, field_count: int = 1) -> int:
     """Where a waiter slot starts in the mapping: after the header, field table and write counts."""
-    return 128 + field_count * 16 + slot * 24
+    return 128 + field_count * 16 + slot * 32
 
 
 @contextlib.contextmanager

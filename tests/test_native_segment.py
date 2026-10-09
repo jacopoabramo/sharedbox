@@ -383,7 +383,7 @@ def test_raw_bytes_follow_the_layout(unique_name: str) -> None:
     # seq, writer_pid, wake_word, waiters and sleepers after one write, with no one waiting.
     assert struct.unpack_from("<QIIII", raw, 64) == (2, 0, 1, 0, 0)
     # field_count and its reserved word, then record_size, record, tail and types_size.
-    assert struct.unpack_from("<HHIIII", raw, 88) == (3, 0, 24, 1728, 128, 0)
+    assert struct.unpack_from("<HHIIII", raw, 88) == (3, 0, 24, 2240, 128, 0)
     assert raw[108:128] == bytes(20)
     assert struct.unpack_from("<6I", raw, 128) == (
         0,
@@ -394,9 +394,9 @@ def test_raw_bytes_follow_the_layout(unique_name: str) -> None:
         1 | BOOL << 24,
     )
     assert struct.unpack_from("<3Q", raw, 152) == (0, 1, 0)
-    assert raw[176:1728] == bytes(1552)
-    assert struct.unpack_from("<qd?", raw, 1728) == (7, 0.5, True)
-    assert raw[1745:] == bytes(4096 - 1745)
+    assert raw[176:2240] == bytes(2064)
+    assert struct.unpack_from("<qd?", raw, 2240) == (7, 0.5, True)
+    assert raw[2257:] == bytes(4096 - 2257)
 
 
 @pytest.mark.parametrize(
@@ -409,7 +409,7 @@ def test_raw_bytes_follow_the_layout(unique_name: str) -> None:
         pytest.param(92, "<I", 4000, id="record-past-the-mapping"),
         pytest.param(96, "<I", 0xFFFF_FFC0, id="record-outside"),
         pytest.param(96, "<I", 128, id="record-over-the-table"),
-        pytest.param(96, "<I", 1736, id="record-unaligned"),
+        pytest.param(96, "<I", 2248, id="record-unaligned"),
         pytest.param(100, "<I", 136, id="tail-moved"),
         pytest.param(56, "<I", 8192, id="size-differs"),
         pytest.param(128, "<I", 32, id="field-past-the-record"),

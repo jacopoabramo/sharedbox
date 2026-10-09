@@ -231,6 +231,8 @@ inline status bind_stream(stream_state &s, os_mapping &&map, const stream_header
     s.waiters.slots =
         reinterpret_cast<waiter_slot *>(base + h.readers + std::uint64_t{h.max_readers} * sizeof(reader_entry));
     s.waiters.claimed = &s.hdr->waiters;
+    s.waiters.base = base;
+    s.waiters.sleeper_counts = {offsetof(stream_header, data_waiting), offsetof(stream_header, space_waiting)};
     s.waiters.count = h.common.waiter_slots;
     return status::ok;
 }

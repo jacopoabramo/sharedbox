@@ -401,6 +401,8 @@ inline void bind(state &s, void *base, std::uint64_t size, std::uint16_t segment
     s.waiters.slots =
         reinterpret_cast<waiter_slot *>(bytes + table + std::size_t{s.field_count} * sizeof(std::uint64_t));
     s.waiters.claimed = &s.hdr->waiters;
+    s.waiters.base = bytes;
+    s.waiters.sleeper_counts = {offsetof(header, sleepers), 0};
     s.waiters.count = s.waiter_slots;
     s.record = bytes + s.record_offset;
     s.size = size;
@@ -994,9 +996,12 @@ namespace detail {
 
 SHAREDBOX_HOT void wake_waiters(const state &s) noexcept {
     header &h = *s.hdr;
-    // A waiter counts itself in sleepers (seq_cst) before it loads wake_word and checks seq. This
-    // increment and the load of sleepers are seq_cst too, after the write's swap of seq, so either the
-    // load sees the count and wakes, or the waiter's check sees the new seq.
+    // A waiter adds itself to sleepers, then loads wake_word, then checks seq, all seq_cst. If the load
+    // of sleepers below misses that increment, the waiter's load of wake_word comes after this fetch_add
+    // in the single order of seq_cst operations and reads it or a later change, every change to wake_word
+    // being a read-modify-write. That load synchronizes with this fetch_add, so the swap of seq before it
+    // happens before the waiter's check, which sees the new seq. The swap is only release, so the
+    // waiter's load of wake_word is required on both platforms, though on Windows its value is unused.
     atomic(h.wake_word).fetch_add(1, std::memory_order_seq_cst);
     if (atomic(h.sleepers).load(std::memory_order_seq_cst) == 0)
         return;

@@ -36,7 +36,7 @@ TEST_CASE("create open and unlink") {
     auto owner = create(name);
     REQUIRE(owner.has_value());
     CHECK((owner->size() == 4096 && owner->minor_version() == 0));
-    CHECK(header_of(*owner).record == 1728);
+    CHECK(header_of(*owner).record == 2240);
     CHECK(create(name).error().code == status::exists);
     auto other = handle::open(name, seconds(1.0));
     CHECK(other.has_value());
@@ -45,7 +45,7 @@ TEST_CASE("create open and unlink") {
         CHECK((other->create_id() == owner->create_id() && owner->create_id() != 0));
         CHECK((other->field(1).offset == 8 && other->field(1).capacity == 16));
         std::int64_t stored = 0;
-        std::memcpy(&stored, static_cast<const std::byte *>(other->base()) + 1728, sizeof stored);
+        std::memcpy(&stored, static_cast<const std::byte *>(other->base()) + 2240, sizeof stored);
         CHECK(stored == 42);
     }
     CHECK(sharedbox::unlink(name).has_value());
@@ -91,12 +91,12 @@ TEST_CASE("checks on open") {
     };
     CHECK(forged(h.tail, 136u) == status::corrupt);
     // Not 64-byte aligned.
-    CHECK(forged(h.record, 1736u) == status::corrupt);
+    CHECK(forged(h.record, 2248u) == status::corrupt);
     // Aligned, but the record starts where the mapping ends.
     CHECK(forged(h.record, 4096u) == status::corrupt);
-    // 64-byte aligned, but inside the waiter slots, which end at 1696.
-    CHECK(forged(h.record, 1664u) == status::corrupt);
-    CHECK(forged(h.record_size, 4096u - 1728u + 1u) == status::corrupt);
+    // 64-byte aligned, but inside the waiter slots, which end at 2208.
+    CHECK(forged(h.record, 2176u) == status::corrupt);
+    CHECK(forged(h.record_size, 4096u - 2240u + 1u) == status::corrupt);
     CHECK(forged(h.common.size, std::uint64_t{8192}) == status::corrupt);
     CHECK(forged(h.field_count, std::uint16_t{0}) == status::corrupt);
     CHECK(forged(h.common.waiter_slots, std::uint16_t{0}) == status::corrupt);
@@ -326,7 +326,7 @@ TEST_CASE("create_unpublished is opened only after publish") {
     REQUIRE(other.has_value());
     CHECK(other->publish().error().code == status::range);
     std::int64_t stored = 0;
-    std::memcpy(&stored, static_cast<const std::byte *>(other->base()) + 1728, sizeof stored);
+    std::memcpy(&stored, static_cast<const std::byte *>(other->base()) + 2240, sizeof stored);
     CHECK(stored == 42);
     static_cast<void>(sharedbox::unlink(name));
 }

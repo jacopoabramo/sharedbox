@@ -150,6 +150,10 @@ struct waiter_slot {
     std::uint64_t owner_pidns;
     std::uint32_t owner_pid;
     std::uint32_t interrupt;
+    // The offset from the mapping's start of the count the current wait in this slot added 1 to; 0 when
+    // none.
+    std::uint32_t asleep_on;
+    std::uint32_t reserved;
 };
 
 // The stored value of a kind_ref field: which box it refers to. All zero when empty; create never gives
@@ -198,11 +202,12 @@ static_assert(sizeof(dl_dtype) == 4);
 
 static_assert(std::is_standard_layout_v<waiter_slot> && std::is_trivially_copyable_v<waiter_slot>);
 static_assert(std::is_standard_layout_v<box_ref> && std::is_trivially_copyable_v<box_ref>);
-static_assert(sizeof(waiter_slot) == 24 && alignof(waiter_slot) == 8);
+static_assert(sizeof(waiter_slot) == 32 && alignof(waiter_slot) == 8);
 static_assert(offsetof(waiter_slot, owner_start) == 0);
 static_assert(offsetof(waiter_slot, owner_pidns) == 8);
 static_assert(offsetof(waiter_slot, owner_pid) == 16);
 static_assert(offsetof(waiter_slot, interrupt) == 20);
+static_assert(offsetof(waiter_slot, asleep_on) == 24 && offsetof(waiter_slot, reserved) == 28);
 static_assert(sizeof(box_ref) == 256 && alignof(box_ref) == 8);
 static_assert(offsetof(box_ref, create_id) == 0);
 static_assert(offsetof(box_ref, schema_hash) == 8);
@@ -218,7 +223,8 @@ inline constexpr std::size_t align64 = std::atomic_ref<std::uint64_t>::required_
 static_assert(offsetof(waiter_slot, owner_start) % detail::align64 == 0 &&
               offsetof(waiter_slot, owner_pidns) % detail::align64 == 0);
 static_assert(offsetof(waiter_slot, owner_pid) % detail::align32 == 0 &&
-              offsetof(waiter_slot, interrupt) % detail::align32 == 0);
+              offsetof(waiter_slot, interrupt) % detail::align32 == 0 &&
+              offsetof(waiter_slot, asleep_on) % detail::align32 == 0);
 
 static_assert(SBX_OK == int(status::ok) && SBX_E_EXISTS == int(status::exists));
 static_assert(SBX_E_NOT_FOUND == int(status::not_found) && SBX_E_LAYOUT == int(status::layout));
@@ -1669,11 +1675,14 @@ inline bool wait_published(void *base, backoff &wait) noexcept {
 }
 
 // One process's view of a segment's waiter slot table: the slots and the count of claimed ones, both in
-// the mapping; which slots this process claimed; and on Windows each slot's event. The owner sets the
-// pointers once the segment is mapped and calls release_owned_slots before unmapping it.
+// the mapping; the mapping's start and the offsets from it of the counts a slot's asleep_on may name, 0
+// marking an unused entry; which slots this process claimed; and on Windows each slot's event. The owner
+// sets the pointers and offsets once the segment is mapped and calls release_owned_slots before unmapping it.
 struct waiter_table {
     waiter_slot *slots = nullptr;
     std::uint32_t *claimed = nullptr;
+    std::byte *base = nullptr;
+    std::array<std::uint32_t, 2> sleeper_counts{};
     std::uint16_t count = 0;
     std::array<std::atomic<std::uint64_t>, max_waiter_slots / 64> owned{};
 #ifdef _WIN32
@@ -1765,9 +1774,10 @@ struct no_pause {
 // decrement and the count can only be too high, which costs a spurious wake-up.
 //
 // Known limits: a freer killed before its owner_pid store leaves the slot unusable until the segment is created
-// again, and counted once too many if it was stamped and the freer was killed before its fetch_sub. The check that
-// owner_pid is still pid cannot tell an unstamped claimer from another one with the same pid, which needs the pid
-// to be reused within a few instructions.
+// again, and counted once too many if it was stamped and the freer was killed before its fetch_sub; a freer killed
+// between the exchange of asleep_on and the subtraction it allows leaves that sleeper count one too high. The
+// check that owner_pid is still pid cannot tell an unstamped claimer from another one with the same pid, which
+// needs the pid to be reused within a few instructions.
 template <class Pause = no_pause>
 inline void free_dead_slot(const waiter_table &t, waiter_slot &w, std::uint32_t pid, std::uint64_t start,
                            Pause pause = {}) noexcept {
@@ -1787,6 +1797,11 @@ inline void free_dead_slot(const waiter_table &t, waiter_slot &w, std::uint32_t 
         atomic(*t.claimed).fetch_sub(1, std::memory_order_seq_cst);
         pause();
     }
+    // The owner died inside a wait: take back the 1 it added. An offset the kind never names is left alone,
+    // so a corrupt slot cannot make this write anywhere else.
+    if (const std::uint32_t off = atomic(w.asleep_on).exchange(0, std::memory_order_seq_cst);
+        off != 0 && (off == t.sleeper_counts[0] || off == t.sleeper_counts[1]))
+        atomic(*reinterpret_cast<std::uint32_t *>(t.base + off)).fetch_sub(1, std::memory_order_seq_cst);
     atomic(w.owner_pidns).store(0, std::memory_order_relaxed);
     pause();
     atomic(w.owner_pid).store(0, std::memory_order_release);
@@ -1884,27 +1899,37 @@ SHAREDBOX_HOT void wake_all(const waiter_table &t, std::uint32_t &word) noexcept
 
 // Blocks in a slot this process holds until changed() is true, the slot is interrupted, or timeout
 // passes (status::timeout). changed must read with seq_cst: word is read before it, so a change between
-// the two moves the word and the futex refuses to sleep. With sleepers, the wait counts itself there
-// for its whole length, before its first check, so a writer that reads sleepers with seq_cst after its
-// own change either sees the count or has its change seen by the check.
+// the two moves the word and the futex refuses to sleep. With sleepers, one of the counts in
+// t.sleeper_counts, the wait counts itself there for its whole length, before its first check, so a
+// writer that reads sleepers with seq_cst after its own change either sees the count or has its change
+// seen by the check.
 template <class Changed>
 result<wake> wait_on(const waiter_table &t, std::uint16_t slot, std::uint32_t &word, Changed changed,
                      seconds timeout, std::uint32_t *sleepers = nullptr) {
     if (slot >= t.count || !owned_test(t, slot) || !timeout_ok(timeout, true))
         return unexpected(status::range);
+    // The slot names the count only after the increment, and the exit subtracts only if it takes the name
+    // back, so a freer of a dead owner's slot subtracts at most what was added: a kill between the two
+    // steps leaves the count one too high, which costs wake calls and never loses a wake.
     struct counted {
         std::uint32_t *n;
-        explicit counted(std::uint32_t *count) noexcept : n(count) {
-            if (n != nullptr)
-                atomic(*n).fetch_add(1, std::memory_order_seq_cst);
+        std::uint32_t &mark;
+        counted(std::uint32_t *count, std::uint32_t &asleep_on, std::uint32_t offset) noexcept
+            : n(count), mark(asleep_on) {
+            if (n == nullptr)
+                return;
+            atomic(*n).fetch_add(1, std::memory_order_seq_cst);
+            atomic(mark).store(offset, std::memory_order_seq_cst);
         }
         ~counted() {
-            if (n != nullptr)
+            if (n != nullptr && atomic(mark).exchange(0, std::memory_order_seq_cst) != 0)
                 atomic(*n).fetch_sub(1, std::memory_order_seq_cst);
         }
         counted(const counted &) = delete;
         counted &operator=(const counted &) = delete;
-    } asleep(sleepers);
+    } asleep(sleepers, t.slots[slot].asleep_on,
+             sleepers == nullptr ? 0
+                                 : static_cast<std::uint32_t>(reinterpret_cast<std::byte *>(sleepers) - t.base));
     const clock::time_point deadline = clock::now() + std::chrono::duration_cast<clock::duration>(timeout);
     for (;;) {
         const std::uint32_t seen = atomic(word).load(std::memory_order_seq_cst);
@@ -1918,6 +1943,7 @@ result<wake> wait_on(const waiter_table &t, std::uint16_t slot, std::uint32_t &w
         if (remaining <= clock::duration::zero())
             return unexpected(status::timeout);
 #ifdef _WIN32
+        // Unused here, but the load of seen must stay: it orders changed() after a waker's change to word.
         static_cast<void>(seen);
         HANDLE e = event(t, slot);
         if (e == nullptr)
