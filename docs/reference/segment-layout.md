@@ -6,8 +6,9 @@ icon: lucide/file-text
 
 This page is the full contract for how a box and a stream are stored in
 shared memory: the names of the objects, every byte of the mapping, and the
-steps every process follows to read, write, send, receive and wait. You need it if you write code that
-opens a box without `sharedbox.hpp`, or if you change `sharedbox` itself;
+steps every process follows to read, write, send, receive and wait. You
+need it if you write code that opens a box without `sharedbox.hpp`, or if
+you change `sharedbox` itself;
 to understand the ideas first, read
 [How a box is stored](../explanation/how-a-box-is-stored.md).
 `include/sharedbox/core.hpp`, `include/sharedbox/box.hpp` and
@@ -15,8 +16,8 @@ to understand the ideas first, read
 extension runs on the first two.
 
 It describes core version 1.0, box layout 3.0 and stream layout 1.0, which
-`sharedbox` 0.6.0 writes. It opens nothing older: box layouts 1.0 and 2.0, which 0.5 and
-earlier wrote, are refused.
+`sharedbox` 0.6.0 writes. It opens nothing older: box layouts 1.0 and 2.0,
+which 0.5 and earlier wrote, are refused.
 
 ## Goal
 
@@ -448,8 +449,6 @@ struct reader_entry {               // sharedbox::reader_entry, 64 bytes
 };
 ```
 
-- Open copies the common line and line 1 and uses only the copy. Lines 2
-  and 3 change while the stream is open.
 - `waiters` and the waiter slots are the core's; see Waiter slots. A waiter
   slot's index is not tied to a reader entry's index.
 - Slot `i` starts at `slots + i * slot_size`. It holds an 8-byte `seq` at
@@ -458,12 +457,14 @@ struct reader_entry {               // sharedbox::reader_entry, 64 bytes
   `slot_size` is the end of the item rounded up to a multiple of 64.
 - The item is the bytes of one value in the encodings above, a length prefix
   included, described by `item_entry` (a `capacity_and_kind` word, as a
-  field table entry has) and the description table. An item of a kind this build does not know is refused.
+  field table entry has) and the description table. An item of a kind
+  this build does not know is refused.
 - The item's `seq` for position `p` is `2p + 1` while the sender writes it
   and `2p + 2` once it is published. 0 means the slot was never written.
   Position `p` lives in slot `p % capacity`.
-- Open copies lines 0 and 1 and checks the common line as for every kind,
-  with `kind_major` 1. It then requires every offset to be the one the
+- Open copies lines 0 and 1, checks only that copy and uses it; lines 2
+  and 3 change while the stream is open. It checks the common line as for
+  every kind, with `kind_major` 1. It then requires every offset to be the one the
   shape gives: the reader table at 256, the waiter slots right after it, the
   slots at the next multiple of 64, the description table right after the
   slots, and a mapping size of the description table's end rounded up to
@@ -814,11 +815,11 @@ A reader joins in this order:
    consistent fence. The count comes first so that a process killed in
    between leaves it too high, never too low.
 
-A reader leaves only if its entry still records this process: store `mode = 0`, subtract 1 from `lossless_readers` if it was
-lossless, add 1 to `readers_epoch`, then clear `owner_start`, `owner_pidns`
-and `owner_pid`. A lossless reader then adds 1 to `space_word` and wakes it,
-since it may have been the one holding the sender back. Last it gives back
-its waiter slot.
+A reader leaves only if its entry still records this process: store
+`mode = 0`, subtract 1 from `lossless_readers` if it was lossless, add 1 to
+`readers_epoch`, then clear `owner_start`, `owner_pidns` and `owner_pid`. A
+lossless reader then adds 1 to `space_word` and wakes it, since it may have
+been the one holding the sender back. Last it gives back its waiter slot.
 
 The sender claims `sender_pid` with a compare-and-swap from 0 to its pid,
 after claiming a waiter slot, and stores `sender_pidns` and `sender_start`.
@@ -1265,8 +1266,7 @@ void     sbx_release(sbx_handle *h);
   `status::kind_mismatch` and `status::foreign`, and `SBX_E_BUSY` (-13),
   `SBX_E_ENDED` (-14) and `SBX_E_INTERRUPTED` (-15), the values of
   `status::busy`, `status::ended` and `status::interrupted`. Streams have no
-  C functions yet. `sbx_open` and
-  `sbx_import` return `SBX_E_KIND` for a segment of another kind and
+  C functions. `sbx_open` and `sbx_import` return `SBX_E_KIND` for a segment of another kind and
   `SBX_E_FOREIGN` for a magic they do not know (see Attach). A C caller
   gets the code only, without the `error`'s OS error and `found`.
 - `sbx_field_desc` returns a field's kind code and its description's
@@ -1345,9 +1345,10 @@ computed in Rust and checked against the test vector above.
 ## Build and packaging
 
 - `include/sharedbox/core.hpp`, `box.hpp`, `stream.hpp`, `sharedbox.hpp`,
-  `sharedbox_c.h` and `sharedbox_c.cpp` are in the repository; the build installs them into the wheel under
-  `sharedbox/include/`, and `cmake/sharedbox-config.cmake` under
-  `sharedbox/share/cmake/sharedbox/`, next to a
+  `sharedbox_c.h` and `sharedbox_c.cpp` are in the repository; the build
+  installs them into the wheel under `sharedbox/include/`, and
+  `cmake/sharedbox-config.cmake` under `sharedbox/share/cmake/sharedbox/`,
+  next to a
   `sharedbox-config-version.cmake` the build writes from the package
   version. Before 1.0 it accepts a request for the same minor version
   only (`SameMinorVersion`), from 1.0 on the same major version.
