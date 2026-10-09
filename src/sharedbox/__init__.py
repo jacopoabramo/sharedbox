@@ -18,6 +18,7 @@ from ._native import (
 )
 from ._refs import BoxRef, BrokenReferenceError, UnknownBoxClassError
 from ._stream import (
+    ReaderEvents,
     ReaderStatistics,
     SharedStream,
     StreamReader,
@@ -38,6 +39,7 @@ __all__ = [
     "FieldWatch",
     "KindMismatchError",
     "LockTimeoutError",
+    "ReaderEvents",
     "ReaderStatistics",
     "SchemaMismatchError",
     "SegmentExistsError",

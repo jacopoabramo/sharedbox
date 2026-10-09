@@ -4,7 +4,7 @@ from typing import assert_type
 
 import numpy as np
 
-from sharedbox import SharedStream, StreamReader
+from sharedbox import ReaderEvents, SharedStream, StreamReader
 
 
 @dataclass(frozen=True)
@@ -16,6 +16,7 @@ def check(stream: SharedStream[Item]) -> None:
     reader = stream.reader()
     assert_type(reader, StreamReader[Item])
     assert_type(reader.receive(), Item)
+    assert_type(reader.events, ReaderEvents)
     assert_type(reader.receive_nowait(), Item)
     for item in reader:
         assert_type(item, Item)
