@@ -18,6 +18,14 @@ Dates are marked as `DD-MM-YYYY`
   one this version knows. Python raises `SchemaMismatchError`.
 - `sharedbox::to_expected` and `sharedbox::from_expected`: convert a
   `sharedbox::result` to a `std::expected` and back on C++23.
+- `sharedbox::stream`, `sharedbox::stream_sender` and `sharedbox::stream_reader`
+  in `stream.hpp`, included by `sharedbox.hpp`: a ring in shared memory with
+  one sender and up to `max_readers` readers, each reading
+  `read_mode::lossless`, `read_mode::lossy` or `read_mode::latest`, laid out
+  as stream layout 1.0. C++ only.
+- `status::busy` (-13), `status::ended` (-14) and `status::interrupted`
+  (-15), with `SBX_E_BUSY`, `SBX_E_ENDED` and `SBX_E_INTERRUPTED` in
+  `sharedbox_c.h`.
 
 ### Changed
 

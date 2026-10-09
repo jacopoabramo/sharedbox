@@ -4,17 +4,18 @@ icon: lucide/file-text
 
 # Segment layout
 
-This page is the full contract for how a box is stored in shared memory:
-the names of the objects, every byte of the mapping, and the steps every
-process follows to read, write and wait. You need it if you write code that
+This page is the full contract for how a box and a stream are stored in
+shared memory: the names of the objects, every byte of the mapping, and the
+steps every process follows to read, write, send, receive and wait. You need it if you write code that
 opens a box without `sharedbox.hpp`, or if you change `sharedbox` itself;
 to understand the ideas first, read
 [How a box is stored](../explanation/how-a-box-is-stored.md).
-`include/sharedbox/core.hpp` and `include/sharedbox/box.hpp` implement this
-contract, and the Python extension runs on them.
+`include/sharedbox/core.hpp`, `include/sharedbox/box.hpp` and
+`include/sharedbox/stream.hpp` implement this contract, and the Python
+extension runs on the first two.
 
-It describes core version 1.0 and box layout 3.0, which `sharedbox` 0.6.0
-writes. It opens nothing older: box layouts 1.0 and 2.0, which 0.5 and
+It describes core version 1.0, box layout 3.0 and stream layout 1.0, which
+`sharedbox` 0.6.0 writes. It opens nothing older: box layouts 1.0 and 2.0, which 0.5 and
 earlier wrote, are refused.
 
 ## Goal
@@ -29,7 +30,7 @@ versioned, and a header-only C++20 library implements them.
 | Topic | Decision | Not taken |
 | --- | --- | --- |
 | Model | the Arrow PyCapsule Interface; the closest analogue is `ArrowArrayStream`, a live handle rather than a one-shot transfer | numpy's `__array_struct__` |
-| Scope | every segment starts with the same first line, and the box is the one kind implemented; the handle struct is versioned so that streams can get their own dunder later | streams in the same step |
+| Scope | every segment starts with the same first line; the box and the stream are the kinds implemented, and the stream is C++ only; the handle struct is versioned so that streams can get their own dunder later | streams in the same step |
 | Contract | a documented memory layout plus a header-only reference implementation | a compiled C library; definitions only |
 | Language | the C++20 headers `core.hpp` and `box.hpp`, which `sharedbox.hpp` includes, namespace `sharedbox` | a C99 header with `static inline` functions |
 | Atomics | `std::atomic_ref` on plain integer fields | wrappers over compiler intrinsics; C11 `<stdatomic.h>` |
@@ -156,7 +157,7 @@ record.
   format and are not tied to the package version.
 - Magic: `SBX_BOX_` for a box and `SBX_STRM` for a stream, each read as a
   little-endian `u64`. The magic names the kind, so attach checks it first.
-  This version opens boxes only; a stream is a segment of another kind.
+  A box opens only a box, and a stream only a stream (see Stream layout).
 - Field table entry, 8 bytes: `u32 offset`, `u32 capacity_and_kind`: top 8
   bits the kind code. For kinds below 64 the low 24 bits are the size or
   capacity; for kinds 64 and up they are the offset of the field's
@@ -382,6 +383,96 @@ attacher agree on it and on the class's meaning.
   `tags: Annotated[list[Annotated[str, Capacity(4)]], Capacity(2)]` and
   `note: int | None`.
 
+## Stream layout
+
+A stream is a ring of `capacity` slots, at least 2, that one sender writes
+and up to `max_readers` readers (1 to 4095) copy out of. Its common line
+holds the magic `SBX_STRM` (`0x4D5254535F584253`), `kind_major` 1 and
+`kind_minor` 0 (stream layout 1.0), and a `waiter_slots` of
+`max_readers + 1`, one slot for each reader and one for the sender. Every
+size and offset is 64-bit, so a ring may pass 4 GiB; the slots end at or
+below 2^46 bytes. The mapping holds, from offset 0:
+
+```text
+offset 0     common line       64 bytes (every kind)
+offset 64    line 1            written once at creation
+offset 128   line 2            the sender's words
+offset 192   line 3            the readers' words
+offset 256   reader table      max_readers x 64 bytes
+             waiter slots      (max_readers + 1) x 24 bytes
+             (zero padding up to a multiple of 64)
+slots        slots             capacity x slot_size bytes
+types        description table types_size bytes
+             (zero padding up to a multiple of 4096)
+```
+
+```cpp
+struct stream_header {              // sharedbox::stream_header, 256 bytes
+    common_header common;           //   0
+    // line 1: written once at creation
+    uint64_t capacity;              //  64  slots in the ring, at least 2
+    uint64_t slot_size;             //  72  bytes per slot, a multiple of 64
+    uint64_t readers;               //  80  offset of the reader table, always 256
+    uint64_t slots;                 //  88  offset of the first slot
+    uint64_t types;                 //  96  offset of the description table
+    uint32_t types_size;            // 104  bytes of the description table
+    uint32_t item_entry;            // 108  the item's capacity_and_kind
+    uint32_t max_readers;           // 112  1 to 4095
+    uint32_t reserved1;             // 116  zero
+    uint64_t reserved2;             // 120  zero
+    // line 2: the sender's words
+    uint64_t write_pos;             // 128  items sent; the next send's position
+    uint64_t sender_start;          // 136  start time of the sender's process
+    uint64_t sender_pidns;          // 144  its pid namespace; 0 on Windows
+    uint32_t sender_pid;            // 152  0 = no sender
+    uint32_t state;                 // 156  0 open, 1 ended
+    uint32_t data_word;             // 160  readers sleep on it (Linux)
+    uint32_t readers_epoch;         // 164  changed when a reader joins, leaves or is freed
+    uint32_t space_waiting;         // 168  sender threads asleep on space_word
+    uint8_t  reserved3[20];         // 172  zero
+    // line 3: the readers' words
+    uint32_t space_word;            // 192  the sender sleeps on it (Linux)
+    uint32_t lossless_readers;      // 196  open lossless readers
+    uint32_t data_waiting;          // 200  reader threads asleep on data_word
+    uint32_t waiters;               // 204  claimed waiter slots
+    uint8_t  reserved4[48];         // 208  zero
+};
+
+struct reader_entry {               // sharedbox::reader_entry, 64 bytes
+    uint64_t position;              //  0  the next position this reader reads
+    uint64_t owner_start;           //  8  process start time, see Liveness
+    uint64_t owner_pidns;           // 16  pid namespace; 0 on Windows
+    uint32_t owner_pid;             // 24  0 = free
+    uint32_t mode;                  // 28  0 until the entry has a position, 1 lossless, 2 lossy, 3 latest
+    uint8_t  reserved[32];          // 32  zero
+};
+```
+
+- Open copies the common line and line 1 and uses only the copy. Lines 2
+  and 3 change while the stream is open.
+- `waiters` and the waiter slots are the core's; see Waiter slots. A waiter
+  slot's index is not tied to a reader entry's index.
+- Slot `i` starts at `slots + i * slot_size`. It holds an 8-byte `seq` at
+  its start and the item at `max(8, item alignment)`, so an item aligned to
+  64 bytes (an array, or a record holding one) starts 64 bytes in.
+  `slot_size` is the end of the item rounded up to a multiple of 64.
+- The item is the bytes of one value in the encodings above, a length prefix
+  included, described by `item_entry` (a `capacity_and_kind` word, as a
+  field table entry has) and the description table. An item of a kind this build does not know is refused.
+- The item's `seq` for position `p` is `2p + 1` while the sender writes it
+  and `2p + 2` once it is published. 0 means the slot was never written.
+  Position `p` lives in slot `p % capacity`.
+- Open copies lines 0 and 1 and checks the common line as for every kind,
+  with `kind_major` 1. It then requires every offset to be the one the
+  shape gives: the reader table at 256, the waiter slots right after it, the
+  slots at the next multiple of 64, the description table right after the
+  slots, and a mapping size of the description table's end rounded up to
+  4 KiB. `capacity` must be at least 2, `max_readers` 1 to 4095,
+  `waiter_slots` `max_readers + 1`, `slot_size` a multiple of 64, and
+  `types_size` a multiple of 8 and at most 16 MiB. A failed check is
+  `status::corrupt`. Last, open parses the item type and requires that
+  `slot_size` is what the item needs.
+
 ## Versioning rules
 
 A segment carries two versions in its common line: the core version, for
@@ -390,8 +481,8 @@ layout version of its kind, for the rest. Each has a major and a minor.
 
 - A reader refuses a `core_major` it does not know: this version opens core
   major 1. It also refuses a `kind_major` its kind does not know: this
-  version opens box layout major 3, so it does not open segments written
-  by 0.5 and earlier, whose magic it does not know.
+  version opens box layout major 3 and stream layout major 1, so it does not
+  open segments written by 0.5 and earlier, whose magic it does not know.
 - A reader opens a segment whose `core_minor` or `kind_minor` is higher than
   its own, and ignores what it does not know. A handle reports the lower of
   the segment's box minor and its own.
@@ -562,6 +653,10 @@ Every shared word is a plain integer in the mapping, accessed through
 - A thread waits in a slot it holds. The Python watcher registers one slot
   for its lifetime, and a one-off `Segment.wait()` without a slot claims
   one for the call.
+- The slot table and the protocol above are the core's, shared by every
+  kind. A box's `waiters` is the count of claimed slots in its header; a
+  stream's is `waiters` in its line 3, and the stream sizes its table at
+  `max_readers + 1`.
 
 Known limits, each after a process is killed at one specific step:
 
@@ -608,6 +703,16 @@ a wake-up.
   waiters check their own flag and sleep again; on Windows it sets that
   slot's event only. The flag stays set until the waiter sees it, so an
   interrupt sent before the wait starts still ends it.
+- Each kind names the word a wait sleeps on: a box's `wake_word`; for a
+  stream, `data_word` for readers and `space_word` for the sender. A wait
+  returns when its kind's condition holds, the slot's `interrupt` flag is
+  set, or the timeout passes. A box wakes whenever a slot is claimed
+  (`waiters` is not 0). A stream counts the threads asleep on each word in
+  `data_waiting` and `space_waiting` and wakes only when the count is not 0.
+  On Windows a wake sets the event of every claimed slot, so the other end
+  of a stream may wake and sleep again. `interrupt` on a stream end adds 1
+  to that end's word and wakes it on Linux, and sets that slot's event on
+  Windows.
 - The Python watcher waits in steps of at most 1 s. Writes and `interrupt`
   wake it at once; after each step it checks that its slot still records
   its own `(pid, start, pidns)` and claims a new slot if not. While every
@@ -645,6 +750,131 @@ still runs, runs in another pid namespace, or has exited. For a box not
 published yet it reads the creator fields without waiting for `magic`,
 and a creator that still runs is reported as still creating the box.
 
+### Send and receive
+
+The sender writes position `p` into slot `p % capacity`, where `p` is
+`write_pos`. Only the sender stores `write_pos`.
+
+Send:
+
+1. Gate. With no lossless reader open (`lossless_readers` is 0) the sender
+   skips this step. Otherwise it keeps the smallest `position` among the
+   entries whose `mode` is lossless, and rescans the reader table when
+   `readers_epoch` has changed or when `p` reaches that smallest position
+   plus `capacity`. While `p` is at least the smallest position plus
+   `capacity`, the ring is full for a lossless reader and the sender waits:
+   with a timeout of 0 it gives `status::timeout` at once. Otherwise it
+   rescans up to 1000 times (`spin_before_sleep`), then sleeps on
+   `space_word` in steps of at most 0.1 s (`liveness_delay`), counting
+   itself in `space_waiting` while it sleeps. `status::timeout` follows when
+   the timeout passes.
+2. Store `seq = 2p + 1`, then a release fence, copy the item, store
+   `seq = 2p + 2` with release, and store `write_pos = p + 1` with release.
+3. A sequentially consistent fence, then, if `data_waiting` is not 0, add 1
+   to `data_word` and wake it.
+
+Receive, for a reader whose next position is `r`:
+
+1. Load `write_pos` with acquire. If it equals `r` there is nothing to
+   read. The reader gives `status::ended` if `state` is ended (read before
+   `write_pos`, since the sender stores `state` after its last `write_pos`).
+   Otherwise, with a timeout of 0 it gives `status::timeout` at once. With
+   a longer timeout it checks `write_pos` up to 1000 times, then sleeps on
+   `data_word` in steps of at most 0.1 s, counting itself in `data_waiting`
+   while it sleeps.
+2. A lossy reader with `write_pos - r > capacity` moves to
+   `write_pos - capacity`. A latest reader with `write_pos - r > 1` moves to
+   `write_pos - 1`. Both count the items they pass as missed.
+3. Load `seq`, which must be `2r + 2`, copy the item, issue an acquire
+   fence and load `seq` again. If it changed, the sender wrote a later
+   position over the slot. A lossy or latest reader counts the item as
+   missed and moves on. A lossless reader moves on without counting until it
+   has received its first item; after that the gate rules this out, and a
+   lossless reader that still sees it gets `status::corrupt`.
+4. Store `position = r + 1` in its entry with release. A lossless reader
+   then issues a sequentially consistent fence and, if `space_waiting` is
+   not 0, adds 1 to `space_word` and wakes it.
+
+A wait that ends with the slot's `interrupt` flag set gives
+`status::interrupted` and clears the flag; the flag stays set until a wait
+sees it, as for a box.
+
+A reader joins in this order:
+
+1. Free the entries and waiter slots of dead processes (see Dead stream
+   ends), then claim a waiter slot. No slot free gives `status::no_slot`.
+2. Claim a free entry with a compare-and-swap of `owner_pid` from 0 to this
+   process's pid, then store `owner_pidns` and `owner_start`. No entry free
+   gives the waiter slot back and `status::no_slot`.
+3. Store the starting `position` with release: for `start_at::newest`
+   `write_pos - 1`, or 0 before the first send, and for `start_at::oldest`
+   `write_pos - capacity`, or 0.
+4. If the reader is lossless, add 1 to `lossless_readers`. Then store its
+   `mode` with release, add 1 to `readers_epoch`, and issue a sequentially
+   consistent fence. The count comes first so that a process killed in
+   between leaves it too high, never too low.
+
+A reader leaves only if its entry still records this process: store `mode = 0`, subtract 1 from `lossless_readers` if it was
+lossless, add 1 to `readers_epoch`, then clear `owner_start`, `owner_pidns`
+and `owner_pid`. A lossless reader then adds 1 to `space_word` and wakes it,
+since it may have been the one holding the sender back. Last it gives back
+its waiter slot.
+
+The sender claims `sender_pid` with a compare-and-swap from 0 to its pid,
+after claiming a waiter slot, and stores `sender_pidns` and `sender_start`.
+It gives `status::busy` while another running process holds `sender_pid`.
+Closing the sender stores `state = 1` (ended), clears `sender_start`,
+`sender_pidns` and `sender_pid`, adds 1 to `data_word`, wakes it, and gives
+back the waiter slot. `ended` is never undone: `sender()` on an ended stream
+gives `status::ended`, and so does a `sender()` that finds the stream ended
+after it claimed `sender_pid`, which it then clears. A reader opened after
+the sender closed receives what is buffered, then `status::ended`.
+
+A process created by `fork` inherits its parent's senders and readers but
+cannot use them: a send or receive from the child gives `status::range`, and
+closing them in the child leaves the parent's entries alone.
+
+### Dead stream ends
+
+A wait never sleeps for more than 0.1 s (`liveness_delay`) at a time. After
+each step that ends without a change, it checks the processes it waits for
+with the rules of Liveness:
+
+- A sender waiting for space frees the entries of readers whose process has
+  exited, with the `start_freeing` exchange that waiter slots use (see
+  Waiter slots). For each it sets `mode` to 0, subtracts 1 from
+  `lossless_readers` if the mode was lossless, clears the owner, and adds 1
+  to `readers_epoch` once for the scan. It then frees the waiter slots of
+  dead processes. `reader()` does the same before it claims anything.
+- A reader waiting for data ends the stream when the sender's process has
+  exited. It first claims the dead sender by changing `sender_start` from the
+  value it read to `start_freeing` with a compare-and-swap. If that
+  succeeds, it changes `state` from 0 to 1, clears `sender_pidns`,
+  `sender_pid` and `sender_start`, adds 1 to `data_word` and wakes it.
+  Readers then receive what was published, then `status::ended`.
+- `sender()` replaces a recorded sender whose process has exited. It claims
+  the dead sender the same way, so a replacement and an ending never both
+  act on one dead owner, then stores its own pid.
+
+Known limits:
+
+- Only a wait notices a dead process. A sender that only sends with a
+  timeout of 0 never frees a dead lossless reader, and a reader that only
+  receives with a timeout of 0 never sees the stream end after its sender
+  dies.
+- A process killed while it waits leaves `data_waiting` or `space_waiting`
+  one too high for good. That costs a wake call on each send or receive; no
+  wake is lost.
+- A process killed in the few instructions between setting `sender_start` to
+  `start_freeing` and its next store leaves `sender_start` at
+  `start_freeing`. Every later `sender()` then gives `status::busy`, and
+  readers wait until their timeout instead of getting `status::ended`. The
+  waiter slots have the same limit.
+- A process killed while it frees a reader entry leaves the entry unusable
+  until the stream is created again.
+- A waiting end spins for up to 1000 checks before it sleeps, which uses a
+  CPU for that time whenever the timeout is above 0.
+
 ### Close and unlink
 
 - Destroying a handle releases any waiter slot it holds, then unmaps its
@@ -656,8 +886,10 @@ and a creator that still runs is reported as still creating the box.
 
 The library is C++20, header-only, in namespace `sharedbox`. `core.hpp`
 holds what every kind of segment uses: results and errors, liveness, names,
-mappings and the type codec. `box.hpp` holds the box: its layout, the
-protocols and `handle`. `sharedbox.hpp` includes every kind and is the
+mappings, the open step, waiter slots and the type codec. `box.hpp` holds
+the box: its layout, the protocols and `handle`. `stream.hpp` holds the
+stream: its layout, the protocols and `stream`, `stream_sender` and
+`stream_reader`. `sharedbox.hpp` includes every kind and is the
 header consumers include. Names are declared in the inline namespace
 `sharedbox::v3`, which changes when the
 C++ interface changes incompatibly, so code built against headers with
@@ -722,7 +954,8 @@ inline constexpr std::uint64_t stream_magic = 0x4D5254535F584253;    // "SBX_STR
 
 enum class status : int { ok = 0, exists = -1, not_found = -2, layout = -3, schema = -4,
                           corrupt = -5, lock_timeout = -6, timeout = -7, no_slot = -8,
-                          range = -9, os = -10, kind_mismatch = -11, foreign = -12 };
+                          range = -9, os = -10, kind_mismatch = -11, foreign = -12,
+                          busy = -13, ended = -14, interrupted = -15 };
 
 struct field_spec { std::uint32_t offset; std::uint32_t capacity; std::uint8_t kind; };
 struct value { std::uint16_t field; std::span<const std::byte> bytes; };
@@ -825,6 +1058,9 @@ The header also declares these names:
   table that fails the attach checks. `lock_timeout`, `timeout`, `no_slot`:
   see Protocols. `range`: an argument out of range. `os`: an OS call
   failed, and the error's `os` holds its `errno` or `GetLastError()`.
+  `busy`: the sender is held by a running process. `ended`: the stream's
+  sender closed or died and every published item was received.
+  `interrupted`: a stream wait ended by `interrupt()`.
 - `create` and `write` take raw bytes in the record encoding, without the
   length prefix of `str`, `bytes` and `Decimal`; converting language values
   stays in each binding.
@@ -855,6 +1091,114 @@ The header also declares these names:
 - Known limit: on Linux every open handle keeps the mapping's file
   descriptor, so about 1000 open boxes reach the default `ulimit -n` of
   1024.
+
+### `stream.hpp`
+
+```cpp
+inline constexpr std::uint16_t stream_layout_major = 1, stream_layout_minor = 0;
+inline constexpr std::uint32_t stream_header_size = 256;
+inline constexpr std::uint64_t min_stream_capacity = 2;
+inline constexpr std::uint32_t max_stream_readers = max_waiter_slots - 1;   // 4095
+inline constexpr std::uint64_t max_stream_size = std::uint64_t{1} << 46;
+inline constexpr std::uint32_t stream_open = 0, stream_ended = 1;
+inline constexpr double liveness_delay = 0.1;       // seconds a wait lasts before it checks for dead processes
+inline constexpr unsigned spin_before_sleep = 1000; // checks a waiting end makes before it sleeps
+
+enum class read_mode : std::uint32_t { lossless = 1, lossy = 2, latest = 3 };
+enum class start_at { newest, oldest };
+
+struct received { std::uint64_t position; std::uint64_t missed; };
+struct reader_info { std::uint64_t position; read_mode mode; std::uint32_t pid; };
+
+class stream_sender {                       // move-only; the destructor closes it
+public:
+    std::uint64_t item_size() const noexcept;
+    result<std::uint64_t> send(std::span<const std::byte> item, seconds timeout);
+    template <class F> requires std::is_nothrow_invocable_v<F &, std::span<std::byte>>
+    result<std::uint64_t> send_with(F &&fill, seconds timeout);
+    result<void> interrupt();
+    void close() noexcept;
+};
+
+class stream_reader {                       // move-only; the destructor closes it
+public:
+    read_mode mode() const noexcept;
+    std::uint64_t position() const noexcept;
+    std::uint64_t missed() const noexcept;
+    std::uint64_t item_size() const noexcept;
+    result<received> receive(std::span<std::byte> out, seconds timeout);
+    template <class F> requires std::is_nothrow_invocable_v<F &, std::span<const std::byte>>
+    result<received> receive_with(F &&copy, seconds timeout);
+    result<void> interrupt();
+    void close() noexcept;
+};
+
+class stream {                              // move-only; the destructor releases it
+public:
+    static result<stream> create(std::string_view name, std::span<const std::byte> types,
+                                 std::uint32_t item_entry, std::uint64_t capacity,
+                                 std::uint32_t max_readers, std::uint64_t schema_hash);
+    static result<stream> open(std::string_view name, seconds timeout);
+
+    std::string_view name() const noexcept;
+    std::uint64_t schema_hash() const noexcept;
+    std::uint64_t create_id() const noexcept;
+    std::uint64_t capacity() const noexcept;
+    std::uint32_t max_readers() const noexcept;
+    std::uint64_t item_size() const noexcept;
+    type_view item_type() const noexcept;
+    std::span<const std::byte> types_table() const noexcept;
+    void *base() const noexcept;
+    std::uint64_t size() const noexcept;
+    result<stream_sender> sender();
+    result<stream_reader> reader(read_mode mode, start_at start);
+    std::uint64_t write_position() const noexcept;
+    bool ended() const noexcept;
+    std::uint32_t sender_pid() const noexcept;
+    std::size_t readers(std::span<reader_info> out) const noexcept;
+};
+```
+
+The header also declares the structs `stream_header` and `reader_entry` (see
+Stream layout). Every function returning a `result` is `[[nodiscard]]`.
+
+- `stream::create` takes the item as an `item_entry`, a `capacity_and_kind`
+  word as a field table entry has, and the description table `types` that
+  entry refers to. `status::range` for a name that breaks the rules, a
+  `capacity` below 2, a `max_readers` outside 1 to 4095, a table that does
+  not parse or an item of an unknown kind, or a shape whose slots would
+  pass 2^46 bytes; `status::exists` if the name is taken.
+- `stream::open` compares nothing: the caller compares `schema_hash()` with
+  its own. Its errors are those of Attach, and `status::corrupt` for an
+  item type or slot size that does not fit.
+- `sender` gives `status::busy` while a running process holds the sender,
+  `status::ended` once a sender has closed the stream, and `status::no_slot`
+  when no waiter slot is free.
+- `reader` gives `status::no_slot` when `max_readers` readers are open or no
+  waiter slot is free.
+- `send` copies `item_size()` bytes into the next slot and returns its
+  position. `send_with` calls `fill` with the slot's `item_size()` bytes
+  instead; `fill` must not throw or call the sender. Both give
+  `status::timeout` while a lossless reader is a full ring behind (at once
+  for a timeout of 0), `status::interrupted` after `interrupt()`, and
+  `status::range` for a sender that is closed, used from a child of `fork`
+  or given an item of the wrong size.
+- `receive` copies the next item into `out` and returns its position and the
+  number of items this reader skipped since its previous receive (always 0
+  for a lossless reader). `receive_with` calls `copy` with the item's bytes
+  in the slot; the sender may change them during the call, so `copy` must
+  only copy and must not throw. `status::timeout` when no item arrives in
+  time (at once for 0), `status::ended` once the sender has closed or died
+  and every published item was received, `status::interrupted` after
+  `interrupt()`, and `status::range` for an `out` shorter than `item_size()`.
+- `interrupt` ends the wait in progress with `status::interrupted`. Sent
+  while nothing waits, it ends the next wait. It must not overlap `close`.
+- `close` on the sender ends the stream for good. `close` on a reader frees
+  its entry.
+- `write_position()` is the number of items sent. `readers(out)` fills `out`
+  with the open readers, as many as fit, and returns how many are open.
+- Calls on one sender or one reader must not overlap, except `interrupt`.
+  Senders and readers must not outlive the `stream` that made them.
 
 ### Capsule handle
 
@@ -918,7 +1262,10 @@ void     sbx_release(sbx_handle *h);
   `force_unlock` and `unlink` are in the C++ API only.
 - The status codes are `SBX_E_EXISTS` (-1) to `SBX_E_OS` (-10), then
   `SBX_E_KIND` (-11) and `SBX_E_FOREIGN` (-12), the values of
-  `status::kind_mismatch` and `status::foreign`. `sbx_open` and
+  `status::kind_mismatch` and `status::foreign`, and `SBX_E_BUSY` (-13),
+  `SBX_E_ENDED` (-14) and `SBX_E_INTERRUPTED` (-15), the values of
+  `status::busy`, `status::ended` and `status::interrupted`. Streams have no
+  C functions yet. `sbx_open` and
   `sbx_import` return `SBX_E_KIND` for a segment of another kind and
   `SBX_E_FOREIGN` for a magic they do not know (see Attach). A C caller
   gets the code only, without the `error`'s OS error and `found`.
@@ -997,8 +1344,8 @@ computed in Rust and checked against the test vector above.
 
 ## Build and packaging
 
-- `include/sharedbox/core.hpp`, `box.hpp`, `sharedbox.hpp`, `sharedbox_c.h`
-  and `sharedbox_c.cpp` are in the repository; the build installs them into the wheel under
+- `include/sharedbox/core.hpp`, `box.hpp`, `stream.hpp`, `sharedbox.hpp`,
+  `sharedbox_c.h` and `sharedbox_c.cpp` are in the repository; the build installs them into the wheel under
   `sharedbox/include/`, and `cmake/sharedbox-config.cmake` under
   `sharedbox/share/cmake/sharedbox/`, next to a
   `sharedbox-config-version.cmake` the build writes from the package
@@ -1018,8 +1365,9 @@ computed in Rust and checked against the test vector above.
 
 ## Out of scope
 
-- Queues and streams; they would get `__sharedbox_queue__` and
-  `__sharedbox_stream__`. The magic `SBX_STRM` is reserved for streams.
+- Queues, which would get `__sharedbox_queue__`.
+- A Python class, a capsule (`__sharedbox_stream__`) and C functions for
+  streams. A stream is C++ only in this version.
 - `Global\` names on Windows. They would let a service in session 0 share
   a box with a desktop application, but creating a file mapping there
   needs `SeCreateGlobalPrivilege` and a security descriptor that lets the
