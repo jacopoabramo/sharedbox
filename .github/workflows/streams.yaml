@@ -8,6 +8,8 @@ on:
       - include/sharedbox/core.hpp
       - src/sharedbox/_stream.py
       - src/sharedbox/_native/stream.cpp
+      - src/sharedbox/_native/types.cpp
+      - src/sharedbox/_native/codec.cpp
       - src/sharedbox/benchmarks/stream.py
       - scripts/stream_compare.py
       - .github/workflows/streams.yaml
@@ -62,17 +64,22 @@ jobs:
         run: |
           mkdir results
           for round in 1 2 3; do
-            for side in ${{ steps.base.outputs.sides }}; do
-              (cd "$side" && uv run --no-sync python ../head/src/sharedbox/benchmarks/stream.py \
-                --short --table both --json "../results/$side-$round.json")
-            done
+            if [ "${{ steps.base.outputs.sides }}" != "head" ]; then
+              (cd base && uv run --no-sync python ../head/src/sharedbox/benchmarks/stream.py \
+                --short --table both --json "../results/base-$round.json") \
+                || echo "::warning::base round $round failed"
+            fi
+            (cd head && uv run --no-sync python ../head/src/sharedbox/benchmarks/stream.py \
+              --short --table both --json "../results/head-$round.json")
           done
       - name: Compare
+        if: ${{ !cancelled() }}
         shell: bash
         run: |
           cd head
           uv run --no-sync python ../head/scripts/stream_compare.py ../results | tee -a "$GITHUB_STEP_SUMMARY"
       - uses: actions/upload-artifact@v7
+        if: ${{ !cancelled() }}
         with:
           name: streams-${{ matrix.os }}
           path: results
