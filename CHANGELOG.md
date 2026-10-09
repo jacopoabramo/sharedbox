@@ -21,6 +21,8 @@ Dates are marked as `DD-MM-YYYY`
 - `StreamStatistics` and `ReaderStatistics`, returned by
   `SharedStream.statistics()`.
 - `WouldBlock`, `EndOfStream`, `StreamBusyError` and `StreamClosedError`.
+- `WaiterSlotsFullError` is exported from `sharedbox`; opening a reader
+  raises it when `max_readers` readers are open.
 - `KindMismatchError`, a `SchemaMismatchError` raised when a name holds a
   segment of another kind; `status::kind_mismatch` and `SBX_E_KIND` (-11)
   in `sharedbox.hpp` and `sharedbox_c.h`.

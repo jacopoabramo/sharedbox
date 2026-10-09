@@ -850,8 +850,9 @@ class StreamReader(End, Iterator[T], AsyncIterator[T], Generic[T]):
         Notes
         -----
         A blocking receive first waits for calls already on the reader's
-        background thread, such as an outstanding [`receive_future`][sharedbox.StreamReader.receive_future], and returns
-        the item after theirs; that wait counts against `timeout`.
+        background thread, such as an outstanding
+        [`receive_future`][sharedbox.StreamReader.receive_future], and
+        returns the item after theirs; that wait counts against `timeout`.
         An interrupt such as Ctrl-C during the call may lose the item being
         received.
         """
@@ -894,8 +895,9 @@ class StreamReader(End, Iterator[T], AsyncIterator[T], Generic[T]):
         Notes
         -----
         A blocking receive first waits for calls already on the reader's
-        background thread, such as an outstanding [`receive_future`][sharedbox.StreamReader.receive_future], and returns
-        the item after theirs; that wait counts against `timeout`.
+        background thread, such as an outstanding
+        [`receive_future`][sharedbox.StreamReader.receive_future], and
+        returns the item after theirs; that wait counts against `timeout`.
         After an exception the contents of `out` are unspecified. `out` must
         not be written to or resized from another thread during the call. An
         interrupt such as Ctrl-C during the call may lose the item being
@@ -1243,8 +1245,9 @@ class IterInto(Iterator[T], AsyncIterator[T], Generic[T]):
     Notes
     -----
     A blocking `next` first waits for calls already on the reader's
-    background thread, such as an outstanding [`receive_future`][sharedbox.StreamReader.receive_future], and
-    returns the item after theirs.
+    background thread, such as an outstanding
+    [`receive_future`][sharedbox.StreamReader.receive_future], and returns
+    the item after theirs.
     """
 
     __slots__ = ("_reader", "_targets")
