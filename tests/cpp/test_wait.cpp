@@ -124,6 +124,33 @@ TEST_CASE("sleepers counts a thread inside a wait until a write, a timeout or an
     static_cast<void>(sharedbox::unlink(name));
 }
 
+TEST_CASE("a write leaves wake_word alone when no thread is inside a wait, and changes it when one is") {
+    const std::string name = unique("wait-wake-word");
+    handle h = make(name);
+    const auto slot = h.register_waiter();
+    REQUIRE(slot.has_value());
+    const auto wake_word = [&] {
+        return sharedbox::detail::atomic(static_cast<sharedbox::header *>(h.base())->wake_word).load();
+    };
+    const std::uint32_t before = wake_word();
+    write_zero(h);
+    write_zero(h);
+    CHECK(wake_word() == before);
+
+    sharedbox::result<wake> out = sharedbox::unexpected(status::ok);
+    std::thread changed([&] { out = h.wait(*slot, h.generation(), 5.0s); });
+    CHECK(sleeper_arrives(h));
+    const auto start = std::chrono::steady_clock::now();
+    write_zero(h);
+    changed.join();
+    CHECK((out && *out == wake::changed));
+    CHECK(std::chrono::steady_clock::now() - start < 1s);
+    CHECK(wake_word() != before);
+
+    h.release_waiter(*slot);
+    static_cast<void>(sharedbox::unlink(name));
+}
+
 TEST_CASE("wait refuses a slot not held and a timeout out of range") {
     const std::string name = unique("wait-range");
     handle h = make(name);

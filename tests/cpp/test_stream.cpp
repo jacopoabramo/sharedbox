@@ -141,6 +141,75 @@ TEST_CASE("lossy and latest readers never return a torn item, and receive plus m
     }
 }
 
+TEST_CASE("a lossy reader lapped several times resumes at the oldest item in the ring and counts the rest") {
+    const std::string name = unique("stream-lapped-lossy");
+    stream st = make(name, 4);
+    auto reader = st.reader(read_mode::lossy, start_at::oldest);
+    auto sender = st.sender();
+    REQUIRE((reader && sender));
+    for (std::uint64_t i = 0; i < 10; ++i)
+        REQUIRE(send(*sender, i));
+    for (std::uint64_t expected = 6; expected < 10; ++expected) {
+        const auto got = receive(*reader);
+        REQUIRE(got);
+        CHECK(got->position == expected);
+        CHECK(got->missed == (expected == 6 ? 6 : 0));
+    }
+    CHECK(reader->missed() == 6);
+    const auto empty = receive(*reader, 0.0);
+    CHECK((!empty && empty.error().code == status::timeout));
+    REQUIRE(send(*sender, 10));
+    const auto next = receive(*reader);
+    REQUIRE(next);
+    CHECK(next->position == 10);
+    CHECK(next->missed == 0);
+    static_cast<void>(unlink(name));
+}
+
+TEST_CASE("a latest reader lapped several times returns the newest item and counts the rest") {
+    const std::string name = unique("stream-lapped-latest");
+    stream st = make(name, 4);
+    auto reader = st.reader(read_mode::latest, start_at::oldest);
+    auto sender = st.sender();
+    REQUIRE((reader && sender));
+    for (std::uint64_t i = 0; i < 10; ++i)
+        REQUIRE(send(*sender, i));
+    const auto got = receive(*reader);
+    REQUIRE(got);
+    CHECK(got->position == 9);
+    CHECK(got->missed == 9);
+    const auto empty = receive(*reader, 0.0);
+    CHECK((!empty && empty.error().code == status::timeout));
+    for (std::uint64_t i = 10; i < 13; ++i)
+        REQUIRE(send(*sender, i));
+    const auto newest = receive(*reader);
+    REQUIRE(newest);
+    CHECK(newest->position == 12);
+    CHECK(newest->missed == 2);
+    static_cast<void>(unlink(name));
+}
+
+TEST_CASE("a lossless reader that keeps pace with the sender over many laps loses nothing") {
+    const std::string name = unique("stream-laps-lossless");
+    stream st = make(name, 4);
+    auto reader = st.reader(read_mode::lossless, start_at::oldest);
+    auto sender = st.sender();
+    REQUIRE((reader && sender));
+    std::uint64_t position = 0;
+    for (std::uint64_t lap = 0; lap < 50; ++lap) {
+        for (std::uint64_t i = 0; i < 4; ++i)
+            REQUIRE(send(*sender, lap * 4 + i));
+        for (std::uint64_t i = 0; i < 4; ++i) {
+            const auto got = receive(*reader);
+            REQUIRE(got);
+            CHECK(got->position == position);
+            CHECK(got->missed == 0);
+            ++position;
+        }
+    }
+    static_cast<void>(unlink(name));
+}
+
 TEST_CASE("an item overwritten while it is copied is discarded and counted as missed") {
     const std::string name = unique("stream-lapped");
     stream st = make(name, 2);
