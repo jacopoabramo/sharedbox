@@ -91,14 +91,12 @@ def machine_note(folder: Path) -> str:
             for line in summary.read_text(encoding="utf-8").splitlines()
             if line.startswith(wanted)
         ]
-    stamp = max(path.stat().st_mtime for path in folder.glob("*.json"))
-    return "<br>".join(
-        [
-            *parts,
-            f"pyperf {pyperf.__version__}; "
-            + datetime.fromtimestamp(stamp, tz=UTC).date().isoformat(),
-        ]
-    )
+    stamp = max((path.stat().st_mtime for path in folder.glob("*.json")), default=None)
+    version = f"pyperf {pyperf.__version__}"
+    if stamp is not None:
+        date = datetime.fromtimestamp(stamp, tz=UTC).date().isoformat()
+        version += f"; {date}"
+    return "<br>".join([*parts, version])
 
 
 def panels_figure(
