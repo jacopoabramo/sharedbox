@@ -1,0 +1,255 @@
+import pickle
+import threading
+import time
+from dataclasses import dataclass
+from typing import Annotated
+
+import numpy as np
+import pytest
+
+from sharedbox import (
+    Capacity,
+    DType,
+    EndOfStream,
+    ReaderStatistics,
+    SchemaMismatchError,
+    Shape,
+    SharedBox,
+    SharedStream,
+    StreamBusyError,
+    StreamClosedError,
+    WouldBlock,
+)
+
+
+@dataclass(frozen=True)
+class Frame:
+    index: int
+    image: Annotated[np.ndarray, Shape(4, 4), DType("uint16")]
+
+
+def frame(i: int) -> Frame:
+    return Frame(i, np.full((4, 4), i, np.uint16))
+
+
+def test_items_go_from_the_sender_to_a_reader(unique_name: str) -> None:
+    """Receive every item sent, in order, then EndOfStream after the sender closes."""
+    with SharedStream.create(Frame, unique_name, capacity=4) as stream:
+        reader = stream.reader()
+        with stream.sender() as sender:
+            for i in range(3):
+                sender.send(frame(i))
+        assert [item.index for item in reader] == [0, 1, 2]
+        assert reader.position == 2
+
+
+def test_receive_into_fills_the_given_array(unique_name: str) -> None:
+    """Return items whose image is the caller's array, refilled by each receive."""
+    with SharedStream.create(Frame, unique_name, capacity=4) as stream:
+        reader = stream.reader()
+        sender = stream.sender()
+        sender.send(frame(5))
+        sender.send(frame(6))
+        image = np.zeros((4, 4), np.uint16)
+        first = reader.receive_into({"image": image})
+        assert first.image is image
+        assert first.image[0, 0] == 5
+        second = next(reader.iter_into({"image": image, "index": None}))
+        assert second.image is image
+        assert image[0, 0] == 6
+
+
+def test_receive_into_takes_a_tuple_for_a_tuple_item(unique_name: str) -> None:
+    """Fill the array entry of a tuple out and decode the member given as None."""
+    hint = tuple[
+        Annotated[
+            np.ndarray,
+            Shape(
+                3,
+            ),
+            DType("float32"),
+        ],
+        int,
+    ]
+    with SharedStream.create(hint, unique_name, capacity=2) as stream:
+        reader = stream.reader()
+        stream.sender().send((np.ones(3, np.float32), 4))
+        line = np.zeros(3, np.float32)
+        got = reader.receive_into((line, None), timeout=5)
+        assert got[0] is line
+        assert got[1] == 4
+
+
+@pytest.mark.parametrize(
+    "out",
+    [
+        {"pixels": np.zeros((4, 4), np.uint16)},
+        ({"image": np.zeros((4, 4), np.uint16)},),
+        np.zeros((4, 4), np.uint16),
+        {"index": np.zeros(1, np.int64)},
+    ],
+)
+def test_receive_into_refuses_an_out_of_the_wrong_shape_and_keeps_the_item(
+    unique_name: str, out: object
+) -> None:
+    """Raise TypeError for an unknown member, an out of another shape or an array for a non-array member, and keep the item."""
+    with SharedStream.create(Frame, unique_name, capacity=2) as stream:
+        reader = stream.reader()
+        stream.sender().send(frame(1))
+        with pytest.raises(TypeError):
+            reader.receive_into_nowait(out)
+        assert reader.receive_nowait().index == 1
+
+
+def test_receive_into_refuses_an_array_for_a_collection_member(
+    unique_name: str,
+) -> None:
+    """Raise TypeError for an array given where the record holds a list, before anything is received."""
+
+    @dataclass(frozen=True)
+    class Tagged:
+        tags: Annotated[list[int], Capacity(4)]
+        image: Annotated[
+            np.ndarray,
+            Shape(
+                2,
+            ),
+            DType("uint8"),
+        ]
+
+    with SharedStream.create(Tagged, unique_name, capacity=2) as stream:
+        reader = stream.reader()
+        stream.sender().send(Tagged([1], np.zeros(2, np.uint8)))
+        with pytest.raises(TypeError, match="tags"):
+            reader.receive_into_nowait({"tags": np.zeros(4, np.int64)})
+        assert reader.receive_nowait().tags == [1]
+
+
+def test_receive_into_refuses_an_item_without_arrays(unique_name: str) -> None:
+    """Raise TypeError from receive_into on a collection item, which holds no array, before anything is received."""
+    hint = Annotated[list[int], Capacity(4)]
+    with SharedStream.create(hint, unique_name, capacity=2) as stream:
+        reader = stream.reader()
+        stream.sender().send([1, 2])
+        with pytest.raises(TypeError, match="no array"):
+            reader.receive_into_nowait(None)
+        assert reader.receive_nowait() == [1, 2]
+
+
+def test_nowait_calls_raise_would_block(unique_name: str) -> None:
+    """Raise WouldBlock from receive_nowait on an empty stream and send_nowait on a full lossless ring."""
+    with SharedStream.create(int, unique_name, capacity=2) as stream:
+        reader = stream.reader()
+        with pytest.raises(WouldBlock):
+            reader.receive_nowait()
+        sender = stream.sender()
+        sender.send_nowait(1)
+        sender.send_nowait(2)
+        with pytest.raises(WouldBlock):
+            sender.send_nowait(3)
+
+
+def test_a_finite_timeout_raises_timeout_error(unique_name: str) -> None:
+    """Raise TimeoutError once a receive's timeout passes."""
+    with SharedStream.create(int, unique_name, capacity=2) as stream:
+        start = time.monotonic()
+        with pytest.raises(TimeoutError):
+            stream.reader().receive(timeout=0.2)
+        assert 0.15 < time.monotonic() - start < 1.0
+
+
+def test_close_ends_a_blocked_receive(unique_name: str) -> None:
+    """End a receive waiting with no timeout when another thread closes the reader."""
+    with SharedStream.create(int, unique_name, capacity=2) as stream:
+        reader = stream.reader()
+        raised: list[BaseException] = []
+
+        def wait() -> None:
+            try:
+                reader.receive()
+            except BaseException as error:
+                raised.append(error)
+
+        thread = threading.Thread(target=wait)
+        thread.start()
+        time.sleep(0.2)
+        reader.close()
+        thread.join(2.0)
+        assert not thread.is_alive()
+        assert isinstance(raised[0], StreamClosedError)
+
+
+def test_a_second_sender_is_busy(unique_name: str) -> None:
+    """Raise StreamBusyError for a second sender while the first is open."""
+    with SharedStream.create(int, unique_name, capacity=2) as stream:
+        first = stream.sender()
+        with pytest.raises(StreamBusyError):
+            stream.sender()
+        first.close()
+
+
+def test_closing_the_stream_closes_its_ends(unique_name: str) -> None:
+    """Raise StreamClosedError from ends of a closed stream."""
+    stream = SharedStream.create(int, unique_name, capacity=2)
+    reader = stream.reader()
+    sender = stream.sender()
+    stream.close()
+    assert reader.closed and sender.closed
+    with pytest.raises(StreamClosedError):
+        reader.receive_nowait()
+    with pytest.raises(StreamClosedError):
+        stream.reader()
+
+
+def test_attach_with_another_item_type_raises(unique_name: str) -> None:
+    """Raise SchemaMismatchError when the item type differs from the creator's."""
+    with (
+        SharedStream.create(int, unique_name, capacity=2),
+        pytest.raises(SchemaMismatchError),
+    ):
+        SharedStream.attach(float, unique_name)
+
+
+def test_a_box_cannot_be_an_item(unique_name: str) -> None:
+    """Raise TypeError for a SharedBox subclass as the item type."""
+
+    class Motor(SharedBox):
+        position: int = 0
+
+    with pytest.raises(TypeError):
+        SharedStream.create(Motor, unique_name, capacity=2)
+
+
+def test_statistics_report_each_reader(unique_name: str) -> None:
+    """Report items sent and buffered, and each reader's mode, position and lag."""
+    with SharedStream.create(int, unique_name, capacity=4) as stream:
+        lossy = stream.reader(mode="lossy")
+        sender = stream.sender()
+        for i in range(3):
+            sender.send(i)
+        lossy.receive_nowait()
+        stats = stream.statistics()
+        assert (stats.sent, stats.buffered, stats.capacity) == (3, 3, 4)
+        assert stats.readers == (ReaderStatistics("lossy", 1, 2, stats.sender_pid),)
+
+
+def test_a_pickled_stream_and_reader_open_again(unique_name: str) -> None:
+    """Unpickle a stream as an attach and a reader as a new reader of the same mode."""
+    with SharedStream.create(int, unique_name, capacity=2) as stream:
+        copy = pickle.loads(pickle.dumps(stream))
+        assert copy.name == stream.name
+        reader = pickle.loads(pickle.dumps(stream.reader(mode="latest")))
+        assert reader.mode == "latest"
+        with pytest.raises(TypeError, match="SharedStream"):
+            pickle.dumps(stream.sender())
+        copy.close()
+
+
+def test_a_reader_iterates_until_the_stream_ends(unique_name: str) -> None:
+    """Stop iteration at EndOfStream rather than raising it."""
+    with SharedStream.create(int, unique_name, capacity=2) as stream:
+        reader = stream.reader()
+        stream.sender().close()
+        assert list(reader) == []
+        with pytest.raises(EndOfStream):
+            reader.receive_nowait()
