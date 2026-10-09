@@ -432,6 +432,21 @@ def test_another_major_version_is_refused(unique_name: str) -> None:
     segment.close()
 
 
+@pytest.mark.parametrize("magic", [b"SHREDBX1", b"NOTSBX00"])
+def test_a_magic_this_version_does_not_know_is_refused(
+    unique_name: str, magic: bytes
+) -> None:
+    """Check that attach raises SchemaMismatchError for a box of 0.5 and for an unknown magic."""
+    segment = create(unique_name)
+    with raw_bytes(unique_name) as view:
+        view[0:8] = magic
+    with pytest.raises(SchemaMismatchError, match="another version of sharedbox"):
+        attach(unique_name)
+    with raw_bytes(unique_name) as view:
+        view[0:8] = MAGIC
+    segment.close()
+
+
 def test_a_higher_minor_version_opens(unique_name: str) -> None:
     """Check that attach accepts a higher minor layout version."""
     owner = create(unique_name)

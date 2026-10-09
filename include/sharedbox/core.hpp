@@ -135,6 +135,7 @@ enum class status : int {
     range = -9,
     os = -10,
     kind_mismatch = -11,
+    foreign = -12,
 };
 
 using seconds = std::chrono::duration<double>;
@@ -156,7 +157,7 @@ struct box_ref {
     char name[name_max];
 };
 
-// The head of one description in the table of a layout 2.0 segment. A description is this head, a body
+// The head of one description in the table of a box segment. A description is this head, a body
 // that depends on kind, and zero padding to a multiple of 8 bytes.
 struct type_head {
     std::uint8_t kind;
@@ -222,10 +223,11 @@ static_assert(SBX_E_SCHEMA == int(status::schema) && SBX_E_CORRUPT == int(status
 static_assert(SBX_E_LOCK_TIMEOUT == int(status::lock_timeout) && SBX_E_TIMEOUT == int(status::timeout));
 static_assert(SBX_E_NO_SLOT == int(status::no_slot) && SBX_E_RANGE == int(status::range));
 static_assert(SBX_E_OS == int(status::os) && SBX_E_KIND == int(status::kind_mismatch));
+static_assert(SBX_E_FOREIGN == int(status::foreign));
 
 // Why a call failed: the status, the OS error (errno or GetLastError()) read where the OS call failed,
-// and what the call found when that is the reason: the magic for kind_mismatch, major << 16 | minor
-// for layout.
+// and what the call found when that is the reason: the magic for kind_mismatch and foreign, major << 16 |
+// minor for layout.
 struct error {
     status code = status::ok;
     std::int32_t os = 0;
@@ -466,11 +468,12 @@ inline std::string_view kind_name(std::uint64_t magic) noexcept {
 // What a segment layout gives the core's open check: its magic, the kind major versions it reads, and
 // a check of the kind's own geometry once the common line passed.
 template <class L>
-concept segment_layout = requires(const void *base, const common_header &line0, std::uint64_t mapped) {
+concept segment_layout = requires(const typename L::header_type &h, std::uint64_t mapped) {
     { L::magic } -> std::convertible_to<std::uint64_t>;
     { L::oldest_major } -> std::convertible_to<std::uint16_t>;
     { L::newest_major } -> std::convertible_to<std::uint16_t>;
-    { L::check_geometry(base, line0, mapped) } -> std::same_as<status>;
+    { h.common } -> std::convertible_to<const common_header &>;
+    { L::check_geometry(h, mapped) } -> std::same_as<status>;
 };
 
 namespace detail {
@@ -482,22 +485,21 @@ inline common_header copy_common(const void *base) noexcept {
     return line0;
 }
 
-// Checks a published segment of mapped bytes at base as a segment of kind L: the kind, the core
-// version, the kind's version, then the kind's geometry. Fills found with what refused it.
-template <segment_layout L> result<common_header> open_check(const void *base, std::uint64_t mapped) noexcept {
-    if (mapped < page_size)
-        return unexpected(status::corrupt);
-    const common_header line0 = copy_common(base);
+// Checks the copy h of the header of a published segment of mapped bytes as a segment of kind L: the
+// kind, the core version, the kind's version, then the kind's geometry. Fills found with what refused it.
+template <segment_layout L>
+result<common_header> open_check(const typename L::header_type &h, std::uint64_t mapped) noexcept {
+    const common_header &line0 = h.common;
     if (line0.magic != L::magic)
         return unexpected(
-            error{kind_name(line0.magic).empty() ? status::layout : status::kind_mismatch, 0, line0.magic});
+            error{kind_name(line0.magic).empty() ? status::foreign : status::kind_mismatch, 0, line0.magic});
     if (line0.core_major != core_major)
         return unexpected(error{status::layout, 0, std::uint64_t{line0.core_major} << 16 | line0.core_minor});
     if (line0.kind_major < L::oldest_major || line0.kind_major > L::newest_major)
         return unexpected(error{status::layout, 0, std::uint64_t{line0.kind_major} << 16 | line0.kind_minor});
     if (line0.size != mapped || line0.waiter_slots == 0 || line0.waiter_slots > max_waiter_slots)
         return unexpected(status::corrupt);
-    if (const status rc = L::check_geometry(base, line0, mapped); rc != status::ok)
+    if (const status rc = L::check_geometry(h, mapped); rc != status::ok)
         return unexpected(rc);
     return line0;
 }

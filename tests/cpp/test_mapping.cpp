@@ -128,18 +128,24 @@ TEST_CASE("geometry limits") {
     h.common.waiter_slots = 1;
     h.tail = sharedbox::header_size;
     h.common.size = mapped;
+    h.common.magic = sharedbox::box_magic;
+    h.common.core_major = sharedbox::core_major;
+    h.common.kind_major = sharedbox::layout_major;
     h.record = std::uint32_t{1} << 20;
     h.record_size = 64;
     const auto with = [&](auto &field, auto bad) {
         const auto saved = field;
         field = bad;
-        const status rc = sharedbox::detail::box_layout::check_geometry(&h, h.common, mapped);
+        const auto checked = sharedbox::detail::open_check<sharedbox::detail::box_layout>(h, mapped);
+        const status rc = checked ? status::ok : checked.error().code;
         field = saved;
         return rc;
     };
-    CHECK(sharedbox::detail::box_layout::check_geometry(&h, h.common, mapped) == status::ok);
+    CHECK(with(h.field_count, std::uint16_t{1}) == status::ok);
     CHECK(with(h.field_count, std::uint16_t{256}) == status::ok);
     CHECK(with(h.field_count, std::uint16_t{257}) == status::corrupt);
+    CHECK(with(h.common.waiter_slots, std::uint16_t{4096}) == status::ok);
+    CHECK(with(h.common.waiter_slots, std::uint16_t{4097}) == status::corrupt);
 }
 
 TEST_CASE("names") {

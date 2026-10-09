@@ -111,6 +111,8 @@ std::string exists_message(const std::string &name, const std::vector<std::strin
                unlink + " removes it";
 #endif
     }
+    if (detail::kind_name(seen->magic).empty())
+        return taken;
     if (std::optional<std::string> foreign = foreign_creator(*seen, taken))
         return *foreign;
     if (detail::process_alive(seen->creator_pid, seen->creator_start))
@@ -376,12 +378,13 @@ std::unique_ptr<Segment> Segment::attach(const std::string &name, const std::vec
     impl->lock_timeout = lock_timeout;
     // A creator that has not published the box within 1 s is not coming back.
     result<handle> opened = handle::open(name, seconds((std::min)(lock_timeout, 1.0)));
+    if (!opened && opened.error().code == status::foreign)
+        throw SchemaMismatch("segment '" + name +
+                             "' was made by another version of sharedbox or is not a sharedbox segment");
     if (!opened && opened.error().code == status::layout) {
         const error &e = opened.error();
-        const bool magic = detail::kind_name(e.found).empty() && e.found > 0xFFFFFFFFu;
-        throw SchemaMismatch(magic ? "segment '" + name + "' was made by another version of sharedbox"
-                                   : "segment '" + name + "' uses layout " + std::to_string(e.found >> 16) + "." +
-                                         std::to_string(e.found & 0xFFFF));
+        throw SchemaMismatch("segment '" + name + "' uses layout " + std::to_string(e.found >> 16) + "." +
+                             std::to_string(e.found & 0xFFFF));
     }
     impl->box = impl->check(std::move(opened));
     if (impl->box.schema_hash() != schema_hash)

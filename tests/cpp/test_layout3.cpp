@@ -79,8 +79,40 @@ TEST_CASE("another kind is a kind mismatch and an unknown magic is a layout erro
     header_of(*owner).common.magic = old_box;
     other = handle::open(name, seconds(0.2));
     REQUIRE_FALSE(other);
-    CHECK(other.error().code == status::layout);
+    CHECK(other.error().code == status::foreign);
     CHECK(other.error().found == old_box);
+    static_cast<void>(unlink(name));
+}
+
+TEST_CASE("from_capsule refuses what open refuses") {
+    const std::string name = unique("capsule-refused");
+    auto owner = handle::create(name, fields, 32, 1, 4, {});
+    REQUIRE(owner);
+    header &h = header_of(*owner);
+    const auto taken_status = [&] {
+        auto copy = owner->duplicate();
+        REQUIRE(copy);
+        sbx_handle *capsule = std::move(*copy).to_capsule();
+        REQUIRE(capsule != nullptr);
+        auto taken = handle::from_capsule(capsule);
+        const status rc = taken ? status::ok : taken.error().code;
+        if (!taken)
+            capsule->release(capsule);
+        delete capsule;
+        return rc;
+    };
+    CHECK(taken_status() == status::ok);
+    h.common.magic = 0x3158424445524853;
+    CHECK(taken_status() == status::foreign);
+    h.common.magic = 0x1234;
+    CHECK(taken_status() == status::foreign);
+    h.common.magic = stream_magic;
+    CHECK(taken_status() == status::kind_mismatch);
+    h.common.magic = box_magic;
+    h.common.kind_major = 4;
+    CHECK(taken_status() == status::layout);
+    h.common.kind_major = 3;
+    CHECK(taken_status() == status::ok);
     static_cast<void>(unlink(name));
 }
 
@@ -102,18 +134,16 @@ TEST_CASE("the box geometry checks") {
 }
 
 TEST_CASE("the record limit") {
-    alignas(8) unsigned char bytes[sizeof(header)] = {};
     header h{};
     h.common.waiter_slots = 1;
     h.field_count = 1;
     h.tail = header_size;
     h.record = 192;
     h.record_size = static_cast<std::uint32_t>(max_mapping_size - 192);
-    std::memcpy(bytes, &h, sizeof h);
-    CHECK(detail::box_layout::check_geometry(bytes, h.common, max_mapping_size) == status::ok);
+    CHECK(detail::box_layout::check_geometry(h, max_mapping_size) == status::ok);
+    CHECK(detail::box_layout::check_geometry(h, max_mapping_size + page_size) == status::corrupt);
     h.record_size += 8;
-    std::memcpy(bytes, &h, sizeof h);
-    CHECK(detail::box_layout::check_geometry(bytes, h.common, max_mapping_size) == status::corrupt);
+    CHECK(detail::box_layout::check_geometry(h, max_mapping_size) == status::corrupt);
 }
 
 TEST_CASE("kinds 6 to 12 are fixed kinds with their sizes") {
