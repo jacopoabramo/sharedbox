@@ -424,6 +424,29 @@ TEST_CASE("data_waiting and space_waiting are back to 0 after a wait that was wo
     static_cast<void>(unlink(name));
 }
 
+TEST_CASE("freeing the waiter slot of a reader killed inside a wait for data takes it out of data_waiting") {
+    const std::string name = unique("stream-dead-sleeper");
+    stream st = make(name, 2);
+    stream_header &h = *static_cast<stream_header *>(st.base());
+    auto *base = static_cast<std::byte *>(st.base());
+    waiter_slot &s = *reinterpret_cast<waiter_slot *>(base + h.readers + h.max_readers * sizeof(reader_entry));
+    // Above INT_MAX on Linux and not a multiple of 4 on Windows: no process has this pid.
+    s.owner_start = 12345;
+    s.owner_pidns = detail::current_pidns();
+    s.owner_pid = 0xFFFFFFF1u;
+    detail::atomic(h.waiters).fetch_add(1);
+    detail::atomic(h.data_waiting).fetch_add(1);
+    s.asleep_on = offsetof(stream_header, data_waiting);
+
+    auto reader = st.reader(read_mode::lossless, start_at::newest);
+    REQUIRE(reader);
+    CHECK(detail::atomic(h.data_waiting).load() == 0);
+    CHECK(detail::atomic(h.space_waiting).load() == 0);
+    CHECK(s.asleep_on == 0);
+    CHECK(detail::atomic(h.waiters).load() == 1);
+    static_cast<void>(unlink(name));
+}
+
 #ifndef _WIN32
 
 namespace {
