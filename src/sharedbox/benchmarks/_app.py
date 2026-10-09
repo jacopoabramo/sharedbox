@@ -231,7 +231,7 @@ def all_command(
         bool, typer.Option("--fast", help="Pass --fast to the ops benchmarks.")
     ] = False,
 ) -> None:
-    """Run ops, roundtrip and size (when wheels are found) and summarise them."""
+    """Run ops, roundtrip, stream and size (when wheels are found) and summarise them."""
     out.mkdir(parents=True, exist_ok=True)
     ops_json = out / "ops.json"
     # pyperf refuses to write over an existing file.
@@ -247,6 +247,17 @@ def all_command(
         ops_markdown(ops_json),
         "## Round trips",
         roundtrip.to_markdown(results),
+    ]
+    streams = stream.Options()
+    throughput = stream.run_throughput(streams)
+    matrix = stream.run_matrix(streams)
+    (out / "stream.json").write_text(
+        json.dumps({"throughput": throughput, "matrix": matrix}, indent=2)
+    )
+    sections += [
+        "## Streams",
+        stream.to_markdown(throughput),
+        stream.matrix_to_markdown(matrix),
     ]
     if wheels := size.default_wheels():
         sizes = [size.measure(wheel) for wheel in wheels]

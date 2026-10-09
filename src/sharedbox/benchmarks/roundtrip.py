@@ -20,9 +20,9 @@ from multiprocessing.connection import Connection
 from multiprocessing.context import SpawnContext, SpawnProcess
 from multiprocessing.shared_memory import SharedMemory
 from multiprocessing.synchronize import Event
-from typing import TypedDict
+from typing import Any, TypedDict
 
-from sharedbox import SharedBox
+from sharedbox import SharedBox, SharedStream
 
 WARMUP = 200
 SAMPLES = 5000
@@ -145,6 +145,48 @@ def box_round_trips(ctx: SpawnContext, opts: Options) -> list[int]:
         PingPong.unlink(name)
 
 
+def stream_child(ping: str, pong: str, total: int, timeout: float) -> None:
+    pings = SharedStream.attach(int, ping).reader(start="oldest")
+    with SharedStream.attach(int, pong).sender() as sender:
+        sender.send(-1)
+        for _ in range(total):
+            sender.send(pings.receive(timeout=timeout))
+
+
+def stream_round_trips(ctx: SpawnContext, opts: Options) -> list[int]:
+    label = "SharedStream"
+    base = f"bench-roundtrip-{os.getpid()}"
+
+    def answered(pongs: Any, i: int) -> bool:
+        try:
+            return bool(pongs.receive(timeout=opts.timeout) == i)
+        except TimeoutError:
+            return False
+
+    with (
+        SharedStream.create(int, f"{base}-ping", capacity=4) as ping_stream,
+        SharedStream.create(int, f"{base}-pong", capacity=4) as pong_stream,
+    ):
+        pongs = pong_stream.reader(start="oldest")
+        child = run_child(
+            ctx,
+            stream_child,
+            ping_stream.name,
+            pong_stream.name,
+            opts.total,
+            opts.timeout,
+        )
+        try:
+            with ping_stream.sender() as sender:
+                if not answered(pongs, -1):
+                    raise SystemExit(f"{label}: the child did not start")
+                return measure(label, sender.send, lambda i: answered(pongs, i), opts)
+        finally:
+            stop_child(child, opts.timeout)
+            SharedStream.unlink(f"{base}-ping")
+            SharedStream.unlink(f"{base}-pong")
+
+
 def event_child(ping: Event, pong: Event, total: int, timeout: float) -> None:
     pong.set()
     for _ in range(total):
@@ -249,6 +291,7 @@ def poll_round_trips(ctx: SpawnContext, opts: Options) -> list[int]:
 
 CONTENDERS: list[tuple[str, Callable[[SpawnContext, Options], list[int]]]] = [
     ("SharedBox.watch()", box_round_trips),
+    ("SharedStream", stream_round_trips),
     ("mp.Event", event_round_trips),
     ("mp.Pipe", pipe_round_trips),
     ("SharedMemory polling (busy CPU)", poll_round_trips),
