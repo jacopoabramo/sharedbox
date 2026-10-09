@@ -21,7 +21,7 @@ the 10th to the 90th percentile of the measured values. The scale is
 logarithmic: each grid line is ten times the one before it. Hover over a dot
 for the exact values.
 
-<div class="sbx-chart" data-src="../../assets/benchmarks/ops.json"></div>
+<div class="sbx-chart" data-src="../assets/benchmarks/ops.json"></div>
 
 Reading or writing one [field](glossary.md#field) of a
 [box](glossary.md#box) takes 43 to 61 ns. That is 11 to 25 times less than
@@ -74,7 +74,7 @@ the median (p50), and the line runs to the 99th percentile (p99). The
 `SharedStream` row sends an `int` through one [stream](glossary.md#stream)
 and gets the answer back through a second one.
 
-<div class="sbx-chart" data-src="../../assets/benchmarks/roundtrip.json"></div>
+<div class="sbx-chart" data-src="../assets/benchmarks/roundtrip.json"></div>
 
 [`watch`][sharedbox.SharedBox.watch] answers in 37 us at the median and
 101 us at p99. `mp.Event` takes 57 us and 133 us, and `mp.Pipe` 37 us and
@@ -122,7 +122,7 @@ per second a reader received, averaged over the readers of the median run,
 and the line runs from the slowest to the fastest of the three runs, so a
 long line means the runs disagreed.
 
-<div class="sbx-chart" data-src="../../assets/benchmarks/stream-throughput.json"></div>
+<div class="sbx-chart" data-src="../assets/benchmarks/stream-throughput.json"></div>
 
 With one reader and 1 KiB items, a [lossless](glossary.md#lossless) reader
 receives 511k items per second. `mp.Queue` manages 84k and the ring with a
@@ -164,7 +164,7 @@ the p90 and for the items per second the pairing sustained when the sender
 did not wait. The `mp.Queue` rows are the standard library baseline, the
 last of them reading the queue from `asyncio` with `run_in_executor`.
 
-<div class="sbx-chart" data-src="../../assets/benchmarks/stream-matrix.json"></div>
+<div class="sbx-chart" data-src="../assets/benchmarks/stream-matrix.json"></div>
 
 At 1 KiB, blocking `send` and `receive` move 433k items per second. Reading
 with `async for` keeps 394k, 91% of that, and `events.received` 257k.
