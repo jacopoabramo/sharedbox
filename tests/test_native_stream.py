@@ -339,7 +339,7 @@ def test_receive_into_refuses_a_bad_array_and_keeps_the_item(
 
 
 def test_receive_into_refuses_a_read_only_array(unique_name: str) -> None:
-    """Raise TypeError for an array that cannot be written."""
+    """Raise TypeError for an array that cannot be written, and keep the item for the next receive."""
     stream = create(unique_name, Frame)
     reader = stream.reader(LOSSLESS, True)
     stream.sender().send(frame_of(1), 0.0)

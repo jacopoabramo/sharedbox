@@ -89,8 +89,9 @@ def test_async_iteration_and_asend(unique_name: str) -> None:
     """Send with asend and receive with async for over the reader."""
 
     async def run() -> list[int]:
-        async with SharedStream.create(int, unique_name, capacity=4).reader() as reader:
-            async with reader._stream.sender() as sender:
+        stream = SharedStream.create(int, unique_name, capacity=4)
+        async with stream.reader() as reader:
+            async with stream.sender() as sender:
                 for i in range(3):
                     await sender.asend(i)
             return [item async for item in reader]

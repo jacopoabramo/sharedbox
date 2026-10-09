@@ -176,13 +176,7 @@ def test_receive_into_refuses_an_array_for_a_collection_member(
     @dataclass(frozen=True)
     class Tagged:
         tags: Annotated[list[int], Capacity(4)]
-        image: Annotated[
-            np.ndarray,
-            Shape(
-                2,
-            ),
-            DType("uint8"),
-        ]
+        image: Annotated[np.ndarray, Shape(2), DType("uint8")]
 
     with SharedStream.create(Tagged, unique_name, capacity=2) as stream:
         reader = stream.reader()
@@ -190,6 +184,20 @@ def test_receive_into_refuses_an_array_for_a_collection_member(
         with pytest.raises(TypeError, match="tags"):
             reader.receive_into_nowait({"tags": np.zeros(4, np.int64)})
         assert reader.receive_nowait().tags == [1]
+
+
+@pytest.mark.parametrize(
+    ("hint", "message"),
+    [(int | None, "is an optional member"), (int | float, "is a union member")],
+)
+def test_receive_into_refuses_an_array_for_an_optional_or_union_member(
+    unique_name: str, hint: Any, message: str
+) -> None:
+    """Raise TypeError naming the member's kind for an array given for an optional or union member."""
+    with SharedStream.create(tuple[Frame, hint], unique_name, capacity=2) as stream:
+        reader = stream.reader()
+        with pytest.raises(TypeError, match=message):
+            reader.receive_into_nowait((None, np.zeros(2, np.int64)))
 
 
 def test_receive_into_refuses_an_item_without_arrays(unique_name: str) -> None:
@@ -259,10 +267,10 @@ def test_a_second_sender_is_busy(unique_name: str) -> None:
     """Raise StreamBusyError for a second sender while the first is open."""
     with SharedStream.create(int, unique_name, capacity=2) as stream:
         first = stream.sender()
-        with pytest.raises(StreamBusyError):
+        with pytest.raises(StreamBusyError, match="has a sender in process"):
             stream.sender()
         first.close()
-        with pytest.raises(EndOfStream):
+        with pytest.raises(EndOfStream, match="has ended"):
             stream.sender()
 
 
@@ -285,7 +293,7 @@ def test_closing_the_stream_closes_the_held_sender(unique_name: str) -> None:
     sender.send(1)
     stream.close()
     assert sender.closed
-    with pytest.raises(StreamClosedError):
+    with pytest.raises(StreamClosedError, match="this end is closed"):
         sender.send_nowait(2)
 
 
@@ -352,7 +360,7 @@ def test_a_pickled_stream_and_reader_open_again(unique_name: str) -> None:
         assert reader.receive_nowait() == 2
         with pytest.raises(TypeError, match="SharedStream"):
             pickle.dumps(sender)
-        reader._stream.close()
+        reader.close()
         copy.close()
 
 
