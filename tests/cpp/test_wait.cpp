@@ -101,9 +101,12 @@ TEST_CASE("sleepers counts a thread inside a wait until a write, a timeout or an
     sharedbox::result<wake> out = sharedbox::unexpected(status::ok);
     std::thread changed([&] { out = h.wait(*slot, h.generation(), 5.0s); });
     CHECK(sleeper_arrives(h));
+    const auto start = std::chrono::steady_clock::now();
     write_zero(h);
     changed.join();
     CHECK((out && *out == wake::changed));
+    // A skipped wake still ends the wait with the right result, but only at the 5 s timeout.
+    CHECK(std::chrono::steady_clock::now() - start < 1s);
     CHECK(h.sleepers() == 0);
 
     const auto quiet = h.wait(*slot, h.generation(), 0.05s);
