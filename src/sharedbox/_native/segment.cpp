@@ -140,6 +140,8 @@ std::string exists_message(const std::string &name, const std::vector<std::strin
         throw SegmentMissing("no segment named '" + name + "'");
     case status::corrupt:
         throw SchemaMismatch("segment '" + name + "' has a corrupt header");
+    case status::kind_mismatch:
+        throw KindMismatch("'" + name + "' is a " + std::string(detail::kind_name(e.found)) + ", not a box");
     case status::range:
         throw std::invalid_argument("box '" + name + "': a field, size or name is out of range");
     case status::os:

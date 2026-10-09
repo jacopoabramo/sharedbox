@@ -6,6 +6,7 @@ from ._events import BoxEvents, FieldWatch
 from ._layout import Capacity, Field, field
 from ._native import (
     BoxClosedError,
+    KindMismatchError,
     LockTimeoutError,
     SchemaMismatchError,
     SegmentExistsError,
@@ -23,6 +24,7 @@ __all__ = [
     "DType",
     "Field",
     "FieldWatch",
+    "KindMismatchError",
     "LockTimeoutError",
     "SchemaMismatchError",
     "SegmentExistsError",

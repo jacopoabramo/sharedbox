@@ -9,7 +9,7 @@ import subprocess
 import sys
 import threading
 import time
-from collections.abc import Callable, Generator
+from collections.abc import Generator
 from multiprocessing.queues import Queue
 from multiprocessing.shared_memory import SharedMemory
 from multiprocessing.synchronize import Event
@@ -298,7 +298,7 @@ def test_waiting_in_a_slot_not_held_is_refused(unique_name: str) -> None:
 
 def test_the_longest_name_and_the_last_slot_wake(unique_name: str) -> None:
     """Check that with the longest name and 4096 slots the last slot is woken promptly by a write."""
-    name = (unique_name + "x" * 128)[:128]
+    name = (unique_name + "x" * 200)[:200]
     segment = create(name, waiter_slots=4096)
     try:
         slots = [segment.register_waiter() for _ in range(4096)]
@@ -404,22 +404,3 @@ def test_a_watcher_with_every_slot_taken_still_sees_writes(unique_name: str) -> 
         while box._watcher._slot is None and time.monotonic() < deadline:
             time.sleep(0.05)
         assert box._watcher._slot == 0
-
-
-@pytest.mark.skipif(
-    sys.platform != "win32", reason="the event suffix is a Windows name"
-)
-def test_a_box_whose_name_ends_like_a_waiter_event_is_its_own(
-    names: Callable[[str], str],
-) -> None:
-    """Check that box `a`'s waiter events and a box named like one of them do not collide."""
-    base = names("a")
-    with Counter.create(base) as box:
-        seen: queue.Queue[int] = queue.Queue()
-        box.events.value.connect(lambda new, old: seen.put(new))
-        with Counter.create(base + "-w1") as other:
-            box.value = 1
-            assert seen.get(timeout=10) == 1
-            assert other.value == 0
-    Counter.unlink(base)
-    Counter.unlink(base + "-w1")

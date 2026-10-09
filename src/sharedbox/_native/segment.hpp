@@ -45,6 +45,9 @@ struct SegmentMissing : std::runtime_error {
 struct SchemaMismatch : std::runtime_error {
     using std::runtime_error::runtime_error;
 };
+struct KindMismatch : SchemaMismatch {
+    using SchemaMismatch::SchemaMismatch;
+};
 struct SegmentClosed : std::runtime_error {
     using std::runtime_error::runtime_error;
 };

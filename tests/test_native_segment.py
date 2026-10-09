@@ -20,6 +20,7 @@ from sharedbox._layout import NativeField
 from sharedbox._native import (
     LAYOUT_VERSION,
     BoxClosedError,
+    KindMismatchError,
     LockTimeoutError,
     SchemaMismatchError,
     Segment,
@@ -44,6 +45,7 @@ def attach(name: str, timeout: float = 1.0) -> Segment:
 
 
 MAGIC = b"SBX_BOX_"
+STREAM_MAGIC = b"SBX_STRM"
 
 
 @contextlib.contextmanager
@@ -461,7 +463,7 @@ def test_a_higher_minor_version_opens(unique_name: str) -> None:
 
 def test_a_name_at_the_length_limit(unique_name: str) -> None:
     """Check that a name of the maximum length can be created and attached."""
-    name = (unique_name + "x" * 128)[:128]
+    name = (unique_name + "x" * 200)[:200]
     owner = create(name)
     try:
         other = attach(name)
@@ -869,3 +871,22 @@ def test_cached_ref_refuses_a_field_that_is_not_a_reference(unique_name: str) ->
     with pytest.raises(ValueError, match="field 0 is not a reference"):
         segment.cached_ref(0, {})
     segment.close()
+
+
+def test_attaching_a_stream_name_as_a_box_raises_kind_mismatch(
+    unique_name: str,
+) -> None:
+    """Check that attaching a segment whose magic says stream raises KindMismatchError at once, naming both kinds."""
+    owner = create(unique_name)
+    with raw_bytes(unique_name) as view:
+        view[0:8] = STREAM_MAGIC
+    started = time.monotonic()
+    with pytest.raises(
+        KindMismatchError, match=f"'{unique_name}' is a stream, not a box"
+    ) as caught:
+        attach(unique_name, 5.0)
+    assert time.monotonic() - started < 1.0
+    assert isinstance(caught.value, SchemaMismatchError)
+    with raw_bytes(unique_name) as view:
+        view[0:8] = MAGIC
+    owner.close()

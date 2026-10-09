@@ -759,7 +759,9 @@ NB_MODULE(_native, m) {
     sharedbox::scalars::init();
     nb::exception<sharedbox::SegmentExists>(m, "SegmentExistsError", PyExc_FileExistsError);
     nb::exception<sharedbox::SegmentMissing>(m, "SegmentNotFoundError", PyExc_FileNotFoundError);
-    nb::exception<sharedbox::SchemaMismatch>(m, "SchemaMismatchError", PyExc_TypeError);
+    nb::object schema_mismatch =
+        nb::exception<sharedbox::SchemaMismatch>(m, "SchemaMismatchError", PyExc_TypeError);
+    nb::exception<sharedbox::KindMismatch>(m, "KindMismatchError", schema_mismatch);
     nb::exception<sharedbox::SegmentClosed>(m, "BoxClosedError", PyExc_ValueError);
     nb::exception<sharedbox::LockTimeout>(m, "LockTimeoutError", PyExc_TimeoutError);
     nb::exception<sharedbox::NoWaiterSlot>(m, "WaiterSlotsFullError", PyExc_RuntimeError);

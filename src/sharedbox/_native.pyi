@@ -58,6 +58,12 @@ class SchemaMismatchError(TypeError):
     again.
     """
 
+class KindMismatchError(SchemaMismatchError):
+    """The name holds a segment of another kind, such as a stream where a box was asked for.
+
+    The message names both kinds.
+    """
+
 class BoxClosedError(ValueError):
     """The segment handle has been closed.
 
