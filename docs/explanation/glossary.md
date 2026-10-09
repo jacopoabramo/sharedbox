@@ -78,8 +78,8 @@ newest item of the [stream](#stream) and skips the rest. See
 ### Lossless
 
 Lossless is a [reader](#reader) mode in which the reader receives every item
-of the [stream](#stream). A [sender](#sender) that is a full ring ahead of a
-lossless reader waits for it. See [`reader`][sharedbox.SharedStream.reader].
+of the [stream](#stream). A [sender](#sender) that is `capacity` items ahead of
+a lossless reader waits for it. See [`reader`][sharedbox.SharedStream.reader].
 
 ### Lossy
 
@@ -146,7 +146,7 @@ of it, its [segment](#segment).
 ### Stream
 
 A stream is a series of items that one process sends and up to
-`max_readers` [readers](#reader) receive. A ring in a [segment](#segment) of
+`max_readers` [readers](#reader) receive. A [segment](#segment) of
 [shared memory](#shared-memory) holds the last `capacity` items. See
 [`SharedStream`][sharedbox.SharedStream].
 

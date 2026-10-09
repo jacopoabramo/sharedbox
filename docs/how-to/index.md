@@ -39,7 +39,7 @@ items through a [stream](../explanation/glossary.md#stream).
 - [How to follow a whole reference graph](follow-a-whole-reference-graph.md):
   one callback for changes in every box a box refers to
 - [How to send items through a stream](send-items-through-a-stream.md): one
-  sender, readers that lose nothing or only the oldest, and asyncio
+  sender, readers that receive every item or only the newest, and asyncio
 
 ### C and C++
 

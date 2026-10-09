@@ -27,9 +27,10 @@ item type, a name and a `capacity`, the number of items the ring holds:
 stream = SharedStream.create(Batch, "example-pipeline:batches", capacity=8)
 ```
 
-A larger capacity lets a slow reader fall further behind before the sender
-has to wait for it, and costs memory for that many items. Other processes
-call [`attach`][sharedbox.SharedStream.attach] with the same type and name.
+A larger capacity lets a reader fall further behind before a lossless
+reader holds the sender back or a lossy one misses items, and costs memory
+for that many items. Other processes call
+[`attach`][sharedbox.SharedStream.attach] with the same type and name.
 `max_readers` (8 unless you set it) limits how many readers may be open at
 once. A stream name follows the same rules as [a box name](name-a-box.md).
 
@@ -37,8 +38,8 @@ once. A stream name follows the same rules as [a box name](name-a-box.md).
 
 A stream has one [sender](../explanation/glossary.md#sender). You get it from
 [`sender()`][sharedbox.SharedStream.sender] and send with
-[`send`][sharedbox.StreamSender.send]. Closing the sender ends the stream, so
-use `with`:
+[`send`][sharedbox.StreamSender.send]. Closing the sender ends the stream,
+and `with` closes it at the end of the block:
 
 ```{.python}
 --8<-- "docs/examples/send_items_through_a_stream.py:main"
@@ -54,18 +55,18 @@ A [reader](../explanation/glossary.md#reader) is opened with
 [`reader`][sharedbox.SharedStream.reader], and its `mode` decides what
 happens when it is slower than the sender:
 
-- `"lossless"` receives every item, and the sender waits for it when it is a
-  full ring behind. Use it for a consumer that must see everything, such as a
-  writer that saves each item.
+- `"lossless"` receives every item, and the sender waits for it when it
+  falls `capacity` items behind. Use it for a consumer that must see
+  everything, such as a writer that saves each item.
 - `"lossy"` skips the items the sender has already overwritten, and
   [`missed`][sharedbox.StreamReader.missed] counts them. Use it for a viewer
   or a GUI that can drop items.
 - `"latest"` always receives the newest item. Use it for a display that
   shows only the current state.
 
-A reader starts at the newest item sent, or, with `start="oldest"`, at the
-oldest the ring still holds. Reading with `for` receives until the stream
-ends:
+A reader starts at the newest item already sent, or, with
+`start="oldest"`, at the oldest the stream still holds. Reading with `for`
+receives until the stream ends:
 
 ```python
 for batch in stream.reader(mode="lossy"):
@@ -73,10 +74,10 @@ for batch in stream.reader(mode="lossy"):
 ```
 
 !!! warning "A reader opened late misses earlier items"
-    A reader sees the items sent after it opens, so a sender that starts at
-    once can send before the reader exists. Open the reader first and tell
-    the sender it can start, as the `ready` event does below, or use
-    `start="oldest"` while the ring still holds what you need.
+    A reader starts at the newest item already sent, so of the items sent
+    before it opens, the reader receives only the last. Open the reader
+    first and tell the sender it can start, as the `ready` event does below,
+    or use `start="oldest"` while the stream still holds what you need.
 
 ## Read into arrays you already have
 
@@ -176,10 +177,11 @@ async with asyncio.timeout(5):
 
 Both ends can be used with `async with`, which closes them at the end of the
 block, so an `asyncio.TaskGroup` can run a sender and a reader in their own
-tasks:
+tasks. List the ends before the group, so that the group waits for its tasks
+before the ends close:
 
 ```python
-async with asyncio.TaskGroup() as group, reader, sender:
+async with reader, sender, asyncio.TaskGroup() as group:
     group.create_task(consume(reader))
     group.create_task(produce(sender))
 ```
@@ -193,9 +195,6 @@ them to `asyncio.wait` or `asyncio.as_completed`:
 futures = [asyncio.wrap_future(r.receive_future()) for r in readers]
 done, pending = await asyncio.wait(futures, return_when=asyncio.FIRST_COMPLETED)
 ```
-
-Receives made with `receive` and the like must not overlap receives made with
-`receive_future` or `async for` on the same reader.
 
 ## Close the stream and handle exits
 
