@@ -698,3 +698,73 @@ TEST_CASE("a dead sender claimed by one path is left alone by the other") {
     }
     static_cast<void>(unlink(name));
 }
+
+namespace {
+
+// Sends positions 0 to 3 and moves write_pos back to 3, the state between the sender's seq store and
+// its write_pos store for position 3. The caller's reader has taken all four items.
+void rewind_write_pos(stream &st) {
+    auto &h = *static_cast<stream_header *>(st.base());
+    detail::atomic(h.write_pos).store(3);
+}
+
+} // namespace
+
+TEST_CASE("a lossless reader one past write_pos waits instead of finding corruption") {
+    const std::string name = unique("stream-past-write-pos");
+    stream st = make(name, 4);
+    auto reader = st.reader(read_mode::lossless, start_at::oldest);
+    REQUIRE(reader);
+    auto sender = st.sender();
+    REQUIRE(sender);
+    for (std::uint64_t i = 0; i < 4; ++i)
+        REQUIRE(send(*sender, i));
+    rewind_write_pos(st);
+    for (std::uint64_t expected = 0; expected < 4; ++expected) {
+        const auto got = receive(*reader);
+        REQUIRE((got && got->position == expected));
+    }
+    CHECK(receive(*reader, 0.0).error().code == status::timeout);
+    static_cast<void>(unlink(name));
+}
+
+TEST_CASE("a lossy reader one past write_pos neither repeats nor misses an item") {
+    const std::string name = unique("stream-past-write-pos-lossy");
+    stream st = make(name, 4);
+    auto reader = st.reader(read_mode::lossy, start_at::oldest);
+    REQUIRE(reader);
+    auto sender = st.sender();
+    REQUIRE(sender);
+    for (std::uint64_t i = 0; i < 4; ++i)
+        REQUIRE(send(*sender, i));
+    rewind_write_pos(st);
+    for (std::uint64_t expected = 0; expected < 4; ++expected) {
+        const auto got = receive(*reader);
+        REQUIRE((got && got->position == expected && got->missed == 0));
+    }
+    CHECK(receive(*reader, 0.0).error().code == status::timeout);
+    detail::atomic(static_cast<stream_header *>(st.base())->write_pos).store(4);
+    REQUIRE(send(*sender, 4));
+    const auto next = receive(*reader);
+    CHECK((next && next->position == 4 && next->missed == 0));
+    static_cast<void>(unlink(name));
+}
+
+TEST_CASE("a reader one past write_pos of an ended stream gets ended") {
+    const std::string name = unique("stream-past-write-pos-ended");
+    stream st = make(name, 4);
+    auto reader = st.reader(read_mode::lossless, start_at::oldest);
+    REQUIRE(reader);
+    auto sender = st.sender();
+    REQUIRE(sender);
+    for (std::uint64_t i = 0; i < 4; ++i)
+        REQUIRE(send(*sender, i));
+    rewind_write_pos(st);
+    detail::atomic(static_cast<stream_header *>(st.base())->state).store(stream_ended);
+    for (std::uint64_t expected = 0; expected < 4; ++expected) {
+        const auto got = receive(*reader);
+        REQUIRE((got && got->position == expected));
+    }
+    CHECK(receive(*reader, 0.0).error().code == status::ended);
+    static_cast<void>(unlink(name));
+}
