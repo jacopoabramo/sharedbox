@@ -136,6 +136,9 @@ enum class status : int {
     os = -10,
     kind_mismatch = -11,
     foreign = -12,
+    busy = -13,
+    ended = -14,
+    interrupted = -15,
 };
 
 using seconds = std::chrono::duration<double>;
@@ -224,6 +227,8 @@ static_assert(SBX_E_LOCK_TIMEOUT == int(status::lock_timeout) && SBX_E_TIMEOUT =
 static_assert(SBX_E_NO_SLOT == int(status::no_slot) && SBX_E_RANGE == int(status::range));
 static_assert(SBX_E_OS == int(status::os) && SBX_E_KIND == int(status::kind_mismatch));
 static_assert(SBX_E_FOREIGN == int(status::foreign));
+static_assert(SBX_E_BUSY == int(status::busy) && SBX_E_ENDED == int(status::ended) &&
+              SBX_E_INTERRUPTED == int(status::interrupted));
 
 // Why a call failed: the status, the OS error (errno or GetLastError()) read where the OS call failed,
 // and what the call found when that is the reason: the magic for kind_mismatch and foreign, for layout
@@ -1978,6 +1983,8 @@ inline result<void> interrupt_slot(const waiter_table &t, std::uint16_t slot, st
     return detail::copy_common(line0);
 }
 
+class stream;
+
 // The type of a field or of a member inside one, read from a handle's checked copy of the description
 // table. Valid while that handle lives.
 class type_view {
@@ -2036,6 +2043,7 @@ public:
 
 private:
     friend class handle;
+    friend class stream;
     type_view(const detail::type_table *table, detail::type_ref ref) noexcept : table_(table), ref_(ref) {}
     const detail::type_node &node() const noexcept { return table_->node(ref_.node); }
     // Whether the kind is in [first, last] and i is below count().

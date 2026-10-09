@@ -6,6 +6,7 @@
 #define SHAREDBOX_SHAREDBOX_HPP
 
 #include <sharedbox/box.hpp>
+#include <sharedbox/stream.hpp>
 
 #undef SHAREDBOX_HOT
 #ifdef SHAREDBOX_DEFINED_NOMINMAX
