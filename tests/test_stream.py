@@ -359,3 +359,39 @@ def test_a_reader_iterates_until_the_stream_ends(unique_name: str) -> None:
         assert list(reader) == []
         with pytest.raises(EndOfStream):
             reader.receive_nowait()
+
+
+def test_threads_receiving_and_closing_at_once(unique_name: str) -> None:
+    """Receive from several threads while another closes the reader, without a crash or a lost wake-up."""
+    taken: list[list[int]] = [[] for _ in range(4)]
+    enough = threading.Event()
+    with SharedStream.create(int, unique_name, capacity=16) as stream:
+        reader = stream.reader()
+        sender = stream.sender()
+
+        def receive(into: list[int]) -> None:
+            while True:
+                try:
+                    into.append(reader.receive(timeout=5))
+                except (StreamClosedError, EndOfStream):
+                    return
+                if sum(map(len, taken)) >= 200:
+                    enough.set()
+
+        def send() -> None:
+            for i in range(10000):
+                sender.send(i, timeout=10)
+
+        threads = [threading.Thread(target=receive, args=(into,)) for into in taken]
+        threads.append(threading.Thread(target=send))
+        for thread in threads:
+            thread.start()
+        assert enough.wait(30)
+        reader.close()
+        for thread in threads:
+            thread.join(10)
+        assert not any(thread.is_alive() for thread in threads)
+    everything = [item for into in taken for item in into]
+    assert len(everything) == len(set(everything)) >= 200
+    for into in taken:
+        assert into == sorted(into)
