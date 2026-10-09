@@ -50,7 +50,7 @@ TEST_CASE("a core major this build does not read is refused with the version fou
     auto other = handle::open(name, seconds(0.2));
     REQUIRE_FALSE(other);
     CHECK(other.error().code == status::layout);
-    CHECK(other.error().found == (std::uint64_t{2} << 16));
+    CHECK(other.error().found == (std::uint64_t{2} << 48 | std::uint64_t{layout_major} << 16));
     static_cast<void>(unlink(name));
 }
 
@@ -62,7 +62,7 @@ TEST_CASE("a box layout major this build does not read is refused with the versi
     auto other = handle::open(name, seconds(0.2));
     REQUIRE_FALSE(other);
     CHECK(other.error().code == status::layout);
-    CHECK(other.error().found == (std::uint64_t{4} << 16));
+    CHECK(other.error().found == (std::uint64_t{core_major} << 48 | std::uint64_t{4} << 16));
     static_cast<void>(unlink(name));
 }
 

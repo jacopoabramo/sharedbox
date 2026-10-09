@@ -385,8 +385,11 @@ std::unique_ptr<Segment> Segment::attach(const std::string &name, const std::vec
                              "' was made by another version of sharedbox or is not a sharedbox segment");
     if (!opened && opened.error().code == status::layout) {
         const error &e = opened.error();
-        throw SchemaMismatch("segment '" + name + "' uses layout " + std::to_string(e.found >> 16) + "." +
-                             std::to_string(e.found & 0xFFFF));
+        throw SchemaMismatch("segment '" + name + "' uses core version " + std::to_string(e.found >> 48) + "." +
+                             std::to_string(e.found >> 32 & 0xFFFF) + " and box layout " +
+                             std::to_string(e.found >> 16 & 0xFFFF) + "." + std::to_string(e.found & 0xFFFF) +
+                             "; this sharedbox reads core version " + std::to_string(core_major) +
+                             " and box layout " + std::to_string(layout_major));
     }
     impl->box = impl->check(std::move(opened));
     if (impl->box.schema_hash() != schema_hash)
