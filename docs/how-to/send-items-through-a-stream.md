@@ -175,25 +175,52 @@ async with asyncio.timeout(5):
     it, not the `out` of the next. Let one task or thread use a reader at a
     time.
 
+A cancelled `asend` may still have sent its item, if room in the stream
+appeared just as it was cancelled, so sending it again can send it twice.
+
 Both ends can be used with `async with`, which closes them at the end of the
-block, so an `asyncio.TaskGroup` can run a sender and a reader in their own
-tasks. List the ends before the group, so that the group waits for its tasks
-before the ends close:
+block. In an `asyncio.TaskGroup`, let the task that sends close the sender,
+because a reader's `async for` ends only when the stream does:
 
 ```python
-async with reader, sender, asyncio.TaskGroup() as group:
-    group.create_task(consume(reader))
-    group.create_task(produce(sender))
+async def produce(sender: StreamSender[Batch]) -> None:
+    async with sender:
+        for i in range(3):
+            await sender.asend(Batch(i, np.full(1024, float(i))))
+
+
+async def consume(reader: StreamReader[Batch]) -> None:
+    async for batch in reader:
+        print(batch.index)
+
+
+async with asyncio.TaskGroup() as group:
+    group.create_task(consume(stream.reader()))
+    group.create_task(produce(stream.sender()))
 ```
+
+The reader is opened before either task starts, so it sees every item.
 
 To wait for whichever of several readers has an item first,
 [`receive_future`][sharedbox.StreamReader.receive_future] returns a
-`concurrent.futures.Future`. Wrap each with `asyncio.wrap_future` and pass
-them to `asyncio.wait` or `asyncio.as_completed`:
+`concurrent.futures.Future`, which `asyncio.wrap_future` turns into one the
+event loop can wait on. A future that has started receiving cannot be
+cancelled, and an item it takes after you stop waiting on it is lost. Keep
+one future per reader, and ask a reader for a new one only once its last
+one is done:
 
 ```python
-futures = [asyncio.wrap_future(r.receive_future()) for r in readers]
-done, pending = await asyncio.wait(futures, return_when=asyncio.FIRST_COMPLETED)
+pending = {asyncio.wrap_future(r.receive_future()): r for r in readers}
+while pending:
+    done, _ = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
+    for future in done:
+        reader = pending.pop(future)
+        try:
+            batch = future.result()
+        except EndOfStream:
+            continue
+        print(batch.index)
+        pending[asyncio.wrap_future(reader.receive_future())] = reader
 ```
 
 ## Close the stream and handle exits
@@ -218,6 +245,12 @@ exit through `sys.exit` and run the hook. Children made by `fork` or
 `forkserver` exit with `os._exit` and do not, so their daemon threads end with
 the process, and the other processes free a reader ended that way after a
 short delay.
+
+A child made by `fork` inherits the parent's ends, but they are closed in the
+child: using one raises [`StreamClosedError`][sharedbox.StreamClosedError].
+Open new ends in the child instead. Do not connect callbacks to an inherited
+reader's events either: if the parent was delivering to callbacks when it
+forked, the child can block on the lock the parent's delivery thread held.
 
 ??? example "The whole script"
 
