@@ -56,7 +56,7 @@ jobs:
         shell: bash
         run: |
           cd head
-          uv run --no-sync python - ../results >> "$GITHUB_STEP_SUMMARY" <<'EOF'
+          uv run --no-sync python - ../results <<'EOF' | tee -a "$GITHUB_STEP_SUMMARY"
           import os
           import platform
           import statistics
