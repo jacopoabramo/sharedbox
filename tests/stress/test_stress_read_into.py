@@ -51,7 +51,7 @@ def test_read_into_never_mixes_two_writes(
             box.read_into("image", image)
             box.read_into("small", small)
             reads += 1
-            torn += image.min() != image.max() or small.min() != small.max()
+            torn += int(image.min() != image.max() or small.min() != small.max())
         for writer in writers:
             writer.join(60)
             assert writer.exitcode == 0
