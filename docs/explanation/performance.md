@@ -94,7 +94,8 @@ nothing has changed, so every change costs a wake-up by the operating
 system. The cost is one core kept busy during those checks. A reader that
 waits longer sleeps like a watcher, which the next section shows: with
 items 1 ms apart, the reader has gone to sleep before the next one arrives,
-and it takes 31 us at the median to see it, close to `watch`.
+and it takes 31 us at the median to see it. That is one way, with one
+wake-up; a round trip through `watch` needs two and takes 37 us.
 
 ## Streams
 
@@ -105,8 +106,8 @@ items between processes. `mp.Queue` pickles each item and sends it through
 a pipe, and the sender needs one queue for each reader. The other contender
 is a ring of 32 slots in `SharedMemory` that the sender and every reader
 guard with one lock, which is the simplest ring you can write with the
-standard library. Every contender holds up to 32 items, and every reader
-receives every item.
+standard library. Every contender holds up to 32 items, and every lossless
+reader receives every item.
 
 The items have two sizes: 1 KiB, an array of 1024 bytes next to a counter,
 and 512 KiB, a 512 by 512 array of `uint16`, such as an image. A row is the
@@ -116,9 +117,10 @@ shows how a stream is used.
 
 ### Items per second
 
-Each panel is one item size and one number of readers, and each dot is the
-items per second that one reader received. The line runs from the slowest to
-the fastest of the three runs, so a long line means the runs disagreed.
+Each panel is one item size and one number of readers. Each dot is the items
+per second a reader received, averaged over the readers of the median run,
+and the line runs from the slowest to the fastest of the three runs, so a
+long line means the runs disagreed.
 
 <div class="sbx-chart" data-src="../../assets/benchmarks/stream-throughput.json"></div>
 
@@ -135,7 +137,10 @@ For 512 KiB items the gap is smaller against the ring and still large
 against the queue. One lossless reader receives 25k items per second
 against 2.0k for `mp.Queue` and 16k for the ring, which is 12 and 1.5 times
 faster. With four readers it is 18k against 1.2k and 7.0k, 15 and 2.6 times
-faster.
+faster. Part of the gap to `mp.Queue` comes from how the readers receive:
+the stream's readers copy each item into one array they reuse, with
+[`iter_into`][sharedbox.StreamReader.iter_into], while a queue's reader
+unpickles every item into a new one.
 
 The reader mode costs little. At 1 KiB with one reader, the
 [lossless](glossary.md#lossless), [lossy](glossary.md#lossy) and
@@ -153,11 +158,11 @@ one reader ranges from 19k to 25k), so the chart cannot tell them apart.
 A stream can be read by a blocking call, by `async for`, or by callbacks
 connected to `events.received`, and sent with `send` or `asend`. This chart
 times every pairing. Each dot is the median latency, the time from the
-sender stamping an item until the reader has it, over 500 items sent 1 ms
-apart, and the line runs from p50 to p99. Hover over a dot for the p90 and
-for the items per second the pairing sustained when the sender did not wait.
-The `mp.Queue` rows are the standard library baseline, the last of them
-reading the queue from `asyncio` with `run_in_executor`.
+sender stamping an item until the reader has it, over 500 items sent at
+least 1 ms apart, and the line runs from p50 to p99. Hover over a dot for
+the p90 and for the items per second the pairing sustained when the sender
+did not wait. The `mp.Queue` rows are the standard library baseline, the
+last of them reading the queue from `asyncio` with `run_in_executor`.
 
 <div class="sbx-chart" data-src="../../assets/benchmarks/stream-matrix.json"></div>
 
@@ -181,11 +186,15 @@ background thread, and the median is 139 us against 31 us for `receive`.
 At 512 KiB every pairing sits at 4k to 5k items per second, whichever way it
 sends and reads, and `mp.Queue` reaches 2k. That is far below the 25k of the
 chart above because these readers use `receive`, `async for` and
-`events.received`, which allocate a new array for each item, while the
-throughput readers copy every item into one array with
-[`iter_into`][sharedbox.StreamReader.iter_into]. It is the same kind of cost
-as the 1 MiB array of a box, 217 us to read and 19 us to read into an array
-you already have. If your items are large, read them with `iter_into` or
+`events.received`, which put each item in new memory, twice for an item that
+is a record: first the whole item, then its array into an array of its own.
+The throughput readers copy every item into one array they reuse, with
+[`iter_into`][sharedbox.StreamReader.iter_into]. The row
+`async for (buffered)` shows the cost on its own: it only times reading
+items already in the ring, and still reaches 4k per second. On this Windows
+machine a fresh 512 KiB buffer costs about 100 us, so two of them plus the
+copy come to about 240 us per item, which is 4k per second. If your items
+are large, read them with `iter_into` or
 [`receive_into`][sharedbox.StreamReader.receive_into].
 
 ??? note "The numbers in the chart"

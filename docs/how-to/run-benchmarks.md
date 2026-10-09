@@ -60,17 +60,17 @@ each side, and [`SharedStream`][sharedbox.SharedStream].
 benchbox stream
 ```
 
-`stream` prints two tables. The first is throughput: the items per second
-that each reader received and that the sender sent, and the items a lossy
-or latest reader skipped, for a lossless, a lossy and a latest
-[`SharedStream`][sharedbox.SharedStream], an `mp.Queue` per reader and a
-ring in `SharedMemory` guarded by a lock. It runs 1 and 4 readers with items
+`stream` prints two tables. The first is throughput, for a lossless, a lossy
+and a latest [`SharedStream`][sharedbox.SharedStream], an `mp.Queue` per
+reader and a ring in `SharedMemory` guarded by a lock: the items per second
+the sender sent and a reader received, averaged over the readers, and the
+items a lossy or latest reader skipped. It runs 1 and 4 readers with items
 of 1 KiB and of 512 KiB, repeats each row three times, and prints the median
 run. The second table pairs `send` and `asend` with `receive`, `async for`
 and `events.received`, next to an `mp.Queue` read with `get` and from
-`asyncio`. For each pairing it prints the items per second and the 50th, 90th
-and 99th percentile of the time from the sender stamping an item until the
-reader has it.
+`asyncio`. For each pairing it prints the items per second and the 50th,
+90th and 99th percentile of the time from the sender stamping an item until
+the reader has it.
 
 `--short` makes a run of a few seconds, with fewer items and one repeat.
 `--table` takes `throughput`, `matrix` or `both`, `--markdown` prints
