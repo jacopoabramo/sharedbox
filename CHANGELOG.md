@@ -11,6 +11,16 @@ Dates are marked as `DD-MM-YYYY`
 
 ### Added
 
+- `SharedStream`, `StreamSender` and `StreamReader`: send items of any type a
+  `SharedBox` field takes from one process to up to `max_readers` readers,
+  each reading `lossless`, `lossy` or `latest`, with blocking, non-blocking
+  and asyncio calls, `receive_into` into the caller's arrays and
+  `receive_future`, a `concurrent.futures.Future`.
+- `StreamReader.events`, a `ReaderEvents` psygnal group whose `received`
+  and `ended` signals deliver a reader's items to callbacks.
+- `StreamStatistics` and `ReaderStatistics`, returned by
+  `SharedStream.statistics()`.
+- `WouldBlock`, `EndOfStream`, `StreamBusyError` and `StreamClosedError`.
 - `KindMismatchError`, a `SchemaMismatchError` raised when a name holds a
   segment of another kind; `status::kind_mismatch` and `SBX_E_KIND` (-11)
   in `sharedbox.hpp` and `sharedbox_c.h`.

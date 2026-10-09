@@ -13,9 +13,10 @@ you're trying to do; if `sharedbox` is new to you, the
 - [How to install sharedbox](install-sharedbox.md): the wheels, the
   platforms and the `benchmarks` extra
 
-### Use a box
+### Use a box or a stream
 
-Name, fill, share and remove a [box](../explanation/glossary.md#box).
+Name, fill, share and remove a [box](../explanation/glossary.md#box), or send
+items through a [stream](../explanation/glossary.md#stream).
 
 - [How to name a box](name-a-box.md): let the class name it, or choose the
   name
@@ -37,6 +38,8 @@ Name, fill, share and remove a [box](../explanation/glossary.md#box).
   recover after a crash
 - [How to follow a whole reference graph](follow-a-whole-reference-graph.md):
   one callback for changes in every box a box refers to
+- [How to send items through a stream](send-items-through-a-stream.md): one
+  sender, readers that lose nothing or only the oldest, and asyncio
 
 ### C and C++
 

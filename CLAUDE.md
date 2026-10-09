@@ -31,6 +31,7 @@ sharedbox/
 |   |-- _arrays.py             Shape, DType, SupportsDLPack, register_array_type
 |   |-- _events.py             BoxEvents, FieldWatch, the watcher thread
 |   |-- _follow.py             BoxEvents.follow and unfollow: forwarding the events of boxes that references reach
+|   |-- _stream.py             SharedStream, StreamSender, StreamReader, ReaderEvents, the statistics classes, the worker threads
 |   |-- _refs.py               reference fields: BoxRef, the class registry, BrokenReferenceError, UnknownBoxClassError
 |   |-- _native.pyi            hand-written stub for the extension
 |   |-- py.typed
@@ -52,7 +53,8 @@ sharedbox/
 |       |                      with_record reads the whole record at once
 |       |-- types.{hpp,cpp}    Types: conversions of kinds above 5, arrays
 |       |-- scalars.{hpp,cpp}  kinds 6 to 12, the datetime C API on full-API builds
-|       `-- segment.{hpp,cpp}  Segment: a sharedbox::handle plus error messages and the lifetime lock
+|       |-- segment.{hpp,cpp}  Segment: a sharedbox::handle plus error messages and the lifetime lock
+|       `-- stream.{hpp,cpp}   Stream, Sender and Reader: the Python binding of a stream and its errors
 |-- tests/                     pytest; many tests spawn processes
 |   |-- crossproc.py           helpers that run a box in another process
 |   |-- forged_types.py        builds segments with forged description tables
@@ -63,7 +65,14 @@ sharedbox/
 |   |-- test_doc_tutorials.py  runs docs/tutorials/motor.py and checks the output its pages show
 |   |-- test_follow.py         BoxEvents.follow, unfollow and nested
 |   |-- test_native_waiters.py waiter slots, dead owners, interrupt
-|   |-- test_properties_*.py   Hypothesis property tests
+|   |-- test_box_sync_async.py a sync and an async watch on one box in two threads
+|   |-- test_stream.py         SharedStream, sender and reader, blocking and non-blocking calls
+|   |-- test_stream_async.py   asyncio calls on a stream, cancellation
+|   |-- test_stream_events.py  ReaderEvents delivery
+|   |-- test_stream_processes.py  streams across processes, dead senders and readers
+|   |-- test_stream_fork.py    stream ends inherited through fork
+|   |-- streamproc.py          helpers that run a stream end in another process
+|   |-- test_properties_*.py   Hypothesis property tests, streams included
 |   |-- stress/                stress tests, marker stress, deselected by default
 |   |-- cpp/                   C++ tests (doctest, CTest) and the C smoke test
 |   |   `-- consumer/          a C library built against an installed wheel, loaded by test_capsule.py
@@ -308,6 +317,11 @@ fields at once; `watch(field)` and `events` report changes from any process.
 C++ and C code take a box through `__sharedbox_box__` or open it by name; see
 `docs/how-to/accept-a-box-in-cpp.md`, `docs/how-to/accept-a-box-in-c.md` and
 `docs/how-to/open-a-box-from-a-program.md`.
+
+`SharedStream.create(Item, name, capacity=8)` makes a ring of typed items
+that one `StreamSender` fills and up to `max_readers` `StreamReader`s read,
+each `lossless`, `lossy` or `latest`; `receive_into` reads into arrays the
+caller allocated. See `docs/how-to/send-items-through-a-stream.md`.
 
 ## Docs
 

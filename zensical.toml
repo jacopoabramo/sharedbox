@@ -21,7 +21,7 @@ nav = [
         { "Install" = [
             "how-to/install-sharedbox.md",
         ]},
-        { "Use a box" = [
+        { "Use a box or a stream" = [
             "how-to/name-a-box.md",
             "how-to/store-text-and-bytes.md",
             "how-to/store-records.md",
@@ -32,6 +32,7 @@ nav = [
             "how-to/send-a-box-to-another-process.md",
             "how-to/clean-up-segments.md",
             "how-to/follow-a-whole-reference-graph.md",
+            "how-to/send-items-through-a-stream.md",
         ]},
         { "C and C++" = [
             "how-to/accept-a-box-in-cpp.md",
@@ -64,6 +65,7 @@ nav = [
             "reference/api/box.md",
             "reference/api/arrays.md",
             "reference/api/events.md",
+            "reference/api/streams.md",
             "reference/api/references.md",
             "reference/api/errors.md",
             "reference/api/library-authors.md",
