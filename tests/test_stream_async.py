@@ -105,14 +105,49 @@ def test_an_item_taken_by_a_cancelled_anext_is_not_lost(unique_name: str) -> Non
         assert reader.position == 0
 
 
+def test_close_drops_items_kept_from_a_cancelled_receive(unique_name: str) -> None:
+    """Raise StreamClosedError from receive after close although an item was kept."""
+    with SharedStream.create(int, unique_name, capacity=4) as stream:
+        reader = stream.reader()
+        future = reader.receive_future()
+        stream.sender().send(5)
+        wait([future], timeout=5)
+        reader._cancel(future)
+        reader.close()
+        with pytest.raises(StreamClosedError):
+            reader.receive(timeout=1)
+
+
+def test_cancelling_asend_leaves_the_item_unsent(unique_name: str) -> None:
+    """Cancel an asend waiting on a full ring and find the ring holding only the earlier items."""
+
+    async def run() -> list[int]:
+        with SharedStream.create(int, unique_name, capacity=2) as stream:
+            reader = stream.reader(start="oldest")
+            sender = stream.sender()
+            sender.send(0)
+            sender.send(1)
+            task = asyncio.create_task(sender.asend(2))
+            await asyncio.sleep(0.05)
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+            await asyncio.wrap_future(sender._submit(lambda future: None))
+            return [reader.receive_nowait(), reader.receive_nowait()]
+
+    assert asyncio.run(run()) == [0, 1]
+
+
 def test_close_cancels_queued_futures(unique_name: str) -> None:
     """Raise StreamClosedError from a running receive_future and cancel queued ones on close."""
     with SharedStream.create(int, unique_name, capacity=2) as stream:
         reader = stream.reader()
         running = reader.receive_future()
         queued = reader.receive_future()
-        while not running.running():
+        deadline = time.monotonic() + 5
+        while not running.running() and time.monotonic() < deadline:
             time.sleep(0.01)
+        assert running.running()
         reader.close()
         with pytest.raises(StreamClosedError):
             running.result(timeout=5)
@@ -142,6 +177,10 @@ def use_inherited_ends(reader: StreamReader[int], sender: StreamSender[int]) -> 
         reader.receive_nowait()
     with pytest.raises(StreamClosedError):
         sender.send_nowait(0)
+    with pytest.raises(StreamClosedError):
+        reader.receive_future()
+    with pytest.raises(StreamClosedError):
+        asyncio.run(anext(reader))
     reader.close()
     sender.close()
 
@@ -166,8 +205,13 @@ def test_an_inherited_end_is_closed_in_the_child_and_works_in_the_parent(
         sender = stream.sender()
         sender.send(1)
         assert reader.receive_future().result(timeout=5) == 1
+        future = reader.receive_future()
+        sender.send(3)
+        wait([future], timeout=5)
+        reader._cancel(future)
         child = fork(use_inherited_ends, reader, sender)
         child.join(timeout=20)
         assert child.exitcode == 0
+        assert reader.receive_future().result(timeout=5) == 3
         sender.send(2)
         assert reader.receive_future().result(timeout=5) == 2
