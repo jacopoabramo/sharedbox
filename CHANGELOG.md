@@ -70,6 +70,9 @@ Dates are marked as `DD-MM-YYYY`
 - `SharedBox.attach`: a segment whose magic this version does not know,
   such as a box made by 0.5, raises `SchemaMismatchError` at once, instead
   of `SegmentNotFoundError` after the timeout.
+- `SharedBox` write: makes a wake call only when a thread is waiting on the
+  box. `sleepers`, at offset 84 of box layout 3.0, counts the threads inside
+  a wait, and `sharedbox::handle::sleepers()` returns it.
 
 ### Removed
 

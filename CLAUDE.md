@@ -131,8 +131,8 @@ version 1.0, box layout 3.0, from offset 0:
   `kind_minor` 0, `schema_hash`, `create_id`, `creator_start`,
   `creator_pidns`, `creator_pid`, `waiter_slots`, `size`.
 - Box line 1, at offset 64: `seq` (sequence lock; the generation is
-  `seq >> 1`, there is no generation field), `writer_pid`, `wake_word` and
-  `waiters`, which writes and waits change; then written once at creation
+  `seq >> 1`, there is no generation field), `writer_pid`, `wake_word`,
+  `waiters` and `sleepers`, which writes and waits change; then written once at creation
   `field_count`, `record_size`, `record`, `tail` (always 128) and
   `types_size`, followed by reserved zero bytes. The header is 128 bytes.
 - The tail: `field_count` field table entries of 8 bytes (`u32 offset`,

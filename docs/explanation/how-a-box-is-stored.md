@@ -53,11 +53,12 @@ header: "header  0x000 - 0x07F" {
   "0x040": "seq  2, even: no write running"
   "0x048": "writer_pid  0"
   "0x04C": "wake_word, waiters"
-  "0x054": "field_count  3"
-  "0x058": "record_size  48"
-  "0x05C": "record  0x6C0"
-  "0x060": "tail  0x080"
-  "0x064": "types_size  0, then reserved"
+  "0x054": "sleepers  0"
+  "0x058": "field_count  3"
+  "0x05C": "record_size  48"
+  "0x060": "record  0x6C0"
+  "0x064": "tail  0x080"
+  "0x068": "types_size  0, then reserved"
 }
 fields: "field table  0x080 - 0x097" {
   shape: sql_table

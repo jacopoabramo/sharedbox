@@ -125,21 +125,22 @@ struct header {                     // sharedbox::header, 128 bytes
     uint32_t writer_pid;            // 72  holder of the write lock, 0 if none
     uint32_t wake_word;             // 76  futex word (Linux)
     uint32_t waiters;               // 80  occupied waiter slots
-    uint16_t field_count;           // 84  1 to 256
-    uint16_t reserved1;             // 86  zero
-    uint32_t record_size;           // 88
-    uint32_t record;                // 92  offset of the record
-    uint32_t tail;                  // 96  offset of the field table, always 128
-    uint32_t types_size;            // 100 bytes of the description table
-    uint8_t  reserved2[24];         // 104 zero; minor versions may use it
+    uint32_t sleepers;              // 84  threads inside a wait on this box
+    uint16_t field_count;           // 88  1 to 256
+    uint16_t reserved1;             // 90  zero
+    uint32_t record_size;           // 92
+    uint32_t record;                // 96  offset of the record
+    uint32_t tail;                  // 100 offset of the field table, always 128
+    uint32_t types_size;            // 104 bytes of the description table
+    uint8_t  reserved2[20];         // 108 zero; minor versions may use it
 };
 ```
 
 The common line is written once at creation. Line 1 starts with the words
-that writes and waits change (`seq`, `writer_pid`, `wake_word`, `waiters`),
+that writes and waits change (`seq`, `writer_pid`, `wake_word`, `waiters`, `sleepers`),
 so a write touches one header line, and ends with geometry written once at
-creation, bytes 84 to 127. Attach copies the common line and those bytes,
-never the four changing words, and uses only the copy.
+creation, bytes 88 to 127. Attach copies the common line and those bytes,
+never the five changing words, and uses only the copy.
 
 The box line has spare bytes so that minor versions can add fields: a
 header with no room left would move the fields after it with every
@@ -677,12 +678,14 @@ Known limits, each after a process is killed at one specific step:
   reused within a few instructions.
 
 A count that is too high costs a system call on each write; it never loses
-a wake-up.
+a wake-up. A thread killed inside a wait leaves `sleepers` one too high in
+the same way.
 
 ### Wait and wake
 
 - Wait (slot `i`, last seen generation `g`, timeout):
-  - Load `wake_word`, then return at once if `seq >> 1 != g` or slot `i`'s
+  - Add 1 to `sleepers` (sequentially consistent) for the whole wait, then
+    load `wake_word`, then return at once if `seq >> 1 != g` or slot `i`'s
     `interrupt` is set (clearing it with a compare-and-swap).
   - Linux: `FUTEX_WAIT` (shared, not private) on `wake_word` with the value
     loaded before the check, so a write in between makes the call return
@@ -693,10 +696,10 @@ a wake-up.
     result is `status::timeout`.
 - Wake, after every write:
   - Increment `wake_word` with sequentially consistent ordering, so the
-    following load of `waiters` cannot move before it or before the swap
-    of `seq`; a waiter that registered just before would otherwise be
-    missed.
-  - If `waiters` is 0, stop: no system call on the normal path.
+    following load of `sleepers` cannot move before it or before the swap
+    of `seq`. Either that load sees a waiter's count, or the waiter's check
+    of `seq` sees the new value.
+  - If `sleepers` is 0, stop: no system call on the normal path.
   - Linux: one `FUTEX_WAKE` with `INT_MAX` waiters.
   - Windows: `SetEvent` on the event of every occupied slot.
 - `interrupt(slot)`: set the slot's `interrupt`, then wake that slot. On
@@ -707,9 +710,9 @@ a wake-up.
 - Each kind names the word a wait sleeps on: a box's `wake_word`; for a
   stream, `data_word` for readers and `space_word` for the sender. A wait
   returns when its kind's condition holds, the slot's `interrupt` flag is
-  set, or the timeout passes. A box wakes whenever a slot is claimed
-  (`waiters` is not 0). A stream counts the threads asleep on each word in
-  `data_waiting` and `space_waiting` and wakes only when the count is not 0.
+  set, or the timeout passes. A box counts the threads inside a wait in
+  `sleepers`, a stream the threads asleep on each word in `data_waiting`
+  and `space_waiting`; a wake is made only when the count is not 0.
   On Windows a wake sets the event of every claimed slot, so the other end
   of a stream may wake and sleep again. `interrupt` on a stream end adds 1
   to that end's word and wakes it on Linux, and sets that slot's event on
@@ -1012,6 +1015,7 @@ public:
     void release_waiter(std::uint16_t slot) noexcept;
     bool waiter_held(std::uint16_t slot) const noexcept;
     std::uint32_t waiters() const noexcept;
+    std::uint32_t sleepers() const noexcept;
     result<wake> wait(std::uint16_t slot, std::uint64_t last_generation, seconds timeout);
     result<void> interrupt(std::uint16_t slot);
 };
