@@ -24,11 +24,10 @@ pid namespace.
 
 How a write wakes the waiters depends on the system. Linux has one futex
 word in the header:[^futex] a waiter sleeps with `FUTEX_WAIT` for as long
-as `wake_word` still holds the value it read, and a writer increments the
-word, when a waiter is inside a wait, and calls `FUTEX_WAKE` once for
+as `wake_word` still holds the value it read. When a waiter is inside a
+wait, a writer increments the word and calls `FUTEX_WAKE` once for
 everybody. Windows has a similar call, `WaitOnAddress`, but it only works
-between threads of one
-process,[^wait-on-address] so there each slot gets its own auto-reset
+between threads of one process,[^wait-on-address] so there each slot gets its own auto-reset
 event, `Local\SBX:<name>#w<i>`,[^create-event] and a writer sets the
 event of every taken slot. Either way, a write to a box nobody is waiting
 on costs no system call: a waiter counts itself in `sleepers` while it is
