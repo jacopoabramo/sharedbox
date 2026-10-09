@@ -11,6 +11,8 @@ Dates are marked as `DD-MM-YYYY`
 
 ### Added
 
+- `FieldWatch.future()`, returning a `FieldFuture` of the next write to the
+  field.
 - `SharedStream`, `StreamSender` and `StreamReader`: send items of any type a
   `SharedBox` field takes from one process to up to `max_readers` readers,
   each reading `lossless`, `lossy` or `latest`, with blocking, non-blocking
@@ -56,6 +58,8 @@ Dates are marked as `DD-MM-YYYY`
 
 ### Changed
 
+- `FieldFuture` is a `concurrent.futures.Future` and is exported from
+  `sharedbox`.
 - `SharedBox` names: one or more segments of `[A-Za-z0-9_-]` joined by
   `:`, up to 240 characters, such as `bl01:camera:det1:frames`. `.` is no
   longer allowed. The shared memory is `/dev/shm/SBX:<name>` on Linux and

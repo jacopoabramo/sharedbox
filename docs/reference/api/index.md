@@ -14,7 +14,7 @@ from sharedbox import SharedBox, Capacity, field
 | --- | --- |
 | [Boxes](box.md) | `SharedBox`, `field`, `fields`, `Field`, `Capacity` |
 | [Arrays](arrays.md) | `Shape`, `DType`, `SupportsDLPack`, `register_array_type` |
-| [Events](events.md) | `BoxEvents`, `FieldWatch` |
+| [Events](events.md) | `BoxEvents`, `FieldFuture`, `FieldWatch` |
 | [Streams](streams.md) | `SharedStream`, `StreamSender`, `StreamReader`, `ReaderEvents`, `StreamStatistics`, `ReaderStatistics` |
 | [References](references.md) | `BoxRef` |
 | [Errors](errors.md) | every exception `sharedbox` raises |
