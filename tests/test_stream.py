@@ -226,7 +226,7 @@ def test_a_timeout_over_one_step_still_raises_timeout_error(unique_name: str) ->
         start = time.monotonic()
         with pytest.raises(TimeoutError):
             stream.reader().receive(timeout=1.3)
-        assert 1.2 <= time.monotonic() - start < 3.0
+        assert 1.3 <= time.monotonic() - start < 3.0
 
 
 def test_close_ends_a_blocked_receive(unique_name: str) -> None:
@@ -257,6 +257,31 @@ def test_a_second_sender_is_busy(unique_name: str) -> None:
         with pytest.raises(StreamBusyError):
             stream.sender()
         first.close()
+        with pytest.raises(EndOfStream):
+            stream.sender()
+
+
+def test_a_dropped_sender_leaves_the_stream_open(unique_name: str) -> None:
+    """Keep the stream open when the sender handle is dropped, and keep the sender busy."""
+    with SharedStream.create(int, unique_name, capacity=4) as stream:
+        reader = stream.reader()
+        stream.sender().send(1)
+        assert reader.receive_nowait() == 1
+        with pytest.raises(WouldBlock):
+            reader.receive_nowait()
+        with pytest.raises(StreamBusyError):
+            stream.sender()
+
+
+def test_closing_the_stream_closes_the_held_sender(unique_name: str) -> None:
+    """End the stream for readers when the stream closes while its sender is held."""
+    stream = SharedStream.create(int, unique_name, capacity=4)
+    sender = stream.sender()
+    sender.send(1)
+    stream.close()
+    assert sender.closed
+    with pytest.raises(StreamClosedError):
+        sender.send_nowait(2)
 
 
 def test_closing_the_stream_closes_its_ends(unique_name: str) -> None:

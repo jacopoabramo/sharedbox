@@ -192,13 +192,22 @@ class SharedStream(Generic[T]):
     a reference to a box.
     """
 
-    __slots__ = ("__weakref__", "_ends", "_hint", "_item", "_name", "_native")
+    __slots__ = (
+        "__weakref__",
+        "_ends",
+        "_hint",
+        "_item",
+        "_name",
+        "_native",
+        "_sender",
+    )
 
     _hint: object
     _item: Item
     _name: str
     _native: Stream
     _ends: weakref.WeakSet[StreamSender[T] | StreamReader[T]]
+    _sender: StreamSender[T] | None
 
     @overload
     @classmethod
@@ -283,6 +292,7 @@ class SharedStream(Generic[T]):
         stream._native = native
         stream._name = native.name
         stream._ends = weakref.WeakSet()
+        stream._sender = None
         return stream
 
     @property
@@ -310,10 +320,18 @@ class SharedStream(Generic[T]):
             If another live end holds the sender. A sender whose process
             died is replaced.
         EndOfStream
-            If a sender already closed the stream.
+            If a sender already closed the stream, which a closed sender
+            does; there is no second sender after that.
+
+        Notes
+        -----
+        The stream keeps its sender until it is closed, so dropping the
+        returned object does not end the stream, and another `sender()` call
+        in this process raises `StreamBusyError` until then.
         """
         end: StreamSender[T] = StreamSender(self, self._native.sender())
         self._ends.add(end)
+        self._sender = end
         return end
 
     def reader(
@@ -361,6 +379,8 @@ class SharedStream(Generic[T]):
 
     def close(self) -> None:
         """Close every sender and reader made from this object, then let go of the stream.
+
+        Closing the sender ends the stream for its readers.
 
         Other processes keep the stream. Using a closed stream raises
         [`StreamClosedError`][sharedbox.StreamClosedError].
@@ -419,17 +439,17 @@ def steps(timeout: float | None) -> Iterator[float]:
         while True:
             yield STEP
     deadline = time.monotonic() + timeout
-    while True:
-        left = deadline - time.monotonic()
-        yield max(0.0, min(STEP, left))
-        if left <= STEP:
-            return
+    yield min(STEP, max(0.0, timeout))
+    while (left := deadline - time.monotonic()) > 0:
+        yield min(STEP, left)
 
 
 class StreamSender(End, Generic[T]):
     """The sender of a stream: one per stream, in the process that holds it.
 
-    [`SharedStream.sender`][sharedbox.SharedStream.sender] returns it.
+    [`SharedStream.sender`][sharedbox.SharedStream.sender] returns it. The
+    stream keeps it open until `close()`, or until the stream is closed or
+    the process dies; dropping the object does not close it.
     Closing it ends the stream: readers receive what is buffered, then
     [`EndOfStream`][sharedbox.EndOfStream].
     """
@@ -476,6 +496,12 @@ class StreamSender(End, Generic[T]):
         raise TimeoutError(
             f"stream {self._stream.name!r}: no lossless reader made room within {timeout} s"
         )
+
+    def close(self) -> None:
+        """Close the sender and end the stream. Calling it again does nothing."""
+        super().close()
+        if self._stream._sender is self:
+            self._stream._sender = None
 
     def __enter__(self) -> StreamSender[T]:
         return self
