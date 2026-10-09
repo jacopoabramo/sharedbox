@@ -3996,10 +3996,10 @@ addition. There is one header per box, and readers and writers touch only
 line 1. The waiter slots, not the header, are the large part of the tail, and
 <code>max_waiters</code> sizes them. Worked example, a box with an <code>int</code>, a <code>float</code>
 and a <code>bool</code> and the default 64 waiter slots: header 128, field table 24,
-write counts 24, waiter slots 1536, padding 16, record 24 (the Python side
-rounds a record up to a multiple of 8): 1752 bytes used, one 4 KiB page. A
-box with three fields and 64 slots stays in one page up to about 2.3 KB of
-record.</p>
+write counts 24, waiter slots 2048, padding 16, record 24 (the Python side
+rounds a record up to a multiple of 8): 2264 bytes used, one 4 KiB page. A
+box with three fields and 64 slots stays in one page up to about 1.8 KB of
+record (4096 - 2240 = 1856).</p>
 <ul>
 <li>Versions: bytes 8 to 11 are <code>01 00 00 00</code> (core 1.0: <code>core_major</code> 1,
   <code>core_minor</code> 0) and bytes 12 to 15 are <code>03 00 00 00</code> (box layout 3.0:
@@ -4663,7 +4663,8 @@ layout version of its kind, for the rest. Each has a major and a minor.</p>
   slot it claimed that still records its own <code>(pid, start, pidns)</code>; a
   child created by <code>fork</code> inherits its parent's claims but leaves them to
   the parent.</li>
-<li>A thread waits in a slot it holds. The Python watcher registers one slot
+<li>A thread waits in a slot it holds, one thread at a time, and a slot is
+  not released while a wait in it runs. The Python watcher registers one slot
   for its lifetime, and a one-off <code>Segment.wait()</code> without a slot claims
   one for the call.</li>
 <li>The slot table and the protocol above are the core's, shared by every
@@ -4676,8 +4677,10 @@ layout version of its kind, for the rest. Each has a major and a minor.</p>
 <li>A freer killed while holding the marker, before it clears <code>owner_pid</code>,
   leaves the slot unusable until the segment is created again, and
   <code>waiters</code> one too high if it was killed before its decrement. Killed
-  between its exchange of <code>asleep_on</code> and the subtraction, it leaves that
-  sleeper count one too high.</li>
+  after it won the slot and before its subtraction of the sleeper count, it
+  leaves that count one too high and the slot stuck with the marker.</li>
+<li>An owner killed between its exit exchange of <code>asleep_on</code> and its
+  subtraction of the sleeper count leaves that count one too high.</li>
 <li>An owner killed partway through a release leaves a slot with no start,
   which is freed without a decrement, so <code>waiters</code> stays one too high if
   the kill came before the decrement. On Linux, a kill after
@@ -4686,17 +4689,14 @@ layout version of its kind, for the rest. Each has a major and a minor.</p>
 <li>A claimer killed on Linux before it stores <code>owner_pidns</code> leaves the slot
   stuck the same way, and counted once too many if it had already
   incremented <code>waiters</code>.</li>
-<li>
-<p>The check that <code>owner_pid</code> still holds the pid cannot tell an unstamped
+<li>The check that <code>owner_pid</code> still holds the pid cannot tell an unstamped
   claimer from another one with the same pid, which needs the pid to be
-  reused within a few instructions.</p>
-</li>
-<li>
-<p>A thread killed inside a wait after it adds 1 to the sleeper count and
+  reused within a few instructions.</li>
+<li>A thread killed inside a wait after it adds 1 to the sleeper count and
   before it stores the count's offset in <code>asleep_on</code> leaves that count one
-  too high, for a box and for a stream alike. Killed later in the wait, it
-  leaves <code>asleep_on</code> set, and freeing its slot takes the 1 back.</p>
-</li>
+  too high, for a box and for a stream alike. Killed later in the wait,
+  before its exit exchange of <code>asleep_on</code>, it leaves <code>asleep_on</code> set, and
+  freeing its slot takes the 1 back.</li>
 </ul>
 <p>A count that is too high costs a system call on each write; it never loses
 a wake-up.</p>
@@ -4893,7 +4893,11 @@ with the rules of Liveness:</p>
   <code>space_waiting</code> and before it stores the count's offset in its slot's
   <code>asleep_on</code>, leaves that count one too high for good. That costs a wake
   call on each send or receive; no wake is lost. Killed later in the wait,
-  it leaves the offset, and freeing its waiter slot takes the 1 back.</li>
+  before its exit exchange of <code>asleep_on</code>, it leaves the offset, and freeing
+  its waiter slot takes the 1 back. Killed between that exchange and its
+  subtraction, it leaves the count one too high. A freer of its slot killed
+  after it won the slot and before its subtraction leaves the count one too
+  high and the slot stuck with the marker.</li>
 <li>A process killed in the few instructions between setting <code>sender_start</code> to
   <code>start_freeing</code> and its next store leaves <code>sender_start</code> at
   <code>start_freeing</code>. Every later <code>sender()</code> then gives <code>status::busy</code>, and
