@@ -71,7 +71,7 @@ Kind = Literal[
 
 MAX_FIELDS: Final[int] = 256
 ALIGN: Final[int] = 8
-REF_SIZE: Final[int] = 144
+REF_SIZE: Final[int] = 216
 
 
 @dataclass(frozen=True, eq=False)

@@ -6,6 +6,7 @@ import inspect
 import multiprocessing as mp
 import os
 import pickle
+import queue
 import re
 import subprocess
 import sys
@@ -30,7 +31,7 @@ from sharedbox import (
     SharedBox,
     field,
 )
-from sharedbox._box import unpickle_box
+from sharedbox._box import check_name, unpickle_box
 
 
 class Point(SharedBox):
@@ -1039,3 +1040,35 @@ def test_a_class_with_two_box_bases_keeps_the_defaults_of_both(
     """Check that fields of the second box base keep their defaults and factories, in dataclass order."""
     with Both.create(unique_name) as box:
         assert list(box.snapshot().items()) == [("b", 2.5), ("c", 7), ("a", 1)]
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["motor", "bl01:camera:det1:frames", "a-b_c", "x" * 200, "a:" + "b" * 198],
+)
+def test_names_with_colon_levels_are_accepted(name: str) -> None:
+    """Check that names of segments joined by ':' up to 200 characters are accepted."""
+    assert check_name(name) == name
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["", ":a", "a:", "a::b", "a.b", "a b", "x" * 201, "\u00e9", "a/b", "a#w1"],
+)
+def test_names_breaking_a_rule_are_refused(name: str) -> None:
+    """Check that empty segments, ':' at either end, '.', other characters and 201 characters are refused."""
+    with pytest.raises(ValueError, match="segment names"):
+        check_name(name)
+
+
+def test_a_name_of_200_characters_works(unique_name: str) -> None:
+    """Check that a box with a 200-character hierarchical name can be created, attached, waited on and closed."""
+    name = (unique_name + ":" + "x" * 200)[:200]
+    with Point.create(name) as box:
+        other = Point.attach(name)
+        seen: queue.Queue[float] = queue.Queue()
+        other.events.x.connect(lambda new, old: seen.put(new))
+        box.x = 1
+        assert seen.get(timeout=10) == 1
+        other.close()
+    Point.unlink(name)

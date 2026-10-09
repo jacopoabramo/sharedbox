@@ -82,7 +82,7 @@ namespace sharedbox {
 // detail may change without a rename, so a shared library should build with hidden visibility.
 inline namespace v3 {
 
-inline constexpr std::size_t name_max = 128;
+inline constexpr std::size_t name_max = 200;
 inline constexpr std::uint32_t max_fields = 256;
 inline constexpr std::uint32_t max_capacity = std::uint32_t{1} << 20;
 inline constexpr std::uint32_t max_waiter_slots = 4096;
@@ -200,7 +200,7 @@ static_assert(offsetof(waiter_slot, owner_start) == 0);
 static_assert(offsetof(waiter_slot, owner_pidns) == 8);
 static_assert(offsetof(waiter_slot, owner_pid) == 16);
 static_assert(offsetof(waiter_slot, interrupt) == 20);
-static_assert(sizeof(box_ref) == 144 && alignof(box_ref) == 8);
+static_assert(sizeof(box_ref) == 216 && alignof(box_ref) == 8);
 static_assert(offsetof(box_ref, create_id) == 0);
 static_assert(offsetof(box_ref, schema_hash) == 8);
 static_assert(offsetof(box_ref, name) == 16);
@@ -465,8 +465,9 @@ inline std::string_view kind_name(std::uint64_t magic) noexcept {
 
 } // namespace detail
 
-// What a segment layout gives the core's open check: its magic, the kind major versions it reads, and
-// a check of the kind's own geometry once the common line passed.
+// What a segment layout gives the core's open check: its header type, which starts with the common
+// line, its magic, the kind major versions it reads, and a check of the kind's own geometry once the
+// common line passed.
 template <class L>
 concept segment_layout = requires(const typename L::header_type &h, std::uint64_t mapped) {
     { L::magic } -> std::convertible_to<std::uint64_t>;
@@ -693,7 +694,8 @@ inline bool process_alive(std::uint32_t pid, std::uint64_t start) noexcept {
     return now != 0 && (now == start_unknown || start == start_unknown || now == start);
 }
 
-inline constexpr std::size_t object_name_max = 160;
+// "Local\SBX:" (10), a name of name_max, "#w4095" (6) and the terminating NUL.
+inline constexpr std::size_t object_name_max = 224;
 inline constexpr int futex_wait = 0;
 inline constexpr int futex_wake = 1;
 
@@ -1341,13 +1343,22 @@ inline status type_table::parse(std::span<const std::byte> table,
     return status::ok;
 }
 
+// One or more segments of [A-Za-z0-9_-] joined by ':', at most name_max characters. '.' is kept for a
+// later name.field address, and '#' for the suffix of Windows waiter events.
 inline bool name_ok(std::string_view name) noexcept {
-    if (name.empty() || name.size() > name_max)
+    if (name.empty() || name.size() > name_max || name.front() == ':' || name.back() == ':')
         return false;
-    for (const char c : name)
-        if (!((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' || c == '.' ||
-              c == '-'))
+    char previous = '\0';
+    for (const char c : name) {
+        if (c == ':') {
+            if (previous == ':')
+                return false;
+        } else if (!((c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '_' ||
+                     c == '-')) {
             return false;
+        }
+        previous = c;
+    }
     return true;
 }
 
@@ -1356,7 +1367,7 @@ using object_name = std::array<char, object_name_max>;
 // name must have passed name_ok.
 inline object_name make_name(const char *prefix, std::string_view name, const char *suffix) noexcept {
     object_name out{};
-    std::snprintf(out.data(), out.size(), "%ssharedbox.%.*s%s", prefix, static_cast<int>(name.size()), name.data(),
+    std::snprintf(out.data(), out.size(), "%sSBX:%.*s%s", prefix, static_cast<int>(name.size()), name.data(),
                   suffix);
     return out;
 }

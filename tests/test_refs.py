@@ -470,13 +470,13 @@ def test_a_reference_is_stored_as_create_id_schema_hash_and_name(
     index = Stage.__layout__.by_name["motor"].index
     with Motor.create(names("m")) as motor, Stage.create(names("s"), 0, motor) as stage:
         assert stage._segment._read(index) == struct.pack(
-            "<QQ128s",
+            "<QQ200s",
             motor._segment.create_id,
             Motor.__layout__.schema_hash,
             motor.name.encode(),
         )
         stage.motor = None
-        assert stage._segment._read(index) == bytes(144)
+        assert stage._segment._read(index) == bytes(216)
 
 
 def test_close_closes_the_boxes_a_read_attached(names: Callable[[str], str]) -> None:
@@ -858,7 +858,7 @@ def test_a_stored_reference_with_an_invalid_name_is_a_broken_reference(
 ) -> None:
     """Check that a reference another writer stored with an invalid name raises BrokenReferenceError."""
     index = Stage.__layout__.by_name["motor"].index
-    raw = struct.pack("<QQ128s", 7, Motor.__layout__.schema_hash, name)
+    raw = struct.pack("<QQ200s", 7, Motor.__layout__.schema_hash, name)
     with Stage.create(names("s")) as stage:
         stage._segment._write([(index, raw)])
         with pytest.raises(
@@ -913,3 +913,16 @@ def test_snapshot_following_a_reference_keeps_no_objects(
         # Each snapshot makes a BoxRef and a nested snapshot; one kept per snapshot
         # would add thousands of blocks, while 100 covers allocator noise.
         assert sys.getallocatedblocks() <= before + 100
+
+
+def test_a_reference_holds_a_name_of_200_characters(unique_name: str) -> None:
+    """Check that a reference field stores and follows a box whose name has 200 characters."""
+    name = (unique_name + ":" + "t" * 200)[:200]
+    with (
+        Motor.create(name) as motor,
+        Stage.create(f"{unique_name}-s", motor=motor) as stage,
+    ):
+        assert stage.motor is not None
+        assert stage.motor.name == name
+    Motor.unlink(name)
+    Stage.unlink(f"{unique_name}-s")

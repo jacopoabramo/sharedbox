@@ -66,7 +66,7 @@ TEST_CASE("a box layout major this build does not read is refused with the versi
     static_cast<void>(unlink(name));
 }
 
-TEST_CASE("another kind is a kind mismatch and an unknown magic is a layout error") {
+TEST_CASE("another kind is a kind mismatch and an unknown magic is foreign") {
     const std::string name = unique("magic");
     auto owner = handle::create(name, fields, 32, 1, 4, {});
     REQUIRE(owner);

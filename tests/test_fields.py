@@ -11,6 +11,7 @@ from multiprocessing.synchronize import Event
 from typing import Annotated, Any, ClassVar, cast
 
 import pytest
+from os_names import os_name
 
 from sharedbox import (
     Capacity,
@@ -569,7 +570,7 @@ def test_a_raising_post_init_leaves_no_file_in_dev_shm(unique_name: str) -> None
     with pytest.raises(RuntimeError):
         Failing.create(unique_name, error=RuntimeError)
     FAILED_BOXES.clear()
-    assert not os.path.exists(f"/dev/shm/sharedbox.{unique_name}")
+    assert not os.path.exists(f"/dev/shm/{os_name(unique_name)}")
 
 
 class Probe(SharedBox, lock_timeout=0.2):

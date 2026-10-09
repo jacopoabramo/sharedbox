@@ -13,6 +13,7 @@ from multiprocessing.synchronize import Event
 from typing import cast
 
 import pytest
+from os_names import os_name
 
 from sharedbox import SharedBox
 from sharedbox._layout import NativeField
@@ -48,7 +49,7 @@ MAGIC = b"SBX_BOX_"
 @contextlib.contextmanager
 def raw_bytes(name: str) -> Generator[memoryview, None, None]:
     if sys.platform == "win32":
-        shm = SharedMemory(f"sharedbox.{name}")
+        shm = SharedMemory(os_name(name))
         try:
             assert shm.buf is not None
             yield shm.buf
@@ -56,7 +57,7 @@ def raw_bytes(name: str) -> Generator[memoryview, None, None]:
             shm.close()
     else:
         with (
-            open(f"/dev/shm/sharedbox.{name}", "r+b") as file,
+            open(f"/dev/shm/{os_name(name)}", "r+b") as file,
             mmap.mmap(file.fileno(), 0) as mapping,
             memoryview(mapping) as view,
         ):
@@ -72,11 +73,11 @@ def patch_header(name: str, offset: int, fmt: str, value: int) -> None:
 def foreign_mapping(name: str) -> Generator[None, None, None]:
     """Shared memory under a box's object name, made by software other than sharedbox."""
     if sys.platform == "win32":
-        with mmap.mmap(-1, 4096, tagname=f"sharedbox.{name}"):
+        with mmap.mmap(-1, 4096, tagname=os_name(name)):
             yield
     else:
         fd = os.open(
-            f"/dev/shm/sharedbox.{name}", os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o600
+            f"/dev/shm/{os_name(name)}", os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o600
         )
         try:
             os.ftruncate(fd, 4096)
@@ -758,7 +759,7 @@ def test_attach_refuses_a_field_of_a_kind_it_cannot_read(unique_name: str) -> No
 
 def ref_segment(name: str) -> Segment:
     return Segment.create(
-        name, [NativeField(0, 144, REF)], ["Stage.motor"], 144, SCHEMA, 1.0, []
+        name, [NativeField(0, 216, REF)], ["Stage.motor"], 216, SCHEMA, 1.0, []
     )
 
 
@@ -769,20 +770,20 @@ def test_a_reference_is_stored_as_create_id_schema_hash_and_padded_name(
     segment = ref_segment(unique_name)
     assert segment.get(0) is None
     segment.set([(0, (7, 0x5EED, "m1"))])
-    assert segment._read(0) == struct.pack("<QQ128s", 7, 0x5EED, b"m1")
+    assert segment._read(0) == struct.pack("<QQ200s", 7, 0x5EED, b"m1")
     assert segment.get(0) == (7, 0x5EED, "m1")
     assert segment.get_dict(("motor",)) == {"motor": (7, 0x5EED, "m1")}
     segment.set([(0, None)])
-    assert segment._read(0) == bytes(144)
+    assert segment._read(0) == bytes(216)
     assert segment.get(0) is None
     segment.close()
 
 
-def test_a_reference_name_of_128_bytes_has_no_terminating_nul(unique_name: str) -> None:
-    """Check that a box name of 128 bytes fills the name bytes and reads back whole."""
+def test_a_reference_name_of_200_bytes_has_no_terminating_nul(unique_name: str) -> None:
+    """Check that a box name of 200 bytes fills the name bytes and reads back whole."""
     segment = ref_segment(unique_name)
-    segment.set([(0, (1, 2, "n" * 128))])
-    assert segment.get(0) == (1, 2, "n" * 128)
+    segment.set([(0, (1, 2, "n" * 200))])
+    assert segment.get(0) == (1, 2, "n" * 200)
     segment.close()
 
 
@@ -791,7 +792,7 @@ def test_a_reference_name_of_128_bytes_has_no_terminating_nul(unique_name: str) 
     [
         ((0, 1, "m1"), ValueError),
         ((1, 1, ""), ValueError),
-        ((1, 1, "n" * 129), ValueError),
+        ((1, 1, "n" * 201), ValueError),
         ((1, 1, "a\x00b"), ValueError),
         ((1, 1, "m\u00f6tor"), ValueError),
         ((1, 1, "bad/name"), ValueError),
@@ -817,9 +818,9 @@ def test_a_reference_value_that_cannot_be_stored_is_refused(
 
 def test_check_takes_none_for_a_reference() -> None:
     """Check that check() accepts None for a reference field and refuses a value of another type."""
-    check(REF, 144, "Stage.motor", None)
+    check(REF, 216, "Stage.motor", None)
     with pytest.raises(TypeError, match="Stage.motor expects a reference, got int"):
-        check(REF, 144, "Stage.motor", 3)
+        check(REF, 216, "Stage.motor", 3)
 
 
 def test_cached_ref_returns_the_entry_only_for_the_stored_create_id(

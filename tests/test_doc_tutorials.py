@@ -4,6 +4,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+from os_names import os_name
+
 SCRIPT = Path(__file__).resolve().parent.parent / "docs" / "tutorials" / "motor.py"
 NAMES = ("tutorial-motor", "tutorial-x", "tutorial-y", "tutorial-stage")
 
@@ -29,7 +31,7 @@ def test_the_tutorial_script_prints_what_its_pages_show(tmp_path: Path) -> None:
         if sys.platform.startswith("linux"):
             for name in NAMES:
                 with contextlib.suppress(FileNotFoundError):
-                    os.unlink(f"/dev/shm/sharedbox.tutorial-{run}-{name[9:]}")
+                    os.unlink(f"/dev/shm/{os_name(f'tutorial-{run}-{name[9:]}')}")
     assert result.returncode == 0, result.stderr
     assert result.stdout.splitlines() == [
         "position set by the other process: 10",

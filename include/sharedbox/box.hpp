@@ -427,8 +427,8 @@ inline void bind(state &s, void *base, std::uint64_t size, std::uint16_t segment
     s.layout_minor = segment_minor < sharedbox::layout_minor ? segment_minor : sharedbox::layout_minor;
 }
 
-// Copies and checks the field table and the description table of a mapping whose line 0 passed
-// open_check.
+// Copies and checks the field table and the description table of a mapping; h is the copy of its
+// header, which passed open_check.
 inline status copy_fields(state &s, const void *base, const header &h) noexcept {
     const auto *bytes = static_cast<const std::byte *>(base);
     std::unique_ptr<std::uint32_t[]> entries(new (std::nothrow) std::uint32_t[s.field_count]);
@@ -1206,7 +1206,7 @@ inline HANDLE event(const state &s, std::uint16_t slot) noexcept {
     if (e != nullptr)
         return e;
     char suffix[8];
-    std::snprintf(suffix, sizeof suffix, ".w%u", static_cast<unsigned>(slot));
+    std::snprintf(suffix, sizeof suffix, "#w%u", static_cast<unsigned>(slot));
     const wide_name wide = make_wide_name(s.name, suffix);
     e = CreateEventW(nullptr, FALSE, FALSE, wide.data());
     if (e == nullptr)

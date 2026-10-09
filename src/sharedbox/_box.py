@@ -47,7 +47,15 @@ from ._native import (
     ValueCache,
 )
 from ._native import Field as FieldDescriptor
-from ._refs import NAME, Reference, attach_reference, box_ref, register, stored
+from ._refs import (
+    MAX_NAME,
+    NAME,
+    Reference,
+    attach_reference,
+    box_ref,
+    register,
+    stored,
+)
 
 if TYPE_CHECKING:
     if sys.version_info >= (3, 13):
@@ -82,8 +90,11 @@ LIVE: weakref.WeakSet[SharedBox] = weakref.WeakSet()
 
 
 def check_name(name: str) -> str:
-    if not NAME.fullmatch(name):
-        raise ValueError(f"segment names match {NAME.pattern}, got {name!r}")
+    if len(name) > MAX_NAME or not NAME.fullmatch(name):
+        raise ValueError(
+            f"segment names are segments of [A-Za-z0-9_-] joined by ':', "
+            f"at most {MAX_NAME} characters; got {name!r}"
+        )
     return name
 
 
@@ -414,7 +425,7 @@ class SharedBox(metaclass=SharedBoxMeta):
     - `name`: the segment name of boxes made by calling the class. By
       default it is 16 hex digits of SHA-256 over the class's identity, so
       every process that imports the class uses the same name. It must
-      match `[A-Za-z0-9_.-]{1,128}`.
+      be segments of `[A-Za-z0-9_-]` joined by `:`, at most 200 characters.
     - `kw_only`: make every field this class declares keyword-only.
       Inherited fields keep the setting of the class that declares them.
     - `lock_timeout`: seconds a read or write waits for a write in
@@ -503,8 +514,8 @@ class SharedBox(metaclass=SharedBoxMeta):
         called, for a missing, unknown or repeated value, or a value of
         the wrong type.
     ValueError
-        When the class is defined, for a `name` that does not match
-        `[A-Za-z0-9_.-]{1,128}`, a `lock_timeout` or `max_waiters` out of
+        When the class is defined, for a `name` that is not segments of
+        `[A-Za-z0-9_-]` joined by `:`, at most 200 characters, a `lock_timeout` or `max_waiters` out of
         range, or a default that does not fit its field (any of the cases
         below). When the class is called or a field is assigned, for a
         `str`, `bytes` or `Decimal` value longer than its capacity, a
@@ -732,7 +743,8 @@ class SharedBox(metaclass=SharedBoxMeta):
         SegmentExistsError
             If the name is taken.
         ValueError
-            If `name` does not match `[A-Za-z0-9_.-]{1,128}`.
+            If `name` is not segments of `[A-Za-z0-9_-]` joined by `:`, at
+            most 200 characters.
         """
         box = cls.__new__(cls)
         box._open(check_name(name), args, kwargs)
@@ -755,7 +767,8 @@ class SharedBox(metaclass=SharedBoxMeta):
             segment layout, or has a field of a kind this version cannot
             read.
         ValueError
-            If `name` does not match `[A-Za-z0-9_.-]{1,128}`.
+            If `name` is not segments of `[A-Za-z0-9_-]` joined by `:`, at
+            most 200 characters.
         """
         box = cls.__new__(cls)
         layout = cls._layout()
@@ -1176,7 +1189,8 @@ class SharedBox(metaclass=SharedBoxMeta):
     Raises
     ------
     ValueError
-        If `name` does not match `[A-Za-z0-9_.-]{1,128}`.
+        If `name` is not segments of `[A-Za-z0-9_-]` joined by `:`, at
+            most 200 characters.
     SegmentNotFoundError
         On Linux, if no segment has that name.
     """

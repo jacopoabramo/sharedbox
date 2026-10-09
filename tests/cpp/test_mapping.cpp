@@ -106,7 +106,7 @@ TEST_CASE("checks on open") {
     CHECK(forged(table[1].offset, 16u) == status::corrupt);
     // Moved to 4: aligned for bytes, but it overlaps the int field.
     CHECK(forged(table[1].offset, 4u) == status::corrupt);
-    // Kind 5 is a reference, which holds 144 bytes; a capacity of 0 is refused.
+    // Kind 5 is a reference, which holds 216 bytes; a capacity of 0 is refused.
     CHECK(forged(table[1].capacity_and_kind, 16u | 5u << 24) == status::corrupt);
     CHECK(forged(table[1].capacity_and_kind, 0u | 4u << 24) == status::corrupt);
     CHECK(open_status(name) == status::ok);
@@ -160,6 +160,27 @@ TEST_CASE("names") {
     CHECK(create("bad/name").error().code == status::range);
     CHECK(create("").error().code == status::range);
     CHECK(open_status("bad name") == status::range);
+}
+
+TEST_CASE("name_ok takes colon levels of 200 characters and refuses the rest") {
+    using sharedbox::detail::name_ok;
+    CHECK(name_ok("motor"));
+    CHECK(name_ok("bl01:camera:det1:frames"));
+    CHECK(name_ok("a-b_c"));
+    CHECK(name_ok(std::string(200, 'x')));
+    CHECK_FALSE(name_ok(std::string(201, 'x')));
+    for (const char *bad : {"", ":a", "a:", "a::b", "a.b", "a b", "a/b", "a#w1"})
+        CHECK_FALSE(name_ok(bad));
+}
+
+TEST_CASE("object names carry the SBX: prefix and the waiter suffix") {
+    CHECK(std::string(sharedbox::detail::make_name("/", "a:b", "").data()) == "/SBX:a:b");
+#ifdef _WIN32
+    const auto wide = sharedbox::detail::make_wide_name("a", "#w7");
+    CHECK(std::wstring(wide.data()) == L"Local\\SBX:a#w7");
+    const auto longest = sharedbox::detail::make_wide_name(std::string(sharedbox::name_max, 'n'), "#w4095");
+    CHECK(std::wstring(longest.data()).size() == 10 + sharedbox::name_max + 6);
+#endif
 }
 
 // Shared memory of other software under the name: create refuses it, open waits for a magic that never
@@ -246,8 +267,8 @@ TEST_CASE("open accepts a kind it does not know") {
 
 TEST_CASE("a reference field holds a box_ref") {
     const std::string name = unique("ref");
-    constexpr sharedbox::field_spec with_ref[2] = {{0, 8, sharedbox::kind_int}, {8, 144, sharedbox::kind_ref}};
-    auto h = handle::create(name, with_ref, 152, 1, 1, {});
+    constexpr sharedbox::field_spec with_ref[2] = {{0, 8, sharedbox::kind_int}, {8, 216, sharedbox::kind_ref}};
+    auto h = handle::create(name, with_ref, 224, 1, 1, {});
     REQUIRE(h.has_value());
     sharedbox::box_ref ref{};
     ref.create_id = 7;
@@ -259,13 +280,13 @@ TEST_CASE("a reference field holds a box_ref") {
     REQUIRE(other.has_value());
     sharedbox::box_ref back{};
     const auto got = other->read(1, std::as_writable_bytes(std::span(&back, 1)));
-    CHECK((got && got->len == 144 && back.create_id == 7 && back.schema_hash == 0x5EED));
+    CHECK((got && got->len == 216 && back.create_id == 7 && back.schema_hash == 0x5EED));
     CHECK(std::string(back.name) == "motor");
     static_cast<void>(sharedbox::unlink(name));
-    constexpr sharedbox::field_spec short_ref[1] = {{0, 143, sharedbox::kind_ref}};
-    CHECK(handle::create(name, short_ref, 144, 1, 1, {}).error().code == status::range);
-    constexpr sharedbox::field_spec unaligned_ref[1] = {{12, 144, sharedbox::kind_ref}};
-    CHECK(handle::create(name, unaligned_ref, 156, 1, 1, {}).error().code == status::range);
+    constexpr sharedbox::field_spec short_ref[1] = {{0, 215, sharedbox::kind_ref}};
+    CHECK(handle::create(name, short_ref, 216, 1, 1, {}).error().code == status::range);
+    constexpr sharedbox::field_spec unaligned_ref[1] = {{12, 216, sharedbox::kind_ref}};
+    CHECK(handle::create(name, unaligned_ref, 228, 1, 1, {}).error().code == status::range);
     constexpr sharedbox::field_spec unknown[1] = {{0, 8, 9}};
     CHECK(handle::create(name, unknown, 8, 1, 1, {}).error().code == status::range);
 }

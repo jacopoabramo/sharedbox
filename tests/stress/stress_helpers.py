@@ -6,6 +6,8 @@ import sys
 import threading
 from collections.abc import Sequence
 
+from os_names import os_name
+
 
 def scale() -> float:
     """``SHAREDBOX_STRESS_SCALE`` multiplies every duration and count; 1 gives the defaults."""
@@ -93,9 +95,7 @@ def leftovers(prefix: str) -> list[str]:
     """Segments in /dev/shm whose box name starts with ``prefix``; none exist to find on Windows."""
     if not os.path.isdir("/dev/shm"):
         return []
-    return sorted(
-        n for n in os.listdir("/dev/shm") if n.startswith(f"sharedbox.{prefix}")
-    )
+    return sorted(n for n in os.listdir("/dev/shm") if n.startswith(os_name(prefix)))
 
 
 def watcher_threads(name: str) -> int:

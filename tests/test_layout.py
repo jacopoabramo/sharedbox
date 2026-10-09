@@ -188,8 +188,8 @@ def test_a_reference_field_is_packed_with_8_byte_fields_and_hashed_by_identity()
         },
     )
     layout = build_layout(stage)
-    assert layout.by_name["motor"].native == (0, 144, 5)
-    assert layout.by_name["label"].offset == 144
+    assert layout.by_name["motor"].native == (0, 216, 5)
+    assert layout.by_name["label"].offset == 216
     assert layout.refs == (layout.by_name["motor"],)
     assert layout.schema_hash == 0xE58153F79AA6FDF6
     required = type(

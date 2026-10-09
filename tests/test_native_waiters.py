@@ -9,12 +9,13 @@ import subprocess
 import sys
 import threading
 import time
-from collections.abc import Generator
+from collections.abc import Callable, Generator
 from multiprocessing.queues import Queue
 from multiprocessing.shared_memory import SharedMemory
 from multiprocessing.synchronize import Event
 
 import pytest
+from os_names import os_name
 
 from sharedbox import SharedBox
 from sharedbox._layout import NativeField
@@ -38,7 +39,7 @@ def slot_offset(slot: int, field_count: int = 1) -> int:
 @contextlib.contextmanager
 def raw_bytes(name: str) -> Generator[memoryview, None, None]:
     if sys.platform == "win32":
-        shm = SharedMemory(f"sharedbox.{name}")
+        shm = SharedMemory(os_name(name))
         try:
             assert shm.buf is not None
             yield shm.buf
@@ -46,7 +47,7 @@ def raw_bytes(name: str) -> Generator[memoryview, None, None]:
             shm.close()
     else:
         with (
-            open(f"/dev/shm/sharedbox.{name}", "r+b") as file,
+            open(f"/dev/shm/{os_name(name)}", "r+b") as file,
             mmap.mmap(file.fileno(), 0) as mapping,
             memoryview(mapping) as view,
         ):
@@ -403,3 +404,22 @@ def test_a_watcher_with_every_slot_taken_still_sees_writes(unique_name: str) -> 
         while box._watcher._slot is None and time.monotonic() < deadline:
             time.sleep(0.05)
         assert box._watcher._slot == 0
+
+
+@pytest.mark.skipif(
+    sys.platform != "win32", reason="the event suffix is a Windows name"
+)
+def test_a_box_whose_name_ends_like_a_waiter_event_is_its_own(
+    names: Callable[[str], str],
+) -> None:
+    """Check that box `a`'s waiter events and a box named like one of them do not collide."""
+    base = names("a")
+    with Counter.create(base) as box:
+        seen: queue.Queue[int] = queue.Queue()
+        box.events.value.connect(lambda new, old: seen.put(new))
+        with Counter.create(base + "-w1") as other:
+            box.value = 1
+            assert seen.get(timeout=10) == 1
+            assert other.value == 0
+    Counter.unlink(base)
+    Counter.unlink(base + "-w1")

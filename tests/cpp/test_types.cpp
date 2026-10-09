@@ -170,8 +170,8 @@ TEST_CASE("forged tables are refused") {
     }
     SUBCASE("a reference inside a record") {
         table_builder t;
-        t.head(kind_record, 1, 144);
-        t.entry(0, kind_ref, 144);
+        t.head(kind_record, 1, 216);
+        t.entry(0, kind_ref, 216);
         t.name("r");
         t.pad();
         CHECK(parse(t, entry_of(kind_record, 0)) == status::corrupt);

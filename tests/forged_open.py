@@ -13,6 +13,7 @@ from multiprocessing.shared_memory import SharedMemory
 
 from hypothesis import example, given, settings
 from hypothesis import strategies as st
+from os_names import os_name
 
 from sharedbox._layout import NativeField
 from sharedbox._native import (
@@ -45,7 +46,7 @@ REGIONS = [
 @contextlib.contextmanager
 def raw_bytes(name: str) -> Generator[memoryview, None, None]:
     if sys.platform == "win32":
-        shm = SharedMemory(f"sharedbox.{name}")
+        shm = SharedMemory(os_name(name))
         try:
             assert shm.buf is not None
             yield shm.buf
@@ -53,7 +54,7 @@ def raw_bytes(name: str) -> Generator[memoryview, None, None]:
             shm.close()
     else:
         with (
-            open(f"/dev/shm/sharedbox.{name}", "r+b") as file,
+            open(f"/dev/shm/{os_name(name)}", "r+b") as file,
             mmap.mmap(file.fileno(), 0) as mapping,
             memoryview(mapping) as view,
         ):
