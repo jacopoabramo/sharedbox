@@ -1,3 +1,4 @@
+import abc
 import contextlib
 import dataclasses
 import gc
@@ -53,6 +54,24 @@ class Holder(SharedBox):
 
 class Other(SharedBox):
     x: int = 0
+
+
+class AbstractBoxMeta(type(SharedBox), abc.ABCMeta):  # type: ignore[misc]
+    pass
+
+
+class AbstractMotor(  # type: ignore[metaclass]
+    SharedBox, identity="sbtest/abstract-motor", metaclass=AbstractBoxMeta
+):
+    position: int = 0
+
+
+class PlainAbstractMotor(SharedBox, identity="sbtest/abstract-motor"):
+    position: int = 0
+
+
+class AbstractHolder(SharedBox):
+    motor: AbstractMotor | None = None
 
 
 class MotorCopy(SharedBox, identity="sbtest/motor"):
@@ -440,6 +459,20 @@ def test_a_box_of_another_class_with_the_same_schema_is_accepted(
         # Motor was defined first, so its class reads a box of either.
         assert type(inner) is Motor
         assert inner.position == 4
+
+
+def test_a_target_with_a_derived_metaclass_accepts_a_plain_class_box(
+    names: Callable[[str], str],
+) -> None:
+    """Check that a target whose metaclass derives from the box metaclass accepts a same-schema box of a plain class."""
+    with (
+        PlainAbstractMotor.create(names("p"), 2) as plain,
+        AbstractHolder.create(names("h")) as holder,
+    ):
+        holder.motor = plain  # type: ignore[assignment]
+        inner = holder.motor
+        assert inner is not None
+        assert inner.position == 2
 
 
 def test_assigning_a_closed_box_raises(names: Callable[[str], str]) -> None:

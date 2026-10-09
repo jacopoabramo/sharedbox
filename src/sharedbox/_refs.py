@@ -104,9 +104,9 @@ def stored(spec: FieldSpec, value: Any) -> tuple[int, int, str] | None:
         )
     if not (
         isinstance(value, target)
-        or (
-            isinstance(type(value), type(target))
-            and type(value).__layout__.schema_hash == target.__layout__.schema_hash
+        or any(
+            ref() is type(value)
+            for ref in CLASSES.get(target.__layout__.schema_hash, ())
         )
     ):
         raise TypeError(
