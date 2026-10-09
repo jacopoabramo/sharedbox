@@ -1,0 +1,78 @@
+name: Streams
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - include/sharedbox/stream.hpp
+      - include/sharedbox/core.hpp
+      - src/sharedbox/_stream.py
+      - src/sharedbox/_native/stream.cpp
+      - src/sharedbox/benchmarks/stream.py
+      - scripts/stream_compare.py
+      - .github/workflows/streams.yaml
+  workflow_dispatch:
+    inputs:
+      base:
+        description: Commit, branch or tag to compare against
+        required: false
+        default: main
+
+permissions:
+  contents: read
+
+jobs:
+  streams:
+    name: Streams against the base on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ ubuntu-latest, windows-latest ]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: head
+          fetch-depth: 0
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.base || github.base_ref || 'main' }}
+          path: base
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@v7
+      - name: Install both
+        shell: bash
+        run: |
+          for side in base head; do
+            (cd "$side" && uv sync --frozen --python 3.12)
+          done
+      - name: Check the base has SharedStream
+        id: base
+        shell: bash
+        run: |
+          if (cd base && uv run --no-sync python -c "import sharedbox; sharedbox.SharedStream"); then
+            echo "sides=base head" >> "$GITHUB_OUTPUT"
+          else
+            echo "sides=head" >> "$GITHUB_OUTPUT"
+            echo "base has no SharedStream; head only" | tee -a "$GITHUB_STEP_SUMMARY"
+          fi
+      - name: Run the stream benchmarks, alternating
+        shell: bash
+        run: |
+          mkdir results
+          for round in 1 2 3; do
+            for side in ${{ steps.base.outputs.sides }}; do
+              (cd "$side" && uv run --no-sync python ../head/src/sharedbox/benchmarks/stream.py \
+                --short --table both --json "../results/$side-$round.json")
+            done
+          done
+      - name: Compare
+        shell: bash
+        run: |
+          cd head
+          uv run --no-sync python ../head/scripts/stream_compare.py ../results | tee -a "$GITHUB_STEP_SUMMARY"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: streams-${{ matrix.os }}
+          path: results
