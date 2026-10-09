@@ -80,6 +80,11 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     target_link_libraries(test_small_shm PRIVATE doctest::doctest_with_main)
 endif()
 
+# Throughput of a stream in one process, run by hand: cmake --build build-cpp --target bench_stream.
+add_executable(bench_stream EXCLUDE_FROM_ALL bench_stream.cpp)
+set_target_properties(bench_stream PROPERTIES EXCLUDE_FROM_DEFAULT_BUILD ON)
+sbx_test_target(bench_stream)
+
 # Each case builds compile_fail.cpp with one call that must not compile and passes on its static_assert
 # message. The C++20 result only: std::expected words its own messages.
 set(sbx_compile_fail
