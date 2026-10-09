@@ -36,8 +36,11 @@ def pytest_ignore_collect(collection_path: Path, config: pytest.Config) -> bool 
         return True
     # The wheel tests in CI install neither, since they come with the benchmarks extra.
     if collection_path.name == "test_benchbox_plot.py" and (
-        find_spec("matplotlib") is None or find_spec("pyperf") is None
+        find_spec("plotly") is None or find_spec("pyperf") is None
     ):
+        return True
+    # The wheel tests in CI do not install typer, which comes with the benchmarks extra.
+    if collection_path.name == "test_benchbox_all.py" and find_spec("typer") is None:
         return True
     # attrs, msgspec and ml_dtypes are dev dependencies that may lack wheels for an interpreter
     # under test; torch is not a dependency at all.

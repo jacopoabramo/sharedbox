@@ -91,6 +91,8 @@ nav = [
     ]},
 ]
 
+extra_javascript = ["javascripts/charts.js"]
+
 [project.theme]
 variant = "modern"
 font.text = "Inter"

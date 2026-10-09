@@ -7,8 +7,8 @@ icon: lucide/wrench
 Numbers measured on someone else's machine only go so far. The `benchbox`
 command measures `sharedbox` on yours, next to the ways the standard
 library shares data between processes: single reads and writes, how fast a
-change reaches another process, several processes sharing one value, and
-the size of the installed package.
+change reaches another process, streams of items, several processes sharing
+one value, and the size of the installed package.
 
 ## Before you start
 
@@ -51,8 +51,34 @@ benchbox roundtrip
 `roundtrip` sends a counter to a second process and times the answer. It
 prints the 50th, 90th and 99th percentile and the maximum, in
 microseconds, for [`watch`][sharedbox.SharedBox.watch], `mp.Event`,
-`mp.Pipe` and a loop polling `SharedMemory`, which keeps one CPU core busy
-on each side.
+`mp.Pipe`, a loop polling `SharedMemory`, which keeps one CPU core busy on
+each side, and [`SharedStream`][sharedbox.SharedStream].
+
+## Time a stream
+
+```bash
+benchbox stream
+```
+
+`stream` prints two tables. The first is throughput, for a lossless, a lossy
+and a latest [`SharedStream`][sharedbox.SharedStream], an `mp.Queue` per
+reader and a ring in `SharedMemory` guarded by a lock: the items per second
+the sender sent and a reader received, averaged over the readers, and the
+items a lossy or latest reader skipped. It runs 1 and 4 readers with items
+of 1 KiB and of 512 KiB, repeats each row three times, and prints the median
+run. The second table pairs `send` and `asend` with `receive`, `async for`
+and `events.received`, next to an `mp.Queue` read with `get` and from
+`asyncio`. For each pairing it prints the items per second and the 50th,
+90th and 99th percentile of the time from the sender stamping an item until
+the reader has it.
+
+`--short` makes a run of a few seconds, with fewer items and one repeat.
+`--table` takes `throughput`, `matrix` or `both`, `--markdown` prints
+Markdown tables, and `--json` also writes the results to a file:
+
+```bash
+benchbox stream --short --table throughput --json stream.json
+```
 
 ## Time several processes sharing one value
 
@@ -98,12 +124,14 @@ it. Without arguments it measures the wheels in `dist/` and `wheelhouse/`.
 benchbox all --out results
 ```
 
-`all` runs `ops`, `roundtrip` and `size`, writes each command's JSON output
-to `results`, and prints a Markdown summary that it also saves as
-`results/summary.md`. The summary names the OS, CPU, Python version and
-build, and the sharedbox version. `all` measures wheel sizes only when it
-finds wheels in `dist/` or `wheelhouse/`, and then measures every wheel
-there, older builds included.
+`all` runs `ops`, `roundtrip`, `stream` and `size`, writes each command's
+JSON output to `results` (`stream.json` holds the two stream tables), and
+prints a Markdown summary that it also saves as `results/summary.md`. The
+summary names the OS, CPU, Python version and build, and the sharedbox
+version. `all` measures wheel sizes only when it finds wheels in `dist/` or
+`wheelhouse/`, and then measures every wheel there, older builds included.
+On a desktop machine a full run takes about 30 minutes, most of it in `ops`
+and `stream`, so start it when you will not need the machine.
 
 `python -m sharedbox.benchmarks` runs the same command as `benchbox`.
 
@@ -113,12 +141,23 @@ there, older builds included.
 benchbox plot results
 ```
 
-`plot` reads `ops.json` and `roundtrip.json` from the folder `all` wrote
-and saves two charts next to them as SVG, each in a light and a dark
-variant: `ops-light.svg`, `ops-dark.svg`, `roundtrip-light.svg` and
-`roundtrip-dark.svg`. The dark files suit a page with a dark background.
-[How fast a box is](../explanation/performance.md) shows the charts of one
-run.
+`plot` reads `ops.json`, `roundtrip.json` and `stream.json` from the folder
+`all` wrote and saves four [plotly](https://plotly.com/python/) figures as
+JSON in `charts/` next to them: `ops.json`, `roundtrip.json`,
+`stream-throughput.json` and `stream-matrix.json`. It skips a chart whose
+results are missing and says which on standard error.
+
+A page of the docs site draws a figure with a `div` of the class
+`sbx-chart`, whose `data-src` is the path of the file, relative to the page:
+
+```html
+<div class="sbx-chart" data-src="../../assets/benchmarks/ops.json"></div>
+```
+
+`docs/javascripts/charts.js` loads plotly.js when a page has such a `div`,
+draws the figure and gives it the colours of the page's light or dark theme.
+Copy the files to `docs/assets/benchmarks/` to update the charts of
+[How fast a box is](../explanation/performance.md), which shows one run.
 
 ## Run the pytest benchmarks
 
@@ -128,4 +167,7 @@ The pytest benchmarks are separate and live only in the repository:
 uv run pytest benchmarks --codspeed
 ```
 
-CI runs them on CodSpeed for every push and pull request to `main`.
+CI runs them on CodSpeed for every push and pull request to `main`. The
+`Ops` and `Streams` workflows time `benchbox ops` and `benchbox stream` on
+the base branch and on the pull request, for pull requests that touch the
+native code or the stream.

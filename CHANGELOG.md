@@ -40,6 +40,17 @@ Dates are marked as `DD-MM-YYYY`
   `sharedbox_c.h`.
 - `benchbox ops`: the row `watched write int`, a write while another process
   has a watcher open.
+- `benchbox stream`: items per second of `SharedStream` readers in each mode
+  against `mp.Queue` and a `SharedMemory` ring with a lock, and a table of
+  `send` and `asend` with `receive`, `async for` and `events.received`,
+  with the 50th, 90th and 99th percentile latency. `--short`, `--table`,
+  `--json` and `--markdown` are its options; `benchbox all` runs it and
+  writes `stream.json`.
+- `benchbox roundtrip`: the row `SharedStream`.
+- `benchmarks/test_bench_stream.py`: a CodSpeed benchmark of `send` plus
+  `receive_into`.
+- `Streams` workflow: `benchbox stream` on the base branch against the pull
+  request, with `scripts/stream_compare.py` writing the table.
 - `sharedbox::handle::sleepers()`: the number of threads inside a wait on
   the box, in any process.
 
@@ -80,6 +91,10 @@ Dates are marked as `DD-MM-YYYY`
   word. Freeing the slot of a process killed inside a wait takes that
   thread out of `sleepers` for a box, and out of `data_waiting` or
   `space_waiting` for a stream.
+- `benchbox plot`: writes plotly figure JSON (`charts/ops.json`,
+  `roundtrip.json`, `stream-throughput.json`, `stream-matrix.json`) instead
+  of SVG files.
+- `benchmarks` extra and group: depend on `plotly` instead of `matplotlib`.
 
 ### Removed
 

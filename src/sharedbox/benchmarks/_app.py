@@ -9,17 +9,17 @@ import sysconfig
 from importlib.metadata import version
 from importlib.util import find_spec
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 import typer
 
-from sharedbox.benchmarks import INSTALL_HINT, contention, roundtrip, size
+from sharedbox.benchmarks import INSTALL_HINT, contention, roundtrip, size, stream
 
 if sys.platform == "win32":
     import winreg
 if find_spec("pyperf") is not None:
     import pyperf
-if find_spec("pyperf") is not None and find_spec("matplotlib") is not None:
+if find_spec("pyperf") is not None and find_spec("plotly") is not None:
     from sharedbox.benchmarks import plot
 
 app = typer.Typer(
@@ -129,6 +129,29 @@ def contention_command(
     )
 
 
+@app.command("stream")
+def stream_command(
+    short: Annotated[
+        bool, typer.Option("--short", help="A run of a few seconds.")
+    ] = False,
+    table: Annotated[
+        Literal["throughput", "matrix", "both"],
+        typer.Option(help="throughput, matrix or both."),
+    ] = "both",
+    output: JsonOption = None,
+    markdown: Annotated[
+        bool, typer.Option("--markdown", help="Print Markdown tables.")
+    ] = False,
+) -> None:
+    """Time streams against the standard library, and the sync and async combinations."""
+    stream.main(
+        (["--short"] if short else [])
+        + ["--table", table]
+        + (["--json", str(output)] if output else [])
+        + (["--markdown"] if markdown else [])
+    )
+
+
 @app.command("size")
 def size_command(
     wheels: Annotated[
@@ -158,8 +181,8 @@ def plot_command(
         ),
     ],
 ) -> None:
-    """Draw ops.json and roundtrip.json of DIR as SVG charts, for light and dark pages."""
-    if find_spec("pyperf") is None or find_spec("matplotlib") is None:
+    """Draw the results of DIR as plotly figure JSON for the docs site."""
+    if find_spec("pyperf") is None or find_spec("plotly") is None:
         raise SystemExit(INSTALL_HINT)
     for path in plot.write_charts(folder):
         typer.echo(path)
@@ -211,7 +234,7 @@ def all_command(
         bool, typer.Option("--fast", help="Pass --fast to the ops benchmarks.")
     ] = False,
 ) -> None:
-    """Run ops, roundtrip and size (when wheels are found) and summarise them."""
+    """Run ops, roundtrip, stream and size (when wheels are found) and summarise them."""
     out.mkdir(parents=True, exist_ok=True)
     ops_json = out / "ops.json"
     # pyperf refuses to write over an existing file.
@@ -227,6 +250,17 @@ def all_command(
         ops_markdown(ops_json),
         "## Round trips",
         roundtrip.to_markdown(results),
+    ]
+    streams = stream.Options()
+    throughput = stream.run_throughput(streams)
+    matrix = stream.run_matrix(streams)
+    (out / "stream.json").write_text(
+        json.dumps({"throughput": throughput, "matrix": matrix}, indent=2)
+    )
+    sections += [
+        "## Streams",
+        stream.to_markdown(throughput),
+        stream.matrix_to_markdown(matrix),
     ]
     if wheels := size.default_wheels():
         sizes = [size.measure(wheel) for wheel in wheels]
