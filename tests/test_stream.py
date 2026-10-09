@@ -18,6 +18,7 @@ from sharedbox import (
     SharedStream,
     StreamBusyError,
     StreamClosedError,
+    StreamReader,
     WouldBlock,
 )
 
@@ -101,6 +102,67 @@ def test_receive_into_refuses_an_out_of_the_wrong_shape_and_keeps_the_item(
         assert reader.receive_nowait().index == 1
 
 
+@dataclass(frozen=True)
+class Inner:
+    image: Annotated[
+        np.ndarray,
+        Shape(
+            2,
+        ),
+        DType("uint8"),
+    ]
+
+
+@dataclass(frozen=True)
+class Outer:
+    inner: Inner
+    pair: tuple[
+        Annotated[
+            np.ndarray,
+            Shape(
+                2,
+            ),
+            DType("uint8"),
+        ],
+        int,
+    ]
+
+
+def test_receive_into_fills_nested_arrays(unique_name: str) -> None:
+    """Fill the arrays of a record in a record and a tuple in a record."""
+    with SharedStream.create(Outer, unique_name, capacity=2) as stream:
+        reader = stream.reader()
+        stream.sender().send(
+            Outer(Inner(np.full(2, 3, np.uint8)), (np.full(2, 4, np.uint8), 9))
+        )
+        a = np.zeros(2, np.uint8)
+        b = np.zeros(2, np.uint8)
+        got = reader.receive_into({"inner": {"image": a}, "pair": (b, None)}, timeout=5)
+        assert got.inner.image is a and got.pair[0] is b
+        assert a[0] == 3 and b[0] == 4 and got.pair[1] == 9
+
+
+@pytest.mark.parametrize(
+    "out",
+    [
+        {"pair": (np.zeros(2, np.uint8),)},
+        {"inner": {"bad": np.zeros(2, np.uint8)}},
+    ],
+)
+def test_receive_into_refuses_a_wrong_nested_out_and_keeps_the_item(
+    unique_name: str, out: object
+) -> None:
+    """Raise TypeError for a tuple of the wrong length or an unknown nested member, and keep the item."""
+    with SharedStream.create(Outer, unique_name, capacity=2) as stream:
+        reader = stream.reader()
+        stream.sender().send(
+            Outer(Inner(np.zeros(2, np.uint8)), (np.zeros(2, np.uint8), 1))
+        )
+        with pytest.raises(TypeError):
+            reader.receive_into_nowait(out)
+        assert reader.receive_nowait().pair[1] == 1
+
+
 def test_receive_into_refuses_an_array_for_a_collection_member(
     unique_name: str,
 ) -> None:
@@ -156,6 +218,15 @@ def test_a_finite_timeout_raises_timeout_error(unique_name: str) -> None:
         with pytest.raises(TimeoutError):
             stream.reader().receive(timeout=0.2)
         assert 0.15 < time.monotonic() - start < 1.0
+
+
+def test_a_timeout_over_one_step_still_raises_timeout_error(unique_name: str) -> None:
+    """Wait across more than one native step, then raise TimeoutError."""
+    with SharedStream.create(int, unique_name, capacity=2) as stream:
+        start = time.monotonic()
+        with pytest.raises(TimeoutError):
+            stream.reader().receive(timeout=1.3)
+        assert 1.2 <= time.monotonic() - start < 3.0
 
 
 def test_close_ends_a_blocked_receive(unique_name: str) -> None:
@@ -238,10 +309,20 @@ def test_a_pickled_stream_and_reader_open_again(unique_name: str) -> None:
     with SharedStream.create(int, unique_name, capacity=2) as stream:
         copy = pickle.loads(pickle.dumps(stream))
         assert copy.name == stream.name
+        sender = stream.sender()
+        sender.send(1)
         reader = pickle.loads(pickle.dumps(stream.reader(mode="latest")))
+        assert isinstance(reader, StreamReader)
         assert reader.mode == "latest"
+        assert reader.position is None
+        assert reader.receive_nowait() == 1
+        with pytest.raises(WouldBlock):
+            reader.receive_nowait()
+        sender.send(2)
+        assert reader.receive_nowait() == 2
         with pytest.raises(TypeError, match="SharedStream"):
-            pickle.dumps(stream.sender())
+            pickle.dumps(sender)
+        reader._stream.close()
         copy.close()
 
 

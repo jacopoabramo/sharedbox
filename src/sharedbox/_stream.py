@@ -140,10 +140,20 @@ def targets_of(
                     (*path, positions[name]),
                 )
             ]
+        case "list" | "set" | "dict":
+            raise TypeError(
+                f"{label} is a {spec.kind}, which cannot hold an array; "
+                "give None for it or leave it out"
+            )
+        case "optional" | "union":
+            raise TypeError(
+                f"{label} is an {spec.kind} member, which cannot be read into an array; "
+                "give None for it or leave it out"
+            )
         case _:
             raise TypeError(
-                f"{label} holds no array to read into, since an array cannot be part of a "
-                f"{spec.kind}; give None for it or leave it out"
+                f"{label} is not an array member, so no array can be given for it; "
+                "give None for it or leave it out"
             )
 
 
@@ -436,6 +446,11 @@ class StreamSender(End, Generic[T]):
             If `timeout` seconds pass first; the item is not sent.
         StreamClosedError
             If this sender is closed, before or during the wait.
+
+        Notes
+        -----
+        An interrupt such as Ctrl-C during the call may leave the item sent
+        although the call raised.
         """
         self._send(item, timeout)
 
@@ -514,6 +529,11 @@ class StreamReader(End, Iterator[T], Generic[T]):
             If `timeout` seconds pass first.
         StreamClosedError
             If this reader is closed, before or during the wait.
+
+        Notes
+        -----
+        An interrupt such as Ctrl-C during the call may lose the item being
+        received.
         """
         return self._receive([], timeout)
 
@@ -545,6 +565,13 @@ class StreamReader(End, Iterator[T], Generic[T]):
             array at all.
         ValueError
             If an array has another dtype or shape than its member.
+
+        Notes
+        -----
+        After an exception the contents of `out` are unspecified. `out` must
+        not be written to or resized from another thread during the call. An
+        interrupt such as Ctrl-C during the call may lose the item being
+        received.
         """
         return self._receive(self._targets(out), timeout)
 
@@ -557,7 +584,7 @@ class StreamReader(End, Iterator[T], Generic[T]):
         return self._take(self._targets(out), 0.0)
 
     def iter_into(self, out: Any, /) -> IterInto[T]:
-        """Return an iterator of items read into the arrays in `out`, as `receive_into` takes it, for `for` and `async for`."""
+        """Return an iterator of items read into the arrays in `out`, as `receive_into` takes it, for `for`."""
         return IterInto(self, self._targets(out))
 
     def __iter__(self) -> StreamReader[T]:
