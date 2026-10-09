@@ -715,6 +715,23 @@ inline bool process_alive(std::uint32_t pid, std::uint64_t start) noexcept {
     return now != 0 && (now == start_unknown || start == start_unknown || now == start);
 }
 
+// Whether the process that recorded pid, start and pidns has exited, as far as this process can tell. A
+// pid means something only inside its namespace: one of another namespace, or with either namespace
+// unknown (0), counts as alive, as does this process. start 0 means not stamped yet, so only whether the
+// pid runs at all is checked. Windows has no pid namespaces.
+inline bool owner_exited(std::uint32_t pid, std::uint64_t start, std::uint64_t pidns) noexcept {
+#ifdef _WIN32
+    static_cast<void>(pidns);
+#else
+    const std::uint64_t own = current_pidns();
+    if (pidns == 0 || own == 0 || pidns != own)
+        return false;
+#endif
+    if (pid == current_pid() && (start == 0 || start == current_start()))
+        return false;
+    return !process_alive(pid, start == 0 ? start_unknown : start);
+}
+
 // "Local\SBX:" (10), a name of name_max, "#w4095" (6) and the terminating NUL.
 inline constexpr std::size_t object_name_max = 264;
 static_assert(10 + name_max + 6 + 1 <= object_name_max && object_name_max % 8 == 0);
@@ -1644,6 +1661,292 @@ inline bool wait_published(void *base, backoff &wait) noexcept {
         wait.pause();
     }
     return true;
+}
+
+// One process's view of a segment's waiter slot table: the slots and the count of claimed ones, both in
+// the mapping; which slots this process claimed; and on Windows each slot's event. The owner sets the
+// pointers once the segment is mapped and calls release_owned_slots before unmapping it.
+struct waiter_table {
+    waiter_slot *slots = nullptr;
+    std::uint32_t *claimed = nullptr;
+    std::uint16_t count = 0;
+    std::array<std::atomic<std::uint64_t>, max_waiter_slots / 64> owned{};
+#ifdef _WIN32
+    // The segment's name, NUL-terminated, kept by the table's owner; events are named after it.
+    const char *name = nullptr;
+    std::unique_ptr<std::atomic<HANDLE>[]> events;
+
+    ~waiter_table() {
+        if (events != nullptr)
+            for (std::uint16_t i = 0; i < count; ++i)
+                if (HANDLE e = events[i].load(std::memory_order_relaxed); e != nullptr)
+                    CloseHandle(e);
+    }
+#endif
+};
+
+#ifdef _WIN32
+// The auto-reset event of waiter slot i, opened on first use and kept until the table is destroyed.
+inline HANDLE event(const waiter_table &t, std::uint16_t slot) noexcept {
+    std::atomic<HANDLE> &cell = t.events[slot];
+    HANDLE e = cell.load(std::memory_order_acquire);
+    if (e != nullptr)
+        return e;
+    char suffix[8];
+    std::snprintf(suffix, sizeof suffix, "#w%u", static_cast<unsigned>(slot));
+    const wide_name wide = make_wide_name(t.name, suffix);
+    e = CreateEventW(nullptr, FALSE, FALSE, wide.data());
+    if (e == nullptr)
+        return nullptr;
+    HANDLE previous = nullptr;
+    if (!cell.compare_exchange_strong(previous, e, std::memory_order_acq_rel, std::memory_order_acquire)) {
+        CloseHandle(e);
+        return previous;
+    }
+    return e;
+}
+#endif
+
+inline bool owned_test(const waiter_table &t, std::uint16_t i) noexcept {
+    return (t.owned[i / 64].load(std::memory_order_relaxed) >> (i % 64) & 1u) != 0;
+}
+
+inline void owned_set(waiter_table &t, std::uint16_t i) noexcept {
+    t.owned[i / 64].fetch_or(std::uint64_t{1} << (i % 64), std::memory_order_acq_rel);
+}
+
+// Returns whether the bit was set.
+inline bool owned_clear(waiter_table &t, std::uint16_t i) noexcept {
+    const std::uint64_t bit = std::uint64_t{1} << (i % 64);
+    return (t.owned[i / 64].fetch_and(~bit, std::memory_order_acq_rel) & bit) != 0;
+}
+
+// Whether slot i still records this process: a slot freed by mistake and claimed by another process
+// is left to its new owner.
+inline bool slot_is_mine(const waiter_table &t, std::uint16_t i) noexcept {
+    waiter_slot &w = t.slots[i];
+    return atomic(w.owner_pid).load(std::memory_order_acquire) == current_pid() &&
+           atomic(w.owner_start).load(std::memory_order_acquire) == current_start() &&
+           atomic(w.owner_pidns).load(std::memory_order_acquire) == current_pidns();
+}
+
+// owner_start while another process frees a dead owner's slot; no real start time has this value.
+inline constexpr std::uint64_t start_freeing = UINT64_MAX - 1;
+
+// Frees slot i, which this process claimed and stamped. owner_start goes first, so a process killed at a
+// later step leaves no stamped slot for a freer to decrement again. Killed before the pidns store, it leaves an
+// unstamped slot of an exited process, which a freer frees without a decrement (the count stays one too high
+// if the kill came before the fetch_sub). Killed between the pidns and pid stores, it leaves namespace 0,
+// which on Linux counts as alive: the slot is never freed, and the count stays correct. A claimer killed
+// between its pid compare-and-swap and its pidns store also leaves namespace 0 and a slot never freed on
+// Linux, counted once too many if it had already added itself to the count.
+inline void free_slot(const waiter_table &t, std::uint16_t i) noexcept {
+    waiter_slot &w = t.slots[i];
+    atomic(w.owner_start).store(0, std::memory_order_release);
+    atomic(*t.claimed).fetch_sub(1, std::memory_order_seq_cst);
+    atomic(w.owner_pidns).store(0, std::memory_order_relaxed);
+    atomic(w.owner_pid).store(0, std::memory_order_release);
+}
+
+// Does nothing; free_dead_slot calls it after each store so a test can run other steps in between.
+struct no_pause {
+    void operator()() const noexcept {}
+};
+
+// Frees slot w of the exited process pid, seen with owner_start start. Only the process whose compare-and-swap
+// sets owner_start to start_freeing goes on, and scanners skip the slot while it holds that value, which it
+// keeps until owner_pid is 0; a new claimer's stamp may replace it after that. A start of 0 is a claimer that
+// died before stamping: it may or may not have counted itself in the count, so the slot is freed without a
+// decrement and the count can only be too high, which costs a spurious wake-up.
+//
+// Known limits: a freer killed before its owner_pid store leaves the slot unusable until the segment is created
+// again, and counted once too many if it was stamped and the freer was killed before its fetch_sub. The check that
+// owner_pid is still pid cannot tell an unstamped claimer from another one with the same pid, which needs the pid
+// to be reused within a few instructions.
+template <class Pause = no_pause>
+inline void free_dead_slot(const waiter_table &t, waiter_slot &w, std::uint32_t pid, std::uint64_t start,
+                           Pause pause = {}) noexcept {
+    if (!atomic(w.owner_start)
+             .compare_exchange_strong(start, start_freeing, std::memory_order_acq_rel, std::memory_order_relaxed))
+        return;
+    // The slot changed hands after the caller read pid. Mainly a stale read, start being the new owner's,
+    // which free_dead_waiters's second read of owner_pid narrows; otherwise a new owner with the same start
+    // time or none stamped yet. The slot is that owner's.
+    if (atomic(w.owner_pid).load(std::memory_order_acquire) != pid) {
+        std::uint64_t freeing = start_freeing;
+        atomic(w.owner_start)
+            .compare_exchange_strong(freeing, start, std::memory_order_release, std::memory_order_relaxed);
+        return;
+    }
+    if (start != 0) {
+        atomic(*t.claimed).fetch_sub(1, std::memory_order_seq_cst);
+        pause();
+    }
+    atomic(w.owner_pidns).store(0, std::memory_order_relaxed);
+    pause();
+    atomic(w.owner_pid).store(0, std::memory_order_release);
+    pause();
+    // Fails, harmlessly, once a new claimer has stamped its own start.
+    std::uint64_t freeing = start_freeing;
+    atomic(w.owner_start)
+        .compare_exchange_strong(freeing, 0, std::memory_order_release, std::memory_order_relaxed);
+    pause();
+}
+
+// Frees every slot whose owner has exited.
+inline void free_dead_waiters(const waiter_table &t) noexcept {
+    for (std::uint16_t i = 0; i < t.count; ++i) {
+        waiter_slot &w = t.slots[i];
+        const std::uint32_t pid = atomic(w.owner_pid).load(std::memory_order_acquire);
+        if (pid == 0)
+            continue;
+        const std::uint64_t start = atomic(w.owner_start).load(std::memory_order_acquire);
+        const std::uint64_t pidns = atomic(w.owner_pidns).load(std::memory_order_acquire);
+        // The slot changed hands between the reads: start and pidns may be the new owner's, not pid's.
+        if (atomic(w.owner_pid).load(std::memory_order_acquire) != pid)
+            continue;
+        if (start == start_freeing || !owner_exited(pid, start, pidns))
+            continue;
+        free_dead_slot(t, w, pid, start);
+    }
+}
+
+// Frees the slots this process claimed through t and still holds; a child created by fork inherits its
+// parent's bits, and those slots stay the parent's.
+inline void release_owned_slots(waiter_table &t) noexcept {
+    for (std::uint16_t i = 0; i < t.count; ++i)
+        if (owned_clear(t, i) && slot_is_mine(t, i))
+            free_slot(t, i);
+}
+
+// Claims a free slot for this process, first freeing the slots of processes that have exited.
+inline result<std::uint16_t> claim_slot(waiter_table &t) {
+    const std::uint32_t pid = current_pid();
+    const std::uint64_t start = current_start();
+    const std::uint64_t pidns = current_pidns();
+    free_dead_waiters(t);
+    for (std::uint16_t i = 0; i < t.count; ++i) {
+        waiter_slot &w = t.slots[i];
+        std::uint32_t none = 0;
+        if (!atomic(w.owner_pid)
+                 .compare_exchange_strong(none, pid, std::memory_order_acq_rel, std::memory_order_relaxed))
+            continue;
+        // Counted before owner_start is stamped: a freer decrements only for a stamped slot, so a claimer
+        // killed in between leaves the count too high, never too low.
+        atomic(*t.claimed).fetch_add(1, std::memory_order_seq_cst);
+        atomic(w.interrupt).store(0, std::memory_order_relaxed);
+        atomic(w.owner_pidns).store(pidns, std::memory_order_relaxed);
+        atomic(w.owner_start).store(start, std::memory_order_release);
+        owned_set(t, i);
+#ifdef _WIN32
+        HANDLE e = event(t, i);
+        if (e == nullptr) {
+            const unexpected failed = os_failure();
+            owned_clear(t, i);
+            free_slot(t, i);
+            return failed;
+        }
+        // Drops a wake-up meant for an earlier owner of the slot.
+        ResetEvent(e);
+#endif
+        return i;
+    }
+    return unexpected(status::no_slot);
+}
+
+inline void release_slot(waiter_table &t, std::uint16_t slot) noexcept {
+    if (slot < t.count && owned_clear(t, slot) && slot_is_mine(t, slot))
+        free_slot(t, slot);
+}
+
+inline bool slot_held(const waiter_table &t, std::uint16_t slot) noexcept {
+    return slot < t.count && owned_test(t, slot) && slot_is_mine(t, slot);
+}
+
+// Wakes every process waiting on word. The caller changes word first and decides whether anyone waits.
+SHAREDBOX_HOT void wake_all(const waiter_table &t, std::uint32_t &word) noexcept {
+#ifdef _WIN32
+    static_cast<void>(word);
+    for (std::uint16_t i = 0; i < t.count; ++i)
+        if (atomic(t.slots[i].owner_pid).load(std::memory_order_seq_cst) != 0)
+            if (HANDLE e = event(t, i); e != nullptr)
+                SetEvent(e);
+#else
+    static_cast<void>(t);
+    syscall(SYS_futex, &word, futex_wake, INT_MAX, nullptr, nullptr, 0);
+#endif
+}
+
+// Blocks in a slot this process holds until changed() is true, the slot is interrupted, or timeout
+// passes (status::timeout). changed must read with seq_cst: word is read before it, so a change between
+// the two moves the word and the futex refuses to sleep. With sleepers, the wait counts itself there
+// for its whole length, before its first check, so a writer that reads sleepers with seq_cst after its
+// own change either sees the count or has its change seen by the check.
+template <class Changed>
+result<wake> wait_on(const waiter_table &t, std::uint16_t slot, std::uint32_t &word, Changed changed,
+                     seconds timeout, std::uint32_t *sleepers = nullptr) {
+    if (slot >= t.count || !owned_test(t, slot) || !timeout_ok(timeout, true))
+        return unexpected(status::range);
+    struct counted {
+        std::uint32_t *n;
+        explicit counted(std::uint32_t *count) noexcept : n(count) {
+            if (n != nullptr)
+                atomic(*n).fetch_add(1, std::memory_order_seq_cst);
+        }
+        ~counted() {
+            if (n != nullptr)
+                atomic(*n).fetch_sub(1, std::memory_order_seq_cst);
+        }
+        counted(const counted &) = delete;
+        counted &operator=(const counted &) = delete;
+    } asleep(sleepers);
+    const clock::time_point deadline = clock::now() + std::chrono::duration_cast<clock::duration>(timeout);
+    for (;;) {
+        const std::uint32_t seen = atomic(word).load(std::memory_order_seq_cst);
+        if (changed())
+            return wake::changed;
+        std::uint32_t set = 1;
+        if (atomic(t.slots[slot].interrupt)
+                .compare_exchange_strong(set, 0, std::memory_order_acq_rel, std::memory_order_relaxed))
+            return wake::interrupted;
+        const clock::duration remaining = deadline - clock::now();
+        if (remaining <= clock::duration::zero())
+            return unexpected(status::timeout);
+#ifdef _WIN32
+        static_cast<void>(seen);
+        HANDLE e = event(t, slot);
+        if (e == nullptr)
+            return os_failure();
+        const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(remaining).count();
+        if (WaitForSingleObject(e, static_cast<DWORD>(ms) + 1) == WAIT_FAILED)
+            return os_failure();
+#else
+        const auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(remaining).count();
+        timespec ts{};
+        ts.tv_sec = static_cast<time_t>(ns / 1000000000);
+        ts.tv_nsec = static_cast<long>(ns % 1000000000);
+        syscall(SYS_futex, &word, futex_wait, seen, &ts, nullptr, 0);
+#endif
+    }
+}
+
+// Ends the wait in slot, of any process, with wake::interrupted; word is the one that wait sleeps on.
+// The flag stays set until that waiter sees it, as the box's interrupt documents.
+inline result<void> interrupt_slot(const waiter_table &t, std::uint16_t slot, std::uint32_t &word) {
+    if (slot >= t.count)
+        return unexpected(status::range);
+    atomic(t.slots[slot].interrupt).store(1, std::memory_order_seq_cst);
+#ifdef _WIN32
+    static_cast<void>(word);
+    HANDLE e = event(t, slot);
+    if (e == nullptr)
+        return os_failure();
+    SetEvent(e);
+#else
+    atomic(word).fetch_add(1, std::memory_order_seq_cst);
+    syscall(SYS_futex, &word, futex_wake, INT_MAX, nullptr, nullptr, 0);
+#endif
+    return {};
 }
 } // namespace detail
 

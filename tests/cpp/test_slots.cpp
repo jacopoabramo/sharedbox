@@ -67,8 +67,8 @@ TEST_CASE("a dead owner's slot claimed again before it is freed is left to the n
     const std::string name = unique("slots-aba");
     auto h = handle::create(name, fields, 8, 1, 4, {});
     REQUIRE(h.has_value());
-    sharedbox::detail::state view;
-    view.hdr = static_cast<sharedbox::header *>(h->base());
+    sharedbox::detail::waiter_table view;
+    view.claimed = &waiters(*h);
     sharedbox::waiter_slot &s = slot_0(*h);
     const std::uint32_t new_owner = sharedbox::detail::current_pid();
     s.owner_start = 12345;
@@ -96,10 +96,10 @@ TEST_CASE("a claim made while a dead owner's slot is being freed survives the re
     auto h = handle::create(name, fields, 8, 1, 4, {});
     REQUIRE(h.has_value());
     sharedbox::waiter_slot &s = slot_0(*h);
-    sharedbox::detail::state other;
-    other.hdr = static_cast<sharedbox::header *>(h->base());
+    sharedbox::detail::waiter_table other;
     other.slots = &s;
-    other.waiter_slots = h->waiter_slots();
+    other.claimed = &waiters(*h);
+    other.count = h->waiter_slots();
     s.owner_start = 12345;
     s.owner_pidns = sharedbox::detail::current_pidns();
     s.owner_pid = dead;
@@ -155,3 +155,24 @@ TEST_CASE("a dead owner's slot is freed only when both namespaces are known and 
     static_cast<void>(sharedbox::unlink(name));
 }
 #endif
+
+TEST_CASE("a handle from a capsule frees its waiter slot before it releases the capsule") {
+    constexpr sharedbox::field_spec fields[1] = {{0, 8, sharedbox::kind_int}};
+    const std::string name = unique("slots-capsule");
+    auto made = handle::create(name, fields, 8, 1, 4, {});
+    REQUIRE(made.has_value());
+    auto watcher = handle::open(name, sharedbox::seconds(1.0));
+    REQUIRE(watcher.has_value());
+    sbx_handle *capsule = std::move(*made).to_capsule();
+    REQUIRE(capsule != nullptr);
+    {
+        auto taken = handle::from_capsule(capsule);
+        REQUIRE(taken.has_value());
+        REQUIRE(taken->register_waiter().has_value());
+        CHECK(watcher->waiters() == 1);
+    }
+    // Freed in a mapping already released, the slot would crash the test or stay counted.
+    CHECK(watcher->waiters() == 0);
+    delete capsule;
+    static_cast<void>(sharedbox::unlink(name));
+}
