@@ -8,6 +8,7 @@ one CPU core busy on each side.
 """
 
 import argparse
+import contextlib
 import multiprocessing as mp
 import os
 import statistics
@@ -22,7 +23,7 @@ from multiprocessing.shared_memory import SharedMemory
 from multiprocessing.synchronize import Event
 from typing import Any, TypedDict
 
-from sharedbox import SharedBox, SharedStream
+from sharedbox import SegmentNotFoundError, SharedBox, SharedStream
 
 WARMUP = 200
 SAMPLES = 5000
@@ -163,28 +164,33 @@ def stream_round_trips(ctx: SpawnContext, opts: Options) -> list[int]:
         except TimeoutError:
             return False
 
-    with (
-        SharedStream.create(int, f"{base}-ping", capacity=4) as ping_stream,
-        SharedStream.create(int, f"{base}-pong", capacity=4) as pong_stream,
-    ):
-        pongs = pong_stream.reader(start="oldest")
-        child = run_child(
-            ctx,
-            stream_child,
-            ping_stream.name,
-            pong_stream.name,
-            opts.total,
-            opts.timeout,
-        )
-        try:
-            with ping_stream.sender() as sender:
-                if not answered(pongs, -1):
-                    raise SystemExit(f"{label}: the child did not start")
-                return measure(label, sender.send, lambda i: answered(pongs, i), opts)
-        finally:
-            stop_child(child, opts.timeout)
-            SharedStream.unlink(f"{base}-ping")
-            SharedStream.unlink(f"{base}-pong")
+    try:
+        with (
+            SharedStream.create(int, f"{base}-ping", capacity=4) as ping_stream,
+            SharedStream.create(int, f"{base}-pong", capacity=4) as pong_stream,
+        ):
+            pongs = pong_stream.reader(start="oldest")
+            child = run_child(
+                ctx,
+                stream_child,
+                ping_stream.name,
+                pong_stream.name,
+                opts.total,
+                opts.timeout,
+            )
+            try:
+                with ping_stream.sender() as sender:
+                    if not answered(pongs, -1):
+                        raise SystemExit(f"{label}: the child did not start")
+                    return measure(
+                        label, sender.send, lambda i: answered(pongs, i), opts
+                    )
+            finally:
+                stop_child(child, opts.timeout)
+    finally:
+        for suffix in ("ping", "pong"):
+            with contextlib.suppress(SegmentNotFoundError):
+                SharedStream.unlink(f"{base}-{suffix}")
 
 
 def event_child(ping: Event, pong: Event, total: int, timeout: float) -> None:
