@@ -2,7 +2,7 @@ from pathlib import Path
 
 from ._arrays import DType, Shape, SupportsDLPack, register_array_type
 from ._box import SharedBox, SupportsSharedBox, fields
-from ._events import BoxEvents, FieldWatch
+from ._events import BoxEvents, FieldFuture, FieldWatch
 from ._layout import Capacity, Field, field
 from ._native import (
     BoxClosedError,
@@ -37,6 +37,7 @@ __all__ = [
     "DType",
     "EndOfStream",
     "Field",
+    "FieldFuture",
     "FieldWatch",
     "KindMismatchError",
     "LockTimeoutError",

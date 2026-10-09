@@ -7,7 +7,7 @@ import logging
 import threading
 import time
 from collections.abc import AsyncIterator, Callable, Generator, Iterator
-from concurrent.futures import CancelledError
+from concurrent.futures import CancelledError, Future, InvalidStateError
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -15,7 +15,6 @@ from typing import (
     Generic,
     TypeAlias,
     TypeVar,
-    cast,
     overload,
 )
 
@@ -32,7 +31,6 @@ if TYPE_CHECKING:
     from ._native import Segment, Types
 
 T = TypeVar("T")
-PENDING, DONE, CANCELLED = "pending", "done", "cancelled"
 STEP: Final = 1.0
 # Seconds the exit handler waits for stopped watcher threads, together.
 EXIT_WAIT: Final = 2.0
@@ -93,45 +91,45 @@ def stop_watchers() -> None:
 atexit.register(stop_watchers)
 
 
-class FieldFuture(Generic[T]):
+class FieldFuture(Future[T]):
     """The next value written to one field of a box.
 
-    Resolves on the first write to the field after the version it was
-    created at. Done callbacks run on the box's watcher thread, or on the
-    thread that closes the box.
+    A `concurrent.futures.Future`, so `concurrent.futures.wait`,
+    `concurrent.futures.as_completed` and `asyncio.wrap_future` take it, and
+    it can be awaited directly in a running event loop. It resolves on the
+    first write to the field after the version it was created at. Done
+    callbacks run on the box's watcher thread, or on the thread that closes
+    the box; closing the box cancels the futures still pending.
+
+    [`FieldWatch.future`][sharedbox.FieldWatch.future] returns one.
     """
 
-    __slots__ = (
-        "_callbacks",
-        "_cond",
-        "_field",
-        "_since",
-        "_state",
-        "_value",
-        "_version",
-        "_watcher",
-    )
-
     def __init__(self, watcher: Watcher, field: FieldSpec, since: int) -> None:
+        super().__init__()
         self._watcher = watcher
         self._field = field
         self._since = since
-        self._cond = threading.Condition()
-        self._state = PENDING
-        self._value: T | None = None
         self._version = since
-        self._callbacks: list[Callable[[FieldFuture[T]], object]] = []
+        self._notified = False
 
     @property
     def version(self) -> int:
-        """Version of the field when the result was read."""
+        """Version of the field when the result was read; before that, the version the future was created at."""
         return self._version
 
-    def done(self) -> bool:
-        return self._state != PENDING
-
-    def cancelled(self) -> bool:
-        return self._state == CANCELLED
+    def cancel(self) -> bool:
+        """Stop waiting; False if the future already has a value, True otherwise."""
+        if not super().cancel():
+            return False
+        # Marks the cancellation as reported, which concurrent.futures.wait needs
+        # to count the future as done; a second call there would log an error.
+        with self._condition:
+            first = not self._notified
+            self._notified = True
+            if first:
+                self.set_running_or_notify_cancel()
+        self._watcher.discard(self)
+        return True
 
     def result(self, timeout: float | None = None) -> T:
         """Block until the field changes and return its new value.
@@ -143,76 +141,26 @@ class FieldFuture(Generic[T]):
         concurrent.futures.CancelledError
             If the future was cancelled.
         """
-        with self._cond:
-            if not self._cond.wait_for(self.done, timeout):
-                raise TimeoutError(
-                    f"{self._field.name} did not change within {timeout} s"
-                )
-        if self._state == CANCELLED:
-            raise CancelledError()
-        # DONE is only set by _settle together with the value, so the cast holds.
-        return cast(T, self._value)
-
-    def cancel(self) -> bool:
-        """Stop waiting; False if the future already has a value, True otherwise."""
-        if self._settle(CANCELLED, None, self._since):
-            self._watcher.discard(self)
-            return True
-        return self.cancelled()
-
-    def add_done_callback(self, fn: Callable[[FieldFuture[T]], object]) -> None:
-        """Call `fn(future)` once it is done, at once if it already is."""
-        with self._cond:
-            if self._state == PENDING:
-                self._callbacks.append(fn)
-                return
-        self._run(fn)
+        try:
+            return super().result(timeout)
+        except TimeoutError:
+            raise TimeoutError(
+                f"{self._field.name} did not change within {timeout} s"
+            ) from None
 
     def __await__(self) -> Generator[Any, None, T]:
-        loop = asyncio.get_running_loop()
-        relay: asyncio.Future[T] = loop.create_future()
+        return asyncio.wrap_future(self).__await__()
 
-        def forward(_: FieldFuture[T]) -> None:
-            with contextlib.suppress(RuntimeError):
-                loop.call_soon_threadsafe(copy_state, self, relay)
-
-        self.add_done_callback(forward)
-        try:
-            return (yield from relay.__await__())
-        except asyncio.CancelledError:
-            self.cancel()
-            raise
-
-    def _settle(self, state: str, value: T | None, version: int) -> bool:
-        with self._cond:
-            if self._state != PENDING:
-                return False
-            self._state, self._value, self._version = state, value, version
-            callbacks, self._callbacks = self._callbacks, []
-            self._cond.notify_all()
-        for fn in callbacks:
-            self._run(fn)
-        return True
-
-    def _run(self, fn: Callable[[FieldFuture[T]], object]) -> None:
-        try:
-            fn(self)
-        except Exception:
-            logger.exception("callback for field %r raised", self._field.name)
-
-
-def copy_state(source: FieldFuture[T], relay: asyncio.Future[T]) -> None:
-    if relay.done():
-        return
-    if source.cancelled():
-        relay.cancel()
-    else:
-        # DONE is only set by _settle together with the value, so the cast holds.
-        relay.set_result(cast(T, source._value))
+    def _resolve(self, value: T, version: int) -> None:
+        if self.done():
+            return
+        self._version = version
+        with contextlib.suppress(InvalidStateError):
+            self.set_result(value)
 
 
 class FieldWatch(Generic[T]):
-    """New values of one field, for `for` and `async for`.
+    """New values of one field, for `for`, `async for` or `future()`.
 
     [`SharedBox.watch`][sharedbox.SharedBox.watch] returns it. Only writes
     made after the watch was created count. Iterating with `for` blocks
@@ -247,6 +195,22 @@ class FieldWatch(Generic[T]):
 
     def __aiter__(self) -> AsyncIterator[T]:
         return self._values()
+
+    def future(self) -> FieldFuture[T]:
+        """Return a future of the next write to the field after the watch was created.
+
+        A write made between [`watch`][sharedbox.SharedBox.watch] and this
+        call resolves the future at once. Each call returns a new future
+        from the same starting version, so one watch can hand out several.
+        The future works with `concurrent.futures.wait`; see
+        [`FieldFuture`][sharedbox.FieldFuture].
+
+        Raises
+        ------
+        BoxClosedError
+            If the box is closed.
+        """
+        return self._watcher.future(self._field, self._since)
 
     async def _values(self) -> AsyncIterator[T]:
         since = self._since
@@ -312,11 +276,11 @@ class Watcher:
             self, field, current if since is None else since
         )
         if current != fut._since:
-            fut._settle(DONE, shown(field, value), current)
+            fut._resolve(shown(field, value), current)
             return fut
         with self._lock:
             if self._stop.is_set():
-                fut._settle(CANCELLED, None, fut._since)
+                fut.cancel()
                 return fut
             self._pending.append(fut)
             self._start_locked()
@@ -433,7 +397,7 @@ class Watcher:
         with self._lock:
             pending, self._pending = self._pending, []
         for fut in pending:
-            fut._settle(CANCELLED, None, fut._since)
+            fut.cancel()
 
     def after_fork(self) -> None:
         """Forget the parent's thread and futures in a child created by `fork`.
@@ -530,7 +494,7 @@ class Watcher:
                 with contextlib.suppress(ValueError):
                     self._pending.remove(fut)
         for fut, value, version in values:
-            fut._settle(DONE, value, version)
+            fut._resolve(value, version)
 
 
 class BoxEvents(SignalGroup):

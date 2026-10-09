@@ -11,6 +11,9 @@ Dates are marked as `DD-MM-YYYY`
 
 ### Added
 
+- `FieldWatch.future()`, returning a `FieldFuture`, a
+  `concurrent.futures.Future` of the next write to the field; `FieldFuture`
+  is exported from `sharedbox`.
 - `SharedStream`, `StreamSender` and `StreamReader`: send items of any type a
   `SharedBox` field takes from one process to up to `max_readers` readers,
   each reading `lossless`, `lossy` or `latest`, with blocking, non-blocking
