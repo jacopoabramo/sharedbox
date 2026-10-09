@@ -13,8 +13,9 @@ the layout and the native module converts values.
 ```text
 sharedbox/
 |-- include/sharedbox/
-|   |-- core.hpp               what every segment kind uses: result and error, liveness, names, mappings, the type codec
-|   |-- box.hpp                box layout 3.0 and its protocols: create, publish, open, lock, read, write, waiter slots, capsule handle
+|   |-- core.hpp               what every segment kind uses: result and error, liveness, names, mappings, the open step, waiter slots, the type codec
+|   |-- box.hpp                box layout 3.0 and its protocols: create, publish, open, lock, read, write, capsule handle
+|   |-- stream.hpp             stream layout 1.0: create, open, the sender, readers, the gate, dead ends
 |   |-- sharedbox.hpp          includes every kind; the header consumers include
 |   |-- sharedbox_c.h          minimal C interface: sbx_open, sbx_import, sbx_read, sbx_write, sbx_schema_hash, sbx_release, sbx_field_desc, typed sbx_read_* and sbx_write_*
 |   `-- sharedbox_c.cpp        its implementation, compiled by the consumer (CMake target sharedbox::c)
@@ -141,7 +142,14 @@ the magic (an unknown one is `status::foreign`), the kind
 every geometry field against the mapping size, and refuses what fails. It
 copies the field table and uses only the copy. It opens no segment of box
 layout 1.0 or 2.0, which 0.5 and earlier wrote.
-`static_assert`s in `core.hpp` and `box.hpp` check every `sizeof` and `offsetof`.
+`static_assert`s in `core.hpp`, `box.hpp` and `stream.hpp` check every
+`sizeof` and `offsetof`.
+
+A stream's segment starts with a 256-byte header: the common line, a line
+of geometry written once, the sender's line and the readers' line. Then
+come a 64-byte entry per reader, the waiter slots, `capacity` slots each
+holding a `seq` and one item, and the description table. Every offset is
+64-bit. The full specification is in `docs/reference/segment-layout.md`.
 
 ### Record encoding
 

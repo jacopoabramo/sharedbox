@@ -139,6 +139,16 @@ struct box_layout {
     static constexpr std::uint16_t oldest_major = layout_major;
     static constexpr std::uint16_t newest_major = layout_major;
     using header_type = header;
+    // The header at base without seq, writer_pid, wake_word and waiters, which other processes change
+    // while they are open: line 0 and the bytes of line 1 written once. Only the copy is checked and used.
+    static header copy_header(const void *base) noexcept {
+        header h{};
+        std::memcpy(&h, base, offsetof(header, seq));
+        constexpr std::size_t once = offsetof(header, field_count);
+        std::memcpy(reinterpret_cast<std::byte *>(&h) + once, static_cast<const std::byte *>(base) + once,
+                    sizeof h - once);
+        return h;
+    }
     // Line 1 of the copied header, after its line 0 passed the core checks.
     static status check_geometry(const header &h, std::uint64_t mapped) noexcept {
         if (mapped > max_mapping_size)
@@ -156,27 +166,6 @@ struct box_layout {
     }
 };
 static_assert(segment_layout<box_layout>);
-
-// The header at base without seq, writer_pid, wake_word and waiters, which other processes change while
-// they are open: line 0 and the bytes of line 1 written once. Only the copy is checked and used.
-inline header copy_header(const void *base) noexcept {
-    header h{};
-    std::memcpy(&h, base, offsetof(header, seq));
-    constexpr std::size_t once = offsetof(header, field_count);
-    std::memcpy(reinterpret_cast<std::byte *>(&h) + once, static_cast<const std::byte *>(base) + once,
-                sizeof h - once);
-    return h;
-}
-
-// Copies the header of a published segment of mapped bytes and checks the copy as a box.
-inline result<header> open_header(const void *base, std::uint64_t mapped) noexcept {
-    if (mapped < page_size)
-        return unexpected(status::corrupt);
-    const header h = copy_header(base);
-    if (const result<common_header> line0 = open_check<box_layout>(h, mapped); !line0)
-        return unexpected(line0.error());
-    return h;
-}
 
 struct state;
 
@@ -350,7 +339,6 @@ struct state {
     std::uint64_t create_id = 0;
     header *hdr = nullptr;
     std::uint64_t *counts = nullptr;
-    waiter_slot *slots = nullptr;
     std::byte *record = nullptr;
     std::uint64_t size = 0;
     std::unique_ptr<field_spec[]> fields;
@@ -359,36 +347,18 @@ struct state {
     double lock_timeout = default_lock_timeout;
     void *(*before_wait)() = nullptr;
     void (*after_wait)(void *) = nullptr;
-    std::array<std::atomic<std::uint64_t>, max_waiter_slots / 64> owned{};
-#ifdef _WIN32
-    std::unique_ptr<std::atomic<HANDLE>[]> events;
-#endif
     sbx_handle foreign{};
+    waiter_table waiters;
 
     ~state();
 };
 
-inline bool owned_clear(state &s, std::uint16_t i) noexcept;
-inline bool slot_is_mine(const state &s, std::uint16_t i) noexcept;
-inline void free_slot(const state &s, std::uint16_t i) noexcept;
-inline void free_dead_waiters(const state &s) noexcept;
 SHAREDBOX_HOT void wake_waiters(const state &s) noexcept;
-#ifdef _WIN32
-inline HANDLE event(const state &s, std::uint16_t slot) noexcept;
-#endif
 
 inline state::~state() {
+    // Before the capsule's release, which may unmap the segment the slots live in.
     if (hdr != nullptr)
-        for (std::uint16_t i = 0; i < waiter_slots; ++i)
-            // A child created by fork inherits the bits of its parent's slots; those stay the parent's.
-            if (owned_clear(*this, i) && slot_is_mine(*this, i))
-                free_slot(*this, i);
-#ifdef _WIN32
-    if (events != nullptr)
-        for (std::uint16_t i = 0; i < waiter_slots; ++i)
-            if (HANDLE e = events[i].load(std::memory_order_relaxed); e != nullptr)
-                CloseHandle(e);
-#endif
+        release_owned_slots(waiters);
     if (foreign.release != nullptr)
         foreign.release(&foreign);
 }
@@ -403,9 +373,10 @@ inline std::unique_ptr<state> make_state(std::string_view name, std::uint16_t fi
     if (s->fields == nullptr)
         return nullptr;
 #ifdef _WIN32
-    s->events.reset(new (std::nothrow) std::atomic<HANDLE>[waiter_slots]());
-    if (s->events == nullptr)
+    s->waiters.events.reset(new (std::nothrow) std::atomic<HANDLE>[waiter_slots]());
+    if (s->waiters.events == nullptr)
         return nullptr;
+    s->waiters.name = s->name;
 #endif
     std::memcpy(s->name, name.data(), name.size());
     s->field_count = field_count;
@@ -420,7 +391,10 @@ inline void bind(state &s, void *base, std::uint64_t size, std::uint16_t segment
     const std::size_t table = header_size + std::size_t{s.field_count} * sizeof(stored_field);
     s.hdr = static_cast<header *>(base);
     s.counts = reinterpret_cast<std::uint64_t *>(bytes + table);
-    s.slots = reinterpret_cast<waiter_slot *>(bytes + table + std::size_t{s.field_count} * sizeof(std::uint64_t));
+    s.waiters.slots =
+        reinterpret_cast<waiter_slot *>(bytes + table + std::size_t{s.field_count} * sizeof(std::uint64_t));
+    s.waiters.claimed = &s.hdr->waiters;
+    s.waiters.count = s.waiter_slots;
     s.record = bytes + s.record_offset;
     s.size = size;
     s.layout_major = segment_major;
@@ -611,13 +585,9 @@ inline result<handle> handle::open(std::string_view name, seconds timeout) {
     result<detail::os_mapping> map = detail::map_open(name, wait);
     if (!map)
         return unexpected(map.error());
-    auto *hdr = static_cast<header *>(map->base());
-    while (detail::atomic(hdr->common.magic).load(std::memory_order_acquire) == 0) {
-        if (wait.expired())
-            return unexpected(status::not_found);
-        wait.pause();
-    }
-    const result<header> opened = detail::open_header(hdr, map->size());
+    if (!detail::wait_published(map->base(), wait))
+        return unexpected(status::not_found);
+    const result<header> opened = detail::open_header<detail::box_layout>(map->base(), map->size());
     if (!opened)
         return unexpected(opened.error());
     const header &h = *opened;
@@ -625,14 +595,14 @@ inline result<handle> handle::open(std::string_view name, seconds timeout) {
     if (s == nullptr)
         return unexpected(status::os);
     s->record_size = h.record_size;
-    if (const status rc = detail::copy_fields(*s, hdr, h); rc != status::ok)
+    if (const status rc = detail::copy_fields(*s, map->base(), h); rc != status::ok)
         return unexpected(rc);
     s->record_offset = h.record;
     s->schema_hash = h.common.schema_hash;
     s->create_id = h.common.create_id;
     s->map = std::move(*map);
     detail::bind(*s, s->map.base(), s->map.size(), h.common.kind_major, h.common.kind_minor);
-    detail::free_dead_waiters(*s);
+    detail::free_dead_waiters(s->waiters);
     return handle(s.release());
 }
 
@@ -651,34 +621,6 @@ inline std::uint16_t handle::minor_version() const noexcept { return s_->layout_
 inline std::uint16_t handle::major_version() const noexcept { return s_->layout_major; }
 inline void *handle::base() const noexcept { return s_->hdr; }
 inline std::uint64_t handle::size() const noexcept { return s_->size; }
-
-// Removes the name, as shm_unlink does: open handles keep working. Does nothing on Windows, where the
-// OS frees the mapping with its last handle.
-[[nodiscard]] inline result<void> unlink(std::string_view name) noexcept {
-    if (!detail::name_ok(name))
-        return unexpected(status::range);
-#ifndef _WIN32
-    const detail::object_name path = detail::make_name("/", name, "");
-    if (shm_unlink(path.data()) != 0)
-        return errno == ENOENT ? unexpected(status::not_found) : detail::os_failure();
-#endif
-    return {};
-}
-
-// A copy of line 0 of the segment called name, of any kind, read without waiting and without the checks
-// of open: not_found when nothing under that name has published a header.
-[[nodiscard]] inline result<common_header> inspect(std::string_view name) noexcept {
-    if (!detail::name_ok(name))
-        return unexpected(status::range);
-    detail::backoff no_wait(0);
-    result<detail::os_mapping> map = detail::map_open(name, no_wait);
-    if (!map)
-        return unexpected(map.error());
-    auto *hdr = static_cast<header *>(map->base());
-    if (detail::atomic(hdr->common.magic).load(std::memory_order_acquire) == 0)
-        return unexpected(status::not_found);
-    return detail::copy_common(hdr);
-}
 
 namespace detail {
 
@@ -1027,198 +969,17 @@ inline result<void> handle::force_unlock() noexcept {
     return {};
 }
 
-namespace detail {
+inline result<std::uint16_t> handle::register_waiter() { return detail::claim_slot(s_->waiters); }
 
-inline bool owned_test(const state &s, std::uint16_t i) noexcept {
-    return (s.owned[i / 64].load(std::memory_order_relaxed) >> (i % 64) & 1u) != 0;
-}
+inline void handle::release_waiter(std::uint16_t slot) noexcept { detail::release_slot(s_->waiters, slot); }
 
-inline void owned_set(state &s, std::uint16_t i) noexcept {
-    s.owned[i / 64].fetch_or(std::uint64_t{1} << (i % 64), std::memory_order_acq_rel);
-}
-
-// Returns whether the bit was set.
-inline bool owned_clear(state &s, std::uint16_t i) noexcept {
-    const std::uint64_t bit = std::uint64_t{1} << (i % 64);
-    return (s.owned[i / 64].fetch_and(~bit, std::memory_order_acq_rel) & bit) != 0;
-}
-
-// Whether slot i still records this process: a slot freed by mistake and claimed by another process
-// is left to its new owner.
-inline bool slot_is_mine(const state &s, std::uint16_t i) noexcept {
-    waiter_slot &w = s.slots[i];
-    return atomic(w.owner_pid).load(std::memory_order_acquire) == current_pid() &&
-           atomic(w.owner_start).load(std::memory_order_acquire) == current_start() &&
-           atomic(w.owner_pidns).load(std::memory_order_acquire) == current_pidns();
-}
-
-// owner_start while another process frees a dead owner's slot; no real start time has this value.
-inline constexpr std::uint64_t start_freeing = UINT64_MAX - 1;
-
-// Frees slot i, which this process claimed and stamped. owner_start goes first, so a process killed at a
-// later step leaves no stamped slot for a freer to decrement again. Killed before the pidns store, it leaves an
-// unstamped slot of an exited process, which a freer frees without a decrement (the count stays one too high
-// if the kill came before the fetch_sub). Killed between the pidns and pid stores, it leaves namespace 0,
-// which on Linux counts as alive: the slot is never freed, and the count stays correct. A claimer killed
-// between its pid compare-and-swap and its pidns store also leaves namespace 0 and a slot never freed on
-// Linux, counted once too many if it had already added itself to waiters.
-inline void free_slot(const state &s, std::uint16_t i) noexcept {
-    waiter_slot &w = s.slots[i];
-    atomic(w.owner_start).store(0, std::memory_order_release);
-    atomic(s.hdr->waiters).fetch_sub(1, std::memory_order_seq_cst);
-    atomic(w.owner_pidns).store(0, std::memory_order_relaxed);
-    atomic(w.owner_pid).store(0, std::memory_order_release);
-}
-
-// Does nothing; free_dead_slot calls it after each store so a test can run other steps in between.
-struct no_pause {
-    void operator()() const noexcept {}
-};
-
-// Frees slot w of the exited process pid, seen with owner_start start. Only the process whose compare-and-swap
-// sets owner_start to start_freeing goes on, and scanners skip the slot while it holds that value, which it
-// keeps until owner_pid is 0; a new claimer's stamp may replace it after that. A start of 0 is a claimer that
-// died before stamping: it may or may not have counted itself in waiters, so the slot is freed without a
-// decrement and the count can only be too high, which costs a spurious wake-up.
-//
-// Known limits: a freer killed before its owner_pid store leaves the slot unusable until the segment is created
-// again, and counted once too many if it was stamped and the freer was killed before its fetch_sub. The check that
-// owner_pid is still pid cannot tell an unstamped claimer from another one with the same pid, which needs the pid
-// to be reused within a few instructions.
-template <class Pause = no_pause>
-inline void free_dead_slot(const state &s, waiter_slot &w, std::uint32_t pid, std::uint64_t start,
-                           Pause pause = {}) noexcept {
-    if (!atomic(w.owner_start)
-             .compare_exchange_strong(start, start_freeing, std::memory_order_acq_rel, std::memory_order_relaxed))
-        return;
-    // The slot changed hands after the caller read pid. Mainly a stale read, start being the new owner's,
-    // which free_dead_waiters's second read of owner_pid narrows; otherwise a new owner with the same start
-    // time or none stamped yet. The slot is that owner's.
-    if (atomic(w.owner_pid).load(std::memory_order_acquire) != pid) {
-        std::uint64_t freeing = start_freeing;
-        atomic(w.owner_start)
-            .compare_exchange_strong(freeing, start, std::memory_order_release, std::memory_order_relaxed);
-        return;
-    }
-    if (start != 0) {
-        atomic(s.hdr->waiters).fetch_sub(1, std::memory_order_seq_cst);
-        pause();
-    }
-    atomic(w.owner_pidns).store(0, std::memory_order_relaxed);
-    pause();
-    atomic(w.owner_pid).store(0, std::memory_order_release);
-    pause();
-    // Fails, harmlessly, once a new claimer has stamped its own start.
-    std::uint64_t freeing = start_freeing;
-    atomic(w.owner_start)
-        .compare_exchange_strong(freeing, 0, std::memory_order_release, std::memory_order_relaxed);
-    pause();
-}
-
-// Frees every slot whose owner has exited.
-inline void free_dead_waiters(const state &s) noexcept {
-    const std::uint32_t self = current_pid();
-    const std::uint64_t own_pidns = current_pidns();
-    for (std::uint16_t i = 0; i < s.waiter_slots; ++i) {
-        waiter_slot &w = s.slots[i];
-        const std::uint32_t pid = atomic(w.owner_pid).load(std::memory_order_acquire);
-        if (pid == 0)
-            continue;
-        std::uint64_t start = atomic(w.owner_start).load(std::memory_order_acquire);
-#ifdef _WIN32
-        static_cast<void>(own_pidns);
-        const bool checkable = true;
-#else
-        // A pid means something only inside its namespace: a slot of another namespace, or with either
-        // namespace unknown (0), counts as alive. Windows has no pid namespaces.
-        const std::uint64_t pidns = atomic(w.owner_pidns).load(std::memory_order_acquire);
-        const bool checkable = pidns != 0 && own_pidns != 0 && pidns == own_pidns;
-#endif
-        // The slot changed hands between the reads: start and pidns may be the new owner's, not pid's.
-        if (atomic(w.owner_pid).load(std::memory_order_acquire) != pid)
-            continue;
-        // start 0: not stamped yet, so only whether the pid runs at all can be checked.
-        if (start == start_freeing || !checkable || (pid == self && (start == 0 || start == current_start())) ||
-            process_alive(pid, start == 0 ? start_unknown : start))
-            continue;
-        free_dead_slot(s, w, pid, start);
-    }
-}
-
-} // namespace detail
-
-inline result<std::uint16_t> handle::register_waiter() {
-    detail::state &s = *s_;
-    const std::uint32_t pid = detail::current_pid();
-    const std::uint64_t start = detail::current_start();
-    const std::uint64_t pidns = detail::current_pidns();
-    detail::free_dead_waiters(s);
-    for (std::uint16_t i = 0; i < s.waiter_slots; ++i) {
-        waiter_slot &w = s.slots[i];
-        std::uint32_t none = 0;
-        if (!detail::atomic(w.owner_pid)
-                 .compare_exchange_strong(none, pid, std::memory_order_acq_rel, std::memory_order_relaxed))
-            continue;
-        // Counted before owner_start is stamped: a freer decrements only for a stamped slot, so a claimer
-        // killed in between leaves waiters too high, never too low.
-        detail::atomic(s.hdr->waiters).fetch_add(1, std::memory_order_seq_cst);
-        detail::atomic(w.interrupt).store(0, std::memory_order_relaxed);
-        detail::atomic(w.owner_pidns).store(pidns, std::memory_order_relaxed);
-        detail::atomic(w.owner_start).store(start, std::memory_order_release);
-        detail::owned_set(s, i);
-#ifdef _WIN32
-        HANDLE e = detail::event(s, i);
-        if (e == nullptr) {
-            const unexpected failed = detail::os_failure();
-            detail::owned_clear(s, i);
-            detail::free_slot(s, i);
-            return failed;
-        }
-        // Drops a wake-up meant for an earlier owner of the slot.
-        ResetEvent(e);
-#endif
-        return i;
-    }
-    return unexpected(status::no_slot);
-}
-
-inline void handle::release_waiter(std::uint16_t slot) noexcept {
-    detail::state &s = *s_;
-    if (slot < s.waiter_slots && detail::owned_clear(s, slot) && detail::slot_is_mine(s, slot))
-        detail::free_slot(s, slot);
-}
-
-inline bool handle::waiter_held(std::uint16_t slot) const noexcept {
-    return slot < s_->waiter_slots && detail::owned_test(*s_, slot) && detail::slot_is_mine(*s_, slot);
-}
+inline bool handle::waiter_held(std::uint16_t slot) const noexcept { return detail::slot_held(s_->waiters, slot); }
 
 inline std::uint32_t handle::waiters() const noexcept {
     return detail::atomic(s_->hdr->waiters).load(std::memory_order_acquire);
 }
 
 namespace detail {
-
-#ifdef _WIN32
-// The auto-reset event of waiter slot i, opened on first use and kept until the handle is destroyed.
-inline HANDLE event(const state &s, std::uint16_t slot) noexcept {
-    std::atomic<HANDLE> &cell = s.events[slot];
-    HANDLE e = cell.load(std::memory_order_acquire);
-    if (e != nullptr)
-        return e;
-    char suffix[8];
-    std::snprintf(suffix, sizeof suffix, "#w%u", static_cast<unsigned>(slot));
-    const wide_name wide = make_wide_name(s.name, suffix);
-    e = CreateEventW(nullptr, FALSE, FALSE, wide.data());
-    if (e == nullptr)
-        return nullptr;
-    HANDLE previous = nullptr;
-    if (!cell.compare_exchange_strong(previous, e, std::memory_order_acq_rel, std::memory_order_acquire)) {
-        CloseHandle(e);
-        return previous;
-    }
-    return e;
-}
-#endif
 
 SHAREDBOX_HOT void wake_waiters(const state &s) noexcept {
     header &h = *s.hdr;
@@ -1228,71 +989,21 @@ SHAREDBOX_HOT void wake_waiters(const state &s) noexcept {
     // waiters is never below the number of claimed slots, so 0 means no one to wake.
     if (atomic(h.waiters).load(std::memory_order_seq_cst) == 0)
         return;
-#ifdef _WIN32
-    for (std::uint16_t i = 0; i < s.waiter_slots; ++i)
-        if (atomic(s.slots[i].owner_pid).load(std::memory_order_seq_cst) != 0)
-            if (HANDLE e = event(s, i); e != nullptr)
-                SetEvent(e);
-#else
-    syscall(SYS_futex, &h.wake_word, futex_wake, INT_MAX, nullptr, nullptr, 0);
-#endif
+    wake_all(s.waiters, h.wake_word);
 }
 
 } // namespace detail
 
 inline result<wake> handle::wait(std::uint16_t slot, std::uint64_t last_generation, seconds timeout) {
-    detail::state &s = *s_;
-    if (slot >= s.waiter_slots || !detail::owned_test(s, slot) || !detail::timeout_ok(timeout, true))
-        return unexpected(status::range);
-    header &h = *s.hdr;
-    const detail::clock::time_point deadline =
-        detail::clock::now() + std::chrono::duration_cast<detail::clock::duration>(timeout);
-    for (;;) {
-        // The word is read before the generation: a write between the two changes the word, and the
-        // futex then refuses to sleep.
-        const std::uint32_t word = detail::atomic(h.wake_word).load(std::memory_order_seq_cst);
-        if (detail::atomic(h.seq).load(std::memory_order_seq_cst) >> 1 != last_generation)
-            return wake::changed;
-        std::uint32_t set = 1;
-        if (detail::atomic(s.slots[slot].interrupt)
-                .compare_exchange_strong(set, 0, std::memory_order_acq_rel, std::memory_order_relaxed))
-            return wake::interrupted;
-        const detail::clock::duration remaining = deadline - detail::clock::now();
-        if (remaining <= detail::clock::duration::zero())
-            return unexpected(status::timeout);
-#ifdef _WIN32
-        static_cast<void>(word);
-        HANDLE e = detail::event(s, slot);
-        if (e == nullptr)
-            return detail::os_failure();
-        const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(remaining).count();
-        if (WaitForSingleObject(e, static_cast<DWORD>(ms) + 1) == WAIT_FAILED)
-            return detail::os_failure();
-#else
-        const auto ns = std::chrono::duration_cast<std::chrono::nanoseconds>(remaining).count();
-        timespec ts{};
-        ts.tv_sec = static_cast<time_t>(ns / 1000000000);
-        ts.tv_nsec = static_cast<long>(ns % 1000000000);
-        syscall(SYS_futex, &h.wake_word, detail::futex_wait, word, &ts, nullptr, 0);
-#endif
-    }
+    header &h = *s_->hdr;
+    return detail::wait_on(
+        s_->waiters, slot, h.wake_word,
+        [&]() noexcept { return detail::atomic(h.seq).load(std::memory_order_seq_cst) >> 1 != last_generation; },
+        timeout);
 }
 
 inline result<void> handle::interrupt(std::uint16_t slot) {
-    detail::state &s = *s_;
-    if (slot >= s.waiter_slots)
-        return unexpected(status::range);
-    detail::atomic(s.slots[slot].interrupt).store(1, std::memory_order_seq_cst);
-#ifdef _WIN32
-    HANDLE e = detail::event(s, slot);
-    if (e == nullptr)
-        return detail::os_failure();
-    SetEvent(e);
-#else
-    detail::atomic(s.hdr->wake_word).fetch_add(1, std::memory_order_seq_cst);
-    syscall(SYS_futex, &s.hdr->wake_word, detail::futex_wake, INT_MAX, nullptr, nullptr, 0);
-#endif
-    return {};
+    return detail::interrupt_slot(s_->waiters, slot, s_->hdr->wake_word);
 }
 
 namespace detail {
@@ -1335,7 +1046,7 @@ inline result<handle> handle::from_capsule(sbx_handle *capsule) {
     auto *hdr = static_cast<header *>(capsule->base);
     if (capsule->size < page_size || detail::atomic(hdr->common.magic).load(std::memory_order_acquire) == 0)
         return unexpected(status::corrupt);
-    const result<header> opened = detail::open_header(hdr, capsule->size);
+    const result<header> opened = detail::open_header<detail::box_layout>(hdr, capsule->size);
     if (!opened)
         return unexpected(opened.error());
     const header &h = *opened;

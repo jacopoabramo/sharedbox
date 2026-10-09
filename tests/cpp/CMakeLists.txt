@@ -26,7 +26,7 @@ function(sbx_test_target target)
     endif()
 endfunction()
 
-set(sbx_tests test_result test_atomics test_mapping test_lock test_slots test_wait test_layout3 test_types test_values test_write_in_place test_core_alone)
+set(sbx_tests test_result test_atomics test_mapping test_lock test_slots test_wait test_layout3 test_stream_layout test_stream test_types test_values test_write_in_place test_core_alone)
 if(WIN32)
     list(APPEND sbx_tests test_windows_h)
 else()
@@ -79,6 +79,10 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
     sbx_test_target(test_small_shm)
     target_link_libraries(test_small_shm PRIVATE doctest::doctest_with_main)
 endif()
+
+# Throughput of a stream in one process, run by hand; built by default so it keeps compiling.
+add_executable(bench_stream bench_stream.cpp)
+sbx_test_target(bench_stream)
 
 # Each case builds compile_fail.cpp with one call that must not compile and passes on its static_assert
 # message. The C++20 result only: std::expected words its own messages.

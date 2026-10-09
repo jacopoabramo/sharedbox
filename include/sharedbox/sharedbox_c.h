@@ -36,6 +36,9 @@ extern "C" {
 #define SBX_E_OS (-10)
 #define SBX_E_KIND (-11)
 #define SBX_E_FOREIGN (-12)
+#define SBX_E_BUSY (-13)
+#define SBX_E_ENDED (-14)
+#define SBX_E_INTERRUPTED (-15)
 
 /* A handle on one box, as a "sharedbox_box" capsule carries it between builds. private_data belongs to
  * the build that made the handle, and only its release reads it. */
