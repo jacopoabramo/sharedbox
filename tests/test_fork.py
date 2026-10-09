@@ -13,6 +13,7 @@ from multiprocessing.synchronize import Event
 from typing import Any
 
 import pytest
+from crossproc import fork
 
 from sharedbox import BoxEvents, LockTimeoutError, SharedBox
 from sharedbox._events import Watcher
@@ -126,15 +127,6 @@ def busy_box(name: str) -> Counter:
     box.value = 1
     seen.get(timeout=5)
     return box
-
-
-def fork(target: Callable[..., object], *args: object) -> BaseProcess:
-    if sys.platform == "win32":
-        raise NotImplementedError("Windows has no fork")
-    else:
-        process = mp.get_context("fork").Process(target=target, args=args, daemon=True)
-        process.start()
-        return process
 
 
 def finish(process: BaseProcess) -> int | None:

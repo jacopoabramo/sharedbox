@@ -82,6 +82,22 @@ public:
     /// out a writable C-contiguous array in CPU memory, and ValueError unless out has the field's dtype and
     /// shape; an ml_dtypes bfloat16 array is taken as its uint16 view.
     nb::ndarray<nb::c_contig, nb::device::cpu> array_out(std::uint32_t index, PyObject *out) const;
+    /// Where an array the caller passed to receive into goes: its writable view, where its bytes start in the
+    /// field's value and how many there are, and the key decode_given finds it under.
+    struct ArrayTarget {
+        nb::ndarray<nb::c_contig, nb::device::cpu> view;
+        std::uint64_t offset = 0;
+        std::uint64_t size = 0;
+        std::uint64_t key = 0;
+    };
+
+    /// out as the destination of the array that path reaches in field index, through records and tuples; the
+    /// empty path is the field itself. Raises as array_out does, and TypeError for a path that steps into
+    /// anything else or does not end at an array.
+    ArrayTarget array_target(std::uint32_t index, std::span<const std::uint32_t> path, PyObject *out) const;
+    /// As decode for field index, with the member under each key of given taken as that object.
+    nb::object decode_given(std::uint32_t index, std::span<const std::byte> bytes,
+                            const std::unordered_map<std::uint64_t, PyObject *> &given) const;
     /// A writable array over data, the bytes of array field index, which owner keeps alive, passed through the
     /// field's converter as a read is. Raises TypeError unless the field is an array.
     nb::object array_over(std::uint32_t index, std::byte *data, nb::handle owner) const;
@@ -92,7 +108,10 @@ public:
 private:
     struct Where {
         const std::string &name;
+        const std::unordered_map<std::uint64_t, PyObject *> *given = nullptr;
     };
+    nb::ndarray<nb::c_contig, nb::device::cpu> array_out_of(const detail::type_ref &t, const std::string &name,
+                                                            PyObject *out) const;
     void encode_into(const detail::type_ref &t, PyObject *value, std::byte *out, const Where &where) const;
     nb::object decode_from(const detail::type_ref &t, const std::byte *data, std::uint32_t container,
                            std::uint32_t member, const Where &where) const;

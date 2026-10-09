@@ -46,6 +46,7 @@ nanobind_add_module(_native
     src/sharedbox/_native/module.cpp
     src/sharedbox/_native/scalars.cpp
     src/sharedbox/_native/segment.cpp
+    src/sharedbox/_native/stream.cpp
     src/sharedbox/_native/types.cpp)
 target_link_libraries(_native PRIVATE sharedbox::headers)
 

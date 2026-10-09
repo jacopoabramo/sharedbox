@@ -39,14 +39,21 @@ EXIT_WAIT: Final = 2.0
 logger = logging.getLogger("sharedbox")
 # Receives each change of a field as native values: the field, the new value, the old one.
 Sink: TypeAlias = "Callable[[FieldSpec, Any, Any], None]"
-# Marks watcher threads: one must not join another, since that one may be joining it.
-WATCHER_THREAD = threading.local()
+
+
+class WatcherThread(threading.local):
+    """Marks watcher threads: one must not join another, since that one may be joining it."""
+
+    active = False
+
+
+WATCHER_THREAD = WatcherThread()
 RUNNING: set[Watcher] = set()
 
 
 def on_watcher_thread() -> bool:
     """Return whether the calling thread is the watcher thread of some box."""
-    return getattr(WATCHER_THREAD, "active", False)
+    return WATCHER_THREAD.active
 
 
 def stop_watchers() -> None:

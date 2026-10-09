@@ -1,6 +1,9 @@
-"""Read and write a box from a spawned process, for tests that check a value survives the trip."""
+"""Run a box or a stream end in another process: read and write a box from a spawned process, or fork."""
 
 import multiprocessing as mp
+import sys
+from collections.abc import Callable
+from multiprocessing.process import BaseProcess
 from typing import Any
 
 from sharedbox import SharedBox
@@ -34,3 +37,15 @@ def update_in_child(box: SharedBox, **values: Any) -> None:
     child.start()
     child.join(60)
     assert child.exitcode == 0
+
+
+def fork(target: Callable[..., object], *args: object) -> BaseProcess:
+    """Start `target(*args)` in a forked daemon process."""
+    # mypy checks this module as Windows code too; the else form lets it skip the
+    # "fork" context, which Windows lacks, without an unreachable-code error.
+    if sys.platform == "win32":
+        raise NotImplementedError("Windows has no fork")
+    else:
+        process = mp.get_context("fork").Process(target=target, args=args, daemon=True)
+        process.start()
+        return process

@@ -69,6 +69,32 @@ same way in every process. It is the class's `module.qualname`, unless the
 class sets the `identity` keyword. The box's default name and its
 [schema hash](#schema-hash) are both worked out from it.
 
+### Latest
+
+Latest is a [reader](#reader) mode in which the reader always receives the
+newest item of the [stream](#stream) and skips the rest. See
+[`reader`][sharedbox.SharedStream.reader].
+
+### Lossless
+
+Lossless is a [reader](#reader) mode in which the reader receives every item
+of the [stream](#stream). A [sender](#sender) that is `capacity` items ahead of
+a lossless reader waits for it. See [`reader`][sharedbox.SharedStream.reader].
+
+### Lossy
+
+Lossy is a [reader](#reader) mode in which the reader skips the items the
+[sender](#sender) overwrote while it was busy, and counts them in
+[`missed`][sharedbox.StreamReader.missed]. See
+[`reader`][sharedbox.SharedStream.reader].
+
+### Reader
+
+A reader is an object that receives the items of a [stream](#stream) in one
+process. Each reader has its own position in the stream and a mode:
+[lossless](#lossless), [lossy](#lossy) or [latest](#latest). See
+[`StreamReader`][sharedbox.StreamReader].
+
 ### Reference field
 
 A reference field is a [field](#field) annotated with another `SharedBox`
@@ -95,6 +121,12 @@ and the [waiter slots](#waiter-slot). It has a name, `SBX:<name>`, by
 which any process can open it. See
 [How a box is stored](how-a-box-is-stored.md).
 
+### Sender
+
+A sender is the object that sends the items of a [stream](#stream). A stream
+has one at a time, and closing it ends the stream. See
+[`StreamSender`][sharedbox.StreamSender].
+
 ### Sequence lock
 
 The sequence lock is how a [box](#box) keeps readers from seeing half a
@@ -110,6 +142,13 @@ Shared memory is memory the operating system lets several processes use at
 the same time, so a value one process writes there is immediately there for
 the others to read, without being sent. Each [box](#box) is kept in a block
 of it, its [segment](#segment).
+
+### Stream
+
+A stream is a series of items that one process sends and up to
+`max_readers` [readers](#reader) receive. A [segment](#segment) of
+[shared memory](#shared-memory) holds the last `capacity` items. See
+[`SharedStream`][sharedbox.SharedStream].
 
 ### Waiter slot
 

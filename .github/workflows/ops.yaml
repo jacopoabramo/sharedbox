@@ -1,0 +1,84 @@
+name: Ops
+
+on:
+  pull_request:
+    branches: [ main ]
+    paths:
+      - include/sharedbox/**
+      - src/sharedbox/_native/**
+      - src/sharedbox/benchmarks/ops.py
+      - .github/workflows/ops.yaml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  ops:
+    name: Reads and writes against the base branch on Windows
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          path: head
+          fetch-depth: 0
+
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.base_ref || 'main' }}
+          path: base
+          fetch-depth: 0
+
+      - uses: astral-sh/setup-uv@v7
+
+      - name: Install both
+        shell: bash
+        run: |
+          for side in base head; do
+            (cd "$side" && uv sync --frozen --python 3.11)
+          done
+
+      - name: Run benchbox ops, alternating base and head
+        shell: bash
+        run: |
+          mkdir results
+          for round in 1 2 3; do
+            for side in base head; do
+              for rows in int record; do
+                (cd "$side" && uv run --no-sync benchbox ops --fast \
+                  --filter "*$rows/SharedBox" --json "../results/$side-$round-$rows.json")
+              done
+            done
+          done
+
+      - name: Compare the medians
+        shell: bash
+        run: |
+          cd head
+          uv run --no-sync python - ../results >> "$GITHUB_STEP_SUMMARY" <<'EOF'
+          import statistics
+          import sys
+          from pathlib import Path
+
+          import pyperf
+
+          means: dict[tuple[str, str], list[float]] = {}
+          for path in sorted(Path(sys.argv[1]).glob("*.json")):
+              side = path.name.split("-")[0]
+              for bench in pyperf.BenchmarkSuite.load(str(path)).get_benchmarks():
+                  means.setdefault((bench.get_name(), side), []).append(bench.mean())
+          print("### benchbox ops on Windows cp311, median of three rounds")
+          print()
+          print("| benchmark | base | head | head / base |")
+          print("| --- | --- | --- | --- |")
+          for name in sorted({name for name, _ in means}):
+              base = statistics.median(means[name, "base"])
+              head = statistics.median(means[name, "head"])
+              print(f"| {name} | {base * 1e9:.1f} ns | {head * 1e9:.1f} ns | {head / base:.3f} |")
+          EOF
+
+      - uses: actions/upload-artifact@v7
+        with:
+          name: ops
+          path: results

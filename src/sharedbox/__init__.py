@@ -6,13 +6,26 @@ from ._events import BoxEvents, FieldWatch
 from ._layout import Capacity, Field, field
 from ._native import (
     BoxClosedError,
+    EndOfStream,
     KindMismatchError,
     LockTimeoutError,
     SchemaMismatchError,
     SegmentExistsError,
     SegmentNotFoundError,
+    StreamBusyError,
+    StreamClosedError,
+    WaiterSlotsFullError,
+    WouldBlock,
 )
 from ._refs import BoxRef, BrokenReferenceError, UnknownBoxClassError
+from ._stream import (
+    ReaderEvents,
+    ReaderStatistics,
+    SharedStream,
+    StreamReader,
+    StreamSender,
+    StreamStatistics,
+)
 from ._version import __version__
 
 __all__ = [
@@ -22,18 +35,29 @@ __all__ = [
     "BrokenReferenceError",
     "Capacity",
     "DType",
+    "EndOfStream",
     "Field",
     "FieldWatch",
     "KindMismatchError",
     "LockTimeoutError",
+    "ReaderEvents",
+    "ReaderStatistics",
     "SchemaMismatchError",
     "SegmentExistsError",
     "SegmentNotFoundError",
     "Shape",
     "SharedBox",
+    "SharedStream",
+    "StreamBusyError",
+    "StreamClosedError",
+    "StreamReader",
+    "StreamSender",
+    "StreamStatistics",
     "SupportsDLPack",
     "SupportsSharedBox",
     "UnknownBoxClassError",
+    "WaiterSlotsFullError",
+    "WouldBlock",
     "__version__",
     "field",
     "fields",

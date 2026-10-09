@@ -27,6 +27,7 @@
 #include "codec.hpp"
 #include "scalars.hpp"
 #include "segment.hpp"
+#include "stream.hpp"
 #include "types.hpp"
 
 namespace nb = nanobind;
@@ -1086,4 +1087,6 @@ NB_MODULE(_native, m) {
     if (!box_method.is_valid())
         throw nb::python_error();
     m.attr("BoxMethod") = box_method;
+
+    sharedbox::bind_stream(m);
 }
