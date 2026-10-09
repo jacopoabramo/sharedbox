@@ -137,10 +137,10 @@ struct header {                     // sharedbox::header, 128 bytes
 ```
 
 The common line is written once at creation. Line 1 starts with the words
-that writes and waits change (`seq`, `writer_pid`, `wake_word`, `waiters`, `sleepers`),
-so a write touches one header line, and ends with geometry written once at
-creation, bytes 88 to 127. Attach copies the common line and those bytes,
-never the five changing words, and uses only the copy.
+that writes and waits change (`seq`, `writer_pid`, `wake_word`, `waiters`,
+`sleepers`), so a write touches one header line, and ends with geometry
+written once at creation, bytes 88 to 127. Attach copies the common line and
+those bytes, never the five changing words, and uses only the copy.
 
 The box line has spare bytes so that minor versions can add fields: a
 header with no room left would move the fields after it with every
@@ -1311,7 +1311,7 @@ class Frame(SharedBox, identity="camera/frame/1", max_waiters=64):
 
 
 with Frame(0.01, 0) as frame:
-    camera.run(frame)          # an extension that supports sharedbox
+    camera.run(frame)  # an extension that supports sharedbox
 ```
 
 The dunder is a protocol for library authors, as `__arrow_c_array__` and

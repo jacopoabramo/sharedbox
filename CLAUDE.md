@@ -132,9 +132,10 @@ version 1.0, box layout 3.0, from offset 0:
   `creator_pidns`, `creator_pid`, `waiter_slots`, `size`.
 - Box line 1, at offset 64: `seq` (sequence lock; the generation is
   `seq >> 1`, there is no generation field), `writer_pid`, `wake_word`,
-  `waiters` and `sleepers`, which writes and waits change; then written once at creation
-  `field_count`, `record_size`, `record`, `tail` (always 128) and
-  `types_size`, followed by reserved zero bytes. The header is 128 bytes.
+  `waiters` and `sleepers`, which writes and waits change; then written
+  once at creation `field_count`, `record_size`, `record`, `tail` (always
+  128) and `types_size`, followed by reserved zero bytes. The header is
+  128 bytes.
 - The tail: `field_count` field table entries of 8 bytes (`u32 offset`,
   `u32 capacity_and_kind`: top 8 bits the kind code, the low 24 the
   capacity or size, or for kinds 64 and up the offset of the field's
@@ -302,7 +303,7 @@ class Motor(SharedBox):
 
 
 def worker() -> None:
-    motor = Motor.attach()          # finds the box by its class
+    motor = Motor.attach()  # finds the box by its class
     motor.position = 10
     motor.close()
 
@@ -312,7 +313,7 @@ if __name__ == "__main__":
         motor.events.position.connect(lambda new, old: print(old, "->", new))
         child = mp.Process(target=worker)
         child.start()
-        child.join()                      # prints: 1 -> 10
+        child.join()  # prints: 1 -> 10
     Motor.unlink()
 ```
 
