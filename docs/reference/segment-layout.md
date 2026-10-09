@@ -809,13 +809,17 @@ Send:
 
 Receive, for a reader whose next position is `r`:
 
-1. Load `write_pos` with acquire. If it equals `r` there is nothing to
-   read. The reader gives `status::ended` if `state` is ended (read before
-   `write_pos`, since the sender stores `state` after its last `write_pos`).
-   Otherwise, with a timeout of 0 it gives `status::timeout` at once. With
-   a longer timeout it checks `write_pos` up to 1000 times, then sleeps on
-   `data_word` in steps of at most 0.1 s, counting itself in `data_waiting`
-   while it sleeps.
+1. A lossless or lossy reader first loads the `seq` of slot `r % capacity`.
+   If it is `2r + 2` the reader copies the item as in step 3 without
+   reading `write_pos`, so it may take an item a moment before the sender
+   stores `write_pos` for it, and its position may be `write_pos + 1` for
+   that moment. Otherwise it loads `write_pos` with acquire. If that is
+   at most `r` there is nothing to read. The reader gives `status::ended` if
+   `state` is ended (read before `write_pos`, since the sender stores
+   `state` after its last `write_pos`). Otherwise, with a timeout of 0 it
+   gives `status::timeout` at once. With a longer timeout it checks
+   `write_pos` up to 1000 times, then sleeps on `data_word` in steps of at
+   most 0.1 s, counting itself in `data_waiting` while it sleeps.
 2. A lossy reader with `write_pos - r > capacity` moves to
    `write_pos - capacity`. A latest reader with `write_pos - r > 1` moves to
    `write_pos - 1`. Both count the items they pass as missed.
