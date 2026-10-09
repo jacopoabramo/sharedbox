@@ -165,7 +165,8 @@ def targets_of(
             )
         case "optional" | "union":
             raise TypeError(
-                f"{label} is an {spec.kind} member, which cannot be read into an array; "
+                f"{label} is {'an' if spec.kind == 'optional' else 'a'} {spec.kind} member, "
+                "which cannot be read into an array; "
                 "give None for it or leave it out"
             )
         case _:
@@ -181,7 +182,12 @@ class ReaderStatistics:
 
     mode: Mode
     position: int
-    """The position the reader receives next."""
+    """The position of the item the reader receives next.
+
+    Right after a receive it is one more than
+    [`StreamReader.position`][sharedbox.StreamReader.position], which is the
+    position of the item received.
+    """
     lag: int
     """Items sent that the reader has not received or skipped yet."""
     pid: int
@@ -335,14 +341,16 @@ class SharedStream(Generic[T]):
         Raises
         ------
         StreamBusyError
-            If another live end holds the sender. A sender whose process
-            died is replaced.
+            If another live end holds the sender.
         EndOfStream
-            If a sender already closed the stream, which a closed sender
-            does; there is no second sender after that.
+            If the stream has ended: its sender closed, or a reader found the
+            sender's process dead. There is no second sender after that.
 
         Notes
         -----
+        A sender whose process died is replaced, unless a reader already
+        found it dead, which ended the stream.
+
         The stream keeps its sender until it is closed, so dropping the
         returned object does not end the stream, and another `sender()` call
         in this process raises `StreamBusyError` until then.
@@ -369,11 +377,15 @@ class SharedStream(Generic[T]):
 
         Raises
         ------
+        ValueError
+            If `mode` or `start` is none of the values above.
         WaiterSlotsFullError
             If `max_readers` readers are open.
         """
         if mode not in MODES:
             raise ValueError(f"mode is 'lossless', 'lossy' or 'latest'; got {mode!r}")
+        if start not in ("newest", "oldest"):
+            raise ValueError(f"start is 'newest' or 'oldest'; got {start!r}")
         end: StreamReader[T] = StreamReader(
             self, self._native.reader(MODES[mode], start == "newest")
         )
@@ -659,7 +671,11 @@ class StreamSender(End, Generic[T]):
         self._send(item, timeout)
 
     async def asend(self, item: T) -> None:
-        """Send `item`, as [`send`][sharedbox.StreamSender.send] does, without blocking the event loop."""
+        """Send `item`, as [`send`][sharedbox.StreamSender.send] does, without blocking the event loop.
+
+        A cancelled `asend` may still have sent its item, if a reader made
+        room just as it was cancelled.
+        """
         await self._yield()
         if self._fast():
             try:
@@ -806,7 +822,12 @@ class StreamReader(End, Iterator[T], AsyncIterator[T], Generic[T]):
 
     @property
     def position(self) -> int | None:
-        """The position of the last item received, None before the first."""
+        """The position of the last item received, None before the first.
+
+        [`ReaderStatistics.position`][sharedbox.ReaderStatistics.position]
+        is the position of the item received next, so right after a receive
+        it is one more than this.
+        """
         return self._position
 
     @property
@@ -923,14 +944,13 @@ class StreamReader(End, Iterator[T], AsyncIterator[T], Generic[T]):
                 "to two consumers, so open a second reader"
             )
 
-    def _submit(self, call: Call, allow_delivery: bool = False) -> CallFuture:
-        if not allow_delivery:
-            self._check_consumer()
+    def _submit(self, call: Call) -> CallFuture:
+        self._check_consumer()
         return super()._submit(call)
 
     @property
     def events(self) -> ReaderEvents:
-        """The reader's psygnal signals: `received` as `(item, position)` for each item, and `ended` once.
+        """The reader's psygnal signals: `received` as `(item, position)` for each item, and `ended` once per delivery.
 
         Connecting the first `received` callback starts delivery on the reader's
         background thread, and disconnecting the last one stops it. While
@@ -1137,9 +1157,16 @@ class StreamReader(End, Iterator[T], AsyncIterator[T], Generic[T]):
         The future is a `concurrent.futures.Future`, so
         `concurrent.futures.wait` and `asyncio.wrap_future` take it. Its
         exception is [`EndOfStream`][sharedbox.EndOfStream] once the stream
-        has ended. Cancel it before it starts to drop it; once it runs,
-        `cancel()` returns False, as for any `Future`. `out`, when given,
-        is what [`receive_into`][sharedbox.StreamReader.receive_into] takes.
+        has ended, and [`StreamClosedError`][sharedbox.StreamClosedError] if
+        the reader closes first. `out`, when given, is what
+        [`receive_into`][sharedbox.StreamReader.receive_into] takes.
+
+        Cancel the future before it starts to drop it. A running call cannot
+        be cancelled: `cancel()` returns False, as for any `Future`, and the
+        call goes on. An item it takes after its future was abandoned, or
+        after an `asyncio.wrap_future` around it was cancelled, is lost. To
+        wait on several readers, keep one outstanding future per reader and
+        submit a new one only for the readers whose future completed.
         """
         return self._receive_future([] if out is None else self._targets(out))
 

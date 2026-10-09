@@ -51,6 +51,10 @@ icon: lucide/code
     options:
       show_root_heading: true
 
+::: sharedbox.WaiterSlotsFullError
+    options:
+      show_root_heading: true
+
 ::: sharedbox.EndOfStream
     options:
       show_root_heading: true

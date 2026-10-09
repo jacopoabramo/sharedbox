@@ -1,5 +1,6 @@
 import gc
 import pickle
+import re
 import subprocess
 import sys
 import threading
@@ -401,6 +402,22 @@ def test_threads_receiving_and_closing_at_once(unique_name: str) -> None:
         assert into == sorted(into)
 
 
+@pytest.mark.parametrize(
+    ("keyword", "allowed"),
+    [("mode", "'lossless', 'lossy' or 'latest'"), ("start", "'newest' or 'oldest'")],
+)
+def test_reader_refuses_an_unknown_mode_or_start(
+    unique_name: str, keyword: str, allowed: str
+) -> None:
+    """Raise ValueError naming the allowed values for an unknown mode or start."""
+    unknown: dict[str, Any] = {keyword: "middle"}
+    with (
+        SharedStream.create(int, unique_name, capacity=2) as stream,
+        pytest.raises(ValueError, match=re.escape(allowed)),
+    ):
+        stream.reader(**unknown)
+
+
 def test_a_stream_reachable_from_its_item_class_is_collected(unique_name: str) -> None:
     """Free a stream and its ends when its item class refers back to the stream."""
 
@@ -448,4 +465,78 @@ def test_a_stream_of_a_module_level_class_leaves_no_leak_report(
         text=True,
         timeout=60,
     )
+    assert "leaked" not in done.stderr
+
+
+WORKER_CYCLE_PROBE = """
+import asyncio
+import gc
+import sys
+import threading
+import weakref
+from dataclasses import dataclass
+
+from sharedbox import SharedStream
+
+name = sys.argv[1]
+
+
+def stream_threads():
+    return [t for t in threading.enumerate() if name in t.name]
+
+
+def build():
+    @dataclass(frozen=True)
+    class Local:
+        index: int
+
+    stream = SharedStream.create(Local, name, capacity=2)
+    Local.stream = stream
+    Local.reader = stream.reader()
+    Local.sender = stream.sender()
+
+    async def use_both_threads():
+        Local.sender.send(Local(0))
+        Local.sender.send(Local(1))
+        blocked = asyncio.create_task(Local.sender.asend(Local(2)))
+        while not stream_threads():
+            await asyncio.sleep(0)
+        got = [(await anext(Local.reader)).index for _ in range(3)]
+        await blocked
+        waiting = asyncio.create_task(anext(Local.reader))
+        while len(stream_threads()) < 2:
+            await asyncio.sleep(0)
+        Local.sender.send(Local(3))
+        got.append((await waiting).index)
+        return got
+
+    assert asyncio.run(use_both_threads()) == [0, 1, 2, 3]
+    return stream_threads(), [
+        weakref.ref(x) for x in (stream, Local, Local.sender, Local.reader)
+    ]
+
+
+threads, refs = build()
+assert len(threads) == 2
+gc.collect()
+assert [r() for r in refs] == [None] * 4
+for thread in threads:
+    thread.join(5)
+assert not any(thread.is_alive() for thread in threads)
+SharedStream.unlink(name)
+"""
+
+
+def test_a_stream_whose_ends_started_threads_is_collected_through_its_item_class(
+    unique_name: str,
+) -> None:
+    """Free a stream and its ends, end their threads and print no leak report when the item class refers back to them."""
+    done = subprocess.run(
+        [sys.executable, "-c", WORKER_CYCLE_PROBE, unique_name],
+        capture_output=True,
+        check=False,
+        text=True,
+        timeout=60,
+    )
+    assert done.returncode == 0, done.stderr
     assert "leaked" not in done.stderr

@@ -14,6 +14,7 @@ from ._native import (
     SegmentNotFoundError,
     StreamBusyError,
     StreamClosedError,
+    WaiterSlotsFullError,
     WouldBlock,
 )
 from ._refs import BoxRef, BrokenReferenceError, UnknownBoxClassError
@@ -55,6 +56,7 @@ __all__ = [
     "SupportsDLPack",
     "SupportsSharedBox",
     "UnknownBoxClassError",
+    "WaiterSlotsFullError",
     "WouldBlock",
     "__version__",
     "field",
