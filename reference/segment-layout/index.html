@@ -4720,17 +4720,18 @@ a wake-up.</p>
 <li>Check again after waking; a wake may be spurious. Past the timeout the
     result is <code>status::timeout</code>.</li>
 <li>Wake, after every write:</li>
-<li>Increment <code>wake_word</code>, then load <code>sleepers</code>, both sequentially
-    consistent. If that load misses a waiter's increment, the waiter's load
-    of <code>wake_word</code> comes after this increment in the single order of
-    sequentially consistent operations, so it reads this increment or a
-    later change, every change to <code>wake_word</code> being a read-modify-write.
-    That load synchronizes with the increment, so the swap of <code>seq</code> before
-    it happens before the waiter's check of <code>seq</code>, which then sees the new
-    value. The swap that unlocks <code>seq</code> is only a release, so the waiter's
-    load of <code>wake_word</code> is required on both platforms, though on Windows its
-    value is not used.</li>
-<li>If <code>sleepers</code> is 0, stop: no system call on the normal path.</li>
+<li>The swap that unlocks <code>seq</code> is sequentially consistent. Then load
+    <code>sleepers</code> (sequentially consistent). If it is 0, stop: no change to
+    <code>wake_word</code> and no system call on the normal path. The load comes before
+    the waiter's increment of <code>sleepers</code> in the single order of sequentially
+    consistent operations, and the swap comes before the load, so the
+    waiter's check of <code>seq</code> sees the new value.</li>
+<li>Otherwise increment <code>wake_word</code> (sequentially consistent) before the
+    wake. A Linux waiter whose load of <code>wake_word</code> came before the increment
+    is refused sleep or woken. One whose load comes after it reads this
+    increment or a later change, every change to <code>wake_word</code> being a
+    read-modify-write, so the swap happens before its check of <code>seq</code>. On
+    Windows the value of <code>wake_word</code> is not used, and the waiter's load stays.</li>
 <li>Linux: one <code>FUTEX_WAKE</code> with <code>INT_MAX</code> waiters.</li>
 <li>Windows: <code>SetEvent</code> on the event of every occupied slot.</li>
 <li><code>interrupt(slot)</code>: set the slot's <code>interrupt</code>, then wake that slot. On
@@ -4786,7 +4787,8 @@ published yet it reads the creator fields without waiting for <code>magic</code>
 and a creator that still runs is reported as still creating the box.</p>
 <h3 id="send-and-receive">Send and receive<a class="headerlink" href="#send-and-receive" title="Permanent link">&para;</a></h3>
 <p>The sender writes position <code>p</code> into slot <code>p % capacity</code>, where <code>p</code> is
-<code>write_pos</code>. Only the sender stores <code>write_pos</code>.</p>
+<code>write_pos</code>. Only the sender stores <code>write_pos</code>, and the process that claims
+a dead sender (see Dead stream ends).</p>
 <p>Send:</p>
 <ol>
 <li>Gate. With no lossless reader open (<code>lossless_readers</code> is 0) the sender
@@ -4807,13 +4809,17 @@ and a creator that still runs is reported as still creating the box.</p>
 </ol>
 <p>Receive, for a reader whose next position is <code>r</code>:</p>
 <ol>
-<li>Load <code>write_pos</code> with acquire. If it equals <code>r</code> there is nothing to
-   read. The reader gives <code>status::ended</code> if <code>state</code> is ended (read before
-   <code>write_pos</code>, since the sender stores <code>state</code> after its last <code>write_pos</code>).
-   Otherwise, with a timeout of 0 it gives <code>status::timeout</code> at once. With
-   a longer timeout it checks <code>write_pos</code> up to 1000 times, then sleeps on
-   <code>data_word</code> in steps of at most 0.1 s, counting itself in <code>data_waiting</code>
-   while it sleeps.</li>
+<li>A lossless or lossy reader first loads the <code>seq</code> of slot <code>r % capacity</code>.
+   If it is <code>2r + 2</code> the reader copies the item as in step 3 without
+   reading <code>write_pos</code>, so it may take an item a moment before the sender
+   stores <code>write_pos</code> for it, and its position may be <code>write_pos + 1</code> until
+   the sender, or whoever claims a dead sender, stores <code>write_pos</code>. Otherwise it loads <code>write_pos</code> with acquire. If that is
+   at most <code>r</code> there is nothing to read. The reader gives <code>status::ended</code> if
+   <code>state</code> is ended (read before <code>write_pos</code>, since the sender stores
+   <code>state</code> after its last <code>write_pos</code>). Otherwise, with a timeout of 0 it
+   gives <code>status::timeout</code> at once. With a longer timeout it checks
+   <code>write_pos</code> up to 1000 times, then sleeps on <code>data_word</code> in steps of at
+   most 0.1 s, counting itself in <code>data_waiting</code> while it sleeps.</li>
 <li>A lossy reader with <code>write_pos - r &gt; capacity</code> moves to
    <code>write_pos - capacity</code>. A latest reader with <code>write_pos - r &gt; 1</code> moves to
    <code>write_pos - 1</code>. Both count the items they pass as missed.</li>
@@ -4876,12 +4882,21 @@ with the rules of Liveness:</p>
 <li>A reader waiting for data ends the stream when the sender's process has
   exited. It first claims the dead sender by changing <code>sender_start</code> from the
   value it read to <code>start_freeing</code> with a compare-and-swap. If that
-  succeeds, it changes <code>state</code> from 0 to 1, clears <code>sender_pidns</code>,
+  succeeds, it completes the dead sender's last publish (see below), then
+  changes <code>state</code> from 0 to 1, clears <code>sender_pidns</code>,
   <code>sender_pid</code> and <code>sender_start</code>, adds 1 to <code>data_word</code> and wakes it.
   Readers then receive what was published, then <code>status::ended</code>.</li>
 <li><code>sender()</code> replaces a recorded sender whose process has exited. It claims
   the dead sender the same way, so a replacement and an ending never both
-  act on one dead owner, then stores its own pid.</li>
+  act on one dead owner, completes the dead sender's last publish, then
+  stores its own pid.</li>
+<li>A sender killed after storing <code>seq</code> of slot <code>p % capacity</code> as <code>2p + 2</code> and
+  before storing <code>write_pos</code> leaves <code>write_pos</code> at <code>p</code> with item <code>p</code> whole
+  in its slot. Whoever claims the dead sender loads <code>write_pos</code>, and if that
+  slot's <code>seq</code> is <code>2p + 2</code> stores <code>write_pos = p + 1</code> and wakes <code>data_word</code>
+  as a send does, before ending the stream or letting a replacement send.
+  Readers then receive the item the dead sender published, then
+  <code>status::ended</code> or the replacement's items.</li>
 </ul>
 <p>Known limits:</p>
 <ul>

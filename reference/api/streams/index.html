@@ -5327,15 +5327,16 @@ callbacks; None for a group tied to no reader.</p>
 
     <div class="doc doc-contents ">
 
-        <p>The position of the item the reader receives next.</p>
+        <p>The position of the item the reader receives next, at most <code>sent</code>.</p>
 <p>Right after a receive it is one more than
 <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-attribute&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-attribute-name&quot;&gt;position&lt;/span&gt;
 
 
   &lt;span class=&quot;doc doc-labels&quot;&gt;
       &lt;small class=&quot;doc doc-label doc-label-property&quot;&gt;&lt;code&gt;property&lt;/code&gt;&lt;/small&gt;
-  &lt;/span&gt;" href="./#sharedbox.StreamReader.position"><code>StreamReader.position</code></a>, which is the
-position of the item received.</p>
+  &lt;/span&gt;" href="./#sharedbox.StreamReader.position"><code>StreamReader.position</code></a>, the position
+of the item received, except for the moment before the sender counts
+that item in <code>sent</code>.</p>
 
     </div>
 

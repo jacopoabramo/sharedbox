@@ -3161,10 +3161,10 @@ one, and the slot records which process owns it: its pid, start time and
 pid namespace.</p>
 <p>How a write wakes the waiters depends on the system. Linux has one futex
 word in the header:<sup id="fnref:futex"><a class="footnote-ref" href="#fn:futex">1</a></sup> a waiter sleeps with <code>FUTEX_WAIT</code> for as long
-as <code>wake_word</code> still holds the value it read, and a writer increments the
-word and calls <code>FUTEX_WAKE</code> once for everybody. Windows has a similar call,
-<code>WaitOnAddress</code>, but it only works between threads of one
-process,<sup id="fnref:wait-on-address"><a class="footnote-ref" href="#fn:wait-on-address">2</a></sup> so there each slot gets its own auto-reset
+as <code>wake_word</code> still holds the value it read. When a waiter is inside a
+wait, a writer increments the word and calls <code>FUTEX_WAKE</code> once for
+everybody. Windows has a similar call, <code>WaitOnAddress</code>, but it only works
+between threads of one process,<sup id="fnref:wait-on-address"><a class="footnote-ref" href="#fn:wait-on-address">2</a></sup> so there each slot gets its own auto-reset
 event, <code>Local\SBX:&lt;name&gt;#w&lt;i&gt;</code>,<sup id="fnref:create-event"><a class="footnote-ref" href="#fn:create-event">3</a></sup> and a writer sets the
 event of every taken slot. Either way, a write to a box nobody is waiting
 on costs no system call: a waiter counts itself in <code>sleepers</code> while it is
@@ -3191,12 +3191,15 @@ is taken is described under <code>max_waiters</code> in
 <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;close&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.close"><code>close</code></a>, it sets the interrupt flag of its own
 watcher's slot and wakes that slot, so the watcher thread returns at once
 instead of at the end of its step.</p>
-<p>A wake-up is never lost. On Linux the waiter reads <code>wake_word</code> before it
-reads the generation, and the writer changes the generation before
-<code>wake_word</code>. If a write lands between the waiter's two reads, <code>wake_word</code>
-no longer matches and the wait returns at once.<sup id="fnref2:futex"><a class="footnote-ref" href="#fn:futex">1</a></sup> On Windows each
-event belongs to one slot, so one waiter cannot take the wake-up meant for
-another.</p>
+<p>A wake-up is never lost. A waiter counts itself in <code>sleepers</code> before it
+reads <code>wake_word</code> and then the generation. A writer changes the generation,
+then reads <code>sleepers</code>. If it reads 0, the waiter has not counted itself yet,
+so the waiter's read of the generation sees the new value. Otherwise the
+writer increments <code>wake_word</code> and wakes. On Linux, a write that lands between
+the waiter's reads of <code>wake_word</code> and the generation has already changed
+<code>wake_word</code>, so it no longer matches and the wait returns at once.<sup id="fnref2:futex"><a class="footnote-ref" href="#fn:futex">1</a></sup> On
+Windows each event belongs to one slot, so one waiter cannot take the wake-up
+meant for another.</p>
 <p><a href="../../reference/segment-layout/#waiter-slots">Waiter slots</a> gives the order of
 the stores that claim, free and release a slot, and the few steps at which
 a killed process leaves a slot stuck or the count one too high.</p>

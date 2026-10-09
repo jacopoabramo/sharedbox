@@ -3802,7 +3802,7 @@ and this project adheres to <a href="https://semver.org/spec/v2.0.0.html">Semant
   of <code>SegmentNotFoundError</code> after the timeout.</li>
 <li><code>SharedBox</code> write: makes a wake call only when a thread is waiting on the
   box. <code>sleepers</code>, at offset 84 of box layout 3.0, counts the threads inside
-  a wait.</li>
+  a wait. It adds 1 to <code>wake_word</code> only when <code>sleepers</code> is not 0.</li>
 <li><code>sharedbox::waiter_slot</code>: 32 bytes, with <code>asleep_on</code>, at offset 24, the
   offset of the count the slot's current wait added 1 to, and a reserved
   word. Freeing the slot of a process killed inside a wait takes that
