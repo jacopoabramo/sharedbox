@@ -7,7 +7,7 @@ import textwrap
 import threading
 import time
 from collections.abc import Callable
-from concurrent.futures import FIRST_COMPLETED, CancelledError, Future, wait
+from concurrent.futures import FIRST_COMPLETED, Future, wait
 from dataclasses import dataclass
 from multiprocessing.process import BaseProcess
 from typing import Annotated, Any
@@ -28,6 +28,14 @@ from sharedbox import (
 from sharedbox._stream import WORKER_THREADS
 
 Frame = Annotated[np.ndarray, Shape(2), DType("int32")]
+
+
+async def worker_started(name: str) -> None:
+    """Return once a background thread of the stream `name` exists, so a call went to it."""
+    deadline = time.monotonic() + 5
+    while not [t for t in threading.enumerate() if name in t.name]:
+        assert time.monotonic() < deadline
+        await asyncio.sleep(0)
 
 
 def test_receive_future_is_a_real_future(unique_name: str) -> None:
@@ -237,8 +245,7 @@ def test_a_sync_receive_after_a_cancelled_anext_returns_its_item_first(
             reader = stream.reader()
             sender = stream.sender()
             first = asyncio.create_task(anext(reader))
-            while not [t for t in threading.enumerate() if unique_name in t.name]:
-                await asyncio.sleep(0)
+            await worker_started(unique_name)
             item = Held(1)
             armed.set()
             sender.send(item)
@@ -303,8 +310,8 @@ def test_a_dropped_end_lets_its_worker_stop(unique_name: str) -> None:
         assert not threads[0].is_alive()
 
 
-def test_close_cancels_queued_futures(unique_name: str) -> None:
-    """Raise StreamClosedError from a running receive_future and cancel queued ones on close."""
+def test_close_ends_queued_futures_with_stream_closed_error(unique_name: str) -> None:
+    """Raise StreamClosedError from both a running and a queued receive_future on close."""
     with SharedStream.create(int, unique_name, capacity=2) as stream:
         reader = stream.reader()
         running = reader.receive_future()
@@ -316,9 +323,54 @@ def test_close_cancels_queued_futures(unique_name: str) -> None:
         reader.close()
         with pytest.raises(StreamClosedError):
             running.result(timeout=5)
-        with pytest.raises(CancelledError):
+        with pytest.raises(StreamClosedError):
             queued.result(timeout=5)
-        assert queued.cancelled()
+        assert not queued.cancelled()
+
+
+def test_close_ends_a_queued_asend_with_stream_closed_error(unique_name: str) -> None:
+    """Raise StreamClosedError in a TaskGroup from an asend queued behind a running one when the sender closes."""
+
+    async def run() -> tuple[BaseException, ...]:
+        with SharedStream.create(int, unique_name, capacity=2) as stream:
+            reader = stream.reader()
+            sender = stream.sender()
+            sender.send(0)
+            sender.send(1)
+            running = asyncio.create_task(sender.asend(2))
+            await worker_started(unique_name)
+            with pytest.raises(ExceptionGroup) as caught:
+                async with asyncio.TaskGroup() as group:
+                    group.create_task(sender.asend(3))
+                    await asyncio.sleep(0.05)
+                    sender.close()
+            with pytest.raises(StreamClosedError):
+                await running
+            reader.close()
+            return caught.value.exceptions
+
+    errors = asyncio.run(run())
+    assert [type(error) for error in errors] == [StreamClosedError]
+
+
+def test_close_ends_an_anext_queued_behind_a_cancelled_one(unique_name: str) -> None:
+    """Raise StreamClosedError, not CancelledError, from an anext queued behind a cancelled one when the reader closes."""
+
+    async def run() -> None:
+        with SharedStream.create(int, unique_name, capacity=4) as stream:
+            reader = stream.reader()
+            first = asyncio.create_task(anext(reader))
+            await worker_started(unique_name)
+            second = asyncio.create_task(anext(reader))
+            await asyncio.sleep(0.05)
+            first.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await first
+            reader.close()
+            with pytest.raises(StreamClosedError):
+                await asyncio.wait_for(second, 5)
+
+    asyncio.run(run())
 
 
 def test_a_process_exits_while_anext_waits(unique_name: str) -> None:

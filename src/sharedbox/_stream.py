@@ -443,13 +443,16 @@ Call = Callable[[CallFuture], Any]
 class Worker:
     """A daemon thread that runs one stream end's waiting calls, one at a time, in the order submitted."""
 
-    def __init__(self, name: str, after: Callable[[], None]) -> None:
+    def __init__(self, stream: str, role: str, after: Callable[[], None]) -> None:
+        self._stream = stream
         self._after = after
         self._calls: queue.SimpleQueue[tuple[CallFuture, Call] | None] = (
             queue.SimpleQueue()
         )
         self._stopped = False
-        self.thread = threading.Thread(target=self._run, name=name, daemon=True)
+        self.thread = threading.Thread(
+            target=self._run, name=f"sharedbox:{stream}:{role}", daemon=True
+        )
         self.thread.start()
         WORKER_THREADS.add(self.thread)
 
@@ -469,10 +472,17 @@ class Worker:
             WORKER_THREADS.discard(self.thread)
 
     def _run_one(self, future: CallFuture, call: Call) -> None:
-        """Run one call in its own frame, so nothing it refers to outlives it while the thread waits."""
-        if self._stopped:
-            future.cancel()
+        """Run one call in its own frame, so nothing it refers to outlives it while the thread waits.
+
+        A call still queued when its end closed raises `StreamClosedError`,
+        as a running one does; only its awaiter cancels it.
+        """
         if not future.set_running_or_notify_cancel():
+            return
+        if self._stopped:
+            future.set_exception(
+                StreamClosedError(f"stream {self._stream!r}: this end is closed")
+            )
             return
         try:
             result = call(future)
@@ -486,15 +496,6 @@ class Worker:
             self._run_one(*entry)
             del entry
             self._after()
-        while True:
-            try:
-                entry = self._calls.get_nowait()
-            except queue.Empty:
-                return
-            if entry is not None:
-                entry[0].cancel()
-                entry[0].set_running_or_notify_cancel()
-                self._after()
 
 
 def finished(end: weakref.ref[End]) -> None:
@@ -550,7 +551,8 @@ class End:
             raise StreamClosedError(f"stream {self._stream.name!r}: this end is closed")
         if self._worker is None:
             self._worker = Worker(
-                f"sharedbox:{self._stream.name}:{self._thread_role()}",
+                self._stream.name,
+                self._thread_role(),
                 functools.partial(finished, weakref.ref(self)),
             )
             weakref.finalize(self, self._worker.stop)
