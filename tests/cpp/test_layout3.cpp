@@ -6,6 +6,7 @@
 #include "unique.hpp"
 
 #include <cstring>
+#include <memory>
 #include <string>
 
 using namespace sharedbox;
@@ -174,4 +175,13 @@ TEST_CASE("a record that, with the tail before it, passes the mapping limit is r
     REQUIRE_FALSE(made.has_value());
     CHECK(made.error().code == status::range);
     CHECK(open_status(name) == status::not_found);
+}
+
+TEST_CASE("a mapping smaller than a page is refused before its header is read") {
+    // 64 bytes on the heap: copying the 128-byte header from them would read past the end, which the
+    // sanitizer build of CI reports.
+    const auto small = std::make_unique<std::byte[]>(64);
+    const auto opened = detail::open_header<detail::box_layout>(small.get(), 64);
+    REQUIRE_FALSE(opened);
+    CHECK(opened.error().code == status::corrupt);
 }

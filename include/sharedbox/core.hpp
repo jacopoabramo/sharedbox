@@ -467,15 +467,16 @@ inline std::string_view kind_name(std::uint64_t magic) noexcept {
 
 } // namespace detail
 
-// What a segment layout gives the core's open check: its header type, which starts with the common
-// line, its magic, the kind major versions it reads, and a check of the kind's own geometry once the
-// common line passed.
+// What a segment layout gives the core's open step: its header type, which starts with the common line,
+// its magic, the kind major versions it reads, a copy of the header that leaves out the words other
+// processes change, and a check of the kind's own geometry once the common line passed.
 template <class L>
-concept segment_layout = requires(const typename L::header_type &h, std::uint64_t mapped) {
+concept segment_layout = requires(const typename L::header_type &h, const void *base, std::uint64_t mapped) {
     { L::magic } -> std::convertible_to<std::uint64_t>;
     { L::oldest_major } -> std::convertible_to<std::uint16_t>;
     { L::newest_major } -> std::convertible_to<std::uint16_t>;
     { h.common } -> std::convertible_to<const common_header &>;
+    { L::copy_header(base) } -> std::same_as<typename L::header_type>;
     { L::check_geometry(h, mapped) } -> std::same_as<status>;
 };
 
@@ -510,6 +511,19 @@ result<common_header> open_check(const typename L::header_type &h, std::uint64_t
     if (const status rc = L::check_geometry(h, mapped); rc != status::ok)
         return unexpected(rc);
     return line0;
+}
+
+// Copies the header of a published segment of mapped bytes and checks the copy as kind L. A mapping
+// smaller than a page is refused before any of it is read, so no kind copies a header past the end.
+template <segment_layout L>
+result<typename L::header_type> open_header(const void *base, std::uint64_t mapped) noexcept {
+    static_assert(sizeof(typename L::header_type) <= page_size);
+    if (mapped < page_size)
+        return unexpected(status::corrupt);
+    const typename L::header_type h = L::copy_header(base);
+    if (const result<common_header> line0 = open_check<L>(h, mapped); !line0)
+        return unexpected(line0.error());
+    return h;
 }
 
 } // namespace detail
@@ -1619,7 +1633,47 @@ inline result<std::uint64_t> random_id() noexcept {
     }
     return id;
 }
+
+// Waits for the creator of the segment at base to publish it: true once its magic is nonzero, false when
+// wait expires first.
+inline bool wait_published(void *base, backoff &wait) noexcept {
+    auto &magic = static_cast<common_header *>(base)->magic;
+    while (atomic(magic).load(std::memory_order_acquire) == 0) {
+        if (wait.expired())
+            return false;
+        wait.pause();
+    }
+    return true;
+}
 } // namespace detail
+
+// Removes the name, as shm_unlink does: open handles keep working. Does nothing on Windows, where the
+// OS frees the mapping with its last handle.
+[[nodiscard]] inline result<void> unlink(std::string_view name) noexcept {
+    if (!detail::name_ok(name))
+        return unexpected(status::range);
+#ifndef _WIN32
+    const detail::object_name path = detail::make_name("/", name, "");
+    if (shm_unlink(path.data()) != 0)
+        return errno == ENOENT ? unexpected(status::not_found) : detail::os_failure();
+#endif
+    return {};
+}
+
+// A copy of line 0 of the segment called name, of any kind, read without waiting and without the checks
+// of open: not_found when nothing under that name has published a header.
+[[nodiscard]] inline result<common_header> inspect(std::string_view name) noexcept {
+    if (!detail::name_ok(name))
+        return unexpected(status::range);
+    detail::backoff no_wait(0);
+    result<detail::os_mapping> map = detail::map_open(name, no_wait);
+    if (!map)
+        return unexpected(map.error());
+    auto *line0 = static_cast<common_header *>(map->base());
+    if (detail::atomic(line0->magic).load(std::memory_order_acquire) == 0)
+        return unexpected(status::not_found);
+    return detail::copy_common(line0);
+}
 
 // The type of a field or of a member inside one, read from a handle's checked copy of the description
 // table. Valid while that handle lives.

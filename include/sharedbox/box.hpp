@@ -139,6 +139,16 @@ struct box_layout {
     static constexpr std::uint16_t oldest_major = layout_major;
     static constexpr std::uint16_t newest_major = layout_major;
     using header_type = header;
+    // The header at base without seq, writer_pid, wake_word and waiters, which other processes change
+    // while they are open: line 0 and the bytes of line 1 written once. Only the copy is checked and used.
+    static header copy_header(const void *base) noexcept {
+        header h{};
+        std::memcpy(&h, base, offsetof(header, seq));
+        constexpr std::size_t once = offsetof(header, field_count);
+        std::memcpy(reinterpret_cast<std::byte *>(&h) + once, static_cast<const std::byte *>(base) + once,
+                    sizeof h - once);
+        return h;
+    }
     // Line 1 of the copied header, after its line 0 passed the core checks.
     static status check_geometry(const header &h, std::uint64_t mapped) noexcept {
         if (mapped > max_mapping_size)
@@ -156,27 +166,6 @@ struct box_layout {
     }
 };
 static_assert(segment_layout<box_layout>);
-
-// The header at base without seq, writer_pid, wake_word and waiters, which other processes change while
-// they are open: line 0 and the bytes of line 1 written once. Only the copy is checked and used.
-inline header copy_header(const void *base) noexcept {
-    header h{};
-    std::memcpy(&h, base, offsetof(header, seq));
-    constexpr std::size_t once = offsetof(header, field_count);
-    std::memcpy(reinterpret_cast<std::byte *>(&h) + once, static_cast<const std::byte *>(base) + once,
-                sizeof h - once);
-    return h;
-}
-
-// Copies the header of a published segment of mapped bytes and checks the copy as a box.
-inline result<header> open_header(const void *base, std::uint64_t mapped) noexcept {
-    if (mapped < page_size)
-        return unexpected(status::corrupt);
-    const header h = copy_header(base);
-    if (const result<common_header> line0 = open_check<box_layout>(h, mapped); !line0)
-        return unexpected(line0.error());
-    return h;
-}
 
 struct state;
 
@@ -611,13 +600,9 @@ inline result<handle> handle::open(std::string_view name, seconds timeout) {
     result<detail::os_mapping> map = detail::map_open(name, wait);
     if (!map)
         return unexpected(map.error());
-    auto *hdr = static_cast<header *>(map->base());
-    while (detail::atomic(hdr->common.magic).load(std::memory_order_acquire) == 0) {
-        if (wait.expired())
-            return unexpected(status::not_found);
-        wait.pause();
-    }
-    const result<header> opened = detail::open_header(hdr, map->size());
+    if (!detail::wait_published(map->base(), wait))
+        return unexpected(status::not_found);
+    const result<header> opened = detail::open_header<detail::box_layout>(map->base(), map->size());
     if (!opened)
         return unexpected(opened.error());
     const header &h = *opened;
@@ -625,7 +610,7 @@ inline result<handle> handle::open(std::string_view name, seconds timeout) {
     if (s == nullptr)
         return unexpected(status::os);
     s->record_size = h.record_size;
-    if (const status rc = detail::copy_fields(*s, hdr, h); rc != status::ok)
+    if (const status rc = detail::copy_fields(*s, map->base(), h); rc != status::ok)
         return unexpected(rc);
     s->record_offset = h.record;
     s->schema_hash = h.common.schema_hash;
@@ -651,34 +636,6 @@ inline std::uint16_t handle::minor_version() const noexcept { return s_->layout_
 inline std::uint16_t handle::major_version() const noexcept { return s_->layout_major; }
 inline void *handle::base() const noexcept { return s_->hdr; }
 inline std::uint64_t handle::size() const noexcept { return s_->size; }
-
-// Removes the name, as shm_unlink does: open handles keep working. Does nothing on Windows, where the
-// OS frees the mapping with its last handle.
-[[nodiscard]] inline result<void> unlink(std::string_view name) noexcept {
-    if (!detail::name_ok(name))
-        return unexpected(status::range);
-#ifndef _WIN32
-    const detail::object_name path = detail::make_name("/", name, "");
-    if (shm_unlink(path.data()) != 0)
-        return errno == ENOENT ? unexpected(status::not_found) : detail::os_failure();
-#endif
-    return {};
-}
-
-// A copy of line 0 of the segment called name, of any kind, read without waiting and without the checks
-// of open: not_found when nothing under that name has published a header.
-[[nodiscard]] inline result<common_header> inspect(std::string_view name) noexcept {
-    if (!detail::name_ok(name))
-        return unexpected(status::range);
-    detail::backoff no_wait(0);
-    result<detail::os_mapping> map = detail::map_open(name, no_wait);
-    if (!map)
-        return unexpected(map.error());
-    auto *hdr = static_cast<header *>(map->base());
-    if (detail::atomic(hdr->common.magic).load(std::memory_order_acquire) == 0)
-        return unexpected(status::not_found);
-    return detail::copy_common(hdr);
-}
 
 namespace detail {
 
@@ -1335,7 +1292,7 @@ inline result<handle> handle::from_capsule(sbx_handle *capsule) {
     auto *hdr = static_cast<header *>(capsule->base);
     if (capsule->size < page_size || detail::atomic(hdr->common.magic).load(std::memory_order_acquire) == 0)
         return unexpected(status::corrupt);
-    const result<header> opened = detail::open_header(hdr, capsule->size);
+    const result<header> opened = detail::open_header<detail::box_layout>(hdr, capsule->size);
     if (!opened)
         return unexpected(opened.error());
     const header &h = *opened;
