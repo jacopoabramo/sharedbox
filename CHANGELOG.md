@@ -40,6 +40,8 @@ Dates are marked as `DD-MM-YYYY`
   `sharedbox_c.h`.
 - `benchbox ops`: the row `watched write int`, a write while another process
   has a watcher open.
+- `sharedbox::handle::sleepers()`: the number of threads inside a wait on
+  the box, in any process.
 
 ### Changed
 
@@ -72,7 +74,12 @@ Dates are marked as `DD-MM-YYYY`
   of `SegmentNotFoundError` after the timeout.
 - `SharedBox` write: makes a wake call only when a thread is waiting on the
   box. `sleepers`, at offset 84 of box layout 3.0, counts the threads inside
-  a wait, and `sharedbox::handle::sleepers()` returns it.
+  a wait.
+- `sharedbox::waiter_slot`: 32 bytes, with `asleep_on`, at offset 24, the
+  offset of the count the slot's current wait added 1 to, and a reserved
+  word. Freeing the slot of a process killed inside a wait takes that
+  thread out of `sleepers` for a box, and out of `data_waiting` or
+  `space_waiting` for a stream.
 
 ### Removed
 

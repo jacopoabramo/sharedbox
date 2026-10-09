@@ -37,7 +37,11 @@ holds a slot but is awake does not cost the writer a call either.
 A process can be killed while it holds a slot, so the next process that
 registers or attaches checks each taken slot's owner, as
 [Checking a process is alive](checking-a-process-is-alive.md) describes,
-and frees the slots of owners that are gone. The few exceptions are listed
+and frees the slots of owners that are gone. A watcher spends nearly all
+its time inside a wait, so that is usually where its process is killed.
+The slot records which count the wait added itself to, and freeing the
+slot takes that 1 back, so later writes stop paying a wake call for a
+thread that is gone. The few exceptions are listed
 under [Waiter slots](../reference/segment-layout.md#waiter-slots). A slot
 recorded in another pid namespace is never freed, because its pid can't be
 checked from here.

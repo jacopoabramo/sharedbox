@@ -56,7 +56,7 @@ header: "header  0x000 - 0x07F" {
   "0x054": "sleepers  0"
   "0x058": "field_count  3"
   "0x05C": "record_size  48"
-  "0x060": "record  0x6C0"
+  "0x060": "record  0x8C0"
   "0x064": "tail  0x080"
   "0x068": "types_size  0, then reserved"
 }
@@ -74,27 +74,27 @@ counts: "write counts  0x098 - 0x0AF" {
   "0x0A0": "enabled  0"
   "0x0A8": "label  0"
 }
-slots: "waiter slots  0x0B0 - 0x6AF" {
+slots: "waiter slots  0x0B0 - 0x8AF" {
   shape: sql_table
-  tooltip: 64 slots of 24 bytes, one per thread waiting for changes. Each records the owner's start time, pid namespace and pid, and an interrupt flag. The space up to 0x6C0 is padding.
-  "0x0B0": "slot 0  start, pidns, pid, interrupt"
-  "0x0C8": "slot 1"
+  tooltip: 64 slots of 32 bytes, one per thread waiting for changes. Each records the owner's start time, pid namespace and pid, an interrupt flag, and which count its current wait added 1 to. The space up to 0x8C0 is padding.
+  "0x0B0": "slot 0  start, pidns, pid, interrupt, asleep_on"
+  "0x0D0": "slot 1"
   "...": "slots 2 to 63"
-  "0x6B0": "padding to a 64-byte boundary"
+  "0x8B0": "padding to a 64-byte boundary"
 }
-record: "record  0x6C0 - 0x6EF" {
+record: "record  0x8C0 - 0x8EF" {
   shape: sql_table
   tooltip: The field values, ordered by alignment, largest first. Every value is little-endian.
-  "0x6C0": "position = 10 | 0A 00 00 00 00 00 00 00"
-  "0x6C8": "label length = 6 | 06 00 00 00"
-  "0x6CC": "label = \"x-axis\" | 78 2D 61 78 69 73, then unused"
-  "0x6EC": "enabled = False | 00"
-  "0x6ED": "padding to 48 bytes"
+  "0x8C0": "position = 10 | 0A 00 00 00 00 00 00 00"
+  "0x8C8": "label length = 6 | 06 00 00 00"
+  "0x8CC": "label = \"x-axis\" | 78 2D 61 78 69 73, then unused"
+  "0x8EC": "enabled = False | 00"
+  "0x8ED": "padding to 48 bytes"
 }
-rest: "unused  0x6F0 - 0xFFF" {
+rest: "unused  0x8F0 - 0xFFF" {
   shape: sql_table
   tooltip: The mapping is rounded up to whole 4 KiB pages.
-  "0x6F0": "rest of the first 4 KiB page"
+  "0x8F0": "rest of the first 4 KiB page"
 }
 ```
 

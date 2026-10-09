@@ -89,7 +89,7 @@ offset 0     common line       64 bytes, one cache line (every kind)
 offset 64    box line          64 bytes, one cache line
 offset 128   field table       field_count x 8 bytes
              write counts      field_count x 8 bytes
-             waiter slots      waiter_slots x 24 bytes
+             waiter slots      waiter_slots x 32 bytes
              description table types_size bytes, 8-aligned
              (zero padding up to a multiple of 64)
 record       record            record_size bytes, 64-byte aligned
@@ -171,14 +171,16 @@ record.
   long as the field order, names, kinds and capacities match, which the
   schema hash checks.
 - Write counts: one `u64` per field, incremented under the write lock.
-- Waiter slot, 24 bytes:
+- Waiter slot, 32 bytes:
 
   ```cpp
   struct waiter_slot {              // sharedbox::waiter_slot
-      uint64_t owner_start;         // process start time, see Liveness
-      uint64_t owner_pidns;         // pid namespace, see Liveness; 0 on Windows
-      uint32_t owner_pid;           // 0 = free
-      uint32_t interrupt;           // set by interrupt(), cleared by the waiter
+      uint64_t owner_start;         // 0   process start time, see Liveness
+      uint64_t owner_pidns;         // 8   pid namespace, see Liveness; 0 on Windows
+      uint32_t owner_pid;           // 16  0 = free
+      uint32_t interrupt;           // 20  set by interrupt(), cleared by the waiter
+      uint32_t asleep_on;           // 24  offset of the count the current wait added 1 to; 0 = none
+      uint32_t reserved;            // 28  0
   };
   ```
 
@@ -401,7 +403,7 @@ offset 64    line 1            written once at creation
 offset 128   line 2            the sender's words
 offset 192   line 3            the readers' words
 offset 256   reader table      max_readers x 64 bytes
-             waiter slots      (max_readers + 1) x 24 bytes
+             waiter slots      (max_readers + 1) x 32 bytes
              (zero padding up to a multiple of 64)
 slots        slots             capacity x slot_size bytes
 types        description table types_size bytes
@@ -556,9 +558,9 @@ Every shared word is a plain integer in the mapping, accessed through
 2. Wait for `magic` with acquire ordering, with backoff (spin, yield, then
    sleeps doubling up to 1 ms), up to the timeout. A mapping that never
    gets `magic` is `status::not_found`.
-3. Copy the common line and bytes 84 to 127 of the box line, leaving out
-   the four words that writes change, and check only the copy. Checks run
-   in this order, and the first to fail decides the status:
+3. Copy the common line and bytes 88 to 127 of the box line, leaving out
+   the five words that writes and waits change, and check only the copy.
+   Checks run in this order, and the first to fail decides the status:
     1. The magic is one this library knows, else `status::foreign`: the
        segment was made by another version of `sharedbox` or is not a
        `sharedbox` segment.
@@ -638,7 +640,12 @@ Every shared word is a plain integer in the mapping, accessed through
   and every scan skips a slot holding the marker. It then checks that
   `owner_pid` still holds the pid it read; if not, it puts the old
   `owner_start` back and leaves the slot to its new owner. Otherwise it
-  decrements `waiters` if the value it read was nonzero, stores
+  decrements `waiters` if the value it read was nonzero, then exchanges
+  `asleep_on` for 0. If the old value is the offset of a count this kind
+  keeps (a box's `sleepers` at 84; a stream's `space_waiting` at 168 or
+  `data_waiting` at 200), the owner died inside a wait and the freer
+  subtracts 1 from that count; any other value is ignored, so a corrupt
+  slot cannot make the freer write elsewhere. It then stores
   `owner_pidns = 0`, then `owner_pid = 0` (release), and last changes
   `owner_start` from the marker to 0 with a compare-and-swap, which fails
   harmlessly once a new claimer has stored its own.
@@ -664,7 +671,9 @@ Known limits, each after a process is killed at one specific step:
 
 - A freer killed while holding the marker, before it clears `owner_pid`,
   leaves the slot unusable until the segment is created again, and
-  `waiters` one too high if it was killed before its decrement.
+  `waiters` one too high if it was killed before its decrement. Killed
+  between its exchange of `asleep_on` and the subtraction, it leaves that
+  sleeper count one too high.
 - An owner killed partway through a release leaves a slot with no start,
   which is freed without a decrement, so `waiters` stays one too high if
   the kill came before the decrement. On Linux, a kill after
@@ -677,16 +686,26 @@ Known limits, each after a process is killed at one specific step:
   claimer from another one with the same pid, which needs the pid to be
   reused within a few instructions.
 
+- A thread killed inside a wait after it adds 1 to the sleeper count and
+  before it stores the count's offset in `asleep_on` leaves that count one
+  too high, for a box and for a stream alike. Killed later in the wait, it
+  leaves `asleep_on` set, and freeing its slot takes the 1 back.
+
 A count that is too high costs a system call on each write; it never loses
-a wake-up. A thread killed inside a wait leaves `sleepers` one too high in
-the same way.
+a wake-up.
 
 ### Wait and wake
 
 - Wait (slot `i`, last seen generation `g`, timeout):
-  - Add 1 to `sleepers` (sequentially consistent) for the whole wait, then
-    load `wake_word`, then return at once if `seq >> 1 != g` or slot `i`'s
-    `interrupt` is set (clearing it with a compare-and-swap).
+  - Add 1 to `sleepers`, then store its offset, 84, in slot `i`'s
+    `asleep_on`, both sequentially consistent, for the whole wait. Then
+    load `wake_word` (sequentially consistent), then return at once if
+    `seq >> 1 != g` or slot `i`'s `interrupt` is set (clearing it with a
+    compare-and-swap).
+  - On every return, exchange `asleep_on` for 0 and subtract 1 from
+    `sleepers` only if the exchange gave a nonzero value. The order keeps
+    the count from going below the number of threads inside a wait: a
+    freer of the slot takes the 1 back only after the store, and only once.
   - Linux: `FUTEX_WAIT` (shared, not private) on `wake_word` with the value
     loaded before the check, so a write in between makes the call return
     at once.
@@ -695,10 +714,16 @@ the same way.
   - Check again after waking; a wake may be spurious. Past the timeout the
     result is `status::timeout`.
 - Wake, after every write:
-  - Increment `wake_word` with sequentially consistent ordering, so the
-    following load of `sleepers` cannot move before it or before the swap
-    of `seq`. Either that load sees a waiter's count, or the waiter's check
-    of `seq` sees the new value.
+  - Increment `wake_word`, then load `sleepers`, both sequentially
+    consistent. If that load misses a waiter's increment, the waiter's load
+    of `wake_word` comes after this increment in the single order of
+    sequentially consistent operations, so it reads this increment or a
+    later change, every change to `wake_word` being a read-modify-write.
+    That load synchronizes with the increment, so the swap of `seq` before
+    it happens before the waiter's check of `seq`, which then sees the new
+    value. The swap that unlocks `seq` is only a release, so the waiter's
+    load of `wake_word` is required on both platforms, though on Windows its
+    value is not used.
   - If `sleepers` is 0, stop: no system call on the normal path.
   - Linux: one `FUTEX_WAKE` with `INT_MAX` waiters.
   - Windows: `SetEvent` on the event of every occupied slot.
@@ -712,7 +737,8 @@ the same way.
   returns when its kind's condition holds, the slot's `interrupt` flag is
   set, or the timeout passes. A box counts the threads inside a wait in
   `sleepers`, a stream the threads asleep on each word in `data_waiting`
-  and `space_waiting`; a wake is made only when the count is not 0.
+  and `space_waiting`; a wake is made only when the count is not 0. Each
+  wait names its count in its slot's `asleep_on` as a box's wait does.
   On Windows a wake sets the event of every claimed slot, so the other end
   of a stream may wake and sleep again. `interrupt` on a stream end adds 1
   to that end's word and wakes it on Linux, and sets that slot's event on
@@ -866,9 +892,11 @@ Known limits:
   timeout of 0 never frees a dead lossless reader, and a reader that only
   receives with a timeout of 0 never sees the stream end after its sender
   dies.
-- A process killed while it waits leaves `data_waiting` or `space_waiting`
-  one too high for good. That costs a wake call on each send or receive; no
-  wake is lost.
+- A process killed while it waits, after it adds 1 to `data_waiting` or
+  `space_waiting` and before it stores the count's offset in its slot's
+  `asleep_on`, leaves that count one too high for good. That costs a wake
+  call on each send or receive; no wake is lost. Killed later in the wait,
+  it leaves the offset, and freeing its waiter slot takes the 1 back.
 - A process killed in the few instructions between setting `sender_start` to
   `start_freeing` and its next store leaves `sender_start` at
   `start_freeing`. Every later `sender()` then gives `status::busy`, and
