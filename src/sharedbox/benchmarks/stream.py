@@ -11,7 +11,8 @@ import os
 import queue
 import statistics
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Generator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from itertools import count
 from multiprocessing.context import SpawnContext, SpawnProcess
@@ -25,6 +26,7 @@ from typing import Annotated, Any, TypedDict
 import numpy as np
 
 from sharedbox import DType, Shape, SharedStream
+from sharedbox._stream import Mode
 
 NAMES = count()
 Report = tuple[str, int, float, int]
@@ -82,11 +84,11 @@ def zeros(item: str) -> np.ndarray:
 
 
 def stream_reader(
-    name: str, mode: str, item: str, ready: Barrier, start: Barrier, results: Any
+    name: str, mode: Mode, item: str, ready: Barrier, start: Barrier, results: Any
 ) -> None:
     """Receive until the stream ends, into arrays allocated once, and report the count and time."""
     stream = SharedStream.attach(SIZES[item], name)
-    reader = stream.reader(mode=mode, start="oldest")  # type: ignore[arg-type]
+    reader = stream.reader(mode=mode, start="oldest")
     out = {"data": zeros(item)}
     ready.wait()
     start.wait()
@@ -273,7 +275,6 @@ def drive(
     ready: Barrier,
     start: Barrier,
     results: "Queue[Report]",
-    cleanup: Callable[[], None],
 ) -> list[Report]:
     """Run the readers, then the sender, release `start`, and collect every report.
 
@@ -281,7 +282,8 @@ def drive(
     ------
     SystemExit
         If a barrier breaks, a process is still running or one reported nothing
-        within `opts.timeout` seconds. Every process is terminated first.
+        within `opts.timeout` seconds, or a process exits with an error. Every
+        process is terminated first.
     """
     children: list[SpawnProcess] = []
     stuck = SystemExit(f"{label}: not finished within {opts.timeout} s")
@@ -305,6 +307,8 @@ def drive(
             child.join(max(0.0, deadline - time.monotonic()))
         if any(child.is_alive() for child in children):
             raise stuck
+        if any(child.exitcode != 0 for child in children):
+            raise SystemExit(f"{label}: a process failed")
         return [results.get(timeout=1) for _ in children]
     except (BrokenBarrierError, queue.Empty):
         raise stuck from None
@@ -313,7 +317,6 @@ def drive(
             if child.is_alive():
                 child.terminate()
             child.join()
-        cleanup()
 
 
 def summarise(label: str, item: str, readers: int, reports: list[Report]) -> Throughput:
@@ -330,36 +333,41 @@ def summarise(label: str, item: str, readers: int, reports: list[Report]) -> Thr
     )
 
 
-def stream_run(mode: str) -> Callable[[SpawnContext, Options, str, int], Throughput]:
+@contextmanager
+def fresh_stream(opts: Options, item: str) -> Generator[str, None, None]:
+    """Create a stream, yield its name and unlink it afterwards."""
+    name = f"bench-stream-{os.getpid()}-{next(NAMES)}"
+    stream = SharedStream.create(
+        SIZES[item], name, capacity=opts.capacity, max_readers=max(opts.readers)
+    )
+    try:
+        yield name
+    finally:
+        stream.close()
+        SharedStream.unlink(name)
+
+
+def stream_run(mode: Mode) -> Callable[[SpawnContext, Options, str, int], Throughput]:
     """A contender that runs a stream with readers of `mode`."""
 
     def run(ctx: SpawnContext, opts: Options, item: str, readers: int) -> Throughput:
         label = f"SharedStream {mode} ({item}, {readers} readers)"
-        name = f"bench-stream-{os.getpid()}-{next(NAMES)}"
-        stream = SharedStream.create(
-            SIZES[item], name, capacity=opts.capacity, max_readers=max(opts.readers)
-        )
-        ready, start, results = (
-            ctx.Barrier(readers + 1),
-            ctx.Barrier(readers + 2),
-            ctx.Queue(),
-        )
-
-        def cleanup() -> None:
-            stream.close()
-            SharedStream.unlink(name)
-
-        reports = drive(
-            label,
-            opts,
-            ctx,
-            [(stream_reader, (name, mode, item))] * readers,
-            (stream_sender, (name, item, opts.items[item])),
-            ready,
-            start,
-            results,
-            cleanup,
-        )
+        with fresh_stream(opts, item) as name:
+            ready, start, results = (
+                ctx.Barrier(readers + 1),
+                ctx.Barrier(readers + 2),
+                ctx.Queue(),
+            )
+            reports = drive(
+                label,
+                opts,
+                ctx,
+                [(stream_reader, (name, mode, item))] * readers,
+                (stream_sender, (name, item, opts.items[item])),
+                ready,
+                start,
+                results,
+            )
         return summarise(f"SharedStream {mode}", item, readers, reports)
 
     return run
@@ -383,7 +391,6 @@ def queue_run(ctx: SpawnContext, opts: Options, item: str, readers: int) -> Thro
         ready,
         start,
         results,
-        lambda: None,
     )
     return summarise("mp.Queue", item, readers, reports)
 
@@ -395,29 +402,27 @@ def ring_run(ctx: SpawnContext, opts: Options, item: str, readers: int) -> Throu
     shm = SharedMemory(
         f"bench-ring-{os.getpid()}-{next(NAMES)}", create=True, size=size
     )
-    cond = ctx.Condition()
-    ready, start, results = (
-        ctx.Barrier(readers + 1),
-        ctx.Barrier(readers + 2),
-        ctx.Queue(),
-    )
-
-    def cleanup() -> None:
+    try:
+        cond = ctx.Condition()
+        ready, start, results = (
+            ctx.Barrier(readers + 1),
+            ctx.Barrier(readers + 2),
+            ctx.Queue(),
+        )
+        common = (shm.name, item, opts.capacity, readers)
+        reports = drive(
+            label,
+            opts,
+            ctx,
+            [(ring_reader, (*common, i, cond, opts.timeout)) for i in range(readers)],
+            (ring_sender, (*common, opts.items[item], cond, opts.timeout)),
+            ready,
+            start,
+            results,
+        )
+    finally:
         shm.close()
         shm.unlink()
-
-    common = (shm.name, item, opts.capacity, readers)
-    reports = drive(
-        label,
-        opts,
-        ctx,
-        [(ring_reader, (*common, i, cond, opts.timeout)) for i in range(readers)],
-        (ring_sender, (*common, opts.items[item], cond, opts.timeout)),
-        ready,
-        start,
-        results,
-        cleanup,
-    )
     return summarise("SharedMemory ring + Lock", item, readers, reports)
 
 
