@@ -403,7 +403,10 @@ class SharedStream(Generic[T]):
             sender_pid,
             tuple(
                 ReaderStatistics(
-                    MODE_NAMES[mode], position, max(sent - position, 0), pid
+                    MODE_NAMES[mode],
+                    min(position, sent),
+                    max(sent - position, 0),
+                    pid,
                 )
                 for position, mode, pid in readers
             ),

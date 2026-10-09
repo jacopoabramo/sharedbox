@@ -336,7 +336,8 @@ struct received {
     std::uint64_t missed;
 };
 
-// An open reader, as stream::readers reports it.
+// An open reader, as stream::readers reports it. A position may be one past write_pos for a moment: a
+// reader can take an item before the sender stores write_pos for it.
 struct reader_info {
     std::uint64_t position;
     read_mode mode;
@@ -821,11 +822,11 @@ inline void stream_sender::close() noexcept {
 inline result<void> stream_reader::wait_for_data(detail::clock::time_point deadline) {
     stream_header &h = *s_->hdr;
     if (detail::atomic(h.state).load(std::memory_order_acquire) == stream_ended &&
-        detail::atomic(h.write_pos).load(std::memory_order_acquire) == r_)
+        detail::atomic(h.write_pos).load(std::memory_order_acquire) <= r_)
         return unexpected(status::ended);
     if (deadline > detail::clock::now()) {
         for (unsigned i = 0; i < spin_before_sleep; ++i) {
-            if (detail::atomic(h.write_pos).load(std::memory_order_seq_cst) != r_)
+            if (detail::atomic(h.write_pos).load(std::memory_order_seq_cst) > r_)
                 return {};
             detail::cpu_relax();
         }
@@ -833,7 +834,7 @@ inline result<void> stream_reader::wait_for_data(detail::clock::time_point deadl
     for (;;) {
         // write_pos is read after state: the sender stores state after its last write_pos.
         if (detail::atomic(h.state).load(std::memory_order_acquire) == stream_ended &&
-            detail::atomic(h.write_pos).load(std::memory_order_acquire) == r_)
+            detail::atomic(h.write_pos).load(std::memory_order_acquire) <= r_)
             return unexpected(status::ended);
         const detail::clock::duration left = deadline - detail::clock::now();
         if (left <= detail::clock::duration::zero())
@@ -841,7 +842,7 @@ inline result<void> stream_reader::wait_for_data(detail::clock::time_point deadl
         const result<wake> woken = detail::wait_on(
             s_->waiters, slot_, h.data_word,
             [&]() noexcept {
-                return detail::atomic(h.write_pos).load(std::memory_order_seq_cst) != r_ ||
+                return detail::atomic(h.write_pos).load(std::memory_order_seq_cst) > r_ ||
                        detail::atomic(h.state).load(std::memory_order_seq_cst) == stream_ended;
             },
             (std::min)(std::chrono::duration_cast<seconds>(left), seconds(liveness_delay)), &h.data_waiting);
@@ -894,7 +895,7 @@ result<received> stream_reader::receive_with(F &&copy, seconds timeout) {
         // A slot whose seq is 2 * r_ + 2 holds item r_ whole, so write_pos need not be read: it is only
         // needed to decide whether to wait, where a lap was lost, and to find the newest item. A later
         // lap shows a larger seq and fails this check. A reader may take an item a moment before the
-        // sender stores write_pos for it.
+        // sender stores write_pos for it, so r_ may be write_pos + 1 and "nothing to read" is write_pos <= r_.
         if (mode_ != read_mode::latest && take(r_)) {
             const received out{r_, missed_ - missed_before};
             ++r_;
@@ -903,7 +904,7 @@ result<received> stream_reader::receive_with(F &&copy, seconds timeout) {
             return out;
         }
         const std::uint64_t w = detail::atomic(h.write_pos).load(std::memory_order_acquire);
-        if (r_ == w) {
+        if (w <= r_) {
             if (const result<void> waited = wait_for_data(deadline); !waited)
                 return unexpected(waited.error());
             continue;
