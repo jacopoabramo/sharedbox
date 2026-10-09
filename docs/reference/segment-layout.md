@@ -887,12 +887,21 @@ with the rules of Liveness:
 - A reader waiting for data ends the stream when the sender's process has
   exited. It first claims the dead sender by changing `sender_start` from the
   value it read to `start_freeing` with a compare-and-swap. If that
-  succeeds, it changes `state` from 0 to 1, clears `sender_pidns`,
+  succeeds, it completes the dead sender's last publish (see below), then
+  changes `state` from 0 to 1, clears `sender_pidns`,
   `sender_pid` and `sender_start`, adds 1 to `data_word` and wakes it.
   Readers then receive what was published, then `status::ended`.
 - `sender()` replaces a recorded sender whose process has exited. It claims
   the dead sender the same way, so a replacement and an ending never both
-  act on one dead owner, then stores its own pid.
+  act on one dead owner, completes the dead sender's last publish, then
+  stores its own pid.
+- A sender killed after storing `seq` of slot `p % capacity` as `2p + 2` and
+  before storing `write_pos` leaves `write_pos` at `p` with item `p` whole
+  in its slot. Whoever claims the dead sender loads `write_pos`, and if that
+  slot's `seq` is `2p + 2` stores `write_pos = p + 1` and wakes `data_word`
+  as a send does, before ending the stream or letting a replacement send.
+  Readers then receive the item the dead sender published, then
+  `status::ended` or the replacement's items.
 
 Known limits:
 

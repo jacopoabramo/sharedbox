@@ -309,6 +309,23 @@ inline bool claim_dead_sender(stream_header &h, std::uint32_t seen, std::uint64_
     return false;
 }
 
+// Stores write_pos for an item the dead sender finished (its seq is even) but did not count. The caller
+// holds the claim, so nobody else stores write_pos. The item passed the gate when it was sent. Wakes
+// waiting readers the way a send does.
+inline void complete_last_publish(stream_state &s) noexcept {
+    stream_header &h = *s.hdr;
+    const std::uint64_t p = atomic(h.write_pos).load(std::memory_order_acquire);
+    std::byte *slot = s.slots + p % s.capacity * s.slot_size;
+    if (atomic(*reinterpret_cast<std::uint64_t *>(slot)).load(std::memory_order_acquire) != 2 * p + 2)
+        return;
+    atomic(h.write_pos).store(p + 1, std::memory_order_release);
+    std::atomic_thread_fence(std::memory_order_seq_cst);
+    if (atomic(h.data_waiting).load(std::memory_order_seq_cst) != 0) {
+        atomic(h.data_word).fetch_add(1, std::memory_order_seq_cst);
+        wake_all(s.waiters, h.data_word);
+    }
+}
+
 // Ends the stream when the process holding the sender has exited, so readers drain and then get
 // status::ended.
 inline void end_if_sender_died(stream_state &s) noexcept {
@@ -317,6 +334,7 @@ inline void end_if_sender_died(stream_state &s) noexcept {
     std::uint64_t start = 0;
     if (pid == 0 || !claim_dead_sender(h, pid, start))
         return;
+    complete_last_publish(s);
     std::uint32_t open = stream_open;
     atomic(h.state).compare_exchange_strong(open, stream_ended, std::memory_order_seq_cst,
                                             std::memory_order_relaxed);
@@ -615,6 +633,9 @@ inline result<stream_sender> stream::sender() {
             detail::release_slot(s.waiters, *slot);
             return unexpected(status::busy);
         }
+        // The dead sender may have died between storing the last item's seq and its write_pos; finish that
+        // publish so no reader sees the slot rewritten for an item it already took.
+        detail::complete_last_publish(s);
         if (!detail::atomic(h.sender_pid)
                  .compare_exchange_strong(seen, pid, std::memory_order_acq_rel, std::memory_order_relaxed)) {
             std::uint64_t freeing = detail::start_freeing;
