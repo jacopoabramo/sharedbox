@@ -9,7 +9,7 @@ import sysconfig
 from importlib.metadata import version
 from importlib.util import find_spec
 from pathlib import Path
-from typing import Annotated
+from typing import Annotated, Literal
 
 import typer
 
@@ -134,7 +134,10 @@ def stream_command(
     short: Annotated[
         bool, typer.Option("--short", help="A run of a few seconds.")
     ] = False,
-    table: Annotated[str, typer.Option(help="throughput, matrix or both.")] = "both",
+    table: Annotated[
+        Literal["throughput", "matrix", "both"],
+        typer.Option(help="throughput, matrix or both."),
+    ] = "both",
     output: JsonOption = None,
     markdown: Annotated[
         bool, typer.Option("--markdown", help="Print Markdown tables.")
