@@ -6,6 +6,7 @@ import asyncio
 import atexit
 import collections
 import contextlib
+import functools
 import hashlib
 import itertools
 import logging
@@ -44,6 +45,8 @@ EXIT_WAIT: Final = 2.0
 logger = logging.getLogger("sharedbox")
 WORKER_THREADS: set[threading.Thread] = set()
 READER_IDS = itertools.count(1)
+YIELD_EVERY: Final = 64
+YIELD_AFTER: Final = 0.001
 LIVE_ENDS: weakref.WeakSet[StreamSender[Any] | StreamReader[Any]] = weakref.WeakSet()
 
 
@@ -438,7 +441,8 @@ Call = Callable[[CallFuture], Any]
 class Worker:
     """A daemon thread that runs one stream end's waiting calls, one at a time, in the order submitted."""
 
-    def __init__(self, name: str) -> None:
+    def __init__(self, name: str, after: Callable[[], None]) -> None:
+        self._after = after
         self._calls: queue.SimpleQueue[tuple[CallFuture, Call] | None] = (
             queue.SimpleQueue()
         )
@@ -479,6 +483,7 @@ class Worker:
         while (entry := self._calls.get()) is not None:
             self._run_one(*entry)
             del entry
+            self._after()
         while True:
             try:
                 entry = self._calls.get_nowait()
@@ -487,6 +492,14 @@ class Worker:
             if entry is not None:
                 entry[0].cancel()
                 entry[0].set_running_or_notify_cancel()
+                self._after()
+
+
+def finished(end: weakref.ref[End]) -> None:
+    """Count a worker call of `end` as done, if the end still exists."""
+    if (target := end()) is not None:
+        with target._lock:
+            target._inflight -= 1
 
 
 class End:
@@ -494,7 +507,10 @@ class End:
 
     __slots__ = (
         "__weakref__",
+        "_burst",
+        "_burst_start",
         "_cancelled",
+        "_inflight",
         "_lock",
         "_native",
         "_shut",
@@ -509,6 +525,9 @@ class End:
         self._worker: Worker | None = None
         self._cancelled: Future[Any] | None = None
         self._shut = False
+        self._inflight = 0
+        self._burst = 0
+        self._burst_start = 0.0
         LIVE_ENDS.add(cast(Any, self))
 
     @property
@@ -523,13 +542,30 @@ class End:
                 )
             if self._worker is None:
                 self._worker = Worker(
-                    f"sharedbox:{self._stream.name}:{self._thread_role()}"
+                    f"sharedbox:{self._stream.name}:{self._thread_role()}",
+                    functools.partial(finished, weakref.ref(self)),
                 )
                 weakref.finalize(self, self._worker.stop)
+            self._inflight += 1
             return self._worker.submit(call)
 
-    def _thread_role(self) -> str:
-        return "end"
+    _thread_role: Callable[[], str]
+
+    def _fast(self) -> bool:
+        """Return whether a call may bypass the worker: none is in flight, so order and the end's mutex are free."""
+        with self._lock:
+            return self._inflight == 0 and not self.closed
+
+    async def _yield(self) -> None:
+        """Give the event loop a turn every `YIELD_EVERY` fast calls or `YIELD_AFTER` seconds, whichever comes first."""
+        self._burst += 1
+        if (
+            self._burst >= YIELD_EVERY
+            or time.monotonic() - self._burst_start >= YIELD_AFTER
+        ):
+            self._burst = 0
+            await asyncio.sleep(0)
+            self._burst_start = time.monotonic()
 
     def _cancel(self, future: Future[Any]) -> None:
         """Stop the call behind `future`: drop it if it has not started, else interrupt its wait."""
@@ -612,13 +648,14 @@ class StreamSender(End, Generic[T]):
 
     async def asend(self, item: T) -> None:
         """Send `item`, as [`send`][sharedbox.StreamSender.send] does, without blocking the event loop."""
-        await asyncio.sleep(0)
-        try:
-            self.send_nowait(item)
-        except WouldBlock:
-            await self._wait(
-                self._submit(lambda future: self._send(item, None, future))
-            )
+        await self._yield()
+        if self._fast():
+            try:
+                self.send_nowait(item)
+                return
+            except WouldBlock:
+                pass
+        await self._wait(self._submit(lambda future: self._send(item, None, future)))
 
     def send_nowait(self, item: T) -> None:
         """Send `item`, or raise [`WouldBlock`][sharedbox.WouldBlock] if a lossless reader is a full ring behind."""
@@ -872,11 +909,13 @@ class StreamReader(End, Iterator[T], AsyncIterator[T], Generic[T]):
 
     async def __anext__(self) -> T:
         try:
-            await asyncio.sleep(0)
-            try:
-                return self._take_nowait([])
-            except WouldBlock:
-                return cast(T, await self._wait(self._receive_future([])))
+            await self._yield()
+            if self._fast():
+                try:
+                    return self._take_nowait([])
+                except WouldBlock:
+                    pass
+            return cast(T, await self._wait(self._receive_future([])))
         except EndOfStream:
             raise StopAsyncIteration from None
 
@@ -937,13 +976,13 @@ class IterInto(Iterator[T], AsyncIterator[T], Generic[T]):
     async def __anext__(self) -> T:
         reader = self._reader
         try:
-            await asyncio.sleep(0)
-            try:
-                return reader._take_nowait(self._targets)
-            except WouldBlock:
-                return cast(
-                    T, await reader._wait(reader._receive_future(self._targets))
-                )
+            await reader._yield()
+            if reader._fast():
+                try:
+                    return reader._take_nowait(self._targets)
+                except WouldBlock:
+                    pass
+            return cast(T, await reader._wait(reader._receive_future(self._targets)))
         except EndOfStream:
             raise StopAsyncIteration from None
 

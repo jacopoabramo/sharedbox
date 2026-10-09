@@ -4,11 +4,12 @@ import multiprocessing as mp
 import subprocess
 import sys
 import textwrap
+import threading
 import time
 from collections.abc import Callable
 from concurrent.futures import FIRST_COMPLETED, CancelledError, Future, wait
 from multiprocessing.process import BaseProcess
-from typing import Annotated
+from typing import Annotated, Any
 
 import numpy as np
 import pytest
@@ -21,6 +22,7 @@ from sharedbox import (
     StreamReader,
     StreamSender,
     WouldBlock,
+    _stream,
 )
 from sharedbox._stream import WORKER_THREADS
 
@@ -145,8 +147,12 @@ def test_cancelling_asend_leaves_the_item_unsent(unique_name: str) -> None:
     assert asyncio.run(run()) == [0, 1]
 
 
-def test_buffered_items_are_received_without_a_worker(unique_name: str) -> None:
-    """Receive buffered items in order with async for and start no worker thread."""
+@pytest.mark.parametrize("every", [64, 1])
+def test_buffered_items_are_received_without_a_worker(
+    unique_name: str, monkeypatch: pytest.MonkeyPatch, every: int
+) -> None:
+    """Receive buffered items in order with async for while no worker thread exists."""
+    monkeypatch.setattr(_stream, "YIELD_EVERY", every)
     count = 1000
 
     async def run() -> tuple[list[int], float]:
@@ -157,12 +163,84 @@ def test_buffered_items_are_received_without_a_worker(unique_name: str) -> None:
                     sender.send(i)
             started = time.perf_counter()
             items = [item async for item in reader]
-            return items, (time.perf_counter() - started) / count
+            elapsed = (time.perf_counter() - started) / count
+            assert not [t for t in _stream.WORKER_THREADS if unique_name in t.name]
+            assert not [t for t in threading.enumerate() if unique_name in t.name]
+            return items, elapsed
 
     items, per_item = asyncio.run(run())
-    print(f"async for over buffered items: {per_item * 1e6:.1f} us per item")
+    print(f"yield every {every}: {per_item * 1e6:.1f} us per item")
     assert items == list(range(count))
-    assert not [t for t in WORKER_THREADS if unique_name in t.name]
+
+
+def test_a_cancelled_anext_does_not_let_the_next_one_overtake(
+    unique_name: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Return the item a cancelled anext took before the one sent after it."""
+    taken = threading.Event()
+    release = threading.Event()
+    real_take = _stream.StreamReader._take
+
+    def held_take(self: Any, targets: Any, step: float, future: Any = None) -> Any:
+        item = real_take(self, targets, step, future)
+        if future is not None:
+            taken.set()
+            release.wait(5)
+        return item
+
+    monkeypatch.setattr(_stream.StreamReader, "_take", held_take)
+
+    async def run() -> list[int]:
+        with SharedStream.create(int, unique_name, capacity=8) as stream:
+            reader = stream.reader()
+            sender = stream.sender()
+            first = asyncio.create_task(anext(reader))
+            while reader._inflight == 0:
+                await asyncio.sleep(0)
+            sender.send(1)
+            await asyncio.get_running_loop().run_in_executor(None, taken.wait, 5)
+            first.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await first
+            sender.send(2)
+            second = asyncio.create_task(anext(reader))
+            await asyncio.sleep(0.05)
+            release.set()
+            received = [await asyncio.wait_for(second, 5)]
+            received.append(await asyncio.wait_for(anext(reader), 5))
+            return received
+
+    assert asyncio.run(run()) == [1, 2]
+
+
+def test_a_second_asend_does_not_block_the_event_loop(unique_name: str) -> None:
+    """Keep the event loop turning while two asend calls wait on a full ring."""
+
+    async def run() -> float:
+        with SharedStream.create(int, unique_name, capacity=2) as stream:
+            reader = stream.reader(start="oldest")
+            sender = stream.sender()
+            sender.send(0)
+            sender.send(1)
+            first = asyncio.create_task(sender.asend(2))
+            await asyncio.sleep(0.05)
+            second = asyncio.create_task(sender.asend(3))
+            loop = asyncio.get_running_loop()
+            worst = 0.0
+            end = loop.time() + 0.3
+            last = loop.time()
+            while last < end:
+                await asyncio.sleep(0.01)
+                now = loop.time()
+                worst = max(worst, now - last)
+                last = now
+            first.cancel()
+            second.cancel()
+            await asyncio.gather(first, second, return_exceptions=True)
+            reader.close()
+            return worst
+
+    assert asyncio.run(run()) < 0.5
 
 
 def test_a_dropped_end_lets_its_worker_stop(unique_name: str) -> None:
