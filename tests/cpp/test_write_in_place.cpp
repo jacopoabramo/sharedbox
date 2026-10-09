@@ -67,13 +67,13 @@ TEST_CASE("begin_write refuses a field that is not an array and times out on a h
     const field_spec fields[2] = {{0, 0, kind_array}, {16, 8, kind_int}};
     auto h = handle::create(name, fields, 24, 1, 4, {}, t.span());
     REQUIRE(h.has_value());
-    CHECK(h->begin_write(1, seconds(1.0)).error() == status::range);
-    CHECK(h->begin_write(2, seconds(1.0)).error() == status::range);
+    CHECK(h->begin_write(1, seconds(1.0)).error().code == status::range);
+    CHECK(h->begin_write(2, seconds(1.0)).error().code == status::range);
     auto other = handle::open(name, seconds(1.0));
     REQUIRE(other.has_value());
     const auto held = h->begin_write(0, seconds(1.0));
     REQUIRE(held.has_value());
-    CHECK(other->begin_write(0, seconds(0.05)).error() == status::lock_timeout);
+    CHECK(other->begin_write(0, seconds(0.05)).error().code == status::lock_timeout);
     h->end_write(*held);
     const auto next = other->begin_write(0, seconds(1.0));
     REQUIRE(next.has_value());

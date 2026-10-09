@@ -45,6 +45,9 @@ struct SegmentMissing : std::runtime_error {
 struct SchemaMismatch : std::runtime_error {
     using std::runtime_error::runtime_error;
 };
+struct KindMismatch : SchemaMismatch {
+    using SchemaMismatch::SchemaMismatch;
+};
 struct SegmentClosed : std::runtime_error {
     using std::runtime_error::runtime_error;
 };
@@ -105,11 +108,12 @@ class Segment {
 public:
     /// values are written before any other process can attach; names label fields in error messages.
     /// Without publish, no other process can attach until publish() is called.
-    static std::unique_ptr<Segment>
-    create(const std::string &name, const std::vector<FieldDesc> &fields, const std::vector<std::string> &names,
-           std::uint64_t record_size, std::uint64_t schema_hash, double lock_timeout, std::uint16_t waiter_slots,
-           const std::vector<std::pair<std::uint32_t, std::string>> &values, const std::string &types_table = {},
-           std::uint16_t major = layout_major, bool publish = true);
+    static std::unique_ptr<Segment> create(const std::string &name, const std::vector<FieldDesc> &fields,
+                                           const std::vector<std::string> &names, std::uint64_t record_size,
+                                           std::uint64_t schema_hash, double lock_timeout,
+                                           std::uint16_t waiter_slots,
+                                           const std::vector<std::pair<std::uint32_t, std::string>> &values,
+                                           const std::string &types_table = {}, bool publish = true);
     /// With types_table, the segment's description table must equal it.
     static std::unique_ptr<Segment> attach(const std::string &name, const std::vector<std::string> &names,
                                            std::uint64_t schema_hash, double lock_timeout,

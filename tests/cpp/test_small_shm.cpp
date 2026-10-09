@@ -16,8 +16,7 @@ TEST_CASE("a box larger than /dev/shm fails at create and leaves the name free")
         fields.push_back({i * span, sharedbox::max_capacity, sharedbox::kind_bytes});
     const std::string name = unique("small-shm");
     const auto large = sharedbox::handle::create(name, fields, count * span, 1, 64, {});
-    const int error = errno;
-    CHECK((!large && large.error() == sharedbox::status::os && error == ENOSPC));
+    CHECK((!large && large.error().code == sharedbox::status::os && large.error().os == ENOSPC));
     // The failed create left the name free.
     const auto small = sharedbox::handle::create(name, {fields.data(), 1}, span, 1, 64, {});
     CHECK(small.has_value());

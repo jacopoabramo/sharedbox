@@ -19,10 +19,10 @@ several processes map at the same time, its
 knows the name can open it, which is how a second process finds your
 box.[^shm-open]
 
-On Linux it is a POSIX shared memory object, `/dev/shm/sharedbox.<name>`,
+On Linux it is a POSIX shared memory object, `/dev/shm/SBX:<name>`,
 created with mode `0600`, readable and writable by its owner
 only.[^shm-open] On Windows it is a file mapping backed by the page file,
-`Local\sharedbox.<name>`, which Windows deletes when the last process closes
+`Local\SBX:<name>`, which Windows deletes when the last process closes
 it.[^create-file-mapping] The standard library's
 `multiprocessing.shared_memory` creates the same kind of object on
 Windows.[^shared-memory] Creation always asks for a new name, so a box
@@ -42,22 +42,22 @@ grid-columns: 1
 vertical-gap: 0
 header: "header  0x000 - 0x07F" {
   shape: sql_table
-  tooltip: Line 0, up to 0x03F, is written once when the box is created. Line 1, from 0x040, changes with every write and wait.
-  "0x000": "magic  \"SHREDBX1\", written last"
-  "0x008": "layout  2.0"
-  "0x00C": "field_count  3"
-  "0x00E": "waiter_slots  64"
+  tooltip: The first line, up to 0x03F, has the same fields in every kind of segment and is written once when the box is created. The second line, from 0x040, starts with the words that writes and waits change, then holds the box's geometry.
+  "0x000": "magic  \"SBX_BOX_\", written last"
+  "0x008": "core version 1.0, box layout 3.0"
   "0x010": "schema_hash"
-  "0x018": "record_size  48"
-  "0x01C": "record  0x6C0"
-  "0x020": "tail  0x080"
-  "0x024": "size  0x1000"
-  "0x028": "create_id, creator start and pid"
-  "0x03C": "types_size  0"
+  "0x018": "create_id"
+  "0x020": "creator start and pid namespace"
+  "0x030": "creator pid, waiter_slots  64"
+  "0x038": "size  0x1000"
   "0x040": "seq  2, even: no write running"
   "0x048": "writer_pid  0"
   "0x04C": "wake_word, waiters"
-  "0x058": "creator_pidns, then reserved"
+  "0x054": "field_count  3"
+  "0x058": "record_size  48"
+  "0x05C": "record  0x6C0"
+  "0x060": "tail  0x080"
+  "0x064": "types_size  0, then reserved"
 }
 fields: "field table  0x080 - 0x097" {
   shape: sql_table
@@ -185,7 +185,8 @@ It helps to know what the schema hash doesn't do:
   writing](reading-and-writing.md#never-trust-the-shared-copy-of-the-layout)
   and the `0600` permissions deal with that.
 - It does not cover changes in how sharedbox itself lays out a record
-  between releases. The header's `layout_major` and `layout_minor` do.
+  between releases. The core version and the box layout version in the
+  header do.
 - 8 bytes of SHA-256 give 2^64 possible values, so two different classes
   sharing a hash by accident is not a practical concern.
 

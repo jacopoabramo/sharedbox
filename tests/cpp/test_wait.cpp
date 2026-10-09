@@ -71,7 +71,7 @@ TEST_CASE("an interrupt sent before the wait ends it, and a quiet wait times out
     const auto early = h.wait(*slot, h.generation(), 5.0s);
     CHECK((early && *early == wake::interrupted));
     const auto quiet = h.wait(*slot, h.generation(), 0.05s);
-    CHECK((!quiet && quiet.error() == status::timeout));
+    CHECK((!quiet && quiet.error().code == status::timeout));
     h.release_waiter(*slot);
     static_cast<void>(sharedbox::unlink(name));
 }
@@ -80,12 +80,12 @@ TEST_CASE("wait refuses a slot not held and a timeout out of range") {
     const std::string name = unique("wait-range");
     handle h = make(name);
     const auto unheld = h.wait(1, h.generation(), 0.01s);
-    CHECK((!unheld && unheld.error() == status::range));
+    CHECK((!unheld && unheld.error().code == status::range));
     const auto slot = h.register_waiter();
     REQUIRE(slot.has_value());
     const auto negative = h.wait(*slot, h.generation(), -1.0s);
-    CHECK((!negative && negative.error() == status::range));
-    CHECK(h.interrupt(4).error() == status::range);
+    CHECK((!negative && negative.error().code == status::range));
+    CHECK(h.interrupt(4).error().code == status::range);
     h.release_waiter(*slot);
     static_cast<void>(sharedbox::unlink(name));
 }
@@ -121,7 +121,7 @@ TEST_CASE("a handle taken from a capsule frees only its own slots and events, th
         auto foreign = handle::from_capsule(&producer);
         REQUIRE(foreign.has_value());
         CHECK(producer.release == nullptr);
-        CHECK(foreign->duplicate().error() == status::range);
+        CHECK(foreign->duplicate().error().code == status::range);
         const auto theirs = foreign->register_waiter();
         REQUIRE(theirs.has_value());
         CHECK(h.waiters() == 2);

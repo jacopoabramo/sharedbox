@@ -26,7 +26,7 @@ function(sbx_test_target target)
     endif()
 endfunction()
 
-set(sbx_tests test_result test_atomics test_mapping test_lock test_slots test_wait test_layout2 test_types test_values test_write_in_place)
+set(sbx_tests test_result test_atomics test_mapping test_lock test_slots test_wait test_layout3 test_types test_values test_write_in_place test_core_alone)
 if(WIN32)
     list(APPEND sbx_tests test_windows_h)
 else()
@@ -37,7 +37,7 @@ foreach(target IN LISTS sbx_tests)
     add_executable(${target} ${target}.cpp)
 endforeach()
 
-# The same test again where the standard library has std::expected, which result then names.
+# The same test again where the standard library has std::expected, to check the conversions.
 if("cxx_std_23" IN_LIST CMAKE_CXX_COMPILE_FEATURES)
     add_executable(test_result_cxx23 test_result.cpp)
     set_target_properties(test_result_cxx23 PROPERTIES CXX_STANDARD 23)

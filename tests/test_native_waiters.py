@@ -15,6 +15,7 @@ from multiprocessing.shared_memory import SharedMemory
 from multiprocessing.synchronize import Event
 
 import pytest
+from os_names import os_name
 
 from sharedbox import SharedBox
 from sharedbox._layout import NativeField
@@ -38,7 +39,7 @@ def slot_offset(slot: int, field_count: int = 1) -> int:
 @contextlib.contextmanager
 def raw_bytes(name: str) -> Generator[memoryview, None, None]:
     if sys.platform == "win32":
-        shm = SharedMemory(f"sharedbox.{name}")
+        shm = SharedMemory(os_name(name))
         try:
             assert shm.buf is not None
             yield shm.buf
@@ -46,7 +47,7 @@ def raw_bytes(name: str) -> Generator[memoryview, None, None]:
             shm.close()
     else:
         with (
-            open(f"/dev/shm/sharedbox.{name}", "r+b") as file,
+            open(f"/dev/shm/{os_name(name)}", "r+b") as file,
             mmap.mmap(file.fileno(), 0) as mapping,
             memoryview(mapping) as view,
         ):
@@ -297,7 +298,7 @@ def test_waiting_in_a_slot_not_held_is_refused(unique_name: str) -> None:
 
 def test_the_longest_name_and_the_last_slot_wake(unique_name: str) -> None:
     """Check that with the longest name and 4096 slots the last slot is woken promptly by a write."""
-    name = (unique_name + "x" * 128)[:128]
+    name = (unique_name + "x" * 240)[:240]
     segment = create(name, waiter_slots=4096)
     try:
         slots = [segment.register_waiter() for _ in range(4096)]

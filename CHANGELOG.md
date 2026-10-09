@@ -9,6 +9,51 @@ Dates are marked as `DD-MM-YYYY`
 
 ## [Unreleased]
 
+### Added
+
+- `KindMismatchError`, a `SchemaMismatchError` raised when a name holds a
+  segment of another kind; `status::kind_mismatch` and `SBX_E_KIND` (-11)
+  in `sharedbox.hpp` and `sharedbox_c.h`.
+- `status::foreign` and `SBX_E_FOREIGN` (-12): the segment's magic is not
+  one this version knows. Python raises `SchemaMismatchError`.
+- `sharedbox::to_expected` and `sharedbox::from_expected`: convert a
+  `sharedbox::result` to a `std::expected` and back on C++23.
+
+### Changed
+
+- `SharedBox` names: one or more segments of `[A-Za-z0-9_-]` joined by
+  `:`, up to 240 characters, such as `bl01:camera:det1:frames`. `.` is no
+  longer allowed. The shared memory is `/dev/shm/SBX:<name>` on Linux and
+  `Local\SBX:<name>` on Windows, and Windows waiter events end in `#w<i>`.
+- `box_ref`: a reference field stores the name of its target in 240 bytes,
+  so the field takes 256 bytes.
+- Segment layout: every segment starts with a common first line (magic,
+  core version, layout version of its kind, schema hash, creator), and
+  boxes use layout 3.0. A box made by 0.5 cannot be opened by 0.6, nor the
+  other way round.
+- `sharedbox.hpp`: split into `core.hpp` and `box.hpp`, which it includes.
+  `sharedbox::result` is the library's own type on C++20 and C++23 alike,
+  and its `error()` is a `sharedbox::error` holding the status, the OS error
+  and what was found. The C++ names moved from `sharedbox::v2` to
+  `sharedbox::v3`.
+- `sharedbox::error`: a `status::os` failure carries the OS error in
+  `error().os`; `errno` and `GetLastError()` no longer hold it reliably
+  when the call returns.
+- `sharedbox::header`: the magic, versions, schema hash, creator, waiter
+  slot count and size moved into its first member, `common`, a
+  `sharedbox::common_header`; `layout_major` and `layout_minor` became
+  `common.kind_major` and `common.kind_minor`.
+- `sharedbox::inspect`: returns `result<common_header>`.
+- `sharedbox::magic`: renamed `sharedbox::box_magic`.
+- `SharedBox.attach`: a segment whose magic this version does not know,
+  such as a box made by 0.5, raises `SchemaMismatchError` at once, instead
+  of `SegmentNotFoundError` after the timeout.
+
+### Removed
+
+- Reading box layouts 1.0 and 2.0.
+- `sharedbox::oldest_layout_major`.
+
 ## [0.5.0] - 09-10-2026
 
 ### Added

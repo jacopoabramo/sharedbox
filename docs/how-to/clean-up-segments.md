@@ -48,13 +48,13 @@ On Linux, a process that crashed before calling `unlink` leaves its segment
 behind as a file in `/dev/shm`. You can list them:
 
 ```bash
-ls /dev/shm/sharedbox.*
+ls /dev/shm/SBX:*
 ```
 
 If you try to create a box under a name that is left over, you get
 [`SegmentExistsError`][sharedbox.SegmentExistsError], and its message says
 whether the process that created it is still running. If it isn't, remove
-the segment with `unlink` and the part of the file name after `sharedbox.`,
+the segment with `unlink` and the part of the file name after `SBX:`,
 for example `Job.unlink("job-1")`, or simply delete the file.
 
 On Windows nothing is left behind: a segment goes away with the last

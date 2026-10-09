@@ -13,9 +13,15 @@ from multiprocessing.shared_memory import SharedMemory
 
 from hypothesis import example, given, settings
 from hypothesis import strategies as st
+from os_names import os_name
 
 from sharedbox._layout import NativeField
-from sharedbox._native import SchemaMismatchError, Segment, SegmentNotFoundError
+from sharedbox._native import (
+    LockTimeoutError,
+    SchemaMismatchError,
+    Segment,
+    SegmentNotFoundError,
+)
 
 BOOL, INT, FLOAT, STR, BYTES = range(5)
 FIELDS = [
@@ -28,14 +34,19 @@ FIELDS = [
 NAMES = ["a", "b", "c", "d", "e"]
 SCHEMA = 0xF0F0
 SLOTS = 4
-# (start, length) of header line 0, the field table and the waiter slot table.
-REGIONS = [(0, 64), (128, len(FIELDS) * 8), (128 + len(FIELDS) * 16, SLOTS * 24)]
+# (start, length) of header lines 0 and 1, the field table and the waiter slot table.
+REGIONS = [
+    (0, 64),
+    (64, 64),
+    (128, len(FIELDS) * 8),
+    (128 + len(FIELDS) * 16, SLOTS * 24),
+]
 
 
 @contextlib.contextmanager
 def raw_bytes(name: str) -> Generator[memoryview, None, None]:
     if sys.platform == "win32":
-        shm = SharedMemory(f"sharedbox.{name}")
+        shm = SharedMemory(os_name(name))
         try:
             assert shm.buf is not None
             yield shm.buf
@@ -43,7 +54,7 @@ def raw_bytes(name: str) -> Generator[memoryview, None, None]:
             shm.close()
     else:
         with (
-            open(f"/dev/shm/sharedbox.{name}", "r+b") as file,
+            open(f"/dev/shm/{os_name(name)}", "r+b") as file,
             mmap.mmap(file.fileno(), 0) as mapping,
             memoryview(mapping) as view,
         ):
@@ -71,9 +82,14 @@ def forged_open(edits: list[tuple[tuple[int, int], int, int]]) -> None:
         except (SchemaMismatchError, SegmentNotFoundError):
             return
         # A box that opens is read and written through its own checked copy of the table.
-        other.get_dict(tuple(NAMES))
-        other.set([(0, 1)])
-        other.close()
+        try:
+            other.get_dict(tuple(NAMES))
+            other.set([(0, 1)])
+        except LockTimeoutError:
+            # A forged seq or writer_pid looks like a writer that never finishes.
+            pass
+        finally:
+            other.close()
     finally:
         owner.close()
         with contextlib.suppress(SegmentNotFoundError):
@@ -82,7 +98,7 @@ def forged_open(edits: list[tuple[tuple[int, int], int, int]]) -> None:
 
 def main(examples: int) -> None:
     # A field count lowered to one the mapping still fits passes every geometry check.
-    pinned = example([((0, 64), 12, 1)])
+    pinned = example([((64, 64), 20, 1)])
     given(EDITS)(
         pinned(
             settings(max_examples=examples, deadline=None, database=None)(forged_open)

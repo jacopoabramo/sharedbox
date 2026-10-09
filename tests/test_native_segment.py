@@ -13,12 +13,14 @@ from multiprocessing.synchronize import Event
 from typing import cast
 
 import pytest
+from os_names import os_name
 
 from sharedbox import SharedBox
 from sharedbox._layout import NativeField
 from sharedbox._native import (
     LAYOUT_VERSION,
     BoxClosedError,
+    KindMismatchError,
     LockTimeoutError,
     SchemaMismatchError,
     Segment,
@@ -42,13 +44,14 @@ def attach(name: str, timeout: float = 1.0) -> Segment:
     return Segment.attach(name, NAMES, SCHEMA, timeout)
 
 
-MAGIC = b"SHREDBX1"
+MAGIC = b"SBX_BOX_"
+STREAM_MAGIC = b"SBX_STRM"
 
 
 @contextlib.contextmanager
 def raw_bytes(name: str) -> Generator[memoryview, None, None]:
     if sys.platform == "win32":
-        shm = SharedMemory(f"sharedbox.{name}")
+        shm = SharedMemory(os_name(name))
         try:
             assert shm.buf is not None
             yield shm.buf
@@ -56,7 +59,7 @@ def raw_bytes(name: str) -> Generator[memoryview, None, None]:
             shm.close()
     else:
         with (
-            open(f"/dev/shm/sharedbox.{name}", "r+b") as file,
+            open(f"/dev/shm/{os_name(name)}", "r+b") as file,
             mmap.mmap(file.fileno(), 0) as mapping,
             memoryview(mapping) as view,
         ):
@@ -72,11 +75,11 @@ def patch_header(name: str, offset: int, fmt: str, value: int) -> None:
 def foreign_mapping(name: str) -> Generator[None, None, None]:
     """Shared memory under a box's object name, made by software other than sharedbox."""
     if sys.platform == "win32":
-        with mmap.mmap(-1, 4096, tagname=f"sharedbox.{name}"):
+        with mmap.mmap(-1, 4096, tagname=os_name(name)):
             yield
     else:
         fd = os.open(
-            f"/dev/shm/sharedbox.{name}", os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o600
+            f"/dev/shm/{os_name(name)}", os.O_CREAT | os.O_EXCL | os.O_RDWR, 0o600
         )
         try:
             os.ftruncate(fd, 4096)
@@ -366,26 +369,22 @@ def test_raw_bytes_follow_the_layout(unique_name: str) -> None:
     segment.close()
     assert len(raw) == 4096
     assert raw[0:8] == MAGIC
-    assert raw[8:12] == struct.pack("<HH", *LAYOUT_VERSION)
-    assert struct.unpack_from("<HHQIIII", raw, 12) == (
-        3,
-        64,
-        0x1122334455667788,
-        24,
-        1728,
-        128,
-        4096,
+    assert struct.unpack_from("<HH", raw, 8) == (1, 0)
+    assert struct.unpack_from("<HH", raw, 12) == LAYOUT_VERSION
+    assert struct.unpack_from("<Q", raw, 16) == (0x1122334455667788,)
+    create_id, creator_start, creator_pidns, creator_pid = struct.unpack_from(
+        "<QQQI", raw, 24
     )
-    create_id, creator_start, creator_pid = struct.unpack_from("<QQI", raw, 40)
     assert create_id != 0
     assert creator_start != 0
+    assert creator_pidns == own_pidns()
     assert creator_pid == os.getpid()
-    assert raw[60:64] == bytes(4)  # types_size
+    assert struct.unpack_from("<HHQ", raw, 52) == (64, 0, 4096)
     # seq, writer_pid, wake_word and waiters after one write, with no one waiting.
     assert struct.unpack_from("<QIII", raw, 64) == (2, 0, 1, 0)
-    assert raw[84:88] == bytes(4)
-    assert struct.unpack_from("<Q", raw, 88) == (own_pidns(),)
-    assert raw[96:128] == bytes(32)
+    # field_count and its reserved word, then record_size, record, tail and types_size.
+    assert struct.unpack_from("<HHIIII", raw, 84) == (3, 0, 24, 1728, 128, 0)
+    assert raw[104:128] == bytes(24)
     assert struct.unpack_from("<6I", raw, 128) == (
         0,
         8 | INT << 24,
@@ -403,16 +402,16 @@ def test_raw_bytes_follow_the_layout(unique_name: str) -> None:
 @pytest.mark.parametrize(
     ("offset", "fmt", "value"),
     [
-        pytest.param(12, "<H", 0, id="no-fields"),
-        pytest.param(12, "<H", 256, id="table-over-the-record"),
-        pytest.param(14, "<H", 0, id="no-waiter-slots"),
-        pytest.param(14, "<H", 4097, id="too-many-waiter-slots"),
-        pytest.param(24, "<I", 4000, id="record-past-the-mapping"),
-        pytest.param(28, "<I", 0xFFFF_FFC0, id="record-outside"),
-        pytest.param(28, "<I", 128, id="record-over-the-table"),
-        pytest.param(28, "<I", 1736, id="record-unaligned"),
-        pytest.param(32, "<I", 136, id="tail-moved"),
-        pytest.param(36, "<I", 8192, id="size-differs"),
+        pytest.param(84, "<H", 0, id="no-fields"),
+        pytest.param(84, "<H", 256, id="table-over-the-record"),
+        pytest.param(52, "<H", 0, id="no-waiter-slots"),
+        pytest.param(52, "<H", 4097, id="too-many-waiter-slots"),
+        pytest.param(88, "<I", 4000, id="record-past-the-mapping"),
+        pytest.param(92, "<I", 0xFFFF_FFC0, id="record-outside"),
+        pytest.param(92, "<I", 128, id="record-over-the-table"),
+        pytest.param(92, "<I", 1736, id="record-unaligned"),
+        pytest.param(96, "<I", 136, id="tail-moved"),
+        pytest.param(56, "<I", 8192, id="size-differs"),
         pytest.param(128, "<I", 32, id="field-past-the-record"),
     ],
 )
@@ -430,16 +429,33 @@ def test_corrupt_header_is_refused(
 def test_another_major_version_is_refused(unique_name: str) -> None:
     """Check that attach raises SchemaMismatchError for a different major layout version."""
     segment = create(unique_name)
-    patch_header(unique_name, 8, "<H", 3)
-    with pytest.raises(SchemaMismatchError, match=r"uses layout 3\.0"):
+    patch_header(unique_name, 12, "<H", 4)
+    with pytest.raises(
+        SchemaMismatchError, match=r"uses core version 1\.0 and box layout 4\.0"
+    ):
         attach(unique_name)
+    segment.close()
+
+
+@pytest.mark.parametrize("magic", [b"SHREDBX1", b"NOTSBX00"])
+def test_a_magic_this_version_does_not_know_is_refused(
+    unique_name: str, magic: bytes
+) -> None:
+    """Check that attach raises SchemaMismatchError for a box of 0.5 and for an unknown magic."""
+    segment = create(unique_name)
+    with raw_bytes(unique_name) as view:
+        view[0:8] = magic
+    with pytest.raises(SchemaMismatchError, match="another version of sharedbox"):
+        attach(unique_name)
+    with raw_bytes(unique_name) as view:
+        view[0:8] = MAGIC
     segment.close()
 
 
 def test_a_higher_minor_version_opens(unique_name: str) -> None:
     """Check that attach accepts a higher minor layout version."""
     owner = create(unique_name)
-    patch_header(unique_name, 10, "<H", 7)
+    patch_header(unique_name, 14, "<H", 7)
     other = attach(unique_name)
     owner._write([(1, b"minor")])
     assert other._read(1) == b"minor"
@@ -449,7 +465,7 @@ def test_a_higher_minor_version_opens(unique_name: str) -> None:
 
 def test_a_name_at_the_length_limit(unique_name: str) -> None:
     """Check that a name of the maximum length can be created and attached."""
-    name = (unique_name + "x" * 128)[:128]
+    name = (unique_name + "x" * 240)[:240]
     owner = create(name)
     try:
         other = attach(name)
@@ -532,7 +548,7 @@ def test_exists_names_a_creator_that_is_running(unique_name: str) -> None:
 def test_exists_says_the_creator_is_in_another_namespace(unique_name: str) -> None:
     """Check that SegmentExistsError mentions another pid namespace when the stored namespace differs."""
     segment = create(unique_name)
-    patch_header(unique_name, 88, "<Q", own_pidns() + 1)
+    patch_header(unique_name, 40, "<Q", own_pidns() + 1)
     with pytest.raises(SegmentExistsError, match="another pid namespace"):
         create(unique_name)
     segment.close()
@@ -541,7 +557,7 @@ def test_exists_says_the_creator_is_in_another_namespace(unique_name: str) -> No
 def test_exists_treats_an_unknown_namespace_as_no_information(unique_name: str) -> None:
     """Check that a zero pid namespace produces neither the namespace nor the not-running message."""
     segment = create(unique_name)
-    patch_header(unique_name, 88, "<Q", 0)
+    patch_header(unique_name, 40, "<Q", 0)
     with pytest.raises(SegmentExistsError) as error:
         create(unique_name)
     assert "another pid namespace" not in str(error.value)
@@ -747,7 +763,7 @@ def test_attach_refuses_a_field_of_a_kind_it_cannot_read(unique_name: str) -> No
 
 def ref_segment(name: str) -> Segment:
     return Segment.create(
-        name, [NativeField(0, 144, REF)], ["Stage.motor"], 144, SCHEMA, 1.0, []
+        name, [NativeField(0, 256, REF)], ["Stage.motor"], 256, SCHEMA, 1.0, []
     )
 
 
@@ -758,20 +774,20 @@ def test_a_reference_is_stored_as_create_id_schema_hash_and_padded_name(
     segment = ref_segment(unique_name)
     assert segment.get(0) is None
     segment.set([(0, (7, 0x5EED, "m1"))])
-    assert segment._read(0) == struct.pack("<QQ128s", 7, 0x5EED, b"m1")
+    assert segment._read(0) == struct.pack("<QQ240s", 7, 0x5EED, b"m1")
     assert segment.get(0) == (7, 0x5EED, "m1")
     assert segment.get_dict(("motor",)) == {"motor": (7, 0x5EED, "m1")}
     segment.set([(0, None)])
-    assert segment._read(0) == bytes(144)
+    assert segment._read(0) == bytes(256)
     assert segment.get(0) is None
     segment.close()
 
 
-def test_a_reference_name_of_128_bytes_has_no_terminating_nul(unique_name: str) -> None:
-    """Check that a box name of 128 bytes fills the name bytes and reads back whole."""
+def test_a_reference_name_of_240_bytes_has_no_terminating_nul(unique_name: str) -> None:
+    """Check that a box name of 240 bytes fills the name bytes and reads back whole."""
     segment = ref_segment(unique_name)
-    segment.set([(0, (1, 2, "n" * 128))])
-    assert segment.get(0) == (1, 2, "n" * 128)
+    segment.set([(0, (1, 2, "n" * 240))])
+    assert segment.get(0) == (1, 2, "n" * 240)
     segment.close()
 
 
@@ -780,7 +796,7 @@ def test_a_reference_name_of_128_bytes_has_no_terminating_nul(unique_name: str) 
     [
         ((0, 1, "m1"), ValueError),
         ((1, 1, ""), ValueError),
-        ((1, 1, "n" * 129), ValueError),
+        ((1, 1, "n" * 241), ValueError),
         ((1, 1, "a\x00b"), ValueError),
         ((1, 1, "m\u00f6tor"), ValueError),
         ((1, 1, "bad/name"), ValueError),
@@ -806,9 +822,9 @@ def test_a_reference_value_that_cannot_be_stored_is_refused(
 
 def test_check_takes_none_for_a_reference() -> None:
     """Check that check() accepts None for a reference field and refuses a value of another type."""
-    check(REF, 144, "Stage.motor", None)
+    check(REF, 256, "Stage.motor", None)
     with pytest.raises(TypeError, match="Stage.motor expects a reference, got int"):
-        check(REF, 144, "Stage.motor", 3)
+        check(REF, 256, "Stage.motor", 3)
 
 
 def test_cached_ref_returns_the_entry_only_for_the_stored_create_id(
@@ -857,3 +873,22 @@ def test_cached_ref_refuses_a_field_that_is_not_a_reference(unique_name: str) ->
     with pytest.raises(ValueError, match="field 0 is not a reference"):
         segment.cached_ref(0, {})
     segment.close()
+
+
+def test_attaching_a_stream_name_as_a_box_raises_kind_mismatch(
+    unique_name: str,
+) -> None:
+    """Check that attaching a segment whose magic says stream raises KindMismatchError at once, naming both kinds."""
+    owner = create(unique_name)
+    with raw_bytes(unique_name) as view:
+        view[0:8] = STREAM_MAGIC
+    started = time.monotonic()
+    with pytest.raises(
+        KindMismatchError, match=f"'{unique_name}' is a stream, not a box"
+    ) as caught:
+        attach(unique_name, 5.0)
+    assert time.monotonic() - started < 1.0
+    assert isinstance(caught.value, SchemaMismatchError)
+    with raw_bytes(unique_name) as view:
+        view[0:8] = MAGIC
+    owner.close()

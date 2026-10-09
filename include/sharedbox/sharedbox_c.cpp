@@ -39,7 +39,7 @@ template <class KindOk, class Use> int read_as(const sbx_handle *h, uint16_t fie
     }
     const auto read = owner->read(field, {buf, size});
     if (!read)
-        return static_cast<int>(read.error());
+        return static_cast<int>(read.error().code);
     return use(owner->field_type(field), bytes_in(buf, read->len));
 }
 
@@ -54,7 +54,7 @@ int write_as(sbx_handle *h, uint16_t field, std::uint8_t kind, double lock_timeo
         return static_cast<int>(rc);
     const sharedbox::value v{field, buf};
     const auto written = owner->write({&v, 1}, sharedbox::seconds(lock_timeout));
-    return written ? SBX_OK : static_cast<int>(written.error());
+    return written ? SBX_OK : static_cast<int>(written.error().code);
 }
 
 auto is(std::uint8_t kind) {
@@ -65,14 +65,14 @@ bool positioned(std::uint8_t k) { return k == sharedbox::kind_enum || k == share
 
 template <class T> int stored(sharedbox::result<T> &&got, T *out) {
     if (!got)
-        return static_cast<int>(got.error());
+        return static_cast<int>(got.error().code);
     *out = *got;
     return SBX_OK;
 }
 
 int fill(sharedbox::result<sharedbox::handle> &&opened, sbx_handle *out) {
     if (!opened)
-        return static_cast<int>(opened.error());
+        return static_cast<int>(opened.error().code);
     return static_cast<int>(sharedbox::detail::export_into(std::move(*opened), *out));
 }
 
@@ -100,7 +100,7 @@ int sbx_read(const sbx_handle *h, uint16_t field, void *buf, size_t cap, size_t 
         return SBX_E_RANGE;
     const auto read = owner->read(field, {static_cast<std::byte *>(buf), cap});
     if (!read)
-        return static_cast<int>(read.error());
+        return static_cast<int>(read.error().code);
     if (len != nullptr)
         *len = read->len;
     if (version != nullptr)
@@ -127,7 +127,7 @@ int sbx_write(sbx_handle *h, const sbx_value *values, size_t n, double lock_time
         converted[i] = {values[i].field, {static_cast<const std::byte *>(values[i].data), values[i].len}};
     }
     const auto written = owner->write({converted, n}, sharedbox::seconds(lock_timeout));
-    return written ? SBX_OK : static_cast<int>(written.error());
+    return written ? SBX_OK : static_cast<int>(written.error().code);
 }
 
 uint64_t sbx_schema_hash(const sbx_handle *h) {
@@ -152,7 +152,7 @@ int sbx_read_complex(const sbx_handle *h, uint16_t field, double out[2]) {
     return read_as(h, field, is(sharedbox::kind_complex), [&](sharedbox::type_view, bytes_in b) {
         const auto got = sharedbox::decode_complex(b);
         if (!got)
-            return static_cast<int>(got.error());
+            return static_cast<int>(got.error().code);
         out[0] = got->real();
         out[1] = got->imag();
         return SBX_OK;
@@ -173,7 +173,7 @@ int sbx_read_date(const sbx_handle *h, uint16_t field, int32_t *ordinal) {
     return read_as(h, field, is(sharedbox::kind_date), [&](sharedbox::type_view, bytes_in b) {
         const auto got = sharedbox::decode_date(b);
         if (!got)
-            return static_cast<int>(got.error());
+            return static_cast<int>(got.error().code);
         *ordinal = static_cast<int32_t>(got->time_since_epoch().count() + sharedbox::unix_epoch_ordinal);
         return SBX_OK;
     });
@@ -192,7 +192,7 @@ int sbx_read_time(const sbx_handle *h, uint16_t field, sbx_time *out) {
     return read_as(h, field, is(sharedbox::kind_time), [&](sharedbox::type_view, bytes_in b) {
         const auto got = sharedbox::decode_time(b);
         if (!got)
-            return static_cast<int>(got.error());
+            return static_cast<int>(got.error().code);
         *out = {got->of_day.count(), got->offset, static_cast<uint8_t>(got->naive),
                 static_cast<uint8_t>(got->fold)};
         return SBX_OK;
@@ -215,7 +215,7 @@ int sbx_read_datetime(const sbx_handle *h, uint16_t field, sbx_datetime *out) {
     return read_as(h, field, is(sharedbox::kind_datetime), [&](sharedbox::type_view, bytes_in b) {
         const auto got = sharedbox::decode_datetime(b);
         if (!got)
-            return static_cast<int>(got.error());
+            return static_cast<int>(got.error().code);
         *out = {got->micros, got->offset, static_cast<uint8_t>(got->naive), static_cast<uint8_t>(got->fold)};
         return SBX_OK;
     });
@@ -236,7 +236,7 @@ int sbx_read_timedelta(const sbx_handle *h, uint16_t field, sbx_timedelta *out) 
     return read_as(h, field, is(sharedbox::kind_timedelta), [&](sharedbox::type_view, bytes_in b) {
         const auto got = sharedbox::decode_timedelta(b);
         if (!got)
-            return static_cast<int>(got.error());
+            return static_cast<int>(got.error().code);
         *out = {got->days, got->seconds, got->microseconds};
         return SBX_OK;
     });
@@ -256,7 +256,7 @@ int sbx_read_uuid(const sbx_handle *h, uint16_t field, uint8_t out[16]) {
     return read_as(h, field, is(sharedbox::kind_uuid), [&](sharedbox::type_view, bytes_in b) {
         const auto got = sharedbox::decode_uuid(b);
         if (!got)
-            return static_cast<int>(got.error());
+            return static_cast<int>(got.error().code);
         std::memcpy(out, got->data(), 16);
         return SBX_OK;
     });
@@ -307,7 +307,7 @@ int sbx_read_present(const sbx_handle *h, uint16_t field, int *present) {
     return read_as(h, field, is(sharedbox::kind_optional), [&](sharedbox::type_view, bytes_in b) {
         const auto got = sharedbox::decode_present(b);
         if (!got)
-            return static_cast<int>(got.error());
+            return static_cast<int>(got.error().code);
         *present = *got ? 1 : 0;
         return SBX_OK;
     });

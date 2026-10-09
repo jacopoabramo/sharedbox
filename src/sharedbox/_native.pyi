@@ -53,9 +53,16 @@ class SchemaMismatchError(TypeError):
 
     Raised by attaching, or unpickling a box, with a class whose identity
     or fields differ from the creator's; by a segment of another layout
-    major version or with a field of a kind this version cannot read,
-    which the message names; and by unpickling after the box was created
-    again.
+    major version, with a field of a kind this version cannot read, or
+    with an unknown magic (a segment made by another version of
+    sharedbox, or not a sharedbox segment), which the message names; and by
+    unpickling after the box was created again.
+    """
+
+class KindMismatchError(SchemaMismatchError):
+    """The name holds a segment of another kind, such as a stream where a box was asked for.
+
+    The message names both kinds.
     """
 
 class BoxClosedError(ValueError):
@@ -143,18 +150,6 @@ class Segment:
         `types.table`. A segment whose field count differs from the number
         of `names` raises `SchemaMismatchError`.
         """
-
-    @staticmethod
-    def _create_layout_1(
-        name: str,
-        fields: Sequence[tuple[int, int, int]],
-        names: Sequence[str],
-        record_size: int,
-        schema_hash: int,
-        lock_timeout: float,
-        values: Sequence[tuple[int, object]],
-    ) -> Segment:
-        """Create a segment with the 1.0 layout, which holds kinds 0 to 5 only; for tests."""
 
     @staticmethod
     def unlink(name: str) -> None:

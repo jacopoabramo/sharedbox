@@ -20,7 +20,7 @@ wheelhouse/
 
 graphify-out/
 
-build-cpp/
+build-cpp*/
 
 .hypothesis/
 .claude/settings.local.json

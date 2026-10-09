@@ -50,9 +50,10 @@ LABELS = [spec.label for spec in LAYOUT.fields]
 
 def regions(view: memoryview) -> list[tuple[int, int]]:
     """(start, length) of the description table and the record, read from the header."""
-    field_count, slots = struct.unpack_from("<HH", view, 12)
-    record_size, record = struct.unpack_from("<II", view, 24)
-    (types_size,) = struct.unpack_from("<I", view, 60)
+    (slots,) = struct.unpack_from("<H", view, 52)
+    field_count = struct.unpack_from("<H", view, 84)[0]
+    record_size, record = struct.unpack_from("<II", view, 88)
+    (types_size,) = struct.unpack_from("<I", view, 100)
     table = 128 + field_count * 16 + slots * 24
     return [(table, types_size), (record, record_size)]
 

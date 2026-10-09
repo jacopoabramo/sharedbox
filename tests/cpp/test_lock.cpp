@@ -39,7 +39,7 @@ TEST_CASE("a late unlock leaves the next writer locked") {
     CHECK(b->writer_pid() == sharedbox::detail::current_pid());
     // b still holds the lock, so no one else can take it.
     const auto third = a->lock(seconds(0.05));
-    CHECK((!third && third.error() == status::lock_timeout));
+    CHECK((!third && third.error().code == status::lock_timeout));
     const std::uint64_t g2 = b->generation();
     b->unlock(*locked_b);
     CHECK((seq_of(*b) == before + 1 && b->writer_pid() == 0));
@@ -66,19 +66,19 @@ TEST_CASE("write then read") {
     std::array<std::byte, 4> four{};
     const auto partial = h->read(1, four);
     CHECK((partial && partial->len == 12 && four[0] == std::byte{0}));
-    CHECK(h->read(2, buf).error() == status::range);
+    CHECK(h->read(2, buf).error().code == status::range);
     std::array<std::byte, 32> record{};
     const auto generation = h->read_record(record);
     CHECK((generation && *generation == 1));
     const auto payload = h->payload(1, record);
     CHECK((payload.size() == 12 && std::memcmp(payload.data(), text, 12) == 0));
-    CHECK(h->read_record({record.data(), 31}).error() == status::range);
+    CHECK(h->read_record({record.data(), 31}).error().code == status::range);
     // A value of the wrong size or for a missing field changes nothing.
     const sharedbox::value wrong[1] = {{0, std::as_bytes(std::span(text, 4))}};
-    CHECK(h->write(wrong, seconds(1.0)).error() == status::range);
+    CHECK(h->write(wrong, seconds(1.0)).error().code == status::range);
     const sharedbox::value missing[1] = {{2, {}}};
-    CHECK(h->write(missing, seconds(1.0)).error() == status::range);
-    CHECK(h->write(values, seconds(0)).error() == status::range);
+    CHECK(h->write(missing, seconds(1.0)).error().code == status::range);
+    CHECK(h->write(values, seconds(0)).error().code == status::range);
     CHECK(h->generation() == 1);
     static_cast<void>(sharedbox::unlink(name));
 }
@@ -91,10 +91,10 @@ TEST_CASE("a held lock times out") {
     REQUIRE(locked.has_value());
     const std::int64_t number = 1;
     const sharedbox::value value{0, std::as_bytes(std::span(&number, 1))};
-    CHECK(a->write({&value, 1}, seconds(0.05)).error() == status::lock_timeout);
+    CHECK(a->write({&value, 1}, seconds(0.05)).error().code == status::lock_timeout);
     std::array<std::byte, 8> buf{};
     CHECK(a->set_lock_timeout(seconds(0.05)).has_value());
-    CHECK(a->read(0, buf).error() == status::lock_timeout);
+    CHECK(a->read(0, buf).error().code == status::lock_timeout);
     a->unlock(*locked);
     CHECK(a->read(0, buf).has_value());
     static_cast<void>(sharedbox::unlink(name));

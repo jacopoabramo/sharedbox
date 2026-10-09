@@ -10,6 +10,7 @@ from pathlib import Path
 
 import pytest
 from hypothesis import settings
+from os_names import os_name
 
 # A spawned child inherits this from its parent's environment, so a fixed
 # segment name built from it stays the same across a run's own processes
@@ -60,7 +61,7 @@ def unique_name() -> Iterator[str]:
     yield name
     if sys.platform.startswith("linux"):
         with contextlib.suppress(FileNotFoundError):
-            os.unlink(f"/dev/shm/sharedbox.{name}")
+            os.unlink(f"/dev/shm/{os_name(name)}")
 
 
 @pytest.fixture
@@ -76,7 +77,7 @@ def names(unique_name: str) -> Iterator[Callable[[str], str]]:
     if sys.platform.startswith("linux"):
         for each in made:
             with contextlib.suppress(FileNotFoundError):
-                os.unlink(f"/dev/shm/sharedbox.{each}")
+                os.unlink(f"/dev/shm/{os_name(each)}")
 
 
 STRESS_OUT = Path(__file__).resolve().parent.parent / "build" / "stress"

@@ -759,7 +759,9 @@ NB_MODULE(_native, m) {
     sharedbox::scalars::init();
     nb::exception<sharedbox::SegmentExists>(m, "SegmentExistsError", PyExc_FileExistsError);
     nb::exception<sharedbox::SegmentMissing>(m, "SegmentNotFoundError", PyExc_FileNotFoundError);
-    nb::exception<sharedbox::SchemaMismatch>(m, "SchemaMismatchError", PyExc_TypeError);
+    nb::object schema_mismatch =
+        nb::exception<sharedbox::SchemaMismatch>(m, "SchemaMismatchError", PyExc_TypeError);
+    nb::exception<sharedbox::KindMismatch>(m, "KindMismatchError", schema_mismatch);
     nb::exception<sharedbox::SegmentClosed>(m, "BoxClosedError", PyExc_ValueError);
     nb::exception<sharedbox::LockTimeout>(m, "LockTimeoutError", PyExc_TimeoutError);
     nb::exception<sharedbox::NoWaiterSlot>(m, "WaiterSlotsFullError", PyExc_RuntimeError);
@@ -824,8 +826,7 @@ NB_MODULE(_native, m) {
                                          std::string(reinterpret_cast<const char *>(bytes.data()), bytes.size()));
                 }
                 return Segment::create(name, descs, names, record_size, schema_hash, lock_timeout, waiter_slots,
-                                       encoded, t == nullptr ? std::string() : t->table(), sharedbox::layout_major,
-                                       publish);
+                                       encoded, t == nullptr ? std::string() : t->table(), publish);
             },
             "name"_a, "fields"_a, "names"_a, "record_size"_a, "schema_hash"_a, "lock_timeout"_a, "values"_a,
             "waiter_slots"_a = sharedbox::default_waiter_slots, "publish"_a = true, "types"_a = nb::none())
@@ -885,31 +886,6 @@ NB_MODULE(_native, m) {
             "field"_a)
         .def_prop_ro("layout_version",
                      [](const Segment &s) { return nb::make_tuple(s.major_version(), s.minor_version()); })
-        .def_static(
-            "_create_layout_1",
-            [](const std::string &name,
-               const std::vector<std::tuple<std::uint32_t, std::uint32_t, std::uint32_t>> &fields,
-               const std::vector<std::string> &names, std::uint64_t record_size, std::uint64_t schema_hash,
-               double lock_timeout, const Values &values) {
-                std::vector<sharedbox::FieldDesc> descs;
-                for (const auto &[offset, capacity, kind] : fields) {
-                    if (kind > sharedbox::kind_ref)
-                        throw std::invalid_argument("a layout 1.0 box holds kinds 0 to 5 only");
-                    descs.push_back({offset, capacity, static_cast<sharedbox::FieldKind>(kind)});
-                }
-                sharedbox::check_names(names, descs.size());
-                Encoded encoded;
-                for (const auto &[index, value] : values) {
-                    sharedbox::check_index(index, descs.size());
-                    sharedbox::EncodeBuffer buffer;
-                    const auto bytes = sharedbox::encode(descs[index], names[index], value.ptr(), buffer);
-                    encoded.emplace_back(index,
-                                         std::string(reinterpret_cast<const char *>(bytes.data()), bytes.size()));
-                }
-                return Segment::create(name, descs, names, record_size, schema_hash, lock_timeout,
-                                       sharedbox::default_waiter_slots, encoded, std::string(), 1, true);
-            },
-            "name"_a, "fields"_a, "names"_a, "record_size"_a, "schema_hash"_a, "lock_timeout"_a, "values"_a)
         .def(
             "cached_ref",
             [](const Segment &s, std::uint32_t index, nb::dict cache) -> nb::object {

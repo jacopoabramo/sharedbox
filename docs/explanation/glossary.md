@@ -91,7 +91,7 @@ See [How a box is stored](how-a-box-is-stored.md#the-schema-hash).
 
 A segment is the block of [shared memory](#shared-memory) that holds one
 [box](#box). Besides the values, it holds a header, a table of the fields
-and the [waiter slots](#waiter-slot). It has a name, `sharedbox.<name>`, by
+and the [waiter slots](#waiter-slot). It has a name, `SBX:<name>`, by
 which any process can open it. See
 [How a box is stored](how-a-box-is-stored.md).
 

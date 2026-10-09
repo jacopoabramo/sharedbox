@@ -26,12 +26,11 @@ unlinks stays until the machine restarts (see
 [Closing and lifetime](closing-and-lifetime.md#lifetime-the-same-rules-as-multiprocessingshared_memory)).
 
 If processes running different releases of `sharedbox` share boxes, check
-which ones can talk to each other. Releases up to 0.3.0rc0 named segments
-differently and used another layout, so they and later releases don't see
-each other's boxes at all. From 0.4.0 on, `sharedbox` opens boxes made by
-0.3.0 and 0.3.1, but those two releases can't open a box made by 0.4.0 or
-later. Releases 0.4 and 0.5 write the same layout and open each other's
-boxes.
+which ones can talk to each other. Releases up to 0.5 named segments
+`sharedbox.<name>`, and from 0.6.0 on they are `SBX:<name>`, so the two
+groups don't see each other's boxes at all. Releases from 0.6 open each
+other's boxes as long as both the core major version and the box layout
+major version are the same.
 
 ## Open boxes and file descriptors
 
