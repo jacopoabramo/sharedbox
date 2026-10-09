@@ -79,14 +79,17 @@ TEST_CASE("a dead owner's slot claimed again before it is freed is left to the n
     s.owner_start = 12345;
     s.owner_pidns = sharedbox::detail::current_pidns();
     s.owner_pid = new_owner;
+    s.asleep_on = 84;
     atomic(waiters(*h)).fetch_add(1);
 
     // A freer that read pid new_owner + 1 with the same start time before the slot changed hands.
     sharedbox::detail::free_dead_slot(view, s, new_owner + 1, 12345);
     CHECK(s.owner_pid == new_owner);
     CHECK(s.owner_start == 12345);
+    CHECK(s.asleep_on == 84);
     CHECK(h->waiters() == 1);
 
+    s.asleep_on = 0;
     s.owner_pid = 0;
     s.owner_start = 0;
     atomic(waiters(*h)).fetch_sub(1);
@@ -204,7 +207,7 @@ TEST_CASE("a process killed while one of its threads waits leaves a slot whose f
             static_cast<void>(mine->wait(*slot, mine->generation(), sharedbox::seconds(10.0)));
         }).detach();
         const auto limit = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-        while (mine->sleepers() != 1)
+        while (atomic(slot_0(*mine).asleep_on).load() == 0)
             if (std::chrono::steady_clock::now() > limit)
                 _exit(3);
             else
@@ -221,6 +224,27 @@ TEST_CASE("a process killed while one of its threads waits leaves a slot whose f
     REQUIRE(slot.has_value());
     CHECK(h->sleepers() == 0);
     CHECK(h->waiters() == 1);
+    h->release_waiter(*slot);
+    static_cast<void>(sharedbox::unlink(name));
+}
+
+TEST_CASE("a child that inherited a parent's slot cannot wait in it") {
+    constexpr sharedbox::field_spec fields[1] = {{0, 8, sharedbox::kind_int}};
+    const std::string name = unique("slots-forked-wait");
+    auto h = handle::create(name, fields, 8, 1, 4, {});
+    REQUIRE(h.has_value());
+    const auto slot = h->register_waiter();
+    REQUIRE(slot.has_value());
+    const pid_t child = fork();
+    REQUIRE(child >= 0);
+    if (child == 0) {
+        const auto waited = h->wait(*slot, h->generation(), sharedbox::seconds(0.1));
+        _exit(!waited && waited.error().code == sharedbox::status::range ? 0 : 1);
+    }
+    int code = 0;
+    REQUIRE(waitpid(child, &code, 0) == child);
+    CHECK((WIFEXITED(code) && WEXITSTATUS(code) == 0));
+    CHECK(h->sleepers() == 0);
     h->release_waiter(*slot);
     static_cast<void>(sharedbox::unlink(name));
 }

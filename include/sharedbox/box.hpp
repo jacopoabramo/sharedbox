@@ -289,7 +289,7 @@ public:
 
     // Claims a free waiter slot for this process, first freeing the slots of processes that have exited.
     [[nodiscard]] result<std::uint16_t> register_waiter();
-    // Frees a slot this handle claimed; any other slot is left alone.
+    // Frees a slot this handle claimed; any other slot is left alone. Not while a wait in the slot runs.
     void release_waiter(std::uint16_t slot) noexcept;
     // Whether this handle claimed slot and the slot still records this process; false once it was freed
     // under it, when the caller releases it and claims another.
@@ -299,7 +299,7 @@ public:
     // Threads inside wait on this box now, in any process.
     std::uint32_t sleepers() const noexcept;
     // Blocks in a slot this handle holds until the generation differs from last_generation, the slot is
-    // interrupted, or timeout passes (status::timeout).
+    // interrupted, or timeout passes (status::timeout). One thread waits in a slot at a time.
     [[nodiscard]] result<wake> wait(std::uint16_t slot, std::uint64_t last_generation, seconds timeout);
     // Ends the wait in slot, of any process, with wake::interrupted; the flag stays set until that waiter
     // sees it, so an interrupt sent before the wait starts still ends it. An interrupt that arrives after the

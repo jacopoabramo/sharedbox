@@ -1775,7 +1775,9 @@ struct no_pause {
 //
 // Known limits: a freer killed before its owner_pid store leaves the slot unusable until the segment is created
 // again, and counted once too many if it was stamped and the freer was killed before its fetch_sub; a freer killed
-// between the exchange of asleep_on and the subtraction it allows leaves that sleeper count one too high. The
+// after it won the slot and before its subtraction of the sleeper count leaves that count one too high and the
+// slot stuck with the freeing marker; an owner killed between its exit exchange of asleep_on and its fetch_sub
+// leaves the count one too high. The
 // check that owner_pid is still pid cannot tell an unstamped claimer from another one with the same pid, which
 // needs the pid to be reused within a few instructions.
 template <class Pause = no_pause>
@@ -1906,7 +1908,7 @@ SHAREDBOX_HOT void wake_all(const waiter_table &t, std::uint32_t &word) noexcept
 template <class Changed>
 result<wake> wait_on(const waiter_table &t, std::uint16_t slot, std::uint32_t &word, Changed changed,
                      seconds timeout, std::uint32_t *sleepers = nullptr) {
-    if (slot >= t.count || !owned_test(t, slot) || !timeout_ok(timeout, true))
+    if (!slot_held(t, slot) || !timeout_ok(timeout, true))
         return unexpected(status::range);
     // The slot names the count only after the increment, and the exit subtracts only if it takes the name
     // back, so a freer of a dead owner's slot subtracts at most what was added: a kill between the two
