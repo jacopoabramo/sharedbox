@@ -7,6 +7,7 @@
 #include <nanobind/stl/vector.h>
 #include <sharedbox/sharedbox.hpp>
 
+#include <algorithm>
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
@@ -18,6 +19,7 @@
 #include <stdexcept>
 #include <string>
 #include <system_error>
+#include <unordered_map>
 #include <utility>
 #include <vector>
 
@@ -242,15 +244,32 @@ public:
                       const std::vector<std::pair<std::vector<std::uint32_t>, nb::object>> &arrays) {
         check_open();
         const seconds wait = wait_of(timeout);
-        if (!arrays.empty())
-            throw std::invalid_argument("receive_into is not supported yet");
         const Types &types = *core_->types;
+        // Each array the caller passed, sorted by where its bytes start in the item, so the copy below walks the
+        // item once: the gaps go to scratch, each array's bytes straight into the array. Everything is checked
+        // here, with the GIL held and before the wait, so a bad array consumes no item. The arguments keep
+        // each array alive for the whole call.
+        std::vector<Types::ArrayTarget> targets;
+        std::unordered_map<std::uint64_t, PyObject *> given;
+        nb::object whole;
+        for (const auto &[path, out] : arrays) {
+            Types::ArrayTarget &target = targets.emplace_back(types.array_target(0, path, out.ptr()));
+            const bool fresh =
+                path.empty() ? !std::exchange(whole, out).is_valid() : given.emplace(target.key, out.ptr()).second;
+            if (!fresh)
+                throw std::invalid_argument("stream '" + name_ + "': two arrays given for one member");
+        }
+        std::sort(targets.begin(), targets.end(),
+                  [](const Types::ArrayTarget &a, const Types::ArrayTarget &b) { return a.offset < b.offset; });
         const std::size_t size = core_->s.item_size();
         // An item of up to 4 KiB is copied to the stack; a larger one to the heap, which a bare array item
         // then keeps as its data instead of copying again.
         alignas(std::max_align_t) std::byte small[4096];
         std::unique_ptr<std::byte[]> large;
         std::byte *scratch = small;
+        // ponytail: the scratch holds the whole item even when arrays take most of it, and its pages under the
+        // arrays are never touched; a scratch of only the gaps is the upgrade if a measurement shows the
+        // allocation.
         if (size > sizeof small) {
             large.reset(new std::byte[size]);
             scratch = large.get();
@@ -261,7 +280,15 @@ public:
             std::lock_guard lock(*calls_);
             if (!closed_.load()) {
                 got.emplace(end_.receive_with(
-                    [&](std::span<const std::byte> item) noexcept { std::memcpy(scratch, item.data(), size); },
+                    [&](std::span<const std::byte> item) noexcept {
+                        std::size_t at = 0;
+                        for (const Types::ArrayTarget &target : targets) {
+                            std::memcpy(scratch + at, item.data() + at, target.offset - at);
+                            std::memcpy(target.view.data(), item.data() + target.offset, target.size);
+                            at = target.offset + target.size;
+                        }
+                        std::memcpy(scratch + at, item.data() + at, size - at);
+                    },
                     wait));
                 missed_total_.store(end_.missed(), std::memory_order_relaxed);
             }
@@ -276,7 +303,10 @@ public:
         }
         const detail::type_ref &t = types.field(0);
         const std::span<const std::byte> bytes = value_bytes(t, {scratch, size}, name_);
-        nb::object value = types.decode(0, bytes, large ? &large : nullptr);
+        if (whole.is_valid())
+            return nb::make_tuple(whole, (*got)->position);
+        nb::object value = given.empty() ? types.decode(0, bytes, large && targets.empty() ? &large : nullptr)
+                                         : types.decode_given(0, bytes, given);
         return nb::make_tuple(value, (*got)->position);
     }
 

@@ -638,6 +638,11 @@ nb::object Types::decode_from(const detail::type_ref &t, const std::byte *data, 
     const detail::type_node &node = tree_.node(t.node);
     // A member of a collection or record as a new reference; a bool, int, float or str skips decode_from.
     auto element = [&](const detail::type_ref &m, const std::byte *at, std::uint32_t index) -> PyObject * {
+        if (where.given != nullptr && (t.kind == kind_record || t.kind == kind_tuple)) {
+            const auto found = where.given->find(bytearray_key(t.node, index));
+            if (found != where.given->end())
+                return Py_NewRef(found->second);
+        }
         if (m.kind > kind_str)
             return decode_from(m, at, t.node, index, where).release().ptr();
         PyObject *value = decode_plain(m, at, where.name);
@@ -795,11 +800,8 @@ nb::ndarray<nb::ro> Types::array_view(const detail::type_ref &t, PyObject *value
     return view;
 }
 
-nb::ndarray<nb::c_contig, nb::device::cpu> Types::array_out(std::uint32_t index, PyObject *out) const {
-    const detail::type_ref &t = field(index);
-    const std::string &name = labels_[index];
-    if (t.kind != kind_array)
-        raise(PyExc_TypeError, name + " is not an array field");
+nb::ndarray<nb::c_contig, nb::device::cpu> Types::array_out_of(const detail::type_ref &t, const std::string &name,
+                                                               PyObject *out) const {
     const NodeInfo &n = nodes_[t.node];
     const detail::type_node &node = tree_.node(t.node);
     nb::dlpack::dtype want{node.dtype.code, node.dtype.bits, node.dtype.lanes};
@@ -830,6 +832,51 @@ nb::ndarray<nb::c_contig, nb::device::cpu> Types::array_out(std::uint32_t index,
                                         return tree_.number(node.numbers + static_cast<std::uint32_t>(i));
                                     }));
     return view;
+}
+
+nb::ndarray<nb::c_contig, nb::device::cpu> Types::array_out(std::uint32_t index, PyObject *out) const {
+    const detail::type_ref &t = field(index);
+    const std::string &name = labels_[index];
+    if (t.kind != kind_array)
+        raise(PyExc_TypeError, name + " is not an array field");
+    return array_out_of(t, name, out);
+}
+
+Types::ArrayTarget Types::array_target(std::uint32_t index, std::span<const std::uint32_t> path,
+                                       PyObject *out) const {
+    detail::type_ref t = field(index);
+    std::string name = labels_[index];
+    std::uint64_t offset = 0;
+    std::uint64_t key = field_container;
+    for (const std::uint32_t step : path) {
+        if (t.kind != kind_record && t.kind != kind_tuple)
+            raise(PyExc_TypeError,
+                  name + " has no array at that place; arrays are reached through records and tuples only");
+        const detail::type_node &node = tree_.node(t.node);
+        if (step >= node.count)
+            raise(PyExc_TypeError, name + " has no member " + std::to_string(step));
+        const detail::type_member &m = tree_.member(node.members + step);
+        key = bytearray_key(t.node, step);
+        offset += m.offset;
+        const NodeInfo &n = nodes_[t.node];
+        if (t.kind == kind_record && n.form <= 1)
+            name += std::string(".") + nb::borrow<nb::str>(n.attrs[step]).c_str();
+        else
+            name += "[" + std::to_string(step) + "]";
+        t = m.type;
+    }
+    if (t.kind != kind_array)
+        raise(PyExc_TypeError, name + " is not an array");
+    return {array_out_of(t, name, out), offset, t.size, key};
+}
+
+nb::object Types::decode_given(std::uint32_t index, std::span<const std::byte> bytes,
+                               const std::unordered_map<std::uint64_t, PyObject *> &given) const {
+    const detail::type_ref &t = field(index);
+    const std::string &name = labels_[index];
+    if (bytes.size() != t.size)
+        raise(PyExc_ValueError, name + ": the stored value has the wrong size");
+    return decode_from(t, bytes.data(), field_container, index, {name, &given});
 }
 
 void Types::copy_array(const nb::ndarray<nb::ro> &view, std::byte *out) {

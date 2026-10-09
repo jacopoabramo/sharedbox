@@ -233,3 +233,151 @@ def test_close_ends_a_blocked_send(unique_name: str) -> None:
     assert time.perf_counter() - start < 1.0
     assert [type(error) for error in raised] == [StreamClosedError]
     reader.close()
+
+
+@dataclass(frozen=True)
+class Frame:
+    index: int
+    image: Annotated[np.ndarray, Shape(4, 4), DType("uint16")]
+    mask: Annotated[
+        np.ndarray,
+        Shape(
+            2,
+        ),
+        DType("uint8"),
+    ]
+
+
+@dataclass(frozen=True)
+class Shot:
+    frame: Frame
+    pair: tuple[
+        Annotated[
+            np.ndarray,
+            Shape(
+                3,
+            ),
+            DType("float32"),
+        ],
+        int,
+    ]
+
+
+def frame_of(i: int) -> Frame:
+    return Frame(i, np.full((4, 4), i, np.uint16), np.array([i, i], np.uint8))
+
+
+def test_receive_into_fills_the_given_arrays(unique_name: str) -> None:
+    """Return a record whose given array member is the caller's array, filled in place, and the rest decoded."""
+    stream = create(unique_name, Frame)
+    reader = stream.reader(LOSSLESS, True)
+    stream.sender().send(frame_of(3), 0.0)
+    image = np.zeros((4, 4), np.uint16)
+    got, _ = reader.receive(0.0, [((1,), image)])
+    assert got.image is image
+    np.testing.assert_equal(image, frame_of(3).image)
+    np.testing.assert_equal(got.mask, frame_of(3).mask)
+    assert got.index == 3
+
+
+def test_receive_into_reaches_arrays_in_nested_records_and_tuples(
+    unique_name: str,
+) -> None:
+    """Fill arrays two levels down, through a record member and through a tuple member."""
+    stream = create(unique_name, Shot)
+    reader = stream.reader(LOSSLESS, True)
+    stream.sender().send(Shot(frame_of(5), (np.arange(3, dtype=np.float32), 7)), 0.0)
+    image = np.zeros((4, 4), np.uint16)
+    line = np.zeros(3, np.float32)
+    got, _ = reader.receive(0.0, [((0, 1), image), ((1, 0), line)])
+    assert got.frame.image is image
+    assert got.pair[0] is line
+    np.testing.assert_equal(line, np.arange(3, dtype=np.float32))
+    assert (got.frame.index, got.pair[1]) == (5, 7)
+
+
+def test_receive_into_a_bare_array_returns_the_array(unique_name: str) -> None:
+    """Return the caller's array itself for an item that is an array."""
+    stream = create(
+        unique_name,
+        Annotated[
+            np.ndarray,
+            Shape(
+                8,
+            ),
+            DType("float64"),
+        ],
+    )
+    reader = stream.reader(LOSSLESS, True)
+    stream.sender().send(np.arange(8.0), 0.0)
+    out = np.empty(8)
+    got, _ = reader.receive(0.0, [((), out)])
+    assert got is out
+    np.testing.assert_equal(out, np.arange(8.0))
+
+
+@pytest.mark.parametrize(
+    ("path", "out", "error"),
+    [
+        ((1,), np.zeros((4, 4), np.uint8), ValueError),
+        ((1,), np.zeros((2, 8), np.uint16), ValueError),
+        ((1,), np.zeros((4, 8), np.uint16)[:, ::2], TypeError),
+        ((0,), np.zeros((4, 4), np.uint16), TypeError),
+        ((1, 0), np.zeros((4, 4), np.uint16), TypeError),
+    ],
+)
+def test_receive_into_refuses_a_bad_array_and_keeps_the_item(
+    unique_name: str, path: tuple[int, ...], out: np.ndarray, error: type[Exception]
+) -> None:
+    """Raise before receiving for a wrong dtype, shape, layout or path, so the next receive gets the item."""
+    stream = create(unique_name, Frame)
+    reader = stream.reader(LOSSLESS, True)
+    stream.sender().send(frame_of(1), 0.0)
+    with pytest.raises(error):
+        reader.receive(0.0, [(path, out)])
+    assert reader.receive(0.0)[0].index == 1
+
+
+def test_receive_into_refuses_a_read_only_array(unique_name: str) -> None:
+    """Raise TypeError for an array that cannot be written."""
+    stream = create(unique_name, Frame)
+    reader = stream.reader(LOSSLESS, True)
+    stream.sender().send(frame_of(1), 0.0)
+    out = np.zeros((4, 4), np.uint16)
+    out.flags.writeable = False
+    with pytest.raises(TypeError):
+        reader.receive(0.0, [((1,), out)])
+    assert reader.receive(0.0)[0].index == 1
+
+
+def test_receive_into_refuses_two_arrays_for_one_member(unique_name: str) -> None:
+    """Raise ValueError for two entries with one path, keeping the item."""
+    stream = create(unique_name, Frame)
+    reader = stream.reader(LOSSLESS, True)
+    stream.sender().send(frame_of(1), 0.0)
+    out = np.zeros(2, np.uint8)
+    with pytest.raises(ValueError, match="two arrays"):
+        reader.receive(0.0, [((2,), out), ((2,), out.copy())])
+    assert reader.receive(0.0)[0].index == 1
+
+
+def test_receive_into_refuses_a_path_into_a_collection(unique_name: str) -> None:
+    """Raise TypeError for a path that steps into a list member, before anything is received."""
+
+    @dataclass(frozen=True)
+    class Tagged:
+        tags: Annotated[list[int], Capacity(4)]
+        image: Annotated[
+            np.ndarray,
+            Shape(
+                2,
+            ),
+            DType("uint8"),
+        ]
+
+    stream = create(unique_name, Tagged)
+    reader = stream.reader(LOSSLESS, True)
+    stream.sender().send(Tagged([1], np.zeros(2, np.uint8)), 0.0)
+    with pytest.raises(TypeError):
+        reader.receive(0.0, [((0, 0), np.zeros(1, np.int64))])
+    assert reader.receive(0.0)[0].tags == [1]
