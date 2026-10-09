@@ -402,7 +402,9 @@ class SharedStream(Generic[T]):
             ended,
             sender_pid,
             tuple(
-                ReaderStatistics(MODE_NAMES[mode], position, sent - position, pid)
+                ReaderStatistics(
+                    MODE_NAMES[mode], position, max(sent - position, 0), pid
+                )
                 for position, mode, pid in readers
             ),
         )

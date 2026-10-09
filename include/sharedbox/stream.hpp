@@ -879,7 +879,29 @@ result<received> stream_reader::receive_with(F &&copy, seconds timeout) {
     const detail::clock::time_point deadline =
         detail::clock::now() + std::chrono::duration_cast<detail::clock::duration>(timeout);
     const std::uint64_t missed_before = missed_;
+    // Copies the item at position r when its slot still holds it whole.
+    auto take = [&](std::uint64_t r) noexcept {
+        std::byte *slot = s.slots + r % s.capacity * s.slot_size;
+        auto seq = detail::atomic(*reinterpret_cast<std::uint64_t *>(slot));
+        const std::uint64_t expected = 2 * r + 2;
+        if (seq.load(std::memory_order_acquire) != expected)
+            return false;
+        copy(std::span<const std::byte>(slot + s.item_offset, s.item_size));
+        std::atomic_thread_fence(std::memory_order_acquire);
+        return seq.load(std::memory_order_relaxed) == expected;
+    };
     for (;;) {
+        // A slot whose seq is 2 * r_ + 2 holds item r_ whole, so write_pos need not be read: it is only
+        // needed to decide whether to wait, where a lap was lost, and to find the newest item. A later
+        // lap shows a larger seq and fails this check. A reader may take an item a moment before the
+        // sender stores write_pos for it.
+        if (mode_ != read_mode::latest && take(r_)) {
+            const received out{r_, missed_ - missed_before};
+            ++r_;
+            started_ = true;
+            advance();
+            return out;
+        }
         const std::uint64_t w = detail::atomic(h.write_pos).load(std::memory_order_acquire);
         if (r_ == w) {
             if (const result<void> waited = wait_for_data(deadline); !waited)
@@ -893,15 +915,7 @@ result<received> stream_reader::receive_with(F &&copy, seconds timeout) {
             missed_ += w - 1 - r_;
             r_ = w - 1;
         }
-        std::byte *slot = s.slots + r_ % s.capacity * s.slot_size;
-        auto seq = detail::atomic(*reinterpret_cast<std::uint64_t *>(slot));
-        const std::uint64_t expected = 2 * r_ + 2;
-        bool kept = seq.load(std::memory_order_acquire) == expected;
-        if (kept) {
-            copy(std::span<const std::byte>(slot + s.item_offset, s.item_size));
-            std::atomic_thread_fence(std::memory_order_acquire);
-            kept = seq.load(std::memory_order_relaxed) == expected;
-        }
+        const bool kept = take(r_);
         if (!kept) {
             // The sender wrote a later position over this slot. A lossless reader's first positions may be
             // overwritten before the sender sees it joined, which is not a miss; after its first item the
