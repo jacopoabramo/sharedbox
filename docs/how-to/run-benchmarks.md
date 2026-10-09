@@ -148,10 +148,12 @@ JSON in `charts/` next to them: `ops.json`, `roundtrip.json`,
 results are missing and says which on standard error.
 
 A page of the docs site draws a figure with a `div` of the class
-`sbx-chart`, whose `data-src` is the path of the file, relative to the page:
+`sbx-chart`, whose `data-src` is the path of the file relative to the page's
+Markdown file, as for a link; the build turns it into a path from the
+published page. From a page in `docs/explanation/`:
 
 ```html
-<div class="sbx-chart" data-src="../../assets/benchmarks/ops.json"></div>
+<div class="sbx-chart" data-src="../assets/benchmarks/ops.json"></div>
 ```
 
 `docs/javascripts/charts.js` loads plotly.js when a page has such a `div`,
