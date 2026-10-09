@@ -14,7 +14,7 @@ the layout and the native module converts values.
 sharedbox/
 |-- include/sharedbox/
 |   |-- core.hpp               what every segment kind uses: result and error, liveness, names, mappings, the type codec
-|   |-- box.hpp                layout 2.0 (and 1.0 reading) of a box and its protocols: create, publish, open, lock, read, write, waiter slots, capsule handle
+|   |-- box.hpp                box layout 3.0 and its protocols: create, publish, open, lock, read, write, waiter slots, capsule handle
 |   |-- sharedbox.hpp          includes every kind; the header consumers include
 |   |-- sharedbox_c.h          minimal C interface: sbx_open, sbx_import, sbx_read, sbx_write, sbx_schema_hash, sbx_release, sbx_field_desc, typed sbx_read_* and sbx_write_*
 |   `-- sharedbox_c.cpp        its implementation, compiled by the consumer (CMake target sharedbox::c)
@@ -75,7 +75,7 @@ sharedbox/
 |-- docs/                      Diataxis site built by Zensical: tutorials/, how-to/, explanation/, reference/
 |   |-- tutorials/motor.py     the script the three tutorials build and include
 |   |-- examples/              one script per how-to guide, included by the guide
-|   `-- reference/segment-layout.md  layout 2.0 and 1.0, names and protocols
+|   `-- reference/segment-layout.md  core 1.0, box layout 3.0, names and protocols
 |-- includes/abbreviations.md  acronym tooltips appended to every page
 |-- zensical.toml              site configuration and navigation
 |-- .github/workflows/ci.yaml  lint, docs check, C++ tests, cibuildwheel wheels, tests, stress,
@@ -101,40 +101,46 @@ sharedbox/
 The specification is `docs/reference/segment-layout.md`; the reasons are in
 the pages of `docs/explanation/`.
 
-One mapping per box, named `sharedbox.<name>`: `/dev/shm/sharedbox.<name>`
-on Linux (mode `0600`), `Local\sharedbox.<name>` on Windows (page-file
-backed). Windows waiter slot `i` also has an auto-reset event
-`Local\sharedbox.<name>.w<i>`. The box name is the `name` class keyword,
-the name passed to `create()`, or by default 16 hex digits of SHA-256 over
-the class's identity (the `identity` class keyword, by default
+One mapping per box, named `SBX:<name>`: `/dev/shm/SBX:<name>` on Linux
+(mode `0600`), `Local\SBX:<name>` on Windows (page-file backed). Windows
+waiter slot `i` also has an auto-reset event `Local\SBX:<name>#w<i>`. A
+name is one or more segments of `[A-Za-z0-9_-]` joined by `:`, up to 240
+characters; `.` is reserved. The box name is the `name` class keyword, the
+name passed to `create()`, or by default 16 hex digits of SHA-256 over the
+class's identity (the `identity` class keyword, by default
 `module.qualname`, with `__mp_main__` counted as `__main__`). Creating
 always asks for a new name and raises `SegmentExistsError` if it is taken.
 
-Layout 2.0, from offset 0:
+Every segment starts with the same 64-byte line, whatever its kind. Core
+version 1.0, box layout 3.0, from offset 0:
 
-- Header, 128 bytes. Line 0, written once at creation: `magic`,
-  `layout_major` 2, `layout_minor` 0, `field_count`, `waiter_slots`,
-  `schema_hash`, `record_size`, `record`, `tail` (always 128), `size`,
-  `types_size` (offset 60; 0 in layout 1.0), and the creator fields
-  `create_id`, `creator_start`, `creator_pid`. Line 1, changed by writes
-  and waits: `seq` (sequence lock; the generation is
-  `seq >> 1`, there is no generation field), `writer_pid`, `wake_word`,
-  `waiters`, `creator_pidns`. Both lines keep reserved zero bytes.
+- Common line 0, written once at creation: `magic` (`SBX_BOX_` for a box,
+  `SBX_STRM` for a stream), `core_major` 1, `core_minor` 0, `kind_major` 3,
+  `kind_minor` 0, `schema_hash`, `create_id`, `creator_start`,
+  `creator_pidns`, `creator_pid`, `waiter_slots`, `size`.
+- Box line 1, at offset 64: `seq` (sequence lock; the generation is
+  `seq >> 1`, there is no generation field), `writer_pid`, `wake_word` and
+  `waiters`, which writes and waits change; then written once at creation
+  `field_count`, `record_size`, `record`, `tail` (always 128) and
+  `types_size`, followed by reserved zero bytes. The header is 128 bytes.
 - The tail: `field_count` field table entries of 8 bytes (`u32 offset`,
   `u32 capacity_and_kind`: top 8 bits the kind code, the low 24 the
   capacity or size, or for kinds 64 and up the offset of the field's
   description), one `u64` write count per field, then `waiter_slots` slots
   of 24 bytes (`owner_start`, `owner_pidns`, `owner_pid`, `interrupt`),
-  then the description table of `types_size` bytes. Kinds are 0 to 5 as
-  in layout 1.0, 6 to 12 (fixed-size scalars) and 64 to 74 (described
-  types).
+  then the description table of `types_size` bytes. Kinds are 0 to 5,
+  6 to 12 (fixed-size scalars) and 64 to 74 (described types).
 - The record, at a multiple of 64. The mapping size is rounded up to 4 KiB.
   `record + record_size <= 2**32 - 4096`.
 
 `magic` is stored last on create, with release ordering, after the initial
-values are in the record; attach waits for it. Attach accepts
-`layout_major` 1 and 2 and refuses another, checks every geometry field
-against the mapping size, copies the field table and uses only the copy.
+values are in the record; attach waits for it. Attach copies line 0 and the
+bytes of line 1 written once, checks only that copy and uses it. It checks
+the magic (an unknown one is `status::foreign`), the kind
+(`status::kind_mismatch`), the core version, the box layout major, then
+every geometry field against the mapping size, and refuses what fails. It
+copies the field table and uses only the copy. It opens no segment of box
+layout 1.0 or 2.0, which 0.5 and earlier wrote.
 `static_assert`s in `core.hpp` and `box.hpp` check every `sizeof` and `offsetof`.
 
 ### Record encoding
@@ -160,7 +166,7 @@ capacity counts elements, 1 to 1048576.
 - `unlink()` removes the name on Linux and does nothing on Windows, where the
   OS frees the segment with its last handle.
 - A Linux segment that is never unlinked stays in `/dev/shm`. Most tests use the
-  `unique_name` fixture, which removes `/dev/shm/sharedbox.<name>` afterwards.
+  `unique_name` fixture, which removes `/dev/shm/SBX:<name>` afterwards.
 - On Linux every open box keeps a file descriptor, so about 1000 open boxes
   reach the default `ulimit -n` of 1024.
 

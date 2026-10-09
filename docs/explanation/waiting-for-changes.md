@@ -28,7 +28,7 @@ as `wake_word` still holds the value it read, and a writer increments the
 word and calls `FUTEX_WAKE` once for everybody. Windows has a similar call,
 `WaitOnAddress`, but it only works between threads of one
 process,[^wait-on-address] so there each slot gets its own auto-reset
-event, `Local\sharedbox.<name>.w<i>`,[^create-event] and a writer sets the
+event, `Local\SBX:<name>#w<i>`,[^create-event] and a writer sets the
 event of every taken slot. Either way, a write to a box nobody waits on
 costs no system call: the writer sees that `waiters` is 0 and stops.
 

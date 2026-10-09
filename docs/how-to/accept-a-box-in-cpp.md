@@ -93,10 +93,10 @@ your build at the header in one of two ways:
 - Put [`sharedbox.get_include()`][sharedbox.get_include] on the include
   path.
 - With CMake, add `Path(sharedbox.get_include()).parent` to
-  `CMAKE_PREFIX_PATH`, call `find_package(sharedbox 0.5 CONFIG REQUIRED)`
+  `CMAKE_PREFIX_PATH`, call `find_package(sharedbox 0.6 CONFIG REQUIRED)`
   and link `sharedbox::headers` (C++) or `sharedbox::c` (C). The version
   is optional. Before 1.0 a request accepts only the same minor version,
-  so `0.5` accepts 0.5.0 and later 0.5 releases but not 0.6.
+  so `0.6` accepts 0.6.0 and later 0.6 releases but not 0.7.
 
 `sharedbox::c` compiles `sharedbox_c.cpp` into the target that links it,
 so your project has to enable the CXX language as well as C; if it doesn't,
@@ -112,7 +112,7 @@ configure stops with a message saying so. On Linux both targets link `rt` and
     `windows.h` before `sharedbox.hpp`.
 
 You write `sharedbox::handle`, but the header actually declares its C++
-names in an inline namespace, `sharedbox::v2`. That namespace changes
+names in an inline namespace, `sharedbox::v3`. That namespace changes
 whenever the C++ interface changes incompatibly, so libraries built against
 different versions of the header can still be linked into one program. The
 C functions `sbx_*` keep their names across versions. Names in
@@ -173,13 +173,13 @@ static PyObject *run(PyObject *, PyObject *frame) {
     std::int64_t count = 0;
     const auto read = box->read(1, std::as_writable_bytes(std::span(&count, 1)));
     if (!read)
-        return PyErr_Format(PyExc_RuntimeError, "read failed: %d", static_cast<int>(read.error()));
+        return PyErr_Format(PyExc_RuntimeError, "read failed: %d", static_cast<int>(read.error().code));
     return PyLong_FromLongLong(count);
 }
 ```
 
 `from_capsule` checks the segment the handle points to, just as an attach
-does. If the check passes, `box` takes over the capsule's handle and
+does, including its kind and its layout version. If the check passes, `box` takes over the capsule's handle and
 releases it when `box` is destroyed. If it fails, the capsule keeps its
 handle and releases it when the capsule is garbage collected, so nothing
 leaks either way.

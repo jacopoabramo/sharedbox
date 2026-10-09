@@ -425,7 +425,7 @@ class SharedBox(metaclass=SharedBoxMeta):
     - `name`: the segment name of boxes made by calling the class. By
       default it is 16 hex digits of SHA-256 over the class's identity, so
       every process that imports the class uses the same name. It must
-      be segments of `[A-Za-z0-9_-]` joined by `:`, at most 200 characters.
+      be segments of `[A-Za-z0-9_-]` joined by `:`, at most 240 characters.
     - `kw_only`: make every field this class declares keyword-only.
       Inherited fields keep the setting of the class that declares them.
     - `lock_timeout`: seconds a read or write waits for a write in
@@ -515,13 +515,13 @@ class SharedBox(metaclass=SharedBoxMeta):
         the wrong type.
     ValueError
         When the class is defined, for a `name` that is not segments of
-        `[A-Za-z0-9_-]` joined by `:`, at most 200 characters, a `lock_timeout` or `max_waiters` out of
-        range, or a default that does not fit its field (any of the cases
-        below). When the class is called or a field is assigned, for a
-        `str`, `bytes` or `Decimal` value longer than its capacity, a
-        collection with more elements than its capacity, a tuple of the
-        wrong length, an array of the wrong shape, a `Literal` field given
-        another value, flag bits outside 0 to 2**64 - 1, a time or
+        `[A-Za-z0-9_-]` joined by `:`, at most 240 characters, a
+        `lock_timeout` or `max_waiters` out of range, or a default that does
+        not fit its field (any of the cases below). When the class is called
+        or a field is assigned, for a `str`, `bytes` or `Decimal` value longer
+        than its capacity, a collection with more elements than its
+        capacity, a tuple of the wrong length, an array of the wrong shape,
+        a `Literal` field given another value, flag bits outside 0 to 2**64 - 1, a time or
         datetime whose UTC offset is not whole minutes of less than a day,
         or a `time` whose tzinfo gives no offset without a date.
     OverflowError
@@ -744,7 +744,7 @@ class SharedBox(metaclass=SharedBoxMeta):
             If the name is taken.
         ValueError
             If `name` is not segments of `[A-Za-z0-9_-]` joined by `:`, at
-            most 200 characters.
+            most 240 characters.
         """
         box = cls.__new__(cls)
         box._open(check_name(name), args, kwargs)
@@ -768,7 +768,7 @@ class SharedBox(metaclass=SharedBoxMeta):
             read.
         ValueError
             If `name` is not segments of `[A-Za-z0-9_-]` joined by `:`, at
-            most 200 characters.
+            most 240 characters.
         """
         box = cls.__new__(cls)
         layout = cls._layout()
@@ -1190,7 +1190,7 @@ class SharedBox(metaclass=SharedBoxMeta):
     ------
     ValueError
         If `name` is not segments of `[A-Za-z0-9_-]` joined by `:`, at
-            most 200 characters.
+        most 240 characters.
     SegmentNotFoundError
         On Linux, if no segment has that name.
     """
