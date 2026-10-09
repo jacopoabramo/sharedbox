@@ -6,9 +6,9 @@ icon: lucide/code
 
 | Class | Base | Raised when |
 | --- | --- | --- |
-| [`SegmentExistsError`][sharedbox.SegmentExistsError] | `FileExistsError` | creating a [box](../../explanation/glossary.md#box) under a name that is already taken |
-| [`SegmentNotFoundError`][sharedbox.SegmentNotFoundError] | `FileNotFoundError` | attaching to, or unlinking on Linux, a name with no [segment](../../explanation/glossary.md#segment), whether it holds a box or a stream; attaching to shared memory that does not become a box within 1 s |
-| [`SchemaMismatchError`][sharedbox.SchemaMismatchError] | `TypeError` | attaching, or unpickling a box, with a class whose [identity](../../explanation/glossary.md#identity) or [fields](../../explanation/glossary.md#field) differ from the creator's; a segment of another core or layout major version; a segment whose magic this version does not know, which another version of `sharedbox` made or which is not a `sharedbox` segment; a segment with a field of a kind this version cannot read; unpickling after the box was created again |
+| [`SegmentExistsError`][sharedbox.SegmentExistsError] | `FileExistsError` | creating a [box](../../explanation/glossary.md#box) or a [stream](../../explanation/glossary.md#stream) under a name that is already taken |
+| [`SegmentNotFoundError`][sharedbox.SegmentNotFoundError] | `FileNotFoundError` | attaching to, or unlinking on Linux, a name with no [segment](../../explanation/glossary.md#segment), whether it holds a box or a stream; attaching to shared memory that does not become a box or a stream within 1 s |
+| [`SchemaMismatchError`][sharedbox.SchemaMismatchError] | `TypeError` | attaching, or unpickling a box, with a class whose [identity](../../explanation/glossary.md#identity) or [fields](../../explanation/glossary.md#field) differ from the creator's; a segment of another core or layout major version; a segment whose magic this version does not know, which another version of `sharedbox` made or which is not a `sharedbox` segment; a segment with a field of a kind this version cannot read; unpickling after the box was created again; attaching a stream with another item type than the creator's; a lossless reader finding that the sender overwrote an item it had not read |
 | [`KindMismatchError`][sharedbox.KindMismatchError] | `SchemaMismatchError` | attaching a box to a name that holds a stream, or a stream to a name that holds a box |
 | [`BoxClosedError`][sharedbox.BoxClosedError] | `ValueError` | using a box after `close()` |
 | [`LockTimeoutError`][sharedbox.LockTimeoutError] | `TimeoutError` | a read or write waits for a write in progress for longer than `lock_timeout` |
@@ -18,6 +18,7 @@ icon: lucide/code
 | [`EndOfStream`][sharedbox.EndOfStream] | `Exception` | receiving from a stream whose sender closed or died after every item was received; asking for the sender of a stream that has ended |
 | [`StreamBusyError`][sharedbox.StreamBusyError] | `RuntimeError` | asking for the sender of a stream while another live sender exists |
 | [`StreamClosedError`][sharedbox.StreamClosedError] | `ValueError` | using a stream, sender or reader after `close()`, or waiting in one that is closed meanwhile |
+| [`WaiterSlotsFullError`][sharedbox.WaiterSlotsFullError] | `RuntimeError` | opening a reader of a [stream](../../explanation/glossary.md#stream) that has `max_readers` readers open or no free [waiter slot](../../explanation/glossary.md#waiter-slot); a box never raises it and checks for changes once a second instead |
 
 ::: sharedbox.BoxClosedError
     options:
