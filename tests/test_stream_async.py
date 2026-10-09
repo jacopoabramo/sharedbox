@@ -8,6 +8,7 @@ import threading
 import time
 from collections.abc import Callable
 from concurrent.futures import FIRST_COMPLETED, CancelledError, Future, wait
+from dataclasses import dataclass
 from multiprocessing.process import BaseProcess
 from typing import Annotated, Any
 
@@ -209,6 +210,51 @@ def test_a_cancelled_anext_does_not_let_the_next_one_overtake(
             received = [await asyncio.wait_for(second, 5)]
             received.append(await asyncio.wait_for(anext(reader), 5))
             return received
+
+    assert asyncio.run(run()) == [1, 2]
+
+
+def test_a_sync_receive_after_a_cancelled_anext_returns_its_item_first(
+    unique_name: str,
+) -> None:
+    """Return the item a cancelled anext was still decoding before a later item, from every sync receive."""
+    armed = threading.Event()
+    entered = threading.Event()
+    release = threading.Event()
+
+    @dataclass
+    class Held:
+        index: int
+
+        def __post_init__(self) -> None:
+            if armed.is_set() and self.index == 1:
+                armed.clear()
+                entered.set()
+                release.wait(5)
+
+    async def run() -> list[int]:
+        with SharedStream.create(Held, unique_name, capacity=8) as stream:
+            reader = stream.reader()
+            sender = stream.sender()
+            first = asyncio.create_task(anext(reader))
+            while not [t for t in threading.enumerate() if unique_name in t.name]:
+                await asyncio.sleep(0)
+            item = Held(1)
+            armed.set()
+            sender.send(item)
+            assert entered.wait(5)
+            first.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await first
+            sender.send(Held(2))
+            try:
+                with pytest.raises(WouldBlock):
+                    reader.receive_nowait()
+                with pytest.raises(TimeoutError):
+                    reader.receive(timeout=0.2)
+            finally:
+                release.set()
+            return [reader.receive(timeout=5).index, reader.receive(timeout=5).index]
 
     assert asyncio.run(run()) == [1, 2]
 

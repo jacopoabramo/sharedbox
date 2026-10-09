@@ -17,7 +17,7 @@ import threading
 import time
 import weakref
 from collections.abc import AsyncIterator, Callable, Iterator, Mapping
-from concurrent.futures import CancelledError, Future, wait
+from concurrent.futures import CancelledError, Future
 from dataclasses import dataclass
 from typing import Any, Final, Generic, Literal, TypeVar, cast, overload
 
@@ -498,10 +498,12 @@ class Worker:
 
 
 def finished(end: weakref.ref[End]) -> None:
-    """Count a worker call of `end` as done, if the end still exists."""
+    """Count a worker call of `end` as done, if the end still exists, and wake the receives waiting for none to be left."""
     if (target := end()) is not None:
         with target._lock:
             target._inflight -= 1
+            if target._inflight == 0:
+                target._idle.notify_all()
 
 
 class End:
@@ -512,6 +514,7 @@ class End:
         "_burst",
         "_burst_start",
         "_cancelled",
+        "_idle",
         "_inflight",
         "_lock",
         "_native",
@@ -524,6 +527,7 @@ class End:
         self._stream = stream
         self._native = native
         self._lock = threading.Lock()
+        self._idle = threading.Condition(self._lock)
         self._worker: Worker | None = None
         self._cancelled: Future[Any] | None = None
         self._shut = False
@@ -591,6 +595,7 @@ class End:
         with self._lock:
             self._shut = True
             worker, self._worker = self._worker, None
+            self._idle.notify_all()
         if worker is not None:
             worker.stop()
         self._native.close()
@@ -598,6 +603,7 @@ class End:
     def _after_fork(self) -> None:
         self._native._after_fork()
         self._lock = threading.Lock()
+        self._idle = threading.Condition(self._lock)
         self._worker = None
         self._cancelled = None
         self._shut = True
@@ -778,7 +784,6 @@ class StreamReader(End, Iterator[T], AsyncIterator[T], Generic[T]):
     __slots__ = (
         "_carry",
         "_delivering",
-        "_delivery",
         "_events",
         "_generation",
         "_position",
@@ -792,7 +797,6 @@ class StreamReader(End, Iterator[T], AsyncIterator[T], Generic[T]):
         self._events: ReaderEvents | None = None
         self._delivering = False
         self._generation = 0
-        self._delivery: CallFuture | None = None
 
     @property
     def mode(self) -> Mode:
@@ -874,8 +878,10 @@ class StreamReader(End, Iterator[T], AsyncIterator[T], Generic[T]):
     def receive_nowait(self) -> T:
         """Return the next item, or raise [`WouldBlock`][sharedbox.WouldBlock] if none is waiting.
 
-        It also raises `WouldBlock` while a delivering call is still stopping,
-        after the last `events.received` callback disconnected.
+        It also raises `WouldBlock` while a call on the reader's background
+        thread is still running, such as a cancelled `anext` or a delivery
+        stopping after the last `events.received` callback disconnected, so
+        an item that call hands back is received first.
         """
         self._check_consumer()
         return self._take_nowait([])
@@ -980,14 +986,12 @@ class StreamReader(End, Iterator[T], AsyncIterator[T], Generic[T]):
             generation = self._generation
             self._delivering = True
             try:
-                self._delivery = self._submit_locked(
-                    lambda future: self._deliver(generation)
-                )
+                self._submit_locked(lambda future: self._deliver(generation))
             except StreamClosedError:
                 self._delivering = False
 
-    def _delivery_pending(self) -> CallFuture | None:
-        """Return the delivering call still running, if the caller is not that call's own thread.
+    def _worker_busy(self) -> bool:
+        """Return whether a call runs or waits on the background thread and the caller is not that thread.
 
         Raises
         ------
@@ -998,26 +1002,30 @@ class StreamReader(End, Iterator[T], AsyncIterator[T], Generic[T]):
             raise StreamClosedError(
                 f"stream {self._stream.name!r}: the reader was closed"
             )
-        future = self._delivery
         worker = self._worker
-        if (
-            future is None
-            or future.done()
-            or (worker is not None and worker.thread is threading.current_thread())
-        ):
-            return None
-        return future
+        return self._inflight > 0 and not (
+            worker is not None and worker.thread is threading.current_thread()
+        )
 
-    def _after_delivery(self, timeout: float | None) -> float | None:
-        """Wait for a delivering call that is still stopping, so the items it hands back come first; return the time left."""
-        future = self._delivery_pending()
-        if future is None:
+    def _after_worker(self, timeout: float | None) -> float | None:
+        """Wait until the background thread has no call left, so an item a call hands back comes first; return the time left.
+
+        A finished future is not enough: the callback that keeps the item of
+        a cancelled call runs after the future's waiters wake.
+        """
+        if not self._worker_busy():
             return timeout
         start = time.monotonic()
-        if not wait([future], timeout).done:
-            raise TimeoutError(
-                f"stream {self._stream.name!r}: no item within {timeout} s"
-            )
+        with self._lock:
+            for step in steps(timeout):
+                if self._idle.wait_for(
+                    lambda: self._inflight == 0 or self.closed, step
+                ):
+                    break
+            else:
+                raise TimeoutError(
+                    f"stream {self._stream.name!r}: no item within {timeout} s"
+                )
         return (
             None if timeout is None else max(0.0, timeout - (time.monotonic() - start))
         )
@@ -1067,7 +1075,7 @@ class StreamReader(End, Iterator[T], AsyncIterator[T], Generic[T]):
             logger.exception("a callback of stream %r raised", self._stream.name)
 
     def _take_nowait(self, targets: list[tuple[tuple[int, ...], Any]]) -> T:
-        if self._delivery_pending() is not None:
+        if self._worker_busy():
             raise WouldBlock(f"stream {self._stream.name!r}: no item is waiting")
         try:
             return self._take(targets, 0.0)
@@ -1110,7 +1118,6 @@ class StreamReader(End, Iterator[T], AsyncIterator[T], Generic[T]):
         super()._after_fork()
         self._carry.clear()
         self._delivering = False
-        self._delivery = None
 
     def _cancel(self, future: Future[Any]) -> None:
         super()._cancel(future)
@@ -1164,7 +1171,7 @@ class StreamReader(End, Iterator[T], AsyncIterator[T], Generic[T]):
         delivering: int | None = None,
     ) -> T:
         if future is None and delivering is None:
-            timeout = self._after_delivery(timeout)
+            timeout = self._after_worker(timeout)
         for step in steps(timeout):
             try:
                 return self._take(targets, step, future)
