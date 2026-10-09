@@ -126,7 +126,9 @@ def test_matrix_reports_every_sender_and_reader() -> None:
         if r["reader"] == "async for (buffered)":
             assert r["p50_us"] is r["p90_us"] is r["p99_us"] is None
         else:
-            assert 0 < r["p50_us"] <= r["p90_us"] <= r["p99_us"]
+            p50, p90, p99 = r["p50_us"], r["p90_us"], r["p99_us"]
+            assert p50 is not None and p90 is not None and p99 is not None
+            assert 0 < p50 <= p90 <= p99
 
 
 def test_matrix_tables_show_a_dash_for_a_row_without_latency() -> None:
