@@ -784,9 +784,16 @@ TEST_CASE("a sender killed before its write_pos store has its last item complete
         REQUIRE((got && got->position == i));
     }
     rewind_write_pos(st);
+    auto waiting = st.reader(read_mode::latest, start_at::newest);
+    REQUIRE(waiting);
     forge_dead_sender(st);
     auto &h = *static_cast<stream_header *>(st.base());
     SUBCASE("ending the stream publishes the item, then readers get ended") {
+        const auto second = receive(*waiting, 2.0);
+        REQUIRE((second && second->position == 2));
+        const auto third = receive(*waiting, 2.0);
+        REQUIRE((third && third->position == 3));
+        CHECK(receive(*waiting, 2.0).error().code == status::ended);
         const auto last = receive(*at_last, 2.0);
         REQUIRE((last && last->position == 3));
         CHECK(receive(*at_last, 2.0).error().code == status::ended);
