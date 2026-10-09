@@ -33,6 +33,7 @@ NAMES = count()
 Mode = Literal["lossless", "lossy", "latest"]
 Report = tuple[str, int, float, Any]
 Spec = tuple[Callable[..., None], tuple[Any, ...]]
+WARM_LAST = -1
 
 
 @dataclass(frozen=True)
@@ -100,11 +101,17 @@ def zeros(item: str) -> np.ndarray:
 def stream_reader(
     name: str, mode: Mode, item: str, ready: Barrier, start: Barrier, results: Any
 ) -> None:
-    """Receive until the stream ends, into arrays allocated once, and report the count and time."""
+    """Receive until the stream ends, into arrays allocated once, and report the count and time.
+
+    The items up to the one with stamp `WARM_LAST` are a warm-up lap and are not counted.
+    """
     stream = SharedStream.attach(SIZES[item], name)
     reader = stream.reader(mode=mode, start="oldest")
     out = {"data": zeros(item)}
     ready.wait()
+    warm: Any = None
+    while getattr(warm, "stamp", None) != WARM_LAST:
+        warm = reader.receive_into(out)
     start.wait()
     begin = time.perf_counter()
     got = 0
@@ -117,14 +124,18 @@ def stream_reader(
 
 
 def stream_sender(
-    name: str, item: str, total: int, start: Barrier, results: Any
+    name: str, item: str, capacity: int, total: int, start: Barrier, results: Any
 ) -> None:
-    """Send `total` items and close the stream, reporting the sending time."""
+    """Send a warm-up lap, then `total` items, and close the stream, reporting the sending time."""
     stream = SharedStream.attach(SIZES[item], name)
-    value = SIZES[item](0, zeros(item))
-    start.wait()
-    begin = time.perf_counter()
+    data = zeros(item)
+    value = SIZES[item](0, data)
     with stream.sender() as sender:
+        for _ in range(capacity - 1):
+            sender.send(SIZES[item](1, data), timeout=None)
+        sender.send(SIZES[item](WARM_LAST, data), timeout=None)
+        start.wait()
+        begin = time.perf_counter()
         for _ in range(total):
             sender.send(value, timeout=None)
     results.put(("sender", total, time.perf_counter() - begin, 0))
@@ -132,8 +143,10 @@ def stream_sender(
 
 
 def queue_reader(source: Any, ready: Barrier, start: Barrier, results: Any) -> None:
-    """Take from `source` until `None` and report the count and time."""
+    """Take from `source` until `None` and report the count and time; the warm-up lap, ended by `False`, is not counted."""
     ready.wait()
+    while source.get() is not False:
+        pass
     start.wait()
     begin = time.perf_counter()
     got = 0
@@ -143,11 +156,15 @@ def queue_reader(source: Any, ready: Barrier, start: Barrier, results: Any) -> N
 
 
 def queue_sender(
-    sinks: list[Any], item: str, total: int, start: Barrier, results: Any
+    sinks: list[Any], item: str, capacity: int, total: int, start: Barrier, results: Any
 ) -> None:
-    """Put `total` items on every queue, then `None`, and report the time."""
+    """Put a warm-up lap, `total` items on every queue, then `None`, and report the time."""
     data = zeros(item)
     value = data.tobytes() if item == "1 KiB" else data
+    for sink in sinks:
+        for _ in range(capacity - 1):
+            sink.put(value)
+        sink.put(False)
     start.wait()
     begin = time.perf_counter()
     for _ in range(total):
@@ -215,6 +232,13 @@ def ring_take(
     out = np.empty(slots.shape[1], np.uint8)
     me = 2 + index
     ready.wait()
+    for _ in range(capacity):
+        with cond:
+            if not cond.wait_for(lambda: header[me] < header[0], timeout):
+                return None
+            out[:] = slots[header[me] % capacity]
+            header[me] += 1
+            cond.notify_all()
     start.wait()
     begin = time.perf_counter()
     got = 0
@@ -263,6 +287,15 @@ def ring_put(
 ) -> Report | None:
     header, slots = ring_views(shm, item, capacity, readers)
     value = zeros(item).view(np.uint8).reshape(-1)
+    for _ in range(capacity):
+        with cond:
+            if not cond.wait_for(
+                lambda: header[0] - header[2:].min() < capacity, timeout
+            ):
+                return None
+            slots[header[0] % capacity] = value
+            header[0] += 1
+            cond.notify_all()
     start.wait()
     begin = time.perf_counter()
     for _ in range(total):
@@ -379,7 +412,7 @@ def stream_run(mode: Mode) -> Callable[[SpawnContext, Options, str, int], Throug
                 opts,
                 ctx,
                 [(stream_reader, (name, mode, item))] * readers,
-                (stream_sender, (name, item, opts.items[item])),
+                (stream_sender, (name, item, opts.capacity, opts.items[item])),
                 ready,
                 start,
                 results,
@@ -403,7 +436,7 @@ def queue_run(ctx: SpawnContext, opts: Options, item: str, readers: int) -> Thro
         opts,
         ctx,
         [(queue_reader, (q,)) for q in queues],
-        (queue_sender, (queues, item, opts.items[item])),
+        (queue_sender, (queues, item, opts.capacity, opts.items[item])),
         ready,
         start,
         results,
@@ -664,7 +697,7 @@ def matrix_run(
     total = opts.items[item]
     if buffered:
         total = total // opts.capacity * opts.capacity
-    latency = 0 if buffered else opts.latency_items
+    latency = 0 if buffered else opts.latency_items + opts.capacity
     ready, start, results = ctx.Barrier(2), ctx.Barrier(3), ctx.Queue()
     if sender == "mp.Queue put":
         sink = ctx.Queue(maxsize=opts.capacity)
@@ -701,7 +734,7 @@ def matrix_run(
                 results,
             )
     _, got, secs, samples = next(r for r in reports if r[0] == "reader")
-    cuts = None if buffered else statistics.quantiles(samples, n=100)
+    cuts = None if buffered else statistics.quantiles(samples[opts.capacity :], n=100)
     return Matrix(
         sender=sender,
         reader=reader,
