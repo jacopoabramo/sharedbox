@@ -207,3 +207,29 @@ def test_close_ends_a_blocked_receive(unique_name: str) -> None:
     thread.join(2.0)
     assert time.perf_counter() - start < 1.0
     assert [type(error) for error in raised] == [StreamClosedError]
+
+
+def test_close_ends_a_blocked_send(unique_name: str) -> None:
+    """Raise StreamClosedError within a step in a send another thread's close() interrupted."""
+    stream = create(unique_name, int, capacity=2)
+    reader = stream.reader(LOSSLESS, True)
+    sender = stream.sender()
+    sender.send(1, 0.0)
+    sender.send(2, 0.0)
+    raised: list[BaseException] = []
+
+    def wait() -> None:
+        try:
+            sender.send(3, 1.0)
+        except BaseException as error:
+            raised.append(error)
+
+    thread = threading.Thread(target=wait)
+    thread.start()
+    time.sleep(0.1)
+    start = time.perf_counter()
+    sender.close()
+    thread.join(2.0)
+    assert time.perf_counter() - start < 1.0
+    assert [type(error) for error in raised] == [StreamClosedError]
+    reader.close()

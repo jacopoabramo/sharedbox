@@ -245,7 +245,7 @@ public:
         if (!arrays.empty())
             throw std::invalid_argument("receive_into is not supported yet");
         const Types &types = *core_->types;
-        const std::size_t size = end_.item_size();
+        const std::size_t size = core_->s.item_size();
         // An item of up to 4 KiB is copied to the stack; a larger one to the heap, which a bare array item
         // then keeps as its data instead of copying again.
         alignas(std::max_align_t) std::byte small[4096];
@@ -259,10 +259,12 @@ public:
         {
             nb::gil_scoped_release unlocked;
             std::lock_guard lock(*calls_);
-            if (!closed_.load())
+            if (!closed_.load()) {
                 got.emplace(end_.receive_with(
                     [&](std::span<const std::byte> item) noexcept { std::memcpy(scratch, item.data(), size); },
                     wait));
+                missed_total_.store(end_.missed(), std::memory_order_relaxed);
+            }
         }
         if (!got)
             check_open();
@@ -279,11 +281,7 @@ public:
     }
 
     std::uint32_t mode() const { return static_cast<std::uint32_t>(end_.mode()); }
-    std::uint64_t missed() {
-        nb::gil_scoped_release unlocked;
-        std::lock_guard lock(*calls_);
-        return end_.missed();
-    }
+    std::uint64_t missed() const { return missed_total_.load(std::memory_order_relaxed); }
 
     void interrupt() {
         std::lock_guard lock(*interrupts_);
@@ -311,6 +309,8 @@ public:
 
 private:
     stream_reader end_;
+    // end_.missed() is only read under calls_; this copy lets a polling thread read it without waiting.
+    std::atomic<std::uint64_t> missed_total_{0};
 };
 
 class Stream {
