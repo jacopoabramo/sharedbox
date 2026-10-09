@@ -230,6 +230,126 @@ inline status bind_stream(stream_state &s, os_mapping &&map, const stream_header
 
 } // namespace detail
 
+// What a receive returns: the item's position, and how many items this reader skipped since its previous
+// receive (always 0 for a lossless reader).
+struct received {
+    std::uint64_t position;
+    std::uint64_t missed;
+};
+
+// An open reader, as stream::readers reports it.
+struct reader_info {
+    std::uint64_t position;
+    read_mode mode;
+    std::uint32_t pid;
+};
+
+class stream;
+
+// The sender of a stream, in the process that claimed it. Move-only; destroying it closes the stream.
+// Calls on one sender must not overlap, except interrupt, which must not overlap close.
+class stream_sender {
+public:
+    stream_sender() noexcept = default;
+    stream_sender(stream_sender &&other) noexcept
+        : s_(std::exchange(other.s_, nullptr)), pid_(other.pid_), slot_(other.slot_), epoch_(other.epoch_),
+          min_(other.min_) {}
+    stream_sender &operator=(stream_sender &&other) noexcept {
+        if (this != &other) {
+            close();
+            s_ = std::exchange(other.s_, nullptr);
+            pid_ = other.pid_;
+            slot_ = other.slot_;
+            epoch_ = other.epoch_;
+            min_ = other.min_;
+        }
+        return *this;
+    }
+    ~stream_sender() { close(); }
+
+    std::uint64_t item_size() const noexcept { return s_ == nullptr ? 0 : s_->item_size; }
+    // Copies item, item_size() bytes, into the next slot and publishes it; returns its position. Waits up
+    // to timeout while a lossless reader is a full ring behind: status::timeout, at once for 0.
+    [[nodiscard]] result<std::uint64_t> send(std::span<const std::byte> item, seconds timeout);
+    // As send, with fill writing the item_size() bytes of the item into the slot. fill must not fail and
+    // must not call this sender.
+    template <class F> [[nodiscard]] result<std::uint64_t> send_with(F &&fill, seconds timeout);
+    // Ends a send waiting in this sender with status::interrupted. Sent while no send waits, it ends the
+    // next wait.
+    [[nodiscard]] result<void> interrupt();
+    // Ends the stream: readers receive what is buffered, then status::ended.
+    void close() noexcept;
+
+private:
+    friend class stream;
+    result<void> gate(std::uint64_t p, seconds timeout);
+    std::uint64_t lossless_min(std::uint64_t p) const noexcept;
+
+    detail::stream_state *s_ = nullptr;
+    std::uint32_t pid_ = 0;
+    std::uint16_t slot_ = 0;
+    std::uint32_t epoch_ = 0;
+    std::uint64_t min_ = 0;
+};
+
+// A reader of a stream, in the process that opened it. Move-only; destroying it closes it. Calls on one
+// reader must not overlap, except interrupt, which must not overlap close.
+class stream_reader {
+public:
+    stream_reader() noexcept = default;
+    stream_reader(stream_reader &&other) noexcept
+        : s_(std::exchange(other.s_, nullptr)), pid_(other.pid_), entry_(other.entry_), slot_(other.slot_),
+          mode_(other.mode_), r_(other.r_), missed_(other.missed_), started_(other.started_) {}
+    stream_reader &operator=(stream_reader &&other) noexcept {
+        if (this != &other) {
+            close();
+            s_ = std::exchange(other.s_, nullptr);
+            pid_ = other.pid_;
+            entry_ = other.entry_;
+            slot_ = other.slot_;
+            mode_ = other.mode_;
+            r_ = other.r_;
+            missed_ = other.missed_;
+            started_ = other.started_;
+        }
+        return *this;
+    }
+    ~stream_reader() { close(); }
+
+    read_mode mode() const noexcept { return mode_; }
+    // The position the next receive starts from.
+    std::uint64_t position() const noexcept { return r_; }
+    // Items skipped since the reader opened; always 0 for a lossless reader.
+    std::uint64_t missed() const noexcept { return missed_; }
+    std::uint64_t item_size() const noexcept { return s_ == nullptr ? 0 : s_->item_size; }
+    // Copies the next item into out, at least item_size() bytes. Waits up to timeout for one:
+    // status::timeout, at once for 0; status::ended once the sender has closed or died and every item it
+    // published was received; status::interrupted after interrupt().
+    [[nodiscard]] result<received> receive(std::span<std::byte> out, seconds timeout);
+    // As receive, with copy given the item's bytes in the slot. The sender may change them during the
+    // copy, so copy must only copy; the call returns once it has checked that they did not change, and
+    // otherwise moves on as the mode says.
+    template <class F> [[nodiscard]] result<received> receive_with(F &&copy, seconds timeout);
+    // Ends a receive waiting in this reader with status::interrupted. Sent while no receive waits, it ends
+    // the next wait.
+    [[nodiscard]] result<void> interrupt();
+    void close() noexcept;
+
+private:
+    friend class stream;
+    result<void> wait_for_data(detail::clock::time_point deadline);
+    void advance() noexcept;
+
+    detail::stream_state *s_ = nullptr;
+    std::uint32_t pid_ = 0;
+    std::uint32_t entry_ = 0;
+    std::uint16_t slot_ = 0;
+    read_mode mode_ = read_mode::lossless;
+    std::uint64_t r_ = 0;
+    std::uint64_t missed_ = 0;
+    bool started_ = false;
+};
+
 // A stream segment, mapped into this process. Move-only; the destructor releases it. Senders and
 // readers made from it must not outlive it.
 class stream {
@@ -263,6 +383,25 @@ public:
     std::span<const std::byte> types_table() const noexcept { return s_->types.bytes(); }
     void *base() const noexcept { return s_->hdr; }
     std::uint64_t size() const noexcept { return s_->size; }
+    // Claims the sender for this process: status::busy while another sender is held, status::ended once a
+    // sender has closed the stream, status::no_slot when no waiter slot is free.
+    [[nodiscard]] result<stream_sender> sender();
+    // Opens a reader starting at the newest item or the oldest the ring still holds: status::no_slot when
+    // max_readers are open.
+    [[nodiscard]] result<stream_reader> reader(read_mode mode, start_at start);
+    // The position the next send publishes, which is the number of items sent.
+    std::uint64_t write_position() const noexcept {
+        return detail::atomic(s_->hdr->write_pos).load(std::memory_order_acquire);
+    }
+    bool ended() const noexcept {
+        return detail::atomic(s_->hdr->state).load(std::memory_order_acquire) == stream_ended;
+    }
+    // The pid holding the sender, 0 when none does.
+    std::uint32_t sender_pid() const noexcept {
+        return detail::atomic(s_->hdr->sender_pid).load(std::memory_order_acquire);
+    }
+    // Fills out with the open readers, as many as fit, and returns how many are open.
+    std::size_t readers(std::span<reader_info> out) const noexcept;
 
 private:
     explicit stream(detail::stream_state *s) noexcept : s_(s) {}
@@ -351,6 +490,322 @@ inline result<stream> stream::open(std::string_view name, seconds timeout) {
         return unexpected(rc);
     detail::free_dead_waiters(s->waiters);
     return stream(s.release());
+}
+
+inline result<stream_sender> stream::sender() {
+    detail::stream_state &s = *s_;
+    stream_header &h = *s.hdr;
+    if (ended())
+        return unexpected(status::ended);
+    const result<std::uint16_t> slot = detail::claim_slot(s.waiters);
+    if (!slot)
+        return unexpected(slot.error());
+    const std::uint32_t pid = detail::current_pid();
+    std::uint32_t none = 0;
+    if (!detail::atomic(h.sender_pid)
+             .compare_exchange_strong(none, pid, std::memory_order_acq_rel, std::memory_order_relaxed)) {
+        detail::release_slot(s.waiters, *slot);
+        return unexpected(status::busy);
+    }
+    detail::atomic(h.sender_pidns).store(detail::current_pidns(), std::memory_order_relaxed);
+    detail::atomic(h.sender_start).store(detail::current_start(), std::memory_order_release);
+    // A sender that closed between the first check and the claim ended the stream for good.
+    if (ended()) {
+        detail::atomic(h.sender_pid).store(0, std::memory_order_release);
+        detail::release_slot(s.waiters, *slot);
+        return unexpected(status::ended);
+    }
+    stream_sender out;
+    out.s_ = s_;
+    out.pid_ = pid;
+    out.slot_ = *slot;
+    return out;
+}
+
+inline result<stream_reader> stream::reader(read_mode mode, start_at start) {
+    if (mode != read_mode::lossless && mode != read_mode::lossy && mode != read_mode::latest)
+        return unexpected(status::range);
+    detail::stream_state &s = *s_;
+    stream_header &h = *s.hdr;
+    const result<std::uint16_t> slot = detail::claim_slot(s.waiters);
+    if (!slot)
+        return unexpected(slot.error());
+    const std::uint32_t pid = detail::current_pid();
+    for (std::uint32_t i = 0; i < s.max_readers; ++i) {
+        reader_entry &e = s.readers[i];
+        std::uint32_t none = 0;
+        if (!detail::atomic(e.owner_pid)
+                 .compare_exchange_strong(none, pid, std::memory_order_acq_rel, std::memory_order_relaxed))
+            continue;
+        detail::atomic(e.owner_pidns).store(detail::current_pidns(), std::memory_order_relaxed);
+        detail::atomic(e.owner_start).store(detail::current_start(), std::memory_order_release);
+        const std::uint64_t w = detail::atomic(h.write_pos).load(std::memory_order_acquire);
+        const std::uint64_t r =
+            start == start_at::newest ? (w == 0 ? 0 : w - 1) : (w > s.capacity ? w - s.capacity : 0);
+        // The position before the mode: the sender counts an entry once its mode says lossless.
+        detail::atomic(e.position).store(r, std::memory_order_release);
+        detail::atomic(e.mode).store(static_cast<std::uint32_t>(mode), std::memory_order_release);
+        if (mode == read_mode::lossless)
+            detail::atomic(h.lossless_readers).fetch_add(1, std::memory_order_seq_cst);
+        detail::atomic(h.readers_epoch).fetch_add(1, std::memory_order_seq_cst);
+        // With the fence the sender issues after each send, the sender's next gate sees this reader
+        // before it can overwrite a slot this reader has read; see send_with.
+        std::atomic_thread_fence(std::memory_order_seq_cst);
+        stream_reader out;
+        out.s_ = s_;
+        out.pid_ = pid;
+        out.entry_ = i;
+        out.slot_ = *slot;
+        out.mode_ = mode;
+        out.r_ = r;
+        return out;
+    }
+    detail::release_slot(s.waiters, *slot);
+    return unexpected(status::no_slot);
+}
+
+inline std::size_t stream::readers(std::span<reader_info> out) const noexcept {
+    std::size_t open = 0;
+    for (std::uint32_t i = 0; i < s_->max_readers; ++i) {
+        reader_entry &e = s_->readers[i];
+        const std::uint32_t mode = detail::atomic(e.mode).load(std::memory_order_acquire);
+        if (mode == 0)
+            continue;
+        if (open < out.size())
+            out[open] = {detail::atomic(e.position).load(std::memory_order_acquire), static_cast<read_mode>(mode),
+                         detail::atomic(e.owner_pid).load(std::memory_order_acquire)};
+        ++open;
+    }
+    return open;
+}
+
+// The smallest position a lossless reader still has to read; p when there is none.
+inline std::uint64_t stream_sender::lossless_min(std::uint64_t p) const noexcept {
+    std::uint64_t least = p;
+    for (std::uint32_t i = 0; i < s_->max_readers; ++i) {
+        reader_entry &e = s_->readers[i];
+        if (detail::atomic(e.mode).load(std::memory_order_seq_cst) !=
+            static_cast<std::uint32_t>(read_mode::lossless))
+            continue;
+        least = (std::min)(least, detail::atomic(e.position).load(std::memory_order_seq_cst));
+    }
+    return least;
+}
+
+// Returns once the slot of position p holds nothing a lossless reader still needs. The table is read
+// only when a lossless reader is open, and rescanned only when the cached minimum would stop p or a
+// reader joined or left.
+inline result<void> stream_sender::gate(std::uint64_t p, seconds timeout) {
+    detail::stream_state &s = *s_;
+    stream_header &h = *s.hdr;
+    if (detail::atomic(h.lossless_readers).load(std::memory_order_seq_cst) == 0)
+        return {};
+    const std::uint32_t epoch = detail::atomic(h.readers_epoch).load(std::memory_order_seq_cst);
+    if (epoch != epoch_ || p >= min_ + s.capacity) {
+        epoch_ = epoch;
+        min_ = lossless_min(p);
+    }
+    if (p < min_ + s.capacity)
+        return {};
+    const result<wake> woken = detail::wait_on(
+        s.waiters, slot_, h.space_word,
+        [&]() noexcept {
+            epoch_ = detail::atomic(h.readers_epoch).load(std::memory_order_seq_cst);
+            min_ = lossless_min(p);
+            return p < min_ + s.capacity;
+        },
+        timeout, &h.space_waiting);
+    if (!woken)
+        return unexpected(woken.error());
+    if (*woken == wake::interrupted)
+        return unexpected(status::interrupted);
+    return {};
+}
+
+template <class F> result<std::uint64_t> stream_sender::send_with(F &&fill, seconds timeout) {
+    if (s_ == nullptr || detail::current_pid() != pid_ || !detail::timeout_ok(timeout, true))
+        return unexpected(status::range);
+    detail::stream_state &s = *s_;
+    stream_header &h = *s.hdr;
+    // Only this sender stores write_pos.
+    const std::uint64_t p = detail::atomic(h.write_pos).load(std::memory_order_relaxed);
+    if (const result<void> open = gate(p, timeout); !open)
+        return unexpected(open.error());
+    std::byte *slot = s.slots + p % s.capacity * s.slot_size;
+    auto seq = detail::atomic(*reinterpret_cast<std::uint64_t *>(slot));
+    seq.store(2 * p + 1, std::memory_order_relaxed);
+    // Keeps the item stores that follow from moving before the odd seq, as a box write's lock does.
+    std::atomic_thread_fence(std::memory_order_release);
+    fill(std::span<std::byte>(slot + s.item_offset, s.item_size));
+    seq.store(2 * p + 2, std::memory_order_release);
+    detail::atomic(h.write_pos).store(p + 1, std::memory_order_release);
+    // A waiting reader counts itself in data_waiting before it reads write_pos, so either it sees p + 1
+    // or this load sees its count. The same fence orders this send's slot stores before the next gate's
+    // load of lossless_readers, which a joining reader's fence pairs with.
+    std::atomic_thread_fence(std::memory_order_seq_cst);
+    if (detail::atomic(h.data_waiting).load(std::memory_order_seq_cst) != 0) {
+        detail::atomic(h.data_word).fetch_add(1, std::memory_order_seq_cst);
+        detail::wake_all(s.waiters, h.data_word);
+    }
+    return p;
+}
+
+inline result<std::uint64_t> stream_sender::send(std::span<const std::byte> item, seconds timeout) {
+    if (s_ == nullptr || item.size() != s_->item_size)
+        return unexpected(status::range);
+    return send_with(
+        [&](std::span<std::byte> slot) noexcept { std::memcpy(slot.data(), item.data(), item.size()); }, timeout);
+}
+
+inline result<void> stream_sender::interrupt() {
+    if (s_ == nullptr)
+        return unexpected(status::range);
+    return detail::interrupt_slot(s_->waiters, slot_, s_->hdr->space_word);
+}
+
+inline void stream_sender::close() noexcept {
+    if (s_ == nullptr)
+        return;
+    detail::stream_state &s = *s_;
+    stream_header &h = *s.hdr;
+    // A child of fork leaves its parent's sender alone.
+    if (detail::current_pid() == pid_) {
+        detail::atomic(h.state).store(stream_ended, std::memory_order_seq_cst);
+        detail::atomic(h.sender_start).store(0, std::memory_order_release);
+        detail::atomic(h.sender_pidns).store(0, std::memory_order_relaxed);
+        detail::atomic(h.sender_pid).store(0, std::memory_order_release);
+        detail::atomic(h.data_word).fetch_add(1, std::memory_order_seq_cst);
+        detail::wake_all(s.waiters, h.data_word);
+        detail::release_slot(s.waiters, slot_);
+    }
+    s_ = nullptr;
+}
+
+inline result<void> stream_reader::wait_for_data(detail::clock::time_point deadline) {
+    stream_header &h = *s_->hdr;
+    // write_pos is read after state: the sender stores state after its last write_pos.
+    if (detail::atomic(h.state).load(std::memory_order_acquire) == stream_ended &&
+        detail::atomic(h.write_pos).load(std::memory_order_acquire) == r_)
+        return unexpected(status::ended);
+    const detail::clock::duration left = deadline - detail::clock::now();
+    if (left <= detail::clock::duration::zero())
+        return unexpected(status::timeout);
+    const result<wake> woken = detail::wait_on(
+        s_->waiters, slot_, h.data_word,
+        [&]() noexcept {
+            return detail::atomic(h.write_pos).load(std::memory_order_seq_cst) != r_ ||
+                   detail::atomic(h.state).load(std::memory_order_seq_cst) == stream_ended;
+        },
+        std::chrono::duration_cast<seconds>(left), &h.data_waiting);
+    if (!woken)
+        return unexpected(woken.error());
+    if (*woken == wake::interrupted)
+        return unexpected(status::interrupted);
+    return {};
+}
+
+// Publishes this reader's position and, for a lossless reader, wakes a sender waiting for space.
+inline void stream_reader::advance() noexcept {
+    detail::stream_state &s = *s_;
+    stream_header &h = *s.hdr;
+    detail::atomic(s.readers[entry_].position).store(r_, std::memory_order_release);
+    if (mode_ != read_mode::lossless)
+        return;
+    // The sender counts itself in space_waiting before it rescans the positions, so either it sees this
+    // position or this load sees its count.
+    std::atomic_thread_fence(std::memory_order_seq_cst);
+    if (detail::atomic(h.space_waiting).load(std::memory_order_seq_cst) != 0) {
+        detail::atomic(h.space_word).fetch_add(1, std::memory_order_seq_cst);
+        detail::wake_all(s.waiters, h.space_word);
+    }
+}
+
+template <class F> result<received> stream_reader::receive_with(F &&copy, seconds timeout) {
+    if (s_ == nullptr || detail::current_pid() != pid_ || !detail::timeout_ok(timeout, true))
+        return unexpected(status::range);
+    detail::stream_state &s = *s_;
+    stream_header &h = *s.hdr;
+    const detail::clock::time_point deadline =
+        detail::clock::now() + std::chrono::duration_cast<detail::clock::duration>(timeout);
+    const std::uint64_t missed_before = missed_;
+    for (;;) {
+        const std::uint64_t w = detail::atomic(h.write_pos).load(std::memory_order_acquire);
+        if (r_ == w) {
+            if (const result<void> waited = wait_for_data(deadline); !waited)
+                return unexpected(waited.error());
+            continue;
+        }
+        if (mode_ == read_mode::lossy && w - r_ > s.capacity) {
+            missed_ += w - s.capacity - r_;
+            r_ = w - s.capacity;
+        } else if (mode_ == read_mode::latest && w - r_ > 1) {
+            missed_ += w - 1 - r_;
+            r_ = w - 1;
+        }
+        std::byte *slot = s.slots + r_ % s.capacity * s.slot_size;
+        auto seq = detail::atomic(*reinterpret_cast<std::uint64_t *>(slot));
+        const std::uint64_t expected = 2 * r_ + 2;
+        bool kept = seq.load(std::memory_order_acquire) == expected;
+        if (kept) {
+            copy(std::span<const std::byte>(slot + s.item_offset, s.item_size));
+            std::atomic_thread_fence(std::memory_order_acquire);
+            kept = seq.load(std::memory_order_relaxed) == expected;
+        }
+        if (!kept) {
+            // The sender wrote a later position over this slot. A lossless reader's first positions may be
+            // overwritten before the sender sees it joined, which is not a miss; after its first item the
+            // gate keeps the sender off its slots.
+            if (mode_ == read_mode::lossless && started_)
+                return unexpected(status::corrupt);
+            if (mode_ != read_mode::lossless)
+                ++missed_;
+            ++r_;
+            continue;
+        }
+        const received out{r_, missed_ - missed_before};
+        ++r_;
+        started_ = true;
+        advance();
+        return out;
+    }
+}
+
+inline result<received> stream_reader::receive(std::span<std::byte> out, seconds timeout) {
+    if (s_ == nullptr || out.size() < s_->item_size)
+        return unexpected(status::range);
+    return receive_with(
+        [&](std::span<const std::byte> item) noexcept { std::memcpy(out.data(), item.data(), item.size()); },
+        timeout);
+}
+
+inline result<void> stream_reader::interrupt() {
+    if (s_ == nullptr)
+        return unexpected(status::range);
+    return detail::interrupt_slot(s_->waiters, slot_, s_->hdr->data_word);
+}
+
+inline void stream_reader::close() noexcept {
+    if (s_ == nullptr)
+        return;
+    detail::stream_state &s = *s_;
+    stream_header &h = *s.hdr;
+    reader_entry &e = s.readers[entry_];
+    // A child of fork, or an entry freed under this reader and claimed again, is left to its owner.
+    if (detail::current_pid() == pid_ && detail::atomic(e.owner_pid).load(std::memory_order_acquire) == pid_ &&
+        detail::atomic(e.owner_start).load(std::memory_order_acquire) == detail::current_start()) {
+        detail::atomic(e.mode).store(0, std::memory_order_seq_cst);
+        if (mode_ == read_mode::lossless)
+            detail::atomic(h.lossless_readers).fetch_sub(1, std::memory_order_seq_cst);
+        detail::atomic(h.readers_epoch).fetch_add(1, std::memory_order_seq_cst);
+        detail::atomic(e.owner_start).store(0, std::memory_order_release);
+        detail::atomic(e.owner_pidns).store(0, std::memory_order_relaxed);
+        detail::atomic(e.owner_pid).store(0, std::memory_order_release);
+        // The sender may be waiting for this reader.
+        detail::atomic(h.space_word).fetch_add(1, std::memory_order_seq_cst);
+        detail::wake_all(s.waiters, h.space_word);
+    }
+    detail::release_slot(s.waiters, slot_);
+    s_ = nullptr;
 }
 
 } // namespace v3
