@@ -717,17 +717,18 @@ a wake-up.
   - Check again after waking; a wake may be spurious. Past the timeout the
     result is `status::timeout`.
 - Wake, after every write:
-  - Increment `wake_word`, then load `sleepers`, both sequentially
-    consistent. If that load misses a waiter's increment, the waiter's load
-    of `wake_word` comes after this increment in the single order of
-    sequentially consistent operations, so it reads this increment or a
-    later change, every change to `wake_word` being a read-modify-write.
-    That load synchronizes with the increment, so the swap of `seq` before
-    it happens before the waiter's check of `seq`, which then sees the new
-    value. The swap that unlocks `seq` is only a release, so the waiter's
-    load of `wake_word` is required on both platforms, though on Windows its
-    value is not used.
-  - If `sleepers` is 0, stop: no system call on the normal path.
+  - The swap that unlocks `seq` is sequentially consistent. Then load
+    `sleepers` (sequentially consistent). If it is 0, stop: no change to
+    `wake_word` and no system call on the normal path. The load comes before
+    the waiter's increment of `sleepers` in the single order of sequentially
+    consistent operations, and the swap comes before the load, so the
+    waiter's check of `seq` sees the new value.
+  - Otherwise increment `wake_word` (sequentially consistent) before the
+    wake. A Linux waiter whose load of `wake_word` came before the increment
+    is refused sleep or woken. One whose load comes after it reads this
+    increment or a later change, every change to `wake_word` being a
+    read-modify-write, so the swap happens before its check of `seq`. On
+    Windows the value of `wake_word` is not used, and the waiter's load stays.
   - Linux: one `FUTEX_WAKE` with `INT_MAX` waiters.
   - Windows: `SetEvent` on the event of every occupied slot.
 - `interrupt(slot)`: set the slot's `interrupt`, then wake that slot. On

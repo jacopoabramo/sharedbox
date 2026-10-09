@@ -80,6 +80,11 @@ Dates are marked as `DD-MM-YYYY`
   word. Freeing the slot of a process killed inside a wait takes that
   thread out of `sleepers` for a box, and out of `data_waiting` or
   `space_waiting` for a stream.
+- `SharedBox` write: leaves `wake_word` unchanged when no thread is inside a
+  wait; it adds 1 to it only when `sleepers` is not 0.
+- `StreamReader` receive: checks the slot's `seq` before reading `write_pos`,
+  in `lossless` and `lossy` modes.
+- `ReaderStatistics.lag`: never negative.
 
 ### Removed
 
