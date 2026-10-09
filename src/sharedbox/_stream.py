@@ -511,7 +511,7 @@ class Worker:
 
 
 def finished(end: weakref.ref[End]) -> None:
-    """Count a worker call of `end` as done, if the end still exists, and wake the receives waiting for none to be left."""
+    """Count a worker call of `end` as done, if the end still exists, and wake the receives waiting for its last call."""
     if (target := end()) is not None:
         with target._lock:
             target._inflight -= 1
