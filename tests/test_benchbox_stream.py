@@ -103,3 +103,22 @@ def test_a_child_that_outlives_the_timeout_is_terminated() -> None:
     """Raise SystemExit naming the contender when a child is still running at the deadline."""
     with pytest.raises(SystemExit, match="pair: not finished"):
         drive_pair(5.0, sender_that_hangs)
+
+
+def test_matrix_reports_every_sender_and_reader() -> None:
+    """Report a rate and ordered latency percentiles for each sender and reader pairing and item size."""
+    rows = stream.run_matrix(stream.Options.short())
+    pairs = {(r["sender"], r["reader"]) for r in rows}
+    assert pairs == {
+        (s, r)
+        for s in ("send", "asend")
+        for r in ("receive", "async for", "events.received")
+    } | {
+        ("send", "async for (buffered)"),
+        ("mp.Queue put", "mp.Queue get"),
+        ("mp.Queue put", "asyncio + mp.Queue"),
+    }
+    assert {r["item"] for r in rows} == set(stream.SIZES)
+    for r in rows:
+        assert r["items_per_s"] > 0
+        assert 0 < r["p50_us"] <= r["p90_us"] <= r["p99_us"]

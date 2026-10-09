@@ -5,31 +5,33 @@ python -m sharedbox.benchmarks.stream --short --json stream.json
 """
 
 import argparse
+import asyncio
 import json
 import multiprocessing as mp
 import os
 import queue
 import statistics
+import threading
 import time
-from collections.abc import Callable, Generator
+from collections.abc import AsyncGenerator, Callable, Generator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from itertools import count
 from multiprocessing.context import SpawnContext, SpawnProcess
 from multiprocessing.queues import Queue
 from multiprocessing.shared_memory import SharedMemory
-from multiprocessing.synchronize import Barrier, Condition
+from multiprocessing.synchronize import Barrier, Condition, Event
 from pathlib import Path
 from threading import BrokenBarrierError
 from typing import Annotated, Any, TypedDict
 
 import numpy as np
 
-from sharedbox import DType, Shape, SharedStream
+from sharedbox import DType, EndOfStream, Shape, SharedStream
 from sharedbox._stream import Mode
 
 NAMES = count()
-Report = tuple[str, int, float, int]
+Report = tuple[str, int, float, Any]
 Spec = tuple[Callable[..., None], tuple[Any, ...]]
 
 
@@ -74,6 +76,16 @@ class Throughput(TypedDict):
     sent_per_s: float
     received_per_s: float
     missed: int
+
+
+class Matrix(TypedDict):
+    sender: str
+    reader: str
+    item: str
+    items_per_s: float
+    p50_us: float
+    p90_us: float
+    p99_us: float
 
 
 def zeros(item: str) -> np.ndarray:
@@ -426,6 +438,273 @@ def ring_run(ctx: SpawnContext, opts: Options, item: str, readers: int) -> Throu
     return summarise("SharedMemory ring + Lock", item, readers, reports)
 
 
+ROWS = [
+    (sender, reader)
+    for sender in ("send", "asend")
+    for reader in ("receive", "async for", "events.received")
+] + [
+    ("send", "async for (buffered)"),
+    ("mp.Queue put", "mp.Queue get"),
+    ("mp.Queue put", "asyncio + mp.Queue"),
+]
+GAP = 0.001
+
+
+@dataclass
+class Tally:
+    """Counts the items a reader takes and times the first `total` of them.
+
+    Each later item is a latency sample: the time since its sender stamped it.
+    """
+
+    total: int
+    latency: int
+    begin: float = 0.0
+    secs: float = 0.0
+    got: int = 0
+    samples: list[int] = field(default_factory=list)
+
+    def take(self, stamp: int) -> None:
+        self.got += 1
+        if self.got == self.total:
+            self.secs = time.perf_counter() - self.begin
+        elif self.got > self.total:
+            self.samples.append(time.perf_counter_ns() - stamp)
+
+    def report(self) -> Report:
+        """The reader's report, once every item arrived."""
+        if self.got != self.total + self.latency:
+            raise RuntimeError(f"took {self.got} of {self.total + self.latency} items")
+        return ("reader", self.total, self.secs, self.samples)
+
+
+def stamps(total: int, latency: int) -> Generator[int, None, None]:
+    """A stamp per item: 0 for the first `total`, then the time, one item per `GAP`."""
+    for i in range(total + latency):
+        if i >= total:
+            time.sleep(GAP)
+        yield time.perf_counter_ns() if i >= total else 0
+
+
+async def astamps(total: int, latency: int) -> AsyncGenerator[int, None]:
+    """`stamps`, sleeping without blocking the event loop."""
+    for i in range(total + latency):
+        if i >= total:
+            await asyncio.sleep(GAP)
+        yield time.perf_counter_ns() if i >= total else 0
+
+
+def read_receive(reader: Any, tally: Tally) -> None:
+    try:
+        while True:
+            tally.take(reader.receive().stamp)
+    except EndOfStream:
+        pass
+
+
+async def read_async(reader: Any, tally: Tally) -> None:
+    async for item in reader:
+        tally.take(item.stamp)
+
+
+def read_events(reader: Any, tally: Tally) -> None:
+    ended = threading.Event()
+    reader.events.ended.connect(lambda: ended.set())
+    reader.events.received.connect(lambda item, position: tally.take(item.stamp))
+    ended.wait()
+
+
+async def read_buffered(reader: Any, tally: Tally) -> None:
+    """Time every `anext` of a reader whose ring is full, and the whole run."""
+    tally.begin = time.perf_counter()
+    while True:
+        before = time.perf_counter_ns()
+        try:
+            await anext(reader)
+        except StopAsyncIteration:
+            break
+        tally.samples.append(time.perf_counter_ns() - before)
+        tally.got += 1
+    tally.secs = time.perf_counter() - tally.begin
+
+
+def matrix_stream_reader(
+    name: str,
+    how: str,
+    item: str,
+    total: int,
+    latency: int,
+    filled: Event,
+    ready: Barrier,
+    start: Barrier,
+    results: Any,
+) -> None:
+    """Receive `total + latency` items the way `how` says and report the timings."""
+    stream = SharedStream.attach(SIZES[item], name)
+    reader = stream.reader(mode="lossless", start="oldest")
+    tally = Tally(total, latency)
+    ready.wait()
+    start.wait()
+    tally.begin = time.perf_counter()
+    match how:
+        case "receive":
+            read_receive(reader, tally)
+        case "async for":
+            asyncio.run(read_async(reader, tally))
+        case "events.received":
+            read_events(reader, tally)
+        case _:
+            filled.wait()
+            asyncio.run(read_buffered(reader, tally))
+    results.put(tally.report())
+    stream.close()
+
+
+async def asend_all(sender: Any, item: str, total: int, latency: int) -> None:
+    data = zeros(item)
+    async for stamp in astamps(total, latency):
+        await sender.asend(SIZES[item](stamp, data))
+
+
+def matrix_stream_sender(
+    name: str,
+    how: str,
+    item: str,
+    total: int,
+    latency: int,
+    fill: int,
+    filled: Event,
+    start: Barrier,
+    results: Any,
+) -> None:
+    """Send `total` items at full speed, then `latency` stamped ones, `GAP` apart.
+
+    `filled` is set once `fill` items are in the ring.
+    """
+    stream = SharedStream.attach(SIZES[item], name)
+    data = zeros(item)
+    start.wait()
+    begin = time.perf_counter()
+    with stream.sender() as sender:
+        if how == "asend":
+            filled.set()
+            asyncio.run(asend_all(sender, item, total, latency))
+        else:
+            for i, stamp in enumerate(stamps(total, latency)):
+                if i == fill:
+                    filled.set()
+                sender.send(SIZES[item](stamp, data), timeout=None)
+    results.put(("sender", total, time.perf_counter() - begin, []))
+    stream.close()
+
+
+async def get_in_executor(source: Any, tally: Tally) -> None:
+    loop = asyncio.get_running_loop()
+    while (message := await loop.run_in_executor(None, source.get)) is not None:
+        tally.take(message[0])
+
+
+def matrix_queue_reader(
+    source: Any,
+    how: str,
+    total: int,
+    latency: int,
+    ready: Barrier,
+    start: Barrier,
+    results: Any,
+) -> None:
+    """Take from `source` until `None`, blocking or in an executor, and report the timings."""
+    tally = Tally(total, latency)
+    ready.wait()
+    start.wait()
+    tally.begin = time.perf_counter()
+    if how == "mp.Queue get":
+        while (message := source.get()) is not None:
+            tally.take(message[0])
+    else:
+        asyncio.run(get_in_executor(source, tally))
+    results.put(tally.report())
+
+
+def matrix_queue_sender(
+    sink: Any, item: str, total: int, latency: int, start: Barrier, results: Any
+) -> None:
+    """Put `total` items at full speed, then `latency` stamped ones, `GAP` apart, then `None`."""
+    data = zeros(item)
+    payload = data.tobytes() if item == "1 KiB" else data
+    start.wait()
+    begin = time.perf_counter()
+    for stamp in stamps(total, latency):
+        sink.put((stamp, payload))
+    sink.put(None)
+    results.put(("sender", total, time.perf_counter() - begin, []))
+
+
+def matrix_run(
+    ctx: SpawnContext, opts: Options, sender: str, reader: str, item: str
+) -> Matrix:
+    """One sender and reader pairing: the rate over `opts.items[item]` items, then latency percentiles."""
+    label = f"{sender} -> {reader} ({item})"
+    total = opts.items[item]
+    buffered = reader.endswith("(buffered)")
+    latency = 0 if buffered else opts.latency_items
+    ready, start, results = ctx.Barrier(2), ctx.Barrier(3), ctx.Queue()
+    if sender == "mp.Queue put":
+        sink = ctx.Queue(maxsize=opts.capacity)
+        reports = drive(
+            label,
+            opts,
+            ctx,
+            [(matrix_queue_reader, (sink, reader, total, latency))],
+            (matrix_queue_sender, (sink, item, total, latency)),
+            ready,
+            start,
+            results,
+        )
+    else:
+        filled = ctx.Event()
+        fill = opts.capacity if buffered else 0
+        with fresh_stream(opts, item) as name:
+            reports = drive(
+                label,
+                opts,
+                ctx,
+                [(matrix_stream_reader, (name, reader, item, total, latency, filled))],
+                (
+                    matrix_stream_sender,
+                    (name, sender, item, total, latency, fill, filled),
+                ),
+                ready,
+                start,
+                results,
+            )
+    _, got, secs, samples = next(r for r in reports if r[0] == "reader")
+    cuts = statistics.quantiles(samples, n=100)
+    return Matrix(
+        sender=sender,
+        reader=reader,
+        item=item,
+        items_per_s=got / secs,
+        p50_us=cuts[49] / 1000,
+        p90_us=cuts[89] / 1000,
+        p99_us=cuts[98] / 1000,
+    )
+
+
+def run_matrix(opts: Options) -> list[Matrix]:
+    """Rate and latency of every sender and reader pairing, for every item size."""
+    ctx = mp.get_context("spawn")
+    rows = []
+    for item in SIZES:
+        for sender, reader in ROWS:
+            runs = [
+                matrix_run(ctx, opts, sender, reader, item) for _ in range(opts.repeats)
+            ]
+            runs.sort(key=lambda row: row["items_per_s"])
+            rows.append(runs[len(runs) // 2])
+    return rows
+
+
 CONTENDERS = [
     stream_run("lossless"),
     stream_run("lossy"),
@@ -495,7 +774,7 @@ def main(argv: list[str] | None = None) -> None:
     args = parser.parse_args(argv)
     opts = Options.short() if args.short else Options()
     throughput = run_throughput(opts) if args.table in ("throughput", "both") else []
-    matrix: list[Any] = []
+    matrix = run_matrix(opts) if args.table in ("matrix", "both") else []
     if args.json is not None:
         args.json.write_text(
             json.dumps({"throughput": throughput, "matrix": matrix}, indent=2)
