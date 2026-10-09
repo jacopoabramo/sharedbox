@@ -110,6 +110,7 @@ class FieldFuture(Future[T]):
         self._field = field
         self._since = since
         self._version = since
+        self._notified = False
 
     @property
     def version(self) -> int:
@@ -121,11 +122,31 @@ class FieldFuture(Future[T]):
         if not super().cancel():
             return False
         # Marks the cancellation as reported, which concurrent.futures.wait needs
-        # to count the future as done; a second cancel finds it marked already.
-        with contextlib.suppress(RuntimeError):
-            self.set_running_or_notify_cancel()
+        # to count the future as done; a second call there would log an error.
+        with self._condition:
+            first = not self._notified
+            self._notified = True
+            if first:
+                self.set_running_or_notify_cancel()
         self._watcher.discard(self)
         return True
+
+    def result(self, timeout: float | None = None) -> T:
+        """Block until the field changes and return its new value.
+
+        Raises
+        ------
+        TimeoutError
+            If the field did not change within `timeout` seconds.
+        concurrent.futures.CancelledError
+            If the future was cancelled.
+        """
+        try:
+            return super().result(timeout)
+        except TimeoutError:
+            raise TimeoutError(
+                f"{self._field.name} did not change within {timeout} s"
+            ) from None
 
     def __await__(self) -> Generator[Any, None, T]:
         return asyncio.wrap_future(self).__await__()
@@ -139,7 +160,7 @@ class FieldFuture(Future[T]):
 
 
 class FieldWatch(Generic[T]):
-    """New values of one field, for `for` and `async for`.
+    """New values of one field, for `for`, `async for` or `future()`.
 
     [`SharedBox.watch`][sharedbox.SharedBox.watch] returns it. Only writes
     made after the watch was created count. Iterating with `for` blocks

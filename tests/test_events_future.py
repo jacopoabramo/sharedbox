@@ -1,5 +1,6 @@
 import asyncio
 import concurrent.futures
+import logging
 import multiprocessing as mp
 import threading
 import time
@@ -58,7 +59,6 @@ def test_wait_returns_the_box_future_when_the_box_is_written_first(
         writer.join(20)
         assert (done, pending) == ({box_future}, {stream_future})
         assert box_future.result(0) == 7
-        stream_future.cancel()
 
 
 def test_wait_returns_the_stream_future_when_the_stream_is_sent_first(
@@ -182,6 +182,7 @@ def test_done_callback_runs_once_whether_added_before_or_after(
         box.value = 1
         assert called.wait(10)
         future.add_done_callback(lambda fut: calls.append("after"))
+        box.close()
         assert calls == ["before", "after"]
 
 
@@ -224,3 +225,57 @@ def test_closing_the_box_cancels_a_pending_future(unique_name: str) -> None:
     assert future.cancelled()
     with pytest.raises(BoxClosedError):
         watch.future()
+
+
+def test_double_cancel_returns_true_and_logs_nothing(
+    unique_name: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Return True from every cancel, count the future done, and log no warning."""
+    with Counter.create(unique_name) as box, caplog.at_level(logging.DEBUG):
+        future = box.watch("value").future()
+        assert (future.cancel(), future.cancel()) == (True, True)
+        done, _ = concurrent.futures.wait([future], timeout=5)
+        assert done == {future}
+    assert [r for r in caplog.records if r.levelno >= logging.WARNING] == []
+
+
+def test_close_ends_an_async_for_without_log_records(
+    unique_name: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    """End an async for over a watch when the box closes, with no warning logged."""
+
+    async def main() -> list[int]:
+        box = Counter.create(unique_name)
+        seen: list[int] = []
+
+        async def consume() -> None:
+            async for value in box.watch("value"):
+                seen.append(value)
+
+        task = asyncio.ensure_future(consume())
+        await asyncio.sleep(0.2)
+        box.close()
+        await asyncio.wait_for(task, 10)
+        return seen
+
+    with caplog.at_level(logging.DEBUG):
+        assert asyncio.run(main()) == []
+    assert [r for r in caplog.records if r.levelno >= logging.WARNING] == []
+
+
+def test_closing_the_box_wakes_a_wait_blocked_in_another_thread(
+    unique_name: str,
+) -> None:
+    """Wake a concurrent.futures.wait blocked in another thread when the box closes."""
+    box = Counter.create(unique_name)
+    future = box.watch("value").future()
+    result: list[set[concurrent.futures.Future[int]]] = []
+    waiter = threading.Thread(
+        target=lambda: result.append(concurrent.futures.wait([future], timeout=20)[0])
+    )
+    waiter.start()
+    time.sleep(0.2)
+    box.close()
+    waiter.join(10)
+    assert not waiter.is_alive()
+    assert result == [{future}]
