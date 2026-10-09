@@ -18,6 +18,9 @@ inline constexpr std::uint64_t max_stream_size = std::uint64_t{1} << 46;
 inline constexpr std::uint32_t stream_open = 0;
 inline constexpr std::uint32_t stream_ended = 1;
 
+// How long a wait lasts before it checks whether the processes it waits for still run.
+inline constexpr double liveness_delay = 0.1;
+
 enum class read_mode : std::uint32_t { lossless = 1, lossy = 2, latest = 3 };
 enum class start_at { newest, oldest };
 
@@ -226,6 +229,66 @@ inline status bind_stream(stream_state &s, os_mapping &&map, const stream_header
     s.waiters.claimed = &s.hdr->waiters;
     s.waiters.count = h.common.waiter_slots;
     return status::ok;
+}
+
+// Frees the entries of readers whose process has exited, as free_dead_slot frees waiter slots: only the
+// process whose compare-and-swap sets owner_start to start_freeing goes on. Then frees their waiter slots.
+// Known limit: a freer killed in the middle leaves the entry unusable until the stream is created again.
+inline void free_dead_readers(stream_state &s) noexcept {
+    stream_header &h = *s.hdr;
+    bool freed = false;
+    for (std::uint32_t i = 0; i < s.max_readers; ++i) {
+        reader_entry &e = s.readers[i];
+        const std::uint32_t pid = atomic(e.owner_pid).load(std::memory_order_acquire);
+        if (pid == 0)
+            continue;
+        std::uint64_t start = atomic(e.owner_start).load(std::memory_order_acquire);
+        const std::uint64_t pidns = atomic(e.owner_pidns).load(std::memory_order_acquire);
+        if (atomic(e.owner_pid).load(std::memory_order_acquire) != pid || start == start_freeing ||
+            !owner_exited(pid, start, pidns))
+            continue;
+        if (!atomic(e.owner_start)
+                 .compare_exchange_strong(start, start_freeing, std::memory_order_acq_rel,
+                                          std::memory_order_relaxed))
+            continue;
+        if (atomic(e.owner_pid).load(std::memory_order_acquire) != pid) {
+            std::uint64_t freeing = start_freeing;
+            atomic(e.owner_start)
+                .compare_exchange_strong(freeing, start, std::memory_order_release, std::memory_order_relaxed);
+            continue;
+        }
+        if (atomic(e.mode).exchange(0, std::memory_order_seq_cst) ==
+            static_cast<std::uint32_t>(read_mode::lossless))
+            atomic(h.lossless_readers).fetch_sub(1, std::memory_order_seq_cst);
+        atomic(e.owner_pidns).store(0, std::memory_order_relaxed);
+        atomic(e.owner_pid).store(0, std::memory_order_release);
+        std::uint64_t freeing = start_freeing;
+        atomic(e.owner_start)
+            .compare_exchange_strong(freeing, 0, std::memory_order_release, std::memory_order_relaxed);
+        freed = true;
+    }
+    if (freed)
+        atomic(h.readers_epoch).fetch_add(1, std::memory_order_seq_cst);
+    free_dead_waiters(s.waiters);
+}
+
+// Ends the stream when the process holding the sender has exited, so readers drain and then get
+// status::ended.
+inline void end_if_sender_died(stream_state &s) noexcept {
+    stream_header &h = *s.hdr;
+    const std::uint32_t pid = atomic(h.sender_pid).load(std::memory_order_acquire);
+    if (pid == 0)
+        return;
+    const std::uint64_t start = atomic(h.sender_start).load(std::memory_order_acquire);
+    const std::uint64_t pidns = atomic(h.sender_pidns).load(std::memory_order_acquire);
+    if (atomic(h.sender_pid).load(std::memory_order_acquire) != pid || !owner_exited(pid, start, pidns))
+        return;
+    std::uint32_t open = stream_open;
+    if (atomic(h.state).compare_exchange_strong(open, stream_ended, std::memory_order_seq_cst,
+                                                std::memory_order_relaxed)) {
+        atomic(h.data_word).fetch_add(1, std::memory_order_seq_cst);
+        wake_all(s.waiters, h.data_word);
+    }
 }
 
 } // namespace detail
@@ -505,11 +568,18 @@ inline result<stream_sender> stream::sender() {
     if (!slot)
         return unexpected(slot.error());
     const std::uint32_t pid = detail::current_pid();
-    std::uint32_t none = 0;
+    std::uint32_t seen = 0;
     if (!detail::atomic(h.sender_pid)
-             .compare_exchange_strong(none, pid, std::memory_order_acq_rel, std::memory_order_relaxed)) {
-        detail::release_slot(s.waiters, *slot);
-        return unexpected(status::busy);
+             .compare_exchange_strong(seen, pid, std::memory_order_acq_rel, std::memory_order_relaxed)) {
+        // seen is the recorded owner; one whose process has exited is replaced.
+        const std::uint64_t start = detail::atomic(h.sender_start).load(std::memory_order_acquire);
+        const std::uint64_t pidns = detail::atomic(h.sender_pidns).load(std::memory_order_acquire);
+        if (!detail::owner_exited(seen, start, pidns) ||
+            !detail::atomic(h.sender_pid)
+                 .compare_exchange_strong(seen, pid, std::memory_order_acq_rel, std::memory_order_relaxed)) {
+            detail::release_slot(s.waiters, *slot);
+            return unexpected(status::busy);
+        }
     }
     detail::atomic(h.sender_pidns).store(detail::current_pidns(), std::memory_order_relaxed);
     detail::atomic(h.sender_start).store(detail::current_start(), std::memory_order_release);
@@ -531,6 +601,7 @@ inline result<stream_reader> stream::reader(read_mode mode, start_at start) {
         return unexpected(status::range);
     detail::stream_state &s = *s_;
     stream_header &h = *s.hdr;
+    detail::free_dead_readers(s);
     const result<std::uint16_t> slot = detail::claim_slot(s.waiters);
     if (!slot)
         return unexpected(slot.error());
@@ -611,19 +682,25 @@ inline result<void> stream_sender::gate(std::uint64_t p, seconds timeout) {
     }
     if (p < min_ + s.capacity)
         return {};
-    const result<wake> woken = detail::wait_on(
-        s.waiters, slot_, h.space_word,
-        [&]() noexcept {
-            epoch_ = detail::atomic(h.readers_epoch).load(std::memory_order_seq_cst);
-            min_ = lossless_min(p);
-            return p < min_ + s.capacity;
-        },
-        timeout, &h.space_waiting);
-    if (!woken)
-        return unexpected(woken.error());
-    if (*woken == wake::interrupted)
-        return unexpected(status::interrupted);
-    return {};
+    const detail::clock::time_point deadline =
+        detail::clock::now() + std::chrono::duration_cast<detail::clock::duration>(timeout);
+    for (;;) {
+        const auto left =
+            (std::max)(std::chrono::duration_cast<seconds>(deadline - detail::clock::now()), seconds(0));
+        const result<wake> woken = detail::wait_on(
+            s.waiters, slot_, h.space_word,
+            [&]() noexcept {
+                epoch_ = detail::atomic(h.readers_epoch).load(std::memory_order_seq_cst);
+                min_ = lossless_min(p);
+                return p < min_ + s.capacity;
+            },
+            (std::min)(left, seconds(liveness_delay)), &h.space_waiting);
+        if (woken)
+            return *woken == wake::interrupted ? result<void>(unexpected(status::interrupted)) : result<void>();
+        if (woken.error().code != status::timeout || detail::clock::now() >= deadline)
+            return unexpected(woken.error());
+        detail::free_dead_readers(s);
+    }
 }
 
 template <class F>
@@ -689,25 +766,27 @@ inline void stream_sender::close() noexcept {
 
 inline result<void> stream_reader::wait_for_data(detail::clock::time_point deadline) {
     stream_header &h = *s_->hdr;
-    // write_pos is read after state: the sender stores state after its last write_pos.
-    if (detail::atomic(h.state).load(std::memory_order_acquire) == stream_ended &&
-        detail::atomic(h.write_pos).load(std::memory_order_acquire) == r_)
-        return unexpected(status::ended);
-    const detail::clock::duration left = deadline - detail::clock::now();
-    if (left <= detail::clock::duration::zero())
-        return unexpected(status::timeout);
-    const result<wake> woken = detail::wait_on(
-        s_->waiters, slot_, h.data_word,
-        [&]() noexcept {
-            return detail::atomic(h.write_pos).load(std::memory_order_seq_cst) != r_ ||
-                   detail::atomic(h.state).load(std::memory_order_seq_cst) == stream_ended;
-        },
-        std::chrono::duration_cast<seconds>(left), &h.data_waiting);
-    if (!woken)
-        return unexpected(woken.error());
-    if (*woken == wake::interrupted)
-        return unexpected(status::interrupted);
-    return {};
+    for (;;) {
+        // write_pos is read after state: the sender stores state after its last write_pos.
+        if (detail::atomic(h.state).load(std::memory_order_acquire) == stream_ended &&
+            detail::atomic(h.write_pos).load(std::memory_order_acquire) == r_)
+            return unexpected(status::ended);
+        const detail::clock::duration left = deadline - detail::clock::now();
+        if (left <= detail::clock::duration::zero())
+            return unexpected(status::timeout);
+        const result<wake> woken = detail::wait_on(
+            s_->waiters, slot_, h.data_word,
+            [&]() noexcept {
+                return detail::atomic(h.write_pos).load(std::memory_order_seq_cst) != r_ ||
+                       detail::atomic(h.state).load(std::memory_order_seq_cst) == stream_ended;
+            },
+            (std::min)(std::chrono::duration_cast<seconds>(left), seconds(liveness_delay)), &h.data_waiting);
+        if (woken)
+            return *woken == wake::interrupted ? result<void>(unexpected(status::interrupted)) : result<void>();
+        if (woken.error().code != status::timeout)
+            return unexpected(woken.error());
+        detail::end_if_sender_died(*s_);
+    }
 }
 
 // Publishes this reader's position and, for a lossless reader, wakes a sender waiting for space.

@@ -12,6 +12,11 @@
 #include <string>
 #include <thread>
 
+#ifndef _WIN32
+#include <sys/wait.h>
+#include <unistd.h>
+#endif
+
 using namespace sharedbox;
 using namespace std::chrono_literals;
 
@@ -400,3 +405,109 @@ TEST_CASE("data_waiting and space_waiting are back to 0 after a wait that was wo
     CHECK(waiting() == std::pair<std::uint32_t, std::uint32_t>{0, 0});
     static_cast<void>(unlink(name));
 }
+
+#ifndef _WIN32
+
+namespace {
+
+// Runs body in a child process, which leaves with _exit as a killed process would, without destructors,
+// and returns its exit code.
+template <class F> int in_child(F body) {
+    const pid_t child = fork();
+    if (child == 0)
+        _exit(body());
+    int code = 0;
+    waitpid(child, &code, 0);
+    return WIFEXITED(code) ? WEXITSTATUS(code) : -1;
+}
+
+} // namespace
+
+TEST_CASE("a lossless reader whose process died stops blocking the sender") {
+    const std::string name = unique("stream-dead-reader");
+    stream st = make(name, 4);
+    auto sender = st.sender();
+    REQUIRE(sender);
+    REQUIRE(in_child([&] {
+                auto mine = stream::open(name, seconds(1.0));
+                if (!mine)
+                    _exit(1);
+                auto reader = mine->reader(read_mode::lossless, start_at::newest);
+                _exit(reader ? 0 : 2);
+                return 3;
+            }) == 0);
+    for (std::uint64_t i = 0; i < 4; ++i)
+        CHECK(send(*sender, i, 0.0));
+    const auto start = clock::now();
+    CHECK(send(*sender, 4));
+    CHECK(clock::now() - start < 2s);
+    CHECK(st.readers({}) == 0);
+    static_cast<void>(unlink(name));
+}
+
+TEST_CASE("a sender whose process died ends the stream once what it sent is read") {
+    const std::string name = unique("stream-dead-sender");
+    stream st = make(name, 4);
+    auto reader = st.reader(read_mode::lossless, start_at::newest);
+    REQUIRE(reader);
+    REQUIRE(in_child([&] {
+                auto mine = stream::open(name, seconds(1.0));
+                if (!mine)
+                    _exit(1);
+                auto sender = mine->sender();
+                if (!sender || !send(*sender, 0) || !send(*sender, 1))
+                    _exit(2);
+                _exit(0);
+                return 3;
+            }) == 0);
+    for (std::uint64_t expected = 0; expected < 2; ++expected) {
+        const auto got = receive(*reader);
+        CHECK((got && got->position == expected));
+    }
+    const auto start = clock::now();
+    CHECK(receive(*reader).error().code == status::ended);
+    CHECK(clock::now() - start < 2s);
+    static_cast<void>(unlink(name));
+}
+
+TEST_CASE("a sender whose process died is replaced") {
+    const std::string name = unique("stream-replace");
+    stream st = make(name, 4);
+    REQUIRE(in_child([&] {
+                auto mine = stream::open(name, seconds(1.0));
+                if (!mine)
+                    _exit(1);
+                auto sender = mine->sender();
+                _exit(sender ? 0 : 2);
+                return 3;
+            }) == 0);
+    auto sender = st.sender();
+    CHECK(sender);
+    CHECK_FALSE(st.ended());
+    static_cast<void>(unlink(name));
+}
+
+TEST_CASE("a reader inherited across fork is refused in the child, which leaves its entry alone") {
+    const std::string name = unique("stream-fork");
+    stream st = make(name, 4);
+    auto reader = st.reader(read_mode::lossless, start_at::newest);
+    auto sender = st.sender();
+    REQUIRE((reader && sender));
+    CHECK(send(*sender, 0));
+    REQUIRE(in_child([&] {
+                item it{};
+                const auto got = reader->receive(std::as_writable_bytes(std::span{it}), seconds(0.0));
+                if (got || got.error().code != status::range)
+                    _exit(1);
+                reader->close();
+                _exit(0);
+                return 2;
+            }) == 0);
+    reader_info info[1];
+    CHECK(st.readers(info) == 1);
+    const auto got = receive(*reader);
+    CHECK((got && got->position == 0));
+    static_cast<void>(unlink(name));
+}
+
+#endif
