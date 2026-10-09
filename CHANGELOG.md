@@ -38,6 +38,8 @@ Dates are marked as `DD-MM-YYYY`
 - `status::busy` (-13), `status::ended` (-14) and `status::interrupted`
   (-15), with `SBX_E_BUSY`, `SBX_E_ENDED` and `SBX_E_INTERRUPTED` in
   `sharedbox_c.h`.
+- `benchbox ops`: the row `write int watched`, a write while another process
+  has a watcher open.
 
 ### Changed
 
