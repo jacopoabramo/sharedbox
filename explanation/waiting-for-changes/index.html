@@ -3166,12 +3166,18 @@ word and calls <code>FUTEX_WAKE</code> once for everybody. Windows has a similar
 <code>WaitOnAddress</code>, but it only works between threads of one
 process,<sup id="fnref:wait-on-address"><a class="footnote-ref" href="#fn:wait-on-address">2</a></sup> so there each slot gets its own auto-reset
 event, <code>Local\SBX:&lt;name&gt;#w&lt;i&gt;</code>,<sup id="fnref:create-event"><a class="footnote-ref" href="#fn:create-event">3</a></sup> and a writer sets the
-event of every taken slot. Either way, a write to a box nobody waits on
-costs no system call: the writer sees that <code>waiters</code> is 0 and stops.</p>
+event of every taken slot. Either way, a write to a box nobody is waiting
+on costs no system call: a waiter counts itself in <code>sleepers</code> while it is
+inside a wait, and a writer that sees <code>sleepers</code> at 0 stops. A watcher that
+holds a slot but is awake does not cost the writer a call either.</p>
 <p>A process can be killed while it holds a slot, so the next process that
 registers or attaches checks each taken slot's owner, as
 <a href="../checking-a-process-is-alive/">Checking a process is alive</a> describes,
-and frees the slots of owners that are gone. The few exceptions are listed
+and frees the slots of owners that are gone. A watcher spends nearly all
+its time inside a wait, so that is usually where its process is killed.
+The slot records which count the wait added itself to, and freeing the
+slot takes that 1 back, so later writes stop paying a wake call for a
+thread that is gone. The few exceptions are listed
 under <a href="../../reference/segment-layout/#waiter-slots">Waiter slots</a>. A slot
 recorded in another pid namespace is never freed, because its pid can't be
 checked from here.</p>

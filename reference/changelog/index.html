@@ -3768,6 +3768,8 @@ and this project adheres to <a href="https://semver.org/spec/v2.0.0.html">Semant
   <code>sharedbox_c.h</code>.</li>
 <li><code>benchbox ops</code>: the row <code>watched write int</code>, a write while another process
   has a watcher open.</li>
+<li><code>sharedbox::handle::sleepers()</code>: the number of threads inside a wait on
+  the box, in any process.</li>
 </ul>
 <h3 id="changed">Changed<a class="headerlink" href="#changed" title="Permanent link">&para;</a></h3>
 <ul>
@@ -3798,6 +3800,14 @@ and this project adheres to <a href="https://semver.org/spec/v2.0.0.html">Semant
 <li><code>SharedBox.attach</code>: a segment whose magic this version does not know,
   such as a box made by 0.5, raises <code>SchemaMismatchError</code> at once, instead
   of <code>SegmentNotFoundError</code> after the timeout.</li>
+<li><code>SharedBox</code> write: makes a wake call only when a thread is waiting on the
+  box. <code>sleepers</code>, at offset 84 of box layout 3.0, counts the threads inside
+  a wait.</li>
+<li><code>sharedbox::waiter_slot</code>: 32 bytes, with <code>asleep_on</code>, at offset 24, the
+  offset of the count the slot's current wait added 1 to, and a reserved
+  word. Freeing the slot of a process killed inside a wait takes that
+  thread out of <code>sleepers</code> for a box, and out of <code>data_waiting</code> or
+  <code>space_waiting</code> for a stream.</li>
 </ul>
 <h3 id="removed">Removed<a class="headerlink" href="#removed" title="Permanent link">&para;</a></h3>
 <ul>

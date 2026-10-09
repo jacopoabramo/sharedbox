@@ -3942,7 +3942,7 @@ rest of its mapping. The mapping holds, from offset 0:</p>
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>offset 64    box line          64 bytes, one cache line
 </span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>offset 128   field table       field_count x 8 bytes
 </span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>             write counts      field_count x 8 bytes
-</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>             waiter slots      waiter_slots x 24 bytes
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>             waiter slots      waiter_slots x 32 bytes
 </span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>             description table types_size bytes, 8-aligned
 </span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>             (zero padding up to a multiple of 64)
 </span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>record       record            record_size bytes, 64-byte aligned
@@ -3975,20 +3975,21 @@ standard-layout and trivially copyable.</p>
 </span><span id="__span-1-21"><a id="__codelineno-1-21" name="__codelineno-1-21" href="#__codelineno-1-21"></a><span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">writer_pid</span><span class="p">;</span><span class="w">            </span><span class="c1">// 72  holder of the write lock, 0 if none</span>
 </span><span id="__span-1-22"><a id="__codelineno-1-22" name="__codelineno-1-22" href="#__codelineno-1-22"></a><span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">wake_word</span><span class="p">;</span><span class="w">             </span><span class="c1">// 76  futex word (Linux)</span>
 </span><span id="__span-1-23"><a id="__codelineno-1-23" name="__codelineno-1-23" href="#__codelineno-1-23"></a><span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">waiters</span><span class="p">;</span><span class="w">               </span><span class="c1">// 80  occupied waiter slots</span>
-</span><span id="__span-1-24"><a id="__codelineno-1-24" name="__codelineno-1-24" href="#__codelineno-1-24"></a><span class="w">    </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">field_count</span><span class="p">;</span><span class="w">           </span><span class="c1">// 84  1 to 256</span>
-</span><span id="__span-1-25"><a id="__codelineno-1-25" name="__codelineno-1-25" href="#__codelineno-1-25"></a><span class="w">    </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">reserved1</span><span class="p">;</span><span class="w">             </span><span class="c1">// 86  zero</span>
-</span><span id="__span-1-26"><a id="__codelineno-1-26" name="__codelineno-1-26" href="#__codelineno-1-26"></a><span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">record_size</span><span class="p">;</span><span class="w">           </span><span class="c1">// 88</span>
-</span><span id="__span-1-27"><a id="__codelineno-1-27" name="__codelineno-1-27" href="#__codelineno-1-27"></a><span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">record</span><span class="p">;</span><span class="w">                </span><span class="c1">// 92  offset of the record</span>
-</span><span id="__span-1-28"><a id="__codelineno-1-28" name="__codelineno-1-28" href="#__codelineno-1-28"></a><span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">tail</span><span class="p">;</span><span class="w">                  </span><span class="c1">// 96  offset of the field table, always 128</span>
-</span><span id="__span-1-29"><a id="__codelineno-1-29" name="__codelineno-1-29" href="#__codelineno-1-29"></a><span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">types_size</span><span class="p">;</span><span class="w">            </span><span class="c1">// 100 bytes of the description table</span>
-</span><span id="__span-1-30"><a id="__codelineno-1-30" name="__codelineno-1-30" href="#__codelineno-1-30"></a><span class="w">    </span><span class="kt">uint8_t</span><span class="w">  </span><span class="n">reserved2</span><span class="p">[</span><span class="mi">24</span><span class="p">];</span><span class="w">         </span><span class="c1">// 104 zero; minor versions may use it</span>
-</span><span id="__span-1-31"><a id="__codelineno-1-31" name="__codelineno-1-31" href="#__codelineno-1-31"></a><span class="p">};</span>
+</span><span id="__span-1-24"><a id="__codelineno-1-24" name="__codelineno-1-24" href="#__codelineno-1-24"></a><span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">sleepers</span><span class="p">;</span><span class="w">              </span><span class="c1">// 84  threads inside a wait on this box</span>
+</span><span id="__span-1-25"><a id="__codelineno-1-25" name="__codelineno-1-25" href="#__codelineno-1-25"></a><span class="w">    </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">field_count</span><span class="p">;</span><span class="w">           </span><span class="c1">// 88  1 to 256</span>
+</span><span id="__span-1-26"><a id="__codelineno-1-26" name="__codelineno-1-26" href="#__codelineno-1-26"></a><span class="w">    </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">reserved1</span><span class="p">;</span><span class="w">             </span><span class="c1">// 90  zero</span>
+</span><span id="__span-1-27"><a id="__codelineno-1-27" name="__codelineno-1-27" href="#__codelineno-1-27"></a><span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">record_size</span><span class="p">;</span><span class="w">           </span><span class="c1">// 92</span>
+</span><span id="__span-1-28"><a id="__codelineno-1-28" name="__codelineno-1-28" href="#__codelineno-1-28"></a><span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">record</span><span class="p">;</span><span class="w">                </span><span class="c1">// 96  offset of the record</span>
+</span><span id="__span-1-29"><a id="__codelineno-1-29" name="__codelineno-1-29" href="#__codelineno-1-29"></a><span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">tail</span><span class="p">;</span><span class="w">                  </span><span class="c1">// 100 offset of the field table, always 128</span>
+</span><span id="__span-1-30"><a id="__codelineno-1-30" name="__codelineno-1-30" href="#__codelineno-1-30"></a><span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">types_size</span><span class="p">;</span><span class="w">            </span><span class="c1">// 104 bytes of the description table</span>
+</span><span id="__span-1-31"><a id="__codelineno-1-31" name="__codelineno-1-31" href="#__codelineno-1-31"></a><span class="w">    </span><span class="kt">uint8_t</span><span class="w">  </span><span class="n">reserved2</span><span class="p">[</span><span class="mi">20</span><span class="p">];</span><span class="w">         </span><span class="c1">// 108 zero; minor versions may use it</span>
+</span><span id="__span-1-32"><a id="__codelineno-1-32" name="__codelineno-1-32" href="#__codelineno-1-32"></a><span class="p">};</span>
 </span></code></pre></div>
 <p>The common line is written once at creation. Line 1 starts with the words
-that writes and waits change (<code>seq</code>, <code>writer_pid</code>, <code>wake_word</code>, <code>waiters</code>),
-so a write touches one header line, and ends with geometry written once at
-creation, bytes 84 to 127. Attach copies the common line and those bytes,
-never the four changing words, and uses only the copy.</p>
+that writes and waits change (<code>seq</code>, <code>writer_pid</code>, <code>wake_word</code>, <code>waiters</code>,
+<code>sleepers</code>), so a write touches one header line, and ends with geometry
+written once at creation, bytes 88 to 127. Attach copies the common line and
+those bytes, never the five changing words, and uses only the copy.</p>
 <p>The box line has spare bytes so that minor versions can add fields: a
 header with no room left would move the fields after it with every
 addition. There is one header per box, and readers and writers touch only
@@ -4018,14 +4019,16 @@ record.</p>
   long as the field order, names, kinds and capacities match, which the
   schema hash checks.</li>
 <li>Write counts: one <code>u64</code> per field, incremented under the write lock.</li>
-<li>Waiter slot, 24 bytes:</li>
+<li>Waiter slot, 32 bytes:</li>
 </ul>
 <div class="language-cpp highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="k">struct</span><span class="w"> </span><span class="nc">waiter_slot</span><span class="w"> </span><span class="p">{</span><span class="w">              </span><span class="c1">// sharedbox::waiter_slot</span>
-</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">    </span><span class="kt">uint64_t</span><span class="w"> </span><span class="n">owner_start</span><span class="p">;</span><span class="w">         </span><span class="c1">// process start time, see Liveness</span>
-</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">    </span><span class="kt">uint64_t</span><span class="w"> </span><span class="n">owner_pidns</span><span class="p">;</span><span class="w">         </span><span class="c1">// pid namespace, see Liveness; 0 on Windows</span>
-</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">owner_pid</span><span class="p">;</span><span class="w">           </span><span class="c1">// 0 = free</span>
-</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">interrupt</span><span class="p">;</span><span class="w">           </span><span class="c1">// set by interrupt(), cleared by the waiter</span>
-</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="p">};</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="w">    </span><span class="kt">uint64_t</span><span class="w"> </span><span class="n">owner_start</span><span class="p">;</span><span class="w">         </span><span class="c1">// 0   process start time, see Liveness</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="w">    </span><span class="kt">uint64_t</span><span class="w"> </span><span class="n">owner_pidns</span><span class="p">;</span><span class="w">         </span><span class="c1">// 8   pid namespace, see Liveness; 0 on Windows</span>
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">owner_pid</span><span class="p">;</span><span class="w">           </span><span class="c1">// 16  0 = free</span>
+</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">interrupt</span><span class="p">;</span><span class="w">           </span><span class="c1">// 20  set by interrupt(), cleared by the waiter</span>
+</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">asleep_on</span><span class="p">;</span><span class="w">           </span><span class="c1">// 24  offset of the count the current wait added 1 to; 0 = none</span>
+</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">reserved</span><span class="p">;</span><span class="w">            </span><span class="c1">// 28  0</span>
+</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="p">};</span>
 </span></code></pre></div>
 <ul>
 <li>A <code>ref</code> field refers to another box, which keeps its own segment. Its
@@ -4408,7 +4411,7 @@ below 2^46 bytes. The mapping holds, from offset 0:</p>
 </span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>offset 128   line 2            the sender's words
 </span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>offset 192   line 3            the readers' words
 </span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>offset 256   reader table      max_readers x 64 bytes
-</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>             waiter slots      (max_readers + 1) x 24 bytes
+</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>             waiter slots      (max_readers + 1) x 32 bytes
 </span><span id="__span-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>             (zero padding up to a multiple of 64)
 </span><span id="__span-5-8"><a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>slots        slots             capacity x slot_size bytes
 </span><span id="__span-5-9"><a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a>types        description table types_size bytes
@@ -4558,9 +4561,9 @@ layout version of its kind, for the rest. Each has a major and a minor.</p>
 <li>Wait for <code>magic</code> with acquire ordering, with backoff (spin, yield, then
    sleeps doubling up to 1 ms), up to the timeout. A mapping that never
    gets <code>magic</code> is <code>status::not_found</code>.</li>
-<li>Copy the common line and bytes 84 to 127 of the box line, leaving out
-   the four words that writes change, and check only the copy. Checks run
-   in this order, and the first to fail decides the status:<ol>
+<li>Copy the common line and bytes 88 to 127 of the box line, leaving out
+   the five words that writes and waits change, and check only the copy.
+   Checks run in this order, and the first to fail decides the status:<ol>
 <li>The magic is one this library knows, else <code>status::foreign</code>: the
    segment was made by another version of <code>sharedbox</code> or is not a
    <code>sharedbox</code> segment.</li>
@@ -4641,7 +4644,12 @@ layout version of its kind, for the rest. Each has a major and a minor.</p>
   and every scan skips a slot holding the marker. It then checks that
   <code>owner_pid</code> still holds the pid it read; if not, it puts the old
   <code>owner_start</code> back and leaves the slot to its new owner. Otherwise it
-  decrements <code>waiters</code> if the value it read was nonzero, stores
+  decrements <code>waiters</code> if the value it read was nonzero, then exchanges
+  <code>asleep_on</code> for 0. If the old value is the offset of a count this kind
+  keeps (a box's <code>sleepers</code> at 84; a stream's <code>space_waiting</code> at 168 or
+  <code>data_waiting</code> at 200), the owner died inside a wait and the freer
+  subtracts 1 from that count; any other value is ignored, so a corrupt
+  slot cannot make the freer write elsewhere. It then stores
   <code>owner_pidns = 0</code>, then <code>owner_pid = 0</code> (release), and last changes
   <code>owner_start</code> from the marker to 0 with a compare-and-swap, which fails
   harmlessly once a new claimer has stored its own.</li>
@@ -4667,7 +4675,9 @@ layout version of its kind, for the rest. Each has a major and a minor.</p>
 <ul>
 <li>A freer killed while holding the marker, before it clears <code>owner_pid</code>,
   leaves the slot unusable until the segment is created again, and
-  <code>waiters</code> one too high if it was killed before its decrement.</li>
+  <code>waiters</code> one too high if it was killed before its decrement. Killed
+  between its exchange of <code>asleep_on</code> and the subtraction, it leaves that
+  sleeper count one too high.</li>
 <li>An owner killed partway through a release leaves a slot with no start,
   which is freed without a decrement, so <code>waiters</code> stays one too high if
   the kill came before the decrement. On Linux, a kill after
@@ -4676,17 +4686,32 @@ layout version of its kind, for the rest. Each has a major and a minor.</p>
 <li>A claimer killed on Linux before it stores <code>owner_pidns</code> leaves the slot
   stuck the same way, and counted once too many if it had already
   incremented <code>waiters</code>.</li>
-<li>The check that <code>owner_pid</code> still holds the pid cannot tell an unstamped
+<li>
+<p>The check that <code>owner_pid</code> still holds the pid cannot tell an unstamped
   claimer from another one with the same pid, which needs the pid to be
-  reused within a few instructions.</li>
+  reused within a few instructions.</p>
+</li>
+<li>
+<p>A thread killed inside a wait after it adds 1 to the sleeper count and
+  before it stores the count's offset in <code>asleep_on</code> leaves that count one
+  too high, for a box and for a stream alike. Killed later in the wait, it
+  leaves <code>asleep_on</code> set, and freeing its slot takes the 1 back.</p>
+</li>
 </ul>
 <p>A count that is too high costs a system call on each write; it never loses
 a wake-up.</p>
 <h3 id="wait-and-wake">Wait and wake<a class="headerlink" href="#wait-and-wake" title="Permanent link">&para;</a></h3>
 <ul>
 <li>Wait (slot <code>i</code>, last seen generation <code>g</code>, timeout):</li>
-<li>Load <code>wake_word</code>, then return at once if <code>seq &gt;&gt; 1 != g</code> or slot <code>i</code>'s
-    <code>interrupt</code> is set (clearing it with a compare-and-swap).</li>
+<li>Add 1 to <code>sleepers</code>, then store its offset, 84, in slot <code>i</code>'s
+    <code>asleep_on</code>, both sequentially consistent, for the whole wait. Then
+    load <code>wake_word</code> (sequentially consistent), then return at once if
+    <code>seq &gt;&gt; 1 != g</code> or slot <code>i</code>'s <code>interrupt</code> is set (clearing it with a
+    compare-and-swap).</li>
+<li>On every return, exchange <code>asleep_on</code> for 0 and subtract 1 from
+    <code>sleepers</code> only if the exchange gave a nonzero value. The order keeps
+    the count from going below the number of threads inside a wait: a
+    freer of the slot takes the 1 back only after the store, and only once.</li>
 <li>Linux: <code>FUTEX_WAIT</code> (shared, not private) on <code>wake_word</code> with the value
     loaded before the check, so a write in between makes the call return
     at once.</li>
@@ -4695,11 +4720,17 @@ a wake-up.</p>
 <li>Check again after waking; a wake may be spurious. Past the timeout the
     result is <code>status::timeout</code>.</li>
 <li>Wake, after every write:</li>
-<li>Increment <code>wake_word</code> with sequentially consistent ordering, so the
-    following load of <code>waiters</code> cannot move before it or before the swap
-    of <code>seq</code>; a waiter that registered just before would otherwise be
-    missed.</li>
-<li>If <code>waiters</code> is 0, stop: no system call on the normal path.</li>
+<li>Increment <code>wake_word</code>, then load <code>sleepers</code>, both sequentially
+    consistent. If that load misses a waiter's increment, the waiter's load
+    of <code>wake_word</code> comes after this increment in the single order of
+    sequentially consistent operations, so it reads this increment or a
+    later change, every change to <code>wake_word</code> being a read-modify-write.
+    That load synchronizes with the increment, so the swap of <code>seq</code> before
+    it happens before the waiter's check of <code>seq</code>, which then sees the new
+    value. The swap that unlocks <code>seq</code> is only a release, so the waiter's
+    load of <code>wake_word</code> is required on both platforms, though on Windows its
+    value is not used.</li>
+<li>If <code>sleepers</code> is 0, stop: no system call on the normal path.</li>
 <li>Linux: one <code>FUTEX_WAKE</code> with <code>INT_MAX</code> waiters.</li>
 <li>Windows: <code>SetEvent</code> on the event of every occupied slot.</li>
 <li><code>interrupt(slot)</code>: set the slot's <code>interrupt</code>, then wake that slot. On
@@ -4710,9 +4741,10 @@ a wake-up.</p>
 <li>Each kind names the word a wait sleeps on: a box's <code>wake_word</code>; for a
   stream, <code>data_word</code> for readers and <code>space_word</code> for the sender. A wait
   returns when its kind's condition holds, the slot's <code>interrupt</code> flag is
-  set, or the timeout passes. A box wakes whenever a slot is claimed
-  (<code>waiters</code> is not 0). A stream counts the threads asleep on each word in
-  <code>data_waiting</code> and <code>space_waiting</code> and wakes only when the count is not 0.
+  set, or the timeout passes. A box counts the threads inside a wait in
+  <code>sleepers</code>, a stream the threads asleep on each word in <code>data_waiting</code>
+  and <code>space_waiting</code>; a wake is made only when the count is not 0. Each
+  wait names its count in its slot's <code>asleep_on</code> as a box's wait does.
   On Windows a wake sets the event of every claimed slot, so the other end
   of a stream may wake and sleep again. <code>interrupt</code> on a stream end adds 1
   to that end's word and wakes it on Linux, and sets that slot's event on
@@ -4857,9 +4889,11 @@ with the rules of Liveness:</p>
   timeout of 0 never frees a dead lossless reader, and a reader that only
   receives with a timeout of 0 never sees the stream end after its sender
   dies.</li>
-<li>A process killed while it waits leaves <code>data_waiting</code> or <code>space_waiting</code>
-  one too high for good. That costs a wake call on each send or receive; no
-  wake is lost.</li>
+<li>A process killed while it waits, after it adds 1 to <code>data_waiting</code> or
+  <code>space_waiting</code> and before it stores the count's offset in its slot's
+  <code>asleep_on</code>, leaves that count one too high for good. That costs a wake
+  call on each send or receive; no wake is lost. Killed later in the wait,
+  it leaves the offset, and freeing its waiter slot takes the 1 back.</li>
 <li>A process killed in the few instructions between setting <code>sender_start</code> to
   <code>start_freeing</code> and its next store leaves <code>sender_start</code> at
   <code>start_freeing</code>. Every later <code>sender()</code> then gives <code>status::busy</code>, and
@@ -5003,15 +5037,16 @@ Windows.</p>
 </span><span id="__span-7-76"><a id="__codelineno-7-76" name="__codelineno-7-76" href="#__codelineno-7-76"></a><span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="nf">release_waiter</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">slot</span><span class="p">)</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
 </span><span id="__span-7-77"><a id="__codelineno-7-77" name="__codelineno-7-77" href="#__codelineno-7-77"></a><span class="w">    </span><span class="kt">bool</span><span class="w"> </span><span class="nf">waiter_held</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">slot</span><span class="p">)</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
 </span><span id="__span-7-78"><a id="__codelineno-7-78" name="__codelineno-7-78" href="#__codelineno-7-78"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="kt">uint32_t</span><span class="w"> </span><span class="nf">waiters</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
-</span><span id="__span-7-79"><a id="__codelineno-7-79" name="__codelineno-7-79" href="#__codelineno-7-79"></a><span class="w">    </span><span class="n">result</span><span class="o">&lt;</span><span class="n">wake</span><span class="o">&gt;</span><span class="w"> </span><span class="n">wait</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">slot</span><span class="p">,</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">uint64_t</span><span class="w"> </span><span class="n">last_generation</span><span class="p">,</span><span class="w"> </span><span class="n">seconds</span><span class="w"> </span><span class="n">timeout</span><span class="p">);</span>
-</span><span id="__span-7-80"><a id="__codelineno-7-80" name="__codelineno-7-80" href="#__codelineno-7-80"></a><span class="w">    </span><span class="n">result</span><span class="o">&lt;</span><span class="kt">void</span><span class="o">&gt;</span><span class="w"> </span><span class="n">interrupt</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">slot</span><span class="p">);</span>
-</span><span id="__span-7-81"><a id="__codelineno-7-81" name="__codelineno-7-81" href="#__codelineno-7-81"></a><span class="p">};</span>
-</span><span id="__span-7-82"><a id="__codelineno-7-82" name="__codelineno-7-82" href="#__codelineno-7-82"></a>
-</span><span id="__span-7-83"><a id="__codelineno-7-83" name="__codelineno-7-83" href="#__codelineno-7-83"></a><span class="n">result</span><span class="o">&lt;</span><span class="kt">void</span><span class="o">&gt;</span><span class="w"> </span><span class="n">unlink</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="n">string_view</span><span class="w"> </span><span class="n">name</span><span class="p">)</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
-</span><span id="__span-7-84"><a id="__codelineno-7-84" name="__codelineno-7-84" href="#__codelineno-7-84"></a><span class="n">result</span><span class="o">&lt;</span><span class="n">common_header</span><span class="o">&gt;</span><span class="w"> </span><span class="n">inspect</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="n">string_view</span><span class="w"> </span><span class="n">name</span><span class="p">)</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
-</span><span id="__span-7-85"><a id="__codelineno-7-85" name="__codelineno-7-85" href="#__codelineno-7-85"></a>
-</span><span id="__span-7-86"><a id="__codelineno-7-86" name="__codelineno-7-86" href="#__codelineno-7-86"></a><span class="p">}</span><span class="w">  </span><span class="c1">// namespace v3</span>
-</span><span id="__span-7-87"><a id="__codelineno-7-87" name="__codelineno-7-87" href="#__codelineno-7-87"></a><span class="p">}</span><span class="w">  </span><span class="c1">// namespace sharedbox</span>
+</span><span id="__span-7-79"><a id="__codelineno-7-79" name="__codelineno-7-79" href="#__codelineno-7-79"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="kt">uint32_t</span><span class="w"> </span><span class="nf">sleepers</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
+</span><span id="__span-7-80"><a id="__codelineno-7-80" name="__codelineno-7-80" href="#__codelineno-7-80"></a><span class="w">    </span><span class="n">result</span><span class="o">&lt;</span><span class="n">wake</span><span class="o">&gt;</span><span class="w"> </span><span class="n">wait</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">slot</span><span class="p">,</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">uint64_t</span><span class="w"> </span><span class="n">last_generation</span><span class="p">,</span><span class="w"> </span><span class="n">seconds</span><span class="w"> </span><span class="n">timeout</span><span class="p">);</span>
+</span><span id="__span-7-81"><a id="__codelineno-7-81" name="__codelineno-7-81" href="#__codelineno-7-81"></a><span class="w">    </span><span class="n">result</span><span class="o">&lt;</span><span class="kt">void</span><span class="o">&gt;</span><span class="w"> </span><span class="n">interrupt</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">slot</span><span class="p">);</span>
+</span><span id="__span-7-82"><a id="__codelineno-7-82" name="__codelineno-7-82" href="#__codelineno-7-82"></a><span class="p">};</span>
+</span><span id="__span-7-83"><a id="__codelineno-7-83" name="__codelineno-7-83" href="#__codelineno-7-83"></a>
+</span><span id="__span-7-84"><a id="__codelineno-7-84" name="__codelineno-7-84" href="#__codelineno-7-84"></a><span class="n">result</span><span class="o">&lt;</span><span class="kt">void</span><span class="o">&gt;</span><span class="w"> </span><span class="n">unlink</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="n">string_view</span><span class="w"> </span><span class="n">name</span><span class="p">)</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
+</span><span id="__span-7-85"><a id="__codelineno-7-85" name="__codelineno-7-85" href="#__codelineno-7-85"></a><span class="n">result</span><span class="o">&lt;</span><span class="n">common_header</span><span class="o">&gt;</span><span class="w"> </span><span class="n">inspect</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="n">string_view</span><span class="w"> </span><span class="n">name</span><span class="p">)</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
+</span><span id="__span-7-86"><a id="__codelineno-7-86" name="__codelineno-7-86" href="#__codelineno-7-86"></a>
+</span><span id="__span-7-87"><a id="__codelineno-7-87" name="__codelineno-7-87" href="#__codelineno-7-87"></a><span class="p">}</span><span class="w">  </span><span class="c1">// namespace v3</span>
+</span><span id="__span-7-88"><a id="__codelineno-7-88" name="__codelineno-7-88" href="#__codelineno-7-88"></a><span class="p">}</span><span class="w">  </span><span class="c1">// namespace sharedbox</span>
 </span></code></pre></div>
 <p>Every function returning <code>result</code> is <code>[[nodiscard]]</code>. <code>handle</code> also has
 <code>lock</code>, <code>unlock</code> and <code>set_wait_hooks</code>, which the tests and the Python
@@ -5288,7 +5323,7 @@ layout.</p>
 </span><span id="__span-11-4"><a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a>
 </span><span id="__span-11-5"><a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a>
 </span><span id="__span-11-6"><a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a><span class="k">with</span> <span class="n">Frame</span><span class="p">(</span><span class="mf">0.01</span><span class="p">,</span> <span class="mi">0</span><span class="p">)</span> <span class="k">as</span> <span class="n">frame</span><span class="p">:</span>
-</span><span id="__span-11-7"><a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a>    <span class="n">camera</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">frame</span><span class="p">)</span>          <span class="c1"># an extension that supports sharedbox</span>
+</span><span id="__span-11-7"><a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a>    <span class="n">camera</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">frame</span><span class="p">)</span>  <span class="c1"># an extension that supports sharedbox</span>
 </span></code></pre></div>
 <p>The dunder is a protocol for library authors, as <code>__arrow_c_array__</code> and
 <code>__dlpack__</code> are: Python users pass the box to a consuming library, which
