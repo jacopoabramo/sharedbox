@@ -32,8 +32,8 @@ benchbox = "sharedbox.benchmarks.cli:main"
 
 [project.optional-dependencies]
 benchmarks = [
-    "matplotlib>=3.11.2",
     "numpy>=2.4.6",
+    "plotly>=7.1.0",
     "pyperf>=2.10.0",
     "typer>=0.27.2",
 ]
@@ -86,7 +86,7 @@ warn_unreachable = true
 files = ["src", "tests", "docs/tutorials", "docs/examples"]
 
 [[tool.mypy.overrides]]
-module = ["pyperf", "torch"]
+module = ["pyperf", "plotly", "plotly.*", "torch"]
 ignore_missing_imports = true
 
 [tool.tox]
@@ -131,8 +131,8 @@ commands = [
 
 [dependency-groups]
 benchmarks = [
-    "matplotlib>=3.11.2",
     "numpy>=2.4.6",
+    "plotly>=7.1.0",
     "pyperf>=2.10.0",
     "typer>=0.27.2",
 ]

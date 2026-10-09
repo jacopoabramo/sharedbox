@@ -1,161 +1,327 @@
-"""Charts of the results of `benchbox all`, as SVG files for light and dark pages."""
+"""Charts of the results of `benchbox all`, as plotly figure JSON for the docs site."""
 
-import io
 import json
+import sys
+from collections.abc import Callable
+from datetime import UTC, datetime
+from math import log10
 from pathlib import Path
-from typing import NamedTuple
+from typing import Any, NamedTuple
 
-import matplotlib
+import plotly.graph_objects as go
 import pyperf
-from matplotlib.axes import Axes
-from matplotlib.figure import Figure
-from matplotlib.lines import Line2D
-from matplotlib.ticker import FuncFormatter, NullLocator
+from plotly.subplots import make_subplots
 
 from sharedbox.benchmarks.roundtrip import Result
+from sharedbox.benchmarks.stream import Matrix, Throughput
+
+ROW_HEIGHT = 30
+PANEL_GAP = 60
+CHAR_WIDTH = 7.5
+MARGIN_TOP = 45
+MARGIN_BOTTOM = 100
+SHARED_PREFIXES = ("SharedBox", "SharedStream", "send", "asend")
 
 
-class Theme(NamedTuple):
-    """Colours of one chart variant; `accent` marks sharedbox, `other` the rest."""
+class Row(NamedTuple):
+    """One contender in one panel: a dot at `mid` and a line from `low` to `high`."""
 
     name: str
-    text: str
-    muted: str
-    grid: str
-    accent: str
-    other: str
+    low: float
+    mid: float
+    high: float
+    hover: str
+    label: str
 
 
-THEMES = (
-    Theme("light", "#0b0b0b", "#52514e", "#e4e3df", "#2a78d6", "#8f8e89"),
-    Theme("dark", "#ffffff", "#c3c2b7", "#383835", "#3987e5", "#8f8e89"),
-)
-BAR_IN = 0.24
+def scale_text(value: float, units: tuple[tuple[float, str], ...]) -> str:
+    """`value` with the largest unit it reaches, such as `1 us`."""
+    for size, unit in units:
+        if value >= size:
+            return f"{value / size:g} {unit}"
+    size, unit = units[-1]
+    return f"{value / size:g} {unit}"
 
 
-def ops_medians(path: Path) -> dict[str, list[tuple[str, float]]]:
-    """Return each contender's median in nanoseconds, by operation, in run order.
+TIME = ((1e9, "s"), (1e6, "ms"), (1e3, "us"), (1.0, "ns"))
+RATE = ((1e6, "M/s"), (1e3, "k/s"), (1.0, "/s"))
+
+
+def decades(low: float, high: float) -> list[float]:
+    """Powers of ten from the one at or below `low` to the one at or above `high`."""
+    steps = []
+    step = 1.0
+    while step < low / 10:
+        step *= 10
+    while step < high * 10:
+        steps.append(step)
+        step *= 10
+    return steps
+
+
+def axis(
+    rows: list[Row], units: tuple[tuple[float, str], ...], unit_scale: float
+) -> dict[str, Any]:
+    """Log x axis settings with a tick at each power of ten, written with its unit.
+
+    `unit_scale` converts the values of the rows to the base unit of `units`.
+    """
+    low = min(row.low for row in rows) * unit_scale
+    high = max(row.high for row in rows) * unit_scale
+    steps = decades(low, high)
+    return {
+        "type": "log",
+        "range": [log10(low / unit_scale) - 0.2, log10(high / unit_scale) + 0.2],
+        "tickvals": [step / unit_scale for step in steps],
+        "ticktext": [scale_text(step, units) for step in steps],
+        "showgrid": True,
+        "zeroline": False,
+    }
+
+
+def machine_note(folder: Path) -> str:
+    """The machine lines of `summary.md`, the pyperf version and the date of the results."""
+    parts = []
+    summary = folder / "summary.md"
+    if summary.exists():
+        wanted = ("- OS:", "- CPU:", "- Python:", "- sharedbox:")
+        parts = [
+            line[2:]
+            for line in summary.read_text(encoding="utf-8").splitlines()
+            if line.startswith(wanted)
+        ]
+    stamp = max(path.stat().st_mtime for path in folder.glob("*.json"))
+    return "; ".join(
+        [
+            *parts,
+            f"pyperf {pyperf.__version__}",
+            datetime.fromtimestamp(stamp, tz=UTC).date().isoformat(),
+        ]
+    )
+
+
+def panels_figure(
+    panels: dict[str, list[Row]],
+    units: tuple[tuple[float, str], ...],
+    unit_scale: float,
+    x_title: str,
+    note: str,
+) -> go.Figure:
+    """Small multiples with a shared log x axis: one panel per key of `panels`.
+
+    Every trace carries `meta` of `accent` or `other`; the page script
+    chooses the colours, so the figure holds none.
+    """
+    rows_total = sum(len(rows) for rows in panels.values())
+    plot_height = rows_total * ROW_HEIGHT + (len(panels) - 1) * PANEL_GAP
+    fig = make_subplots(
+        rows=len(panels),
+        cols=1,
+        shared_xaxes=True,
+        subplot_titles=list(panels),
+        row_heights=[len(rows) for rows in panels.values()],
+        vertical_spacing=PANEL_GAP / plot_height if len(panels) > 1 else 0,
+    )
+    fig.for_each_annotation(lambda a: a.update(x=0, xanchor="left", yshift=22))
+    for index, rows in enumerate(panels.values(), start=1):
+        for row in rows:
+            kind = "accent" if row.name.startswith(SHARED_PREFIXES) else "other"
+            fig.add_trace(
+                go.Scatter(
+                    x=[row.low, row.high],
+                    y=[row.name, row.name],
+                    mode="lines",
+                    line={"width": 2},
+                    hoverinfo="skip",
+                    meta=kind,
+                    uid=f"{index}-{row.name}-range",
+                ),
+                row=index,
+                col=1,
+            )
+            fig.add_trace(
+                go.Scatter(
+                    x=[row.mid],
+                    y=[row.name],
+                    mode="markers+text" if kind == "accent" else "markers",
+                    marker={"size": 10},
+                    text=[row.label] if kind == "accent" else None,
+                    textposition="top center",
+                    cliponaxis=False,
+                    hovertemplate=row.hover + "<extra></extra>",
+                    meta=kind,
+                    uid=f"{index}-{row.name}-median",
+                ),
+                row=index,
+                col=1,
+            )
+    left = 20 + CHAR_WIDTH * max(
+        len(row.name) for rows in panels.values() for row in rows
+    )
+    fig.update_layout(
+        template=None,
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        showlegend=False,
+        height=plot_height + MARGIN_TOP + MARGIN_BOTTOM,
+        margin={"l": left, "r": 60, "t": MARGIN_TOP, "b": MARGIN_BOTTOM},
+    )
+    every = [row for rows in panels.values() for row in rows]
+    fig.update_xaxes(**axis(every, units, unit_scale))
+    fig.update_xaxes(title_text=x_title, row=len(panels), col=1)
+    fig.update_yaxes(autorange="reversed", showgrid=False, zeroline=False)
+    fig.add_annotation(
+        text=note,
+        xref="paper",
+        yref="paper",
+        x=0,
+        y=-(MARGIN_BOTTOM - 45) / plot_height,
+        xanchor="left",
+        yanchor="top",
+        showarrow=False,
+        name="note",
+    )
+    return fig
+
+
+def ops_panels(path: Path) -> dict[str, list[Row]]:
+    """The median, p10 and p90 of each contender in ns, by operation.
 
     Operations timed for one contender only are left out, since they compare
     nothing.
     """
-    groups: dict[str, list[tuple[str, float]]] = {}
+    panels: dict[str, list[Row]] = {}
     for bench in pyperf.BenchmarkSuite.load(str(path)).get_benchmarks():
-        operation, _, contender = bench.get_name().partition("/")
-        groups.setdefault(operation, []).append((contender, bench.median() * 1e9))
-    return {op: rows for op, rows in groups.items() if len(rows) > 1}
-
-
-def style(ax: Axes, theme: Theme) -> None:
-    """Make the axes recessive: no box, light vertical grid, muted ticks."""
-    for side in ("top", "right", "left"):
-        ax.spines[side].set_visible(False)
-    ax.spines["bottom"].set_color(theme.grid)
-    ax.tick_params(colors=theme.muted, length=0)
-    ax.grid(axis="x", which="major", color=theme.grid, linewidth=0.8)
-    ax.set_axisbelow(True)
-    ax.set_facecolor("none")
-    ax.xaxis.set_major_formatter(FuncFormatter(lambda value, _: f"{value:g}"))
-    ax.xaxis.set_minor_locator(NullLocator())
-
-
-def ops_figure(groups: dict[str, list[tuple[str, float]]], theme: Theme) -> Figure:
-    """Draw one panel of horizontal bars per operation, on one shared log axis."""
-    rows = sum(len(group) for group in groups.values())
-    fig = Figure(figsize=(8, rows * BAR_IN + len(groups) * 0.45), layout="constrained")
-    axes = fig.subplots(
-        len(groups),
-        1,
-        sharex=True,
-        squeeze=False,
-        gridspec_kw={"height_ratios": [len(group) for group in groups.values()]},
-    )[:, 0]
-    for ax, (operation, group) in zip(axes, groups.items(), strict=True):
-        names = [name for name, _ in group]
-        times = [ns for _, ns in group]
-        mine = [name.startswith("SharedBox") for name in names]
-        ys = range(len(group))
-        ax.barh(
-            ys,
-            times,
-            height=0.7,
-            color=[theme.accent if m else theme.other for m in mine],
+        operation, _, name = bench.get_name().partition("/")
+        median, p10, p90 = (
+            bench.median() * 1e9,
+            bench.percentile(10) * 1e9,
+            bench.percentile(90) * 1e9,
         )
-        ax.set_yticks(ys, names)
-        ax.invert_yaxis()
-        ax.set_xscale("log")
-        ax.set_title(operation, loc="left", color=theme.text, fontweight="bold")
-        for y, ns, m in zip(ys, times, mine, strict=True):
-            if m:
-                ax.annotate(
-                    f"{ns:.0f} ns",
-                    (ns, y),
-                    xytext=(4, 0),
-                    textcoords="offset points",
-                    va="center",
-                    color=theme.muted,
-                )
-        style(ax, theme)
-    axes[-1].set_xlabel("Time per operation (ns, log scale)", color=theme.muted)
-    return fig
-
-
-def roundtrip_figure(results: list[Result], theme: Theme) -> Figure:
-    """Draw one row per contender: the p50 to p99 range, with p50, p90 and p99 marked."""
-    fig = Figure(figsize=(8, len(results) * 0.45 + 1.0), layout="constrained")
-    ax = fig.subplots()
-    marks = (("o", 8, "p50"), ("D", 6, "p90"), ("s", 6, "p99"))
-    for y, result in enumerate(results):
-        colour = (
-            theme.accent if result["contender"].startswith("SharedBox") else theme.other
+        panels.setdefault(operation, []).append(
+            Row(
+                name,
+                p10,
+                median,
+                p90,
+                f"{name}<br>median %{{x:.3g}} ns<br>p10 {p10:.3g} ns, p90 {p90:.3g} ns",
+                f"{median:.3g} ns",
+            )
         )
-        cuts = (result["p50_us"], result["p90_us"], result["p99_us"])
-        ax.plot([cuts[0], cuts[2]], [y, y], color=colour, linewidth=2)
-        for us, (marker, size, _) in zip(cuts, marks, strict=True):
-            ax.plot(us, y, marker=marker, markersize=size, color=colour)
-    ax.set_yticks(range(len(results)), [r["contender"] for r in results])
-    ax.invert_yaxis()
-    ax.set_xscale("log")
-    ax.set_xlabel("Round trip (us, log scale)", color=theme.muted)
-    key = [
-        Line2D([], [], marker=marker, markersize=size, color=theme.muted, ls="none")
-        for marker, size, _ in marks
-    ]
-    fig.legend(
-        key,
-        [label for _, _, label in marks],
-        loc="outside upper right",
-        ncols=len(marks),
-        frameon=False,
-        labelcolor=theme.muted,
+    return {op: rows for op, rows in panels.items() if len(rows) > 1}
+
+
+def ops_figure(path: Path, note: str) -> go.Figure:
+    """One panel per operation: the median, with a line from p10 to p90."""
+    return panels_figure(
+        ops_panels(path), TIME, 1.0, "Time per operation (log scale)", note
     )
-    style(ax, theme)
-    return fig
+
+
+def roundtrip_figure(results: list[Result], note: str) -> go.Figure:
+    """One row per contender: the p50, with a line from p50 to p99."""
+    rows = [
+        Row(
+            r["contender"],
+            r["p50_us"],
+            r["p50_us"],
+            r["p99_us"],
+            f"{r['contender']}<br>p50 %{{x:.3g}} us<br>"
+            f"p90 {r['p90_us']:.3g} us, p99 {r['p99_us']:.3g} us",
+            f"{r['p50_us']:.3g} us",
+        )
+        for r in results
+    ]
+    return panels_figure({"": rows}, TIME, 1e3, "Round trip (log scale)", note)
+
+
+def throughput_figure(results: list[Throughput], note: str) -> go.Figure:
+    """One panel per item size and reader count: items received per second.
+
+    The line runs up to the items sent per second, so a reader that misses
+    items shows as a gap.
+    """
+    panels: dict[str, list[Row]] = {}
+    for r in results:
+        title = f"{r['item']}, {r['readers']} reader{'s' * (r['readers'] != 1)}"
+        name = r["contender"].split(" (")[0]
+        received, sent = r["received_per_s"], max(r["sent_per_s"], r["received_per_s"])
+        panels.setdefault(title, []).append(
+            Row(
+                name,
+                received,
+                received,
+                sent,
+                f"{name}<br>received %{{x:,.0f}}/s<br>sent {r['sent_per_s']:,.0f}/s"
+                f"<br>missed {r['missed']}",
+                scale_text(received, RATE),
+            )
+        )
+    return panels_figure(panels, RATE, 1.0, "Items per second (log scale)", note)
+
+
+def matrix_figure(results: list[Matrix], note: str) -> go.Figure:
+    """One panel per item size: the p50 latency, with a line from p50 to p99.
+
+    A pairing without latency (the buffered reader) has nothing to place on the
+    axis and is left out.
+    """
+    panels: dict[str, list[Row]] = {}
+    for r in results:
+        p50, p90, p99 = r["p50_us"], r["p90_us"], r["p99_us"]
+        if p50 is None or p90 is None or p99 is None:
+            continue
+        name = f"{r['sender']} / {r['reader']}"
+        panels.setdefault(r["item"], []).append(
+            Row(
+                name,
+                p50,
+                p50,
+                p99,
+                f"{name}<br>p50 %{{x:.3g}} us<br>p90 {p90:.3g} us, p99 {p99:.3g} us"
+                f"<br>{r['items_per_s']:,.0f} items/s",
+                f"{p50:.3g} us",
+            )
+        )
+    return panels_figure(panels, TIME, 1e3, "Latency (log scale)", note)
+
+
+def load(path: Path) -> Any:
+    """The parsed JSON in `path`."""
+    return json.loads(path.read_text(encoding="utf-8"))
 
 
 def write_charts(folder: Path) -> list[Path]:
-    """Write `ops-<theme>.svg` and `roundtrip-<theme>.svg` from the JSON in `folder`."""
-    groups = ops_medians(folder / "ops.json")
-    results: list[Result] = json.loads(
-        (folder / "roundtrip.json").read_text(encoding="utf-8")
-    )
+    """Write plotly figure JSON for each chart whose results exist in `folder`.
+
+    The files go to `folder/charts`: `ops.json`, `roundtrip.json`,
+    `stream-throughput.json` and `stream-matrix.json`. A chart whose results
+    are missing is named on standard error and skipped.
+    """
+    note = machine_note(folder)
+    charts: dict[str, tuple[str, Callable[[Path], go.Figure]]] = {
+        "ops.json": ("ops.json", lambda p: ops_figure(p, note)),
+        "roundtrip.json": (
+            "roundtrip.json",
+            lambda p: roundtrip_figure(load(p), note),
+        ),
+        "stream-throughput.json": (
+            "stream.json",
+            lambda p: throughput_figure(load(p)["throughput"], note),
+        ),
+        "stream-matrix.json": (
+            "stream.json",
+            lambda p: matrix_figure(load(p)["matrix"], note),
+        ),
+    }
+    out = folder / "charts"
+    out.mkdir(exist_ok=True)
     written = []
-    # Text stays text, so pages can search it, and ids do not change between runs.
-    with matplotlib.rc_context(
-        {"svg.fonttype": "none", "svg.hashsalt": "sharedbox", "font.size": 9}
-    ):
-        for theme in THEMES:
-            for stem, fig in (
-                ("ops", ops_figure(groups, theme)),
-                ("roundtrip", roundtrip_figure(results, theme)),
-            ):
-                svg = io.StringIO()
-                fig.savefig(
-                    svg, format="svg", transparent=True, metadata={"Date": None}
-                )
-                path = folder / f"{stem}-{theme.name}.svg"
-                # matplotlib ends many path lines with a space, which whitespace checks reject.
-                lines = (line.rstrip() for line in svg.getvalue().splitlines())
-                path.write_text("\n".join(lines) + "\n", encoding="utf-8")
-                written.append(path)
+    for name, (source, build) in charts.items():
+        if not (folder / source).exists():
+            print(f"skipped {name}: no {source}", file=sys.stderr)
+            continue
+        path = out / name
+        path.write_text(build(folder / source).to_json() + "\n", encoding="utf-8")
+        written.append(path)
     return written

@@ -19,7 +19,7 @@ if sys.platform == "win32":
     import winreg
 if find_spec("pyperf") is not None:
     import pyperf
-if find_spec("pyperf") is not None and find_spec("matplotlib") is not None:
+if find_spec("pyperf") is not None and find_spec("plotly") is not None:
     from sharedbox.benchmarks import plot
 
 app = typer.Typer(
@@ -178,8 +178,8 @@ def plot_command(
         ),
     ],
 ) -> None:
-    """Draw ops.json and roundtrip.json of DIR as SVG charts, for light and dark pages."""
-    if find_spec("pyperf") is None or find_spec("matplotlib") is None:
+    """Draw the results of DIR as plotly figure JSON for the docs site."""
+    if find_spec("pyperf") is None or find_spec("plotly") is None:
         raise SystemExit(INSTALL_HINT)
     for path in plot.write_charts(folder):
         typer.echo(path)
