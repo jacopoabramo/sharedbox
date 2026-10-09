@@ -186,7 +186,8 @@ class ReaderStatistics:
 
     Right after a receive it is one more than
     [`StreamReader.position`][sharedbox.StreamReader.position], which is the
-    position of the item received. It is at most `sent`.
+    position of the item received, unless that is more than `sent`. It is
+    otherwise at most `sent`.
     """
     lag: int
     """Items sent that the reader has not received or skipped yet."""

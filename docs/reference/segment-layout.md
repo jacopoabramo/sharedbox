@@ -787,7 +787,8 @@ and a creator that still runs is reported as still creating the box.
 ### Send and receive
 
 The sender writes position `p` into slot `p % capacity`, where `p` is
-`write_pos`. Only the sender stores `write_pos`.
+`write_pos`. Only the sender stores `write_pos`, and the process that claims
+a dead sender (see Dead stream ends).
 
 Send:
 
@@ -812,8 +813,8 @@ Receive, for a reader whose next position is `r`:
 1. A lossless or lossy reader first loads the `seq` of slot `r % capacity`.
    If it is `2r + 2` the reader copies the item as in step 3 without
    reading `write_pos`, so it may take an item a moment before the sender
-   stores `write_pos` for it, and its position may be `write_pos + 1` for
-   that moment. Otherwise it loads `write_pos` with acquire. If that is
+   stores `write_pos` for it, and its position may be `write_pos + 1` until
+   the sender, or whoever claims a dead sender, stores `write_pos`. Otherwise it loads `write_pos` with acquire. If that is
    at most `r` there is nothing to read. The reader gives `status::ended` if
    `state` is ended (read before `write_pos`, since the sender stores
    `state` after its last `write_pos`). Otherwise, with a timeout of 0 it

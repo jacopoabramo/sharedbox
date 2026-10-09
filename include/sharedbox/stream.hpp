@@ -354,8 +354,8 @@ struct received {
     std::uint64_t missed;
 };
 
-// An open reader, as stream::readers reports it. A position may be one past write_pos for a moment: a
-// reader can take an item before the sender stores write_pos for it.
+// An open reader, as stream::readers reports it. A position may be one past write_pos until the
+// sender, or whoever claims a dead sender, stores write_pos: a reader can take an item before then.
 struct reader_info {
     std::uint64_t position;
     read_mode mode;
