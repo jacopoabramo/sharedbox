@@ -29,7 +29,7 @@ function themed(figure, name) {
     ...trace,
     marker: { ...trace.marker, color: t[trace.meta] },
     line: { ...trace.line, color: t[trace.meta] },
-    textfont: { family, size: 12, color: t.muted },
+    textfont: { family, size: 12, color: trace.meta === "accent" ? t.accent : t.muted },
   }));
   const axes = Object.fromEntries(
     Object.keys(figure.layout)
@@ -64,9 +64,13 @@ async function draw() {
   if (divs.length === 0) return;
   const Plotly = await plotly();
   for (const div of divs) {
-    div.figure ??= await (await fetch(div.dataset.src)).json();
-    const { data, layout } = themed(div.figure, scheme());
-    Plotly.react(div, data, layout, { displayModeBar: false, responsive: true });
+    try {
+      div.figure ??= await (await fetch(div.dataset.src)).json();
+      const { data, layout } = themed(div.figure, scheme());
+      await Plotly.react(div, data, layout, { displayModeBar: false, responsive: true });
+    } catch {
+      div.textContent = "Chart not available";
+    }
   }
 }
 

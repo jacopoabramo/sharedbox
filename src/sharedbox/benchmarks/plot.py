@@ -19,7 +19,8 @@ ROW_HEIGHT = 30
 PANEL_GAP = 60
 CHAR_WIDTH = 7.5
 MARGIN_TOP = 45
-MARGIN_BOTTOM = 100
+NOTE_LINE = 15
+MARGIN_BOTTOM = 60
 SHARED_PREFIXES = ("SharedBox", "SharedStream", "send", "asend")
 
 
@@ -38,9 +39,9 @@ def scale_text(value: float, units: tuple[tuple[float, str], ...]) -> str:
     """`value` with the largest unit it reaches, such as `1 us`."""
     for size, unit in units:
         if value >= size:
-            return f"{value / size:g} {unit}"
+            return f"{value / size:.3g} {unit}"
     size, unit = units[-1]
-    return f"{value / size:g} {unit}"
+    return f"{value / size:.3g} {unit}"
 
 
 TIME = ((1e9, "s"), (1e6, "ms"), (1e3, "us"), (1.0, "ns"))
@@ -91,11 +92,11 @@ def machine_note(folder: Path) -> str:
             if line.startswith(wanted)
         ]
     stamp = max(path.stat().st_mtime for path in folder.glob("*.json"))
-    return "; ".join(
+    return "<br>".join(
         [
             *parts,
-            f"pyperf {pyperf.__version__}",
-            datetime.fromtimestamp(stamp, tz=UTC).date().isoformat(),
+            f"pyperf {pyperf.__version__}; "
+            + datetime.fromtimestamp(stamp, tz=UTC).date().isoformat(),
         ]
     )
 
@@ -143,9 +144,9 @@ def panels_figure(
                 go.Scatter(
                     x=[row.mid],
                     y=[row.name],
-                    mode="markers+text" if kind == "accent" else "markers",
+                    mode="markers+text",
                     marker={"size": 10},
-                    text=[row.label] if kind == "accent" else None,
+                    text=[row.label],
                     textposition="top center",
                     cliponaxis=False,
                     hovertemplate=row.hover + "<extra></extra>",
@@ -155,6 +156,7 @@ def panels_figure(
                 row=index,
                 col=1,
             )
+    bottom = MARGIN_BOTTOM + NOTE_LINE * (note.count("<br>") + 1)
     left = 20 + CHAR_WIDTH * max(
         len(row.name) for rows in panels.values() for row in rows
     )
@@ -163,8 +165,8 @@ def panels_figure(
         paper_bgcolor="rgba(0,0,0,0)",
         plot_bgcolor="rgba(0,0,0,0)",
         showlegend=False,
-        height=plot_height + MARGIN_TOP + MARGIN_BOTTOM,
-        margin={"l": left, "r": 60, "t": MARGIN_TOP, "b": MARGIN_BOTTOM},
+        height=plot_height + MARGIN_TOP + bottom,
+        margin={"l": left, "r": 60, "t": MARGIN_TOP, "b": bottom},
     )
     every = [row for rows in panels.values() for row in rows]
     fig.update_xaxes(**axis(every, units, unit_scale))
@@ -175,8 +177,9 @@ def panels_figure(
         xref="paper",
         yref="paper",
         x=0,
-        y=-(MARGIN_BOTTOM - 45) / plot_height,
+        y=-(MARGIN_BOTTOM - 5) / plot_height,
         xanchor="left",
+        align="left",
         yanchor="top",
         showarrow=False,
         name="note",
@@ -205,7 +208,7 @@ def ops_panels(path: Path) -> dict[str, list[Row]]:
                 median,
                 p90,
                 f"{name}<br>median %{{x:.3g}} ns<br>p10 {p10:.3g} ns, p90 {p90:.3g} ns",
-                f"{median:.3g} ns",
+                scale_text(median, TIME),
             )
         )
     return {op: rows for op, rows in panels.items() if len(rows) > 1}
@@ -228,7 +231,7 @@ def roundtrip_figure(results: list[Result], note: str) -> go.Figure:
             r["p99_us"],
             f"{r['contender']}<br>p50 %{{x:.3g}} us<br>"
             f"p90 {r['p90_us']:.3g} us, p99 {r['p99_us']:.3g} us",
-            f"{r['p50_us']:.3g} us",
+            scale_text(r["p50_us"] * 1e3, TIME),
         )
         for r in results
     ]
@@ -238,22 +241,25 @@ def roundtrip_figure(results: list[Result], note: str) -> go.Figure:
 def throughput_figure(results: list[Throughput], note: str) -> go.Figure:
     """One panel per item size and reader count: items received per second.
 
-    The line runs up to the items sent per second, so a reader that misses
-    items shows as a gap.
+    The line runs from the slowest to the fastest repeat. A row from an older
+    run, without those two values, is drawn as a dot alone.
     """
     panels: dict[str, list[Row]] = {}
     for r in results:
         title = f"{r['item']}, {r['readers']} reader{'s' * (r['readers'] != 1)}"
         name = r["contender"].split(" (")[0]
-        received, sent = r["received_per_s"], max(r["sent_per_s"], r["received_per_s"])
+        received = r["received_per_s"]
+        low = r.get("received_per_s_min", received)
+        high = r.get("received_per_s_max", received)
+        spread = f"<br>min {low:,.0f}/s, max {high:,.0f}/s" if low != high else ""
         panels.setdefault(title, []).append(
             Row(
                 name,
+                low,
                 received,
-                received,
-                sent,
-                f"{name}<br>received %{{x:,.0f}}/s<br>sent {r['sent_per_s']:,.0f}/s"
-                f"<br>missed {r['missed']}",
+                high,
+                f"{name}<br>received %{{x:,.0f}}/s{spread}"
+                f"<br>sent {r['sent_per_s']:,.0f}/s<br>missed {r['missed']}",
                 scale_text(received, RATE),
             )
         )
@@ -280,7 +286,7 @@ def matrix_figure(results: list[Matrix], note: str) -> go.Figure:
                 p99,
                 f"{name}<br>p50 %{{x:.3g}} us<br>p90 {p90:.3g} us, p99 {p99:.3g} us"
                 f"<br>{r['items_per_s']:,.0f} items/s",
-                f"{p50:.3g} us",
+                scale_text(p50 * 1e3, TIME),
             )
         )
     return panels_figure(panels, TIME, 1e3, "Latency (log scale)", note)

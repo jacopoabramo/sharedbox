@@ -13,6 +13,8 @@ THROUGHPUT: list[stream.Throughput] = [
         "readers": 1,
         "sent_per_s": 2000.0,
         "received_per_s": 1900.0,
+        "received_per_s_min": 1800.0,
+        "received_per_s_max": 1950.0,
         "missed": 0,
     }
 ]

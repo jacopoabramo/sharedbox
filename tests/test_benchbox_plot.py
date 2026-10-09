@@ -45,7 +45,15 @@ def write_results(folder: Path) -> None:
             "received_per_s": rate,
             "missed": 0,
         }
-        for name, rate in (("SharedStream lossless", 5e5), ("mp.Queue", 5e4))
+        | (
+            {"received_per_s_min": rate * 0.8, "received_per_s_max": rate * 1.2}
+            if has_spread
+            else {}
+        )
+        for name, rate, has_spread in (
+            ("SharedStream lossless", 5e5, True),
+            ("mp.Queue", 5e4, False),
+        )
     ]
     matrix = [
         {
@@ -67,7 +75,8 @@ def write_results(folder: Path) -> None:
         json.dumps({"throughput": throughput, "matrix": matrix}), encoding="utf-8"
     )
     (folder / "summary.md").write_text(
-        "# sharedbox benchmarks\n\n- OS: TestOS 1\n- CPU: TestCPU, 8 logical cores\n",
+        "# sharedbox benchmarks\n\n- OS: TestOS 1\n"
+        "- CPU: TestCPU, 8 logical cores\n- Python: CPython 3.99.1 (GIL)\n",
         encoding="utf-8",
     )
 
@@ -95,6 +104,7 @@ def test_plot_writes_every_chart_naming_every_contender(tmp_path: Path) -> None:
     assert all(t["meta"] in ("accent", "other") for t in ops["data"])
     assert "read ref" not in json.dumps(ops)
     assert "TestCPU" in json.dumps(ops)
+    assert "CPython 3.99.1" in json.dumps(ops)
     roundtrip = read_chart(tmp_path, "roundtrip.json")
     assert {y for trace in roundtrip["data"] for y in trace["y"]} == set(ROUNDTRIP)
 
@@ -109,6 +119,20 @@ def test_plot_leaves_the_buffered_row_off_the_latency_axis(tmp_path: Path) -> No
         "send / receive": "accent",
         "mp.Queue put / mp.Queue get": "other",
     }
+
+
+def test_throughput_draws_the_spread_of_the_repeats_and_labels_every_dot(
+    tmp_path: Path,
+) -> None:
+    """Draw the min to max line when a row has it, a dot alone when it lacks it, and label every dot."""
+    write_results(tmp_path)
+    plot.write_charts(tmp_path)
+    chart = read_chart(tmp_path, "stream-throughput.json")
+    ranges = {t["y"][0]: t["x"] for t in chart["data"] if t["mode"] == "lines"}
+    assert ranges["SharedStream lossless"] == [4e5, 6e5]
+    assert ranges["mp.Queue"] == [5e4, 5e4]
+    dots = [t for t in chart["data"] if t["mode"] == "markers+text"]
+    assert all(t["text"] for t in dots)
 
 
 def test_plot_writes_the_same_bytes_twice(tmp_path: Path) -> None:

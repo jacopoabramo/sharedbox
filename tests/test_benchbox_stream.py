@@ -63,6 +63,7 @@ def test_throughput_reports_every_contender_and_mode() -> None:
     }
     for r in rows:
         assert r["sent_per_s"] > 0 and r["received_per_s"] > 0
+        assert r["received_per_s_min"] <= r["received_per_s"] <= r["received_per_s_max"]
         if r["contender"] in (
             "SharedStream lossless",
             "mp.Queue",

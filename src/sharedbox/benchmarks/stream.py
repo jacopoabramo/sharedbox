@@ -75,6 +75,8 @@ class Throughput(TypedDict):
     readers: int
     sent_per_s: float
     received_per_s: float
+    received_per_s_min: float
+    received_per_s_max: float
     missed: int
 
 
@@ -341,6 +343,8 @@ def summarise(label: str, item: str, readers: int, reports: list[Report]) -> Thr
         readers=readers,
         sent_per_s=sent,
         received_per_s=statistics.fmean(received),
+        received_per_s_min=min(received),
+        received_per_s_max=max(received),
         missed=sum(missed for _, _, _, missed in reports),
     )
 
@@ -743,7 +747,13 @@ def run_throughput(opts: Options) -> list[Throughput]:
                     contender(ctx, opts, item, readers) for _ in range(opts.repeats)
                 ]
                 runs.sort(key=lambda row: row["received_per_s"])
-                rows.append(runs[len(runs) // 2])
+                rows.append(
+                    runs[len(runs) // 2]
+                    | {
+                        "received_per_s_min": runs[0]["received_per_s"],
+                        "received_per_s_max": runs[-1]["received_per_s"],
+                    }
+                )
     return rows
 
 
