@@ -102,15 +102,18 @@ def stored(spec: FieldSpec, value: Any) -> tuple[int, int, str] | None:
             f"{spec.label} refers to a {target.__qualname__} box and cannot be None; "
             f"annotate it {target.__qualname__} | None to allow None"
         )
-    layout = getattr(type(value), "__layout__", None)
-    if layout is None or not (
-        isinstance(value, target) or layout.schema_hash == target.__layout__.schema_hash
+    if not (
+        isinstance(value, target)
+        or (
+            isinstance(type(value), type(target))
+            and type(value).__layout__.schema_hash == target.__layout__.schema_hash
+        )
     ):
         raise TypeError(
             f"{spec.label} expects a {target.__qualname__} box, one of a subclass, "
             f"or None, got {type(value).__qualname__}"
         )
-    return (value._segment.create_id, layout.schema_hash, value.name)
+    return (value._segment.create_id, type(value).__layout__.schema_hash, value.name)
 
 
 def attach_reference(

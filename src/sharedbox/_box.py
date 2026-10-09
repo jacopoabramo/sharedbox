@@ -865,9 +865,11 @@ class SharedBox(metaclass=SharedBoxMeta):
             publish=False,
             types=layout.types,
         )
+        tracked = False
         try:
             self._watcher = Watcher(self._segment, layout.types)
             self._track()
+            tracked = True
             post_init = getattr(cls, "__post_init__", None)
             if post_init is not None:
                 post_init(
@@ -884,7 +886,7 @@ class SharedBox(metaclass=SharedBoxMeta):
                 with contextlib.suppress(SegmentNotFoundError):
                     Segment.unlink(name)
             finally:
-                if hasattr(self, "_finalizer"):
+                if tracked:
                     self.close()
                 else:
                     self._segment.close()
