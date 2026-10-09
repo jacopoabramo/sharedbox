@@ -142,13 +142,14 @@ the magic (an unknown one is `status::foreign`), the kind
 every geometry field against the mapping size, and refuses what fails. It
 copies the field table and uses only the copy. It opens no segment of box
 layout 1.0 or 2.0, which 0.5 and earlier wrote.
-`static_assert`s in `core.hpp` and `box.hpp` check every `sizeof` and `offsetof`.
+`static_assert`s in `core.hpp`, `box.hpp` and `stream.hpp` check every
+`sizeof` and `offsetof`.
 
-A stream's segment is the common line, then a 256-byte header of
-written-once geometry and the sender's and readers' lines, a 64-byte entry
-per reader, the waiter slots, `capacity` slots of a `seq` and one item, and
-the description table. Every offset is 64-bit. The full specification is in
-`docs/reference/segment-layout.md`.
+A stream's segment starts with a 256-byte header: the common line, a line
+of geometry written once, the sender's line and the readers' line. Then
+come a 64-byte entry per reader, the waiter slots, `capacity` slots each
+holding a `seq` and one item, and the description table. Every offset is
+64-bit. The full specification is in `docs/reference/segment-layout.md`.
 
 ### Record encoding
 
