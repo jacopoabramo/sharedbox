@@ -330,6 +330,24 @@ TEST_CASE("a second sender is busy, and a refused reader gives back its waiter s
     static_cast<void>(unlink(name));
 }
 
+TEST_CASE("a send with no timeout keeps a pending interrupt for the next send") {
+    const std::string name = unique("stream-nowait-interrupt");
+    stream st = make(name, 2);
+    auto reader = st.reader(read_mode::lossless, start_at::newest);
+    auto sender = st.sender();
+    REQUIRE((reader && sender));
+    CHECK(send(*sender, 0));
+    CHECK(send(*sender, 1));
+    CHECK(sender->interrupt());
+    const auto nowait = send(*sender, 2, 0.0);
+    REQUIRE_FALSE(nowait);
+    CHECK(nowait.error().code == status::timeout);
+    const auto waited = send(*sender, 2, 1.0);
+    REQUIRE_FALSE(waited);
+    CHECK(waited.error().code == status::interrupted);
+    static_cast<void>(unlink(name));
+}
+
 TEST_CASE("newest starts at the last item sent and oldest at the oldest still in the ring") {
     const std::string name = unique("stream-start");
     stream st = make(name, 4);

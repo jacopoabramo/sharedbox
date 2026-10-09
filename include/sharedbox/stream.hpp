@@ -13,7 +13,7 @@ inline constexpr std::uint32_t stream_header_size = 256;
 inline constexpr std::uint64_t min_stream_capacity = 2;
 // Each reader and the sender hold one waiter slot.
 inline constexpr std::uint32_t max_stream_readers = max_waiter_slots - 1;
-// The slots and the description table end below this, so no sum of offsets and sizes overflows.
+// The slots end at or below this, so no sum of offsets and sizes overflows.
 inline constexpr std::uint64_t max_stream_size = std::uint64_t{1} << 46;
 inline constexpr std::uint32_t stream_open = 0;
 inline constexpr std::uint32_t stream_ended = 1;
@@ -118,7 +118,7 @@ struct stream_shape {
     std::uint64_t size = 0;
 };
 
-// False when the slots and the table would pass max_stream_size; max_readers must be at most
+// False when the slots would pass max_stream_size; max_readers must be at most
 // max_stream_readers and types_size at most max_types_size.
 inline bool stream_shape_of(std::uint64_t capacity, std::uint64_t slot_size, std::uint32_t max_readers,
                             std::uint32_t types_size, stream_shape &out) noexcept {
@@ -723,6 +723,8 @@ inline result<void> stream_sender::gate(std::uint64_t p, seconds timeout) {
     }
     if (p < min_ + s.capacity)
         return {};
+    if (timeout == seconds(0))
+        return unexpected(status::timeout);
     const detail::clock::time_point deadline =
         detail::clock::now() + std::chrono::duration_cast<detail::clock::duration>(timeout);
     if (deadline > detail::clock::now()) {
@@ -816,6 +818,9 @@ inline void stream_sender::close() noexcept {
 
 inline result<void> stream_reader::wait_for_data(detail::clock::time_point deadline) {
     stream_header &h = *s_->hdr;
+    if (detail::atomic(h.state).load(std::memory_order_acquire) == stream_ended &&
+        detail::atomic(h.write_pos).load(std::memory_order_acquire) == r_)
+        return unexpected(status::ended);
     if (deadline > detail::clock::now()) {
         for (unsigned i = 0; i < spin_before_sleep; ++i) {
             if (detail::atomic(h.write_pos).load(std::memory_order_seq_cst) != r_)
