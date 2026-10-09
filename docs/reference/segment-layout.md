@@ -485,9 +485,9 @@ Every shared word is a plain integer in the mapping, accessed through
        overlapping), then the description table (Descriptions). A field
        of an unknown kind is opaque (Versioning rules). A failed check is
        `status::corrupt`.
-   For `foreign`, `kind_mismatch` and `layout`, the error's `found` holds
-   what was read: the magic, or `major << 16 | minor` of the version that
-   was refused.
+   For `foreign` and `kind_mismatch`, the error's `found` holds the magic
+   that was read. For `layout` it holds both versions:
+   `core_major << 48 | core_minor << 32 | kind_major << 16 | kind_minor`.
 4. Copy the field table and use only the copy afterwards.
 5. Free the waiter slots of dead processes (see Waiter slots).
 
@@ -823,7 +823,7 @@ The header also declares these names:
   `schema` is kept for callers that compare schema hashes. `corrupt`: a header or field
   table that fails the attach checks. `lock_timeout`, `timeout`, `no_slot`:
   see Protocols. `range`: an argument out of range. `os`: an OS call
-  failed, with `errno` or `GetLastError()` left as the call set it.
+  failed, and the error's `os` holds its `errno` or `GetLastError()`.
 - `create` and `write` take raw bytes in the record encoding, without the
   length prefix of `str`, `bytes` and `Decimal`; converting language values
   stays in each binding.

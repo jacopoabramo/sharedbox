@@ -761,11 +761,13 @@ class SharedBox(metaclass=SharedBoxMeta):
         SegmentNotFoundError
             If no segment has that name, or the shared memory under it does
             not become a box within 1 s (the lock timeout, if shorter).
+        KindMismatchError
+            If the name holds a segment of another kind.
         SchemaMismatchError
             If the segment was created by a different class or a different
             version of this class, uses another major version of the
-            segment layout, or has a field of a kind this version cannot
-            read.
+            segment layout, has a field of a kind this version cannot read,
+            or is not a segment this version of sharedbox knows.
         ValueError
             If `name` is not segments of `[A-Za-z0-9_-]` joined by `:`, at
             most 240 characters.

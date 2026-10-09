@@ -16,8 +16,8 @@ Dates are marked as `DD-MM-YYYY`
   in `sharedbox.hpp` and `sharedbox_c.h`.
 - `status::foreign` and `SBX_E_FOREIGN` (-12): the segment's magic is not
   one this version knows. Python raises `SchemaMismatchError`.
-- `sharedbox::to_expected`: converts a `sharedbox::result` to a
-  `std::expected` on C++23.
+- `sharedbox::to_expected` and `sharedbox::from_expected`: convert a
+  `sharedbox::result` to a `std::expected` and back on C++23.
 
 ### Changed
 
@@ -36,10 +36,23 @@ Dates are marked as `DD-MM-YYYY`
   and its `error()` is a `sharedbox::error` holding the status, the OS error
   and what was found. The C++ names moved from `sharedbox::v2` to
   `sharedbox::v3`.
+- `sharedbox::error`: a `status::os` failure carries the OS error in
+  `error().os`; `errno` and `GetLastError()` are no longer kept for the
+  caller.
+- `sharedbox::header`: the magic, versions, schema hash, creator, waiter
+  slot count and size moved into its first member, `common`, a
+  `sharedbox::common_header`; `layout_major` and `layout_minor` became
+  `common.kind_major` and `common.kind_minor`.
+- `sharedbox::inspect`: returns `result<common_header>`.
+- `sharedbox::magic`: renamed `sharedbox::box_magic`.
+- `SharedBox.attach`: shared memory under the name that holds no segment
+  this version knows raises `SchemaMismatchError` at once, instead of
+  `SegmentNotFoundError` after the timeout.
 
 ### Removed
 
 - Reading box layouts 1.0 and 2.0.
+- `sharedbox::oldest_layout_major`.
 
 ## [0.5.0] - 09-10-2026
 
