@@ -21,6 +21,9 @@ inline constexpr std::uint32_t stream_ended = 1;
 // How long a wait lasts before it checks whether the processes it waits for still run.
 inline constexpr double liveness_delay = 0.1;
 
+// A reader that sleeps on every item makes the sender pay a wake per item, so an end polls this many times first.
+inline constexpr unsigned spin_before_sleep = 1000;
+
 enum class read_mode : std::uint32_t { lossless = 1, lossy = 2, latest = 3 };
 enum class start_at { newest, oldest };
 
@@ -719,6 +722,15 @@ inline result<void> stream_sender::gate(std::uint64_t p, seconds timeout) {
         return {};
     const detail::clock::time_point deadline =
         detail::clock::now() + std::chrono::duration_cast<detail::clock::duration>(timeout);
+    if (deadline > detail::clock::now()) {
+        for (unsigned i = 0; i < spin_before_sleep; ++i) {
+            epoch_ = detail::atomic(h.readers_epoch).load(std::memory_order_seq_cst);
+            min_ = lossless_min(p);
+            if (p < min_ + s.capacity)
+                return {};
+            detail::cpu_relax();
+        }
+    }
     for (;;) {
         const auto left =
             (std::max)(std::chrono::duration_cast<seconds>(deadline - detail::clock::now()), seconds(0));
@@ -801,6 +813,13 @@ inline void stream_sender::close() noexcept {
 
 inline result<void> stream_reader::wait_for_data(detail::clock::time_point deadline) {
     stream_header &h = *s_->hdr;
+    if (deadline > detail::clock::now()) {
+        for (unsigned i = 0; i < spin_before_sleep; ++i) {
+            if (detail::atomic(h.write_pos).load(std::memory_order_seq_cst) != r_)
+                return {};
+            detail::cpu_relax();
+        }
+    }
     for (;;) {
         // write_pos is read after state: the sender stores state after its last write_pos.
         if (detail::atomic(h.state).load(std::memory_order_acquire) == stream_ended &&
