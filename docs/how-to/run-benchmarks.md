@@ -125,13 +125,13 @@ benchbox all --out results
 ```
 
 `all` runs `ops`, `roundtrip`, `stream` and `size`, writes each command's
-JSON output to `results` (`stream.json` holds the two stream tables), and prints a Markdown summary that it also saves as
-`results/summary.md`. The summary names the OS, CPU, Python version and
-build, and the sharedbox version. `all` measures wheel sizes only when it
-finds wheels in `dist/` or `wheelhouse/`, and then measures every wheel
-there, older builds included. On a desktop machine a full run takes about
-30 minutes, most of it in `ops` and `stream`, so start it when you will not
-need the machine.
+JSON output to `results` (`stream.json` holds the two stream tables), and
+prints a Markdown summary that it also saves as `results/summary.md`. The
+summary names the OS, CPU, Python version and build, and the sharedbox
+version. `all` measures wheel sizes only when it finds wheels in `dist/` or
+`wheelhouse/`, and then measures every wheel there, older builds included.
+On a desktop machine a full run takes about 30 minutes, most of it in `ops`
+and `stream`, so start it when you will not need the machine.
 
 `python -m sharedbox.benchmarks` runs the same command as `benchbox`.
 

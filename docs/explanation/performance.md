@@ -91,10 +91,10 @@ short time before they sleep. A reader that finds no item checks again up to
 In a round trip the answer arrives within those checks, so neither process
 sleeps and nobody has to wake it. A watcher goes to sleep as soon as
 nothing has changed, so every change costs a wake-up by the operating
-system. The cost is one core kept busy during those checks. A reader that waits longer sleeps like a watcher, which
-the next section shows: with items 1 ms apart, the reader has gone to sleep
-before the next one arrives, and it takes 31 us at the median to see it,
-close to `watch`.
+system. The cost is one core kept busy during those checks. A reader that
+waits longer sleeps like a watcher, which the next section shows: with
+items 1 ms apart, the reader has gone to sleep before the next one arrives,
+and it takes 31 us at the median to see it, close to `watch`.
 
 ## Streams
 
@@ -169,22 +169,22 @@ hands every `get` to a thread and reaches 10k items per second, so
 `async for` on a stream is about 40 times faster. A blocking `get` reaches
 84k.
 
-`async for` stays close to the blocking rate because it takes an item
-that is already waiting right where it is, instead of handing the wait to
-the reader's background thread. The row `async for (buffered)` isolates
-that: the sender fills the ring and the reader awaits each of the 32 items,
-all already there, at 370k items per second, about what `async for`
-sustains in the full run. When no item is waiting, as in the latency part
-of the run, the wait does go through the background thread, and the median
-is 139 us against 31 us for `receive`.
+`async for` stays close to the blocking rate because, when an item is
+already waiting, it takes it on the event loop's own thread instead of
+handing the wait to the reader's background thread. The row
+`async for (buffered)` isolates that: the sender fills the ring and the
+reader awaits each of the 32 items, all already there, at 370k items per
+second, about what `async for` sustains in the full run. When no item is
+waiting, as in the latency part of the run, the wait does go through the
+background thread, and the median is 139 us against 31 us for `receive`.
 
-At 512 KiB every pairing sits at 4k to 5k items per second, whichever way
-it sends and reads, and `mp.Queue` reaches 2k. That is far below the 25k of
-the chart above because these readers use `receive`, `async for` and
+At 512 KiB every pairing sits at 4k to 5k items per second, whichever way it
+sends and reads, and `mp.Queue` reaches 2k. That is far below the 25k of the
+chart above because these readers use `receive`, `async for` and
 `events.received`, which allocate a new array for each item, while the
 throughput readers copy every item into one array with
-[`iter_into`][sharedbox.StreamReader.iter_into]. It is the same cost as
-the 1 MiB array of a box, 217 us to read and 19 us to read into an array
+[`iter_into`][sharedbox.StreamReader.iter_into]. It is the same kind of cost
+as the 1 MiB array of a box, 217 us to read and 19 us to read into an array
 you already have. If your items are large, read them with `iter_into` or
 [`receive_into`][sharedbox.StreamReader.receive_into].
 
