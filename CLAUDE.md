@@ -142,8 +142,9 @@ version 1.0, box layout 3.0, from offset 0:
   description), one `u64` write count per field, then `waiter_slots` slots
   of 32 bytes (`owner_start`, `owner_pidns`, `owner_pid`, `interrupt`,
   `asleep_on`: the offset of the count the slot's current wait added 1 to,
-  which freeing a dead owner's slot takes back), then the description table of `types_size` bytes. Kinds are 0 to 5,
-  6 to 12 (fixed-size scalars) and 64 to 74 (described types).
+  which freeing a dead owner's slot takes back), then the description
+  table of `types_size` bytes. Kinds are 0 to 5, 6 to 12 (fixed-size
+  scalars) and 64 to 74 (described types).
 - The record, at a multiple of 64. The mapping size is rounded up to 4 KiB.
   `record + record_size <= 2**32 - 4096`.
 
