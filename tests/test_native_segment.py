@@ -381,7 +381,7 @@ def test_raw_bytes_follow_the_layout(unique_name: str) -> None:
     assert creator_pid == os.getpid()
     assert struct.unpack_from("<HHQ", raw, 52) == (64, 0, 4096)
     # seq, writer_pid, wake_word, waiters and sleepers after one write, with no one waiting.
-    assert struct.unpack_from("<QIIII", raw, 64) == (2, 0, 1, 0, 0)
+    assert struct.unpack_from("<QIIII", raw, 64) == (2, 0, 0, 0, 0)
     # field_count and its reserved word, then record_size, record, tail and types_size.
     assert struct.unpack_from("<HHIIII", raw, 88) == (3, 0, 24, 2240, 128, 0)
     assert raw[108:128] == bytes(20)

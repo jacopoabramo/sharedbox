@@ -74,7 +74,7 @@ Dates are marked as `DD-MM-YYYY`
   of `SegmentNotFoundError` after the timeout.
 - `SharedBox` write: makes a wake call only when a thread is waiting on the
   box. `sleepers`, at offset 84 of box layout 3.0, counts the threads inside
-  a wait.
+  a wait. It adds 1 to `wake_word` only when `sleepers` is not 0.
 - `sharedbox::waiter_slot`: 32 bytes, with `asleep_on`, at offset 24, the
   offset of the count the slot's current wait added 1 to, and a reserved
   word. Freeing the slot of a process killed inside a wait takes that

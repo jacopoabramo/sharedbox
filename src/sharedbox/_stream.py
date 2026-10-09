@@ -182,11 +182,12 @@ class ReaderStatistics:
 
     mode: Mode
     position: int
-    """The position of the item the reader receives next.
+    """The position of the item the reader receives next, at most `sent`.
 
     Right after a receive it is one more than
-    [`StreamReader.position`][sharedbox.StreamReader.position], which is the
-    position of the item received.
+    [`StreamReader.position`][sharedbox.StreamReader.position], the position
+    of the item received, except for the moment before the sender counts
+    that item in `sent`.
     """
     lag: int
     """Items sent that the reader has not received or skipped yet."""
@@ -402,7 +403,12 @@ class SharedStream(Generic[T]):
             ended,
             sender_pid,
             tuple(
-                ReaderStatistics(MODE_NAMES[mode], position, sent - position, pid)
+                ReaderStatistics(
+                    MODE_NAMES[mode],
+                    min(position, sent),
+                    max(sent - position, 0),
+                    pid,
+                )
                 for position, mode, pid in readers
             ),
         )

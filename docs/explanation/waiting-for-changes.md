@@ -24,10 +24,10 @@ pid namespace.
 
 How a write wakes the waiters depends on the system. Linux has one futex
 word in the header:[^futex] a waiter sleeps with `FUTEX_WAIT` for as long
-as `wake_word` still holds the value it read, and a writer increments the
-word and calls `FUTEX_WAKE` once for everybody. Windows has a similar call,
-`WaitOnAddress`, but it only works between threads of one
-process,[^wait-on-address] so there each slot gets its own auto-reset
+as `wake_word` still holds the value it read. When a waiter is inside a
+wait, a writer increments the word and calls `FUTEX_WAKE` once for
+everybody. Windows has a similar call, `WaitOnAddress`, but it only works
+between threads of one process,[^wait-on-address] so there each slot gets its own auto-reset
 event, `Local\SBX:<name>#w<i>`,[^create-event] and a writer sets the
 event of every taken slot. Either way, a write to a box nobody is waiting
 on costs no system call: a waiter counts itself in `sleepers` while it is
@@ -57,12 +57,15 @@ is taken is described under `max_waiters` in
 watcher's slot and wakes that slot, so the watcher thread returns at once
 instead of at the end of its step.
 
-A wake-up is never lost. On Linux the waiter reads `wake_word` before it
-reads the generation, and the writer changes the generation before
-`wake_word`. If a write lands between the waiter's two reads, `wake_word`
-no longer matches and the wait returns at once.[^futex] On Windows each
-event belongs to one slot, so one waiter cannot take the wake-up meant for
-another.
+A wake-up is never lost. A waiter counts itself in `sleepers` before it
+reads `wake_word` and then the generation. A writer changes the generation,
+then reads `sleepers`. If it reads 0, the waiter has not counted itself yet,
+so the waiter's read of the generation sees the new value. Otherwise the
+writer increments `wake_word` and wakes. On Linux, a write that lands between
+the waiter's reads of `wake_word` and the generation has already changed
+`wake_word`, so it no longer matches and the wait returns at once.[^futex] On
+Windows each event belongs to one slot, so one waiter cannot take the wake-up
+meant for another.
 
 [Waiter slots](../reference/segment-layout.md#waiter-slots) gives the order of
 the stores that claim, free and release a slot, and the few steps at which

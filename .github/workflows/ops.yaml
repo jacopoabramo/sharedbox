@@ -56,9 +56,12 @@ jobs:
         shell: bash
         run: |
           cd head
-          uv run --no-sync python - ../results >> "$GITHUB_STEP_SUMMARY" <<'EOF'
+          uv run --no-sync python - ../results <<'EOF' | tee -a "$GITHUB_STEP_SUMMARY"
+          import os
+          import platform
           import statistics
           import sys
+          import winreg
           from pathlib import Path
 
           import pyperf
@@ -68,7 +71,13 @@ jobs:
               side = path.name.split("-")[0]
               for bench in pyperf.BenchmarkSuite.load(str(path)).get_benchmarks():
                   means.setdefault((bench.get_name(), side), []).append(bench.mean())
+          key = winreg.OpenKey(
+              winreg.HKEY_LOCAL_MACHINE, r"HARDWARE\DESCRIPTION\System\CentralProcessor\0"
+          )
+          cpu = winreg.QueryValueEx(key, "ProcessorNameString")[0].strip()
           print("### benchbox ops on Windows cp311, median of three rounds")
+          print()
+          print(f"{cpu}, {os.cpu_count()} logical cores, {platform.platform()}")
           print()
           print("| benchmark | base | head | head / base |")
           print("| --- | --- | --- | --- |")

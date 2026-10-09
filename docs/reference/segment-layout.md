@@ -717,17 +717,18 @@ a wake-up.
   - Check again after waking; a wake may be spurious. Past the timeout the
     result is `status::timeout`.
 - Wake, after every write:
-  - Increment `wake_word`, then load `sleepers`, both sequentially
-    consistent. If that load misses a waiter's increment, the waiter's load
-    of `wake_word` comes after this increment in the single order of
-    sequentially consistent operations, so it reads this increment or a
-    later change, every change to `wake_word` being a read-modify-write.
-    That load synchronizes with the increment, so the swap of `seq` before
-    it happens before the waiter's check of `seq`, which then sees the new
-    value. The swap that unlocks `seq` is only a release, so the waiter's
-    load of `wake_word` is required on both platforms, though on Windows its
-    value is not used.
-  - If `sleepers` is 0, stop: no system call on the normal path.
+  - The swap that unlocks `seq` is sequentially consistent. Then load
+    `sleepers` (sequentially consistent). If it is 0, stop: no change to
+    `wake_word` and no system call on the normal path. The load comes before
+    the waiter's increment of `sleepers` in the single order of sequentially
+    consistent operations, and the swap comes before the load, so the
+    waiter's check of `seq` sees the new value.
+  - Otherwise increment `wake_word` (sequentially consistent) before the
+    wake. A Linux waiter whose load of `wake_word` came before the increment
+    is refused sleep or woken. One whose load comes after it reads this
+    increment or a later change, every change to `wake_word` being a
+    read-modify-write, so the swap happens before its check of `seq`. On
+    Windows the value of `wake_word` is not used, and the waiter's load stays.
   - Linux: one `FUTEX_WAKE` with `INT_MAX` waiters.
   - Windows: `SetEvent` on the event of every occupied slot.
 - `interrupt(slot)`: set the slot's `interrupt`, then wake that slot. On
@@ -786,7 +787,8 @@ and a creator that still runs is reported as still creating the box.
 ### Send and receive
 
 The sender writes position `p` into slot `p % capacity`, where `p` is
-`write_pos`. Only the sender stores `write_pos`.
+`write_pos`. Only the sender stores `write_pos`, and the process that claims
+a dead sender (see Dead stream ends).
 
 Send:
 
@@ -808,13 +810,17 @@ Send:
 
 Receive, for a reader whose next position is `r`:
 
-1. Load `write_pos` with acquire. If it equals `r` there is nothing to
-   read. The reader gives `status::ended` if `state` is ended (read before
-   `write_pos`, since the sender stores `state` after its last `write_pos`).
-   Otherwise, with a timeout of 0 it gives `status::timeout` at once. With
-   a longer timeout it checks `write_pos` up to 1000 times, then sleeps on
-   `data_word` in steps of at most 0.1 s, counting itself in `data_waiting`
-   while it sleeps.
+1. A lossless or lossy reader first loads the `seq` of slot `r % capacity`.
+   If it is `2r + 2` the reader copies the item as in step 3 without
+   reading `write_pos`, so it may take an item a moment before the sender
+   stores `write_pos` for it, and its position may be `write_pos + 1` until
+   the sender, or whoever claims a dead sender, stores `write_pos`. Otherwise it loads `write_pos` with acquire. If that is
+   at most `r` there is nothing to read. The reader gives `status::ended` if
+   `state` is ended (read before `write_pos`, since the sender stores
+   `state` after its last `write_pos`). Otherwise, with a timeout of 0 it
+   gives `status::timeout` at once. With a longer timeout it checks
+   `write_pos` up to 1000 times, then sleeps on `data_word` in steps of at
+   most 0.1 s, counting itself in `data_waiting` while it sleeps.
 2. A lossy reader with `write_pos - r > capacity` moves to
    `write_pos - capacity`. A latest reader with `write_pos - r > 1` moves to
    `write_pos - 1`. Both count the items they pass as missed.
@@ -882,12 +888,21 @@ with the rules of Liveness:
 - A reader waiting for data ends the stream when the sender's process has
   exited. It first claims the dead sender by changing `sender_start` from the
   value it read to `start_freeing` with a compare-and-swap. If that
-  succeeds, it changes `state` from 0 to 1, clears `sender_pidns`,
+  succeeds, it completes the dead sender's last publish (see below), then
+  changes `state` from 0 to 1, clears `sender_pidns`,
   `sender_pid` and `sender_start`, adds 1 to `data_word` and wakes it.
   Readers then receive what was published, then `status::ended`.
 - `sender()` replaces a recorded sender whose process has exited. It claims
   the dead sender the same way, so a replacement and an ending never both
-  act on one dead owner, then stores its own pid.
+  act on one dead owner, completes the dead sender's last publish, then
+  stores its own pid.
+- A sender killed after storing `seq` of slot `p % capacity` as `2p + 2` and
+  before storing `write_pos` leaves `write_pos` at `p` with item `p` whole
+  in its slot. Whoever claims the dead sender loads `write_pos`, and if that
+  slot's `seq` is `2p + 2` stores `write_pos = p + 1` and wakes `data_word`
+  as a send does, before ending the stream or letting a replacement send.
+  Readers then receive the item the dead sender published, then
+  `status::ended` or the replacement's items.
 
 Known limits:
 
