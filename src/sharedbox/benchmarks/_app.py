@@ -13,7 +13,7 @@ from typing import Annotated
 
 import typer
 
-from sharedbox.benchmarks import INSTALL_HINT, contention, roundtrip, size
+from sharedbox.benchmarks import INSTALL_HINT, contention, roundtrip, size, stream
 
 if sys.platform == "win32":
     import winreg
@@ -126,6 +126,26 @@ def contention_command(
         output.write_text(json.dumps(results, indent=2))
     typer.echo(
         contention.to_markdown(results) if markdown else contention.to_text(results)
+    )
+
+
+@app.command("stream")
+def stream_command(
+    short: Annotated[
+        bool, typer.Option("--short", help="A run of a few seconds.")
+    ] = False,
+    table: Annotated[str, typer.Option(help="throughput, matrix or both.")] = "both",
+    output: JsonOption = None,
+    markdown: Annotated[
+        bool, typer.Option("--markdown", help="Print Markdown tables.")
+    ] = False,
+) -> None:
+    """Time streams against the standard library, and the sync and async combinations."""
+    stream.main(
+        (["--short"] if short else [])
+        + ["--table", table]
+        + (["--json", str(output)] if output else [])
+        + (["--markdown"] if markdown else [])
     )
 
 
