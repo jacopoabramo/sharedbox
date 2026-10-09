@@ -845,6 +845,8 @@
       
         
       
+        
+      
     
     
     
@@ -868,7 +870,7 @@
   <span class="md-ellipsis">
     
   
-  Use a box
+  Use a box or a stream
 
     
   </span>
@@ -884,7 +886,7 @@
               <span class="md-nav__icon md-icon"></span>
               
   
-  Use a box
+  Use a box or a stream
 
             </label>
             <ul class="md-nav__list" data-md-scrollfix>
@@ -1167,6 +1169,35 @@
     
   
   How to follow a whole reference graph
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../how-to/send-items-through-a-stream/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-wrench" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  How to send items through a stream
 
     
   </span>
@@ -1998,6 +2029,8 @@
       
         
       
+        
+      
     
     
     
@@ -2131,6 +2164,35 @@
     
   
   Events
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/streams/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-code" viewBox="0 0 24 24"><path d="m16 18 6-6-6-6M8 6l-6 6 6 6"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  Streams
 
     
   </span>
@@ -3677,6 +3739,18 @@ and this project adheres to <a href="https://semver.org/spec/v2.0.0.html">Semant
 <h2 id="unreleased"><a href="https://github.com/jacopoabramo/sharedbox/compare/v0.5.0...HEAD">Unreleased</a><a class="headerlink" href="#unreleased" title="Permanent link">&para;</a></h2>
 <h3 id="added">Added<a class="headerlink" href="#added" title="Permanent link">&para;</a></h3>
 <ul>
+<li><code>SharedStream</code>, <code>StreamSender</code> and <code>StreamReader</code>: send items of any type a
+  <code>SharedBox</code> field takes from one process to up to <code>max_readers</code> readers,
+  each reading <code>lossless</code>, <code>lossy</code> or <code>latest</code>, with blocking, non-blocking
+  and asyncio calls, <code>receive_into</code> into the caller's arrays and
+  <code>receive_future</code>, a <code>concurrent.futures.Future</code>.</li>
+<li><code>StreamReader.events</code>, a <code>ReaderEvents</code> psygnal group whose <code>received</code>
+  and <code>ended</code> signals deliver a reader's items to callbacks.</li>
+<li><code>StreamStatistics</code> and <code>ReaderStatistics</code>, returned by
+  <code>SharedStream.statistics()</code>.</li>
+<li><code>WouldBlock</code>, <code>EndOfStream</code>, <code>StreamBusyError</code> and <code>StreamClosedError</code>.</li>
+<li><code>WaiterSlotsFullError</code> is exported from <code>sharedbox</code>; opening a reader
+  raises it when <code>max_readers</code> readers are open.</li>
 <li><code>KindMismatchError</code>, a <code>SchemaMismatchError</code> raised when a name holds a
   segment of another kind; <code>status::kind_mismatch</code> and <code>SBX_E_KIND</code> (-11)
   in <code>sharedbox.hpp</code> and <code>sharedbox_c.h</code>.</li>

@@ -97,6 +97,9 @@
         <loc>https://jacopoabramo.github.io/sharedbox/how-to/send-a-box-to-another-process/</loc>
       </url>
       <url>
+        <loc>https://jacopoabramo.github.io/sharedbox/how-to/send-items-through-a-stream/</loc>
+      </url>
+      <url>
         <loc>https://jacopoabramo.github.io/sharedbox/how-to/set-defaults-and-check-values/</loc>
       </url>
       <url>
@@ -140,6 +143,9 @@
       </url>
       <url>
         <loc>https://jacopoabramo.github.io/sharedbox/reference/api/references/</loc>
+      </url>
+      <url>
+        <loc>https://jacopoabramo.github.io/sharedbox/reference/api/streams/</loc>
       </url>
       <url>
         <loc>https://jacopoabramo.github.io/sharedbox/reference/changelog/</loc>
