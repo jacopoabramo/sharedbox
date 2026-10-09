@@ -3376,8 +3376,10 @@ JSON in <code>charts/</code> next to them: <code>ops.json</code>, <code>roundtri
 <code>stream-throughput.json</code> and <code>stream-matrix.json</code>. It skips a chart whose
 results are missing and says which on standard error.</p>
 <p>A page of the docs site draws a figure with a <code>div</code> of the class
-<code>sbx-chart</code>, whose <code>data-src</code> is the path of the file, relative to the page:</p>
-<div class="language-html highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="p">&lt;</span><span class="nt">div</span> <span class="na">class</span><span class="o">=</span><span class="s">"sbx-chart"</span> <span class="na">data-src</span><span class="o">=</span><span class="s">"../../assets/benchmarks/ops.json"</span><span class="p">&gt;&lt;/</span><span class="nt">div</span><span class="p">&gt;</span>
+<code>sbx-chart</code>, whose <code>data-src</code> is the path of the file relative to the page's
+Markdown file, as for a link; the build turns it into a path from the
+published page. From a page in <code>docs/explanation/</code>:</p>
+<div class="language-html highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="p">&lt;</span><span class="nt">div</span> <span class="na">class</span><span class="o">=</span><span class="s">"sbx-chart"</span> <span class="na">data-src</span><span class="o">=</span><span class="s">"../assets/benchmarks/ops.json"</span><span class="p">&gt;&lt;/</span><span class="nt">div</span><span class="p">&gt;</span>
 </span></code></pre></div>
 <p><code>docs/javascripts/charts.js</code> loads plotly.js when a page has such a <code>div</code>,
 draws the figure and gives it the colours of the page's light or dark theme.

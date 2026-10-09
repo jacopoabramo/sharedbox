@@ -3209,7 +3209,7 @@ process, measured by pyperf. The dot is the median, and the line runs from
 the 10<sup>th</sup> to the 90<sup>th</sup> percentile of the measured values. The scale is
 logarithmic: each grid line is ten times the one before it. Hover over a dot
 for the exact values.</p>
-<div class="sbx-chart" data-src="../../../assets/benchmarks/ops.json"></div>
+<div class="sbx-chart" data-src="../../assets/benchmarks/ops.json"></div>
 
 <p>Reading or writing one <a href="../glossary/#field">field</a> of a
 <a href="../glossary/#box">box</a> takes 43 to 61 ns. That is 11 to 25 times less than
@@ -3332,7 +3332,7 @@ process has seen it and answered back, over 5000 round trips. The dot is
 the median (p50), and the line runs to the 99<sup>th</sup> percentile (p99). The
 <code>SharedStream</code> row sends an <code>int</code> through one <a href="../glossary/#stream">stream</a>
 and gets the answer back through a second one.</p>
-<div class="sbx-chart" data-src="../../../assets/benchmarks/roundtrip.json"></div>
+<div class="sbx-chart" data-src="../../assets/benchmarks/roundtrip.json"></div>
 
 <p><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;watch&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.watch"><code>watch</code></a> answers in 37 us at the median and
 101 us at p99. <code>mp.Event</code> takes 57 us and 133 us, and <code>mp.Pipe</code> 37 us and
@@ -3373,7 +3373,7 @@ shows how a stream is used.</p>
 per second a reader received, averaged over the readers of the median run,
 and the line runs from the slowest to the fastest of the three runs, so a
 long line means the runs disagreed.</p>
-<div class="sbx-chart" data-src="../../../assets/benchmarks/stream-throughput.json"></div>
+<div class="sbx-chart" data-src="../../assets/benchmarks/stream-throughput.json"></div>
 
 <p>With one reader and 1 KiB items, a <a href="../glossary/#lossless">lossless</a> reader
 receives 511k items per second. <code>mp.Queue</code> manages 84k and the ring with a
@@ -3410,7 +3410,7 @@ least 1 ms apart, and the line runs from p50 to p99. Hover over a dot for
 the p90 and for the items per second the pairing sustained when the sender
 did not wait. The <code>mp.Queue</code> rows are the standard library baseline, the
 last of them reading the queue from <code>asyncio</code> with <code>run_in_executor</code>.</p>
-<div class="sbx-chart" data-src="../../../assets/benchmarks/stream-matrix.json"></div>
+<div class="sbx-chart" data-src="../../assets/benchmarks/stream-matrix.json"></div>
 
 <p>At 1 KiB, blocking <code>send</code> and <code>receive</code> move 433k items per second. Reading
 with <code>async for</code> keeps 394k, 91% of that, and <code>events.received</code> 257k.
