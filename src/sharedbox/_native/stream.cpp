@@ -49,15 +49,32 @@ struct Interrupted : std::runtime_error {
     using std::runtime_error::runtime_error;
 };
 
-/// A stream mapped in this process and the item type its values are converted with. The Stream object and
-/// every end made from it share it, so the mapping outlives the ends. It holds a Python object, so the last
-/// reference is dropped with the GIL held.
+/// A stream mapped in this process. The Stream object and every end made from it share it, so the mapping
+/// outlives the ends. It holds no Python object: the Stream and each end own a reference to the Types
+/// instance their values are converted with, so the collector sees every reference to it and can free a
+/// cycle that runs through the item type. Each reference is visited by its own object's traverse.
 struct StreamCore {
     stream s;
-    nb::object types_object;
-    const Types *types = nullptr;
     std::string name;
 };
+
+template <class T> int traverse_slot(PyObject *self, visitproc visit, void *arg) {
+    Py_VISIT(Py_TYPE(self));
+    if (!nb::inst_ready(self))
+        return 0;
+    return nb::inst_ptr<T>(self)->traverse(visit, arg);
+}
+
+template <class T> int clear_slot(PyObject *self) {
+    if (nb::inst_ready(self))
+        nb::inst_ptr<T>(self)->clear();
+    return 0;
+}
+
+template <class T>
+const PyType_Slot gc_slots[] = {{Py_tp_traverse, reinterpret_cast<void *>(traverse_slot<T>)},
+                                {Py_tp_clear, reinterpret_cast<void *>(clear_slot<T>)},
+                                {0, nullptr}};
 
 [[noreturn]] void throw_stream(const error &e, const std::string &name) {
 #ifdef _WIN32
@@ -120,12 +137,10 @@ std::span<const std::byte> value_bytes(const detail::type_ref &t, std::span<cons
     return item.subspan(sizeof length, length);
 }
 
-std::shared_ptr<StreamCore> make_core(stream s, nb::handle types) {
+std::shared_ptr<StreamCore> make_core(stream s) {
     auto core = std::make_shared<StreamCore>();
     core->name = std::string(s.name());
     core->s = std::move(s);
-    core->types_object = nb::borrow(types);
-    core->types = &nb::cast<const Types &>(types);
     return core;
 }
 
@@ -135,8 +150,15 @@ std::shared_ptr<StreamCore> make_core(stream s, nb::handle types) {
 /// with the GIL released.
 class End {
 public:
-    explicit End(std::shared_ptr<StreamCore> core) : name_(core->name), core_(std::move(core)) {}
+    End(std::shared_ptr<StreamCore> core, nb::handle types)
+        : name_(core->name), core_(std::move(core)), types_(nb::borrow(types)) {}
     bool closed() const { return closed_.load(); }
+
+    int traverse(visitproc visit, void *arg) const {
+        Py_VISIT(types_.ptr());
+        return 0;
+    }
+    void clear() { types_.release().dec_ref(); }
 
 protected:
     void check_open() const {
@@ -154,6 +176,13 @@ protected:
         throw_stream(e, name_);
     }
     std::shared_ptr<StreamCore> core_;
+    nb::object types_;
+    /// The item type, which this end's own reference keeps alive; empty once the collector cleared the end.
+    const Types &types() const {
+        if (!types_.is_valid())
+            throw StreamClosed("stream '" + name_ + "': this end is closed");
+        return nb::cast<const Types &>(types_);
+    }
     // unique_ptr so after_fork can replace a mutex another thread of the parent held, rather than unlock it.
     std::unique_ptr<std::mutex> calls_ = std::make_unique<std::mutex>();
     std::unique_ptr<std::mutex> interrupts_ = std::make_unique<std::mutex>();
@@ -172,13 +201,14 @@ protected:
 
 class Sender : public End {
 public:
-    Sender(std::shared_ptr<StreamCore> core, stream_sender end) : End(std::move(core)), end_(std::move(end)) {}
+    Sender(std::shared_ptr<StreamCore> core, nb::handle types, stream_sender end)
+        : End(std::move(core), types), end_(std::move(end)) {}
     ~Sender() { close(); }
 
     std::uint64_t send(nb::handle value, double timeout) {
         check_open();
         const seconds wait = wait_of(timeout);
-        const Types &types = *core_->types;
+        const Types &types = this->types();
         EncodeBuffer buffer;
         const std::span<const std::byte> bytes = types.encode(0, value.ptr(), buffer);
         const bool prefixed = detail::prefixed(types.field(0).kind);
@@ -237,14 +267,15 @@ private:
 
 class Reader : public End {
 public:
-    Reader(std::shared_ptr<StreamCore> core, stream_reader end) : End(std::move(core)), end_(std::move(end)) {}
+    Reader(std::shared_ptr<StreamCore> core, nb::handle types, stream_reader end)
+        : End(std::move(core), types), end_(std::move(end)) {}
     ~Reader() { close(); }
 
     nb::tuple receive(double timeout,
                       const std::vector<std::pair<std::vector<std::uint32_t>, nb::object>> &arrays) {
         check_open();
         const seconds wait = wait_of(timeout);
-        const Types &types = *core_->types;
+        const Types &types = this->types();
         // Each array the caller passed, sorted by where its bytes start in the item, so the copy below walks the
         // item once: the gaps go to scratch, each array's bytes straight into the array. Everything is checked
         // here, with the GIL held and before the wait, so a bad array consumes no item. The arguments keep
@@ -353,7 +384,7 @@ public:
                            capacity, max_readers, schema_hash);
         if (!made)
             throw_stream(made.error(), name);
-        return Stream(make_core(std::move(*made), types));
+        return Stream(make_core(std::move(*made)), types);
     }
 
     static Stream attach(const std::string &name, nb::handle types, std::uint32_t entry,
@@ -373,7 +404,7 @@ public:
         if ((*opened)->schema_hash() != schema_hash || !same_table ||
             static_cast<const stream_header *>((*opened)->base())->item_entry != entry)
             throw SchemaMismatch("stream '" + name + "' holds another item type");
-        return Stream(make_core(std::move(**opened), types));
+        return Stream(make_core(std::move(**opened)), types);
     }
 
     const std::string &name() const { return core().name; }
@@ -401,7 +432,7 @@ public:
                              std::to_string(core().s.sender_pid()));
         if (!made)
             throw_stream(made.error(), core().name);
-        return std::make_unique<Sender>(core_, std::move(*made));
+        return std::make_unique<Sender>(core_, types(), std::move(*made));
     }
 
     std::unique_ptr<Reader> reader(std::uint32_t mode, bool newest) {
@@ -411,13 +442,25 @@ public:
             core().s.reader(static_cast<read_mode>(mode), newest ? start_at::newest : start_at::oldest);
         if (!made)
             throw_stream(made.error(), core().name);
-        return std::make_unique<Reader>(core_, std::move(*made));
+        return std::make_unique<Reader>(core_, types(), std::move(*made));
     }
 
     void close() { core_.reset(); }
 
+    int traverse(visitproc visit, void *arg) const {
+        Py_VISIT(types_.ptr());
+        return 0;
+    }
+    void clear() { types_.release().dec_ref(); }
+
 private:
-    explicit Stream(std::shared_ptr<StreamCore> core) : core_(std::move(core)) {}
+    Stream(std::shared_ptr<StreamCore> core, nb::handle types)
+        : core_(std::move(core)), types_(nb::borrow(types)) {}
+    nb::handle types() const {
+        if (!types_.is_valid())
+            throw StreamClosed("this stream is closed");
+        return types_;
+    }
     const StreamCore &core() const {
         if (core_ == nullptr)
             throw StreamClosed("this stream is closed");
@@ -429,6 +472,7 @@ private:
         return *core_;
     }
     std::shared_ptr<StreamCore> core_;
+    nb::object types_;
 };
 
 } // namespace
@@ -440,13 +484,13 @@ void bind_stream(nb::module_ &m) {
     nb::exception<StreamClosed>(m, "StreamClosedError", PyExc_ValueError);
     nb::exception<Interrupted>(m, "_Interrupted");
 
-    nb::class_<Sender>(m, "Sender")
+    nb::class_<Sender>(m, "Sender", nb::type_slots(gc_slots<Sender>))
         .def("send", &Sender::send, "value"_a.none(), "timeout"_a)
         .def("interrupt", &Sender::interrupt)
         .def("close", &Sender::close)
         .def("_after_fork", &Sender::after_fork)
         .def_prop_ro("closed", &Sender::closed);
-    nb::class_<Reader>(m, "Reader")
+    nb::class_<Reader>(m, "Reader", nb::type_slots(gc_slots<Reader>))
         .def("receive", &Reader::receive, "timeout"_a,
              "arrays"_a = std::vector<std::pair<std::vector<std::uint32_t>, nb::object>>{})
         .def_prop_ro("mode", &Reader::mode)
@@ -455,7 +499,7 @@ void bind_stream(nb::module_ &m) {
         .def("close", &Reader::close)
         .def("_after_fork", &Reader::after_fork)
         .def_prop_ro("closed", &Reader::closed);
-    nb::class_<Stream>(m, "Stream")
+    nb::class_<Stream>(m, "Stream", nb::type_slots(gc_slots<Stream>))
         .def_static("create", &Stream::create, "name"_a, "types"_a, "entry"_a, "schema_hash"_a, "capacity"_a,
                     "max_readers"_a)
         .def_static("attach", &Stream::attach, "name"_a, "types"_a, "entry"_a, "schema_hash"_a)

@@ -33,7 +33,7 @@ def process_batches(name: str, ready: "mp.synchronize.Event") -> None:
 
 
 # --8<-- [start:main]
-def main() -> None:
+if __name__ == "__main__":
     context = mp.get_context("spawn")
     ready = context.Event()
     with SharedStream.create(Batch, "example-pipeline:batches", capacity=8) as stream:
@@ -45,8 +45,4 @@ def main() -> None:
                 sender.send(Batch(i, np.full(1024, float(i))))
         child.join(60)
     SharedStream.unlink("example-pipeline:batches")
-
-
-if __name__ == "__main__":
-    main()
 # --8<-- [end:main]

@@ -1,8 +1,12 @@
+import gc
 import pickle
+import subprocess
+import sys
 import threading
 import time
+import weakref
 from dataclasses import dataclass
-from typing import Annotated
+from typing import Annotated, Any
 
 import numpy as np
 import pytest
@@ -395,3 +399,53 @@ def test_threads_receiving_and_closing_at_once(unique_name: str) -> None:
     assert len(everything) == len(set(everything)) >= 200
     for into in taken:
         assert into == sorted(into)
+
+
+def test_a_stream_reachable_from_its_item_class_is_collected(unique_name: str) -> None:
+    """Free a stream and its ends when its item class refers back to the stream."""
+
+    def build() -> tuple[weakref.ref[Any], weakref.ref[Any]]:
+        @dataclass(frozen=True)
+        class Local:
+            index: int
+
+        stream = SharedStream.create(Local, unique_name, capacity=4)
+        Local.stream = stream  # type: ignore[attr-defined]
+        Local.sender = stream.sender()  # type: ignore[attr-defined]
+        return weakref.ref(stream), weakref.ref(Local)
+
+    stream_ref, class_ref = build()
+    gc.collect()
+    assert stream_ref() is None
+    assert class_ref() is None
+
+
+LEAK_PROBE = """
+import sys
+from dataclasses import dataclass
+
+from sharedbox import SharedStream
+
+@dataclass(frozen=True)
+class Plain:
+    index: int
+
+with SharedStream.create(Plain, sys.argv[1], capacity=8) as stream:
+    with stream.sender() as sender:
+        sender.send(Plain(1))
+SharedStream.unlink(sys.argv[1])
+"""
+
+
+def test_a_stream_of_a_module_level_class_leaves_no_leak_report(
+    unique_name: str,
+) -> None:
+    """Print no nanobind leak report when a script ends holding a stream of a dataclass."""
+    done = subprocess.run(
+        [sys.executable, "-c", LEAK_PROBE, unique_name],
+        capture_output=True,
+        check=True,
+        text=True,
+        timeout=60,
+    )
+    assert "leaked" not in done.stderr
