@@ -65,9 +65,10 @@ def test_receive_into_fills_the_callers_array_across_processes(
     """Return items whose image shares memory with the array passed, with the sent content."""
     with SharedStream.create(Frame, unique_name, capacity=4) as stream:
         reader = stream.reader()
-        child = CONTEXT.Process(
-            target=send_frames, args=(unique_name, 3, CONTEXT.Barrier(1))
-        )
+        # Process.start drops its args, and on Linux a freed barrier unlinks
+        # its semaphores before the spawned child can open them.
+        ready = CONTEXT.Barrier(1)
+        child = CONTEXT.Process(target=send_frames, args=(unique_name, 3, ready))
         child.start()
         buf = np.zeros((64, 64), np.uint16)
         for i in range(3):
