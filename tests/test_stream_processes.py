@@ -186,8 +186,8 @@ def test_send_and_asend_from_two_threads_lose_nothing(unique_name: str) -> None:
             asyncio.run(run())
 
         threads = [
-            threading.Thread(target=send_sync),
-            threading.Thread(target=send_async),
+            threading.Thread(target=send_sync, daemon=True),
+            threading.Thread(target=send_async, daemon=True),
         ]
         for thread in threads:
             thread.start()
@@ -217,7 +217,9 @@ def test_two_event_loops_in_two_threads_each_receive_everything(
 
             asyncio.run(run())
 
-        threads = [threading.Thread(target=consume, args=(n,)) for n in (0, 1)]
+        threads = [
+            threading.Thread(target=consume, args=(n,), daemon=True) for n in (0, 1)
+        ]
         for thread in threads:
             thread.start()
         opened.wait(60)

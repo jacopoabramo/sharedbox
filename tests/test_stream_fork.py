@@ -1,9 +1,7 @@
-import multiprocessing as mp
 import sys
-from collections.abc import Callable
-from multiprocessing.process import BaseProcess
 
 import pytest
+from crossproc import fork
 
 from sharedbox import SharedStream, StreamClosedError, WouldBlock
 
@@ -11,15 +9,6 @@ pytestmark = [
     pytest.mark.skipif(sys.platform == "win32", reason="Windows has no fork"),
     pytest.mark.filterwarnings("ignore:This process .* is multi-threaded"),
 ]
-
-
-def fork(target: Callable[[], object]) -> BaseProcess:
-    if sys.platform == "win32":
-        raise NotImplementedError("Windows has no fork")
-    else:
-        process = mp.get_context("fork").Process(target=target, daemon=True)
-        process.start()
-        return process
 
 
 def test_an_inherited_reader_is_closed_in_the_child_and_works_in_the_parent(

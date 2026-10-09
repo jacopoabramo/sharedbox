@@ -1,19 +1,18 @@
 import asyncio
 import gc
-import multiprocessing as mp
 import subprocess
 import sys
 import textwrap
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Iterator
 from concurrent.futures import FIRST_COMPLETED, Future, wait
 from dataclasses import dataclass
-from multiprocessing.process import BaseProcess
 from typing import Annotated, Any
 
 import numpy as np
 import pytest
+from crossproc import fork
 
 from sharedbox import (
     DType,
@@ -36,6 +35,42 @@ async def worker_started(name: str) -> None:
     while not [t for t in threading.enumerate() if name in t.name]:
         assert time.monotonic() < deadline
         await asyncio.sleep(0)
+
+
+class Hold:
+    """An item type whose item 1, once armed, stops in its decoding until released, on whichever thread decodes it."""
+
+    def __init__(self) -> None:
+        self.armed = threading.Event()
+        self.entered = threading.Event()
+        self.release = threading.Event()
+        hold = self
+
+        @dataclass
+        class Held:
+            index: int
+
+            def __post_init__(self) -> None:
+                if hold.armed.is_set() and self.index == 1:
+                    hold.armed.clear()
+                    hold.entered.set()
+                    hold.release.wait(5)
+
+        self.type: type[Any] = Held
+
+    def send_and_wait(self, sender: StreamSender[Any]) -> None:
+        """Send item 1 and return once a reader's thread stopped decoding it."""
+        item = self.type(1)
+        self.armed.set()
+        sender.send(item)
+        assert self.entered.wait(5)
+
+
+@pytest.fixture
+def hold() -> Iterator[Hold]:
+    hold = Hold()
+    yield hold
+    hold.release.set()
 
 
 def test_receive_future_is_a_real_future(unique_name: str) -> None:
@@ -107,16 +142,24 @@ def test_cancelling_anext_removes_the_wait(unique_name: str) -> None:
     assert asyncio.run(run()) == 1
 
 
-def test_an_item_taken_by_a_cancelled_anext_is_not_lost(unique_name: str) -> None:
+def test_an_item_taken_by_a_cancelled_anext_is_not_lost(
+    unique_name: str, hold: Hold
+) -> None:
     """Return from the next receive an item a cancelled anext had already received."""
-    with SharedStream.create(int, unique_name, capacity=4) as stream:
-        reader = stream.reader()
-        future = reader.receive_future()
-        stream.sender().send(5)
-        wait([future], timeout=5)
-        reader._cancel(future)
-        assert reader.receive(timeout=5) == 5
-        assert reader.position == 0
+
+    async def run() -> tuple[int, int | None]:
+        with SharedStream.create(hold.type, unique_name, capacity=4) as stream:
+            reader = stream.reader()
+            task = asyncio.create_task(anext(reader))
+            await worker_started(unique_name)
+            hold.send_and_wait(stream.sender())
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+            hold.release.set()
+            return reader.receive(timeout=5).index, reader.position
+
+    assert asyncio.run(run()) == (1, 0)
 
 
 def test_close_drops_items_kept_from_a_cancelled_receive(unique_name: str) -> None:
@@ -132,8 +175,10 @@ def test_close_drops_items_kept_from_a_cancelled_receive(unique_name: str) -> No
             reader.receive(timeout=1)
 
 
-def test_cancelling_asend_leaves_the_item_unsent(unique_name: str) -> None:
-    """Cancel an asend waiting on a full ring and find the ring holding only the earlier items."""
+def test_an_asend_cancelled_while_the_ring_stays_full_sends_nothing(
+    unique_name: str,
+) -> None:
+    """Send nothing from an asend cancelled while the ring stays full until the sender closes."""
 
     async def run() -> list[int]:
         with SharedStream.create(int, unique_name, capacity=2) as stream:
@@ -142,16 +187,12 @@ def test_cancelling_asend_leaves_the_item_unsent(unique_name: str) -> None:
             sender.send(0)
             sender.send(1)
             task = asyncio.create_task(sender.asend(2))
-            await asyncio.sleep(0.05)
+            await worker_started(unique_name)
             task.cancel()
             with pytest.raises(asyncio.CancelledError):
                 await task
-            idle = asyncio.wrap_future(sender._submit(lambda future: None))
-            await asyncio.wait_for(idle, 5)
-            received = [reader.receive_nowait(), reader.receive_nowait()]
-            with pytest.raises(WouldBlock):
-                reader.receive_nowait()
-            return received
+            sender.close()
+            return list(reader)
 
     assert asyncio.run(run()) == [0, 1]
 
@@ -183,84 +224,52 @@ def test_buffered_items_are_received_without_a_worker(
 
 
 def test_a_cancelled_anext_does_not_let_the_next_one_overtake(
-    unique_name: str, monkeypatch: pytest.MonkeyPatch
+    unique_name: str, hold: Hold
 ) -> None:
     """Return the item a cancelled anext took before the one sent after it."""
-    taken = threading.Event()
-    release = threading.Event()
-    real_take = _stream.StreamReader._take
-
-    def held_take(self: Any, targets: Any, step: float, future: Any = None) -> Any:
-        item = real_take(self, targets, step, future)
-        if future is not None:
-            taken.set()
-            release.wait(5)
-        return item
-
-    monkeypatch.setattr(_stream.StreamReader, "_take", held_take)
 
     async def run() -> list[int]:
-        with SharedStream.create(int, unique_name, capacity=8) as stream:
+        with SharedStream.create(hold.type, unique_name, capacity=8) as stream:
             reader = stream.reader()
             sender = stream.sender()
             first = asyncio.create_task(anext(reader))
-            while reader._inflight == 0:
-                await asyncio.sleep(0)
-            sender.send(1)
-            await asyncio.get_running_loop().run_in_executor(None, taken.wait, 5)
+            await worker_started(unique_name)
+            hold.send_and_wait(sender)
             first.cancel()
             with pytest.raises(asyncio.CancelledError):
                 await first
-            sender.send(2)
+            sender.send(hold.type(2))
             second = asyncio.create_task(anext(reader))
             await asyncio.sleep(0.05)
-            release.set()
-            received = [await asyncio.wait_for(second, 5)]
-            received.append(await asyncio.wait_for(anext(reader), 5))
+            hold.release.set()
+            received = [(await asyncio.wait_for(second, 5)).index]
+            received.append((await asyncio.wait_for(anext(reader), 5)).index)
             return received
 
     assert asyncio.run(run()) == [1, 2]
 
 
 def test_a_sync_receive_after_a_cancelled_anext_returns_its_item_first(
-    unique_name: str,
+    unique_name: str, hold: Hold
 ) -> None:
     """Return the item a cancelled anext was still decoding before a later item, from every sync receive."""
-    armed = threading.Event()
-    entered = threading.Event()
-    release = threading.Event()
-
-    @dataclass
-    class Held:
-        index: int
-
-        def __post_init__(self) -> None:
-            if armed.is_set() and self.index == 1:
-                armed.clear()
-                entered.set()
-                release.wait(5)
 
     async def run() -> list[int]:
-        with SharedStream.create(Held, unique_name, capacity=8) as stream:
+        with SharedStream.create(hold.type, unique_name, capacity=8) as stream:
             reader = stream.reader()
             sender = stream.sender()
             first = asyncio.create_task(anext(reader))
             await worker_started(unique_name)
-            item = Held(1)
-            armed.set()
-            sender.send(item)
-            assert entered.wait(5)
+            hold.send_and_wait(sender)
             first.cancel()
             with pytest.raises(asyncio.CancelledError):
                 await first
-            sender.send(Held(2))
-            try:
-                with pytest.raises(WouldBlock):
-                    reader.receive_nowait()
-                with pytest.raises(TimeoutError):
-                    reader.receive(timeout=0.2)
-            finally:
-                release.set()
+            sender.send(hold.type(2))
+            with pytest.raises(WouldBlock):
+                reader.receive_nowait()
+            with pytest.raises(TimeoutError):
+                reader.receive(timeout=0.2)
+            hold.release.set()
             return [reader.receive(timeout=5).index, reader.receive(timeout=5).index]
 
     assert asyncio.run(run()) == [1, 2]
@@ -400,15 +409,6 @@ def use_inherited_ends(reader: StreamReader[int], sender: StreamSender[int]) -> 
         asyncio.run(anext(reader))
     reader.close()
     sender.close()
-
-
-def fork(target: Callable[..., object], *args: object) -> BaseProcess:
-    if sys.platform == "win32":
-        raise NotImplementedError("Windows has no fork")
-    else:
-        process = mp.get_context("fork").Process(target=target, args=args, daemon=True)
-        process.start()
-        return process
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="Windows has no fork")

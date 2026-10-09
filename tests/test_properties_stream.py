@@ -11,7 +11,7 @@ from hypothesis.stateful import (
     rule,
 )
 
-from sharedbox import SharedStream, StreamReader, WouldBlock
+from sharedbox import SharedStream, StreamReader, StreamSender, WouldBlock
 
 CAPACITY = 4
 MAX_READERS = 4
@@ -34,6 +34,7 @@ class StreamMachine(RuleBasedStateMachine):
         super().__init__()
         self.name = ""
         self.stream: SharedStream[int]
+        self.sender: StreamSender[int]
         self.sent: list[int] = []
         self.readers: list[Model] = []
 

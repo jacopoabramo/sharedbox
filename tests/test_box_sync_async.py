@@ -44,8 +44,8 @@ def test_a_sync_and_an_async_watch_in_two_threads_both_see_another_process(
             asyncio.run(asyncio.wait_for(run(), 60))
 
         threads = [
-            threading.Thread(target=watch_sync),
-            threading.Thread(target=watch_async),
+            threading.Thread(target=watch_sync, daemon=True),
+            threading.Thread(target=watch_async, daemon=True),
         ]
         for thread in threads:
             thread.start()
