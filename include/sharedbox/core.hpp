@@ -82,7 +82,7 @@ namespace sharedbox {
 // detail may change without a rename, so a shared library should build with hidden visibility.
 inline namespace v3 {
 
-inline constexpr std::size_t name_max = 200;
+inline constexpr std::size_t name_max = 240;
 inline constexpr std::uint32_t max_fields = 256;
 inline constexpr std::uint32_t max_capacity = std::uint32_t{1} << 20;
 inline constexpr std::uint32_t max_waiter_slots = 4096;
@@ -200,7 +200,7 @@ static_assert(offsetof(waiter_slot, owner_start) == 0);
 static_assert(offsetof(waiter_slot, owner_pidns) == 8);
 static_assert(offsetof(waiter_slot, owner_pid) == 16);
 static_assert(offsetof(waiter_slot, interrupt) == 20);
-static_assert(sizeof(box_ref) == 216 && alignof(box_ref) == 8);
+static_assert(sizeof(box_ref) == 256 && alignof(box_ref) == 8);
 static_assert(offsetof(box_ref, create_id) == 0);
 static_assert(offsetof(box_ref, schema_hash) == 8);
 static_assert(offsetof(box_ref, name) == 16);
@@ -695,7 +695,10 @@ inline bool process_alive(std::uint32_t pid, std::uint64_t start) noexcept {
 }
 
 // "Local\SBX:" (10), a name of name_max, "#w4095" (6) and the terminating NUL.
-inline constexpr std::size_t object_name_max = 224;
+inline constexpr std::size_t object_name_max = 264;
+static_assert(10 + name_max + 6 + 1 <= object_name_max && object_name_max % 8 == 0);
+// MAX_PATH on Windows, NAME_MAX on Linux.
+static_assert(10 + name_max + 6 <= 260 && 4 + name_max <= 255);
 inline constexpr int futex_wait = 0;
 inline constexpr int futex_wake = 1;
 

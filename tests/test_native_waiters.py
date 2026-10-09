@@ -298,7 +298,7 @@ def test_waiting_in_a_slot_not_held_is_refused(unique_name: str) -> None:
 
 def test_the_longest_name_and_the_last_slot_wake(unique_name: str) -> None:
     """Check that with the longest name and 4096 slots the last slot is woken promptly by a write."""
-    name = (unique_name + "x" * 200)[:200]
+    name = (unique_name + "x" * 240)[:240]
     segment = create(name, waiter_slots=4096)
     try:
         slots = [segment.register_waiter() for _ in range(4096)]

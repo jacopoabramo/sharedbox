@@ -53,8 +53,9 @@ class SchemaMismatchError(TypeError):
 
     Raised by attaching, or unpickling a box, with a class whose identity
     or fields differ from the creator's; by a segment of another layout
-    major version or with a field of a kind this version cannot read,
-    which the message names; and by unpickling after the box was created
+    major version, with a field of a kind this version cannot read, or
+    with an unknown magic (a segment made by another version of
+    sharedbox, or not a sharedbox segment), which the message names; and by unpickling after the box was created
     again.
     """
 

@@ -1044,26 +1044,26 @@ def test_a_class_with_two_box_bases_keeps_the_defaults_of_both(
 
 @pytest.mark.parametrize(
     "name",
-    ["motor", "bl01:camera:det1:frames", "a-b_c", "x" * 200, "a:" + "b" * 198],
+    ["motor", "bl01:camera:det1:frames", "a-b_c", "x" * 240, "a:" + "b" * 238],
 )
 def test_names_with_colon_levels_are_accepted(name: str) -> None:
-    """Check that names of segments joined by ':' up to 200 characters are accepted."""
+    """Check that names of segments joined by ':' up to 240 characters are accepted."""
     assert check_name(name) == name
 
 
 @pytest.mark.parametrize(
     "name",
-    ["", ":a", "a:", "a::b", "a.b", "a b", "x" * 201, "\u00e9", "a/b", "a#w1"],
+    ["", ":a", "a:", "a::b", "a.b", "a b", "x" * 241, "\u00e9", "a/b", "a#w1"],
 )
 def test_names_breaking_a_rule_are_refused(name: str) -> None:
-    """Check that empty segments, ':' at either end, '.', other characters and 201 characters are refused."""
+    """Check that empty segments, ':' at either end, '.', other characters and 241 characters are refused."""
     with pytest.raises(ValueError, match="segment names"):
         check_name(name)
 
 
 def test_a_name_of_200_characters_works(unique_name: str) -> None:
-    """Check that a box with a 200-character hierarchical name can be created, attached, waited on and closed."""
-    name = (unique_name + ":" + "x" * 200)[:200]
+    """Check that a box with a 240-character hierarchical name can be created, attached, waited on and closed."""
+    name = (unique_name + ":" + "x" * 240)[:240]
     with Point.create(name) as box:
         other = Point.attach(name)
         seen: queue.Queue[float] = queue.Queue()

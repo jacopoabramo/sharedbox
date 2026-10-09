@@ -463,7 +463,7 @@ def test_a_higher_minor_version_opens(unique_name: str) -> None:
 
 def test_a_name_at_the_length_limit(unique_name: str) -> None:
     """Check that a name of the maximum length can be created and attached."""
-    name = (unique_name + "x" * 200)[:200]
+    name = (unique_name + "x" * 240)[:240]
     owner = create(name)
     try:
         other = attach(name)
@@ -761,7 +761,7 @@ def test_attach_refuses_a_field_of_a_kind_it_cannot_read(unique_name: str) -> No
 
 def ref_segment(name: str) -> Segment:
     return Segment.create(
-        name, [NativeField(0, 216, REF)], ["Stage.motor"], 216, SCHEMA, 1.0, []
+        name, [NativeField(0, 256, REF)], ["Stage.motor"], 256, SCHEMA, 1.0, []
     )
 
 
@@ -772,20 +772,20 @@ def test_a_reference_is_stored_as_create_id_schema_hash_and_padded_name(
     segment = ref_segment(unique_name)
     assert segment.get(0) is None
     segment.set([(0, (7, 0x5EED, "m1"))])
-    assert segment._read(0) == struct.pack("<QQ200s", 7, 0x5EED, b"m1")
+    assert segment._read(0) == struct.pack("<QQ240s", 7, 0x5EED, b"m1")
     assert segment.get(0) == (7, 0x5EED, "m1")
     assert segment.get_dict(("motor",)) == {"motor": (7, 0x5EED, "m1")}
     segment.set([(0, None)])
-    assert segment._read(0) == bytes(216)
+    assert segment._read(0) == bytes(256)
     assert segment.get(0) is None
     segment.close()
 
 
 def test_a_reference_name_of_200_bytes_has_no_terminating_nul(unique_name: str) -> None:
-    """Check that a box name of 200 bytes fills the name bytes and reads back whole."""
+    """Check that a box name of 240 bytes fills the name bytes and reads back whole."""
     segment = ref_segment(unique_name)
-    segment.set([(0, (1, 2, "n" * 200))])
-    assert segment.get(0) == (1, 2, "n" * 200)
+    segment.set([(0, (1, 2, "n" * 240))])
+    assert segment.get(0) == (1, 2, "n" * 240)
     segment.close()
 
 
@@ -794,7 +794,7 @@ def test_a_reference_name_of_200_bytes_has_no_terminating_nul(unique_name: str) 
     [
         ((0, 1, "m1"), ValueError),
         ((1, 1, ""), ValueError),
-        ((1, 1, "n" * 201), ValueError),
+        ((1, 1, "n" * 241), ValueError),
         ((1, 1, "a\x00b"), ValueError),
         ((1, 1, "m\u00f6tor"), ValueError),
         ((1, 1, "bad/name"), ValueError),
@@ -820,9 +820,9 @@ def test_a_reference_value_that_cannot_be_stored_is_refused(
 
 def test_check_takes_none_for_a_reference() -> None:
     """Check that check() accepts None for a reference field and refuses a value of another type."""
-    check(REF, 216, "Stage.motor", None)
+    check(REF, 256, "Stage.motor", None)
     with pytest.raises(TypeError, match="Stage.motor expects a reference, got int"):
-        check(REF, 216, "Stage.motor", 3)
+        check(REF, 256, "Stage.motor", 3)
 
 
 def test_cached_ref_returns_the_entry_only_for_the_stored_create_id(

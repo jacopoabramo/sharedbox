@@ -148,7 +148,7 @@ std::span<const std::byte> encode(const FieldDesc &field, const std::string &nam
             if (!detail::name_ok(box_name))
                 raise(PyExc_ValueError,
                       name +
-                          " needs a box name of segments of [A-Za-z0-9_-] joined by ':', at most 200 characters");
+                          " needs a box name of segments of [A-Za-z0-9_-] joined by ':', at most 240 characters");
             std::memcpy(ref.name, box_name.data(), box_name.size());
         }
         std::memcpy(buffer.small, &ref, sizeof ref);

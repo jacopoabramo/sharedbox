@@ -12,7 +12,7 @@ if TYPE_CHECKING:
     from ._layout import FieldSpec
 
 NAME = re.compile(r"[A-Za-z0-9_-]+(?::[A-Za-z0-9_-]+)*")
-MAX_NAME = 200
+MAX_NAME = 240
 
 # Weak, so that a class nothing else uses, such as one defined inside a function, can be freed.
 CLASSES: dict[int, list[weakref.ref[type[SharedBox]]]] = {}
