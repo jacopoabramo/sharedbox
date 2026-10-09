@@ -3684,6 +3684,14 @@ and this project adheres to <a href="https://semver.org/spec/v2.0.0.html">Semant
   one this version knows. Python raises <code>SchemaMismatchError</code>.</li>
 <li><code>sharedbox::to_expected</code> and <code>sharedbox::from_expected</code>: convert a
   <code>sharedbox::result</code> to a <code>std::expected</code> and back on C++23.</li>
+<li><code>sharedbox::stream</code>, <code>sharedbox::stream_sender</code> and <code>sharedbox::stream_reader</code>
+  in <code>stream.hpp</code>, included by <code>sharedbox.hpp</code>: a ring in shared memory with
+  one sender and up to <code>max_readers</code> readers, each reading
+  <code>read_mode::lossless</code>, <code>read_mode::lossy</code> or <code>read_mode::latest</code>, laid out
+  as stream layout 1.0. C++ only.</li>
+<li><code>status::busy</code> (-13), <code>status::ended</code> (-14) and <code>status::interrupted</code>
+  (-15), with <code>SBX_E_BUSY</code>, <code>SBX_E_ENDED</code> and <code>SBX_E_INTERRUPTED</code> in
+  <code>sharedbox_c.h</code>.</li>
 </ul>
 <h3 id="changed">Changed<a class="headerlink" href="#changed" title="Permanent link">&para;</a></h3>
 <ul>
