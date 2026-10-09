@@ -21,7 +21,8 @@ inline constexpr std::uint32_t stream_ended = 1;
 // How long a wait lasts before it checks whether the processes it waits for still run.
 inline constexpr double liveness_delay = 0.1;
 
-// A reader that sleeps on every item makes the sender pay a wake per item, so an end polls this many times first.
+// A send or receive waiting for the other end checks this many times before it sleeps: an end that sleeps
+// on every item makes the other pay a wake call per item.
 inline constexpr unsigned spin_before_sleep = 1000;
 
 enum class read_mode : std::uint32_t { lossless = 1, lossy = 2, latest = 3 };
@@ -285,6 +286,8 @@ struct no_sender_pause {
 // both go through it, so exactly one of them acts on a dead owner. On success start holds the start read
 // and the caller must leave sender_start to its own store. Gives false when the owner is alive, another claim
 // is in progress or sender_pid is no longer seen.
+// Known limit: a process killed before it stores sender_start again leaves it at start_freeing, so every later
+// sender() is busy and readers time out instead of getting ended.
 template <class Pause = no_sender_pause>
 inline bool claim_dead_sender(stream_header &h, std::uint32_t seen, std::uint64_t &start,
                               Pause pause = {}) noexcept {
