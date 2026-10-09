@@ -1,9 +1,11 @@
 import asyncio
 import gc
 import multiprocessing as mp
+import sys
 import threading
 import time
 from collections.abc import Callable
+from multiprocessing.process import BaseProcess
 from typing import Annotated, Any
 
 import numpy as np
@@ -17,6 +19,7 @@ from sharedbox import (
     ReaderEvents,
     Shape,
     SharedStream,
+    StreamClosedError,
     StreamReader,
 )
 from sharedbox._stream import CountedSignal
@@ -410,3 +413,76 @@ def test_psygnal_still_calls_the_slot_hooks() -> None:
     del owner
     gc.collect()
     assert seen[4:] == [(1, True), (0, False)]
+
+
+def fork(target: Callable[..., object], *args: object) -> BaseProcess:
+    if sys.platform == "win32":
+        raise NotImplementedError("Windows has no fork")
+    else:
+        process = mp.get_context("fork").Process(target=target, args=args, daemon=True)
+        process.start()
+        return process
+
+
+def use_inherited_delivering_reader(reader: StreamReader[int]) -> None:
+    """Check in a forked child that a reader that was delivering is closed."""
+    with pytest.raises(StreamClosedError):
+        reader.receive()
+    with pytest.raises(StreamClosedError):
+        reader.receive_nowait()
+    reader.close()
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="Windows has no fork")
+@pytest.mark.filterwarnings("ignore:This process .* is multi-threaded")
+def test_a_forked_child_of_a_delivering_reader_gets_stream_closed_error(
+    unique_name: str,
+) -> None:
+    """Raise StreamClosedError from receive and receive_nowait in the child of a fork."""
+    with SharedStream.create(int, unique_name, capacity=4) as stream:
+        reader = stream.reader()
+        reader.events.received.connect(lambda *_: None)
+        child = fork(use_inherited_delivering_reader, reader)
+        child.join(20)
+        assert child.exitcode == 0
+
+
+def test_an_item_handed_back_does_not_move_the_position(unique_name: str) -> None:
+    """Keep reader.position at the last item delivered when delivery hands one back."""
+    take = StreamReader._take
+    calls: list[int] = []
+    positions: list[int | None] = []
+    got: list[tuple[int, int]] = []
+
+    def keep(item: int, position: int) -> None:
+        got.append((item, position))
+
+    def patched(self: StreamReader[int], *args: Any) -> int:
+        calls.append(1)
+        if len(calls) == 3:
+            positions.append(self.position)
+        item = take(self, *args)
+        if len(calls) == 2:
+            self.events.received.disconnect(keep)
+        return item
+
+    with SharedStream.create(int, unique_name, capacity=4) as stream:
+        reader = stream.reader()
+        sender = stream.sender()
+        sender.send(10)
+        sender.send(11)
+        with pytest.MonkeyPatch.context() as patch:
+            patch.setattr(StreamReader, "_take", patched)
+            reader.events.received.connect(keep)
+            deadline = time.monotonic() + 5
+            while True:
+                try:
+                    received = reader.receive(timeout=5)
+                    break
+                except RuntimeError:
+                    assert time.monotonic() < deadline
+                    time.sleep(0.01)
+        assert got == [(10, 0)]
+        assert positions == [0]
+        assert received == 11
+        assert reader.position == 1

@@ -538,18 +538,20 @@ class End:
 
     def _submit(self, call: Call) -> CallFuture:
         with self._lock:
-            if self.closed:
-                raise StreamClosedError(
-                    f"stream {self._stream.name!r}: this end is closed"
-                )
-            if self._worker is None:
-                self._worker = Worker(
-                    f"sharedbox:{self._stream.name}:{self._thread_role()}",
-                    functools.partial(finished, weakref.ref(self)),
-                )
-                weakref.finalize(self, self._worker.stop)
-            self._inflight += 1
-            return self._worker.submit(call)
+            return self._submit_locked(call)
+
+    def _submit_locked(self, call: Call) -> CallFuture:
+        """Queue `call` on the worker; the caller holds `_lock`."""
+        if self.closed:
+            raise StreamClosedError(f"stream {self._stream.name!r}: this end is closed")
+        if self._worker is None:
+            self._worker = Worker(
+                f"sharedbox:{self._stream.name}:{self._thread_role()}",
+                functools.partial(finished, weakref.ref(self)),
+            )
+            weakref.finalize(self, self._worker.stop)
+        self._inflight += 1
+        return self._worker.submit(call)
 
     _thread_role: Callable[[], str]
 
@@ -738,10 +740,17 @@ class ReaderEvents(SignalGroup):
     received = Signal(object, int, signal_instance_class=CountedSignal)
     """Emitted as `(item, position)` for each item the reader receives."""
     ended = Signal()
-    """Emitted once, when delivery has received the last item of an ended stream."""
+    """Emitted once per delivery, when it reaches the end of the stream."""
 
     def __init__(self, reader: StreamReader[Any] | None = None) -> None:
-        """Create the group; `reader` is the reader whose delivery follows the `received` callbacks, if any."""
+        """Create the signal group of a stream reader.
+
+        Parameters
+        ----------
+        reader
+            The reader whose delivery starts and stops with the `received`
+            callbacks; None for a group tied to no reader.
+        """
         self._reader = None if reader is None else weakref.ref(reader)
         super().__init__()
 
@@ -863,7 +872,11 @@ class StreamReader(End, Iterator[T], AsyncIterator[T], Generic[T]):
         return self._receive(self._targets(out), timeout)
 
     def receive_nowait(self) -> T:
-        """Return the next item, or raise [`WouldBlock`][sharedbox.WouldBlock] if none is waiting."""
+        """Return the next item, or raise [`WouldBlock`][sharedbox.WouldBlock] if none is waiting.
+
+        It also raises `WouldBlock` while a delivering call is still stopping,
+        after the last `events.received` callback disconnected.
+        """
         self._check_consumer()
         return self._take_nowait([])
 
@@ -911,7 +924,7 @@ class StreamReader(End, Iterator[T], AsyncIterator[T], Generic[T]):
     def events(self) -> ReaderEvents:
         """The reader's psygnal signals: `received` as `(item, position)` for each item, and `ended` once.
 
-        Connecting the first callback starts delivery on the reader's
+        Connecting the first `received` callback starts delivery on the reader's
         background thread, and disconnecting the last one stops it. While
         delivery runs, every other way of receiving from this reader raises
         `RuntimeError`, also after the stream has ended, until the callbacks
@@ -921,10 +934,12 @@ class StreamReader(End, Iterator[T], AsyncIterator[T], Generic[T]):
         `psygnal.emit_queued()` to run them on the main thread. A callback
         that raises is logged to the `sharedbox` logger and delivery goes
         on, unless the receive itself fails: that is logged too, and callbacks
-        then receive nothing more until a callback connects or disconnects.
+        then receive nothing more until a `received` callback connects or disconnects.
         Delivery runs only while `received` has a callback, and `ended` fires
         only then. A slow callback makes a lossy or latest
         reader miss items and holds the sender back for a lossless one.
+        Right after delivery stops, the `_nowait` forms may raise `WouldBlock`
+        until the delivering call has returned.
 
         Notes
         -----
@@ -961,16 +976,28 @@ class StreamReader(End, Iterator[T], AsyncIterator[T], Generic[T]):
         with self._lock:
             if self._delivering or self.closed:
                 return
-            self._delivering = True
             self._generation += 1
             generation = self._generation
-        with contextlib.suppress(StreamClosedError):
-            self._delivery = self._submit(
-                lambda future: self._deliver(generation), allow_delivery=True
-            )
+            self._delivering = True
+            try:
+                self._delivery = self._submit_locked(
+                    lambda future: self._deliver(generation)
+                )
+            except StreamClosedError:
+                self._delivering = False
 
-    def _after_delivery(self, timeout: float | None) -> float | None:
-        """Wait for a delivering call that is still stopping, so the items it hands back come first; return the time left."""
+    def _delivery_pending(self) -> CallFuture | None:
+        """Return the delivering call still running, if the caller is not that call's own thread.
+
+        Raises
+        ------
+        StreamClosedError
+            If this reader is closed.
+        """
+        if self.closed:
+            raise StreamClosedError(
+                f"stream {self._stream.name!r}: the reader was closed"
+            )
         future = self._delivery
         worker = self._worker
         if (
@@ -978,6 +1005,13 @@ class StreamReader(End, Iterator[T], AsyncIterator[T], Generic[T]):
             or future.done()
             or (worker is not None and worker.thread is threading.current_thread())
         ):
+            return None
+        return future
+
+    def _after_delivery(self, timeout: float | None) -> float | None:
+        """Wait for a delivering call that is still stopping, so the items it hands back come first; return the time left."""
+        future = self._delivery_pending()
+        if future is None:
             return timeout
         start = time.monotonic()
         if not wait([future], timeout).done:
@@ -1033,7 +1067,7 @@ class StreamReader(End, Iterator[T], AsyncIterator[T], Generic[T]):
             logger.exception("a callback of stream %r raised", self._stream.name)
 
     def _take_nowait(self, targets: list[tuple[tuple[int, ...], Any]]) -> T:
-        if self._delivery is not None and not self._delivery.done():
+        if self._delivery_pending() is not None:
             raise WouldBlock(f"stream {self._stream.name!r}: no item is waiting")
         try:
             return self._take(targets, 0.0)
@@ -1076,6 +1110,7 @@ class StreamReader(End, Iterator[T], AsyncIterator[T], Generic[T]):
         super()._after_fork()
         self._carry.clear()
         self._delivering = False
+        self._delivery = None
 
     def _cancel(self, future: Future[Any]) -> None:
         super()._cancel(future)
