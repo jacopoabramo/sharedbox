@@ -80,7 +80,7 @@ class LockTimeoutError(TimeoutError):
     """
 
 class WaiterSlotsFullError(RuntimeError):
-    """Every waiter slot of the box or stream is taken; for a stream, `max_readers` readers are open."""
+    """A stream has `max_readers` readers open, or has no free waiter slot."""
 
 def check(kind: int, capacity: int, name: str, value: object) -> None:
     """Raise what writing `value` to a field of this kind and capacity would raise."""
