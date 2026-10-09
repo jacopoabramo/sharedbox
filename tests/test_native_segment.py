@@ -430,7 +430,9 @@ def test_another_major_version_is_refused(unique_name: str) -> None:
     """Check that attach raises SchemaMismatchError for a different major layout version."""
     segment = create(unique_name)
     patch_header(unique_name, 12, "<H", 4)
-    with pytest.raises(SchemaMismatchError, match=r"uses layout 4\.0"):
+    with pytest.raises(
+        SchemaMismatchError, match=r"uses core version 1\.0 and box layout 4\.0"
+    ):
         attach(unique_name)
     segment.close()
 
@@ -781,7 +783,7 @@ def test_a_reference_is_stored_as_create_id_schema_hash_and_padded_name(
     segment.close()
 
 
-def test_a_reference_name_of_200_bytes_has_no_terminating_nul(unique_name: str) -> None:
+def test_a_reference_name_of_240_bytes_has_no_terminating_nul(unique_name: str) -> None:
     """Check that a box name of 240 bytes fills the name bytes and reads back whole."""
     segment = ref_segment(unique_name)
     segment.set([(0, (1, 2, "n" * 240))])

@@ -1061,7 +1061,7 @@ def test_names_breaking_a_rule_are_refused(name: str) -> None:
         check_name(name)
 
 
-def test_a_name_of_200_characters_works(unique_name: str) -> None:
+def test_a_name_of_240_characters_works(unique_name: str) -> None:
     """Check that a box with a 240-character hierarchical name can be created, attached, waited on and closed."""
     name = (unique_name + ":" + "x" * 240)[:240]
     with Point.create(name) as box:

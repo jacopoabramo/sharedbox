@@ -915,7 +915,7 @@ def test_snapshot_following_a_reference_keeps_no_objects(
         assert sys.getallocatedblocks() <= before + 100
 
 
-def test_a_reference_holds_a_name_of_200_characters(unique_name: str) -> None:
+def test_a_reference_holds_a_name_of_240_characters(unique_name: str) -> None:
     """Check that a reference field stores and follows a box whose name has 240 characters."""
     name = (unique_name + ":" + "t" * 240)[:240]
     with (
