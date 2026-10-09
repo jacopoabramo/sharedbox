@@ -226,8 +226,8 @@ static_assert(SBX_E_OS == int(status::os) && SBX_E_KIND == int(status::kind_mism
 static_assert(SBX_E_FOREIGN == int(status::foreign));
 
 // Why a call failed: the status, the OS error (errno or GetLastError()) read where the OS call failed,
-// and what the call found when that is the reason: the magic for kind_mismatch and foreign, major << 16 |
-// minor for layout.
+// and what the call found when that is the reason: the magic for kind_mismatch and foreign, for layout
+// core_major << 48 | core_minor << 32 | kind_major << 16 | kind_minor of the segment's first line.
 struct error {
     status code = status::ok;
     std::int32_t os = 0;
@@ -268,12 +268,6 @@ public:
     constexpr explicit(!std::is_convertible_v<U, T>) result(U &&v)
         : v_(std::in_place_index<0>, std::forward<U>(v)) {}
     constexpr result(unexpected e) : v_(std::in_place_index<1>, e) {}
-#if defined(__cpp_lib_expected) && __cpp_lib_expected >= 202211L
-    // result never aliases std::expected, so a program may mix translation units built as C++20 and as
-    // C++23; to_expected converts the other way.
-    constexpr result(std::expected<T, sharedbox::error> e)
-        : result(e ? result(std::move(*e)) : result(unexpected(e.error()))) {}
-#endif
 
     constexpr bool has_value() const noexcept { return v_.index() == 0; }
     constexpr explicit operator bool() const noexcept { return has_value(); }
@@ -349,12 +343,6 @@ public:
 
     constexpr result() noexcept = default;
     constexpr result(unexpected e) noexcept : has_value_(false), error_(e.error()) {}
-#if defined(__cpp_lib_expected) && __cpp_lib_expected >= 202211L
-    // result never aliases std::expected, so a program may mix translation units built as C++20 and as
-    // C++23; to_expected converts the other way.
-    constexpr result(std::expected<void, sharedbox::error> e)
-        : result(e ? result() : result(unexpected(e.error()))) {}
-#endif
 
     constexpr bool has_value() const noexcept { return has_value_; }
     constexpr explicit operator bool() const noexcept { return has_value(); }
@@ -396,8 +384,10 @@ private:
 };
 
 #if defined(__cpp_lib_expected) && __cpp_lib_expected >= 202211L
-// A free function because expected's own converting constructor would read a result<bool> through its
-// explicit operator bool, and a member conversion cannot move a move-only value.
+// Free functions, not constructors of result: a constructor under this #if would give the class a
+// different body in C++20 and C++23 translation units of one program. A free to_expected also avoids
+// expected's own converting constructor reading a result<bool> through its explicit operator bool, and
+// a member conversion cannot move a move-only value.
 template <class T> constexpr std::expected<T, error> to_expected(result<T> r) {
     if (!r)
         return std::unexpected(r.error());
@@ -405,6 +395,18 @@ template <class T> constexpr std::expected<T, error> to_expected(result<T> r) {
         return {};
     else
         return *std::move(r);
+}
+
+template <class T> constexpr result<T> from_expected(std::expected<T, error> e) {
+    if (!e)
+        return unexpected(e.error());
+    return result<T>(std::move(*e));
+}
+
+constexpr result<void> from_expected(std::expected<void, error> e) {
+    if (!e)
+        return unexpected(e.error());
+    return {};
 }
 #endif
 
@@ -486,6 +488,11 @@ inline common_header copy_common(const void *base) noexcept {
     return line0;
 }
 
+inline std::uint64_t layout_found(const common_header &line0) noexcept {
+    return std::uint64_t{line0.core_major} << 48 | std::uint64_t{line0.core_minor} << 32 |
+           std::uint64_t{line0.kind_major} << 16 | line0.kind_minor;
+}
+
 // Checks the copy h of the header of a published segment of mapped bytes as a segment of kind L: the
 // kind, the core version, the kind's version, then the kind's geometry. Fills found with what refused it.
 template <segment_layout L>
@@ -495,9 +502,9 @@ result<common_header> open_check(const typename L::header_type &h, std::uint64_t
         return unexpected(
             error{kind_name(line0.magic).empty() ? status::foreign : status::kind_mismatch, 0, line0.magic});
     if (line0.core_major != core_major)
-        return unexpected(error{status::layout, 0, std::uint64_t{line0.core_major} << 16 | line0.core_minor});
+        return unexpected(error{status::layout, 0, layout_found(line0)});
     if (line0.kind_major < L::oldest_major || line0.kind_major > L::newest_major)
-        return unexpected(error{status::layout, 0, std::uint64_t{line0.kind_major} << 16 | line0.kind_minor});
+        return unexpected(error{status::layout, 0, layout_found(line0)});
     if (line0.size != mapped || line0.waiter_slots == 0 || line0.waiter_slots > max_waiter_slots)
         return unexpected(status::corrupt);
     if (const status rc = L::check_geometry(h, mapped); rc != status::ok)
