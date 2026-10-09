@@ -182,21 +182,8 @@ Both ends can be used with `async with`, which closes them at the end of the
 block. In an `asyncio.TaskGroup`, let the task that sends close the sender,
 because a reader's `async for` ends only when the stream does:
 
-```python
-async def produce(sender: StreamSender[Batch]) -> None:
-    async with sender:
-        for i in range(3):
-            await sender.asend(Batch(i, np.full(1024, float(i))))
-
-
-async def consume(reader: StreamReader[Batch]) -> None:
-    async for batch in reader:
-        print(batch.index)
-
-
-async with asyncio.TaskGroup() as group:
-    group.create_task(consume(stream.reader()))
-    group.create_task(produce(stream.sender()))
+```{.python}
+--8<-- "docs/examples/send_items_through_a_stream.py:tasks"
 ```
 
 The reader is opened before either task starts, so it sees every item.
@@ -209,18 +196,8 @@ cancelled, and an item it takes after you stop waiting on it is lost. Keep
 one future per reader, and ask a reader for a new one only once its last
 one is done:
 
-```python
-pending = {asyncio.wrap_future(r.receive_future()): r for r in readers}
-while pending:
-    done, _ = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
-    for future in done:
-        reader = pending.pop(future)
-        try:
-            batch = future.result()
-        except EndOfStream:
-            continue
-        print(batch.index)
-        pending[asyncio.wrap_future(reader.receive_future())] = reader
+```{.python}
+--8<-- "docs/examples/send_items_through_a_stream.py:first"
 ```
 
 ## Close the stream and handle exits
