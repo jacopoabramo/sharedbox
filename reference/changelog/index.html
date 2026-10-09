@@ -3768,6 +3768,17 @@ and this project adheres to <a href="https://semver.org/spec/v2.0.0.html">Semant
   <code>sharedbox_c.h</code>.</li>
 <li><code>benchbox ops</code>: the row <code>watched write int</code>, a write while another process
   has a watcher open.</li>
+<li><code>benchbox stream</code>: items per second of <code>SharedStream</code> readers in each mode
+  against <code>mp.Queue</code> and a <code>SharedMemory</code> ring with a lock, and a table of
+  <code>send</code> and <code>asend</code> with <code>receive</code>, <code>async for</code> and <code>events.received</code>,
+  with the 50<sup>th</sup>, 90<sup>th</sup> and 99<sup>th</sup> percentile latency. <code>--short</code>, <code>--table</code>,
+  <code>--json</code> and <code>--markdown</code> are its options; <code>benchbox all</code> runs it and
+  writes <code>stream.json</code>.</li>
+<li><code>benchbox roundtrip</code>: the row <code>SharedStream</code>.</li>
+<li><code>benchmarks/test_bench_stream.py</code>: a CodSpeed benchmark of <code>send</code> plus
+  <code>receive_into</code>.</li>
+<li><code>Streams</code> workflow: <code>benchbox stream</code> on the base branch against the pull
+  request, with <code>scripts/stream_compare.py</code> writing the table.</li>
 <li><code>sharedbox::handle::sleepers()</code>: the number of threads inside a wait on
   the box, in any process.</li>
 </ul>
@@ -3808,6 +3819,10 @@ and this project adheres to <a href="https://semver.org/spec/v2.0.0.html">Semant
   word. Freeing the slot of a process killed inside a wait takes that
   thread out of <code>sleepers</code> for a box, and out of <code>data_waiting</code> or
   <code>space_waiting</code> for a stream.</li>
+<li><code>benchbox plot</code>: writes plotly figure JSON (<code>charts/ops.json</code>,
+  <code>roundtrip.json</code>, <code>stream-throughput.json</code>, <code>stream-matrix.json</code>) instead
+  of SVG files.</li>
+<li><code>benchmarks</code> extra and group: depend on <code>plotly</code> instead of <code>matplotlib</code>.</li>
 </ul>
 <h3 id="removed">Removed<a class="headerlink" href="#removed" title="Permanent link">&para;</a></h3>
 <ul>
@@ -4260,6 +4275,8 @@ and this project adheres to <a href="https://semver.org/spec/v2.0.0.html">Semant
     
     
       <script src="../../assets/javascripts/bundle.67a597eb.min.js"></script>
+      
+        <script src="../../javascripts/charts.js"></script>
       
     
   </body>

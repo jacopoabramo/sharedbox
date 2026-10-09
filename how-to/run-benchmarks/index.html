@@ -1551,6 +1551,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#time-a-stream" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Time a stream
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#time-several-processes-sharing-one-value" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -3086,6 +3097,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#time-a-stream" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Time a stream
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#time-several-processes-sharing-one-value" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -3256,8 +3278,8 @@
 <p>Numbers measured on someone else's machine only go so far. The <code>benchbox</code>
 command measures <code>sharedbox</code> on yours, next to the ways the standard
 library shares data between processes: single reads and writes, how fast a
-change reaches another process, several processes sharing one value, and
-the size of the installed package.</p>
+change reaches another process, streams of items, several processes sharing
+one value, and the size of the installed package.</p>
 <h2 id="before-you-start">Before you start<a class="headerlink" href="#before-you-start" title="Permanent link">&para;</a></h2>
 <p>Install the <code>benchmarks</code> extra, as
 <a href="../install-sharedbox/#add-the-benchmark-command">How to install sharedbox</a>
@@ -3286,10 +3308,29 @@ matches a pattern, and <code>--json</code> also writes the results to a file:</p
 <p><code>roundtrip</code> sends a counter to a second process and times the answer. It
 prints the 50<sup>th</sup>, 90<sup>th</sup> and 99<sup>th</sup> percentile and the maximum, in
 microseconds, for <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;watch&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.watch"><code>watch</code></a>, <code>mp.Event</code>,
-<code>mp.Pipe</code> and a loop polling <code>SharedMemory</code>, which keeps one <abbr title="Central processing unit. The processor that runs a program.">CPU</abbr> core busy
-on each side.</p>
+<code>mp.Pipe</code>, a loop polling <code>SharedMemory</code>, which keeps one <abbr title="Central processing unit. The processor that runs a program.">CPU</abbr> core busy on
+each side, and <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;SharedStream&lt;/span&gt;" href="../../reference/api/streams/#sharedbox.SharedStream"><code>SharedStream</code></a>.</p>
+<h2 id="time-a-stream">Time a stream<a class="headerlink" href="#time-a-stream" title="Permanent link">&para;</a></h2>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>benchbox<span class="w"> </span>stream
+</span></code></pre></div>
+<p><code>stream</code> prints two tables. The first is throughput, for a lossless, a lossy
+and a latest <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;SharedStream&lt;/span&gt;" href="../../reference/api/streams/#sharedbox.SharedStream"><code>SharedStream</code></a>, an <code>mp.Queue</code> per
+reader and a ring in <code>SharedMemory</code> guarded by a lock: the items per second
+the sender sent and a reader received, averaged over the readers, and the
+items a lossy or latest reader skipped. It runs 1 and 4 readers with items
+of 1 KiB and of 512 KiB, repeats each row three times, and prints the median
+run. The second table pairs <code>send</code> and <code>asend</code> with <code>receive</code>, <code>async for</code>
+and <code>events.received</code>, next to an <code>mp.Queue</code> read with <code>get</code> and from
+<code>asyncio</code>. For each pairing it prints the items per second and the 50<sup>th</sup>,
+90<sup>th</sup> and 99<sup>th</sup> percentile of the time from the sender stamping an item until
+the reader has it.</p>
+<p><code>--short</code> makes a run of a few seconds, with fewer items and one repeat.
+<code>--table</code> takes <code>throughput</code>, <code>matrix</code> or <code>both</code>, <code>--markdown</code> prints
+Markdown tables, and <code>--json</code> also writes the results to a file:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>benchbox<span class="w"> </span>stream<span class="w"> </span>--short<span class="w"> </span>--table<span class="w"> </span>throughput<span class="w"> </span>--json<span class="w"> </span>stream.json
+</span></code></pre></div>
 <h2 id="time-several-processes-sharing-one-value">Time several processes sharing one value<a class="headerlink" href="#time-several-processes-sharing-one-value" title="Permanent link">&para;</a></h2>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>benchbox<span class="w"> </span>contention
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>benchbox<span class="w"> </span>contention
 </span></code></pre></div>
 <p><code>contention</code> starts several writer and reader processes at once and times
 every operation each of them runs, so its numbers show how much the
@@ -3307,37 +3348,49 @@ whether writers to different fields still wait for each other.</p>
 process runs 100,000 operations. <code>--writers</code> and <code>--readers</code> take one count
 and can be repeated, <code>--ops</code> sets the operations per process, <code>--json</code> also
 writes the results to a file, and <code>--markdown</code> prints a Markdown table:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>benchbox<span class="w"> </span>contention<span class="w"> </span>--writers<span class="w"> </span><span class="m">1</span><span class="w"> </span>--writers<span class="w"> </span><span class="m">8</span><span class="w"> </span>--readers<span class="w"> </span><span class="m">0</span><span class="w"> </span>--ops<span class="w"> </span><span class="m">50000</span>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>benchbox<span class="w"> </span>contention<span class="w"> </span>--writers<span class="w"> </span><span class="m">1</span><span class="w"> </span>--writers<span class="w"> </span><span class="m">8</span><span class="w"> </span>--readers<span class="w"> </span><span class="m">0</span><span class="w"> </span>--ops<span class="w"> </span><span class="m">50000</span>
 </span></code></pre></div>
 <h2 id="measure-wheel-size">Measure wheel size<a class="headerlink" href="#measure-wheel-size" title="Permanent link">&para;</a></h2>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a>benchbox<span class="w"> </span>size<span class="w"> </span>dist/*.whl
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>benchbox<span class="w"> </span>size<span class="w"> </span>dist/*.whl
 </span></code></pre></div>
 <p><code>size</code> prints the size of each wheel and of the extension module inside
 it. Without arguments it measures the wheels in <code>dist/</code> and <code>wheelhouse/</code>.</p>
 <h2 id="run-everything">Run everything<a class="headerlink" href="#run-everything" title="Permanent link">&para;</a></h2>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>benchbox<span class="w"> </span>all<span class="w"> </span>--out<span class="w"> </span>results
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>benchbox<span class="w"> </span>all<span class="w"> </span>--out<span class="w"> </span>results
 </span></code></pre></div>
-<p><code>all</code> runs <code>ops</code>, <code>roundtrip</code> and <code>size</code>, writes each command's JSON output
-to <code>results</code>, and prints a Markdown summary that it also saves as
-<code>results/summary.md</code>. The summary names the <abbr title="Operating system.">OS</abbr>, <abbr title="Central processing unit. The processor that runs a program.">CPU</abbr>, Python version and
-build, and the sharedbox version. <code>all</code> measures wheel sizes only when it
-finds wheels in <code>dist/</code> or <code>wheelhouse/</code>, and then measures every wheel
-there, older builds included.</p>
+<p><code>all</code> runs <code>ops</code>, <code>roundtrip</code>, <code>stream</code> and <code>size</code>, writes each command's
+JSON output to <code>results</code> (<code>stream.json</code> holds the two stream tables), and
+prints a Markdown summary that it also saves as <code>results/summary.md</code>. The
+summary names the <abbr title="Operating system.">OS</abbr>, <abbr title="Central processing unit. The processor that runs a program.">CPU</abbr>, Python version and build, and the sharedbox
+version. <code>all</code> measures wheel sizes only when it finds wheels in <code>dist/</code> or
+<code>wheelhouse/</code>, and then measures every wheel there, older builds included.
+On a desktop machine a full run takes about 30 minutes, most of it in <code>ops</code>
+and <code>stream</code>, so start it when you will not need the machine.</p>
 <p><code>python -m sharedbox.benchmarks</code> runs the same command as <code>benchbox</code>.</p>
 <h2 id="draw-the-results">Draw the results<a class="headerlink" href="#draw-the-results" title="Permanent link">&para;</a></h2>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>benchbox<span class="w"> </span>plot<span class="w"> </span>results
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-9-1"><a id="__codelineno-9-1" name="__codelineno-9-1" href="#__codelineno-9-1"></a>benchbox<span class="w"> </span>plot<span class="w"> </span>results
 </span></code></pre></div>
-<p><code>plot</code> reads <code>ops.json</code> and <code>roundtrip.json</code> from the folder <code>all</code> wrote
-and saves two charts next to them as SVG, each in a light and a dark
-variant: <code>ops-light.svg</code>, <code>ops-dark.svg</code>, <code>roundtrip-light.svg</code> and
-<code>roundtrip-dark.svg</code>. The dark files suit a page with a dark background.
-<a href="../../explanation/performance/">How fast a box is</a> shows the charts of one
-run.</p>
+<p><code>plot</code> reads <code>ops.json</code>, <code>roundtrip.json</code> and <code>stream.json</code> from the folder
+<code>all</code> wrote and saves four <a href="https://plotly.com/python/">plotly</a> figures as
+JSON in <code>charts/</code> next to them: <code>ops.json</code>, <code>roundtrip.json</code>,
+<code>stream-throughput.json</code> and <code>stream-matrix.json</code>. It skips a chart whose
+results are missing and says which on standard error.</p>
+<p>A page of the docs site draws a figure with a <code>div</code> of the class
+<code>sbx-chart</code>, whose <code>data-src</code> is the path of the file, relative to the page:</p>
+<div class="language-html highlight"><pre><span></span><code><span id="__span-10-1"><a id="__codelineno-10-1" name="__codelineno-10-1" href="#__codelineno-10-1"></a><span class="p">&lt;</span><span class="nt">div</span> <span class="na">class</span><span class="o">=</span><span class="s">"sbx-chart"</span> <span class="na">data-src</span><span class="o">=</span><span class="s">"../../assets/benchmarks/ops.json"</span><span class="p">&gt;&lt;/</span><span class="nt">div</span><span class="p">&gt;</span>
+</span></code></pre></div>
+<p><code>docs/javascripts/charts.js</code> loads plotly.js when a page has such a <code>div</code>,
+draws the figure and gives it the colours of the page's light or dark theme.
+Copy the files to <code>docs/assets/benchmarks/</code> to update the charts of
+<a href="../../explanation/performance/">How fast a box is</a>, which shows one run.</p>
 <h2 id="run-the-pytest-benchmarks">Run the pytest benchmarks<a class="headerlink" href="#run-the-pytest-benchmarks" title="Permanent link">&para;</a></h2>
 <p>The pytest benchmarks are separate and live only in the repository:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-8-1"><a id="__codelineno-8-1" name="__codelineno-8-1" href="#__codelineno-8-1"></a>uv<span class="w"> </span>run<span class="w"> </span>pytest<span class="w"> </span>benchmarks<span class="w"> </span>--codspeed
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-11-1"><a id="__codelineno-11-1" name="__codelineno-11-1" href="#__codelineno-11-1"></a>uv<span class="w"> </span>run<span class="w"> </span>pytest<span class="w"> </span>benchmarks<span class="w"> </span>--codspeed
 </span></code></pre></div>
-<p><abbr title="Continuous integration. The builds and tests GitHub runs on pushes and pull requests to the main branch.">CI</abbr> runs them on CodSpeed for every push and pull request to <code>main</code>.</p>
+<p><abbr title="Continuous integration. The builds and tests GitHub runs on pushes and pull requests to the main branch.">CI</abbr> runs them on CodSpeed for every push and pull request to <code>main</code>. The
+<code>Ops</code> and <code>Streams</code> workflows time <code>benchbox ops</code> and <code>benchbox stream</code> on
+the base branch and on the pull request, for pull requests that touch the
+native code or the stream.</p>
 
 
 
@@ -3475,6 +3528,8 @@ run.</p>
     
     
       <script src="../../assets/javascripts/bundle.67a597eb.min.js"></script>
+      
+        <script src="../../javascripts/charts.js"></script>
       
     
   </body>

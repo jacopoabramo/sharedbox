@@ -1933,6 +1933,45 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#streams" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Streams
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Streams">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#items-per-second" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Items per second
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sync-and-async-calls" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Sync and async calls
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -3016,6 +3055,45 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#streams" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Streams
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Streams">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#items-per-second" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Items per second
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sync-and-async-calls" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Sync and async calls
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -3120,33 +3198,35 @@
 <p>How much faster is a box than what the standard library already gives you?
 This page answers with measurements: <code>benchbox</code> times <code>sharedbox</code> against
 each way the standard library offers to share data between processes. The
-charts come from one run of <code>benchbox all</code> followed by <code>benchbox plot</code>, on
-Windows 11 with an AMD Ryzen 9 7945HX, CPython 3.11 and a development
-version of <code>sharedbox</code> after 0.3.1, so your own numbers will differ.
-<a href="../../how-to/run-benchmarks/">How to run the benchmarks</a> shows how to make
-the same charts on your own machine.</p>
+charts and tables come from one run of <code>benchbox all</code> followed by
+<code>benchbox plot</code>, on Windows 11 with an AMD Ryzen 9 7945HX, CPython 3.11 and
+a development version of <code>sharedbox</code> after 0.5.0, so your own numbers will
+differ. <a href="../../how-to/run-benchmarks/">How to run the benchmarks</a> shows how
+to make the same charts on your own machine.</p>
 <h2 id="single-operations">Single operations<a class="headerlink" href="#single-operations" title="Permanent link">&para;</a></h2>
-<p>Each bar is the median time of one operation, timed by pyperf in a single
-process. The scale is logarithmic: each grid line is ten times the one
-before it.</p>
-<p><img alt="Time per operation for each contender" src="../../assets/benchmarks/ops-light.svg#only-light" />
-<img alt="Time per operation for each contender" src="../../assets/benchmarks/ops-dark.svg#only-dark" /></p>
+<p>Each row of a panel is one contender timing one operation in a single
+process, measured by pyperf. The dot is the median, and the line runs from
+the 10<sup>th</sup> to the 90<sup>th</sup> percentile of the measured values. The scale is
+logarithmic: each grid line is ten times the one before it. Hover over a dot
+for the exact values.</p>
+<div class="sbx-chart" data-src="../../../assets/benchmarks/ops.json"></div>
+
 <p>Reading or writing one <a href="../glossary/#field">field</a> of a
-<a href="../glossary/#box">box</a> takes 44 to 59 ns. That is 11 to 26 times less than
-<code>mp.Value</code>, <code>ShareableList</code> or <code>SharedMemory</code> with a <code>Lock</code>, and about 400
-to 620 times less than a <code>Manager().Namespace()</code>, which sends every access
+<a href="../glossary/#box">box</a> takes 43 to 61 ns. That is 11 to 25 times less than
+<code>mp.Value</code>, <code>ShareableList</code> or <code>SharedMemory</code> with a <code>Lock</code>, and about 370
+to 540 times less than a <code>Manager().Namespace()</code>, which sends every access
 to another process.</p>
-<p><code>SharedMemory</code> with <code>struct</code> and no lock is as fast for <code>int</code> and <code>float</code>
-and slower for <code>str</code>, but it does nothing to stop a reader from seeing a
-value that another process is halfway through writing. A box prevents
-that with its <a href="../glossary/#sequence-lock">sequence lock</a>, as
+<p><code>SharedMemory</code> with <code>struct</code> and no lock is about as fast for <code>int</code> and
+<code>float</code> and slower for <code>str</code>, but it does nothing to stop a reader from
+seeing a value that another process is halfway through writing. A box
+prevents that with its <a href="../glossary/#sequence-lock">sequence lock</a>, as
 <a href="../reading-and-writing/">Reading and writing</a> explains.</p>
-<p>Changing two fields with <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;update&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.update"><code>update</code></a> takes 108
-ns, about a seventh of one write under a <code>Lock</code>. That is less than two
+<p>Changing two fields with <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;update&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.update"><code>update</code></a> takes 94
+ns, about an eighth of one write under a <code>Lock</code>. That is less than two
 separate writes, which take about 117 ns together. Reading every field with
 <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;snapshot&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.snapshot"><code>snapshot</code></a> takes 102 ns. <code>SharedMemory</code>
-with <code>struct</code> and no lock packs or unpacks the same values in 60 ns and
-131 ns, again without keeping a reader from seeing half of a write.</p>
+with <code>struct</code> and no lock packs or unpacks the same values in 59 ns and
+134 ns, again without keeping a reader from seeing half of a write.</p>
 <details class="note">
 <summary>The numbers in the chart</summary>
 <table>
@@ -3164,81 +3244,81 @@ with <code>struct</code> and no lock packs or unpacks the same values in 60 ns a
 <tbody>
 <tr>
 <td>write int</td>
-<td>58 ns</td>
-<td>51 ns</td>
-<td>802 ns</td>
-<td>647 ns</td>
-<td>1.4 us</td>
-<td>28.8 us</td>
-</tr>
-<tr>
-<td>read int</td>
-<td>45 ns</td>
+<td>60 ns</td>
 <td>47 ns</td>
-<td>782 ns</td>
-<td>630 ns</td>
-<td>969 ns</td>
+<td>787 ns</td>
+<td>641 ns</td>
+<td>1.4 us</td>
 <td>22.8 us</td>
 </tr>
 <tr>
+<td>read int</td>
+<td>44 ns</td>
+<td>47 ns</td>
+<td>799 ns</td>
+<td>618 ns</td>
+<td>949 ns</td>
+<td>23.7 us</td>
+</tr>
+<tr>
 <td>write float</td>
-<td>59 ns</td>
+<td>58 ns</td>
 <td>50 ns</td>
-<td>807 ns</td>
-<td>650 ns</td>
+<td>795 ns</td>
+<td>638 ns</td>
 <td>1.4 us</td>
-<td>23.5 us</td>
+<td>27.5 us</td>
 </tr>
 <tr>
 <td>read float</td>
 <td>46 ns</td>
-<td>51 ns</td>
-<td>808 ns</td>
-<td>631 ns</td>
-<td>964 ns</td>
-<td>28.3 us</td>
+<td>52 ns</td>
+<td>791 ns</td>
+<td>628 ns</td>
+<td>957 ns</td>
+<td>23.2 us</td>
 </tr>
 <tr>
 <td>write str</td>
-<td>59 ns</td>
+<td>61 ns</td>
 <td>86 ns</td>
-<td>847 ns</td>
-<td>668 ns</td>
+<td>851 ns</td>
+<td>663 ns</td>
 <td>1.5 us</td>
-<td>28.5 us</td>
+<td>22.7 us</td>
 </tr>
 <tr>
 <td>read str</td>
-<td>44 ns</td>
+<td>43 ns</td>
 <td>82 ns</td>
-<td>859 ns</td>
-<td>643 ns</td>
+<td>833 ns</td>
+<td>638 ns</td>
 <td>1.1 us</td>
-<td>26.0 us</td>
+<td>22.8 us</td>
 </tr>
 <tr>
 <td>update two fields</td>
-<td>108 ns</td>
-<td>60 ns</td>
-<td>805 ns</td>
+<td>94 ns</td>
+<td>59 ns</td>
+<td>803 ns</td>
 <td>1.3 us (a lock per value)</td>
 <td>2.9 us</td>
-<td>45.8 us</td>
+<td>48.7 us</td>
 </tr>
 <tr>
 <td>read all</td>
 <td>102 ns</td>
-<td>131 ns</td>
-<td>929 ns</td>
+<td>134 ns</td>
+<td>941 ns</td>
 <td>2.0 us (a lock per value)</td>
-<td>3.1 us</td>
-<td>70.3 us</td>
+<td>3.2 us</td>
+<td>81.8 us</td>
 </tr>
 </tbody>
 </table>
 </details>
 <h2 id="large-values">Large values<a class="headerlink" href="#large-values" title="Permanent link">&para;</a></h2>
-<p>In the same run, reading a 1 MiB array field took 190 us and writing one
+<p>In the same run, reading a 1 MiB array field took 217 us and writing one
 took 19 us. The read is slower because it gets fresh memory for a new array
 every time, which on Windows costs far more than the copy itself;
 <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;read_into&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.read_into"><code>read_into</code></a> copies into an array you
@@ -3249,15 +3329,297 @@ own avoids that.</p>
 <h2 id="a-change-sent-to-another-process">A change sent to another process<a class="headerlink" href="#a-change-sent-to-another-process" title="Permanent link">&para;</a></h2>
 <p>Each row is the time from writing a value in one process until a second
 process has seen it and answered back, over 5000 round trips. The dot is
-the median (p50), and the line runs to the 99<sup>th</sup> percentile (p99).</p>
-<p><img alt="Round trip time for each contender" src="../../assets/benchmarks/roundtrip-light.svg#only-light" />
-<img alt="Round trip time for each contender" src="../../assets/benchmarks/roundtrip-dark.svg#only-dark" /></p>
-<p><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;watch&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.watch"><code>watch</code></a> answers in 54 us at the median and
-155 us at p99. <code>mp.Event</code> takes 61 us and 183 us, and <code>mp.Pipe</code> 44 us and
-256 us. A loop that keeps reading <code>SharedMemory</code> answers in about 0.4 us,
-but it keeps one <abbr title="Central processing unit. The processor that runs a program.">CPU</abbr> core busy on each side the whole time, while a
-waiting <a href="../glossary/#watcher">watcher</a> uses none;
-<a href="../waiting-for-changes/">Waiting for changes</a> explains how it waits.</p>
+the median (p50), and the line runs to the 99<sup>th</sup> percentile (p99). The
+<code>SharedStream</code> row sends an <code>int</code> through one <a href="../glossary/#stream">stream</a>
+and gets the answer back through a second one.</p>
+<div class="sbx-chart" data-src="../../../assets/benchmarks/roundtrip.json"></div>
+
+<p><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;watch&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.watch"><code>watch</code></a> answers in 37 us at the median and
+101 us at p99. <code>mp.Event</code> takes 57 us and 133 us, and <code>mp.Pipe</code> 37 us and
+230 us. A <code>SharedStream</code> answers in 2.1 us and 5.2 us, about 18 times
+faster than <code>watch</code> at the median. A loop that keeps reading
+<code>SharedMemory</code> answers in about 0.6 us, but it keeps one <abbr title="Central processing unit. The processor that runs a program.">CPU</abbr> core busy on
+each side the whole time, while a waiting <a href="../glossary/#watcher">watcher</a>
+uses none; <a href="../waiting-for-changes/">Waiting for changes</a> explains how it
+waits.</p>
+<p>A stream is faster than <code>watch</code> because its two ends keep checking for a
+short time before they sleep. A reader that finds no item checks again up to
+1000 times before it sleeps, and a sender waiting for room does the same.
+In a round trip the answer arrives within those checks, so neither process
+sleeps and nobody has to wake it. A watcher goes to sleep as soon as
+nothing has changed, so every change costs a wake-up by the operating
+system. The cost is one core kept busy during those checks. A reader that
+waits longer sleeps like a watcher, which the next section shows: with
+items 1 ms apart, the reader has gone to sleep before the next one arrives,
+and it takes 31 us at the median to see it. That is one way, with one
+wake-up; a round trip through <code>watch</code> needs two and takes 37 us.</p>
+<h2 id="streams">Streams<a class="headerlink" href="#streams" title="Permanent link">&para;</a></h2>
+<p>A <a href="../glossary/#stream">stream</a> carries items from one
+<a href="../glossary/#sender">sender</a> to several <a href="../glossary/#reader">readers</a>, so
+the comparison is with the ways the standard library moves a series of
+items between processes. <code>mp.Queue</code> pickles each item and sends it through
+a pipe, and the sender needs one queue for each reader. The other contender
+is a ring of 32 slots in <code>SharedMemory</code> that the sender and every reader
+guard with one lock, which is the simplest ring you can write with the
+standard library. Every contender holds up to 32 items, and every lossless
+reader receives every item.</p>
+<p>The items have two sizes: 1 KiB, an array of 1024 bytes next to a counter,
+and 512 KiB, a 512 by 512 array of <code>uint16</code>, such as an image. A row is the
+median of three runs of 20000 items for 1 KiB and 2000 for 512 KiB.
+<a href="../../how-to/send-items-through-a-stream/">How to send items through a stream</a>
+shows how a stream is used.</p>
+<h3 id="items-per-second">Items per second<a class="headerlink" href="#items-per-second" title="Permanent link">&para;</a></h3>
+<p>Each panel is one item size and one number of readers. Each dot is the items
+per second a reader received, averaged over the readers of the median run,
+and the line runs from the slowest to the fastest of the three runs, so a
+long line means the runs disagreed.</p>
+<div class="sbx-chart" data-src="../../../assets/benchmarks/stream-throughput.json"></div>
+
+<p>With one reader and 1 KiB items, a <a href="../glossary/#lossless">lossless</a> reader
+receives 511k items per second. <code>mp.Queue</code> manages 84k and the ring with a
+lock 43k, so the stream is 6 and 12 times faster. The gap grows with the
+readers, because a stream's readers do not wait for each other. Four
+lossless readers each still receive 429k per second, 84% of the rate of
+one, while the sender of the queues has to put every item on four queues
+and the readers of the ring share one lock. <code>mp.Queue</code> falls to 19k and the
+ring to 17k, which makes the stream 22 and 25 times faster.</p>
+<p>For 512 KiB items the gap is smaller against the ring and still large
+against the queue. One lossless reader receives 25k items per second
+against 2.0k for <code>mp.Queue</code> and 16k for the ring, which is 12 and 1.5 times
+faster. With four readers it is 18k against 1.2k and 7.0k, 15 and 2.6 times
+faster. Part of the gap to <code>mp.Queue</code> comes from how the readers receive:
+the stream's readers copy each item into one array they reuse, with
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;iter_into&lt;/span&gt;" href="../../reference/api/streams/#sharedbox.StreamReader.iter_into"><code>iter_into</code></a>, while a queue's reader
+unpickles every item into a new one.</p>
+<p>The reader mode costs little. At 1 KiB with one reader, the
+<a href="../glossary/#lossless">lossless</a>, <a href="../glossary/#lossy">lossy</a> and
+<a href="../glossary/#latest">latest</a> readers receive between 471k and 511k items
+per second, within 8% of each other. With four readers lossless is 13%
+slower than the other two (429k against 489k and 491k), because a lossless
+sender waits for its slowest reader, while a lossy or latest sender never
+waits and sent 1.1M to 1.4M items per second. The price is that those
+readers skip items: one lossy reader skipped 12,895 of the 20,000. At 512
+KiB the three modes differ by less than the runs do (the lossless row with
+one reader ranges from 19k to 25k), so the chart cannot tell them apart.</p>
+<h3 id="sync-and-async-calls">Sync and async calls<a class="headerlink" href="#sync-and-async-calls" title="Permanent link">&para;</a></h3>
+<p>A stream can be read by a blocking call, by <code>async for</code>, or by callbacks
+connected to <code>events.received</code>, and sent with <code>send</code> or <code>asend</code>. This chart
+times every pairing. Each dot is the median latency, the time from the
+sender stamping an item until the reader has it, over 500 items sent at
+least 1 ms apart, and the line runs from p50 to p99. Hover over a dot for
+the p90 and for the items per second the pairing sustained when the sender
+did not wait. The <code>mp.Queue</code> rows are the standard library baseline, the
+last of them reading the queue from <code>asyncio</code> with <code>run_in_executor</code>.</p>
+<div class="sbx-chart" data-src="../../../assets/benchmarks/stream-matrix.json"></div>
+
+<p>At 1 KiB, blocking <code>send</code> and <code>receive</code> move 433k items per second. Reading
+with <code>async for</code> keeps 394k, 91% of that, and <code>events.received</code> 257k.
+Sending with <code>asend</code> is slower: 262k with <code>receive</code> and 148k with
+<code>async for</code>. Reading an <code>mp.Queue</code> from <code>asyncio</code> with <code>run_in_executor</code>
+hands every <code>get</code> to a thread and reaches 10k items per second, so
+<code>async for</code> on a stream is about 40 times faster. A blocking <code>get</code> reaches
+84k.</p>
+<p><code>async for</code> stays close to the blocking rate because, when an item is
+already waiting, it takes it on the event loop's own thread instead of
+handing the wait to the reader's background thread. The row
+<code>async for (buffered)</code> isolates that: the sender fills the ring and the
+reader awaits each of the 32 items, all already there, at 370k items per
+second, about what <code>async for</code> sustains in the full run. When no item is
+waiting, as in the latency part of the run, the wait does go through the
+background thread, and the median is 139 us against 31 us for <code>receive</code>.</p>
+<p>At 512 KiB every pairing sits at 4k to 5k items per second, whichever way it
+sends and reads, and <code>mp.Queue</code> reaches 2k. That is far below the 25k of the
+chart above because these readers use <code>receive</code>, <code>async for</code> and
+<code>events.received</code>, which put each item in new memory, twice for an item that
+is a record: first the whole item, then its array into an array of its own.
+The throughput readers copy every item into one array they reuse, with
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;iter_into&lt;/span&gt;" href="../../reference/api/streams/#sharedbox.StreamReader.iter_into"><code>iter_into</code></a>. The row
+<code>async for (buffered)</code> shows the cost on its own: it only times reading
+items already in the ring, and still reaches 4k per second. On this Windows
+machine a fresh 512 KiB buffer costs about 100 us, so two of them plus the
+copy come to about 240 us per item, which is 4k per second. If your items
+are large, read them with <code>iter_into</code> or
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;receive_into&lt;/span&gt;" href="../../reference/api/streams/#sharedbox.StreamReader.receive_into"><code>receive_into</code></a>.</p>
+<details class="note">
+<summary>The numbers in the chart</summary>
+<table>
+<thead>
+<tr>
+<th>sender</th>
+<th>reader</th>
+<th>item</th>
+<th>items/s</th>
+<th>p50 us</th>
+<th>p90 us</th>
+<th>p99 us</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td>send</td>
+<td>receive</td>
+<td>1 KiB</td>
+<td>433k</td>
+<td>31.2</td>
+<td>58.2</td>
+<td>85.6</td>
+</tr>
+<tr>
+<td>send</td>
+<td>async for</td>
+<td>1 KiB</td>
+<td>394k</td>
+<td>139.4</td>
+<td>232.8</td>
+<td>304.4</td>
+</tr>
+<tr>
+<td>send</td>
+<td>events.received</td>
+<td>1 KiB</td>
+<td>257k</td>
+<td>40.5</td>
+<td>75.0</td>
+<td>119.9</td>
+</tr>
+<tr>
+<td>asend</td>
+<td>receive</td>
+<td>1 KiB</td>
+<td>262k</td>
+<td>47.8</td>
+<td>71.0</td>
+<td>115.5</td>
+</tr>
+<tr>
+<td>asend</td>
+<td>async for</td>
+<td>1 KiB</td>
+<td>148k</td>
+<td>189.1</td>
+<td>272.3</td>
+<td>590.8</td>
+</tr>
+<tr>
+<td>asend</td>
+<td>events.received</td>
+<td>1 KiB</td>
+<td>177k</td>
+<td>64.3</td>
+<td>95.3</td>
+<td>130.5</td>
+</tr>
+<tr>
+<td>send</td>
+<td>async for (buffered)</td>
+<td>1 KiB</td>
+<td>370k</td>
+<td>-</td>
+<td>-</td>
+<td>-</td>
+</tr>
+<tr>
+<td>mp.Queue put</td>
+<td>mp.Queue get</td>
+<td>1 KiB</td>
+<td>84k</td>
+<td>84.5</td>
+<td>149.7</td>
+<td>193.7</td>
+</tr>
+<tr>
+<td>mp.Queue put</td>
+<td>asyncio + mp.Queue</td>
+<td>1 KiB</td>
+<td>10k</td>
+<td>195.9</td>
+<td>305.3</td>
+<td>425.0</td>
+</tr>
+<tr>
+<td>send</td>
+<td>receive</td>
+<td>512 KiB</td>
+<td>4k</td>
+<td>387.4</td>
+<td>526.7</td>
+<td>1017.7</td>
+</tr>
+<tr>
+<td>send</td>
+<td>async for</td>
+<td>512 KiB</td>
+<td>4k</td>
+<td>289.9</td>
+<td>521.8</td>
+<td>836.7</td>
+</tr>
+<tr>
+<td>send</td>
+<td>events.received</td>
+<td>512 KiB</td>
+<td>4k</td>
+<td>406.9</td>
+<td>623.5</td>
+<td>958.0</td>
+</tr>
+<tr>
+<td>asend</td>
+<td>receive</td>
+<td>512 KiB</td>
+<td>4k</td>
+<td>484.1</td>
+<td>599.8</td>
+<td>1193.0</td>
+</tr>
+<tr>
+<td>asend</td>
+<td>async for</td>
+<td>512 KiB</td>
+<td>5k</td>
+<td>483.2</td>
+<td>729.9</td>
+<td>916.2</td>
+</tr>
+<tr>
+<td>asend</td>
+<td>events.received</td>
+<td>512 KiB</td>
+<td>5k</td>
+<td>352.0</td>
+<td>507.6</td>
+<td>766.8</td>
+</tr>
+<tr>
+<td>send</td>
+<td>async for (buffered)</td>
+<td>512 KiB</td>
+<td>4k</td>
+<td>-</td>
+<td>-</td>
+<td>-</td>
+</tr>
+<tr>
+<td>mp.Queue put</td>
+<td>mp.Queue get</td>
+<td>512 KiB</td>
+<td>2k</td>
+<td>730.1</td>
+<td>1025.4</td>
+<td>5783.6</td>
+</tr>
+<tr>
+<td>mp.Queue put</td>
+<td>asyncio + mp.Queue</td>
+<td>512 KiB</td>
+<td>2k</td>
+<td>699.6</td>
+<td>1057.7</td>
+<td>7775.4</td>
+</tr>
+</tbody>
+</table>
+</details>
 
 
 
@@ -3395,6 +3757,8 @@ waiting <a href="../glossary/#watcher">watcher</a> uses none;
     
     
       <script src="../../assets/javascripts/bundle.67a597eb.min.js"></script>
+      
+        <script src="../../javascripts/charts.js"></script>
       
     
   </body>
