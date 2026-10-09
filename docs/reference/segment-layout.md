@@ -148,10 +148,10 @@ addition. There is one header per box, and readers and writers touch only
 line 1. The waiter slots, not the header, are the large part of the tail, and
 `max_waiters` sizes them. Worked example, a box with an `int`, a `float`
 and a `bool` and the default 64 waiter slots: header 128, field table 24,
-write counts 24, waiter slots 1536, padding 16, record 24 (the Python side
-rounds a record up to a multiple of 8): 1752 bytes used, one 4 KiB page. A
-box with three fields and 64 slots stays in one page up to about 2.3 KB of
-record.
+write counts 24, waiter slots 2048, padding 16, record 24 (the Python side
+rounds a record up to a multiple of 8): 2264 bytes used, one 4 KiB page. A
+box with three fields and 64 slots stays in one page up to about 1.8 KB of
+record (4096 - 2240 = 1856).
 
 - Versions: bytes 8 to 11 are `01 00 00 00` (core 1.0: `core_major` 1,
   `core_minor` 0) and bytes 12 to 15 are `03 00 00 00` (box layout 3.0:
@@ -659,7 +659,8 @@ Every shared word is a plain integer in the mapping, accessed through
   slot it claimed that still records its own `(pid, start, pidns)`; a
   child created by `fork` inherits its parent's claims but leaves them to
   the parent.
-- A thread waits in a slot it holds. The Python watcher registers one slot
+- A thread waits in a slot it holds, one thread at a time, and a slot is
+  not released while a wait in it runs. The Python watcher registers one slot
   for its lifetime, and a one-off `Segment.wait()` without a slot claims
   one for the call.
 - The slot table and the protocol above are the core's, shared by every
@@ -672,8 +673,10 @@ Known limits, each after a process is killed at one specific step:
 - A freer killed while holding the marker, before it clears `owner_pid`,
   leaves the slot unusable until the segment is created again, and
   `waiters` one too high if it was killed before its decrement. Killed
-  between its exchange of `asleep_on` and the subtraction, it leaves that
-  sleeper count one too high.
+  after it won the slot and before its subtraction of the sleeper count, it
+  leaves that count one too high and the slot stuck with the marker.
+- An owner killed between its exit exchange of `asleep_on` and its
+  subtraction of the sleeper count leaves that count one too high.
 - An owner killed partway through a release leaves a slot with no start,
   which is freed without a decrement, so `waiters` stays one too high if
   the kill came before the decrement. On Linux, a kill after
@@ -685,11 +688,11 @@ Known limits, each after a process is killed at one specific step:
 - The check that `owner_pid` still holds the pid cannot tell an unstamped
   claimer from another one with the same pid, which needs the pid to be
   reused within a few instructions.
-
 - A thread killed inside a wait after it adds 1 to the sleeper count and
   before it stores the count's offset in `asleep_on` leaves that count one
-  too high, for a box and for a stream alike. Killed later in the wait, it
-  leaves `asleep_on` set, and freeing its slot takes the 1 back.
+  too high, for a box and for a stream alike. Killed later in the wait,
+  before its exit exchange of `asleep_on`, it leaves `asleep_on` set, and
+  freeing its slot takes the 1 back.
 
 A count that is too high costs a system call on each write; it never loses
 a wake-up.
@@ -896,7 +899,11 @@ Known limits:
   `space_waiting` and before it stores the count's offset in its slot's
   `asleep_on`, leaves that count one too high for good. That costs a wake
   call on each send or receive; no wake is lost. Killed later in the wait,
-  it leaves the offset, and freeing its waiter slot takes the 1 back.
+  before its exit exchange of `asleep_on`, it leaves the offset, and freeing
+  its waiter slot takes the 1 back. Killed between that exchange and its
+  subtraction, it leaves the count one too high. A freer of its slot killed
+  after it won the slot and before its subtraction leaves the count one too
+  high and the slot stuck with the marker.
 - A process killed in the few instructions between setting `sender_start` to
   `start_freeing` and its next store leaves `sender_start` at
   `start_freeing`. Every later `sender()` then gives `status::busy`, and
