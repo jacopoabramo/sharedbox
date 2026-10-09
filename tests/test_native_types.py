@@ -181,26 +181,6 @@ def test_the_table_is_compared_at_attach(unique_name: str) -> None:
     owner.close()
 
 
-def test_a_layout_1_box_opens_with_types(unique_name: str) -> None:
-    """Check that a box with the 1.0 layout attaches, reads and writes, and reports 1.0."""
-    fields = [NativeField(0, 8, 1), NativeField(8, 8, 2)]
-    owner = Segment._create_layout_1(
-        unique_name, fields, ["P.x", "P.y"], 16, 0x11, 1.0, [(0, 5)]
-    )
-    other = Segment.attach(
-        unique_name,
-        ["P.x", "P.y"],
-        0x11,
-        1.0,
-        Types(fields, ["P.x", "P.y"], b"", {}, []),
-    )
-    assert other.layout_version == (1, 0)
-    other.set([(1, 2.5)])
-    assert other.get_dict(("x", "y")) == {"x": 5, "y": 2.5}
-    other.close()
-    owner.close()
-
-
 class FarAhead(datetime.datetime):
     """A datetime whose own utcoffset gives 45 days, whose minutes overflow 16 bits."""
 

@@ -45,7 +45,7 @@ table_builder record_with_list() {
 
 status parse(const table_builder &t, std::uint32_t entry) {
     type_table table;
-    return table.parse(t.span(), {&entry, 1}, false);
+    return table.parse(t.span(), {&entry, 1});
 }
 
 // A chain of n optionals around an int, each description after the one that refers to it. Level k from the
@@ -87,7 +87,7 @@ TEST_CASE("a record holding a list shows its members") {
     type_table table;
     const table_builder t = record_with_list();
     const std::uint32_t entry = entry_of(kind_record, 0);
-    REQUIRE(table.parse(t.span(), {&entry, 1}, false) == status::ok);
+    REQUIRE(table.parse(t.span(), {&entry, 1}) == status::ok);
     const detail::type_ref &record = table.field(0);
     CHECK((record.kind == kind_record && record.size == 40 && record.alignment == 8));
     const detail::type_node &node = table.node(record.node);
@@ -131,7 +131,7 @@ TEST_CASE("forged tables are refused") {
         const table_builder t = colour();
         const std::uint32_t entries[2] = {entry_of(kind_enum, 0), entry_of(kind_enum, 0)};
         type_table table;
-        CHECK(table.parse(t.span(), entries, false) == status::corrupt);
+        CHECK(table.parse(t.span(), entries) == status::corrupt);
     }
     SUBCASE("nesting deeper than 16") {
         CHECK(parse(optionals(16), entry_of(kind_optional, 0)) == status::ok);
@@ -266,28 +266,4 @@ TEST_CASE("create refuses a table that does not check") {
     const auto created = handle::create(unique("types-bad"), fields, 8, 1, 4, {}, t.span());
     REQUIRE_FALSE(created);
     CHECK(created.error().code == status::range);
-}
-
-TEST_CASE("layout 1.0 refuses a described kind") {
-    const field_spec fields[1] = {{0, 8, kind_int}};
-    const std::string name = unique("types-v1");
-    SUBCASE("on open") {
-        auto owner = detail::create_impl(name, fields, 8, 1, 4, {}, {}, 1, true);
-        REQUIRE(owner.has_value());
-        auto *bytes = static_cast<std::byte *>(owner->base());
-        stored_field stored;
-        std::memcpy(&stored, bytes + header_size, sizeof stored);
-        stored.capacity_and_kind = entry_of(kind_enum, 8);
-        std::memcpy(bytes + header_size, &stored, sizeof stored);
-        const auto opened = handle::open(name, seconds(1.0));
-        REQUIRE_FALSE(opened);
-        CHECK(opened.error().code == status::corrupt);
-        static_cast<void>(unlink(name));
-    }
-    SUBCASE("on create") {
-        const field_spec bad[1] = {{0, 8, kind_enum}};
-        const auto created = detail::create_impl(name, bad, 8, 1, 4, {}, {}, 1, true);
-        REQUIRE_FALSE(created);
-        CHECK(created.error().code == status::range);
-    }
 }

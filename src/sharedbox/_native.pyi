@@ -145,18 +145,6 @@ class Segment:
         """
 
     @staticmethod
-    def _create_layout_1(
-        name: str,
-        fields: Sequence[tuple[int, int, int]],
-        names: Sequence[str],
-        record_size: int,
-        schema_hash: int,
-        lock_timeout: float,
-        values: Sequence[tuple[int, object]],
-    ) -> Segment:
-        """Create a segment with the 1.0 layout, which holds kinds 0 to 5 only; for tests."""
-
-    @staticmethod
     def unlink(name: str) -> None:
         """Remove the name, as `shm_unlink` does; a no-op on Windows."""
 

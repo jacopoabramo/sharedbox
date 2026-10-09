@@ -134,7 +134,7 @@ def test_the_capsule_holds_a_handle_on_the_box(unique_name: str) -> None:
         )
         assert handle.size == box._segment._size
         assert handle.name == unique_name.encode()
-        assert ctypes.string_at(handle.base, 8) == b"SHREDBX1"
+        assert ctypes.string_at(handle.base, 8) == b"SBX_BOX_"
 
 
 def test_an_unused_capsule_outlives_close_and_unlink(unique_name: str) -> None:
@@ -144,7 +144,7 @@ def test_an_unused_capsule_outlives_close_and_unlink(unique_name: str) -> None:
     handle = handle_of(capsule)
     box.close()
     Frame.unlink(unique_name)
-    assert ctypes.string_at(handle.base, 8) == b"SHREDBX1"
+    assert ctypes.string_at(handle.base, 8) == b"SBX_BOX_"
     del capsule, handle
     gc.collect()
 
@@ -152,8 +152,8 @@ def test_an_unused_capsule_outlives_close_and_unlink(unique_name: str) -> None:
 def test_requests_the_box_cannot_meet_are_refused(unique_name: str) -> None:
     """Check that the capsule request refuses a newer major version and a stream, and a closed box raises BoxClosedError."""
     with Frame.create(unique_name) as box:
-        with pytest.raises(BufferError, match="major version 3"):
-            box.__sharedbox_box__(max_version=(3, 0))
+        with pytest.raises(BufferError, match="major version 4"):
+            box.__sharedbox_box__(max_version=(4, 0))
         with pytest.raises(NotImplementedError, match="stream"):
             box.__sharedbox_box__(stream=True)
     with pytest.raises(BoxClosedError):

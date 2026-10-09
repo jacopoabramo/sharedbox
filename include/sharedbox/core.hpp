@@ -15,6 +15,7 @@
 #include <atomic>
 #include <chrono>
 #include <complex>
+#include <concepts>
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
@@ -412,6 +413,97 @@ template <class T> SHAREDBOX_HOT std::atomic_ref<T> atomic(T &word) noexcept { r
 
 } // namespace detail
 
+inline constexpr std::uint16_t core_major = 1;
+inline constexpr std::uint16_t core_minor = 0;
+// One magic per kind of segment, "SBX_BOX_" and "SBX_STRM" read as little-endian u64. The magic is
+// stored last when a segment is created, so a nonzero magic also means it is published.
+inline constexpr std::uint64_t box_magic = 0x5F584F425F584253;
+inline constexpr std::uint64_t stream_magic = 0x4D5254535F584253;
+
+// Line 0 of every segment, whatever its kind, written once by the creator.
+struct common_header {
+    std::uint64_t magic;
+    std::uint16_t core_major;
+    std::uint16_t core_minor;
+    std::uint16_t kind_major;
+    std::uint16_t kind_minor;
+    std::uint64_t schema_hash;
+    std::uint64_t create_id;
+    std::uint64_t creator_start;
+    std::uint64_t creator_pidns;
+    std::uint32_t creator_pid;
+    std::uint16_t waiter_slots;
+    std::uint16_t reserved0;
+    std::uint64_t size;
+};
+static_assert(std::is_standard_layout_v<common_header> && std::is_trivially_copyable_v<common_header>);
+static_assert(sizeof(common_header) == 64 && alignof(common_header) == 8);
+static_assert(offsetof(common_header, magic) == 0 && offsetof(common_header, core_major) == 8 &&
+              offsetof(common_header, core_minor) == 10 && offsetof(common_header, kind_major) == 12 &&
+              offsetof(common_header, kind_minor) == 14 && offsetof(common_header, schema_hash) == 16 &&
+              offsetof(common_header, create_id) == 24 && offsetof(common_header, creator_start) == 32 &&
+              offsetof(common_header, creator_pidns) == 40 && offsetof(common_header, creator_pid) == 48 &&
+              offsetof(common_header, waiter_slots) == 52 && offsetof(common_header, reserved0) == 54 &&
+              offsetof(common_header, size) == 56);
+static_assert(offsetof(common_header, magic) % detail::align64 == 0);
+
+namespace detail {
+
+// The kind a magic names, for messages; empty for a magic this build does not know.
+inline std::string_view kind_name(std::uint64_t magic) noexcept {
+    switch (magic) {
+    case box_magic:
+        return "box";
+    case stream_magic:
+        return "stream";
+    default:
+        return {};
+    }
+}
+
+} // namespace detail
+
+// What a segment layout gives the core's open check: its magic, the kind major versions it reads, and
+// a check of the kind's own geometry once the common line passed.
+template <class L>
+concept segment_layout = requires(const void *base, const common_header &line0, std::uint64_t mapped) {
+    { L::magic } -> std::convertible_to<std::uint64_t>;
+    { L::oldest_major } -> std::convertible_to<std::uint16_t>;
+    { L::newest_major } -> std::convertible_to<std::uint16_t>;
+    { L::check_geometry(base, line0, mapped) } -> std::same_as<status>;
+};
+
+namespace detail {
+
+// Line 0 at base, copied once so that only the copy is checked and used.
+inline common_header copy_common(const void *base) noexcept {
+    common_header line0{};
+    std::memcpy(&line0, base, sizeof line0);
+    return line0;
+}
+
+// Checks a published segment of mapped bytes at base as a segment of kind L: the kind, the core
+// version, the kind's version, then the kind's geometry. Fills found with what refused it.
+template <segment_layout L> result<common_header> open_check(const void *base, std::uint64_t mapped) noexcept {
+    if (mapped < page_size)
+        return unexpected(status::corrupt);
+    const common_header line0 = copy_common(base);
+    if (line0.magic != L::magic)
+        return unexpected(
+            error{kind_name(line0.magic).empty() ? status::layout : status::kind_mismatch, 0, line0.magic});
+    if (line0.core_major != core_major)
+        return unexpected(error{status::layout, 0, std::uint64_t{line0.core_major} << 16 | line0.core_minor});
+    if (line0.kind_major < L::oldest_major || line0.kind_major > L::newest_major)
+        return unexpected(error{status::layout, 0, std::uint64_t{line0.kind_major} << 16 | line0.kind_minor});
+    if (line0.size != mapped || line0.waiter_slots == 0 || line0.waiter_slots > max_waiter_slots)
+        return unexpected(status::corrupt);
+    if (const status rc = L::check_geometry(base, line0, mapped); rc != status::ok)
+        return unexpected(rc);
+    return line0;
+}
+
+} // namespace detail
+
 namespace detail {
 
 struct process_cache {
@@ -792,10 +884,10 @@ class type_parser;
 // fixed once parse returns. Movable, not copyable; copy() parses the same bytes into another table.
 class type_table {
 public:
-    // Copies table and checks it with the field entries, capacity_and_kind as stored. With v1 every entry
-    // is read as a 1.0 field and the table must be empty. On failure the table is left empty.
-    status parse(std::span<const std::byte> table, std::span<const std::uint32_t> entries, bool v1) noexcept;
-    status copy(type_table &out) const noexcept { return out.parse(bytes(), {entries_.get(), field_count_}, v1_); }
+    // Copies table and checks it with the field entries, capacity_and_kind as stored. On failure the
+    // table is left empty.
+    status parse(std::span<const std::byte> table, std::span<const std::uint32_t> entries) noexcept;
+    status copy(type_table &out) const noexcept { return out.parse(bytes(), {entries_.get(), field_count_}); }
 
     std::span<const std::byte> bytes() const noexcept { return {bytes_.get(), size_}; }
     std::uint32_t node_count() const noexcept { return node_count_; }
@@ -814,7 +906,6 @@ private:
     std::unique_ptr<std::uint32_t[]> entries_;
     std::uint16_t field_count_ = 0;
     std::uint32_t node_count_ = 0;
-    bool v1_ = false;
     std::unique_ptr<type_ref[]> fields_;
     std::unique_ptr<type_node[]> nodes_;
     std::unique_ptr<type_member[]> members_;
@@ -833,12 +924,10 @@ public:
 
     type_counts counts;
 
-    status field(std::uint32_t entry, bool v1, type_ref &out) noexcept {
+    status field(std::uint32_t entry, type_ref &out) noexcept {
         const auto kind = static_cast<std::uint8_t>(entry >> kind_shift);
         const std::uint32_t low = entry & capacity_mask;
-        if (v1 && described(kind) && kind_known(kind))
-            return status::corrupt;
-        if (v1 || !described(kind))
+        if (!described(kind))
             return fixed(kind, low, true, out);
         return describe(kind, low, no_parent, 1, true, true, out);
     }
@@ -1198,11 +1287,10 @@ inline status type_parser::place(std::uint8_t kind, const type_head &head, type_
     }
 }
 
-inline status type_table::parse(std::span<const std::byte> table, std::span<const std::uint32_t> entries,
-                                bool v1) noexcept {
+inline status type_table::parse(std::span<const std::byte> table,
+                                std::span<const std::uint32_t> entries) noexcept {
     *this = type_table{};
-    if (table.size() % 8 != 0 || table.size() > max_types_size || (v1 && !table.empty()) ||
-        entries.size() > max_fields)
+    if (table.size() % 8 != 0 || table.size() > max_types_size || entries.size() > max_fields)
         return status::corrupt;
     const auto size = static_cast<std::uint32_t>(table.size());
     const auto count = static_cast<std::uint16_t>(entries.size());
@@ -1220,12 +1308,11 @@ inline status type_table::parse(std::span<const std::byte> table, std::span<cons
     std::copy(entries.begin(), entries.end(), entries_.get());
     size_ = size;
     field_count_ = count;
-    v1_ = v1;
     const std::span<const std::byte> copy(bytes_.get(), size);
     type_parser counter(copy, seen.get(), nullptr);
     for (std::uint16_t i = 0; i < count; ++i) {
         type_ref ignored;
-        if (const status rc = counter.field(entries[i], v1, ignored); rc != status::ok) {
+        if (const status rc = counter.field(entries[i], ignored); rc != status::ok) {
             *this = type_table{};
             return rc;
         }
@@ -1245,7 +1332,7 @@ inline status type_table::parse(std::span<const std::byte> table, std::span<cons
     std::fill_n(seen.get(), words, std::uint64_t{0});
     type_parser filler(copy, seen.get(), this);
     for (std::uint16_t i = 0; i < count; ++i)
-        if (const status rc = filler.field(entries[i], v1, fields_[i]); rc != status::ok) {
+        if (const status rc = filler.field(entries[i], fields_[i]); rc != status::ok) {
             *this = type_table{};
             return rc;
         }

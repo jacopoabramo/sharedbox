@@ -42,7 +42,7 @@ def attach(name: str, timeout: float = 1.0) -> Segment:
     return Segment.attach(name, NAMES, SCHEMA, timeout)
 
 
-MAGIC = b"SHREDBX1"
+MAGIC = b"SBX_BOX_"
 
 
 @contextlib.contextmanager
@@ -366,26 +366,22 @@ def test_raw_bytes_follow_the_layout(unique_name: str) -> None:
     segment.close()
     assert len(raw) == 4096
     assert raw[0:8] == MAGIC
-    assert raw[8:12] == struct.pack("<HH", *LAYOUT_VERSION)
-    assert struct.unpack_from("<HHQIIII", raw, 12) == (
-        3,
-        64,
-        0x1122334455667788,
-        24,
-        1728,
-        128,
-        4096,
+    assert struct.unpack_from("<HH", raw, 8) == (1, 0)
+    assert struct.unpack_from("<HH", raw, 12) == LAYOUT_VERSION
+    assert struct.unpack_from("<Q", raw, 16) == (0x1122334455667788,)
+    create_id, creator_start, creator_pidns, creator_pid = struct.unpack_from(
+        "<QQQI", raw, 24
     )
-    create_id, creator_start, creator_pid = struct.unpack_from("<QQI", raw, 40)
     assert create_id != 0
     assert creator_start != 0
+    assert creator_pidns == own_pidns()
     assert creator_pid == os.getpid()
-    assert raw[60:64] == bytes(4)  # types_size
+    assert struct.unpack_from("<HHQ", raw, 52) == (64, 0, 4096)
     # seq, writer_pid, wake_word and waiters after one write, with no one waiting.
     assert struct.unpack_from("<QIII", raw, 64) == (2, 0, 1, 0)
-    assert raw[84:88] == bytes(4)
-    assert struct.unpack_from("<Q", raw, 88) == (own_pidns(),)
-    assert raw[96:128] == bytes(32)
+    # field_count and its reserved word, then record_size, record, tail and types_size.
+    assert struct.unpack_from("<HHIIII", raw, 84) == (3, 0, 24, 1728, 128, 0)
+    assert raw[104:128] == bytes(24)
     assert struct.unpack_from("<6I", raw, 128) == (
         0,
         8 | INT << 24,
@@ -403,16 +399,16 @@ def test_raw_bytes_follow_the_layout(unique_name: str) -> None:
 @pytest.mark.parametrize(
     ("offset", "fmt", "value"),
     [
-        pytest.param(12, "<H", 0, id="no-fields"),
-        pytest.param(12, "<H", 256, id="table-over-the-record"),
-        pytest.param(14, "<H", 0, id="no-waiter-slots"),
-        pytest.param(14, "<H", 4097, id="too-many-waiter-slots"),
-        pytest.param(24, "<I", 4000, id="record-past-the-mapping"),
-        pytest.param(28, "<I", 0xFFFF_FFC0, id="record-outside"),
-        pytest.param(28, "<I", 128, id="record-over-the-table"),
-        pytest.param(28, "<I", 1736, id="record-unaligned"),
-        pytest.param(32, "<I", 136, id="tail-moved"),
-        pytest.param(36, "<I", 8192, id="size-differs"),
+        pytest.param(84, "<H", 0, id="no-fields"),
+        pytest.param(84, "<H", 256, id="table-over-the-record"),
+        pytest.param(52, "<H", 0, id="no-waiter-slots"),
+        pytest.param(52, "<H", 4097, id="too-many-waiter-slots"),
+        pytest.param(88, "<I", 4000, id="record-past-the-mapping"),
+        pytest.param(92, "<I", 0xFFFF_FFC0, id="record-outside"),
+        pytest.param(92, "<I", 128, id="record-over-the-table"),
+        pytest.param(92, "<I", 1736, id="record-unaligned"),
+        pytest.param(96, "<I", 136, id="tail-moved"),
+        pytest.param(56, "<I", 8192, id="size-differs"),
         pytest.param(128, "<I", 32, id="field-past-the-record"),
     ],
 )
@@ -430,8 +426,8 @@ def test_corrupt_header_is_refused(
 def test_another_major_version_is_refused(unique_name: str) -> None:
     """Check that attach raises SchemaMismatchError for a different major layout version."""
     segment = create(unique_name)
-    patch_header(unique_name, 8, "<H", 3)
-    with pytest.raises(SchemaMismatchError, match=r"uses layout 3\.0"):
+    patch_header(unique_name, 12, "<H", 4)
+    with pytest.raises(SchemaMismatchError, match=r"uses layout 4\.0"):
         attach(unique_name)
     segment.close()
 
@@ -439,7 +435,7 @@ def test_another_major_version_is_refused(unique_name: str) -> None:
 def test_a_higher_minor_version_opens(unique_name: str) -> None:
     """Check that attach accepts a higher minor layout version."""
     owner = create(unique_name)
-    patch_header(unique_name, 10, "<H", 7)
+    patch_header(unique_name, 14, "<H", 7)
     other = attach(unique_name)
     owner._write([(1, b"minor")])
     assert other._read(1) == b"minor"
@@ -532,7 +528,7 @@ def test_exists_names_a_creator_that_is_running(unique_name: str) -> None:
 def test_exists_says_the_creator_is_in_another_namespace(unique_name: str) -> None:
     """Check that SegmentExistsError mentions another pid namespace when the stored namespace differs."""
     segment = create(unique_name)
-    patch_header(unique_name, 88, "<Q", own_pidns() + 1)
+    patch_header(unique_name, 40, "<Q", own_pidns() + 1)
     with pytest.raises(SegmentExistsError, match="another pid namespace"):
         create(unique_name)
     segment.close()
@@ -541,7 +537,7 @@ def test_exists_says_the_creator_is_in_another_namespace(unique_name: str) -> No
 def test_exists_treats_an_unknown_namespace_as_no_information(unique_name: str) -> None:
     """Check that a zero pid namespace produces neither the namespace nor the not-running message."""
     segment = create(unique_name)
-    patch_header(unique_name, 88, "<Q", 0)
+    patch_header(unique_name, 40, "<Q", 0)
     with pytest.raises(SegmentExistsError) as error:
         create(unique_name)
     assert "another pid namespace" not in str(error.value)

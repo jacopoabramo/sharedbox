@@ -51,7 +51,7 @@ WaitHook before_wait = []() -> void * { return nullptr; };
 ResumeHook after_wait = [](void *) {};
 
 // The message for a creator whose pid cannot be checked from here, or nullopt when it can.
-std::optional<std::string> foreign_creator(const header &h, const std::string &taken) {
+std::optional<std::string> foreign_creator(const common_header &h, const std::string &taken) {
 #ifndef _WIN32
     // A pid means something only inside its namespace: with either namespace unknown (0), or a
     // real mismatch, there is nothing safe to say about whether the creator is still running.
@@ -67,17 +67,15 @@ std::optional<std::string> foreign_creator(const header &h, const std::string &t
     return std::nullopt;
 }
 
-// The header of a box whose creator has not published it yet. The creator fields are written before
+// Line 0 of a segment whose creator has not published it yet. The creator fields are written before
 // magic, but this reads them without waiting for magic and without the lock, so a creator still
 // writing them can only make the message less precise.
-std::optional<header> unpublished_header(const std::string &name) {
+std::optional<common_header> unpublished_header(const std::string &name) {
     detail::backoff no_wait(0);
     result<detail::os_mapping> map = detail::map_open(name, no_wait);
     if (!map)
         return std::nullopt;
-    header copy;
-    std::memcpy(&copy, map->base(), sizeof copy);
-    return copy;
+    return detail::copy_common(map->base());
 }
 
 // The Python layer labels fields "Class.field", so the first label names the class to unlink through.
@@ -90,12 +88,12 @@ std::string exists_message(const std::string &name, const std::vector<std::strin
 #else
     static_cast<void>(names);
 #endif
-    const result<header> seen = inspect(name);
+    const result<common_header> seen = inspect(name);
     if (!seen) {
         if (seen.error().code != status::not_found)
             return taken;
         // Zero creator fields mean shared memory made by other software.
-        if (const std::optional<header> creating = unpublished_header(name);
+        if (const std::optional<common_header> creating = unpublished_header(name);
             creating && creating->creator_pid != 0) {
             if (std::optional<std::string> foreign = foreign_creator(*creating, taken))
                 return *foreign;
@@ -113,8 +111,6 @@ std::string exists_message(const std::string &name, const std::vector<std::strin
                unlink + " removes it";
 #endif
     }
-    if (!detail::major_ok(seen->layout_major))
-        return taken;
     if (std::optional<std::string> foreign = foreign_creator(*seen, taken))
         return *foreign;
     if (detail::process_alive(seen->creator_pid, seen->creator_start))
@@ -330,7 +326,7 @@ std::unique_ptr<Segment> Segment::create(const std::string &name, const std::vec
                                          std::uint64_t schema_hash, double lock_timeout,
                                          std::uint16_t waiter_slots,
                                          const std::vector<std::pair<std::uint32_t, std::string>> &values,
-                                         const std::string &types_table, std::uint16_t major, bool publish) {
+                                         const std::string &types_table, bool publish) {
     check_lock_timeout(lock_timeout);
     if (fields.empty() || fields.size() > max_fields)
         throw std::invalid_argument("a box needs between 1 and 256 fields");
@@ -361,8 +357,8 @@ std::unique_ptr<Segment> Segment::create(const std::string &name, const std::vec
     impl->names = names;
     impl->lock_timeout = lock_timeout;
     const auto size = static_cast<std::uint32_t>(record_size);
-    result<handle> made = detail::create_impl(name, table, size, schema_hash, waiter_slots, initial,
-                                              bytes_of(types_table), major, publish);
+    result<handle> made =
+        detail::create_impl(name, table, size, schema_hash, waiter_slots, initial, bytes_of(types_table), publish);
     if (!made && made.error().code == status::exists)
         throw SegmentExists(exists_message(name, names));
     impl->box = impl->check(std::move(made));
@@ -381,11 +377,11 @@ std::unique_ptr<Segment> Segment::attach(const std::string &name, const std::vec
     // A creator that has not published the box within 1 s is not coming back.
     result<handle> opened = handle::open(name, seconds((std::min)(lock_timeout, 1.0)));
     if (!opened && opened.error().code == status::layout) {
-        const result<header> seen = inspect(name);
-        const std::string version =
-            seen ? std::to_string(seen->layout_major) + "." + std::to_string(seen->layout_minor)
-                 : std::string("another major version");
-        throw SchemaMismatch("segment '" + name + "' uses layout " + version);
+        const error &e = opened.error();
+        const bool magic = detail::kind_name(e.found).empty() && e.found > 0xFFFFFFFFu;
+        throw SchemaMismatch(magic ? "segment '" + name + "' was made by another version of sharedbox"
+                                   : "segment '" + name + "' uses layout " + std::to_string(e.found >> 16) + "." +
+                                         std::to_string(e.found & 0xFFFF));
     }
     impl->box = impl->check(std::move(opened));
     if (impl->box.schema_hash() != schema_hash)
@@ -485,8 +481,8 @@ std::vector<std::uint64_t> Segment::versions() const {
 
 bool Segment::published() const {
     auto guard = impl_->enter();
-    return detail::atomic(static_cast<header *>(impl_->box.base())->magic).load(std::memory_order_acquire) ==
-           magic;
+    return detail::atomic(static_cast<header *>(impl_->box.base())->common.magic)
+               .load(std::memory_order_acquire) == box_magic;
 }
 
 void Segment::publish() {

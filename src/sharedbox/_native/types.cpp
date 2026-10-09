@@ -205,7 +205,7 @@ Types::Types(const std::vector<std::tuple<std::uint32_t, std::uint32_t, std::uin
         entries.push_back(capacity | kind << kind_shift);
     }
     const auto *bytes = reinterpret_cast<const std::byte *>(table_.data());
-    if (tree_.parse({bytes, table_.size()}, entries, false) != status::ok)
+    if (tree_.parse({bytes, table_.size()}, entries) != status::ok)
         throw std::invalid_argument("the description table does not pass the layout's checks");
     for (std::size_t i = 0; i < fields.size(); ++i)
         if (!detail::kind_known(tree_.field(static_cast<std::uint16_t>(i)).kind))

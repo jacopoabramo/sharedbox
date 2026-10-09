@@ -62,11 +62,11 @@ TEST_CASE("creator is recorded") {
         auto owner = create(name);
         REQUIRE(owner.has_value());
         const header &h = header_of(*owner);
-        CHECK(h.creator_pid == sharedbox::detail::current_pid());
-        CHECK(h.creator_start == sharedbox::detail::current_start());
-        CHECK(h.creator_pidns == sharedbox::detail::current_pidns());
+        CHECK(h.common.creator_pid == sharedbox::detail::current_pid());
+        CHECK(h.common.creator_start == sharedbox::detail::current_start());
+        CHECK(h.common.creator_pidns == sharedbox::detail::current_pidns());
         const auto seen = sharedbox::inspect(name);
-        CHECK((seen && seen->creator_pid == h.creator_pid && seen->create_id == owner->create_id()));
+        CHECK((seen && seen->creator_pid == h.common.creator_pid && seen->create_id == owner->create_id()));
         first_id = owner->create_id();
         static_cast<void>(sharedbox::unlink(name));
     }
@@ -97,9 +97,10 @@ TEST_CASE("checks on open") {
     // 64-byte aligned, but inside the waiter slots, which end at 1696.
     CHECK(forged(h.record, 1664u) == status::corrupt);
     CHECK(forged(h.record_size, 4096u - 1728u + 1u) == status::corrupt);
-    CHECK(forged(h.size, 8192u) == status::corrupt);
+    CHECK(forged(h.common.size, std::uint64_t{8192}) == status::corrupt);
     CHECK(forged(h.field_count, std::uint16_t{0}) == status::corrupt);
-    CHECK(forged(h.waiter_slots, std::uint16_t{0}) == status::corrupt);
+    CHECK(forged(h.common.waiter_slots, std::uint16_t{0}) == status::corrupt);
+    CHECK(forged(h.common.waiter_slots, std::uint16_t{4097}) == status::corrupt);
     auto *table = reinterpret_cast<sharedbox::stored_field *>(static_cast<std::byte *>(owner->base()) + 128);
     // The bytes field moved to 16: aligned and inside the record, but its 20 bytes end past 32.
     CHECK(forged(table[1].offset, 16u) == status::corrupt);
@@ -109,13 +110,13 @@ TEST_CASE("checks on open") {
     CHECK(forged(table[1].capacity_and_kind, 16u | 5u << 24) == status::corrupt);
     CHECK(forged(table[1].capacity_and_kind, 0u | 4u << 24) == status::corrupt);
     CHECK(open_status(name) == status::ok);
-    h.layout_minor = 7;
+    h.common.kind_minor = 7;
     auto newer = handle::open(name, seconds(1.0));
     CHECK((newer && newer->minor_version() == 0));
-    CHECK(forged(h.layout_major, std::uint16_t{3}) == status::layout);
+    CHECK(forged(h.common.kind_major, std::uint16_t{4}) == status::layout);
     const auto seen = sharedbox::inspect(name);
-    CHECK((seen && seen->layout_minor == 7));
-    h.layout_minor = 0;
+    CHECK((seen && seen->kind_minor == 7));
+    h.common.kind_minor = 0;
     static_cast<void>(sharedbox::unlink(name));
 }
 
@@ -123,27 +124,22 @@ TEST_CASE("checks on open") {
 TEST_CASE("geometry limits") {
     constexpr std::uint32_t mapped = std::uint32_t{1} << 30;
     header h{};
-    h.layout_major = 1;
     h.field_count = 1;
-    h.waiter_slots = 1;
+    h.common.waiter_slots = 1;
     h.tail = sharedbox::header_size;
-    h.size = mapped;
+    h.common.size = mapped;
     h.record = std::uint32_t{1} << 20;
     h.record_size = 64;
     const auto with = [&](auto &field, auto bad) {
         const auto saved = field;
         field = bad;
-        const status rc = sharedbox::detail::check_geometry(h, mapped);
+        const status rc = sharedbox::detail::box_layout::check_geometry(&h, h.common, mapped);
         field = saved;
         return rc;
     };
-    CHECK(sharedbox::detail::check_geometry(h, mapped) == status::ok);
+    CHECK(sharedbox::detail::box_layout::check_geometry(&h, h.common, mapped) == status::ok);
     CHECK(with(h.field_count, std::uint16_t{256}) == status::ok);
     CHECK(with(h.field_count, std::uint16_t{257}) == status::corrupt);
-    CHECK(with(h.waiter_slots, std::uint16_t{4096}) == status::ok);
-    CHECK(with(h.waiter_slots, std::uint16_t{4097}) == status::corrupt);
-    CHECK(with(h.record_size, sharedbox::detail::max_record_size) == status::ok);
-    CHECK(with(h.record_size, sharedbox::detail::max_record_size + 1u) == status::corrupt);
 }
 
 TEST_CASE("names") {
