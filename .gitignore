@@ -23,6 +23,7 @@ graphify-out/
 build-cpp*/
 
 .hypothesis/
+.claude/settings.json
 .claude/settings.local.json
 
 site/
