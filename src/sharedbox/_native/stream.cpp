@@ -144,8 +144,13 @@ protected:
         if (closed_.load())
             throw StreamClosed("stream '" + name_ + "': this end is closed");
     }
-    // Kept apart from core_, which close() drops, so a message can still name the stream.
     std::string name_;
+    /// Ends a call that failed: a wait that close() interrupted is a closed end, not an interrupt.
+    [[noreturn]] void fail(const error &e) const {
+        if (e.code == status::interrupted && closed_.load())
+            throw StreamClosed("stream '" + name_ + "': this end is closed");
+        throw_stream(e, name_);
+    }
     std::shared_ptr<StreamCore> core_;
     // unique_ptr so after_fork can replace a mutex another thread of the parent held, rather than unlock it.
     std::unique_ptr<std::mutex> calls_ = std::make_unique<std::mutex>();
@@ -195,7 +200,7 @@ public:
         if (!sent)
             check_open();
         if (!*sent)
-            throw_stream(sent->error(), name_);
+            fail(sent->error());
         return **sent;
     }
 
@@ -220,7 +225,6 @@ public:
             std::lock_guard lock(*calls_);
             end_.close();
         }
-        core_.reset();
     }
 
     void after_fork() { forget_locks_after_fork(); }
@@ -262,8 +266,12 @@ public:
         }
         if (!got)
             check_open();
-        if (!*got)
-            throw_stream(got->error(), name_);
+        if (!*got) {
+            if (got->error().code == status::corrupt)
+                throw SchemaMismatch("stream '" + name_ +
+                                     "': the sender overwrote an item this lossless reader had not read");
+            fail(got->error());
+        }
         const detail::type_ref &t = types.field(0);
         const std::span<const std::byte> bytes = value_bytes(t, {scratch, size}, name_);
         nb::object value = types.decode(0, bytes, large ? &large : nullptr);
@@ -271,7 +279,11 @@ public:
     }
 
     std::uint32_t mode() const { return static_cast<std::uint32_t>(end_.mode()); }
-    std::uint64_t missed() const { return end_.missed(); }
+    std::uint64_t missed() {
+        nb::gil_scoped_release unlocked;
+        std::lock_guard lock(*calls_);
+        return end_.missed();
+    }
 
     void interrupt() {
         std::lock_guard lock(*interrupts_);
@@ -293,7 +305,6 @@ public:
             std::lock_guard lock(*calls_);
             end_.close();
         }
-        core_.reset();
     }
 
     void after_fork() { forget_locks_after_fork(); }
@@ -418,16 +429,16 @@ void bind_stream(nb::module_ &m) {
         .def_static("create", &Stream::create, "name"_a, "types"_a, "entry"_a, "schema_hash"_a, "capacity"_a,
                     "max_readers"_a)
         .def_static("attach", &Stream::attach, "name"_a, "types"_a, "entry"_a, "schema_hash"_a)
-        .def_prop_ro("name", &Stream::name)
-        .def_prop_ro("capacity", &Stream::capacity)
-        .def_prop_ro("max_readers", &Stream::max_readers)
-        .def_prop_ro("item_size", &Stream::item_size)
-        .def_prop_ro("create_id", &Stream::create_id)
-        .def_prop_ro("closed", &Stream::closed)
-        .def("statistics", &Stream::statistics)
-        .def("sender", &Stream::sender)
-        .def("reader", &Stream::reader, "mode"_a, "newest"_a)
-        .def("close", &Stream::close);
+        .def_prop_ro("name", &Stream::name, nb::lock_self())
+        .def_prop_ro("capacity", &Stream::capacity, nb::lock_self())
+        .def_prop_ro("max_readers", &Stream::max_readers, nb::lock_self())
+        .def_prop_ro("item_size", &Stream::item_size, nb::lock_self())
+        .def_prop_ro("create_id", &Stream::create_id, nb::lock_self())
+        .def_prop_ro("closed", &Stream::closed, nb::lock_self())
+        .def("statistics", &Stream::statistics, nb::lock_self())
+        .def("sender", &Stream::sender, nb::lock_self())
+        .def("reader", &Stream::reader, "mode"_a, "newest"_a, nb::lock_self())
+        .def("close", &Stream::close, nb::lock_self());
 }
 
 } // namespace sharedbox

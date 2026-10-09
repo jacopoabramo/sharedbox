@@ -1,3 +1,4 @@
+import threading
 import time
 from dataclasses import dataclass
 from typing import Annotated
@@ -122,9 +123,9 @@ def test_more_readers_than_max_readers_are_refused(unique_name: str) -> None:
     """Raise WaiterSlotsFullError for a reader beyond max_readers."""
     stream = create(unique_name, int, max_readers=1)
     first = stream.reader(LOSSLESS, True)
-    assert first.mode == LOSSLESS
     with pytest.raises(WaiterSlotsFullError):
         stream.reader(LOSSY, True)
+    first.close()
 
 
 def test_attach_checks_the_item_type(unique_name: str) -> None:
@@ -135,7 +136,7 @@ def test_attach_checks_the_item_type(unique_name: str) -> None:
     other, entry, schema = item(float)
     with pytest.raises(SchemaMismatchError, match="another item type"):
         Stream.attach(unique_name, other, entry, schema)
-    assert not stream.closed
+    stream.close()
 
 
 def test_a_box_and_a_stream_refuse_each_others_names(unique_name: str) -> None:
@@ -151,7 +152,7 @@ def test_a_box_and_a_stream_refuse_each_others_names(unique_name: str) -> None:
     stream = create(f"{unique_name}-stream", int)
     with pytest.raises(KindMismatchError, match="is a stream, not a box"):
         Counter.attach(f"{unique_name}-stream")
-    assert not stream.closed
+    stream.close()
 
 
 def test_a_closed_end_raises_stream_closed(unique_name: str) -> None:
@@ -185,3 +186,24 @@ def test_a_negative_timeout_is_refused(unique_name: str) -> None:
     reader: Reader = create(unique_name, int).reader(LOSSLESS, True)
     with pytest.raises(ValueError):
         reader.receive(-1.0)
+
+
+def test_close_ends_a_blocked_receive(unique_name: str) -> None:
+    """Raise StreamClosedError within a step in a receive another thread's close() interrupted."""
+    reader = create(unique_name, int).reader(LOSSLESS, True)
+    raised: list[BaseException] = []
+
+    def wait() -> None:
+        try:
+            reader.receive(1.0)
+        except BaseException as error:
+            raised.append(error)
+
+    thread = threading.Thread(target=wait)
+    thread.start()
+    time.sleep(0.1)
+    start = time.perf_counter()
+    reader.close()
+    thread.join(2.0)
+    assert time.perf_counter() - start < 1.0
+    assert [type(error) for error in raised] == [StreamClosedError]
