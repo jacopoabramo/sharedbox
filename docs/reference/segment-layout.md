@@ -692,10 +692,11 @@ Windows.
   returning a `result` is `[[nodiscard]]`, and the header builds with
   `-fno-exceptions`.
 - Where the standard library has `std::expected` with
-  `__cpp_lib_expected >= 202211L` (C++23), a `result` is built from a
-  `std::expected<T, error>`, and the free function `to_expected(result<T>)`
-  converts the other way. Because `result` is never an alias, translation
-  units built as C++20 and as C++23 can be linked into one program.
+  `__cpp_lib_expected >= 202211L` (C++23), the free functions
+  `to_expected(result<T>)` and `from_expected(std::expected<T, error>)`
+  convert one into the other. Because `result` is never an alias and its
+  definition does not depend on the C++ version, translation units built as
+  C++20 and as C++23 can be linked into one program.
 
 ## `sharedbox.hpp`
 

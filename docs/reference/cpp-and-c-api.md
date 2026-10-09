@@ -32,7 +32,7 @@ listed in [`sharedbox.hpp`](segment-layout.md#sharedboxhpp).
 
 - [Implementation language](segment-layout.md#implementation-language):
   `sharedbox::result<T>`, which every C++ call that can fail returns, its
-  `sharedbox::error`, and `to_expected` on C++23
+  `sharedbox::error`, and `to_expected` and `from_expected` on C++23
 - [`sharedbox.hpp`](segment-layout.md#sharedboxhpp): what each
   `sharedbox::status` means, including `status::os`, `status::kind_mismatch`
   (a segment of another kind) and `status::foreign` (a magic this version

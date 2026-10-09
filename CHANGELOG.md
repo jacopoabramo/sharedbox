@@ -37,17 +37,17 @@ Dates are marked as `DD-MM-YYYY`
   and what was found. The C++ names moved from `sharedbox::v2` to
   `sharedbox::v3`.
 - `sharedbox::error`: a `status::os` failure carries the OS error in
-  `error().os`; `errno` and `GetLastError()` are no longer kept for the
-  caller.
+  `error().os`; `errno` and `GetLastError()` no longer hold it reliably
+  when the call returns.
 - `sharedbox::header`: the magic, versions, schema hash, creator, waiter
   slot count and size moved into its first member, `common`, a
   `sharedbox::common_header`; `layout_major` and `layout_minor` became
   `common.kind_major` and `common.kind_minor`.
 - `sharedbox::inspect`: returns `result<common_header>`.
 - `sharedbox::magic`: renamed `sharedbox::box_magic`.
-- `SharedBox.attach`: shared memory under the name that holds no segment
-  this version knows raises `SchemaMismatchError` at once, instead of
-  `SegmentNotFoundError` after the timeout.
+- `SharedBox.attach`: a segment whose magic this version does not know,
+  such as a box made by 0.5, raises `SchemaMismatchError` at once, instead
+  of `SegmentNotFoundError` after the timeout.
 
 ### Removed
 
