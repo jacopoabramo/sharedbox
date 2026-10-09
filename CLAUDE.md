@@ -37,11 +37,12 @@ sharedbox/
 |   |-- py.typed
 |   |-- benchmarks/            the benchbox command (extra: benchmarks)
 |   |   |-- cli.py             entry point; exits with an install hint without Typer
-|   |   |-- _app.py            Typer commands: ops, roundtrip, contention, size, plot, all
+|   |   |-- _app.py            Typer commands: ops, roundtrip, contention, stream, size, plot, all
 |   |   |-- ops.py             pyperf timings of single operations, against the stdlib
 |   |   |-- roundtrip.py       cross-process round trip percentiles
 |   |   |-- contention.py      throughput and percentiles with several writer and reader processes
-|   |   |-- plot.py            SVG charts of the ops and roundtrip results (matplotlib)
+|   |   |-- stream.py          stream throughput against mp.Queue and a locked ring, and the sync/async matrix
+|   |   |-- plot.py            plotly figures (JSON) of the ops, roundtrip and stream results
 |   |   |-- size.py            wheel and extension size (standard library only)
 |   |   `-- size_diff.py       wheel size table against main, for CI (standard library only)
 |   `-- _native/
@@ -59,7 +60,7 @@ sharedbox/
 |   |-- crossproc.py           helpers that run a box in another process
 |   |-- forged_types.py        builds segments with forged description tables
 |   |-- test_benchbox_contention.py  benchbox contention, a short run
-|   |-- test_benchbox_plot.py  benchbox plot; skipped without matplotlib and pyperf
+|   |-- test_benchbox_plot.py  benchbox plot; skipped without plotly and pyperf
 |   |-- test_capsule.py        __sharedbox_box__, and the C consumer in tests/cpp/consumer/
 |   |-- test_doc_examples.py   runs each docs/examples/*.py script
 |   |-- test_doc_tutorials.py  runs docs/tutorials/motor.py and checks the output its pages show
@@ -78,13 +79,17 @@ sharedbox/
 |   |   `-- consumer/          a C library built against an installed wheel, loaded by test_capsule.py
 |   `-- type_checks/           checked by mypy, never imported at run time
 |-- benchmarks/                not collected by the default pytest run
-|   `-- test_bench_box.py      pytest-codspeed benchmarks, run by codspeed.yml
+|   |-- test_bench_box.py      pytest-codspeed benchmarks, run by codspeed.yml
+|   `-- test_bench_stream.py   pytest-codspeed stream benchmarks: send plus receive_into
 |-- scripts/
+|   |-- stream_compare.py      base against head table of two benchbox stream runs, for the Streams workflow
 |   |-- vscode_setup.py        points VS Code's C/C++ extension at the build headers
 |   `-- check_xrefs.py         reports unresolved cross-references, unread snippets and broken links in site/
 |-- docs/                      Diataxis site built by Zensical: tutorials/, how-to/, explanation/, reference/
 |   |-- tutorials/motor.py     the script the three tutorials build and include
 |   |-- examples/              one script per how-to guide, included by the guide
+|   |-- javascripts/charts.js  draws each div of class sbx-chart from a plotly figure JSON file
+|   |-- assets/benchmarks/     the figure JSON files of the performance page, from benchbox plot
 |   `-- reference/segment-layout.md  core 1.0, box layout 3.0, names and protocols
 |-- includes/abbreviations.md  acronym tooltips appended to every page
 |-- zensical.toml              site configuration and navigation
@@ -97,6 +102,8 @@ sharedbox/
 |                              that touch the native code, and by hand
 |-- .github/workflows/ops.yaml  benchbox ops int and record rows, base branch against the pull
 |                              request on Windows cp311, for pull requests that touch the native code
+|-- .github/workflows/streams.yaml  benchbox stream, base branch against the pull request on Linux and
+|                              Windows, for pull requests that touch the stream
 |-- CMakeLists.txt             sharedbox::headers, sharedbox::c, extension build
 |-- stubtest-allowlist.txt     stubtest exceptions for nanobind types
 |-- .clang-format              clang-format style for the C and C++ sources
@@ -259,7 +266,10 @@ the native code, and by hand. On Windows cp311 it times the `int` and
 three times on the pull request, alternating, and writes the medians and
 their ratio to the job summary. Read the ratios of `read int/SharedBox`,
 `write int/SharedBox` and `write+read record/SharedBox`; the last decodes
-the record on every read.
+the record on every read. The `Streams` workflow
+(`.github/workflows/streams.yaml`) does the same for `benchbox stream` on
+Linux and Windows when a pull request touches the stream, and
+`scripts/stream_compare.py` writes the table of medians and ratios.
 
 Property tests (`tests/test_properties_*.py`) run in the normal suite under
 the Hypothesis profile `ci` (50 examples); `--hypothesis-profile=thorough`
