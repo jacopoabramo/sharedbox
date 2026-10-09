@@ -356,10 +356,9 @@ TEST_CASE("newest starts at the last item sent and oldest at the oldest still in
 TEST_CASE("data_waiting and space_waiting are back to 0 after a wait that was woken, timed out or interrupted") {
     const std::string name = unique("stream-counts");
     stream st = make(name, 2);
-    const stream_header &h = *static_cast<stream_header *>(st.base());
+    stream_header &h = *static_cast<stream_header *>(st.base());
     const auto waiting = [&] {
-        return std::pair{detail::atomic(const_cast<std::uint32_t &>(h.data_waiting)).load(),
-                         detail::atomic(const_cast<std::uint32_t &>(h.space_waiting)).load()};
+        return std::pair{detail::atomic(h.data_waiting).load(), detail::atomic(h.space_waiting).load()};
     };
     auto reader = st.reader(read_mode::lossless, start_at::newest);
     auto sender = st.sender();
@@ -377,6 +376,7 @@ TEST_CASE("data_waiting and space_waiting are back to 0 after a wait that was wo
     std::thread waiting_reader([&] { got = receive(*reader); });
     CHECK(reader->interrupt());
     waiting_reader.join();
+    CHECK(got.error().code == status::interrupted);
     CHECK(waiting() == std::pair<std::uint32_t, std::uint32_t>{0, 0});
 
     CHECK(send(*sender, 1));

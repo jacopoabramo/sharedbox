@@ -273,7 +273,9 @@ public:
     [[nodiscard]] result<std::uint64_t> send(std::span<const std::byte> item, seconds timeout);
     // As send, with fill writing the item_size() bytes of the item into the slot. fill must not fail and
     // must not call this sender.
-    template <class F> [[nodiscard]] result<std::uint64_t> send_with(F &&fill, seconds timeout);
+    template <class F>
+        requires std::is_nothrow_invocable_v<F &, std::span<std::byte>>
+    [[nodiscard]] result<std::uint64_t> send_with(F &&fill, seconds timeout);
     // Ends a send waiting in this sender with status::interrupted. Sent while no send waits, it ends the
     // next wait.
     [[nodiscard]] result<void> interrupt();
@@ -329,7 +331,9 @@ public:
     // As receive, with copy given the item's bytes in the slot. The sender may change them during the
     // copy, so copy must only copy; the call returns once it has checked that they did not change, and
     // otherwise moves on as the mode says.
-    template <class F> [[nodiscard]] result<received> receive_with(F &&copy, seconds timeout);
+    template <class F>
+        requires std::is_nothrow_invocable_v<F &, std::span<const std::byte>>
+    [[nodiscard]] result<received> receive_with(F &&copy, seconds timeout);
     // Ends a receive waiting in this reader with status::interrupted. Sent while no receive waits, it ends
     // the next wait.
     [[nodiscard]] result<void> interrupt();
@@ -622,7 +626,9 @@ inline result<void> stream_sender::gate(std::uint64_t p, seconds timeout) {
     return {};
 }
 
-template <class F> result<std::uint64_t> stream_sender::send_with(F &&fill, seconds timeout) {
+template <class F>
+    requires std::is_nothrow_invocable_v<F &, std::span<std::byte>>
+result<std::uint64_t> stream_sender::send_with(F &&fill, seconds timeout) {
     if (s_ == nullptr || detail::current_pid() != pid_ || !detail::timeout_ok(timeout, true))
         return unexpected(status::range);
     detail::stream_state &s = *s_;
@@ -720,7 +726,9 @@ inline void stream_reader::advance() noexcept {
     }
 }
 
-template <class F> result<received> stream_reader::receive_with(F &&copy, seconds timeout) {
+template <class F>
+    requires std::is_nothrow_invocable_v<F &, std::span<const std::byte>>
+result<received> stream_reader::receive_with(F &&copy, seconds timeout) {
     if (s_ == nullptr || detail::current_pid() != pid_ || !detail::timeout_ok(timeout, true))
         return unexpected(status::range);
     detail::stream_state &s = *s_;
@@ -800,9 +808,11 @@ inline void stream_reader::close() noexcept {
         detail::atomic(e.owner_start).store(0, std::memory_order_release);
         detail::atomic(e.owner_pidns).store(0, std::memory_order_relaxed);
         detail::atomic(e.owner_pid).store(0, std::memory_order_release);
-        // The sender may be waiting for this reader.
-        detail::atomic(h.space_word).fetch_add(1, std::memory_order_seq_cst);
-        detail::wake_all(s.waiters, h.space_word);
+        // Only a lossless reader leaving can unblock a sender waiting for space.
+        if (mode_ == read_mode::lossless) {
+            detail::atomic(h.space_word).fetch_add(1, std::memory_order_seq_cst);
+            detail::wake_all(s.waiters, h.space_word);
+        }
     }
     detail::release_slot(s.waiters, slot_);
     s_ = nullptr;
