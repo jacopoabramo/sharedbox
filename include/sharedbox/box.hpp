@@ -50,6 +50,8 @@ struct header {
     std::uint32_t writer_pid;
     std::uint32_t wake_word;
     std::uint32_t waiters;
+    // Threads inside a wait on this box.
+    std::uint32_t sleepers;
     std::uint16_t field_count;
     std::uint16_t reserved1;
     std::uint32_t record_size;
@@ -57,7 +59,7 @@ struct header {
     std::uint32_t tail;
     // Bytes of the description table after the waiter slots.
     std::uint32_t types_size;
-    std::uint8_t reserved2[24];
+    std::uint8_t reserved2[20];
 };
 
 struct stored_field {
@@ -71,11 +73,12 @@ static_assert(std::is_standard_layout_v<sbx_handle> && std::is_trivially_copyabl
 static_assert(sizeof(header) == 128 && alignof(header) == 8);
 static_assert(offsetof(header, common) == 0);
 static_assert(offsetof(header, seq) == 64 && offsetof(header, writer_pid) == 72 &&
-              offsetof(header, wake_word) == 76 && offsetof(header, waiters) == 80);
-static_assert(offsetof(header, field_count) == 84 && offsetof(header, reserved1) == 86 &&
-              offsetof(header, record_size) == 88 && offsetof(header, record) == 92 &&
-              offsetof(header, tail) == 96 && offsetof(header, types_size) == 100 &&
-              offsetof(header, reserved2) == 104);
+              offsetof(header, wake_word) == 76 && offsetof(header, waiters) == 80 &&
+              offsetof(header, sleepers) == 84);
+static_assert(offsetof(header, field_count) == 88 && offsetof(header, reserved1) == 90 &&
+              offsetof(header, record_size) == 92 && offsetof(header, record) == 96 &&
+              offsetof(header, tail) == 100 && offsetof(header, types_size) == 104 &&
+              offsetof(header, reserved2) == 108);
 static_assert(sizeof(stored_field) == 8 && alignof(stored_field) == 4);
 static_assert(offsetof(stored_field, offset) == 0);
 static_assert(offsetof(stored_field, capacity_and_kind) == 4);
@@ -92,7 +95,8 @@ static_assert(offsetof(sbx_handle, private_data) == 40);
 static_assert(offsetof(header, seq) % detail::align64 == 0);
 static_assert(offsetof(header, writer_pid) % detail::align32 == 0 &&
               offsetof(header, wake_word) % detail::align32 == 0 &&
-              offsetof(header, waiters) % detail::align32 == 0);
+              offsetof(header, waiters) % detail::align32 == 0 &&
+              offsetof(header, sleepers) % detail::align32 == 0);
 // The write counts start at header_size + field_count * sizeof(stored_field), the slots after them.
 static_assert(header_size % detail::align64 == 0 && sizeof(stored_field) % detail::align64 == 0);
 static_assert(sizeof(waiter_slot) % detail::align64 == 0 && page_size % alignof(header) == 0);
@@ -139,8 +143,9 @@ struct box_layout {
     static constexpr std::uint16_t oldest_major = layout_major;
     static constexpr std::uint16_t newest_major = layout_major;
     using header_type = header;
-    // The header at base without seq, writer_pid, wake_word and waiters, which other processes change
-    // while they are open: line 0 and the bytes of line 1 written once. Only the copy is checked and used.
+    // The header at base without seq, writer_pid, wake_word, waiters and sleepers, which other processes
+    // change while they are open: line 0 and the bytes of line 1 written once. Only the copy is checked
+    // and used.
     static header copy_header(const void *base) noexcept {
         header h{};
         std::memcpy(&h, base, offsetof(header, seq));
@@ -291,6 +296,8 @@ public:
     bool waiter_held(std::uint16_t slot) const noexcept;
     // Occupied waiter slots.
     std::uint32_t waiters() const noexcept;
+    // Threads inside wait on this box now, in any process.
+    std::uint32_t sleepers() const noexcept;
     // Blocks in a slot this handle holds until the generation differs from last_generation, the slot is
     // interrupted, or timeout passes (status::timeout).
     [[nodiscard]] result<wake> wait(std::uint16_t slot, std::uint64_t last_generation, seconds timeout);
@@ -979,15 +986,19 @@ inline std::uint32_t handle::waiters() const noexcept {
     return detail::atomic(s_->hdr->waiters).load(std::memory_order_acquire);
 }
 
+inline std::uint32_t handle::sleepers() const noexcept {
+    return detail::atomic(s_->hdr->sleepers).load(std::memory_order_acquire);
+}
+
 namespace detail {
 
 SHAREDBOX_HOT void wake_waiters(const state &s) noexcept {
     header &h = *s.hdr;
-    // seq_cst, not only release: the load of waiters below must not move before this increment or the
-    // swap of seq, or a waiter registering at the same time could be missed.
+    // A waiter counts itself in sleepers (seq_cst) before it loads wake_word and checks seq. This
+    // increment and the load of sleepers are seq_cst too, after the write's swap of seq, so either the
+    // load sees the count and wakes, or the waiter's check sees the new seq.
     atomic(h.wake_word).fetch_add(1, std::memory_order_seq_cst);
-    // waiters is never below the number of claimed slots, so 0 means no one to wake.
-    if (atomic(h.waiters).load(std::memory_order_seq_cst) == 0)
+    if (atomic(h.sleepers).load(std::memory_order_seq_cst) == 0)
         return;
     wake_all(s.waiters, h.wake_word);
 }
@@ -999,7 +1010,7 @@ inline result<wake> handle::wait(std::uint16_t slot, std::uint64_t last_generati
     return detail::wait_on(
         s_->waiters, slot, h.wake_word,
         [&]() noexcept { return detail::atomic(h.seq).load(std::memory_order_seq_cst) >> 1 != last_generation; },
-        timeout);
+        timeout, &h.sleepers);
 }
 
 inline result<void> handle::interrupt(std::uint16_t slot) {

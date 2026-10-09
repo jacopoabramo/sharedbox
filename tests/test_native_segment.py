@@ -380,11 +380,11 @@ def test_raw_bytes_follow_the_layout(unique_name: str) -> None:
     assert creator_pidns == own_pidns()
     assert creator_pid == os.getpid()
     assert struct.unpack_from("<HHQ", raw, 52) == (64, 0, 4096)
-    # seq, writer_pid, wake_word and waiters after one write, with no one waiting.
-    assert struct.unpack_from("<QIII", raw, 64) == (2, 0, 1, 0)
+    # seq, writer_pid, wake_word, waiters and sleepers after one write, with no one waiting.
+    assert struct.unpack_from("<QIIII", raw, 64) == (2, 0, 1, 0, 0)
     # field_count and its reserved word, then record_size, record, tail and types_size.
-    assert struct.unpack_from("<HHIIII", raw, 84) == (3, 0, 24, 1728, 128, 0)
-    assert raw[104:128] == bytes(24)
+    assert struct.unpack_from("<HHIIII", raw, 88) == (3, 0, 24, 1728, 128, 0)
+    assert raw[108:128] == bytes(20)
     assert struct.unpack_from("<6I", raw, 128) == (
         0,
         8 | INT << 24,
@@ -402,15 +402,15 @@ def test_raw_bytes_follow_the_layout(unique_name: str) -> None:
 @pytest.mark.parametrize(
     ("offset", "fmt", "value"),
     [
-        pytest.param(84, "<H", 0, id="no-fields"),
-        pytest.param(84, "<H", 256, id="table-over-the-record"),
+        pytest.param(88, "<H", 0, id="no-fields"),
+        pytest.param(88, "<H", 256, id="table-over-the-record"),
         pytest.param(52, "<H", 0, id="no-waiter-slots"),
         pytest.param(52, "<H", 4097, id="too-many-waiter-slots"),
-        pytest.param(88, "<I", 4000, id="record-past-the-mapping"),
-        pytest.param(92, "<I", 0xFFFF_FFC0, id="record-outside"),
-        pytest.param(92, "<I", 128, id="record-over-the-table"),
-        pytest.param(92, "<I", 1736, id="record-unaligned"),
-        pytest.param(96, "<I", 136, id="tail-moved"),
+        pytest.param(92, "<I", 4000, id="record-past-the-mapping"),
+        pytest.param(96, "<I", 0xFFFF_FFC0, id="record-outside"),
+        pytest.param(96, "<I", 128, id="record-over-the-table"),
+        pytest.param(96, "<I", 1736, id="record-unaligned"),
+        pytest.param(100, "<I", 136, id="tail-moved"),
         pytest.param(56, "<I", 8192, id="size-differs"),
         pytest.param(128, "<I", 32, id="field-past-the-record"),
     ],
