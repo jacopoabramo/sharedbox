@@ -4,14 +4,24 @@ import multiprocessing as mp
 import threading
 import time
 from collections.abc import Callable
-from typing import Any
+from typing import Annotated, Any
 
+import numpy as np
 import psygnal
 import pytest
 from streamproc import exit_while_delivering, send_ints
 
-from sharedbox import EndOfStream, ReaderEvents, SharedStream, StreamReader
+from sharedbox import (
+    DType,
+    EndOfStream,
+    ReaderEvents,
+    Shape,
+    SharedStream,
+    StreamReader,
+)
 from sharedbox._stream import CountedSignal
+
+Frame = Annotated[np.ndarray, Shape(2), DType("int32")]
 
 
 def wait_until(
@@ -61,10 +71,9 @@ def test_callbacks_on_the_main_thread_run_from_emit_queued(unique_name: str) -> 
 
 
 def drain(reader: StreamReader[int]) -> list[int]:
-    """Receive what is left once the delivering call has returned, up to the end of the stream."""
+    """Receive with plain calls up to the end of the stream."""
     rest: list[int] = []
     try:
-        rest.append(reader.receive_future().result(10))
         while True:
             rest.append(reader.receive(timeout=10))
     except EndOfStream:
@@ -127,12 +136,12 @@ def test_delivery_stops_when_the_last_callback_disconnects(unique_name: str) -> 
         reader.events.received.disconnect(keep)
         reader.events.disconnect()
         sender.send(2)
-        assert reader.receive_future().result(5) == 2
+        assert reader.receive(timeout=5) == 2
         assert got == [1]
 
 
 def test_async_receive_works_again_after_delivery_stops(unique_name: str) -> None:
-    """Receive with anext once delivery stopped, with no worker call left in flight."""
+    """Receive with anext once delivery stopped."""
     with SharedStream.create(int, unique_name, capacity=4) as stream:
         reader = stream.reader()
         sender = stream.sender()
@@ -145,7 +154,6 @@ def test_async_receive_works_again_after_delivery_stops(unique_name: str) -> Non
         assert reader.receive_future().result(5) == 2
         sender.send(3)
         assert asyncio.run(anext_of(reader)) == 3
-        assert reader._inflight == 0
 
 
 def test_a_callback_can_disconnect_itself(unique_name: str) -> None:
@@ -202,10 +210,10 @@ def disconnect_mid_stream(name: str, count: int) -> list[int]:
 
 
 def test_an_item_taken_as_delivery_stops_is_not_lost(unique_name: str) -> None:
-    """Hand every item to a callback or to a later receive, exactly once, when a lossless reader disconnects mid-stream."""
+    """Hand every item to a callback or to a plain receive, once and in order, when a lossless reader disconnects mid-stream."""
     for run in range(10):
         name = f"{unique_name}-{run}"
-        assert sorted(disconnect_mid_stream(name, 2000)) == list(range(2000))
+        assert disconnect_mid_stream(name, 2000) == list(range(2000))
         SharedStream.unlink(name)
 
 
@@ -253,14 +261,46 @@ def test_a_quick_reconnect_emits_ended_once(unique_name: str) -> None:
         def on_ended() -> None:
             ended.append(1)
 
+        def on_received(item: int, position: int) -> None:
+            pass
+
         reader.events.ended.connect(on_ended)
-        reader.events.ended.disconnect(on_ended)
-        reader.events.ended.connect(on_ended)
+        reader.events.received.connect(on_received)
+        reader.events.received.disconnect(on_received)
+        reader.events.received.connect(on_received)
         wait_until(lambda: bool(ended))
-        reader.events.ended.disconnect(on_ended)
+        reader.events.disconnect()
         with pytest.raises(EndOfStream):
             reader.receive_future().result(5)
         assert ended == [1]
+
+
+def test_ended_alone_does_not_start_delivery(unique_name: str) -> None:
+    """Leave the items to receive when only an ended callback is connected."""
+    with SharedStream.create(int, unique_name, capacity=4) as stream:
+        reader = stream.reader()
+        sender = stream.sender()
+        reader.events.ended.connect(lambda: None)
+        sender.send(1)
+        assert reader.receive(timeout=5) == 1
+
+
+def test_an_iterator_made_before_delivery_refuses_while_it_runs(
+    unique_name: str,
+) -> None:
+    """Raise RuntimeError from iter_into iterators, for and async for, once delivery runs."""
+    with SharedStream.create(Frame, unique_name, capacity=4) as stream:
+        reader = stream.reader()
+        iterator = reader.iter_into(np.empty(2, np.int32))
+        reader.events.received.connect(lambda *_: None)
+        with pytest.raises(RuntimeError, match="second reader"):
+            next(iterator)
+
+        async def go() -> None:
+            await anext(iterator)
+
+        with pytest.raises(RuntimeError, match="second reader"):
+            asyncio.run(go())
 
 
 def test_an_error_while_receiving_is_logged_and_stops_delivery(
