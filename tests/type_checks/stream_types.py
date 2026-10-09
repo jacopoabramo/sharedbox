@@ -1,3 +1,4 @@
+from concurrent.futures import Future
 from dataclasses import dataclass
 from typing import assert_type
 
@@ -17,3 +18,11 @@ def check(stream: SharedStream[Item]) -> None:
     for item in reader:
         assert_type(item, Item)
     assert_type(SharedStream.attach(Item, "name"), SharedStream[Item])
+
+
+async def check_async(stream: SharedStream[Item]) -> None:
+    reader = stream.reader()
+    async for item in reader:
+        assert_type(item, Item)
+    assert_type(await anext(reader), Item)
+    assert_type(reader.receive_future(), Future[Item])
