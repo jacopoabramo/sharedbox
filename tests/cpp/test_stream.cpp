@@ -701,8 +701,8 @@ TEST_CASE("a dead sender claimed by one path is left alone by the other") {
 
 namespace {
 
-// Sends positions 0 to 3 and moves write_pos back to 3, the state between the sender's seq store and
-// its write_pos store for position 3. The caller's reader has taken all four items.
+// Moves write_pos back to 3 after positions 0 to 3 were sent, the state between the sender's seq store and
+// its write_pos store for position 3.
 void rewind_write_pos(stream &st) {
     auto &h = *static_cast<stream_header *>(st.base());
     detail::atomic(h.write_pos).store(3);
@@ -766,5 +766,54 @@ TEST_CASE("a reader one past write_pos of an ended stream gets ended") {
         REQUIRE((got && got->position == expected));
     }
     CHECK(receive(*reader, 0.0).error().code == status::ended);
+    static_cast<void>(unlink(name));
+}
+
+TEST_CASE("a sender killed before its write_pos store has its last item completed by the claimer") {
+    const std::string name = unique("stream-dead-last-publish");
+    stream st = make(name, 4);
+    auto behind = st.reader(read_mode::lossless, start_at::oldest);
+    auto at_last = st.reader(read_mode::lossless, start_at::oldest);
+    REQUIRE((behind && at_last));
+    auto sender = st.sender();
+    REQUIRE(sender);
+    for (std::uint64_t i = 0; i < 4; ++i)
+        REQUIRE(send(*sender, i));
+    for (std::uint64_t i = 0; i < 3; ++i) {
+        const auto got = receive(*at_last);
+        REQUIRE((got && got->position == i));
+    }
+    rewind_write_pos(st);
+    forge_dead_sender(st);
+    auto &h = *static_cast<stream_header *>(st.base());
+    SUBCASE("ending the stream publishes the item, then readers get ended") {
+        const auto last = receive(*at_last, 2.0);
+        REQUIRE((last && last->position == 3));
+        CHECK(receive(*at_last, 2.0).error().code == status::ended);
+        CHECK(detail::atomic(h.write_pos).load() == 4);
+        for (std::uint64_t expected = 0; expected < 4; ++expected) {
+            const auto got = receive(*behind);
+            REQUIRE((got && got->position == expected));
+        }
+        CHECK(receive(*behind, 2.0).error().code == status::ended);
+    }
+    SUBCASE("a replacement continues after the item, which readers receive once") {
+        auto next = st.sender();
+        REQUIRE(next);
+        CHECK(detail::atomic(h.write_pos).load() == 4);
+        for (std::uint64_t expected = 0; expected < 4; ++expected) {
+            const auto got = receive(*behind);
+            REQUIRE((got && got->position == expected));
+        }
+        const auto position = send(*next, 4);
+        REQUIRE(position);
+        CHECK(*position == 4);
+        const auto fifth = receive(*behind);
+        CHECK((fifth && fifth->position == 4));
+        const auto last = receive(*at_last);
+        REQUIRE((last && last->position == 3));
+        const auto after = receive(*at_last);
+        CHECK((after && after->position == 4));
+    }
     static_cast<void>(unlink(name));
 }
