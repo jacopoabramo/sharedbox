@@ -47,8 +47,8 @@ class:
 A readable name is easier to spot, for example when you list `/dev/shm` on
 Linux to see which boxes exist. [`SharedBox`][sharedbox.SharedBox] lists the
 characters a name may use. A name can have levels joined by `:`, such as
-`bl01:camera:det1`, which keeps the boxes of one setup together when you
-list `/dev/shm`.
+`bl01:camera:det1`, which on Linux keeps the boxes of one setup together
+when you list `/dev/shm`. Windows has no such listing.
 
 ## Name each box when you create it
 

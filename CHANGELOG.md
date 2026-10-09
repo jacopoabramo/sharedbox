@@ -9,11 +9,21 @@ Dates are marked as `DD-MM-YYYY`
 
 ## [Unreleased]
 
+### Added
+
+- `KindMismatchError`, a `SchemaMismatchError` raised when a name holds a
+  segment of another kind; `status::kind_mismatch` and `SBX_E_KIND` (-11)
+  in `sharedbox.hpp` and `sharedbox_c.h`.
+- `status::foreign` and `SBX_E_FOREIGN` (-12): the segment's magic is not
+  one this version knows. Python raises `SchemaMismatchError`.
+- `sharedbox::to_expected`: converts a `sharedbox::result` to a
+  `std::expected` on C++23.
+
 ### Changed
 
-- Segment names: one or more segments of `[A-Za-z0-9_-]` joined by `:`, up
-  to 240 characters, such as `bl01:camera:det1:frames`. `.` is no longer
-  allowed. The shared memory is `/dev/shm/SBX:<name>` on Linux and
+- `SharedBox` names: one or more segments of `[A-Za-z0-9_-]` joined by
+  `:`, up to 240 characters, such as `bl01:camera:det1:frames`. `.` is no
+  longer allowed. The shared memory is `/dev/shm/SBX:<name>` on Linux and
   `Local\SBX:<name>` on Windows, and Windows waiter events end in `#w<i>`.
 - `box_ref`: a reference field stores the name of its target in 240 bytes,
   so the field takes 256 bytes.
@@ -26,16 +36,6 @@ Dates are marked as `DD-MM-YYYY`
   and its `error()` is a `sharedbox::error` holding the status, the OS error
   and what was found. The C++ names moved from `sharedbox::v2` to
   `sharedbox::v3`.
-
-### Added
-
-- `KindMismatchError`, a `SchemaMismatchError` raised when a name holds a
-  segment of another kind; `status::kind_mismatch` and `SBX_E_KIND` (-11)
-  in `sharedbox.hpp` and `sharedbox_c.h`.
-- `status::foreign` and `SBX_E_FOREIGN` (-12): the segment's magic is not
-  one this version knows. Python raises `SchemaMismatchError`.
-- `sharedbox::to_expected`: converts a `sharedbox::result` to a
-  `std::expected` on C++23.
 
 ### Removed
 

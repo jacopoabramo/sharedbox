@@ -29,7 +29,8 @@ If processes running different releases of `sharedbox` share boxes, check
 which ones can talk to each other. Releases up to 0.5 named segments
 `sharedbox.<name>`, and from 0.6.0 on they are `SBX:<name>`, so the two
 groups don't see each other's boxes at all. Releases from 0.6 open each
-other's boxes as long as the box layout major version is the same.
+other's boxes as long as both the core major version and the box layout
+major version are the same.
 
 ## Open boxes and file descriptors
 
