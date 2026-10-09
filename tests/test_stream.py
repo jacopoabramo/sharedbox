@@ -481,6 +481,7 @@ import asyncio
 import gc
 import sys
 import threading
+import time
 import weakref
 from dataclasses import dataclass
 
@@ -526,7 +527,12 @@ def build():
 
 threads, refs = build()
 assert len(threads) == 2
-gc.collect()
+deadline = time.monotonic() + 5
+while time.monotonic() < deadline:
+    gc.collect()
+    if all(r() is None for r in refs):
+        break
+    time.sleep(0.01)
 assert [r() for r in refs] == [None] * 4
 for thread in threads:
     thread.join(5)
