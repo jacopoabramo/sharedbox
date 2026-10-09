@@ -7,6 +7,7 @@ import atexit
 import collections
 import contextlib
 import hashlib
+import itertools
 import logging
 import os
 import queue
@@ -42,6 +43,7 @@ STEP: Final = 1.0
 EXIT_WAIT: Final = 2.0
 logger = logging.getLogger("sharedbox")
 WORKER_THREADS: set[threading.Thread] = set()
+READER_IDS = itertools.count(1)
 LIVE_ENDS: weakref.WeakSet[StreamSender[Any] | StreamReader[Any]] = weakref.WeakSet()
 
 
@@ -442,8 +444,8 @@ class Worker:
         )
         self._stopped = False
         self.thread = threading.Thread(target=self._run, name=name, daemon=True)
-        WORKER_THREADS.add(self.thread)
         self.thread.start()
+        WORKER_THREADS.add(self.thread)
 
     def submit(self, call: Call) -> CallFuture:
         future = CallFuture()
@@ -460,19 +462,23 @@ class Worker:
         finally:
             WORKER_THREADS.discard(self.thread)
 
+    def _run_one(self, future: CallFuture, call: Call) -> None:
+        """Run one call in its own frame, so nothing it refers to outlives it while the thread waits."""
+        if self._stopped:
+            future.cancel()
+        if not future.set_running_or_notify_cancel():
+            return
+        try:
+            result = call(future)
+        except BaseException as error:
+            future.set_exception(error)
+        else:
+            future.set_result(result)
+
     def _serve(self) -> None:
         while (entry := self._calls.get()) is not None:
-            future, call = entry
-            if self._stopped:
-                future.cancel()
-            if not future.set_running_or_notify_cancel():
-                continue
-            try:
-                result = call(future)
-            except BaseException as error:
-                future.set_exception(error)
-            else:
-                future.set_result(result)
+            self._run_one(*entry)
+            del entry
         while True:
             try:
                 entry = self._calls.get_nowait()
@@ -516,9 +522,14 @@ class End:
                     f"stream {self._stream.name!r}: this end is closed"
                 )
             if self._worker is None:
-                self._worker = Worker(f"sharedbox-stream-{self._stream.name}")
+                self._worker = Worker(
+                    f"sharedbox:{self._stream.name}:{self._thread_role()}"
+                )
                 weakref.finalize(self, self._worker.stop)
             return self._worker.submit(call)
+
+    def _thread_role(self) -> str:
+        return "end"
 
     def _cancel(self, future: Future[Any]) -> None:
         """Stop the call behind `future`: drop it if it has not started, else interrupt its wait."""
@@ -579,6 +590,9 @@ class StreamSender(End, Generic[T]):
     __slots__ = ()
     _native: Sender
 
+    def _thread_role(self) -> str:
+        return "sender"
+
     def send(self, item: T, timeout: float | None = None) -> None:
         """Send `item`, waiting while a lossless reader is a full ring behind.
 
@@ -598,7 +612,13 @@ class StreamSender(End, Generic[T]):
 
     async def asend(self, item: T) -> None:
         """Send `item`, as [`send`][sharedbox.StreamSender.send] does, without blocking the event loop."""
-        await self._wait(self._submit(lambda future: self._send(item, None, future)))
+        await asyncio.sleep(0)
+        try:
+            self.send_nowait(item)
+        except WouldBlock:
+            await self._wait(
+                self._submit(lambda future: self._send(item, None, future))
+            )
 
     def send_nowait(self, item: T) -> None:
         """Send `item`, or raise [`WouldBlock`][sharedbox.WouldBlock] if a lossless reader is a full ring behind."""
@@ -778,6 +798,9 @@ class StreamReader(End, Iterator[T], AsyncIterator[T], Generic[T]):
             raise TypeError(f"{item.label} holds no array; use receive()")
         return targets_of(item.spec, out, item.label)
 
+    def _thread_role(self) -> str:
+        return f"reader-{next(READER_IDS)}"
+
     def _take_nowait(self, targets: list[tuple[tuple[int, ...], Any]]) -> T:
         try:
             return self._take(targets, 0.0)
@@ -849,7 +872,11 @@ class StreamReader(End, Iterator[T], AsyncIterator[T], Generic[T]):
 
     async def __anext__(self) -> T:
         try:
-            return cast(T, await self._wait(self.receive_future()))
+            await asyncio.sleep(0)
+            try:
+                return self._take_nowait([])
+            except WouldBlock:
+                return cast(T, await self._wait(self._receive_future([])))
         except EndOfStream:
             raise StopAsyncIteration from None
 
@@ -910,7 +937,13 @@ class IterInto(Iterator[T], AsyncIterator[T], Generic[T]):
     async def __anext__(self) -> T:
         reader = self._reader
         try:
-            return cast(T, await reader._wait(reader._receive_future(self._targets)))
+            await asyncio.sleep(0)
+            try:
+                return reader._take_nowait(self._targets)
+            except WouldBlock:
+                return cast(
+                    T, await reader._wait(reader._receive_future(self._targets))
+                )
         except EndOfStream:
             raise StopAsyncIteration from None
 
@@ -951,6 +984,7 @@ atexit.register(stop_stream_workers)
 
 def reset_streams_after_fork() -> None:
     """Make every stream end inherited through `fork` closed in the child, without touching the parent's."""
+    WORKER_THREADS.clear()
     for end in list(LIVE_ENDS):
         end._after_fork()
 

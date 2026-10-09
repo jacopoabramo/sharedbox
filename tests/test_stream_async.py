@@ -1,4 +1,5 @@
 import asyncio
+import gc
 import multiprocessing as mp
 import subprocess
 import sys
@@ -19,7 +20,9 @@ from sharedbox import (
     StreamClosedError,
     StreamReader,
     StreamSender,
+    WouldBlock,
 )
+from sharedbox._stream import WORKER_THREADS
 
 Frame = Annotated[np.ndarray, Shape(2), DType("int32")]
 
@@ -132,10 +135,48 @@ def test_cancelling_asend_leaves_the_item_unsent(unique_name: str) -> None:
             task.cancel()
             with pytest.raises(asyncio.CancelledError):
                 await task
-            await asyncio.wrap_future(sender._submit(lambda future: None))
-            return [reader.receive_nowait(), reader.receive_nowait()]
+            idle = asyncio.wrap_future(sender._submit(lambda future: None))
+            await asyncio.wait_for(idle, 5)
+            received = [reader.receive_nowait(), reader.receive_nowait()]
+            with pytest.raises(WouldBlock):
+                reader.receive_nowait()
+            return received
 
     assert asyncio.run(run()) == [0, 1]
+
+
+def test_buffered_items_are_received_without_a_worker(unique_name: str) -> None:
+    """Receive buffered items in order with async for and start no worker thread."""
+    count = 1000
+
+    async def run() -> tuple[list[int], float]:
+        with SharedStream.create(int, unique_name, capacity=count + 1) as stream:
+            reader = stream.reader(start="oldest")
+            with stream.sender() as sender:
+                for i in range(count):
+                    sender.send(i)
+            started = time.perf_counter()
+            items = [item async for item in reader]
+            return items, (time.perf_counter() - started) / count
+
+    items, per_item = asyncio.run(run())
+    print(f"async for over buffered items: {per_item * 1e6:.1f} us per item")
+    assert items == list(range(count))
+    assert not [t for t in WORKER_THREADS if unique_name in t.name]
+
+
+def test_a_dropped_end_lets_its_worker_stop(unique_name: str) -> None:
+    """End the worker thread of a reader that completed a call and was dropped without close."""
+    with SharedStream.create(int, unique_name, capacity=2) as stream:
+        reader = stream.reader()
+        stream.sender().send(1)
+        assert reader.receive_future().result(timeout=5) == 1
+        threads = [t for t in WORKER_THREADS if unique_name in t.name]
+        assert len(threads) == 1
+        del reader
+        gc.collect()
+        threads[0].join(5)
+        assert not threads[0].is_alive()
 
 
 def test_close_cancels_queued_futures(unique_name: str) -> None:
