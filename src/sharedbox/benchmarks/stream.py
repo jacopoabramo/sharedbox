@@ -20,17 +20,17 @@ from itertools import count
 from multiprocessing.context import SpawnContext, SpawnProcess
 from multiprocessing.queues import Queue
 from multiprocessing.shared_memory import SharedMemory
-from multiprocessing.synchronize import Barrier, Condition, Event
+from multiprocessing.synchronize import Barrier, Condition
 from pathlib import Path
 from threading import BrokenBarrierError
-from typing import Annotated, Any, TypedDict
+from typing import Annotated, Any, Literal, TypedDict
 
 import numpy as np
 
 from sharedbox import DType, EndOfStream, Shape, SharedStream
-from sharedbox._stream import Mode
 
 NAMES = count()
+Mode = Literal["lossless", "lossy", "latest"]
 Report = tuple[str, int, float, Any]
 Spec = tuple[Callable[..., None], tuple[Any, ...]]
 
@@ -83,9 +83,9 @@ class Matrix(TypedDict):
     reader: str
     item: str
     items_per_s: float
-    p50_us: float
-    p90_us: float
-    p99_us: float
+    p50_us: float | None
+    p90_us: float | None
+    p99_us: float | None
 
 
 def zeros(item: str) -> np.ndarray:
@@ -514,18 +514,22 @@ def read_events(reader: Any, tally: Tally) -> None:
     ended.wait()
 
 
-async def read_buffered(reader: Any, tally: Tally) -> None:
-    """Time every `anext` of a reader whose ring is full, and the whole run."""
-    tally.begin = time.perf_counter()
-    while True:
-        before = time.perf_counter_ns()
-        try:
+async def read_buffered(
+    reader: Any, tally: Tally, rounds: int, capacity: int, gate: Barrier
+) -> None:
+    """Time every `anext` of a full ring, `rounds` times.
+
+    The sender fills the ring and meets the reader at `gate`; the reader drains
+    the ring and meets the sender again before the next round.
+    """
+    for _ in range(rounds):
+        gate.wait()
+        for _ in range(capacity):
+            before = time.perf_counter_ns()
             await anext(reader)
-        except StopAsyncIteration:
-            break
-        tally.samples.append(time.perf_counter_ns() - before)
-        tally.got += 1
-    tally.secs = time.perf_counter() - tally.begin
+            tally.secs += (time.perf_counter_ns() - before) / 1e9
+            tally.got += 1
+        gate.wait()
 
 
 def matrix_stream_reader(
@@ -534,7 +538,8 @@ def matrix_stream_reader(
     item: str,
     total: int,
     latency: int,
-    filled: Event,
+    capacity: int,
+    gate: Barrier,
     ready: Barrier,
     start: Barrier,
     results: Any,
@@ -553,9 +558,11 @@ def matrix_stream_reader(
             asyncio.run(read_async(reader, tally))
         case "events.received":
             read_events(reader, tally)
+        case "async for (buffered)":
+            rounds = total // capacity
+            asyncio.run(read_buffered(reader, tally, rounds, capacity, gate))
         case _:
-            filled.wait()
-            asyncio.run(read_buffered(reader, tally))
+            raise ValueError(f"unknown reader {how!r}")
     results.put(tally.report())
     stream.close()
 
@@ -573,13 +580,14 @@ def matrix_stream_sender(
     total: int,
     latency: int,
     fill: int,
-    filled: Event,
+    gate: Barrier,
     start: Barrier,
     results: Any,
 ) -> None:
     """Send `total` items at full speed, then `latency` stamped ones, `GAP` apart.
 
-    `filled` is set once `fill` items are in the ring.
+    With `fill`, send `total` items in rounds of `fill`, each meeting the reader
+    at `gate` when the ring is full and again when it is empty.
     """
     stream = SharedStream.attach(SIZES[item], name)
     data = zeros(item)
@@ -587,12 +595,15 @@ def matrix_stream_sender(
     begin = time.perf_counter()
     with stream.sender() as sender:
         if how == "asend":
-            filled.set()
             asyncio.run(asend_all(sender, item, total, latency))
+        elif fill:
+            for _ in range(total // fill):
+                for _ in range(fill):
+                    sender.send(SIZES[item](0, data), timeout=None)
+                gate.wait()
+                gate.wait()
         else:
-            for i, stamp in enumerate(stamps(total, latency)):
-                if i == fill:
-                    filled.set()
+            for stamp in stamps(total, latency):
                 sender.send(SIZES[item](stamp, data), timeout=None)
     results.put(("sender", total, time.perf_counter() - begin, []))
     stream.close()
@@ -645,8 +656,10 @@ def matrix_run(
 ) -> Matrix:
     """One sender and reader pairing: the rate over `opts.items[item]` items, then latency percentiles."""
     label = f"{sender} -> {reader} ({item})"
-    total = opts.items[item]
     buffered = reader.endswith("(buffered)")
+    total = opts.items[item]
+    if buffered:
+        total = total // opts.capacity * opts.capacity
     latency = 0 if buffered else opts.latency_items
     ready, start, results = ctx.Barrier(2), ctx.Barrier(3), ctx.Queue()
     if sender == "mp.Queue put":
@@ -662,32 +675,37 @@ def matrix_run(
             results,
         )
     else:
-        filled = ctx.Event()
+        gate = ctx.Barrier(2)
         fill = opts.capacity if buffered else 0
         with fresh_stream(opts, item) as name:
             reports = drive(
                 label,
                 opts,
                 ctx,
-                [(matrix_stream_reader, (name, reader, item, total, latency, filled))],
+                [
+                    (
+                        matrix_stream_reader,
+                        (name, reader, item, total, latency, opts.capacity, gate),
+                    )
+                ],
                 (
                     matrix_stream_sender,
-                    (name, sender, item, total, latency, fill, filled),
+                    (name, sender, item, total, latency, fill, gate),
                 ),
                 ready,
                 start,
                 results,
             )
     _, got, secs, samples = next(r for r in reports if r[0] == "reader")
-    cuts = statistics.quantiles(samples, n=100)
+    cuts = None if buffered else statistics.quantiles(samples, n=100)
     return Matrix(
         sender=sender,
         reader=reader,
         item=item,
         items_per_s=got / secs,
-        p50_us=cuts[49] / 1000,
-        p90_us=cuts[89] / 1000,
-        p99_us=cuts[98] / 1000,
+        p50_us=None if cuts is None else cuts[49] / 1000,
+        p90_us=None if cuts is None else cuts[89] / 1000,
+        p99_us=None if cuts is None else cuts[98] / 1000,
     )
 
 
@@ -763,6 +781,36 @@ def to_markdown(rows: list[Throughput]) -> str:
     return "\n".join(lines)
 
 
+def micros(value: float | None) -> str:
+    """`value` in microseconds, or `-` when the row has no latency."""
+    return "-" if value is None else f"{value:.1f}"
+
+
+def matrix_to_text(rows: list[Matrix]) -> str:
+    lines = [
+        f"{'sender':13} {'reader':22} {'item':8} {'items/s':>9} {'p50 us':>9} {'p90 us':>9} {'p99 us':>9}"
+    ]
+    lines += [
+        f"{r['sender']:13} {r['reader']:22} {r['item']:8} {rate(r['items_per_s']):>9} "
+        f"{micros(r['p50_us']):>9} {micros(r['p90_us']):>9} {micros(r['p99_us']):>9}"
+        for r in rows
+    ]
+    return "\n".join(lines)
+
+
+def matrix_to_markdown(rows: list[Matrix]) -> str:
+    lines = [
+        "| sender | reader | item | items/s | p50 us | p90 us | p99 us |",
+        "| --- | --- | --- | --- | --- | --- | --- |",
+    ]
+    lines += [
+        f"| {r['sender']} | {r['reader']} | {r['item']} | {rate(r['items_per_s'])} "
+        f"| {micros(r['p50_us'])} | {micros(r['p90_us'])} | {micros(r['p99_us'])} |"
+        for r in rows
+    ]
+    return "\n".join(lines)
+
+
 def main(argv: list[str] | None = None) -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--short", action="store_true")
@@ -779,9 +827,10 @@ def main(argv: list[str] | None = None) -> None:
         args.json.write_text(
             json.dumps({"throughput": throughput, "matrix": matrix}, indent=2)
         )
-    show = to_markdown if args.markdown else to_text
     if throughput:
-        print(show(throughput))
+        print((to_markdown if args.markdown else to_text)(throughput))
+    if matrix:
+        print((matrix_to_markdown if args.markdown else matrix_to_text)(matrix))
 
 
 if __name__ == "__main__":

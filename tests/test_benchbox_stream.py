@@ -28,7 +28,7 @@ def sender_that_finishes(start: Any, results: Any) -> None:
 def sender_that_hangs(start: Any, results: Any) -> None:
     """Wait on the start barrier, then sleep far past any timeout."""
     start.wait()
-    time.sleep(120)
+    time.sleep(60)
 
 
 def drive_pair(timeout: float, sender: Any) -> list[Any]:
@@ -100,9 +100,11 @@ def test_a_failed_child_stops_the_run_with_the_contender_name() -> None:
 
 
 def test_a_child_that_outlives_the_timeout_is_terminated() -> None:
-    """Raise SystemExit naming the contender when a child is still running at the deadline."""
+    """Raise SystemExit naming the contender and end the child at once, not after its sleep."""
+    begin = time.monotonic()
     with pytest.raises(SystemExit, match="pair: not finished"):
         drive_pair(5.0, sender_that_hangs)
+    assert time.monotonic() - begin < 30
 
 
 def test_matrix_reports_every_sender_and_reader() -> None:
@@ -121,4 +123,22 @@ def test_matrix_reports_every_sender_and_reader() -> None:
     assert {r["item"] for r in rows} == set(stream.SIZES)
     for r in rows:
         assert r["items_per_s"] > 0
-        assert 0 < r["p50_us"] <= r["p90_us"] <= r["p99_us"]
+        if r["reader"] == "async for (buffered)":
+            assert r["p50_us"] is r["p90_us"] is r["p99_us"] is None
+        else:
+            assert 0 < r["p50_us"] <= r["p90_us"] <= r["p99_us"]
+
+
+def test_matrix_tables_show_a_dash_for_a_row_without_latency() -> None:
+    """Print `-` in the percentile columns of a row whose latency is None."""
+    row = stream.Matrix(
+        sender="send",
+        reader="async for (buffered)",
+        item="1 KiB",
+        items_per_s=1e6,
+        p50_us=None,
+        p90_us=None,
+        p99_us=None,
+    )
+    assert stream.matrix_to_text([row]).splitlines()[1].split()[-3:] == ["-"] * 3
+    assert stream.matrix_to_markdown([row]).splitlines()[2].endswith("| - | - | - |")
