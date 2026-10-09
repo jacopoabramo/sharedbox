@@ -6,7 +6,7 @@ a record, a list and an array time SharedBox alone; they have no
 standard-library counterpart. `mp.Value/Array` takes one lock per value, so
 its "update two fields" and "read all" rows take two or three locks one after
 the other.
-The row `write int watched` writes while another process has a watcher open.
+The row `watched write int` writes while another process has a watcher open.
 Rows under `split` isolate the native segment's typed `set`/`get`,
 which convert the Python value in the native module, against the raw
 `_write`/`_read` calls that move already-encoded bytes.
@@ -203,7 +203,7 @@ TYPED = "typed, = resources('typed')"
 
 BENCHMARKS: list[tuple[str, str, str, list[str]]] = [
     ("write int", "SharedBox", BOX, ["box.a = 1"]),
-    ("write int watched", "SharedBox", WATCHED, ["box.a = 1"]),
+    ("watched write int", "SharedBox", WATCHED, ["box.a = 1"]),
     ("write int", "SharedMemory+struct", SHM, ["INT.pack_into(buf, 0, 1)"]),
     (
         "write int",
