@@ -414,10 +414,13 @@ namespace {
 // and returns its exit code.
 template <class F> int in_child(F body) {
     const pid_t child = fork();
+    if (child < 0)
+        return -1;
     if (child == 0)
         _exit(body());
     int code = 0;
-    waitpid(child, &code, 0);
+    if (waitpid(child, &code, 0) != child)
+        return -1;
     return WIFEXITED(code) ? WEXITSTATUS(code) : -1;
 }
 
@@ -511,3 +514,54 @@ TEST_CASE("a reader inherited across fork is refused in the child, which leaves 
 }
 
 #endif
+
+namespace {
+
+// Makes the sender of st look like one whose process has exited.
+void forge_dead_sender(stream &st) {
+    auto &h = *static_cast<stream_header *>(st.base());
+    detail::atomic(h.sender_pidns).store(detail::current_pidns());
+    detail::atomic(h.sender_start).store(detail::current_start() + 1);
+    detail::atomic(h.sender_pid).store(detail::current_pid());
+}
+
+} // namespace
+
+TEST_CASE("a dead sender claimed by one path is left alone by the other") {
+    const std::string name = unique("stream-claim-dead");
+    stream st = make(name, 4);
+    auto reader = st.reader(read_mode::lossless, start_at::newest);
+    REQUIRE(reader);
+    forge_dead_sender(st);
+    auto &h = *static_cast<stream_header *>(st.base());
+    const std::uint32_t dead = detail::current_pid();
+    SUBCASE("a reader waiting while the replacement holds the claim does not end the stream") {
+        std::uint64_t start = 0;
+        bool backed_off = false;
+        REQUIRE(detail::claim_dead_sender(h, dead, start, [&]() noexcept {
+            backed_off = receive(*reader, 0.3).error().code == status::timeout;
+        }));
+        CHECK(backed_off);
+        CHECK_FALSE(st.ended());
+    }
+    SUBCASE("a replacement while a claim is in progress gives busy") {
+        detail::atomic(h.sender_start).store(detail::start_freeing);
+        CHECK(st.sender().error().code == status::busy);
+        CHECK_FALSE(st.ended());
+    }
+    SUBCASE("a reader waiting with a dead sender ends the stream and leaves no sender") {
+        CHECK(receive(*reader, 2.0).error().code == status::ended);
+        CHECK(st.ended());
+        CHECK(st.sender_pid() == 0);
+        CHECK(st.sender().error().code == status::ended);
+    }
+    SUBCASE("a replacement of a dead sender leaves the stream open") {
+        auto sender = st.sender();
+        REQUIRE(sender);
+        CHECK_FALSE(st.ended());
+        CHECK(st.sender_pid() == dead);
+        CHECK(send(*sender, 0));
+        CHECK(receive(*reader, 0.0));
+    }
+    static_cast<void>(unlink(name));
+}

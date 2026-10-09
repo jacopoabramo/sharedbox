@@ -272,23 +272,51 @@ inline void free_dead_readers(stream_state &s) noexcept {
     free_dead_waiters(s.waiters);
 }
 
+// Does nothing; claim_dead_sender calls it after its compare-and-swap so a test can run other steps in between.
+struct no_sender_pause {
+    void operator()() const noexcept {}
+};
+
+// Claims the sender recorded as pid seen, whose process has exited, by setting sender_start to start_freeing
+// from the start it read, as free_dead_slot does for a waiter slot. Sender replacement and ending the stream
+// both go through it, so exactly one of them acts on a dead owner. On success start holds the start read
+// and the caller must leave sender_start to its own store. Gives false when the owner is alive, another claim
+// is in progress or sender_pid is no longer seen.
+template <class Pause = no_sender_pause>
+inline bool claim_dead_sender(stream_header &h, std::uint32_t seen, std::uint64_t &start,
+                              Pause pause = {}) noexcept {
+    start = atomic(h.sender_start).load(std::memory_order_acquire);
+    const std::uint64_t pidns = atomic(h.sender_pidns).load(std::memory_order_acquire);
+    if (start == start_freeing || !owner_exited(seen, start, pidns))
+        return false;
+    if (!atomic(h.sender_start)
+             .compare_exchange_strong(start, start_freeing, std::memory_order_acq_rel, std::memory_order_relaxed))
+        return false;
+    pause();
+    if (atomic(h.sender_pid).load(std::memory_order_acquire) == seen)
+        return true;
+    std::uint64_t freeing = start_freeing;
+    atomic(h.sender_start)
+        .compare_exchange_strong(freeing, start, std::memory_order_release, std::memory_order_relaxed);
+    return false;
+}
+
 // Ends the stream when the process holding the sender has exited, so readers drain and then get
 // status::ended.
 inline void end_if_sender_died(stream_state &s) noexcept {
     stream_header &h = *s.hdr;
     const std::uint32_t pid = atomic(h.sender_pid).load(std::memory_order_acquire);
-    if (pid == 0)
-        return;
-    const std::uint64_t start = atomic(h.sender_start).load(std::memory_order_acquire);
-    const std::uint64_t pidns = atomic(h.sender_pidns).load(std::memory_order_acquire);
-    if (atomic(h.sender_pid).load(std::memory_order_acquire) != pid || !owner_exited(pid, start, pidns))
+    std::uint64_t start = 0;
+    if (pid == 0 || !claim_dead_sender(h, pid, start))
         return;
     std::uint32_t open = stream_open;
-    if (atomic(h.state).compare_exchange_strong(open, stream_ended, std::memory_order_seq_cst,
-                                                std::memory_order_relaxed)) {
-        atomic(h.data_word).fetch_add(1, std::memory_order_seq_cst);
-        wake_all(s.waiters, h.data_word);
-    }
+    atomic(h.state).compare_exchange_strong(open, stream_ended, std::memory_order_seq_cst,
+                                            std::memory_order_relaxed);
+    atomic(h.sender_pidns).store(0, std::memory_order_relaxed);
+    atomic(h.sender_pid).store(0, std::memory_order_release);
+    atomic(h.sender_start).store(0, std::memory_order_release);
+    atomic(h.data_word).fetch_add(1, std::memory_order_seq_cst);
+    wake_all(s.waiters, h.data_word);
 }
 
 } // namespace detail
@@ -571,12 +599,18 @@ inline result<stream_sender> stream::sender() {
     std::uint32_t seen = 0;
     if (!detail::atomic(h.sender_pid)
              .compare_exchange_strong(seen, pid, std::memory_order_acq_rel, std::memory_order_relaxed)) {
-        // seen is the recorded owner; one whose process has exited is replaced.
-        const std::uint64_t start = detail::atomic(h.sender_start).load(std::memory_order_acquire);
-        const std::uint64_t pidns = detail::atomic(h.sender_pidns).load(std::memory_order_acquire);
-        if (!detail::owner_exited(seen, start, pidns) ||
-            !detail::atomic(h.sender_pid)
+        // seen is the recorded owner; one whose process has exited is replaced, and the claim on its start
+        // makes this and end_if_sender_died exclusive.
+        std::uint64_t start = 0;
+        if (!detail::claim_dead_sender(h, seen, start)) {
+            detail::release_slot(s.waiters, *slot);
+            return unexpected(status::busy);
+        }
+        if (!detail::atomic(h.sender_pid)
                  .compare_exchange_strong(seen, pid, std::memory_order_acq_rel, std::memory_order_relaxed)) {
+            std::uint64_t freeing = detail::start_freeing;
+            detail::atomic(h.sender_start)
+                .compare_exchange_strong(freeing, start, std::memory_order_release, std::memory_order_relaxed);
             detail::release_slot(s.waiters, *slot);
             return unexpected(status::busy);
         }
@@ -619,9 +653,10 @@ inline result<stream_reader> stream::reader(read_mode mode, start_at start) {
             start == start_at::newest ? (w == 0 ? 0 : w - 1) : (w > s.capacity ? w - s.capacity : 0);
         // The position before the mode: the sender counts an entry once its mode says lossless.
         detail::atomic(e.position).store(r, std::memory_order_release);
-        detail::atomic(e.mode).store(static_cast<std::uint32_t>(mode), std::memory_order_release);
+        // The count first: a claimer killed in between leaves it too high, never too low.
         if (mode == read_mode::lossless)
             detail::atomic(h.lossless_readers).fetch_add(1, std::memory_order_seq_cst);
+        detail::atomic(e.mode).store(static_cast<std::uint32_t>(mode), std::memory_order_release);
         detail::atomic(h.readers_epoch).fetch_add(1, std::memory_order_seq_cst);
         // With the fence the sender issues after each send, the sender's next gate sees this reader
         // before it can overwrite a slot this reader has read; see send_with.
