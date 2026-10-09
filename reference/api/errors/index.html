@@ -2266,6 +2266,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#sharedbox.KindMismatchError" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-class"></code>&nbsp;KindMismatchError
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#sharedbox.LockTimeoutError" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -2993,6 +3004,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#sharedbox.KindMismatchError" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-class"></code>&nbsp;KindMismatchError
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#sharedbox.LockTimeoutError" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -3198,7 +3220,12 @@
 <tr>
 <td><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;SchemaMismatchError&lt;/span&gt;" href="./#sharedbox.SchemaMismatchError"><code>SchemaMismatchError</code></a></td>
 <td><code>TypeError</code></td>
-<td>attaching, or unpickling a box, with a class whose <a href="../../../explanation/glossary/#identity">identity</a> or <a href="../../../explanation/glossary/#field">fields</a> differ from the creator's; a segment of another layout major version; a segment with a field of a kind this version cannot read; unpickling after the box was created again</td>
+<td>attaching, or unpickling a box, with a class whose <a href="../../../explanation/glossary/#identity">identity</a> or <a href="../../../explanation/glossary/#field">fields</a> differ from the creator's; a segment of another core or layout major version; a segment whose magic this version does not know, which another version of <code>sharedbox</code> made or which is not a <code>sharedbox</code> segment; a segment with a field of a kind this version cannot read; unpickling after the box was created again</td>
+</tr>
+<tr>
+<td><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;KindMismatchError&lt;/span&gt;" href="./#sharedbox.KindMismatchError"><code>KindMismatchError</code></a></td>
+<td><code>SchemaMismatchError</code></td>
+<td>attaching to a name that holds a segment of another kind than a box</td>
 </tr>
 <tr>
 <td><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;BoxClosedError&lt;/span&gt;" href="./#sharedbox.BoxClosedError"><code>BoxClosedError</code></a></td>
@@ -3295,6 +3322,38 @@ message names the field, the box and which of the two happened.</p>
 
 
 
+<h2 id="sharedbox.KindMismatchError" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-class"></code>            <span class="doc doc-object-name doc-class-name">KindMismatchError</span>
+
+
+<a href="#sharedbox.KindMismatchError" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents first">
+            <p class="doc doc-class-bases">
+              Bases: <code><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;SchemaMismatchError&lt;/span&gt; (&lt;code&gt;sharedbox._native.SchemaMismatchError&lt;/code&gt;)" href="./#sharedbox.SchemaMismatchError">SchemaMismatchError</a></code></p>
+
+
+
+        <p>The name holds a segment of another kind, such as a stream where a box was asked for.</p>
+<p>The message names both kinds.</p>
+
+
+
+
+
+
+
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
 <h2 id="sharedbox.LockTimeoutError" class="doc doc-heading">
 <code class="doc-symbol doc-symbol-heading doc-symbol-class"></code>            <span class="doc doc-object-name doc-class-name">LockTimeoutError</span>
 
@@ -3345,9 +3404,10 @@ that holds the lock.</p>
         <p>The segment was created by a different class or layout.</p>
 <p>Raised by attaching, or unpickling a box, with a class whose identity
 or fields differ from the creator's; by a segment of another layout
-major version or with a field of a kind this version cannot read,
-which the message names; and by unpickling after the box was created
-again.</p>
+major version, with a field of a kind this version cannot read, or
+with an unknown magic (a segment made by another version of
+sharedbox, or not a sharedbox segment), which the message names; and by
+unpickling after the box was created again.</p>
 
 
 

@@ -3103,7 +3103,7 @@ as <code>wake_word</code> still holds the value it read, and a writer increments
 word and calls <code>FUTEX_WAKE</code> once for everybody. Windows has a similar call,
 <code>WaitOnAddress</code>, but it only works between threads of one
 process,<sup id="fnref:wait-on-address"><a class="footnote-ref" href="#fn:wait-on-address">2</a></sup> so there each slot gets its own auto-reset
-event, <code>Local\sharedbox.&lt;name&gt;.w&lt;i&gt;</code>,<sup id="fnref:create-event"><a class="footnote-ref" href="#fn:create-event">3</a></sup> and a writer sets the
+event, <code>Local\SBX:&lt;name&gt;#w&lt;i&gt;</code>,<sup id="fnref:create-event"><a class="footnote-ref" href="#fn:create-event">3</a></sup> and a writer sets the
 event of every taken slot. Either way, a write to a box nobody waits on
 costs no system call: the writer sees that <code>waiters</code> is 0 and stops.</p>
 <p>A process can be killed while it holds a slot, so the next process that

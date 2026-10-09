@@ -3172,7 +3172,9 @@ class:</p>
 </span></code></pre></div>
 <p>A readable name is easier to spot, for example when you list <code>/dev/shm</code> on
 Linux to see which boxes exist. <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;SharedBox&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox"><code>SharedBox</code></a> lists the
-characters a name may use.</p>
+characters a name may use. A name can have levels joined by <code>:</code>, such as
+<code>bl01:camera:det1</code>, which on Linux keeps the boxes of one setup together
+when you list <code>/dev/shm</code>. Windows has no such listing.</p>
 <h2 id="name-each-box-when-you-create-it">Name each box when you create it<a class="headerlink" href="#name-each-box-when-you-create-it" title="Permanent link">&para;</a></h2>
 <p>When you need several boxes of the same class, say one per motor, give
 each its own name when you create it with

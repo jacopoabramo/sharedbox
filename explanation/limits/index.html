@@ -3122,12 +3122,11 @@ same user can open it. Only <code>unlink</code> removes its name, so a segment n
 unlinks stays until the machine restarts (see
 <a href="../closing-and-lifetime/#lifetime-the-same-rules-as-multiprocessingshared_memory">Closing and lifetime</a>).</p>
 <p>If processes running different releases of <code>sharedbox</code> share boxes, check
-which ones can talk to each other. Releases up to 0.3.0rc0 named segments
-differently and used another layout, so they and later releases don't see
-each other's boxes at all. From 0.4.0 on, <code>sharedbox</code> opens boxes made by
-0.3.0 and 0.3.1, but those two releases can't open a box made by 0.4.0 or
-later. Releases 0.4 and 0.5 write the same layout and open each other's
-boxes.</p>
+which ones can talk to each other. Releases up to 0.5 named segments
+<code>sharedbox.&lt;name&gt;</code>, and from 0.6.0 on they are <code>SBX:&lt;name&gt;</code>, so the two
+groups don't see each other's boxes at all. Releases from 0.6 open each
+other's boxes as long as both the core major version and the box layout
+major version are the same.</p>
 <h2 id="open-boxes-and-file-descriptors">Open boxes and file descriptors<a class="headerlink" href="#open-boxes-and-file-descriptors" title="Permanent link">&para;</a></h2>
 <p>On Linux every open box keeps one file descriptor, and a process can have
 1024 of those by default (<code>ulimit -n</code>), so you run out at about 1000 open

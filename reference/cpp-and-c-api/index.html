@@ -3039,8 +3039,8 @@ instead.</p>
 </thead>
 <tbody>
 <tr>
-<td><a href="https://github.com/jacopoabramo/sharedbox/blob/main/include/sharedbox/sharedbox.hpp"><code>sharedbox/sharedbox.hpp</code></a></td>
-<td>the C++20 <abbr title="Application programming interface. The functions and classes a library offers to code that uses it.">API</abbr>: <code>sharedbox::handle</code>, <code>sharedbox::result</code>, <code>sharedbox::status</code>, <code>sharedbox::type_view</code> and the <code>encode_*</code> and <code>decode_*</code> functions of the value types; the inline namespace is <code>v2</code></td>
+<td><a href="https://github.com/jacopoabramo/sharedbox/blob/main/include/sharedbox/sharedbox.hpp"><code>sharedbox/sharedbox.hpp</code></a>, which includes <code>core.hpp</code> and <code>box.hpp</code></td>
+<td>the C++20 <abbr title="Application programming interface. The functions and classes a library offers to code that uses it.">API</abbr>: <code>sharedbox::handle</code>, <code>sharedbox::result</code>, <code>sharedbox::error</code>, <code>sharedbox::status</code>, <code>sharedbox::type_view</code> and the <code>encode_*</code> and <code>decode_*</code> functions of the value types; the inline namespace is <code>v3</code></td>
 <td><a href="../segment-layout/#sharedboxhpp"><code>sharedbox.hpp</code></a></td>
 </tr>
 <tr>
@@ -3067,12 +3067,15 @@ listed in <a href="../segment-layout/#sharedboxhpp"><code>sharedbox.hpp</code></
 <h2 id="errors">Errors<a class="headerlink" href="#errors" title="Permanent link">&para;</a></h2>
 <ul>
 <li><a href="../segment-layout/#implementation-language">Implementation language</a>:
-  <code>sharedbox::result&lt;T&gt;</code>, which every C++ call that can fail returns, and
-  the C++20 and C++23 build rules that come with it</li>
+  <code>sharedbox::result&lt;T&gt;</code>, which every C++ call that can fail returns, its
+  <code>sharedbox::error</code>, and <code>to_expected</code> and <code>from_expected</code> on C++23</li>
 <li><a href="../segment-layout/#sharedboxhpp"><code>sharedbox.hpp</code></a>: what each
-  <code>sharedbox::status</code> means, including <code>status::os</code></li>
+  <code>sharedbox::status</code> means, including <code>status::os</code>, <code>status::kind_mismatch</code>
+  (a segment of another kind) and <code>status::foreign</code> (a magic this version
+  does not know)</li>
 <li><a href="../segment-layout/#sharedbox_ch"><code>sharedbox_c.h</code></a>: the <code>SBX_OK</code> and
-  <code>SBX_E_*</code> codes the C functions return</li>
+  <code>SBX_E_*</code> codes the C functions return, including <code>SBX_E_KIND</code> (-11) and
+  <code>SBX_E_FOREIGN</code> (-12)</li>
 </ul>
 
 

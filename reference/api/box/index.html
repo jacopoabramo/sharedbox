@@ -3872,7 +3872,7 @@ exception propagates.</p>
 <li><code>name</code>: the segment name of boxes made by calling the class. By
   default it is 16 hex digits of SHA-256 over the class's identity, so
   every process that imports the class uses the same name. It must
-  match <code>[A-Za-z0-9_.-]{1,128}</code>.</li>
+  be segments of <code>[A-Za-z0-9_-]</code> joined by <code>:</code>, at most 240 characters.</li>
 <li><code>kw_only</code>: make every field this class declares keyword-only.
   Inherited fields keep the setting of the class that declares them.</li>
 <li><code>lock_timeout</code>: seconds a read or write waits for a write in
@@ -3984,14 +3984,14 @@ the wrong type.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>When the class is defined, for a <code>name</code> that does not match
-<code>[A-Za-z0-9_.-]{1,128}</code>, a <code>lock_timeout</code> or <code>max_waiters</code> out of
-range, or a default that does not fit its field (any of the cases
-below). When the class is called or a field is assigned, for a
-<code>str</code>, <code>bytes</code> or <code>Decimal</code> value longer than its capacity, a
-collection with more elements than its capacity, a tuple of the
-wrong length, an array of the wrong shape, a <code>Literal</code> field given
-another value, flag bits outside 0 to 2**64 - 1, a time or
+                <p>When the class is defined, for a <code>name</code> that is not segments of
+<code>[A-Za-z0-9_-]</code> joined by <code>:</code>, at most 240 characters, a
+<code>lock_timeout</code> or <code>max_waiters</code> out of range, or a default that does
+not fit its field (any of the cases below). When the class is called
+or a field is assigned, for a <code>str</code>, <code>bytes</code> or <code>Decimal</code> value longer
+than its capacity, a collection with more elements than its
+capacity, a tuple of the wrong length, an array of the wrong shape,
+a <code>Literal</code> field given another value, flag bits outside 0 to 2**64 - 1, a time or
 datetime whose <abbr title="Coordinated Universal Time. The time standard that offsets such as +02:00 are measured from.">UTC</abbr> offset is not whole minutes of less than a day,
 or a <code>time</code> whose tzinfo gives no offset without a date.</p>
               </div>
@@ -4241,7 +4241,8 @@ nothing; the segment goes away with its last handle.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>If <code>name</code> does not match <code>[A-Za-z0-9_.-]{1,128}</code>.</p>
+                <p>If <code>name</code> is not segments of <code>[A-Za-z0-9_-]</code> joined by <code>:</code>, at
+most 240 characters.</p>
               </div>
             </td>
           </tr>
@@ -4312,7 +4313,8 @@ class does.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>If <code>name</code> does not match <code>[A-Za-z0-9_.-]{1,128}</code>.</p>
+                <p>If <code>name</code> is not segments of <code>[A-Za-z0-9_-]</code> joined by <code>:</code>, at
+most 240 characters.</p>
               </div>
             </td>
           </tr>
@@ -4367,14 +4369,24 @@ not become a box within 1 s (the lock timeout, if shorter).</p>
           </tr>
           <tr class="doc-section-item">
             <td>
+                  <code><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;KindMismatchError&lt;/span&gt; (&lt;code&gt;sharedbox._native.KindMismatchError&lt;/code&gt;)" href="../errors/#sharedbox.KindMismatchError">KindMismatchError</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If the name holds a segment of another kind.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
                   <code><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;SchemaMismatchError&lt;/span&gt; (&lt;code&gt;sharedbox._native.SchemaMismatchError&lt;/code&gt;)" href="../errors/#sharedbox.SchemaMismatchError">SchemaMismatchError</a></code>
             </td>
             <td>
               <div class="doc-md-description">
                 <p>If the segment was created by a different class or a different
 version of this class, uses another major version of the
-segment layout, or has a field of a kind this version cannot
-read.</p>
+segment layout, has a field of a kind this version cannot read,
+or is not a segment this version of sharedbox knows.</p>
               </div>
             </td>
           </tr>
@@ -4384,7 +4396,8 @@ read.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>If <code>name</code> does not match <code>[A-Za-z0-9_.-]{1,128}</code>.</p>
+                <p>If <code>name</code> is not segments of <code>[A-Za-z0-9_-]</code> joined by <code>:</code>, at
+most 240 characters.</p>
               </div>
             </td>
           </tr>

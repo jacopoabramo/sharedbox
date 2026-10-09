@@ -3638,15 +3638,16 @@ process follows to read, write and wait. You need it if you write code that
 opens a box without <code>sharedbox.hpp</code>, or if you change <code>sharedbox</code> itself;
 to understand the ideas first, read
 <a href="../../explanation/how-a-box-is-stored/">How a box is stored</a>.
-<code>include/sharedbox/sharedbox.hpp</code> implements this contract, and the Python
-extension runs on that header.</p>
-<p>It describes layout 2.0, which <code>sharedbox</code> 0.4.0 and later write, and
-layout 1.0, which the 0.3 releases wrote and later releases still open.</p>
+<code>include/sharedbox/core.hpp</code> and <code>include/sharedbox/box.hpp</code> implement this
+contract, and the Python extension runs on them.</p>
+<p>It describes core version 1.0 and box layout 3.0, which <code>sharedbox</code> 0.6.0
+writes. It opens nothing older: box layouts 1.0 and 2.0, which 0.5 and
+earlier wrote, are refused.</p>
 <h2 id="goal">Goal<a class="headerlink" href="#goal" title="Permanent link">&para;</a></h2>
 <p>C++ and C code can use a sharedbox box, both as an extension loaded in a
 Python process and as a standalone program with no Python, without linking
 a library that sharedbox ships. The layout and protocols below are
-versioned, and one header-only C++20 library implements them.</p>
+versioned, and a header-only C++20 library implements them.</p>
 <h2 id="decisions">Decisions<a class="headerlink" href="#decisions" title="Permanent link">&para;</a></h2>
 <table>
 <thead>
@@ -3664,8 +3665,8 @@ versioned, and one header-only C++20 library implements them.</p>
 </tr>
 <tr>
 <td>Scope</td>
-<td>boxes only; the handle struct is versioned so that queues and streams can get their own dunders later</td>
-<td>queues and streams in the same step</td>
+<td>every segment starts with the same first line, and the box is the one kind implemented; the handle struct is versioned so that streams can get their own dunder later</td>
+<td>streams in the same step</td>
 </tr>
 <tr>
 <td>Contract</td>
@@ -3674,7 +3675,7 @@ versioned, and one header-only C++20 library implements them.</p>
 </tr>
 <tr>
 <td>Language</td>
-<td>the C++20 header <code>sharedbox.hpp</code>, namespace <code>sharedbox</code></td>
+<td>the C++20 headers <code>core.hpp</code> and <code>box.hpp</code>, which <code>sharedbox.hpp</code> includes, namespace <code>sharedbox</code></td>
 <td>a C99 header with <code>static inline</code> functions</td>
 </tr>
 <tr>
@@ -3699,7 +3700,7 @@ versioned, and one header-only C++20 library implements them.</p>
 </tr>
 <tr>
 <td>Object names</td>
-<td><code>sharedbox.</code> + box name + suffix, for every object</td>
+<td><code>SBX:</code> + box name + suffix, for every object</td>
 <td>the bare box name; names stored in the header</td>
 </tr>
 <tr>
@@ -3709,7 +3710,7 @@ versioned, and one header-only C++20 library implements them.</p>
 </tr>
 <tr>
 <td>Versioning</td>
-<td><code>layout_major</code> refuses, <code>layout_minor</code> opens and ignores what it does not know</td>
+<td>the core version and the box layout each have a major that refuses and a minor that opens and ignores what it does not know</td>
 <td>exact match; flag masks</td>
 </tr>
 <tr>
@@ -3742,8 +3743,8 @@ versioned, and one header-only C++20 library implements them.</p>
 <tbody>
 <tr>
 <td>mapping</td>
-<td><code>shm_open("/sharedbox.&lt;name&gt;")</code>, seen as <code>/dev/shm/sharedbox.&lt;name&gt;</code></td>
-<td><code>CreateFileMappingW(INVALID_HANDLE_VALUE, ..., L"Local\\sharedbox.&lt;name&gt;")</code></td>
+<td><code>shm_open("/SBX:&lt;name&gt;")</code>, seen as <code>/dev/shm/SBX:&lt;name&gt;</code></td>
+<td><code>CreateFileMappingW(INVALID_HANDLE_VALUE, ..., L"Local\\SBX:&lt;name&gt;")</code></td>
 </tr>
 <tr>
 <td>wake word</td>
@@ -3753,12 +3754,21 @@ versioned, and one header-only C++20 library implements them.</p>
 <tr>
 <td>waiter slot <code>i</code></td>
 <td>inside the mapping, no name</td>
-<td>auto-reset event <code>Local\sharedbox.&lt;name&gt;.w&lt;i&gt;</code></td>
+<td>auto-reset event <code>Local\SBX:&lt;name&gt;#w&lt;i&gt;</code></td>
 </tr>
 </tbody>
 </table>
 <ul>
-<li>A box name matches <code>[A-Za-z0-9_.-]{1,128}</code>.</li>
+<li>A name is one or more segments of <code>[A-Za-z0-9_-]</code> joined by <code>:</code>, such as
+  <code>bl01:camera:det1:frames</code>, up to 240 characters. A segment is never
+  empty, so a name neither starts nor ends with <code>:</code> and has no <code>::</code>. <code>.</code> is
+  reserved for a later <code>name.field</code> address, and <code>#</code> for the waiter event
+  suffix. Every function that takes a name returns <code>status::range</code> for one
+  that breaks these rules. The longest Windows object name, <code>Local\SBX:</code>
+  (10 characters), a 240-character name and <code>#w4095</code> (6), is 256
+  characters, under the 260-character limit on object names. On Linux the
+  file name <code>SBX:</code> plus the name is 244 bytes, under the 255 of
+  <code>NAME_MAX</code>.</li>
 <li>The default name of a class is 16 hex digits of SHA-256 over its identity
   (see Schema identity). Without an <code>identity=</code> keyword the identity is
   <code>module.qualname</code>, with <code>__mp_main__</code> counted as <code>__main__</code>.</li>
@@ -3772,54 +3782,65 @@ versioned, and one header-only C++20 library implements them.</p>
   <code>unlink()</code> does nothing; the <abbr title="Operating system.">OS</abbr> frees the mapping with its last handle.</li>
 </ul>
 <h2 id="layout">Layout<a class="headerlink" href="#layout" title="Permanent link">&para;</a></h2>
-<p>The mapping holds, from offset 0:</p>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>offset 0     header            128 bytes, two cache lines
-</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>offset 128   field table       field_count x 8 bytes
-</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>             write counts      field_count x 8 bytes
-</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>             waiter slots      waiter_slots x 24 bytes
-</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>             description table types_size bytes, 8-aligned (layout 2.0)
-</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>             (zero padding up to a multiple of 64)
-</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>record       record            record_size bytes, 64-byte aligned
-</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>             (zero padding up to a multiple of 4096)
+<p>The first 64 bytes of every segment, whatever its kind, are the common
+line: the same fields at the same offsets, so a process can tell what it has
+found before it knows how to read it. A box then adds a second line and the
+rest of its mapping. The mapping holds, from offset 0:</p>
+<div class="language-text highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>offset 0     common line       64 bytes, one cache line (every kind)
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>offset 64    box line          64 bytes, one cache line
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>offset 128   field table       field_count x 8 bytes
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>             write counts      field_count x 8 bytes
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>             waiter slots      waiter_slots x 24 bytes
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>             description table types_size bytes, 8-aligned
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>             (zero padding up to a multiple of 64)
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>record       record            record_size bytes, 64-byte aligned
+</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>             (zero padding up to a multiple of 4096)
 </span></code></pre></div>
 <p>No structure has implicit padding: gaps are explicit <code>pad</code> and <code>reserved</code>
-members, and <code>static_assert</code>s in <code>sharedbox.hpp</code> pin each structure's
-<code>sizeof</code>, <code>alignof</code> and every <code>offsetof</code>, and that it is standard-layout
-and trivially copyable.</p>
-<div class="language-cpp highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="k">struct</span><span class="w"> </span><span class="nc">header</span><span class="w"> </span><span class="p">{</span><span class="w">                     </span><span class="c1">// sharedbox::header, 128 bytes</span>
-</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">    </span><span class="c1">// line 0: written once at creation</span>
-</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">    </span><span class="kt">uint64_t</span><span class="w"> </span><span class="n">magic</span><span class="p">;</span><span class="w">                 </span><span class="c1">//  0  "SHREDBX1"; written last, with release ordering</span>
-</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">    </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">layout_major</span><span class="p">;</span><span class="w">          </span><span class="c1">//  8</span>
-</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">    </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">layout_minor</span><span class="p">;</span><span class="w">          </span><span class="c1">// 10</span>
-</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">    </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">field_count</span><span class="p">;</span><span class="w">           </span><span class="c1">// 12  1 to 256</span>
-</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">    </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">waiter_slots</span><span class="p">;</span><span class="w">          </span><span class="c1">// 14  1 to 4096</span>
-</span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="w">    </span><span class="kt">uint64_t</span><span class="w"> </span><span class="n">schema_hash</span><span class="p">;</span><span class="w">           </span><span class="c1">// 16</span>
-</span><span id="__span-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">record_size</span><span class="p">;</span><span class="w">           </span><span class="c1">// 24</span>
-</span><span id="__span-1-10"><a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">record</span><span class="p">;</span><span class="w">                </span><span class="c1">// 28  offset of the record</span>
-</span><span id="__span-1-11"><a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">tail</span><span class="p">;</span><span class="w">                  </span><span class="c1">// 32  offset of the field table, always 128</span>
-</span><span id="__span-1-12"><a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">size</span><span class="p">;</span><span class="w">                  </span><span class="c1">// 36  mapping size in bytes</span>
-</span><span id="__span-1-13"><a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="w">    </span><span class="kt">uint64_t</span><span class="w"> </span><span class="n">create_id</span><span class="p">;</span><span class="w">             </span><span class="c1">// 40  random at create, never 0</span>
-</span><span id="__span-1-14"><a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a><span class="w">    </span><span class="kt">uint64_t</span><span class="w"> </span><span class="n">creator_start</span><span class="p">;</span><span class="w">         </span><span class="c1">// 48  creator's start time, see Liveness</span>
-</span><span id="__span-1-15"><a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a><span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">creator_pid</span><span class="p">;</span><span class="w">           </span><span class="c1">// 56</span>
-</span><span id="__span-1-16"><a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a><span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">types_size</span><span class="p">;</span><span class="w">            </span><span class="c1">// 60  bytes of the description table; 0 in layout 1.0</span>
-</span><span id="__span-1-17"><a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a><span class="w">    </span><span class="c1">// line 1: changed by writes and waits</span>
-</span><span id="__span-1-18"><a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a><span class="w">    </span><span class="kt">uint64_t</span><span class="w"> </span><span class="n">seq</span><span class="p">;</span><span class="w">                   </span><span class="c1">// 64  sequence lock: even when free, odd while writing</span>
-</span><span id="__span-1-19"><a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a><span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">writer_pid</span><span class="p">;</span><span class="w">            </span><span class="c1">// 72  holder of the write lock, 0 if none</span>
-</span><span id="__span-1-20"><a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a><span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">wake_word</span><span class="p">;</span><span class="w">             </span><span class="c1">// 76  futex word (Linux)</span>
-</span><span id="__span-1-21"><a id="__codelineno-1-21" name="__codelineno-1-21" href="#__codelineno-1-21"></a><span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">waiters</span><span class="p">;</span><span class="w">               </span><span class="c1">// 80  occupied waiter slots</span>
-</span><span id="__span-1-22"><a id="__codelineno-1-22" name="__codelineno-1-22" href="#__codelineno-1-22"></a><span class="w">    </span><span class="kt">uint8_t</span><span class="w">  </span><span class="n">pad0</span><span class="p">[</span><span class="mi">4</span><span class="p">];</span><span class="w">               </span><span class="c1">// 84  zero</span>
-</span><span id="__span-1-23"><a id="__codelineno-1-23" name="__codelineno-1-23" href="#__codelineno-1-23"></a><span class="w">    </span><span class="kt">uint64_t</span><span class="w"> </span><span class="n">creator_pidns</span><span class="p">;</span><span class="w">         </span><span class="c1">// 88  creator's pid namespace; 0 on Windows</span>
-</span><span id="__span-1-24"><a id="__codelineno-1-24" name="__codelineno-1-24" href="#__codelineno-1-24"></a><span class="w">    </span><span class="kt">uint8_t</span><span class="w">  </span><span class="n">reserved1</span><span class="p">[</span><span class="mi">32</span><span class="p">];</span><span class="w">         </span><span class="c1">// 96  zero; minor versions may use it</span>
-</span><span id="__span-1-25"><a id="__codelineno-1-25" name="__codelineno-1-25" href="#__codelineno-1-25"></a><span class="p">};</span>
+members, and <code>static_assert</code>s in <code>core.hpp</code> and <code>box.hpp</code> pin each
+structure's <code>sizeof</code>, <code>alignof</code> and every <code>offsetof</code>, and that it is
+standard-layout and trivially copyable.</p>
+<div class="language-cpp highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="k">struct</span><span class="w"> </span><span class="nc">common_header</span><span class="w"> </span><span class="p">{</span><span class="w">              </span><span class="c1">// sharedbox::common_header, 64 bytes</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="w">    </span><span class="kt">uint64_t</span><span class="w"> </span><span class="n">magic</span><span class="p">;</span><span class="w">                 </span><span class="c1">//  0  one per kind; written last, with release ordering</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="w">    </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">core_major</span><span class="p">;</span><span class="w">            </span><span class="c1">//  8</span>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="w">    </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">core_minor</span><span class="p">;</span><span class="w">            </span><span class="c1">// 10</span>
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="w">    </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">kind_major</span><span class="p">;</span><span class="w">            </span><span class="c1">// 12  the layout version of this kind</span>
+</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="w">    </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">kind_minor</span><span class="p">;</span><span class="w">            </span><span class="c1">// 14</span>
+</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="w">    </span><span class="kt">uint64_t</span><span class="w"> </span><span class="n">schema_hash</span><span class="p">;</span><span class="w">           </span><span class="c1">// 16</span>
+</span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a><span class="w">    </span><span class="kt">uint64_t</span><span class="w"> </span><span class="n">create_id</span><span class="p">;</span><span class="w">             </span><span class="c1">// 24  random at create, never 0</span>
+</span><span id="__span-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a><span class="w">    </span><span class="kt">uint64_t</span><span class="w"> </span><span class="n">creator_start</span><span class="p">;</span><span class="w">         </span><span class="c1">// 32  creator's start time, see Liveness</span>
+</span><span id="__span-1-10"><a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a><span class="w">    </span><span class="kt">uint64_t</span><span class="w"> </span><span class="n">creator_pidns</span><span class="p">;</span><span class="w">         </span><span class="c1">// 40  creator's pid namespace; 0 on Windows</span>
+</span><span id="__span-1-11"><a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">creator_pid</span><span class="p">;</span><span class="w">           </span><span class="c1">// 48</span>
+</span><span id="__span-1-12"><a id="__codelineno-1-12" name="__codelineno-1-12" href="#__codelineno-1-12"></a><span class="w">    </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">waiter_slots</span><span class="p">;</span><span class="w">          </span><span class="c1">// 52  1 to 4096</span>
+</span><span id="__span-1-13"><a id="__codelineno-1-13" name="__codelineno-1-13" href="#__codelineno-1-13"></a><span class="w">    </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">reserved0</span><span class="p">;</span><span class="w">             </span><span class="c1">// 54  zero</span>
+</span><span id="__span-1-14"><a id="__codelineno-1-14" name="__codelineno-1-14" href="#__codelineno-1-14"></a><span class="w">    </span><span class="kt">uint64_t</span><span class="w"> </span><span class="n">size</span><span class="p">;</span><span class="w">                  </span><span class="c1">// 56  mapping size in bytes</span>
+</span><span id="__span-1-15"><a id="__codelineno-1-15" name="__codelineno-1-15" href="#__codelineno-1-15"></a><span class="p">};</span>
+</span><span id="__span-1-16"><a id="__codelineno-1-16" name="__codelineno-1-16" href="#__codelineno-1-16"></a>
+</span><span id="__span-1-17"><a id="__codelineno-1-17" name="__codelineno-1-17" href="#__codelineno-1-17"></a><span class="k">struct</span><span class="w"> </span><span class="nc">header</span><span class="w"> </span><span class="p">{</span><span class="w">                     </span><span class="c1">// sharedbox::header, 128 bytes</span>
+</span><span id="__span-1-18"><a id="__codelineno-1-18" name="__codelineno-1-18" href="#__codelineno-1-18"></a><span class="w">    </span><span class="n">common_header</span><span class="w"> </span><span class="n">common</span><span class="p">;</span><span class="w">           </span><span class="c1">//  0</span>
+</span><span id="__span-1-19"><a id="__codelineno-1-19" name="__codelineno-1-19" href="#__codelineno-1-19"></a><span class="w">    </span><span class="c1">// line 1: the words writes and waits change, then geometry written once</span>
+</span><span id="__span-1-20"><a id="__codelineno-1-20" name="__codelineno-1-20" href="#__codelineno-1-20"></a><span class="w">    </span><span class="kt">uint64_t</span><span class="w"> </span><span class="n">seq</span><span class="p">;</span><span class="w">                   </span><span class="c1">// 64  sequence lock: even when free, odd while writing</span>
+</span><span id="__span-1-21"><a id="__codelineno-1-21" name="__codelineno-1-21" href="#__codelineno-1-21"></a><span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">writer_pid</span><span class="p">;</span><span class="w">            </span><span class="c1">// 72  holder of the write lock, 0 if none</span>
+</span><span id="__span-1-22"><a id="__codelineno-1-22" name="__codelineno-1-22" href="#__codelineno-1-22"></a><span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">wake_word</span><span class="p">;</span><span class="w">             </span><span class="c1">// 76  futex word (Linux)</span>
+</span><span id="__span-1-23"><a id="__codelineno-1-23" name="__codelineno-1-23" href="#__codelineno-1-23"></a><span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">waiters</span><span class="p">;</span><span class="w">               </span><span class="c1">// 80  occupied waiter slots</span>
+</span><span id="__span-1-24"><a id="__codelineno-1-24" name="__codelineno-1-24" href="#__codelineno-1-24"></a><span class="w">    </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">field_count</span><span class="p">;</span><span class="w">           </span><span class="c1">// 84  1 to 256</span>
+</span><span id="__span-1-25"><a id="__codelineno-1-25" name="__codelineno-1-25" href="#__codelineno-1-25"></a><span class="w">    </span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">reserved1</span><span class="p">;</span><span class="w">             </span><span class="c1">// 86  zero</span>
+</span><span id="__span-1-26"><a id="__codelineno-1-26" name="__codelineno-1-26" href="#__codelineno-1-26"></a><span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">record_size</span><span class="p">;</span><span class="w">           </span><span class="c1">// 88</span>
+</span><span id="__span-1-27"><a id="__codelineno-1-27" name="__codelineno-1-27" href="#__codelineno-1-27"></a><span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">record</span><span class="p">;</span><span class="w">                </span><span class="c1">// 92  offset of the record</span>
+</span><span id="__span-1-28"><a id="__codelineno-1-28" name="__codelineno-1-28" href="#__codelineno-1-28"></a><span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">tail</span><span class="p">;</span><span class="w">                  </span><span class="c1">// 96  offset of the field table, always 128</span>
+</span><span id="__span-1-29"><a id="__codelineno-1-29" name="__codelineno-1-29" href="#__codelineno-1-29"></a><span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">types_size</span><span class="p">;</span><span class="w">            </span><span class="c1">// 100 bytes of the description table</span>
+</span><span id="__span-1-30"><a id="__codelineno-1-30" name="__codelineno-1-30" href="#__codelineno-1-30"></a><span class="w">    </span><span class="kt">uint8_t</span><span class="w">  </span><span class="n">reserved2</span><span class="p">[</span><span class="mi">24</span><span class="p">];</span><span class="w">         </span><span class="c1">// 104 zero; minor versions may use it</span>
+</span><span id="__span-1-31"><a id="__codelineno-1-31" name="__codelineno-1-31" href="#__codelineno-1-31"></a><span class="p">};</span>
 </span></code></pre></div>
-<p>Line 0 is written once at creation and read once by attach, which copies
-it. Line 1 holds what writes change, so a write touches one header line.
-<code>creator_pidns</code> sits in line 1 only because line 0 has no room left; it is
-written once at creation like the other creator fields.</p>
-<p>The header is 128 bytes so that minor versions can add fields: a 64-byte
-header has no spare byte, and every addition would move the fields after
-it. There is one header per box, and readers and writers touch only line 1.
-The waiter slots, not the header, are the large part of the tail, and
+<p>The common line is written once at creation. Line 1 starts with the words
+that writes and waits change (<code>seq</code>, <code>writer_pid</code>, <code>wake_word</code>, <code>waiters</code>),
+so a write touches one header line, and ends with geometry written once at
+creation, bytes 84 to 127. Attach copies the common line and those bytes,
+never the four changing words, and uses only the copy.</p>
+<p>The box line has spare bytes so that minor versions can add fields: a
+header with no room left would move the fields after it with every
+addition. There is one header per box, and readers and writers touch only
+line 1. The waiter slots, not the header, are the large part of the tail, and
 <code>max_waiters</code> sizes them. Worked example, a box with an <code>int</code>, a <code>float</code>
 and a <code>bool</code> and the default 64 waiter slots: header 128, field table 24,
 write counts 24, waiter slots 1536, padding 16, record 24 (the Python side
@@ -3827,11 +3848,13 @@ rounds a record up to a multiple of 8): 1752 bytes used, one 4 KiB page. A
 box with three fields and 64 slots stays in one page up to about 2.3 KB of
 record.</p>
 <ul>
-<li>This is layout <code>2.0</code>: bytes 8 to 11 are <code>02 00 00 00</code> (<code>layout_major</code>
-  2, <code>layout_minor</code> 0). Layout 1.0 is the same except that offset 60 is
-  reserved and zero, there is no description table, and the field kinds
-  are 0 to 5 only. Attach accepts majors 1 and 2. The layout version
-  counts the segment format and is not tied to the package version.</li>
+<li>Versions: bytes 8 to 11 are <code>01 00 00 00</code> (core 1.0: <code>core_major</code> 1,
+  <code>core_minor</code> 0) and bytes 12 to 15 are <code>03 00 00 00</code> (box layout 3.0:
+  <code>kind_major</code> 3, <code>kind_minor</code> 0). The two versions count the segment
+  format and are not tied to the package version.</li>
+<li>Magic: <code>SBX_BOX_</code> for a box and <code>SBX_STRM</code> for a stream, each read as a
+  little-endian <code>u64</code>. The magic names the kind, so attach checks it first.
+  This version opens boxes only; a stream is a segment of another kind.</li>
 <li>Field table entry, 8 bytes: <code>u32 offset</code>, <code>u32 capacity_and_kind</code>: top 8
   bits the kind code. For kinds below 64 the low 24 bits are the size or
   capacity; for kinds 64 and up they are the offset of the field's
@@ -3854,15 +3877,15 @@ record.</p>
 </span></code></pre></div>
 <ul>
 <li>A <code>ref</code> field refers to another box, which keeps its own segment. Its
-  capacity is always 144:</li>
+  capacity is always 256:</li>
 </ul>
 <div class="language-cpp highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="k">struct</span><span class="w"> </span><span class="nc">box_ref</span><span class="w"> </span><span class="p">{</span><span class="w">                  </span><span class="c1">// sharedbox::box_ref</span>
 </span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="w">    </span><span class="kt">uint64_t</span><span class="w"> </span><span class="n">create_id</span><span class="p">;</span><span class="w">           </span><span class="c1">// 0   the box's create_id; 0 = empty</span>
 </span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="w">    </span><span class="kt">uint64_t</span><span class="w"> </span><span class="n">schema_hash</span><span class="p">;</span><span class="w">         </span><span class="c1">// 8   the box's schema_hash</span>
-</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">    </span><span class="kt">char</span><span class="w">     </span><span class="n">name</span><span class="p">[</span><span class="mi">128</span><span class="p">];</span><span class="w">           </span><span class="c1">// 16  its name, NUL-padded; ends at the first NUL or at 128</span>
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">    </span><span class="kt">char</span><span class="w">     </span><span class="n">name</span><span class="p">[</span><span class="mi">240</span><span class="p">];</span><span class="w">           </span><span class="c1">// 16  its name, NUL-padded; ends at the first NUL or at 240</span>
 </span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="p">};</span>
 </span></code></pre></div>
-<p>An empty reference is 144 zero bytes. A non-empty one always has a
+<p>An empty reference is 256 zero bytes. A non-empty one always has a
   nonzero <code>create_id</code>, since create never draws 0. It is written under the
   referring box's sequence lock like any other field. A reader that
   attaches the named box compares its <code>create_id</code> with the stored one to
@@ -3911,8 +3934,8 @@ record.</p>
 <tr>
 <td>5</td>
 <td>ref</td>
-<td>144</td>
-<td>144, 8</td>
+<td>256</td>
+<td>256, 8</td>
 </tr>
 <tr>
 <td>6</td>
@@ -4035,7 +4058,7 @@ head. Every described size is a multiple of its alignment.</p>
 <li><code>float</code>: 8 bytes, IEEE 754 double.</li>
 <li><code>str</code>, <code>bytes</code>: <code>u32</code> length, then up to <code>capacity</code> bytes (UTF-8 for
   <code>str</code>).</li>
-<li><code>ref</code>: 144 bytes, as <code>box_ref</code> above.</li>
+<li><code>ref</code>: 256 bytes, as <code>box_ref</code> above.</li>
 <li><code>complex</code>: two <code>f64</code>, real then imaginary.</li>
 <li><code>date</code>: <code>i32</code> <code>date.toordinal()</code>, 1 to 3652059.</li>
 <li><code>time</code>: <code>i64</code> microseconds since midnight (wall time), <code>i16</code> <abbr title="Coordinated Universal Time. The time standard that offsets such as +02:00 are measured from.">UTC</abbr> offset
@@ -4141,9 +4164,8 @@ their count), lengths (at most the capacity), date ordinals (1 to
 3652059), times (below a day), offsets (within 1439 minutes either way)
 and timedeltas (within Python's range), and treat a failure as a corrupt
 value.</p>
-<p>Only a <code>bool</code> inside a described kind has to be 0 or 1. A field of kinds
-0 to 5 decodes as it did in 0.3, so a <code>bool</code> field whose byte is not 0
-reads as <code>True</code>.</p>
+<p>Only a <code>bool</code> inside a described kind has to be 0 or 1. A <code>bool</code> field
+(kind 0) whose byte is not 0 reads as <code>True</code>.</p>
 <h3 id="writing-a-list-set-or-dict">Writing a list, set or dict<a class="headerlink" href="#writing-a-list-set-or-dict" title="Permanent link">&para;</a></h3>
 <p>The bytes written for a list, set or dict field are its length and the
 slots it uses, shorter than the field when it is not full; a reader copies
@@ -4160,8 +4182,10 @@ attacher agree on it and on the class's meaning.</p>
   <code>bool</code>). A <code>ref</code> field enters as <code>name:ref:&lt;identity&gt;</code>, or
   <code>name:ref?:&lt;identity&gt;</code> when it may be empty (annotated <code>X | None</code>), with
   the identity of the class it refers to in place of the capacity.</li>
-<li>A field of a kind from 6 on enters as <code>name:&lt;type text&gt;</code>. The type text
-  of each kind, with <code>T</code> for the type text of a member:<ul>
+<li>
+<p>A field of a kind from 6 on enters as <code>name:&lt;type text&gt;</code>. The type text
+  of each kind, with <code>T</code> for the type text of a member:</p>
+<ul>
 <li><code>complex</code>, <code>date</code>, <code>time</code>, <code>datetime</code>, <code>timedelta</code>, <code>uuid</code>: the kind
   name alone. <code>bool:1</code>, <code>int:8</code> and <code>float:8</code> are the texts of those
   kinds inside a described type.</li>
@@ -4183,25 +4207,25 @@ attacher agree on it and on the class's meaning.</p>
 <li><code>array(dtype,d1xd2x...)</code>, as in <code>array(float32,2x3)</code>.</li>
 </ul>
 </li>
-</ul>
-<p>A class whose fields are all of kinds 0 to 5 has the hash it had in
-  layout 1.0.
-- <code>schema_hash</code>: the first 8 bytes of SHA-256 over that text, read as a
-  little-endian <code>u64</code>.
-- Identity: the <code>identity=</code> class keyword, a non-empty string; without it,
-  <code>module.qualname</code>. A subclass does not inherit its base's identity.
-- The default box name is 16 hex digits of SHA-256 over the identity, so a
+<li>
+<p><code>schema_hash</code>: the first 8 bytes of SHA-256 over that text, read as a
+  little-endian <code>u64</code>.</p>
+</li>
+<li>Identity: the <code>identity=</code> class keyword, a non-empty string; without it,
+  <code>module.qualname</code>. A subclass does not inherit its base's identity.</li>
+<li>The default box name is 16 hex digits of SHA-256 over the identity, so a
   class that sets <code>identity=</code> is found by that identity from any package or
-  language, with no explicit name.
-- A set identity lets another language agree with Python on a string both
+  language, with no explicit name.</li>
+<li>A set identity lets another language agree with Python on a string both
   sides write down, rather than on a Python module path. Moving or renaming
   the Python class then keeps the hash, two packages can each declare a
   matching class and share a box, and changing the identity (<code>"motor/2"</code>)
   refuses processes of the old meaning when no field changed (a change of
-  units, for instance).
-- <code>sharedbox.hpp</code> does not carry SHA-256; C and C++ callers compute the
-  hash with their own library.
-- Test vector:</p>
+  units, for instance).</li>
+<li><code>sharedbox.hpp</code> does not carry SHA-256; C and C++ callers compute the
+  hash with their own library.</li>
+<li>Test vector:</li>
+</ul>
 <div class="language-text highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>__main__.Motor|position:int:8|enabled:bool:1|label:str:32
 </span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>schema_hash  = 0x82ce467598596a72
 </span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>default name = 5b4f7004d44277b7    (16 hex digits of SHA-256 over "__main__.Motor")
@@ -4220,12 +4244,17 @@ attacher agree on it and on the class's meaning.</p>
   <code>tags: Annotated[list[Annotated[str, Capacity(4)]], Capacity(2)]</code> and
   <code>note: int | None</code>.</p>
 <h2 id="versioning-rules">Versioning rules<a class="headerlink" href="#versioning-rules" title="Permanent link">&para;</a></h2>
+<p>A segment carries two versions in its common line: the core version, for
+what every kind shares (the common line, the object names, liveness), and the
+layout version of its kind, for the rest. Each has a major and a minor.</p>
 <ul>
-<li>A reader refuses a <code>layout_major</code> it does not know: this version opens
-  majors 1 and 2.</li>
-<li>A reader opens a segment whose <code>layout_minor</code> is higher than its own, and
-  ignores what it does not know. A handle reports the lower of the
-  segment's minor and its own.</li>
+<li>A reader refuses a <code>core_major</code> it does not know: this version opens core
+  major 1. It also refuses a <code>kind_major</code> its kind does not know: this
+  version opens box layout major 3, so it does not open segments written
+  by 0.5 and earlier, whose magic it does not know.</li>
+<li>A reader opens a segment whose <code>core_minor</code> or <code>kind_minor</code> is higher than
+  its own, and ignores what it does not know. A handle reports the lower of
+  the segment's box minor and its own.</li>
 <li>A minor version may only add: fields in bytes that are reserved and zero
   in older minors, or features that stay off unless the segment says they
   are on and the reader knows them.</li>
@@ -4236,19 +4265,20 @@ attacher agree on it and on the class's meaning.</p>
   never writes one, and <code>write</code> returns <code>status::range</code> for it. The Python
   extension, which converts every field, refuses such a segment with
   <code>SchemaMismatchError</code>.</li>
-<li>For an unknown kind, the entry's low 24 bits are the field's whole span
-  in the record (1 byte to 1 MiB), so a future kind with a length prefix
-  counts the prefix in it, and no alignment is asked. In a layout 2.0
-  segment this holds for kinds below 64 only: for an unknown kind from 64
-  on, the low 24 bits are the offset of its description, whose head's
-  <code>size</code> is the span, and no alignment is asked either.</li>
-<li>Layout 2.0 adds the description table and kinds 6 to 12 and 64 to 74. A
-  later 2.x minor version may add kinds; a reader opens a field of a kind
-  it does not know as opaque bytes.</li>
-<li>A change to how existing bytes are read or written (the sequence lock,
-  field encoding, the slot layout, object names) raises <code>layout_major</code>.</li>
-<li>The package takes a semver major step whenever <code>layout_major</code> changes;
-  before 1.0, a minor version step does.</li>
+<li>For an unknown kind below 64, the entry's low 24 bits are the field's
+  whole span in the record (1 byte to 1 MiB), so a future kind with a length
+  prefix counts the prefix in it, and no alignment is asked. For an unknown
+  kind from 64 on, the low 24 bits are the offset of its description, whose
+  head's <code>size</code> is the span, and no alignment is asked either.</li>
+<li>Box layout 3.0 has the description table and the kinds 6 to 12 and 64 to</li>
+<li>A later 3.x minor version may add kinds; a reader opens a field of a
+  kind it does not know as opaque bytes.</li>
+<li>A change to how existing bytes are read or written raises a major: the
+  core's (the common line, the object names, liveness) raises <code>core_major</code>,
+  and a kind's own (the sequence lock, field encoding, the slot layout)
+  raises its <code>kind_major</code>.</li>
+<li>The package takes a semver major step whenever a major changes; before
+  1.0, a minor version step does.</li>
 </ul>
 <h2 id="protocols">Protocols<a class="headerlink" href="#protocols" title="Permanent link">&para;</a></h2>
 <p>Every shared word is a plain integer in the mapping, accessed through
@@ -4261,15 +4291,18 @@ attacher agree on it and on the class's meaning.</p>
    error instead of a later <code>SIGBUS</code>; <code>ftruncate</code> is the fallback where
    the file system does not support it. New pages read as zero on both
    platforms.</li>
-<li>Write the field table, the creator fields and the rest of line 0
-   except <code>magic</code>.
+<li>Write the field table, the creator fields and the rest of the common
+   line except <code>magic</code>, then the box line's geometry. <code>core_major</code>,
+   <code>core_minor</code>, <code>kind_major</code> and <code>kind_minor</code> are the versions of this
+   library.
    <code>create_id</code> comes from the <abbr title="Operating system.">OS</abbr> random source (<code>getrandom</code> on Linux,
    falling back to <code>/dev/urandom</code> where it is missing or refused;
    <code>BCryptGenRandom</code> on Windows) and is drawn again if 0. The creator
    fields are this process's pid, start time and pid namespace. Every
    waiter slot is free because the pages are zero.</li>
 <li>Write the initial field values into the record.</li>
-<li>Store <code>magic</code> with release ordering. Until then no attach succeeds.
+<li>Store <code>magic</code> (<code>SBX_BOX_</code>) with release ordering. Until then no attach
+   succeeds.
    <code>handle::create</code> does this at once. <code>handle::create_unpublished</code>
    stops before it, so the creator can write through its handle first
    (the Python layer runs <code>__post_init__</code> there), and
@@ -4288,17 +4321,33 @@ attacher agree on it and on the class's meaning.</p>
 <li>Wait for <code>magic</code> with acquire ordering, with backoff (spin, yield, then
    sleeps doubling up to 1 ms), up to the timeout. A mapping that never
    gets <code>magic</code> is <code>status::not_found</code>.</li>
-<li>Check <code>layout_major</code> (Versioning rules).</li>
-<li>Check every geometry field against the mapping size before reading
-   through it: <code>field_count</code> and <code>waiter_slots</code> in range, <code>tail == 128</code>,
-   the record 64-byte aligned, after the waiter slots and inside the
-   mapping, <code>size</code> equal to the mapping size, and each field table entry
-   (capacity 1 byte to 1 MiB, and the sizes of Kind codes for the fixed
-   kinds, alignment for the known kinds, the field inside the record, no
-   two fields overlapping), then the description table (Descriptions). In
-   layout 2.0 <code>record + record_size</code> is at most 2^32 - 4096. A field of an
-   unknown kind is opaque (Versioning rules). A failed check is
-   <code>status::corrupt</code>.</li>
+<li>Copy the common line and bytes 84 to 127 of the box line, leaving out
+   the four words that writes change, and check only the copy. Checks run
+   in this order, and the first to fail decides the status:<ol>
+<li>The magic is one this library knows, else <code>status::foreign</code>: the
+   segment was made by another version of <code>sharedbox</code> or is not a
+   <code>sharedbox</code> segment.</li>
+<li>The magic is the one of a box, else <code>status::kind_mismatch</code>: the
+   name holds a segment of another kind.</li>
+<li><code>core_major</code> is 1, else <code>status::layout</code>.</li>
+<li><code>kind_major</code> is 3, else <code>status::layout</code>.</li>
+<li><code>size</code> equals the mapping size and <code>waiter_slots</code> is in 1 to 4096,
+   else <code>status::corrupt</code>.</li>
+<li>Every geometry field against the mapping size, before reading
+   through it: the mapping is at most 2^32 - 4096 bytes, <code>field_count</code> is in range,
+   <code>tail == 128</code>, the record is 64-byte aligned, after the waiter
+   slots and inside the mapping, with <code>record + record_size</code> at most
+   2^32 - 4096, then each field table entry (capacity 1 byte to
+   1 MiB, and the sizes of Kind codes for the fixed kinds, alignment
+   for the known kinds, the field inside the record, no two fields
+   overlapping), then the description table (Descriptions). A field
+   of an unknown kind is opaque (Versioning rules). A failed check is
+   <code>status::corrupt</code>.
+   For <code>foreign</code> and <code>kind_mismatch</code>, the error's <code>found</code> holds the magic
+   that was read. For <code>layout</code> it holds both versions:
+   <code>core_major &lt;&lt; 48 | core_minor &lt;&lt; 32 | kind_major &lt;&lt; 16 | kind_minor</code>.</li>
+</ol>
+</li>
 <li>Copy the field table and use only the copy afterwards.</li>
 <li>Free the waiter slots of dead processes (see Waiter slots).</li>
 </ol>
@@ -4456,12 +4505,16 @@ and a creator that still runs is reported as still creating the box.</p>
 <ul>
 <li>Destroying a handle releases any waiter slot it holds, then unmaps its
   view and closes its <abbr title="Operating system.">OS</abbr> handles, including the events it opened.</li>
-<li><code>unlink(name)</code>: Linux <code>shm_unlink("/sharedbox.&lt;name&gt;")</code>; Windows does
+<li><code>unlink(name)</code>: Linux <code>shm_unlink("/SBX:&lt;name&gt;")</code>; Windows does
   nothing.</li>
 </ul>
 <h2 id="implementation-language">Implementation language<a class="headerlink" href="#implementation-language" title="Permanent link">&para;</a></h2>
-<p>The core is C++20, header-only, in namespace <code>sharedbox</code>. Its names are
-declared in the inline namespace <code>sharedbox::v2</code>, which changes when the
+<p>The library is C++20, header-only, in namespace <code>sharedbox</code>. <code>core.hpp</code>
+holds what every kind of segment uses: results and errors, liveness, names,
+mappings and the type codec. <code>box.hpp</code> holds the box: its layout, the
+protocols and <code>handle</code>. <code>sharedbox.hpp</code> includes every kind and is the
+header consumers include. Names are declared in the inline namespace
+<code>sharedbox::v3</code>, which changes when the
 C++ interface changes incompatibly, so code built against headers with
 different inline namespaces can be linked into one program. Names in
 <code>sharedbox::detail</code> may change without a new inline namespace, so shared
@@ -4483,108 +4536,115 @@ Windows.</p>
 <li>64-bit little-endian targets only; the header refuses a big-endian
   target at compile time.</li>
 <li>No allocation on the read and write paths. No exceptions: every function
-  that can fail returns <code>result&lt;T&gt;</code>, a value or a <code>status</code>. On C++20
-  <code>result&lt;T&gt;</code> is the header's own type with the part of the interface of
-  <code>std::expected&lt;T, status&gt;</code> it needs (<code>has_value</code>, <code>operator bool</code>,
-  <code>operator*</code>, <code>-&gt;</code>, <code>value</code>, <code>error</code>, <code>and_then</code>, <code>transform</code>, <code>or_else</code>,
-  <code>value_or</code>); <code>value()</code> on an error calls <code>std::terminate</code>. Where the
-  standard library has <code>std::expected</code> with <code>__cpp_lib_expected &gt;=
-  202211L</code> (C++23), <code>result&lt;T&gt;</code> is an alias for <code>std::expected&lt;T,
-  status&gt;</code>. Every function returning it is <code>[[nodiscard]]</code>, and the header
-  builds with <code>-fno-exceptions</code>.</li>
-<li>Every translation unit of a program must see the same <code>result</code>: build
-  them all as C++20 or all as C++23.</li>
+  that can fail returns <code>result&lt;T&gt;</code>, a value or an <code>error</code>. <code>result&lt;T&gt;</code> is
+  the library's own class on C++20 and C++23 alike, with the part of the
+  interface of <code>std::expected&lt;T, error&gt;</code> it needs (<code>has_value</code>,
+  <code>operator bool</code>, <code>operator*</code>, <code>-&gt;</code>, <code>value</code>, <code>error</code>, <code>and_then</code>,
+  <code>transform</code>, <code>or_else</code>, <code>value_or</code>); <code>value()</code> on an error calls
+  <code>std::terminate</code>. An <code>error</code> holds the <code>status</code> (<code>code</code>), the <abbr title="Operating system.">OS</abbr> error
+  (<code>os</code>, the <code>errno</code> or <code>GetLastError()</code> value read where the <abbr title="Operating system.">OS</abbr> call
+  failed) and what the call found (<code>found</code>, see Attach). Every function
+  returning a <code>result</code> is <code>[[nodiscard]]</code>, and the header builds with
+  <code>-fno-exceptions</code>.</li>
+<li>Where the standard library has <code>std::expected</code> with
+  <code>__cpp_lib_expected &gt;= 202211L</code> (C++23), the free functions
+  <code>to_expected(result&lt;T&gt;)</code> and <code>from_expected(std::expected&lt;T, error&gt;)</code>
+  convert one into the other. Because <code>result</code> is never an alias and its
+  definition does not depend on the C++ version, translation units built as
+  C++20 and as C++23 can be linked into one program.</li>
 </ul>
 <h2 id="sharedboxhpp"><code>sharedbox.hpp</code><a class="headerlink" href="#sharedboxhpp" title="Permanent link">&para;</a></h2>
 <div class="language-cpp highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="k">namespace</span><span class="w"> </span><span class="nn">sharedbox</span><span class="w"> </span><span class="p">{</span>
-</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="kr">inline</span><span class="w"> </span><span class="k">namespace</span><span class="w"> </span><span class="nn">v2</span><span class="w"> </span><span class="p">{</span>
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="kr">inline</span><span class="w"> </span><span class="k">namespace</span><span class="w"> </span><span class="nn">v3</span><span class="w"> </span><span class="p">{</span>
 </span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>
-</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="kr">inline</span><span class="w"> </span><span class="k">constexpr</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">layout_major</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">2</span><span class="p">,</span><span class="w"> </span><span class="n">layout_minor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span>
-</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="kr">inline</span><span class="w"> </span><span class="k">constexpr</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">oldest_layout_major</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span><span class="p">;</span>
-</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="c1">// Also: the layout constants handle_version, magic, header_size, name_max, max_fields,</span>
-</span><span id="__span-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="c1">// max_capacity, max_waiter_slots, default_waiter_slots, record_alignment, page_size,</span>
-</span><span id="__span-5-8"><a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="c1">// max_timeout, default_lock_timeout, kind_shift, capacity_mask, max_types_size,</span>
-</span><span id="__span-5-9"><a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="c1">// max_type_depth, max_mapping_size, first_described_kind, max_date_ordinal,</span>
-</span><span id="__span-5-10"><a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="c1">// unix_epoch_ordinal, micros_per_day, max_offset_minutes, literal_none through</span>
-</span><span id="__span-5-11"><a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a><span class="c1">// literal_enum, and the kind codes kind_bool, kind_int, kind_float, kind_str,</span>
-</span><span id="__span-5-12"><a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a><span class="c1">// kind_bytes, kind_ref, kind_complex through kind_decimal and kind_enum through</span>
-</span><span id="__span-5-13"><a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a><span class="c1">// kind_array; the structs header, stored_field, waiter_slot, box_ref and</span>
-</span><span id="__span-5-14"><a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a><span class="c1">// type_head (see Layout); dl_dtype and literal_value, which type_view's dtype()</span>
-</span><span id="__span-5-15"><a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a><span class="c1">// and literal() return (see Layout 2.0 adds); result&lt;T&gt; and unexpected (see</span>
-</span><span id="__span-5-16"><a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a><span class="c1">// Implementation language).</span>
-</span><span id="__span-5-17"><a id="__codelineno-5-17" name="__codelineno-5-17" href="#__codelineno-5-17"></a>
-</span><span id="__span-5-18"><a id="__codelineno-5-18" name="__codelineno-5-18" href="#__codelineno-5-18"></a><span class="k">enum</span><span class="w"> </span><span class="k">class</span><span class="w"> </span><span class="nc">status</span><span class="w"> </span><span class="o">:</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">ok</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="n">exists</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">-1</span><span class="p">,</span><span class="w"> </span><span class="n">not_found</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">-2</span><span class="p">,</span><span class="w"> </span><span class="n">layout</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">-3</span><span class="p">,</span><span class="w"> </span><span class="n">schema</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">-4</span><span class="p">,</span>
-</span><span id="__span-5-19"><a id="__codelineno-5-19" name="__codelineno-5-19" href="#__codelineno-5-19"></a><span class="w">                          </span><span class="n">corrupt</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">-5</span><span class="p">,</span><span class="w"> </span><span class="n">lock_timeout</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">-6</span><span class="p">,</span><span class="w"> </span><span class="n">timeout</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">-7</span><span class="p">,</span><span class="w"> </span><span class="n">no_slot</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">-8</span><span class="p">,</span>
-</span><span id="__span-5-20"><a id="__codelineno-5-20" name="__codelineno-5-20" href="#__codelineno-5-20"></a><span class="w">                          </span><span class="n">range</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">-9</span><span class="p">,</span><span class="w"> </span><span class="n">os</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">-10</span><span class="w"> </span><span class="p">};</span>
-</span><span id="__span-5-21"><a id="__codelineno-5-21" name="__codelineno-5-21" href="#__codelineno-5-21"></a>
-</span><span id="__span-5-22"><a id="__codelineno-5-22" name="__codelineno-5-22" href="#__codelineno-5-22"></a><span class="k">struct</span><span class="w"> </span><span class="nc">field_spec</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">offset</span><span class="p">;</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">capacity</span><span class="p">;</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">kind</span><span class="p">;</span><span class="w"> </span><span class="p">};</span>
-</span><span id="__span-5-23"><a id="__codelineno-5-23" name="__codelineno-5-23" href="#__codelineno-5-23"></a><span class="k">struct</span><span class="w"> </span><span class="nc">value</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">field</span><span class="p">;</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">span</span><span class="o">&lt;</span><span class="k">const</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">byte</span><span class="o">&gt;</span><span class="w"> </span><span class="n">bytes</span><span class="p">;</span><span class="w"> </span><span class="p">};</span>
-</span><span id="__span-5-24"><a id="__codelineno-5-24" name="__codelineno-5-24" href="#__codelineno-5-24"></a><span class="k">using</span><span class="w"> </span><span class="n">seconds</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">chrono</span><span class="o">::</span><span class="n">duration</span><span class="o">&lt;</span><span class="kt">double</span><span class="o">&gt;</span><span class="p">;</span>
-</span><span id="__span-5-25"><a id="__codelineno-5-25" name="__codelineno-5-25" href="#__codelineno-5-25"></a><span class="k">struct</span><span class="w"> </span><span class="nc">read_value</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">size_t</span><span class="w"> </span><span class="n">len</span><span class="p">;</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">uint64_t</span><span class="w"> </span><span class="n">version</span><span class="p">;</span><span class="w"> </span><span class="p">};</span>
-</span><span id="__span-5-26"><a id="__codelineno-5-26" name="__codelineno-5-26" href="#__codelineno-5-26"></a><span class="k">enum</span><span class="w"> </span><span class="k">class</span><span class="w"> </span><span class="nc">wake</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">changed</span><span class="p">,</span><span class="w"> </span><span class="n">interrupted</span><span class="w"> </span><span class="p">};</span><span class="w">      </span><span class="c1">// a timeout is status::timeout</span>
-</span><span id="__span-5-27"><a id="__codelineno-5-27" name="__codelineno-5-27" href="#__codelineno-5-27"></a>
-</span><span id="__span-5-28"><a id="__codelineno-5-28" name="__codelineno-5-28" href="#__codelineno-5-28"></a><span class="k">class</span><span class="w"> </span><span class="nc">handle</span><span class="w"> </span><span class="p">{</span><span class="w">                                  </span><span class="c1">// move-only; the destructor releases it</span>
-</span><span id="__span-5-29"><a id="__codelineno-5-29" name="__codelineno-5-29" href="#__codelineno-5-29"></a><span class="k">public</span><span class="o">:</span>
-</span><span id="__span-5-30"><a id="__codelineno-5-30" name="__codelineno-5-30" href="#__codelineno-5-30"></a><span class="w">    </span><span class="k">static</span><span class="w"> </span><span class="n">result</span><span class="o">&lt;</span><span class="n">handle</span><span class="o">&gt;</span><span class="w"> </span><span class="n">create</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="n">string_view</span><span class="w"> </span><span class="n">name</span><span class="p">,</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">span</span><span class="o">&lt;</span><span class="k">const</span><span class="w"> </span><span class="n">field_spec</span><span class="o">&gt;</span><span class="w"> </span><span class="n">fields</span><span class="p">,</span>
-</span><span id="__span-5-31"><a id="__codelineno-5-31" name="__codelineno-5-31" href="#__codelineno-5-31"></a><span class="w">                                 </span><span class="n">std</span><span class="o">::</span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">record_size</span><span class="p">,</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">uint64_t</span><span class="w"> </span><span class="n">schema_hash</span><span class="p">,</span>
-</span><span id="__span-5-32"><a id="__codelineno-5-32" name="__codelineno-5-32" href="#__codelineno-5-32"></a><span class="w">                                 </span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">waiter_slots</span><span class="p">,</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">span</span><span class="o">&lt;</span><span class="k">const</span><span class="w"> </span><span class="n">value</span><span class="o">&gt;</span><span class="w"> </span><span class="n">initial</span><span class="p">,</span>
-</span><span id="__span-5-33"><a id="__codelineno-5-33" name="__codelineno-5-33" href="#__codelineno-5-33"></a><span class="w">                                 </span><span class="n">std</span><span class="o">::</span><span class="n">span</span><span class="o">&lt;</span><span class="k">const</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">byte</span><span class="o">&gt;</span><span class="w"> </span><span class="n">types</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{});</span>
-</span><span id="__span-5-34"><a id="__codelineno-5-34" name="__codelineno-5-34" href="#__codelineno-5-34"></a><span class="w">    </span><span class="k">static</span><span class="w"> </span><span class="n">result</span><span class="o">&lt;</span><span class="n">handle</span><span class="o">&gt;</span><span class="w"> </span><span class="n">create_unpublished</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="n">string_view</span><span class="w"> </span><span class="n">name</span><span class="p">,</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">span</span><span class="o">&lt;</span><span class="k">const</span><span class="w"> </span><span class="n">field_spec</span><span class="o">&gt;</span><span class="w"> </span><span class="n">fields</span><span class="p">,</span>
-</span><span id="__span-5-35"><a id="__codelineno-5-35" name="__codelineno-5-35" href="#__codelineno-5-35"></a><span class="w">                                             </span><span class="n">std</span><span class="o">::</span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">record_size</span><span class="p">,</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">uint64_t</span><span class="w"> </span><span class="n">schema_hash</span><span class="p">,</span>
-</span><span id="__span-5-36"><a id="__codelineno-5-36" name="__codelineno-5-36" href="#__codelineno-5-36"></a><span class="w">                                             </span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">waiter_slots</span><span class="p">,</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">span</span><span class="o">&lt;</span><span class="k">const</span><span class="w"> </span><span class="n">value</span><span class="o">&gt;</span><span class="w"> </span><span class="n">initial</span><span class="p">,</span>
-</span><span id="__span-5-37"><a id="__codelineno-5-37" name="__codelineno-5-37" href="#__codelineno-5-37"></a><span class="w">                                             </span><span class="n">std</span><span class="o">::</span><span class="n">span</span><span class="o">&lt;</span><span class="k">const</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">byte</span><span class="o">&gt;</span><span class="w"> </span><span class="n">types</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{});</span>
-</span><span id="__span-5-38"><a id="__codelineno-5-38" name="__codelineno-5-38" href="#__codelineno-5-38"></a><span class="w">    </span><span class="n">result</span><span class="o">&lt;</span><span class="kt">void</span><span class="o">&gt;</span><span class="w"> </span><span class="n">publish</span><span class="p">()</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
-</span><span id="__span-5-39"><a id="__codelineno-5-39" name="__codelineno-5-39" href="#__codelineno-5-39"></a><span class="w">    </span><span class="k">static</span><span class="w"> </span><span class="n">result</span><span class="o">&lt;</span><span class="n">handle</span><span class="o">&gt;</span><span class="w"> </span><span class="n">open</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="n">string_view</span><span class="w"> </span><span class="n">name</span><span class="p">,</span><span class="w"> </span><span class="n">seconds</span><span class="w"> </span><span class="n">timeout</span><span class="p">);</span>
-</span><span id="__span-5-40"><a id="__codelineno-5-40" name="__codelineno-5-40" href="#__codelineno-5-40"></a><span class="w">    </span><span class="k">static</span><span class="w"> </span><span class="n">result</span><span class="o">&lt;</span><span class="n">handle</span><span class="o">&gt;</span><span class="w"> </span><span class="n">from_capsule</span><span class="p">(</span><span class="n">sbx_handle</span><span class="w"> </span><span class="o">*</span><span class="n">capsule</span><span class="p">);</span>
-</span><span id="__span-5-41"><a id="__codelineno-5-41" name="__codelineno-5-41" href="#__codelineno-5-41"></a><span class="w">    </span><span class="n">result</span><span class="o">&lt;</span><span class="n">handle</span><span class="o">&gt;</span><span class="w"> </span><span class="n">duplicate</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="p">;</span>
-</span><span id="__span-5-42"><a id="__codelineno-5-42" name="__codelineno-5-42" href="#__codelineno-5-42"></a><span class="w">    </span><span class="n">sbx_handle</span><span class="w"> </span><span class="o">*</span><span class="nf">to_capsule</span><span class="p">()</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="p">;</span>
-</span><span id="__span-5-43"><a id="__codelineno-5-43" name="__codelineno-5-43" href="#__codelineno-5-43"></a>
-</span><span id="__span-5-44"><a id="__codelineno-5-44" name="__codelineno-5-44" href="#__codelineno-5-44"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="n">string_view</span><span class="w"> </span><span class="nf">name</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
-</span><span id="__span-5-45"><a id="__codelineno-5-45" name="__codelineno-5-45" href="#__codelineno-5-45"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="w"> </span><span class="nf">field_count</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
-</span><span id="__span-5-46"><a id="__codelineno-5-46" name="__codelineno-5-46" href="#__codelineno-5-46"></a><span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="n">field_spec</span><span class="w"> </span><span class="o">&amp;</span><span class="nf">field</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">index</span><span class="p">)</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
-</span><span id="__span-5-47"><a id="__codelineno-5-47" name="__codelineno-5-47" href="#__codelineno-5-47"></a><span class="w">    </span><span class="n">type_view</span><span class="w"> </span><span class="nf">field_type</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">index</span><span class="p">)</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
-</span><span id="__span-5-48"><a id="__codelineno-5-48" name="__codelineno-5-48" href="#__codelineno-5-48"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="n">span</span><span class="o">&lt;</span><span class="k">const</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">byte</span><span class="o">&gt;</span><span class="w"> </span><span class="n">types_table</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
-</span><span id="__span-5-49"><a id="__codelineno-5-49" name="__codelineno-5-49" href="#__codelineno-5-49"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="kt">uint32_t</span><span class="w"> </span><span class="nf">record_size</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
-</span><span id="__span-5-50"><a id="__codelineno-5-50" name="__codelineno-5-50" href="#__codelineno-5-50"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="kt">uint64_t</span><span class="w"> </span><span class="nf">schema_hash</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
-</span><span id="__span-5-51"><a id="__codelineno-5-51" name="__codelineno-5-51" href="#__codelineno-5-51"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="kt">uint64_t</span><span class="w"> </span><span class="nf">create_id</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
-</span><span id="__span-5-52"><a id="__codelineno-5-52" name="__codelineno-5-52" href="#__codelineno-5-52"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="w"> </span><span class="nf">waiter_slots</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
-</span><span id="__span-5-53"><a id="__codelineno-5-53" name="__codelineno-5-53" href="#__codelineno-5-53"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="w"> </span><span class="nf">minor_version</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
-</span><span id="__span-5-54"><a id="__codelineno-5-54" name="__codelineno-5-54" href="#__codelineno-5-54"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="w"> </span><span class="nf">major_version</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
-</span><span id="__span-5-55"><a id="__codelineno-5-55" name="__codelineno-5-55" href="#__codelineno-5-55"></a><span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="nf">base</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
-</span><span id="__span-5-56"><a id="__codelineno-5-56" name="__codelineno-5-56" href="#__codelineno-5-56"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="kt">uint64_t</span><span class="w"> </span><span class="nf">size</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
-</span><span id="__span-5-57"><a id="__codelineno-5-57" name="__codelineno-5-57" href="#__codelineno-5-57"></a>
-</span><span id="__span-5-58"><a id="__codelineno-5-58" name="__codelineno-5-58" href="#__codelineno-5-58"></a><span class="w">    </span><span class="n">result</span><span class="o">&lt;</span><span class="kt">void</span><span class="o">&gt;</span><span class="w"> </span><span class="n">set_lock_timeout</span><span class="p">(</span><span class="n">seconds</span><span class="w"> </span><span class="n">timeout</span><span class="p">)</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
-</span><span id="__span-5-59"><a id="__codelineno-5-59" name="__codelineno-5-59" href="#__codelineno-5-59"></a><span class="w">    </span><span class="n">result</span><span class="o">&lt;</span><span class="n">read_value</span><span class="o">&gt;</span><span class="w"> </span><span class="n">read</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">field</span><span class="p">,</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">span</span><span class="o">&lt;</span><span class="n">std</span><span class="o">::</span><span class="kt">byte</span><span class="o">&gt;</span><span class="w"> </span><span class="n">buf</span><span class="p">)</span><span class="w"> </span><span class="k">const</span><span class="p">;</span>
-</span><span id="__span-5-60"><a id="__codelineno-5-60" name="__codelineno-5-60" href="#__codelineno-5-60"></a><span class="w">    </span><span class="n">result</span><span class="o">&lt;</span><span class="n">std</span><span class="o">::</span><span class="kt">uint64_t</span><span class="o">&gt;</span><span class="w"> </span><span class="n">read_record</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="n">span</span><span class="o">&lt;</span><span class="n">std</span><span class="o">::</span><span class="kt">byte</span><span class="o">&gt;</span><span class="w"> </span><span class="n">buf</span><span class="p">)</span><span class="w"> </span><span class="k">const</span><span class="p">;</span>
-</span><span id="__span-5-61"><a id="__codelineno-5-61" name="__codelineno-5-61" href="#__codelineno-5-61"></a><span class="w">    </span><span class="n">result</span><span class="o">&lt;</span><span class="n">read_value</span><span class="o">&gt;</span><span class="w"> </span><span class="n">read_used</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">field</span><span class="p">,</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">span</span><span class="o">&lt;</span><span class="n">std</span><span class="o">::</span><span class="kt">byte</span><span class="o">&gt;</span><span class="w"> </span><span class="n">buf</span><span class="p">)</span><span class="w"> </span><span class="k">const</span><span class="p">;</span>
-</span><span id="__span-5-62"><a id="__codelineno-5-62" name="__codelineno-5-62" href="#__codelineno-5-62"></a><span class="w">    </span><span class="n">result</span><span class="o">&lt;</span><span class="n">read_value</span><span class="o">&gt;</span><span class="w"> </span><span class="n">read_large</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">field</span><span class="p">,</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">span</span><span class="o">&lt;</span><span class="n">std</span><span class="o">::</span><span class="kt">byte</span><span class="o">&gt;</span><span class="w"> </span><span class="n">buf</span><span class="p">)</span><span class="w"> </span><span class="k">const</span><span class="p">;</span>
-</span><span id="__span-5-63"><a id="__codelineno-5-63" name="__codelineno-5-63" href="#__codelineno-5-63"></a><span class="w">    </span><span class="n">result</span><span class="o">&lt;</span><span class="n">std</span><span class="o">::</span><span class="kt">uint64_t</span><span class="o">&gt;</span><span class="w"> </span><span class="n">read_record_large</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="n">span</span><span class="o">&lt;</span><span class="n">std</span><span class="o">::</span><span class="kt">byte</span><span class="o">&gt;</span><span class="w"> </span><span class="n">buf</span><span class="p">)</span><span class="w"> </span><span class="k">const</span><span class="p">;</span>
-</span><span id="__span-5-64"><a id="__codelineno-5-64" name="__codelineno-5-64" href="#__codelineno-5-64"></a><span class="w">    </span><span class="n">result</span><span class="o">&lt;</span><span class="kt">void</span><span class="o">&gt;</span><span class="w"> </span><span class="n">write_large</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="n">span</span><span class="o">&lt;</span><span class="k">const</span><span class="w"> </span><span class="n">value</span><span class="o">&gt;</span><span class="w"> </span><span class="n">values</span><span class="p">,</span><span class="w"> </span><span class="n">seconds</span><span class="w"> </span><span class="n">lock_timeout</span><span class="p">);</span>
-</span><span id="__span-5-65"><a id="__codelineno-5-65" name="__codelineno-5-65" href="#__codelineno-5-65"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="n">span</span><span class="o">&lt;</span><span class="k">const</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">byte</span><span class="o">&gt;</span><span class="w"> </span><span class="n">payload</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">field</span><span class="p">,</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">span</span><span class="o">&lt;</span><span class="k">const</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">byte</span><span class="o">&gt;</span><span class="w"> </span><span class="n">record</span><span class="p">)</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
-</span><span id="__span-5-66"><a id="__codelineno-5-66" name="__codelineno-5-66" href="#__codelineno-5-66"></a><span class="w">    </span><span class="n">result</span><span class="o">&lt;</span><span class="kt">void</span><span class="o">&gt;</span><span class="w"> </span><span class="n">write</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="n">span</span><span class="o">&lt;</span><span class="k">const</span><span class="w"> </span><span class="n">value</span><span class="o">&gt;</span><span class="w"> </span><span class="n">values</span><span class="p">,</span><span class="w"> </span><span class="n">seconds</span><span class="w"> </span><span class="n">lock_timeout</span><span class="p">);</span>
-</span><span id="__span-5-67"><a id="__codelineno-5-67" name="__codelineno-5-67" href="#__codelineno-5-67"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="kt">uint64_t</span><span class="w"> </span><span class="nf">generation</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
-</span><span id="__span-5-68"><a id="__codelineno-5-68" name="__codelineno-5-68" href="#__codelineno-5-68"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="kt">uint64_t</span><span class="w"> </span><span class="nf">version</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">field</span><span class="p">)</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
-</span><span id="__span-5-69"><a id="__codelineno-5-69" name="__codelineno-5-69" href="#__codelineno-5-69"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="kt">uint32_t</span><span class="w"> </span><span class="nf">writer_pid</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
-</span><span id="__span-5-70"><a id="__codelineno-5-70" name="__codelineno-5-70" href="#__codelineno-5-70"></a><span class="w">    </span><span class="n">result</span><span class="o">&lt;</span><span class="kt">void</span><span class="o">&gt;</span><span class="w"> </span><span class="n">force_unlock</span><span class="p">()</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
-</span><span id="__span-5-71"><a id="__codelineno-5-71" name="__codelineno-5-71" href="#__codelineno-5-71"></a>
-</span><span id="__span-5-72"><a id="__codelineno-5-72" name="__codelineno-5-72" href="#__codelineno-5-72"></a><span class="w">    </span><span class="n">result</span><span class="o">&lt;</span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="o">&gt;</span><span class="w"> </span><span class="n">register_waiter</span><span class="p">();</span>
-</span><span id="__span-5-73"><a id="__codelineno-5-73" name="__codelineno-5-73" href="#__codelineno-5-73"></a><span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="nf">release_waiter</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">slot</span><span class="p">)</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
-</span><span id="__span-5-74"><a id="__codelineno-5-74" name="__codelineno-5-74" href="#__codelineno-5-74"></a><span class="w">    </span><span class="kt">bool</span><span class="w"> </span><span class="nf">waiter_held</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">slot</span><span class="p">)</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
-</span><span id="__span-5-75"><a id="__codelineno-5-75" name="__codelineno-5-75" href="#__codelineno-5-75"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="kt">uint32_t</span><span class="w"> </span><span class="nf">waiters</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
-</span><span id="__span-5-76"><a id="__codelineno-5-76" name="__codelineno-5-76" href="#__codelineno-5-76"></a><span class="w">    </span><span class="n">result</span><span class="o">&lt;</span><span class="n">wake</span><span class="o">&gt;</span><span class="w"> </span><span class="n">wait</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">slot</span><span class="p">,</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">uint64_t</span><span class="w"> </span><span class="n">last_generation</span><span class="p">,</span><span class="w"> </span><span class="n">seconds</span><span class="w"> </span><span class="n">timeout</span><span class="p">);</span>
-</span><span id="__span-5-77"><a id="__codelineno-5-77" name="__codelineno-5-77" href="#__codelineno-5-77"></a><span class="w">    </span><span class="n">result</span><span class="o">&lt;</span><span class="kt">void</span><span class="o">&gt;</span><span class="w"> </span><span class="n">interrupt</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">slot</span><span class="p">);</span>
-</span><span id="__span-5-78"><a id="__codelineno-5-78" name="__codelineno-5-78" href="#__codelineno-5-78"></a><span class="p">};</span>
-</span><span id="__span-5-79"><a id="__codelineno-5-79" name="__codelineno-5-79" href="#__codelineno-5-79"></a>
-</span><span id="__span-5-80"><a id="__codelineno-5-80" name="__codelineno-5-80" href="#__codelineno-5-80"></a><span class="n">result</span><span class="o">&lt;</span><span class="kt">void</span><span class="o">&gt;</span><span class="w"> </span><span class="n">unlink</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="n">string_view</span><span class="w"> </span><span class="n">name</span><span class="p">)</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
-</span><span id="__span-5-81"><a id="__codelineno-5-81" name="__codelineno-5-81" href="#__codelineno-5-81"></a><span class="n">result</span><span class="o">&lt;</span><span class="n">header</span><span class="o">&gt;</span><span class="w"> </span><span class="n">inspect</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="n">string_view</span><span class="w"> </span><span class="n">name</span><span class="p">)</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
-</span><span id="__span-5-82"><a id="__codelineno-5-82" name="__codelineno-5-82" href="#__codelineno-5-82"></a>
-</span><span id="__span-5-83"><a id="__codelineno-5-83" name="__codelineno-5-83" href="#__codelineno-5-83"></a><span class="p">}</span><span class="w">  </span><span class="c1">// namespace v2</span>
-</span><span id="__span-5-84"><a id="__codelineno-5-84" name="__codelineno-5-84" href="#__codelineno-5-84"></a><span class="p">}</span><span class="w">  </span><span class="c1">// namespace sharedbox</span>
+</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="kr">inline</span><span class="w"> </span><span class="k">constexpr</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">core_major</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="n">core_minor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span>
+</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="kr">inline</span><span class="w"> </span><span class="k">constexpr</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">layout_major</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">3</span><span class="p">,</span><span class="w"> </span><span class="n">layout_minor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span><span class="w">   </span><span class="c1">// the box layout</span>
+</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="kr">inline</span><span class="w"> </span><span class="k">constexpr</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">uint64_t</span><span class="w"> </span><span class="n">box_magic</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mh">0x5F584F425F584253</span><span class="p">;</span><span class="w">       </span><span class="c1">// "SBX_BOX_"</span>
+</span><span id="__span-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a><span class="kr">inline</span><span class="w"> </span><span class="k">constexpr</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">uint64_t</span><span class="w"> </span><span class="n">stream_magic</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mh">0x4D5254535F584253</span><span class="p">;</span><span class="w">    </span><span class="c1">// "SBX_STRM"</span>
+</span><span id="__span-5-8"><a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a><span class="c1">// Also: the layout constants handle_version, header_size, name_max, max_fields,</span>
+</span><span id="__span-5-9"><a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="c1">// max_capacity, max_waiter_slots, default_waiter_slots, record_alignment, page_size,</span>
+</span><span id="__span-5-10"><a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a><span class="c1">// max_timeout, default_lock_timeout, kind_shift, capacity_mask, max_types_size,</span>
+</span><span id="__span-5-11"><a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a><span class="c1">// max_type_depth, max_mapping_size, first_described_kind, max_date_ordinal,</span>
+</span><span id="__span-5-12"><a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a><span class="c1">// unix_epoch_ordinal, micros_per_day, max_offset_minutes, literal_none through</span>
+</span><span id="__span-5-13"><a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a><span class="c1">// literal_enum, and the kind codes kind_bool, kind_int, kind_float, kind_str,</span>
+</span><span id="__span-5-14"><a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a><span class="c1">// kind_bytes, kind_ref, kind_complex through kind_decimal and kind_enum through</span>
+</span><span id="__span-5-15"><a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a><span class="c1">// kind_array; the structs common_header, header, stored_field, waiter_slot, box_ref and</span>
+</span><span id="__span-5-16"><a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a><span class="c1">// type_head (see Layout); dl_dtype and literal_value, which type_view's dtype()</span>
+</span><span id="__span-5-17"><a id="__codelineno-5-17" name="__codelineno-5-17" href="#__codelineno-5-17"></a><span class="c1">// and literal() return (see the list below); error, result&lt;T&gt; and unexpected (see</span>
+</span><span id="__span-5-18"><a id="__codelineno-5-18" name="__codelineno-5-18" href="#__codelineno-5-18"></a><span class="c1">// Implementation language).</span>
+</span><span id="__span-5-19"><a id="__codelineno-5-19" name="__codelineno-5-19" href="#__codelineno-5-19"></a>
+</span><span id="__span-5-20"><a id="__codelineno-5-20" name="__codelineno-5-20" href="#__codelineno-5-20"></a><span class="k">enum</span><span class="w"> </span><span class="k">class</span><span class="w"> </span><span class="nc">status</span><span class="w"> </span><span class="o">:</span><span class="w"> </span><span class="kt">int</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">ok</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">,</span><span class="w"> </span><span class="n">exists</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">-1</span><span class="p">,</span><span class="w"> </span><span class="n">not_found</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">-2</span><span class="p">,</span><span class="w"> </span><span class="n">layout</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">-3</span><span class="p">,</span><span class="w"> </span><span class="n">schema</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">-4</span><span class="p">,</span>
+</span><span id="__span-5-21"><a id="__codelineno-5-21" name="__codelineno-5-21" href="#__codelineno-5-21"></a><span class="w">                          </span><span class="n">corrupt</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">-5</span><span class="p">,</span><span class="w"> </span><span class="n">lock_timeout</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">-6</span><span class="p">,</span><span class="w"> </span><span class="n">timeout</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">-7</span><span class="p">,</span><span class="w"> </span><span class="n">no_slot</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">-8</span><span class="p">,</span>
+</span><span id="__span-5-22"><a id="__codelineno-5-22" name="__codelineno-5-22" href="#__codelineno-5-22"></a><span class="w">                          </span><span class="n">range</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">-9</span><span class="p">,</span><span class="w"> </span><span class="n">os</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">-10</span><span class="p">,</span><span class="w"> </span><span class="n">kind_mismatch</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">-11</span><span class="p">,</span><span class="w"> </span><span class="n">foreign</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">-12</span><span class="w"> </span><span class="p">};</span>
+</span><span id="__span-5-23"><a id="__codelineno-5-23" name="__codelineno-5-23" href="#__codelineno-5-23"></a>
+</span><span id="__span-5-24"><a id="__codelineno-5-24" name="__codelineno-5-24" href="#__codelineno-5-24"></a><span class="k">struct</span><span class="w"> </span><span class="nc">field_spec</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">offset</span><span class="p">;</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">capacity</span><span class="p">;</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">kind</span><span class="p">;</span><span class="w"> </span><span class="p">};</span>
+</span><span id="__span-5-25"><a id="__codelineno-5-25" name="__codelineno-5-25" href="#__codelineno-5-25"></a><span class="k">struct</span><span class="w"> </span><span class="nc">value</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">field</span><span class="p">;</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">span</span><span class="o">&lt;</span><span class="k">const</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">byte</span><span class="o">&gt;</span><span class="w"> </span><span class="n">bytes</span><span class="p">;</span><span class="w"> </span><span class="p">};</span>
+</span><span id="__span-5-26"><a id="__codelineno-5-26" name="__codelineno-5-26" href="#__codelineno-5-26"></a><span class="k">using</span><span class="w"> </span><span class="n">seconds</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">chrono</span><span class="o">::</span><span class="n">duration</span><span class="o">&lt;</span><span class="kt">double</span><span class="o">&gt;</span><span class="p">;</span>
+</span><span id="__span-5-27"><a id="__codelineno-5-27" name="__codelineno-5-27" href="#__codelineno-5-27"></a><span class="k">struct</span><span class="w"> </span><span class="nc">read_value</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">size_t</span><span class="w"> </span><span class="n">len</span><span class="p">;</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">uint64_t</span><span class="w"> </span><span class="n">version</span><span class="p">;</span><span class="w"> </span><span class="p">};</span>
+</span><span id="__span-5-28"><a id="__codelineno-5-28" name="__codelineno-5-28" href="#__codelineno-5-28"></a><span class="k">enum</span><span class="w"> </span><span class="k">class</span><span class="w"> </span><span class="nc">wake</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">changed</span><span class="p">,</span><span class="w"> </span><span class="n">interrupted</span><span class="w"> </span><span class="p">};</span><span class="w">      </span><span class="c1">// a timeout is status::timeout</span>
+</span><span id="__span-5-29"><a id="__codelineno-5-29" name="__codelineno-5-29" href="#__codelineno-5-29"></a>
+</span><span id="__span-5-30"><a id="__codelineno-5-30" name="__codelineno-5-30" href="#__codelineno-5-30"></a><span class="k">class</span><span class="w"> </span><span class="nc">handle</span><span class="w"> </span><span class="p">{</span><span class="w">                                  </span><span class="c1">// move-only; the destructor releases it</span>
+</span><span id="__span-5-31"><a id="__codelineno-5-31" name="__codelineno-5-31" href="#__codelineno-5-31"></a><span class="k">public</span><span class="o">:</span>
+</span><span id="__span-5-32"><a id="__codelineno-5-32" name="__codelineno-5-32" href="#__codelineno-5-32"></a><span class="w">    </span><span class="k">static</span><span class="w"> </span><span class="n">result</span><span class="o">&lt;</span><span class="n">handle</span><span class="o">&gt;</span><span class="w"> </span><span class="n">create</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="n">string_view</span><span class="w"> </span><span class="n">name</span><span class="p">,</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">span</span><span class="o">&lt;</span><span class="k">const</span><span class="w"> </span><span class="n">field_spec</span><span class="o">&gt;</span><span class="w"> </span><span class="n">fields</span><span class="p">,</span>
+</span><span id="__span-5-33"><a id="__codelineno-5-33" name="__codelineno-5-33" href="#__codelineno-5-33"></a><span class="w">                                 </span><span class="n">std</span><span class="o">::</span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">record_size</span><span class="p">,</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">uint64_t</span><span class="w"> </span><span class="n">schema_hash</span><span class="p">,</span>
+</span><span id="__span-5-34"><a id="__codelineno-5-34" name="__codelineno-5-34" href="#__codelineno-5-34"></a><span class="w">                                 </span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">waiter_slots</span><span class="p">,</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">span</span><span class="o">&lt;</span><span class="k">const</span><span class="w"> </span><span class="n">value</span><span class="o">&gt;</span><span class="w"> </span><span class="n">initial</span><span class="p">,</span>
+</span><span id="__span-5-35"><a id="__codelineno-5-35" name="__codelineno-5-35" href="#__codelineno-5-35"></a><span class="w">                                 </span><span class="n">std</span><span class="o">::</span><span class="n">span</span><span class="o">&lt;</span><span class="k">const</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">byte</span><span class="o">&gt;</span><span class="w"> </span><span class="n">types</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{});</span>
+</span><span id="__span-5-36"><a id="__codelineno-5-36" name="__codelineno-5-36" href="#__codelineno-5-36"></a><span class="w">    </span><span class="k">static</span><span class="w"> </span><span class="n">result</span><span class="o">&lt;</span><span class="n">handle</span><span class="o">&gt;</span><span class="w"> </span><span class="n">create_unpublished</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="n">string_view</span><span class="w"> </span><span class="n">name</span><span class="p">,</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">span</span><span class="o">&lt;</span><span class="k">const</span><span class="w"> </span><span class="n">field_spec</span><span class="o">&gt;</span><span class="w"> </span><span class="n">fields</span><span class="p">,</span>
+</span><span id="__span-5-37"><a id="__codelineno-5-37" name="__codelineno-5-37" href="#__codelineno-5-37"></a><span class="w">                                             </span><span class="n">std</span><span class="o">::</span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">record_size</span><span class="p">,</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">uint64_t</span><span class="w"> </span><span class="n">schema_hash</span><span class="p">,</span>
+</span><span id="__span-5-38"><a id="__codelineno-5-38" name="__codelineno-5-38" href="#__codelineno-5-38"></a><span class="w">                                             </span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">waiter_slots</span><span class="p">,</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">span</span><span class="o">&lt;</span><span class="k">const</span><span class="w"> </span><span class="n">value</span><span class="o">&gt;</span><span class="w"> </span><span class="n">initial</span><span class="p">,</span>
+</span><span id="__span-5-39"><a id="__codelineno-5-39" name="__codelineno-5-39" href="#__codelineno-5-39"></a><span class="w">                                             </span><span class="n">std</span><span class="o">::</span><span class="n">span</span><span class="o">&lt;</span><span class="k">const</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">byte</span><span class="o">&gt;</span><span class="w"> </span><span class="n">types</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{});</span>
+</span><span id="__span-5-40"><a id="__codelineno-5-40" name="__codelineno-5-40" href="#__codelineno-5-40"></a><span class="w">    </span><span class="n">result</span><span class="o">&lt;</span><span class="kt">void</span><span class="o">&gt;</span><span class="w"> </span><span class="n">publish</span><span class="p">()</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
+</span><span id="__span-5-41"><a id="__codelineno-5-41" name="__codelineno-5-41" href="#__codelineno-5-41"></a><span class="w">    </span><span class="k">static</span><span class="w"> </span><span class="n">result</span><span class="o">&lt;</span><span class="n">handle</span><span class="o">&gt;</span><span class="w"> </span><span class="n">open</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="n">string_view</span><span class="w"> </span><span class="n">name</span><span class="p">,</span><span class="w"> </span><span class="n">seconds</span><span class="w"> </span><span class="n">timeout</span><span class="p">);</span>
+</span><span id="__span-5-42"><a id="__codelineno-5-42" name="__codelineno-5-42" href="#__codelineno-5-42"></a><span class="w">    </span><span class="k">static</span><span class="w"> </span><span class="n">result</span><span class="o">&lt;</span><span class="n">handle</span><span class="o">&gt;</span><span class="w"> </span><span class="n">from_capsule</span><span class="p">(</span><span class="n">sbx_handle</span><span class="w"> </span><span class="o">*</span><span class="n">capsule</span><span class="p">);</span>
+</span><span id="__span-5-43"><a id="__codelineno-5-43" name="__codelineno-5-43" href="#__codelineno-5-43"></a><span class="w">    </span><span class="n">result</span><span class="o">&lt;</span><span class="n">handle</span><span class="o">&gt;</span><span class="w"> </span><span class="n">duplicate</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="p">;</span>
+</span><span id="__span-5-44"><a id="__codelineno-5-44" name="__codelineno-5-44" href="#__codelineno-5-44"></a><span class="w">    </span><span class="n">sbx_handle</span><span class="w"> </span><span class="o">*</span><span class="nf">to_capsule</span><span class="p">()</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="p">;</span>
+</span><span id="__span-5-45"><a id="__codelineno-5-45" name="__codelineno-5-45" href="#__codelineno-5-45"></a>
+</span><span id="__span-5-46"><a id="__codelineno-5-46" name="__codelineno-5-46" href="#__codelineno-5-46"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="n">string_view</span><span class="w"> </span><span class="nf">name</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
+</span><span id="__span-5-47"><a id="__codelineno-5-47" name="__codelineno-5-47" href="#__codelineno-5-47"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="w"> </span><span class="nf">field_count</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
+</span><span id="__span-5-48"><a id="__codelineno-5-48" name="__codelineno-5-48" href="#__codelineno-5-48"></a><span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="n">field_spec</span><span class="w"> </span><span class="o">&amp;</span><span class="nf">field</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">index</span><span class="p">)</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
+</span><span id="__span-5-49"><a id="__codelineno-5-49" name="__codelineno-5-49" href="#__codelineno-5-49"></a><span class="w">    </span><span class="n">type_view</span><span class="w"> </span><span class="nf">field_type</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">index</span><span class="p">)</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
+</span><span id="__span-5-50"><a id="__codelineno-5-50" name="__codelineno-5-50" href="#__codelineno-5-50"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="n">span</span><span class="o">&lt;</span><span class="k">const</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">byte</span><span class="o">&gt;</span><span class="w"> </span><span class="n">types_table</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
+</span><span id="__span-5-51"><a id="__codelineno-5-51" name="__codelineno-5-51" href="#__codelineno-5-51"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="kt">uint32_t</span><span class="w"> </span><span class="nf">record_size</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
+</span><span id="__span-5-52"><a id="__codelineno-5-52" name="__codelineno-5-52" href="#__codelineno-5-52"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="kt">uint64_t</span><span class="w"> </span><span class="nf">schema_hash</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
+</span><span id="__span-5-53"><a id="__codelineno-5-53" name="__codelineno-5-53" href="#__codelineno-5-53"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="kt">uint64_t</span><span class="w"> </span><span class="nf">create_id</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
+</span><span id="__span-5-54"><a id="__codelineno-5-54" name="__codelineno-5-54" href="#__codelineno-5-54"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="w"> </span><span class="nf">waiter_slots</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
+</span><span id="__span-5-55"><a id="__codelineno-5-55" name="__codelineno-5-55" href="#__codelineno-5-55"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="w"> </span><span class="nf">minor_version</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
+</span><span id="__span-5-56"><a id="__codelineno-5-56" name="__codelineno-5-56" href="#__codelineno-5-56"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="w"> </span><span class="nf">major_version</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
+</span><span id="__span-5-57"><a id="__codelineno-5-57" name="__codelineno-5-57" href="#__codelineno-5-57"></a><span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="nf">base</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
+</span><span id="__span-5-58"><a id="__codelineno-5-58" name="__codelineno-5-58" href="#__codelineno-5-58"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="kt">uint64_t</span><span class="w"> </span><span class="nf">size</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
+</span><span id="__span-5-59"><a id="__codelineno-5-59" name="__codelineno-5-59" href="#__codelineno-5-59"></a>
+</span><span id="__span-5-60"><a id="__codelineno-5-60" name="__codelineno-5-60" href="#__codelineno-5-60"></a><span class="w">    </span><span class="n">result</span><span class="o">&lt;</span><span class="kt">void</span><span class="o">&gt;</span><span class="w"> </span><span class="n">set_lock_timeout</span><span class="p">(</span><span class="n">seconds</span><span class="w"> </span><span class="n">timeout</span><span class="p">)</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
+</span><span id="__span-5-61"><a id="__codelineno-5-61" name="__codelineno-5-61" href="#__codelineno-5-61"></a><span class="w">    </span><span class="n">result</span><span class="o">&lt;</span><span class="n">read_value</span><span class="o">&gt;</span><span class="w"> </span><span class="n">read</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">field</span><span class="p">,</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">span</span><span class="o">&lt;</span><span class="n">std</span><span class="o">::</span><span class="kt">byte</span><span class="o">&gt;</span><span class="w"> </span><span class="n">buf</span><span class="p">)</span><span class="w"> </span><span class="k">const</span><span class="p">;</span>
+</span><span id="__span-5-62"><a id="__codelineno-5-62" name="__codelineno-5-62" href="#__codelineno-5-62"></a><span class="w">    </span><span class="n">result</span><span class="o">&lt;</span><span class="n">std</span><span class="o">::</span><span class="kt">uint64_t</span><span class="o">&gt;</span><span class="w"> </span><span class="n">read_record</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="n">span</span><span class="o">&lt;</span><span class="n">std</span><span class="o">::</span><span class="kt">byte</span><span class="o">&gt;</span><span class="w"> </span><span class="n">buf</span><span class="p">)</span><span class="w"> </span><span class="k">const</span><span class="p">;</span>
+</span><span id="__span-5-63"><a id="__codelineno-5-63" name="__codelineno-5-63" href="#__codelineno-5-63"></a><span class="w">    </span><span class="n">result</span><span class="o">&lt;</span><span class="n">read_value</span><span class="o">&gt;</span><span class="w"> </span><span class="n">read_used</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">field</span><span class="p">,</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">span</span><span class="o">&lt;</span><span class="n">std</span><span class="o">::</span><span class="kt">byte</span><span class="o">&gt;</span><span class="w"> </span><span class="n">buf</span><span class="p">)</span><span class="w"> </span><span class="k">const</span><span class="p">;</span>
+</span><span id="__span-5-64"><a id="__codelineno-5-64" name="__codelineno-5-64" href="#__codelineno-5-64"></a><span class="w">    </span><span class="n">result</span><span class="o">&lt;</span><span class="n">read_value</span><span class="o">&gt;</span><span class="w"> </span><span class="n">read_large</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">field</span><span class="p">,</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">span</span><span class="o">&lt;</span><span class="n">std</span><span class="o">::</span><span class="kt">byte</span><span class="o">&gt;</span><span class="w"> </span><span class="n">buf</span><span class="p">)</span><span class="w"> </span><span class="k">const</span><span class="p">;</span>
+</span><span id="__span-5-65"><a id="__codelineno-5-65" name="__codelineno-5-65" href="#__codelineno-5-65"></a><span class="w">    </span><span class="n">result</span><span class="o">&lt;</span><span class="n">std</span><span class="o">::</span><span class="kt">uint64_t</span><span class="o">&gt;</span><span class="w"> </span><span class="n">read_record_large</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="n">span</span><span class="o">&lt;</span><span class="n">std</span><span class="o">::</span><span class="kt">byte</span><span class="o">&gt;</span><span class="w"> </span><span class="n">buf</span><span class="p">)</span><span class="w"> </span><span class="k">const</span><span class="p">;</span>
+</span><span id="__span-5-66"><a id="__codelineno-5-66" name="__codelineno-5-66" href="#__codelineno-5-66"></a><span class="w">    </span><span class="n">result</span><span class="o">&lt;</span><span class="kt">void</span><span class="o">&gt;</span><span class="w"> </span><span class="n">write_large</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="n">span</span><span class="o">&lt;</span><span class="k">const</span><span class="w"> </span><span class="n">value</span><span class="o">&gt;</span><span class="w"> </span><span class="n">values</span><span class="p">,</span><span class="w"> </span><span class="n">seconds</span><span class="w"> </span><span class="n">lock_timeout</span><span class="p">);</span>
+</span><span id="__span-5-67"><a id="__codelineno-5-67" name="__codelineno-5-67" href="#__codelineno-5-67"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="n">span</span><span class="o">&lt;</span><span class="k">const</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">byte</span><span class="o">&gt;</span><span class="w"> </span><span class="n">payload</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">field</span><span class="p">,</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">span</span><span class="o">&lt;</span><span class="k">const</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">byte</span><span class="o">&gt;</span><span class="w"> </span><span class="n">record</span><span class="p">)</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
+</span><span id="__span-5-68"><a id="__codelineno-5-68" name="__codelineno-5-68" href="#__codelineno-5-68"></a><span class="w">    </span><span class="n">result</span><span class="o">&lt;</span><span class="kt">void</span><span class="o">&gt;</span><span class="w"> </span><span class="n">write</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="n">span</span><span class="o">&lt;</span><span class="k">const</span><span class="w"> </span><span class="n">value</span><span class="o">&gt;</span><span class="w"> </span><span class="n">values</span><span class="p">,</span><span class="w"> </span><span class="n">seconds</span><span class="w"> </span><span class="n">lock_timeout</span><span class="p">);</span>
+</span><span id="__span-5-69"><a id="__codelineno-5-69" name="__codelineno-5-69" href="#__codelineno-5-69"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="kt">uint64_t</span><span class="w"> </span><span class="nf">generation</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
+</span><span id="__span-5-70"><a id="__codelineno-5-70" name="__codelineno-5-70" href="#__codelineno-5-70"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="kt">uint64_t</span><span class="w"> </span><span class="nf">version</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">field</span><span class="p">)</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
+</span><span id="__span-5-71"><a id="__codelineno-5-71" name="__codelineno-5-71" href="#__codelineno-5-71"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="kt">uint32_t</span><span class="w"> </span><span class="nf">writer_pid</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
+</span><span id="__span-5-72"><a id="__codelineno-5-72" name="__codelineno-5-72" href="#__codelineno-5-72"></a><span class="w">    </span><span class="n">result</span><span class="o">&lt;</span><span class="kt">void</span><span class="o">&gt;</span><span class="w"> </span><span class="n">force_unlock</span><span class="p">()</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
+</span><span id="__span-5-73"><a id="__codelineno-5-73" name="__codelineno-5-73" href="#__codelineno-5-73"></a>
+</span><span id="__span-5-74"><a id="__codelineno-5-74" name="__codelineno-5-74" href="#__codelineno-5-74"></a><span class="w">    </span><span class="n">result</span><span class="o">&lt;</span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="o">&gt;</span><span class="w"> </span><span class="n">register_waiter</span><span class="p">();</span>
+</span><span id="__span-5-75"><a id="__codelineno-5-75" name="__codelineno-5-75" href="#__codelineno-5-75"></a><span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="nf">release_waiter</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">slot</span><span class="p">)</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
+</span><span id="__span-5-76"><a id="__codelineno-5-76" name="__codelineno-5-76" href="#__codelineno-5-76"></a><span class="w">    </span><span class="kt">bool</span><span class="w"> </span><span class="nf">waiter_held</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">slot</span><span class="p">)</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
+</span><span id="__span-5-77"><a id="__codelineno-5-77" name="__codelineno-5-77" href="#__codelineno-5-77"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="kt">uint32_t</span><span class="w"> </span><span class="nf">waiters</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
+</span><span id="__span-5-78"><a id="__codelineno-5-78" name="__codelineno-5-78" href="#__codelineno-5-78"></a><span class="w">    </span><span class="n">result</span><span class="o">&lt;</span><span class="n">wake</span><span class="o">&gt;</span><span class="w"> </span><span class="n">wait</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">slot</span><span class="p">,</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">uint64_t</span><span class="w"> </span><span class="n">last_generation</span><span class="p">,</span><span class="w"> </span><span class="n">seconds</span><span class="w"> </span><span class="n">timeout</span><span class="p">);</span>
+</span><span id="__span-5-79"><a id="__codelineno-5-79" name="__codelineno-5-79" href="#__codelineno-5-79"></a><span class="w">    </span><span class="n">result</span><span class="o">&lt;</span><span class="kt">void</span><span class="o">&gt;</span><span class="w"> </span><span class="n">interrupt</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">slot</span><span class="p">);</span>
+</span><span id="__span-5-80"><a id="__codelineno-5-80" name="__codelineno-5-80" href="#__codelineno-5-80"></a><span class="p">};</span>
+</span><span id="__span-5-81"><a id="__codelineno-5-81" name="__codelineno-5-81" href="#__codelineno-5-81"></a>
+</span><span id="__span-5-82"><a id="__codelineno-5-82" name="__codelineno-5-82" href="#__codelineno-5-82"></a><span class="n">result</span><span class="o">&lt;</span><span class="kt">void</span><span class="o">&gt;</span><span class="w"> </span><span class="n">unlink</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="n">string_view</span><span class="w"> </span><span class="n">name</span><span class="p">)</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
+</span><span id="__span-5-83"><a id="__codelineno-5-83" name="__codelineno-5-83" href="#__codelineno-5-83"></a><span class="n">result</span><span class="o">&lt;</span><span class="n">common_header</span><span class="o">&gt;</span><span class="w"> </span><span class="n">inspect</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="n">string_view</span><span class="w"> </span><span class="n">name</span><span class="p">)</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
+</span><span id="__span-5-84"><a id="__codelineno-5-84" name="__codelineno-5-84" href="#__codelineno-5-84"></a>
+</span><span id="__span-5-85"><a id="__codelineno-5-85" name="__codelineno-5-85" href="#__codelineno-5-85"></a><span class="p">}</span><span class="w">  </span><span class="c1">// namespace v3</span>
+</span><span id="__span-5-86"><a id="__codelineno-5-86" name="__codelineno-5-86" href="#__codelineno-5-86"></a><span class="p">}</span><span class="w">  </span><span class="c1">// namespace sharedbox</span>
 </span></code></pre></div>
 <p>Every function returning <code>result</code> is <code>[[nodiscard]]</code>. <code>handle</code> also has
 <code>lock</code>, <code>unlock</code> and <code>set_wait_hooks</code>, which the tests and the Python
 extension use.</p>
-<p>Layout 2.0 adds these names to the header:</p>
+<p>The header also declares these names:</p>
 <ul>
 <li><code>type_view</code> and <code>handle::field_type(index)</code>: a field's type, read from
   its description. <code>handle::types_table()</code> returns the table's bytes.</li>
@@ -4593,8 +4653,7 @@ extension use.</p>
   <code>complex</code>, <code>date</code>, <code>uuid</code>, <code>flag</code> and enum and literal positions
   (<code>encode_position</code>, <code>decode_position</code>). <code>decode_bool</code>, <code>decode_present</code>,
   <code>decode_tag</code> and <code>decode_length</code> have no encoder.</li>
-<li><code>handle::major_version()</code> and <code>oldest_layout_major</code>, the lowest major
-  version <code>open</code> and <code>from_capsule</code> accept.</li>
+<li><code>handle::major_version()</code>, the box layout major of the segment.</li>
 <li>The constants <code>first_described_kind</code>, <code>max_date_ordinal</code>,
   <code>unix_epoch_ordinal</code>, <code>micros_per_day</code>, <code>max_offset_minutes</code> and
   <code>literal_none</code> through <code>literal_enum</code>, and the structs <code>type_head</code>,
@@ -4605,17 +4664,20 @@ extension use.</p>
 <li>A <code>types</code> parameter on <code>handle::create</code> and <code>handle::create_unpublished</code>:
   the description table, empty by default.</li>
 <li>
-<p>The inline namespace is <code>v2</code>.</p>
+<p>The inline namespace is <code>v3</code>.</p>
 </li>
 <li>
 <p><code>status</code>: <code>ok</code>, and one code per error the Python side raises, so the
   extension maps each to its exception class. <code>exists</code>: the name is taken.
   <code>not_found</code>: no mapping under the name, or one that never becomes a box
-  within the timeout. <code>layout</code>: another <code>layout_major</code>. <code>schema</code> is kept
-  for callers that compare schema hashes. <code>corrupt</code>: a header or field
+  within the timeout. <code>layout</code>: another <code>core_major</code> or box <code>kind_major</code>.
+  <code>kind_mismatch</code>: the name holds a segment of another kind.
+  <code>foreign</code>: the magic is not one this library knows, so the segment was
+  made by another version of <code>sharedbox</code> or is not a <code>sharedbox</code> segment.
+  <code>schema</code> is kept for callers that compare schema hashes. <code>corrupt</code>: a header or field
   table that fails the attach checks. <code>lock_timeout</code>, <code>timeout</code>, <code>no_slot</code>:
   see Protocols. <code>range</code>: an argument out of range. <code>os</code>: an <abbr title="Operating system.">OS</abbr> call
-  failed, with <code>errno</code> or <code>GetLastError()</code> left as the call set it.</p>
+  failed, and the error's <code>os</code> holds its <code>errno</code> or <code>GetLastError()</code>.</p>
 </li>
 <li><code>create</code> and <code>write</code> take raw bytes in the record encoding, without the
   length prefix of <code>str</code>, <code>bytes</code> and <code>Decimal</code>; converting language values
@@ -4629,15 +4691,16 @@ extension use.</p>
   capacity always fits. <code>read_record</code> copies every field from one moment
   and returns the generation of that moment; <code>payload</code> finds a field in
   such a copy.</li>
-<li><code>inspect(name)</code> copies a published header without waiting and without
-  the checks of <code>open</code>. The Python extension uses it to name the layout of
-  a segment it refuses and the creator in <code>SegmentExistsError</code>.</li>
+<li><code>inspect(name)</code> copies the common line of a published segment of any
+  kind, without waiting and without the checks of <code>open</code>. The Python
+  extension uses it to name the layout of a segment it refuses and the
+  creator in <code>SegmentExistsError</code>.</li>
 <li><code>duplicate()</code> makes a second handle with its own mapping from this
   handle's <abbr title="Operating system.">OS</abbr> handle (<code>dup</code> and <code>mmap</code> on Linux, <code>DuplicateHandle</code> and
   <code>MapViewOfFile</code> on Windows), not from the name, so it works after
   <code>unlink()</code>.</li>
-<li><code>minor_version()</code> is the lower of the segment's <code>layout_minor</code> and the
-  <code>layout_minor</code> of the <code>sharedbox.hpp</code> the caller was compiled with.</li>
+<li><code>minor_version()</code> is the lower of the segment's <code>kind_minor</code> and the
+  <code>layout_minor</code> of the <code>box.hpp</code> the caller was compiled with.</li>
 <li>Shared memory that never becomes a box within the timeout is
   <code>status::not_found</code>.</li>
 <li>Thread safety: every member function may be called from several threads
@@ -4649,7 +4712,7 @@ extension use.</p>
 </ul>
 <h3 id="capsule-handle">Capsule handle<a class="headerlink" href="#capsule-handle" title="Permanent link">&para;</a></h3>
 <p><code>sbx_handle</code> is the struct a capsule holds. It is plain C data with function
-pointers, declared in <code>sharedbox_c.h</code> and included by <code>sharedbox.hpp</code>,
+pointers, declared in <code>sharedbox_c.h</code> and included by <code>box.hpp</code>,
 because it passes between extensions compiled separately, possibly with
 different compilers and standard libraries. No C++ standard-library type
 crosses the capsule.</p>
@@ -4669,8 +4732,8 @@ crosses the capsule.</p>
 <li>A consumer never reads another build's <code>private_data</code>. It takes the
   handle with <code>handle::from_capsule</code> (or <code>sbx_import</code>). It does not wait
   for <code>magic</code>: it loads it once and returns <code>status::corrupt</code> if it is not
-  set or <code>size</code> is below 4096, then runs steps 3 to 5 of Attach on the
-  segment at <code>base</code>. It keeps its own copy of the struct and of the field table, and
+  set or <code>size</code> is below 4096, then runs steps 3 and 4 of Attach on the
+  segment at <code>base</code>, which includes the kind and version checks. It keeps its own copy of the struct and of the field table, and
   checks no schema: the consumer compares <code>schema_hash()</code>. On success it
   clears the capsule struct's <code>release</code>, and destroying the new handle
   calls the producer's <code>release</code>. The consumer's handle opens slot events
@@ -4701,6 +4764,12 @@ layout.</p>
 <li>It holds <code>sbx_handle</code>, <code>sbx_value</code>, the status codes, the six functions
   above and the typed functions below. Creating, waiting, <code>interrupt</code>,
   <code>force_unlock</code> and <code>unlink</code> are in the C++ <abbr title="Application programming interface. The functions and classes a library offers to code that uses it.">API</abbr> only.</li>
+<li>The status codes are <code>SBX_E_EXISTS</code> (-1) to <code>SBX_E_OS</code> (-10), then
+  <code>SBX_E_KIND</code> (-11) and <code>SBX_E_FOREIGN</code> (-12), the values of
+  <code>status::kind_mismatch</code> and <code>status::foreign</code>. <code>sbx_open</code> and
+  <code>sbx_import</code> return <code>SBX_E_KIND</code> for a segment of another kind and
+  <code>SBX_E_FOREIGN</code> for a magic they do not know (see Attach). A C caller
+  gets the code only, without the <code>error</code>'s <abbr title="Operating system.">OS</abbr> error and <code>found</code>.</li>
 <li><code>sbx_field_desc</code> returns a field's kind code and its description's
   bytes. <code>sbx_read_*</code> and <code>sbx_write_*</code> exist for <code>complex</code>, <code>date</code>,
   <code>time</code>, <code>datetime</code>, <code>timedelta</code>, <code>uuid</code>, enum and literal positions
@@ -4762,17 +4831,17 @@ no Python-level export method.</p>
   <code>sharedbox/sharedbox_c.cpp</code> in the installed package.</li>
 <li><code>sharedbox.SupportsSharedBox</code> is a <code>typing.Protocol</code> with
   <code>__sharedbox_box__</code>, for annotations in consuming libraries.</li>
-<li><code>sharedbox._native.LAYOUT_VERSION</code> is <code>(1, 0)</code>.</li>
+<li><code>sharedbox._native.LAYOUT_VERSION</code> is <code>(3, 0)</code>, the box layout.</li>
 </ul>
 <h2 id="rust-crate-deferred">Rust crate (deferred)<a class="headerlink" href="#rust-crate-deferred" title="Permanent link">&para;</a></h2>
 <p>A Rust crate is not part of this release. It will be a safe layer over
-<code>sharedbox.hpp</code> through cxx, so Python, C++ and Rust share one
+the headers through cxx, so Python, C++ and Rust share one
 implementation of the protocols, with <code>schema_hash</code> and the default name
 computed in Rust and checked against the test vector above.</p>
 <h2 id="build-and-packaging">Build and packaging<a class="headerlink" href="#build-and-packaging" title="Permanent link">&para;</a></h2>
 <ul>
-<li><code>include/sharedbox/sharedbox.hpp</code>, <code>sharedbox_c.h</code> and <code>sharedbox_c.cpp</code>
-  are in the repository; the build installs them into the wheel under
+<li><code>include/sharedbox/core.hpp</code>, <code>box.hpp</code>, <code>sharedbox.hpp</code>, <code>sharedbox_c.h</code>
+  and <code>sharedbox_c.cpp</code> are in the repository; the build installs them into the wheel under
   <code>sharedbox/include/</code>, and <code>cmake/sharedbox-config.cmake</code> under
   <code>sharedbox/share/cmake/sharedbox/</code>, next to a
   <code>sharedbox-config-version.cmake</code> the build writes from the package
@@ -4793,16 +4862,16 @@ computed in Rust and checked against the test vector above.</p>
 <h2 id="out-of-scope">Out of scope<a class="headerlink" href="#out-of-scope" title="Permanent link">&para;</a></h2>
 <ul>
 <li>Queues and streams; they would get <code>__sharedbox_queue__</code> and
-  <code>__sharedbox_stream__</code>.</li>
+  <code>__sharedbox_stream__</code>. The magic <code>SBX_STRM</code> is reserved for streams.</li>
 <li><code>Global\</code> names on Windows. They would let a service in session 0 share
   a box with a desktop application, but creating a file mapping there
   needs <code>SeCreateGlobalPrivilege</code> and a security descriptor that lets the
   other session's user open it.</li>
 <li>A vcpkg port and a headers-only wheel.</li>
-<li>macOS. Every platform detail lives in <code>sharedbox.hpp</code>, so macOS would be
-  a third platform there. Known obstacles: <abbr title="Portable Operating System Interface. The standard that Linux and other Unix-like systems follow.">POSIX</abbr> shared memory names are
-  limited to 31 characters, which <code>sharedbox.&lt;name&gt;</code> with 128-character
-  box names does not fit; there is no futex; there is no
+<li>macOS. Every platform detail lives in <code>core.hpp</code> and <code>box.hpp</code>, so macOS
+  would be a third platform there. Known obstacles: <abbr title="Portable Operating System Interface. The standard that Linux and other Unix-like systems follow.">POSIX</abbr> shared memory names are
+  limited to 31 characters, which <code>SBX:&lt;name&gt;</code> with names of up to 240
+  characters does not fit; there is no futex; there is no
   <code>posix_fallocate</code>; leftover segments cannot be listed.</li>
 <li>A read-only open mode.</li>
 <li>Big-endian hosts.</li>

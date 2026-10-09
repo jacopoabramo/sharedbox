@@ -3168,12 +3168,12 @@ handle is closed. Either way you write the same code, and it works on both.</p>
 <h2 id="remove-a-segment-left-by-a-crash">Remove a segment left by a crash<a class="headerlink" href="#remove-a-segment-left-by-a-crash" title="Permanent link">&para;</a></h2>
 <p>On Linux, a process that crashed before calling <code>unlink</code> leaves its segment
 behind as a file in <code>/dev/shm</code>. You can list them:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>ls<span class="w"> </span>/dev/shm/sharedbox.*
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>ls<span class="w"> </span>/dev/shm/SBX:*
 </span></code></pre></div>
 <p>If you try to create a box under a name that is left over, you get
 <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;SegmentExistsError&lt;/span&gt;" href="../../reference/api/errors/#sharedbox.SegmentExistsError"><code>SegmentExistsError</code></a>, and its message says
 whether the process that created it is still running. If it isn't, remove
-the segment with <code>unlink</code> and the part of the file name after <code>sharedbox.</code>,
+the segment with <code>unlink</code> and the part of the file name after <code>SBX:</code>,
 for example <code>Job.unlink("job-1")</code>, or simply delete the file.</p>
 <p>On Windows nothing is left behind: a segment goes away with the last
 process that has it open.</p>

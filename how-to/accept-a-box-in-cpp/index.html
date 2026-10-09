@@ -3220,10 +3220,10 @@ your build at the header in one of two ways:</p>
 <li>Put <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-function&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;get_include&lt;/span&gt;" href="../../reference/api/library-authors/#sharedbox.get_include"><code>sharedbox.get_include()</code></a> on the include
   path.</li>
 <li>With CMake, add <code>Path(sharedbox.get_include()).parent</code> to
-  <code>CMAKE_PREFIX_PATH</code>, call <code>find_package(sharedbox 0.5 CONFIG REQUIRED)</code>
+  <code>CMAKE_PREFIX_PATH</code>, call <code>find_package(sharedbox 0.6 CONFIG REQUIRED)</code>
   and link <code>sharedbox::headers</code> (C++) or <code>sharedbox::c</code> (C). The version
   is optional. Before 1.0 a request accepts only the same minor version,
-  so <code>0.5</code> accepts 0.5.0 and later 0.5 releases but not 0.6.</li>
+  so <code>0.6</code> accepts 0.6.0 and later 0.6 releases but not 0.7.</li>
 </ul>
 <p><code>sharedbox::c</code> compiles <code>sharedbox_c.cpp</code> into the target that links it,
 so your project has to enable the CXX language as well as C; if it doesn't,
@@ -3239,7 +3239,7 @@ needs the full <code>windows.h</code> or the <code>min</code> and <code>max</cod
 <code>windows.h</code> before <code>sharedbox.hpp</code>.</p>
 </div>
 <p>You write <code>sharedbox::handle</code>, but the header actually declares its C++
-names in an inline namespace, <code>sharedbox::v2</code>. That namespace changes
+names in an inline namespace, <code>sharedbox::v3</code>. That namespace changes
 whenever the C++ interface changes incompatibly, so libraries built against
 different versions of the header can still be linked into one program. The
 C functions <code>sbx_*</code> keep their names across versions. Names in
@@ -3295,12 +3295,12 @@ whatever its target settings.</p>
 </span><span id="__span-5-24"><a id="__codelineno-5-24" name="__codelineno-5-24" href="#__codelineno-5-24"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="kt">int64_t</span><span class="w"> </span><span class="n">count</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span>
 </span><span id="__span-5-25"><a id="__codelineno-5-25" name="__codelineno-5-25" href="#__codelineno-5-25"></a><span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="k">auto</span><span class="w"> </span><span class="n">read</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">box</span><span class="o">-&gt;</span><span class="n">read</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">as_writable_bytes</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="n">span</span><span class="p">(</span><span class="o">&amp;</span><span class="n">count</span><span class="p">,</span><span class="w"> </span><span class="mi">1</span><span class="p">)));</span>
 </span><span id="__span-5-26"><a id="__codelineno-5-26" name="__codelineno-5-26" href="#__codelineno-5-26"></a><span class="w">    </span><span class="k">if</span><span class="w"> </span><span class="p">(</span><span class="o">!</span><span class="n">read</span><span class="p">)</span>
-</span><span id="__span-5-27"><a id="__codelineno-5-27" name="__codelineno-5-27" href="#__codelineno-5-27"></a><span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">PyErr_Format</span><span class="p">(</span><span class="n">PyExc_RuntimeError</span><span class="p">,</span><span class="w"> </span><span class="s">"read failed: %d"</span><span class="p">,</span><span class="w"> </span><span class="k">static_cast</span><span class="o">&lt;</span><span class="kt">int</span><span class="o">&gt;</span><span class="p">(</span><span class="n">read</span><span class="p">.</span><span class="n">error</span><span class="p">()));</span>
+</span><span id="__span-5-27"><a id="__codelineno-5-27" name="__codelineno-5-27" href="#__codelineno-5-27"></a><span class="w">        </span><span class="k">return</span><span class="w"> </span><span class="n">PyErr_Format</span><span class="p">(</span><span class="n">PyExc_RuntimeError</span><span class="p">,</span><span class="w"> </span><span class="s">"read failed: %d"</span><span class="p">,</span><span class="w"> </span><span class="k">static_cast</span><span class="o">&lt;</span><span class="kt">int</span><span class="o">&gt;</span><span class="p">(</span><span class="n">read</span><span class="p">.</span><span class="n">error</span><span class="p">().</span><span class="n">code</span><span class="p">));</span>
 </span><span id="__span-5-28"><a id="__codelineno-5-28" name="__codelineno-5-28" href="#__codelineno-5-28"></a><span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="n">PyLong_FromLongLong</span><span class="p">(</span><span class="n">count</span><span class="p">);</span>
 </span><span id="__span-5-29"><a id="__codelineno-5-29" name="__codelineno-5-29" href="#__codelineno-5-29"></a><span class="p">}</span>
 </span></code></pre></div>
 <p><code>from_capsule</code> checks the segment the handle points to, just as an attach
-does. If the check passes, <code>box</code> takes over the capsule's handle and
+does, including its kind and its layout version. If the check passes, <code>box</code> takes over the capsule's handle and
 releases it when <code>box</code> is destroyed. If it fails, the capsule keeps its
 handle and releases it when the capsule is garbage collected, so nothing
 leaks either way.</p>
