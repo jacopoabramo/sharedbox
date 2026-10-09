@@ -2269,6 +2269,34 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#sharedbox.FieldFuture" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-class"></code>&nbsp;FieldFuture
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="FieldFuture">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#sharedbox.FieldFuture.version" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-attribute"></code>&nbsp;version
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#sharedbox.FieldWatch" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -2276,6 +2304,23 @@
       </span>
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="FieldWatch">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#sharedbox.FieldWatch.future" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;future
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -3067,6 +3112,34 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#sharedbox.FieldFuture" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-class"></code>&nbsp;FieldFuture
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="FieldFuture">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#sharedbox.FieldFuture.version" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-attribute"></code>&nbsp;version
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#sharedbox.FieldWatch" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -3074,6 +3147,23 @@
       </span>
     </span>
   </a>
+  
+    <nav class="md-nav" aria-label="FieldWatch">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#sharedbox.FieldWatch.future" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;future
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
   
 </li>
       
@@ -3221,8 +3311,12 @@
 <td>the psygnal signal group of a <a href="../../../explanation/glossary/#box">box</a>: one <code>(new, old)</code> signal per <a href="../../../explanation/glossary/#field">field</a></td>
 </tr>
 <tr>
+<td><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;FieldFuture&lt;/span&gt;" href="./#sharedbox.FieldFuture"><code>FieldFuture</code></a></td>
+<td>a <code>concurrent.futures.Future</code> of the next write to one field</td>
+</tr>
+<tr>
 <td><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;FieldWatch&lt;/span&gt;" href="./#sharedbox.FieldWatch"><code>FieldWatch</code></a></td>
-<td>new values of one field, for <code>for</code> and <code>async for</code></td>
+<td>new values of one field, for <code>for</code>, <code>async for</code> or <code>future()</code></td>
 </tr>
 </tbody>
 </table>
@@ -3502,6 +3596,86 @@ stops all its forwarding.</p>
 
 
 
+<h2 id="sharedbox.FieldFuture" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-class"></code>            <span class="doc doc-object-name doc-class-name">FieldFuture</span>
+
+
+<a href="#sharedbox.FieldFuture" class="headerlink" title="Permanent link">&para;</a></h2>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">FieldFuture</span><span class="p">(</span><span class="n">watcher</span><span class="p">:</span> <span class="n">Watcher</span><span class="p">,</span> <span class="n">field</span><span class="p">:</span> <span class="n">FieldSpec</span><span class="p">,</span> <span class="n">since</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span>
+</span></code></pre></div>
+
+    <div class="doc doc-contents first">
+            <p class="doc doc-class-bases">
+              Bases: <code><a class="autorefs autorefs-external" title="&lt;code&gt;concurrent.futures.Future&lt;/code&gt;" href="https://docs.python.org/3/library/concurrent.futures.html#concurrent.futures.Future">Future</a>[<span title="sharedbox._events.T">T</span>]</code></p>
+
+
+
+        <p>The next value written to one field of a box.</p>
+<p>A <code>concurrent.futures.Future</code>, so <code>concurrent.futures.wait</code>,
+<code>concurrent.futures.as_completed</code> and <code>asyncio.wrap_future</code> take it, and
+it can be awaited directly in a running event loop. It resolves on the
+first write to the field after the version it was created at. Done
+callbacks run on the box's watcher thread, or on the thread that closes
+the box; closing the box cancels the futures still pending.</p>
+<p><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;future&lt;/span&gt;" href="./#sharedbox.FieldWatch.future"><code>FieldWatch.future</code></a> returns one.</p>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h3 id="sharedbox.FieldFuture.version" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-attribute"></code>            <span class="doc doc-object-name doc-attribute-name">version</span>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#sharedbox.FieldFuture.version" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">version</span><span class="p">:</span> <span class="nb">int</span>
+</span></code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Version of the field when the result was read; before that, the version the future was created at.</p>
+
+    </div>
+
+</div>
+
+
+
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
 <h2 id="sharedbox.FieldWatch" class="doc doc-heading">
 <code class="doc-symbol doc-symbol-heading doc-symbol-class"></code>            <span class="doc doc-object-name doc-class-name">FieldWatch</span>
 
@@ -3516,7 +3690,7 @@ stops all its forwarding.</p>
 
 
 
-        <p>New values of one field, for <code>for</code> and <code>async for</code>.</p>
+        <p>New values of one field, for <code>for</code>, <code>async for</code> or <code>future()</code>.</p>
 <p><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;watch&lt;/span&gt;" href="../box/#sharedbox.SharedBox.watch"><code>SharedBox.watch</code></a> returns it. Only writes
 made after the watch was created count. Iterating with <code>for</code> blocks
 until the field is written and yields the new value; <code>async for</code> waits
@@ -3544,6 +3718,54 @@ Iteration ends when the box is closed.</p>
 
 
 
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="sharedbox.FieldWatch.future" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <span class="doc doc-object-name doc-function-name">future</span>
+
+
+<a href="#sharedbox.FieldWatch.future" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">future</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">FieldFuture</span><span class="p">[</span><span class="n">T</span><span class="p">]</span>
+</span></code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Return a future of the next write to the field after the watch was created.</p>
+<p>A write made between <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;watch&lt;/span&gt;" href="../box/#sharedbox.SharedBox.watch"><code>watch</code></a> and this
+call resolves the future at once. Each call returns a new future
+from the same starting version, so one watch can hand out several.
+The future works with <code>concurrent.futures.wait</code>; see
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;FieldFuture&lt;/span&gt;" href="./#sharedbox.FieldFuture"><code>FieldFuture</code></a>.</p>
+
+
+<p><span class="doc-section-title">Raises:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;BoxClosedError&lt;/span&gt; (&lt;code&gt;sharedbox._native.BoxClosedError&lt;/code&gt;)" href="../errors/#sharedbox.BoxClosedError">BoxClosedError</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If the box is closed.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
 
 
 
