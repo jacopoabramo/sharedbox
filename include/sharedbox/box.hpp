@@ -916,7 +916,8 @@ SHAREDBOX_HOT void handle::unlock(std::uint64_t locked) noexcept {
     // If a force_unlock has released this writer's lock, seq has moved on and may belong to another
     // writer's lock, so the swap fails and changes nothing.
     std::uint64_t expected = locked + 1;
-    detail::atomic(h.seq).compare_exchange_strong(expected, locked + 2, std::memory_order_release,
+    // Sequentially consistent so that wake_waiters, which loads sleepers next, is ordered after it.
+    detail::atomic(h.seq).compare_exchange_strong(expected, locked + 2, std::memory_order_seq_cst,
                                                   std::memory_order_relaxed);
 }
 
@@ -996,15 +997,17 @@ namespace detail {
 
 SHAREDBOX_HOT void wake_waiters(const state &s) noexcept {
     header &h = *s.hdr;
-    // A waiter adds itself to sleepers, then loads wake_word, then checks seq, all seq_cst. If the load
-    // of sleepers below misses that increment, the waiter's load of wake_word comes after this fetch_add
-    // in the single order of seq_cst operations and reads it or a later change, every change to wake_word
-    // being a read-modify-write. That load synchronizes with this fetch_add, so the swap of seq before it
-    // happens before the waiter's check, which sees the new seq. The swap is only release, so the
-    // waiter's load of wake_word is required on both platforms, though on Windows its value is unused.
-    atomic(h.wake_word).fetch_add(1, std::memory_order_seq_cst);
+    // A waiter adds itself to sleepers, then loads wake_word, then checks seq, all seq_cst, and the unlock
+    // swap of seq is seq_cst too. If the load of sleepers below reads 0, it comes before the waiter's
+    // increment in the single order of seq_cst operations, and the swap comes before the load, so the
+    // waiter's check of seq comes after the swap and sees the new generation; wake_word is left alone. If
+    // it reads a nonzero count, wake_word is changed before the wake, so a futex wait whose value was
+    // loaded before the change returns at once, and a waiter whose load comes after it reads this change
+    // or a later one, every change to wake_word being a read-modify-write, and the swap happens before
+    // its check. On Windows the value of wake_word is unused, but the waiter's load stays.
     if (atomic(h.sleepers).load(std::memory_order_seq_cst) == 0)
         return;
+    atomic(h.wake_word).fetch_add(1, std::memory_order_seq_cst);
     wake_all(s.waiters, h.wake_word);
 }
 
