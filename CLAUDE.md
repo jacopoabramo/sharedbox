@@ -95,6 +95,8 @@ sharedbox/
 |-- .github/workflows/codspeed.yml  benchmarks on CodSpeed
 |-- .github/workflows/contention.yaml  benchbox contention on Linux and Windows, for pull requests
 |                              that touch the native code, and by hand
+|-- .github/workflows/ops.yaml  benchbox ops int and record rows, base branch against the pull
+|                              request on Windows cp311, for pull requests that touch the native code
 |-- CMakeLists.txt             sharedbox::headers, sharedbox::c, extension build
 |-- stubtest-allowlist.txt     stubtest exceptions for nanobind types
 |-- .clang-format              clang-format style for the C and C++ sources
@@ -247,10 +249,14 @@ job runs the C++ tests on Linux and Windows, again on Linux with
 AddressSanitizer and UndefinedBehaviorSanitizer, then the C consumer with
 that variable set.
 
-Performance check for changes to the read or write path, on Windows
-cp311: run `uv run benchbox ops --fast --filter "*int*"` three times on
-the branch and three times on `main` in the same session, and compare the
-medians of `read int/SharedBox` and `write int/SharedBox`.
+Performance check for changes to the read or write path: the `Ops`
+workflow (`.github/workflows/ops.yaml`) runs on pull requests that touch
+the native code, and by hand. On Windows cp311 it times the `int` and
+`record` rows of `benchbox ops --fast` three times on the base branch and
+three times on the pull request, alternating, and writes the medians and
+their ratio to the job summary. Read the ratios of `read int/SharedBox`,
+`write int/SharedBox` and `write+read record/SharedBox`; the last decodes
+the record on every read.
 
 Property tests (`tests/test_properties_*.py`) run in the normal suite under
 the Hypothesis profile `ci` (50 examples); `--hypothesis-profile=thorough`
