@@ -76,6 +76,51 @@ TEST_CASE("an interrupt sent before the wait ends it, and a quiet wait times out
     static_cast<void>(sharedbox::unlink(name));
 }
 
+namespace {
+
+// Polls from another thread until the box has one thread inside a wait; false after 5 s.
+bool sleeper_arrives(const handle &h) {
+    const auto limit = std::chrono::steady_clock::now() + 5s;
+    while (h.sleepers() != 1) {
+        if (std::chrono::steady_clock::now() > limit)
+            return false;
+        std::this_thread::sleep_for(1ms);
+    }
+    return true;
+}
+
+} // namespace
+
+TEST_CASE("sleepers counts a thread inside a wait until a write, a timeout or an interrupt ends it") {
+    const std::string name = unique("wait-sleepers");
+    handle h = make(name);
+    const auto slot = h.register_waiter();
+    REQUIRE(slot.has_value());
+    CHECK(h.sleepers() == 0);
+
+    sharedbox::result<wake> out = sharedbox::unexpected(status::ok);
+    std::thread changed([&] { out = h.wait(*slot, h.generation(), 5.0s); });
+    CHECK(sleeper_arrives(h));
+    write_zero(h);
+    changed.join();
+    CHECK((out && *out == wake::changed));
+    CHECK(h.sleepers() == 0);
+
+    const auto quiet = h.wait(*slot, h.generation(), 0.05s);
+    CHECK((!quiet && quiet.error().code == status::timeout));
+    CHECK(h.sleepers() == 0);
+
+    std::thread interrupted([&] { out = h.wait(*slot, h.generation(), 5.0s); });
+    CHECK(sleeper_arrives(h));
+    REQUIRE(h.interrupt(*slot).has_value());
+    interrupted.join();
+    CHECK((out && *out == wake::interrupted));
+    CHECK(h.sleepers() == 0);
+
+    h.release_waiter(*slot);
+    static_cast<void>(sharedbox::unlink(name));
+}
+
 TEST_CASE("wait refuses a slot not held and a timeout out of range") {
     const std::string name = unique("wait-range");
     handle h = make(name);
