@@ -400,6 +400,20 @@ def field_text(spec: FieldSpec) -> str:
     return f"{spec.name}:ref{optional}:{spec.target.__sharedbox_identity__}"
 
 
+def default_shape(cls: type, name: str) -> tuple[int, ...] | None:
+    """Return the shape of the plain default of field `name`, or None if it has none or is not an array."""
+    for base in cls.__mro__:
+        option = base.__dict__.get("__sharedbox_options__", {}).get(name)
+        value = base.__dict__.get(name, MISSING) if option is None else option
+        if value is MISSING:
+            continue
+        shape = getattr(
+            value.default if isinstance(value, Field) else value, "shape", None
+        )
+        return tuple(map(int, shape)) if isinstance(shape, tuple) else None
+    return None
+
+
 def build_layout(cls: type, identity: str | None = None) -> Layout:
     """Lay out the public annotated fields of `cls`, base classes first.
 
@@ -425,7 +439,15 @@ def build_layout(cls: type, identity: str | None = None) -> Layout:
         if isinstance(hint, InitVar):
             continue
         ref = reference(hint)
-        spec = None if ref is not None else parse(hint, f"{cls.__qualname__}.{name}")
+        spec = (
+            None
+            if ref is not None
+            else parse(
+                hint,
+                f"{cls.__qualname__}.{name}",
+                default_shape=default_shape(cls, name),
+            )
+        )
         found.append((name, spec, ref))
     if not found:
         raise TypeError(f"{cls.__qualname__} declares no fields")

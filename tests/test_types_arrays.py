@@ -15,6 +15,7 @@ from sharedbox import (
     SharedBox,
     SharedStream,
     SupportsDLPack,
+    field,
     register_array_type,
 )
 from sharedbox._arrays import CONVERTERS, key
@@ -215,15 +216,15 @@ def test_shapes_outside_the_limits_are_refused(dims: tuple[int, ...]) -> None:
 
 
 def zeros(shape: int | tuple[int, ...], dtype: type) -> Any:
-    """Return zeros typed Any, since numpy types a shape argument as `tuple[int, ...]`."""
+    """Return zeros typed Any, for the cases that mismatch a declared dimension count."""
     return np.zeros(shape, dtype)
 
 
 class Native(SharedBox, identity="native-shape"):
-    image: np.ndarray[tuple[Literal[4], Literal[3]], np.dtype[np.float32]] = zeros(
+    image: np.ndarray[tuple[int, int], np.dtype[np.float32]] = np.zeros(
         (4, 3), np.float32
     )
-    mask: np.ndarray[tuple[Literal[5]], np.dtype[np.bool_]] = zeros(5, bool)
+    mask: np.ndarray[tuple[int], np.dtype[np.bool_]] = np.zeros(5, bool)
 
 
 class Spelled(SharedBox, identity="native-shape"):
@@ -236,13 +237,13 @@ class Spelled(SharedBox, identity="native-shape"):
 @dataclass(frozen=True)
 class Shot:
     index: int
-    pixels: np.ndarray[tuple[Literal[2], Literal[3]], np.dtype[np.uint16]]
+    pixels: Annotated[np.ndarray[tuple[int, int], np.dtype[np.uint16]], Shape(2, 3)]
 
 
-def test_a_shape_and_dtype_in_the_annotation_read_back_in_another_process(
+def test_a_shape_from_the_default_array_reads_back_in_another_process(
     unique_name: str,
 ) -> None:
-    """Check that a field declared only by its annotation reads back equal in a spawned process."""
+    """Check that a field with no Shape, sized by its default array, reads back equal in a spawned process."""
     image = np.arange(12, dtype=np.float32).reshape(4, 3)
     with Native.create(unique_name, image=image) as box:
         seen = snapshot_in_child(box)
@@ -253,7 +254,7 @@ def test_a_shape_and_dtype_in_the_annotation_read_back_in_another_process(
 
 
 def test_both_spellings_describe_the_same_field(unique_name: str) -> None:
-    """Check that the annotation form and the Shape and DType form give one schema hash, so either attaches the other's box."""
+    """Check that the default-array form and the Shape and DType form give one schema hash, so either attaches the other's box."""
     assert Native.__layout__.schema_hash == Spelled.__layout__.schema_hash
     image = np.arange(12, dtype=np.float32).reshape(4, 3)
     with Native.create(unique_name, image=image) as box:
@@ -264,55 +265,84 @@ def test_both_spellings_describe_the_same_field(unique_name: str) -> None:
     Native.unlink(unique_name)
 
 
-def test_a_shape_that_agrees_with_the_annotation_is_accepted() -> None:
-    """Check that a Shape equal to the literals in the annotation builds the same layout."""
-    agreeing = make(
-        Annotated[
-            np.ndarray[tuple[Literal[2], Literal[3]], np.dtype[np.uint8]], Shape(2, 3)
-        ]
+def test_a_shape_with_the_named_dimension_count_is_accepted() -> None:
+    """Check that Shape(4, 6) next to tuple[int, int] builds the same layout as the Shape and DType form."""
+    named = make(
+        Annotated[np.ndarray[tuple[int, int], np.dtype[np.uint8]], Shape(4, 6)]
     )
-    plain = make(
-        np.ndarray[tuple[Literal[2], Literal[3]], np.dtype[np.uint8]],
-    )
-    assert build_layout(agreeing).schema_hash == build_layout(plain).schema_hash
+    plain = make(Annotated[np.ndarray, Shape(4, 6), DType("uint8")])
+    assert build_layout(named).schema_hash == build_layout(plain).schema_hash
+
+
+def test_literal_dimensions_count_like_int() -> None:
+    """Check that a Literal dimension names no size, so the field needs a Shape."""
+    literal = np.ndarray[tuple[Literal[4], Literal[6]], np.dtype[np.uint8]]
+    with pytest.raises(TypeError, match="Shape"):
+        build_layout(make(literal))
+    build_layout(make(Annotated[literal, Shape(4, 6)]))
+    with pytest.raises(TypeError, match="2 dimensions"):
+        build_layout(make(Annotated[literal, Shape(4, 6, 3)]))
+
+
+def test_a_default_with_the_wrong_dimension_count_is_refused() -> None:
+    """Check that a 3-d default under tuple[int, int] raises TypeError naming both counts."""
+    with pytest.raises(TypeError, match="2 dimensions and the default array has 3"):
+
+        class Wrong(SharedBox):
+            x: np.ndarray[tuple[int, int], np.dtype[np.uint8]] = zeros(
+                (2, 3, 4), np.uint8
+            )
+
+
+def test_a_field_with_a_default_through_field_takes_its_shape(
+    unique_name: str,
+) -> None:
+    """Check that field(default=array) sizes the field like a plain default."""
+
+    class Sized(SharedBox):
+        x: np.ndarray[tuple[int], np.dtype[np.uint8]] = field(
+            default=zeros(3, np.uint8)
+        )
+
+    with Sized.create(unique_name) as box:
+        assert box.x.shape == (3,)
+    Sized.unlink(unique_name)
+
+
+def test_a_default_factory_does_not_give_a_shape() -> None:
+    """Check that default_factory without a Shape raises TypeError naming both ways."""
+    with pytest.raises(TypeError, match=r"Shape.*default array"):
+
+        class Factory(SharedBox):
+            x: np.ndarray[tuple[int], np.dtype[np.uint8]] = field(
+                default_factory=lambda: zeros(3, np.uint8)
+            )
 
 
 @pytest.mark.parametrize(
     ("annotation", "message"),
     [
         (
-            Annotated[
-                np.ndarray[tuple[Literal[2], Literal[3]], np.dtype[np.uint8]],
-                Shape(3, 2),
-            ],
-            "disagree",
+            Annotated[np.ndarray[tuple[int, int], np.dtype[np.uint8]], Shape(4, 6, 3)],
+            "2 dimensions and Shape.4, 6, 3. has 3",
         ),
-        (np.ndarray[tuple[int, int], np.dtype[np.uint8]], "Shape"),
+        (np.ndarray[tuple[int, int], np.dtype[np.uint8]], r"Shape.*default array"),
         (np.ndarray[tuple[int, ...], np.dtype[np.uint8]], "Shape"),
-        (np.ndarray[tuple[Literal[2], int], np.dtype[np.uint8]], "Shape"),
-        (np.ndarray[tuple[Literal[1, 2]], np.dtype[np.uint8]], "Shape"),
         (npt.NDArray[np.uint8], "Shape"),
-        (np.ndarray[tuple[Literal[0]], np.dtype[np.uint8]], "Literal.0."),
-        (np.ndarray[tuple[Literal[2], Literal[-3]], np.dtype[np.uint8]], "-3"),
-        (np.ndarray[tuple[Literal[True]], np.dtype[np.uint8]], "True"),
-        (
-            np.ndarray[tuple[Literal["a"]], np.dtype[np.uint8]],  # type: ignore[type-var]
-            "'a'",
-        ),
     ],
 )
 def test_annotation_shapes_that_cannot_be_kept_are_refused(
     annotation: object, message: str
 ) -> None:
-    """Check that a disagreeing Shape, a dimension that names no size and a literal that is not a positive int raise TypeError."""
+    """Check that a Shape of another dimension count and a field with neither Shape nor default array raise TypeError."""
     with pytest.raises(TypeError, match=message):
         build_layout(make(annotation))
 
 
-def test_a_stream_item_with_an_annotated_array_sends_and_receives(
+def test_a_stream_item_with_a_dimension_counted_array_sends_and_receives(
     unique_name: str,
 ) -> None:
-    """Check that an item whose array member names its shape and dtype only in the annotation goes through a stream, receive_into included."""
+    """Check that an item whose array member is annotated tuple[int, int] goes through a stream, receive_into included."""
     with SharedStream.create(Shot, unique_name, capacity=4) as stream:
         reader = stream.reader()
         sender = stream.sender()

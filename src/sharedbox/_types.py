@@ -293,6 +293,7 @@ def parse(
     capacity: int | None = None,
     depth: int = 1,
     path: frozenset[int] = frozenset(),
+    default_shape: tuple[int, ...] | None = None,
 ) -> TypeSpec:
     """Return how a value annotated `hint` is stored.
 
@@ -307,6 +308,9 @@ def parse(
         Nesting level of a described type here, the field's own being 1.
     path
         Type aliases being unwrapped around this one.
+    default_shape
+        Shape of the field's default array, used by an array field that has
+        no `Shape`.
 
     Raises
     ------
@@ -327,7 +331,7 @@ def parse(
             raise TypeError(
                 f"{where}: Capacity does not apply to an array; give its Shape"
             )
-        spec = array_spec(hint, extras, where)
+        spec = array_spec(hint, extras, where, default_shape)
     else:
         spec = dispatch(hint, extras, where, capacity, depth, path)
     if spec.described:
@@ -372,42 +376,36 @@ def annotation_dtype(hint: Any, where: str) -> str | None:
     return name
 
 
-def annotation_shape(hint: Any, where: str) -> tuple[int, ...] | None:
-    """Return the shape a parametrised array annotation names, as in `ndarray[tuple[Literal[2], Literal[3]], ...]`; None if it names none.
-
-    Raises
-    ------
-    TypeError
-        If a dimension is a literal that is not a positive `int`.
-    """
+def annotation_ndim(hint: Any) -> int | None:
+    """Return the number of dimensions a parametrised array annotation names, as in `ndarray[tuple[int, int], ...]`; None if it names none."""
     args = get_args(hint)
     if len(args) != 2 or get_origin(args[0]) is not tuple:
         return None
-    dims: list[int] = []
-    for dim in get_args(args[0]):
-        if get_origin(dim) is not Literal or len(get_args(dim)) != 1:
-            return None
-        (value,) = get_args(dim)
-        if type(value) is not int or value < 1:
-            raise TypeError(
-                f"{where}: the dimension {dim!r} of the annotation's shape is not a positive int"
-            )
-        dims.append(value)
-    return tuple(dims) or None
+    dims = get_args(args[0])
+    return None if Ellipsis in dims or not dims else len(dims)
 
 
-def array_spec(hint: Any, extras: list[Any], where: str) -> TypeSpec:
+def array_spec(
+    hint: Any,
+    extras: list[Any],
+    where: str,
+    default_shape: tuple[int, ...] | None = None,
+) -> TypeSpec:
     shapes = [extra for extra in extras if isinstance(extra, Shape)]
     dtypes = [extra.name for extra in extras if isinstance(extra, DType)]
-    named_dims = annotation_shape(hint, where)
-    if len(shapes) > 1 or (not shapes and named_dims is None):
+    if len(shapes) > 1 or (not shapes and default_shape is None):
         raise TypeError(
-            f"{where}: an array field needs one Shape, as in Annotated[numpy.ndarray, Shape(2, 3), DType('float32')], or a shape in its annotation, as in numpy.ndarray[tuple[Literal[2], Literal[3]], numpy.dtype[numpy.float32]]"
+            f"{where}: an array field needs one Shape, as in Annotated[numpy.ndarray, Shape(2, 3), DType('float32')], or a default array to take its shape from"
         )
-    dims = shapes[0].dims if shapes else Shape(*named_dims or ()).dims
-    if named_dims is not None and named_dims != dims:
+    if shapes:
+        dims, source = shapes[0].dims, f"Shape{shapes[0].dims}"
+    else:
+        assert default_shape is not None
+        dims, source = Shape(*default_shape).dims, "the default array"
+    ndim = annotation_ndim(hint)
+    if ndim is not None and ndim != len(dims):
         raise TypeError(
-            f"{where}: the annotation's shape {named_dims} and Shape{dims} disagree"
+            f"{where}: the annotation names {ndim} dimensions and {source} has {len(dims)}"
         )
     named = annotation_dtype(hint, where)
     if len(dtypes) > 1 or (not dtypes and named is None):
