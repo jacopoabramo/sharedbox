@@ -11,6 +11,14 @@ Dates are marked as `DD-MM-YYYY`
 
 ### Added
 
+- A `numpy.ndarray` annotation that names its shape as a tuple of `Literal`
+  sizes and its dtype needs no `Shape` or `DType`; a `Shape` that disagrees
+  with it raises `TypeError`:
+
+  ```python
+  class Camera(SharedBox):
+      frame: np.ndarray[tuple[Literal[512], Literal[512]], np.dtype[np.uint16]]
+  ```
 - `FieldWatch.future()`, returning a `FieldFuture`, a
   `concurrent.futures.Future` of the next write to the field; `FieldFuture`
   is exported from `sharedbox`.

@@ -52,7 +52,10 @@ class Shape:
     """Dimensions of an array field, fixed when the class is defined.
 
     It goes in the annotation, as in
-    `Annotated[numpy.ndarray, Shape(480, 640), DType("uint8")]`.
+    `Annotated[numpy.ndarray, Shape(480, 640), DType("uint8")]`. A numpy
+    annotation that spells the shape out, as in
+    `numpy.ndarray[tuple[Literal[480], Literal[640]], numpy.dtype[numpy.uint8]]`,
+    needs no `Shape`; one that is given must agree with it.
 
     Raises
     ------
@@ -91,7 +94,9 @@ class DType:
 
     It takes a name as numpy spells it (`"float32"`, `"bfloat16"`,
     `"complex64"`, `"bool"`), a `numpy.dtype` or scalar type, or a
-    `torch.dtype`.
+    `torch.dtype`. A numpy annotation that names its dtype, as in
+    `numpy.ndarray[tuple[Literal[3]], numpy.dtype[numpy.uint8]]`, needs no
+    `DType`.
 
     Raises
     ------
