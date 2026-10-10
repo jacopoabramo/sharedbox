@@ -3739,54 +3739,67 @@ and this project adheres to <a href="https://semver.org/spec/v2.0.0.html">Semant
 <h2 id="unreleased"><a href="https://github.com/jacopoabramo/sharedbox/compare/v0.5.0...HEAD">Unreleased</a><a class="headerlink" href="#unreleased" title="Permanent link">&para;</a></h2>
 <h3 id="added">Added<a class="headerlink" href="#added" title="Permanent link">&para;</a></h3>
 <ul>
-<li><code>FieldWatch.future()</code>, returning a <code>FieldFuture</code>, a
+<li><code>field(shape=...)</code>: the sizes of an array field of a box. A box array field
+  also takes its sizes from a plain default array, so it needs no <code>Shape</code>
+  and, with a dtype in its annotation, no <code>DType</code>:</li>
+</ul>
+<p><div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="k">class</span><span class="w"> </span><span class="nc">Grid</span><span class="p">(</span><span class="n">SharedBox</span><span class="p">):</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="n">cells</span><span class="p">:</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">uint8</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">4</span><span class="p">,</span> <span class="mi">6</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">uint8</span><span class="p">)</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    <span class="n">weights</span><span class="p">:</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="mi">3</span><span class="p">,))</span>
+</span></code></pre></div>
+- <code>FieldWatch.future()</code>, returning a <code>FieldFuture</code>, a
   <code>concurrent.futures.Future</code> of the next write to the field; <code>FieldFuture</code>
-  is exported from <code>sharedbox</code>.</li>
-<li><code>SharedStream</code>, <code>StreamSender</code> and <code>StreamReader</code>: send items of any type a
+  is exported from <code>sharedbox</code>.
+- <code>SharedStream</code>, <code>StreamSender</code> and <code>StreamReader</code>: send items of any type a
   <code>SharedBox</code> field takes from one process to up to <code>max_readers</code> readers,
   each reading <code>lossless</code>, <code>lossy</code> or <code>latest</code>, with blocking, non-blocking
   and asyncio calls, <code>receive_into</code> into the caller's arrays and
-  <code>receive_future</code>, a <code>concurrent.futures.Future</code>.</li>
-<li><code>StreamReader.events</code>, a <code>ReaderEvents</code> psygnal group whose <code>received</code>
-  and <code>ended</code> signals deliver a reader's items to callbacks.</li>
-<li><code>StreamStatistics</code> and <code>ReaderStatistics</code>, returned by
-  <code>SharedStream.statistics()</code>.</li>
-<li><code>WouldBlock</code>, <code>EndOfStream</code>, <code>StreamBusyError</code> and <code>StreamClosedError</code>.</li>
-<li><code>WaiterSlotsFullError</code> is exported from <code>sharedbox</code>; opening a reader
-  raises it when <code>max_readers</code> readers are open.</li>
-<li><code>KindMismatchError</code>, a <code>SchemaMismatchError</code> raised when a name holds a
+  <code>receive_future</code>, a <code>concurrent.futures.Future</code>.
+- <code>StreamReader.events</code>, a <code>ReaderEvents</code> psygnal group whose <code>received</code>
+  and <code>ended</code> signals deliver a reader's items to callbacks.
+- <code>StreamStatistics</code> and <code>ReaderStatistics</code>, returned by
+  <code>SharedStream.statistics()</code>.
+- <code>WouldBlock</code>, <code>EndOfStream</code>, <code>StreamBusyError</code> and <code>StreamClosedError</code>.
+- <code>WaiterSlotsFullError</code> is exported from <code>sharedbox</code>; opening a reader
+  raises it when <code>max_readers</code> readers are open.
+- <code>KindMismatchError</code>, a <code>SchemaMismatchError</code> raised when a name holds a
   segment of another kind; <code>status::kind_mismatch</code> and <code>SBX_E_KIND</code> (-11)
-  in <code>sharedbox.hpp</code> and <code>sharedbox_c.h</code>.</li>
-<li><code>status::foreign</code> and <code>SBX_E_FOREIGN</code> (-12): the segment's magic is not
-  one this version knows. Python raises <code>SchemaMismatchError</code>.</li>
-<li><code>sharedbox::to_expected</code> and <code>sharedbox::from_expected</code>: convert a
-  <code>sharedbox::result</code> to a <code>std::expected</code> and back on C++23.</li>
-<li><code>sharedbox::stream</code>, <code>sharedbox::stream_sender</code> and <code>sharedbox::stream_reader</code>
+  in <code>sharedbox.hpp</code> and <code>sharedbox_c.h</code>.
+- <code>status::foreign</code> and <code>SBX_E_FOREIGN</code> (-12): the segment's magic is not
+  one this version knows. Python raises <code>SchemaMismatchError</code>.
+- <code>sharedbox::to_expected</code> and <code>sharedbox::from_expected</code>: convert a
+  <code>sharedbox::result</code> to a <code>std::expected</code> and back on C++23.
+- <code>sharedbox::stream</code>, <code>sharedbox::stream_sender</code> and <code>sharedbox::stream_reader</code>
   in <code>stream.hpp</code>, included by <code>sharedbox.hpp</code>: a ring in shared memory with
   one sender and up to <code>max_readers</code> readers, each reading
   <code>read_mode::lossless</code>, <code>read_mode::lossy</code> or <code>read_mode::latest</code>, laid out
-  as stream layout 1.0. C++ only.</li>
-<li><code>status::busy</code> (-13), <code>status::ended</code> (-14) and <code>status::interrupted</code>
+  as stream layout 1.0. C++ only.
+- <code>status::busy</code> (-13), <code>status::ended</code> (-14) and <code>status::interrupted</code>
   (-15), with <code>SBX_E_BUSY</code>, <code>SBX_E_ENDED</code> and <code>SBX_E_INTERRUPTED</code> in
-  <code>sharedbox_c.h</code>.</li>
-<li><code>benchbox ops</code>: the row <code>watched write int</code>, a write while another process
-  has a watcher open.</li>
-<li><code>benchbox stream</code>: items per second of <code>SharedStream</code> readers in each mode
+  <code>sharedbox_c.h</code>.
+- <code>benchbox ops</code>: the row <code>watched write int</code>, a write while another process
+  has a watcher open.
+- <code>benchbox stream</code>: items per second of <code>SharedStream</code> readers in each mode
   against <code>mp.Queue</code> and a <code>SharedMemory</code> ring with a lock, and a table of
   <code>send</code> and <code>asend</code> with <code>receive</code>, <code>async for</code> and <code>events.received</code>,
   with the 50<sup>th</sup>, 90<sup>th</sup> and 99<sup>th</sup> percentile latency. <code>--short</code>, <code>--table</code>,
   <code>--json</code> and <code>--markdown</code> are its options; <code>benchbox all</code> runs it and
-  writes <code>stream.json</code>.</li>
-<li><code>benchbox roundtrip</code>: the row <code>SharedStream</code>.</li>
-<li><code>benchmarks/test_bench_stream.py</code>: a CodSpeed benchmark of <code>send</code> plus
-  <code>receive_into</code>.</li>
-<li><code>Streams</code> workflow: <code>benchbox stream</code> on the base branch against the pull
-  request, with <code>scripts/stream_compare.py</code> writing the table.</li>
-<li><code>sharedbox::handle::sleepers()</code>: the number of threads inside a wait on
-  the box, in any process.</li>
-</ul>
+  writes <code>stream.json</code>.
+- <code>benchbox roundtrip</code>: the row <code>SharedStream</code>.
+- <code>benchmarks/test_bench_stream.py</code>: a CodSpeed benchmark of <code>send</code> plus
+  <code>receive_into</code>.
+- <code>Streams</code> workflow: <code>benchbox stream</code> on the base branch against the pull
+  request, with <code>scripts/stream_compare.py</code> writing the table.
+- <code>sharedbox::handle::sleepers()</code>: the number of threads inside a wait on
+  the box, in any process.</p>
 <h3 id="changed">Changed<a class="headerlink" href="#changed" title="Permanent link">&para;</a></h3>
 <ul>
+<li>Array fields: an annotation that names its number of dimensions, as in
+  <code>numpy.ndarray[tuple[int, int], numpy.dtype[numpy.uint8]]</code>, raises
+  <code>TypeError</code> when its <code>Shape</code> has another number, in a box, a record and a
+  stream item.</li>
+<li>Array fields: a default array whose shape differs from the field's <code>Shape</code>
+  raises <code>TypeError</code> instead of <code>ValueError</code> when the class is defined.</li>
 <li><code>SharedBox</code> names: one or more segments of <code>[A-Za-z0-9_-]</code> joined by
   <code>:</code>, up to 240 characters, such as <code>bl01:camera:det1:frames</code>. <code>.</code> is no
   longer allowed. The shared memory is <code>/dev/shm/SBX:&lt;name&gt;</code> on Linux and
@@ -3918,10 +3931,10 @@ and this project adheres to <a href="https://semver.org/spec/v2.0.0.html">Semant
   positions, flag bits and optional presence.</li>
 <li><code>benchbox ops</code>: rows for datetime, record, list and array fields.</li>
 </ul>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="k">class</span><span class="w"> </span><span class="nc">Frame</span><span class="p">(</span><span class="n">SharedBox</span><span class="p">):</span>
-</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>    <span class="n">taken</span><span class="p">:</span> <span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span>
-</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    <span class="n">image</span><span class="p">:</span> <span class="n">Annotated</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">Shape</span><span class="p">(</span><span class="mi">480</span><span class="p">,</span> <span class="mi">640</span><span class="p">),</span> <span class="n">DType</span><span class="p">(</span><span class="s2">"uint8"</span><span class="p">)]</span>
-</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    <span class="n">tags</span><span class="p">:</span> <span class="n">Annotated</span><span class="p">[</span><span class="nb">list</span><span class="p">[</span><span class="n">Annotated</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Capacity</span><span class="p">(</span><span class="mi">16</span><span class="p">)]],</span> <span class="n">Capacity</span><span class="p">(</span><span class="mi">8</span><span class="p">)]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">list</span><span class="p">)</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="k">class</span><span class="w"> </span><span class="nc">Frame</span><span class="p">(</span><span class="n">SharedBox</span><span class="p">):</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>    <span class="n">taken</span><span class="p">:</span> <span class="n">datetime</span><span class="o">.</span><span class="n">datetime</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>    <span class="n">image</span><span class="p">:</span> <span class="n">Annotated</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">Shape</span><span class="p">(</span><span class="mi">480</span><span class="p">,</span> <span class="mi">640</span><span class="p">),</span> <span class="n">DType</span><span class="p">(</span><span class="s2">"uint8"</span><span class="p">)]</span>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>    <span class="n">tags</span><span class="p">:</span> <span class="n">Annotated</span><span class="p">[</span><span class="nb">list</span><span class="p">[</span><span class="n">Annotated</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Capacity</span><span class="p">(</span><span class="mi">16</span><span class="p">)]],</span> <span class="n">Capacity</span><span class="p">(</span><span class="mi">8</span><span class="p">)]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default_factory</span><span class="o">=</span><span class="nb">list</span><span class="p">)</span>
 </span></code></pre></div>
 <h3 id="changed_3">Changed<a class="headerlink" href="#changed_3" title="Permanent link">&para;</a></h3>
 <ul>
@@ -3980,9 +3993,9 @@ and this project adheres to <a href="https://semver.org/spec/v2.0.0.html">Semant
   <code>sbx_schema_hash</code>, <code>sbx_read</code>, <code>sbx_write</code>, <code>sbx_release</code>), built
   through <code>sharedbox::c</code>.</li>
 </ul>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="k">class</span><span class="w"> </span><span class="nc">Frame</span><span class="p">(</span><span class="n">SharedBox</span><span class="p">,</span> <span class="n">identity</span><span class="o">=</span><span class="s2">"camera/frame/1"</span><span class="p">,</span> <span class="n">max_waiters</span><span class="o">=</span><span class="mi">16</span><span class="p">):</span>
-</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>    <span class="n">exposure</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.01</span>
-</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>    <span class="n">count</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="k">class</span><span class="w"> </span><span class="nc">Frame</span><span class="p">(</span><span class="n">SharedBox</span><span class="p">,</span> <span class="n">identity</span><span class="o">=</span><span class="s2">"camera/frame/1"</span><span class="p">,</span> <span class="n">max_waiters</span><span class="o">=</span><span class="mi">16</span><span class="p">):</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>    <span class="n">exposure</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.01</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>    <span class="n">count</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span>
 </span></code></pre></div>
 <ul>
 <li><code>field()</code>: per-field <code>default</code>, <code>default_factory</code>, <code>init</code>, <code>repr</code>,
@@ -4012,17 +4025,17 @@ and this project adheres to <a href="https://semver.org/spec/v2.0.0.html">Semant
 <li><code>sharedbox.hpp</code>: <code>kind_ref</code> and <code>box_ref</code>, the kind code and stored value
   of a reference field.</li>
 </ul>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="k">class</span><span class="w"> </span><span class="nc">Motor</span><span class="p">(</span><span class="n">SharedBox</span><span class="p">):</span>
-</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>    <span class="n">position</span><span class="p">:</span> <span class="nb">int</span>
-</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>    <span class="n">limit</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span> <span class="n">kw_only</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">metadata</span><span class="o">=</span><span class="p">{</span><span class="s2">"unit"</span><span class="p">:</span> <span class="s2">"mm"</span><span class="p">})</span>
-</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>    <span class="n">offset</span><span class="p">:</span> <span class="n">InitVar</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
-</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>
-</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">__post_init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">offset</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>        <span class="bp">self</span><span class="o">.</span><span class="n">position</span> <span class="o">+=</span> <span class="n">offset</span>
-</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>
-</span><span id="__span-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>
-</span><span id="__span-2-10"><a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a><span class="k">class</span><span class="w"> </span><span class="nc">Stage</span><span class="p">(</span><span class="n">SharedBox</span><span class="p">):</span>
-</span><span id="__span-2-11"><a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>    <span class="n">motor</span><span class="p">:</span> <span class="n">Motor</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="k">class</span><span class="w"> </span><span class="nc">Motor</span><span class="p">(</span><span class="n">SharedBox</span><span class="p">):</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>    <span class="n">position</span><span class="p">:</span> <span class="nb">int</span>
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>    <span class="n">limit</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">default</span><span class="o">=</span><span class="mi">100</span><span class="p">,</span> <span class="n">kw_only</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">metadata</span><span class="o">=</span><span class="p">{</span><span class="s2">"unit"</span><span class="p">:</span> <span class="s2">"mm"</span><span class="p">})</span>
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>    <span class="n">offset</span><span class="p">:</span> <span class="n">InitVar</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">=</span> <span class="mi">0</span>
+</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>
+</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a>    <span class="k">def</span><span class="w"> </span><span class="nf">__post_init__</span><span class="p">(</span><span class="bp">self</span><span class="p">,</span> <span class="n">offset</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+</span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>        <span class="bp">self</span><span class="o">.</span><span class="n">position</span> <span class="o">+=</span> <span class="n">offset</span>
+</span><span id="__span-3-8"><a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>
+</span><span id="__span-3-9"><a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>
+</span><span id="__span-3-10"><a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="k">class</span><span class="w"> </span><span class="nc">Stage</span><span class="p">(</span><span class="n">SharedBox</span><span class="p">):</span>
+</span><span id="__span-3-11"><a id="__codelineno-3-11" name="__codelineno-3-11" href="#__codelineno-3-11"></a>    <span class="n">motor</span><span class="p">:</span> <span class="n">Motor</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
 </span></code></pre></div>
 <ul>
 <li><code>BoxEvents</code>: psygnal <code>SignalGroup</code> subclass that <code>SharedBox.events</code>
@@ -4035,10 +4048,10 @@ and this project adheres to <a href="https://semver.org/spec/v2.0.0.html">Semant
 <li><code>BoxEvents.nested</code>: <code>(path, new, old)</code> signal of a class with reference
   fields.</li>
 </ul>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="n">motor_events</span> <span class="o">=</span> <span class="n">stage</span><span class="o">.</span><span class="n">events</span><span class="o">.</span><span class="n">follow</span><span class="p">(</span><span class="s2">"motor"</span><span class="p">)</span>
-</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="n">motor_events</span><span class="o">.</span><span class="n">position</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="k">lambda</span> <span class="n">new</span><span class="p">,</span> <span class="n">old</span><span class="p">:</span> <span class="nb">print</span><span class="p">(</span><span class="n">new</span><span class="p">))</span>
-</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="n">stage</span><span class="o">.</span><span class="n">events</span><span class="o">.</span><span class="n">follow</span><span class="p">()</span>
-</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="n">stage</span><span class="o">.</span><span class="n">events</span><span class="o">.</span><span class="n">nested</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="k">lambda</span> <span class="n">path</span><span class="p">,</span> <span class="n">new</span><span class="p">,</span> <span class="n">old</span><span class="p">:</span> <span class="nb">print</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">new</span><span class="p">))</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">motor_events</span> <span class="o">=</span> <span class="n">stage</span><span class="o">.</span><span class="n">events</span><span class="o">.</span><span class="n">follow</span><span class="p">(</span><span class="s2">"motor"</span><span class="p">)</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="n">motor_events</span><span class="o">.</span><span class="n">position</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="k">lambda</span> <span class="n">new</span><span class="p">,</span> <span class="n">old</span><span class="p">:</span> <span class="nb">print</span><span class="p">(</span><span class="n">new</span><span class="p">))</span>
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="n">stage</span><span class="o">.</span><span class="n">events</span><span class="o">.</span><span class="n">follow</span><span class="p">()</span>
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="n">stage</span><span class="o">.</span><span class="n">events</span><span class="o">.</span><span class="n">nested</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="k">lambda</span> <span class="n">path</span><span class="p">,</span> <span class="n">new</span><span class="p">,</span> <span class="n">old</span><span class="p">:</span> <span class="nb">print</span><span class="p">(</span><span class="n">path</span><span class="p">,</span> <span class="n">new</span><span class="p">))</span>
 </span></code></pre></div>
 <ul>
 <li>Documentation site at <a href="https://jacopoabramo.github.io/sharedbox">https://jacopoabramo.github.io/sharedbox</a>:
