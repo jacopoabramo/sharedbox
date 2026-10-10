@@ -372,12 +372,42 @@ def annotation_dtype(hint: Any, where: str) -> str | None:
     return name
 
 
+def annotation_shape(hint: Any, where: str) -> tuple[int, ...] | None:
+    """Return the shape a parametrised array annotation names, as in `ndarray[tuple[Literal[2], Literal[3]], ...]`; None if it names none.
+
+    Raises
+    ------
+    TypeError
+        If a dimension is a literal that is not a positive `int`.
+    """
+    args = get_args(hint)
+    if len(args) != 2 or get_origin(args[0]) is not tuple:
+        return None
+    dims: list[int] = []
+    for dim in get_args(args[0]):
+        if get_origin(dim) is not Literal or len(get_args(dim)) != 1:
+            return None
+        (value,) = get_args(dim)
+        if type(value) is not int or value < 1:
+            raise TypeError(
+                f"{where}: the dimension {dim!r} of the annotation's shape is not a positive int"
+            )
+        dims.append(value)
+    return tuple(dims) or None
+
+
 def array_spec(hint: Any, extras: list[Any], where: str) -> TypeSpec:
     shapes = [extra for extra in extras if isinstance(extra, Shape)]
     dtypes = [extra.name for extra in extras if isinstance(extra, DType)]
-    if len(shapes) != 1:
+    named_dims = annotation_shape(hint, where)
+    if len(shapes) > 1 or (not shapes and named_dims is None):
         raise TypeError(
-            f"{where}: an array field needs one Shape, as in Annotated[numpy.ndarray, Shape(2, 3), DType('float32')]"
+            f"{where}: an array field needs one Shape, as in Annotated[numpy.ndarray, Shape(2, 3), DType('float32')], or a shape in its annotation, as in numpy.ndarray[tuple[Literal[2], Literal[3]], numpy.dtype[numpy.float32]]"
+        )
+    dims = shapes[0].dims if shapes else Shape(*named_dims or ()).dims
+    if named_dims is not None and named_dims != dims:
+        raise TypeError(
+            f"{where}: the annotation's shape {named_dims} and Shape{dims} disagree"
         )
     named = annotation_dtype(hint, where)
     if len(dtypes) > 1 or (not dtypes and named is None):
@@ -391,7 +421,6 @@ def array_spec(hint: Any, extras: list[Any], where: str) -> TypeSpec:
             f"{where}: the annotation's dtype {named} and DType({name!r}) disagree"
         )
     code, bits = DLPACK[name]
-    dims = shapes[0].dims
     size = math.prod(dims) * bits // 8
     if size >= 1 << 32:
         raise TypeError(
