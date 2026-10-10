@@ -11,13 +11,15 @@ Dates are marked as `DD-MM-YYYY`
 
 ### Added
 
-- A `numpy.ndarray` annotation that names its shape as a tuple of `Literal`
-  sizes and its dtype needs no `Shape` or `DType`; a `Shape` that disagrees
-  with it raises `TypeError`:
+- An array field of a box takes its shape from a plain default array when it
+  has no `Shape`. A numpy annotation of `int` dimensions, as in
+  `tuple[int, int]`, fixes the number of dimensions; a `Shape` or default
+  with another number raises `TypeError`. A numpy annotation that names the
+  dtype needs no `DType`:
 
   ```python
-  class Camera(SharedBox):
-      frame: np.ndarray[tuple[Literal[512], Literal[512]], np.dtype[np.uint16]]
+  class Grid(SharedBox):
+      cells: np.ndarray[tuple[int, int], np.dtype[np.uint8]] = np.zeros((4, 6), np.uint8)
   ```
 - `FieldWatch.future()`, returning a `FieldFuture`, a
   `concurrent.futures.Future` of the next write to the field; `FieldFuture`

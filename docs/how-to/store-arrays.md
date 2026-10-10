@@ -13,31 +13,31 @@ write it, and the two ways to save a copy when the arrays are large.
 
 ## 1. Declare the field with a shape and a dtype
 
-With `numpy`, spell the shape and the dtype out in the annotation. The
-shape is a tuple of `Literal` sizes, and the dtype is the second argument:
+With `numpy`, annotate the field as `numpy.ndarray[tuple[int, int],
+numpy.dtype[numpy.uint8]]`: one `int` for each dimension, then the dtype.
+The sizes come from the array you give as the field's default, or from a
+[`Shape`][sharedbox.Shape] in the annotation:
 
 ```{.python}
 --8<-- "docs/examples/store_arrays.py:declare"
 ```
 
 The `frame` field holds 4 by 6 values of `uint8`, and a read gives back a
-`numpy.ndarray`. A type checker sees the same type, because the annotation
-is the ordinary `numpy` one.
+`numpy.ndarray`. The sizes of the annotation and of the shape must agree in
+number: a `Shape(4, 6, 3)` or a 3-dimensional default under
+`tuple[int, int]` raises a `TypeError` when the class is defined. Only a
+plain default counts (`= array` or `field(default=array)`), not a
+`default_factory`.
 
-Some fields need a [`Shape`][sharedbox.Shape] and a
-[`DType`][sharedbox.DType] in the annotation instead, as `raw` shows:
+Put a `Shape` and a [`DType`][sharedbox.DType] in the annotation instead,
+as `raw` does, when:
 
+- the field has no default array;
 - the array type is not generic, such as `torch.Tensor`, or
   [`SupportsDLPack`][sharedbox.SupportsDLPack], an array object of
   `sharedbox`'s own that any DLPack library can take;
 - the dtype is `bfloat16`;
-- the annotation does not name the shape, as in `numpy.typing.NDArray[np.uint8]`,
-  `tuple[int, ...]` or `tuple[int, int]`.
-
-A `Shape` or `DType` given next to a `numpy` annotation that names the same
-shape or dtype is accepted. One that disagrees raises a `TypeError` when
-the class is defined. A dimension written as a `Literal` has to be a
-positive `int`.
+- the annotation names no dtype, as in `numpy.typing.NDArray`.
 
 ## 2. Write and read an array
 
