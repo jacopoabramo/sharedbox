@@ -5,7 +5,7 @@ import inspect
 import re
 import sys
 import types
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Iterable, Mapping
 from dataclasses import KW_ONLY, MISSING, InitVar, dataclass
 from types import MappingProxyType
 from typing import (
@@ -23,6 +23,7 @@ from typing import (
     get_type_hints,
 )
 
+from ._arrays import Shape
 from ._native import Types
 from ._types import (
     CODES,
@@ -100,6 +101,8 @@ class Field:
     """Read-only; kept in Python, never stored in the segment."""
     doc: str | None
     """Kept in Python, never stored in the segment."""
+    shape: tuple[int, ...] | None = None
+    """The `shape` option given to `field`, or None; a field sized by a `Shape` or a default array has None."""
 
 
 def field(
@@ -111,6 +114,7 @@ def field(
     kw_only: bool | Any = MISSING,
     metadata: Mapping[Any, Any] | None = None,
     doc: str | None = None,
+    shape: Iterable[int] | None = None,
 ) -> Any:
     """Set the options of one field of a `SharedBox` class, as `dataclasses.field` does.
 
@@ -119,7 +123,9 @@ def field(
     same object. A field with neither `default` nor `default_factory` is
     required. A default is checked against the field's type and capacity
     when the class is defined, and a factory's result when a box is
-    created; both raise what assigning the value raises. Values are copied
+    created; both raise what assigning the value raises, except that an array
+    default of another shape than the field's sizes raises `TypeError` when
+    the class is defined. Values are copied
     into the segment, and only the stored types exist: no lists, dicts or
     other objects. [`Capacity`][sharedbox.Capacity] goes in the
     annotation, not here.
@@ -161,13 +167,20 @@ def field(
         segment.
     doc
         Kept in Python, never stored in the segment.
+    shape
+        Sizes of an array field, as `Shape` takes them. It must agree with
+        a `Shape` in the annotation and with the shape of a plain
+        `default` array. A subclass that declares the field again without
+        `field(shape=...)` does not inherit it.
 
     Raises
     ------
     ValueError
-        If both `default` and `default_factory` are given.
+        If both `default` and `default_factory` are given, or `shape` is
+        not 1 to 8 sizes of at least 1.
     TypeError
-        When the class is defined, for `field()` on a name that is not a
+        When the class is defined, for `shape` on a field that is not an
+        array, for `field()` on a name that is not a
         field (a name starting with `_`, a `ClassVar`), `field()` without
         an annotation, `init=False` without a default, or a subclass that
         sets a plain class attribute, without an annotation, on the name
@@ -185,6 +198,7 @@ def field(
         kw_only=kw_only,
         metadata=MappingProxyType(dict(metadata or {})),
         doc=doc,
+        shape=None if shape is None else Shape(*shape).dims,
     )
 
 
@@ -400,6 +414,27 @@ def field_text(spec: FieldSpec) -> str:
     return f"{spec.name}:ref{optional}:{spec.target.__sharedbox_identity__}"
 
 
+def sizing_options(cls: type, name: str) -> tuple[tuple[int, ...] | None, Any]:
+    """Return the `field(shape=...)` and the plain default `cls` gives field `name`, following the rules of inherited options."""
+    own = name in own_annotations(cls)
+    value = cls.__dict__.get(name, MISSING) if own else MISSING
+    if value is MISSING:
+        option = next(
+            (
+                base.__dict__["__sharedbox_options__"][name]
+                for base in cls.__mro__[1:]
+                if name in base.__dict__.get("__sharedbox_options__", {})
+            ),
+            None,
+        )
+        if option is None:
+            return None, MISSING
+        return (None if own else option.shape), option.default
+    if isinstance(value, Field):
+        return value.shape, value.default
+    return None, value
+
+
 def build_layout(cls: type, identity: str | None = None) -> Layout:
     """Lay out the public annotated fields of `cls`, base classes first.
 
@@ -425,7 +460,16 @@ def build_layout(cls: type, identity: str | None = None) -> Layout:
         if isinstance(hint, InitVar):
             continue
         ref = reference(hint)
-        spec = None if ref is not None else parse(hint, f"{cls.__qualname__}.{name}")
+        given = sizing_options(cls, name)
+        if ref is not None and given[0] is not None:
+            raise TypeError(
+                f"{cls.__qualname__}.{name}: field(shape=...) applies only to an array field"
+            )
+        spec = (
+            None
+            if ref is not None
+            else parse(hint, f"{cls.__qualname__}.{name}", sizes=given)
+        )
         found.append((name, spec, ref))
     if not found:
         raise TypeError(f"{cls.__qualname__} declares no fields")

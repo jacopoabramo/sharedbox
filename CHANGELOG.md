@@ -11,6 +11,15 @@ Dates are marked as `DD-MM-YYYY`
 
 ### Added
 
+- `field(shape=...)`: the sizes of an array field of a box. A box array field
+  also takes its sizes from a plain default array, so it needs no `Shape`
+  and, with a dtype in its annotation, no `DType`:
+
+  ```python
+  class Grid(SharedBox):
+      cells: npt.NDArray[np.uint8] = np.zeros((4, 6), np.uint8)
+      weights: npt.NDArray[np.float32] = field(shape=(3,))
+  ```
 - `FieldWatch.future()`, returning a `FieldFuture`, a
   `concurrent.futures.Future` of the next write to the field; `FieldFuture`
   is exported from `sharedbox`.
@@ -59,6 +68,12 @@ Dates are marked as `DD-MM-YYYY`
 
 ### Changed
 
+- Array fields: an annotation that names its number of dimensions, as in
+  `numpy.ndarray[tuple[int, int], numpy.dtype[numpy.uint8]]`, raises
+  `TypeError` when its `Shape` has another number, in a box, a record and a
+  stream item.
+- Array fields: a default array whose shape differs from the field's `Shape`
+  raises `TypeError` instead of `ValueError` when the class is defined.
 - `SharedBox` names: one or more segments of `[A-Za-z0-9_-]` joined by
   `:`, up to 240 characters, such as `bl01:camera:det1:frames`. `.` is no
   longer allowed. The shared memory is `/dev/shm/SBX:<name>` on Linux and

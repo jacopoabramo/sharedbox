@@ -663,6 +663,10 @@ class SharedBox(metaclass=SharedBoxMeta):
                 given, name=attr, type=hint, kw_only=attr_kw_only
             )
             if isinstance(hint, InitVar):
+                if param.shape is not None:
+                    raise TypeError(
+                        f"{cls.__qualname__}.{attr}: field(shape=...) applies only to an array field"
+                    )
                 if param.default_factory is not MISSING or not param.init:
                     raise TypeError(
                         f"{cls.__qualname__}: InitVar {attr!r} takes neither default_factory nor init=False"
