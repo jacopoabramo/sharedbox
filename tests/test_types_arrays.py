@@ -1,7 +1,7 @@
 import array
 import multiprocessing as mp
-from dataclasses import dataclass
-from typing import Annotated, Any, Literal
+from dataclasses import InitVar, dataclass
+from typing import Annotated, Any, Literal, Unpack
 
 import numpy as np
 import numpy.typing as npt
@@ -248,7 +248,7 @@ class Shot:
 
 @dataclass(frozen=True)
 class Labelled:
-    shape: tuple[int, int] = (1, 2)
+    shape: Annotated[tuple[Annotated[str, Capacity(4)], ...], Capacity(2)] = ("a",)
 
 
 class Holder(SharedBox):
@@ -349,7 +349,7 @@ def test_a_field_shape_on_a_field_that_is_not_an_array_is_refused() -> None:
 def test_a_non_array_default_with_a_shape_attribute_is_left_alone(
     unique_name: str,
 ) -> None:
-    """Check that a record with a str-valued shape member is accepted and reads back."""
+    """Check that a record whose shape member holds strings is accepted and reads back."""
     with Holder.create(unique_name) as box:
         assert box.label == Labelled()
     Holder.unlink(unique_name)
@@ -387,6 +387,12 @@ def test_the_dimension_count_of_the_annotation_is_checked() -> None:
                 ]
             )
         )
+
+    for open_ended in (
+        np.ndarray[tuple[int, *tuple[int, ...]], np.dtype[np.uint8]],
+        np.ndarray[tuple[int, Unpack[tuple[int, ...]]], np.dtype[np.uint8]],  # noqa: UP044
+    ):
+        build_layout(make(Annotated[open_ended, Shape(4, 6, 3)]))
 
     with pytest.raises(
         TypeError, match=r"2 dimensions and field\(shape=\(2,\)\) has 1"
@@ -436,8 +442,8 @@ def test_a_field_shape_without_a_default_leaves_the_field_required(
     Needs.unlink(unique_name)
 
 
-def test_a_subclass_default_changes_the_shape_unless_it_is_fixed() -> None:
-    """Check that a new default array changes an inherited field's shape, a bare redeclaration keeps the base's, and field(shape=) or Shape on the base keeps it fixed."""
+def test_a_subclass_default_changes_the_shape_unless_its_sizes_are_repeated() -> None:
+    """Check that a new default array changes an inherited field's shape, a bare redeclaration keeps the base's default, and sizes repeated in the subclass's declaration make a differing default raise."""
 
     class Base(SharedBox):
         x: npt.NDArray[np.uint8] = zeros(3, np.uint8)
@@ -452,21 +458,98 @@ def test_a_subclass_default_changes_the_shape_unless_it_is_fixed() -> None:
     assert Wider.__layout__.by_name["x"].capacity == 5
     assert Bare.__layout__.by_name["x"].capacity == 3
 
-    class Fixed(SharedBox):
-        x: npt.NDArray[np.uint8] = field(shape=(3,), default=zeros(3, np.uint8))
+    class Pinned(SharedBox):
+        x: Annotated[npt.NDArray[np.uint8], Shape(3)] = zeros(3, np.uint8)
 
-    class Inherits(Fixed):
+    class Repinned(Pinned):
+        x: npt.NDArray[np.uint8] = zeros(5, np.uint8)
+
+    assert Repinned.__layout__.by_name["x"].capacity == 5
+    with pytest.raises(TypeError, match="disagree"):
+
+        class ShapeChanged(Pinned):
+            x: Annotated[npt.NDArray[np.uint8], Shape(3)] = zeros(5, np.uint8)
+
+    with pytest.raises(TypeError, match="disagree"):
+
+        class OptionChanged(Pinned):
+            x: npt.NDArray[np.uint8] = field(shape=(3,), default=zeros(5, np.uint8))
+
+
+def test_an_inherited_field_shape_option_is_kept_unless_the_field_is_redeclared() -> (
+    None
+):
+    """Check that a subclass that leaves the field alone keeps field(shape=), and a bare redeclaration loses it and needs sizes."""
+
+    class OptOnly(SharedBox):
+        x: npt.NDArray[np.uint8] = field(shape=(3,))
+
+    class Inherits(OptOnly):
         pass
 
     assert Inherits.__layout__.by_name["x"].capacity == 3
+    with pytest.raises(TypeError, match="its sizes"):
+
+        class Sub(OptOnly):
+            x: npt.NDArray[np.uint8]
+
+
+def test_a_plain_attribute_over_an_inherited_array_field_keeps_the_old_message() -> (
+    None
+):
+    """Check that overriding an inherited array field with an unannotated attribute says so, not that the shapes disagree."""
 
     class Pinned(SharedBox):
         x: Annotated[npt.NDArray[np.uint8], Shape(3)] = zeros(3, np.uint8)
 
-    with pytest.raises(TypeError, match="disagree"):
+    with pytest.raises(TypeError, match="overrides the field inherited from"):
 
-        class Changed(Pinned):
-            x: Annotated[npt.NDArray[np.uint8], Shape(3)] = zeros(5, np.uint8)
+        class Sub(Pinned):
+            x = zeros(5, np.uint8)
+
+
+def test_field_shape_is_refused_on_a_reference_and_an_init_var() -> None:
+    """Check that field(shape=) on a reference field, an optional one and an InitVar raises TypeError."""
+
+    class Target(SharedBox):
+        n: int = 0
+
+    with pytest.raises(TypeError, match=r"Plain.t: field\(shape=\.\.\.\) applies only"):
+
+        class Plain(SharedBox):
+            t: Target = field(shape=(2,))
+
+    with pytest.raises(TypeError, match=r"Maybe.t: field\(shape=\.\.\.\) applies only"):
+
+        class Maybe(SharedBox):
+            t: Target | None = field(shape=(2,), default=None)
+
+    with pytest.raises(TypeError, match=r"Init.k: field\(shape=\.\.\.\) applies only"):
+
+        class Init(SharedBox):
+            k: InitVar[int] = field(shape=(3,))
+            n: int = 0
+
+            def __post_init__(self, k: int) -> None:
+                pass
+
+
+def test_where_sizes_can_come_from_is_named_by_position(unique_name: str) -> None:
+    """Check that a box field names all three ways, and a record member and a stream item name only Shape."""
+    with pytest.raises(TypeError, match=r"field\(shape=.*default array"):
+        build_layout(make(npt.NDArray[np.uint8]))
+
+    @dataclass(frozen=True)
+    class Member:
+        pixels: npt.NDArray[np.uint8]
+
+    with pytest.raises(TypeError) as member:
+        build_layout(make(Member))
+    assert "Shape" in str(member.value) and "field(shape" not in str(member.value)
+
+    with pytest.raises(TypeError) as item:
+        SharedStream.create(Member, unique_name, capacity=2)
+    assert "Shape" in str(item.value) and "field(shape" not in str(item.value)
 
 
 def test_a_stream_item_with_a_shape_in_the_annotation_sends_and_receives(

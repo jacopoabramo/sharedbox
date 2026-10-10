@@ -102,7 +102,7 @@ class Field:
     doc: str | None
     """Kept in Python, never stored in the segment."""
     shape: tuple[int, ...] | None = None
-    """Sizes of an array field, or None."""
+    """The `shape` option given to `field`, or None; a field sized by a `Shape` or a default array has None."""
 
 
 def field(
@@ -123,7 +123,9 @@ def field(
     same object. A field with neither `default` nor `default_factory` is
     required. A default is checked against the field's type and capacity
     when the class is defined, and a factory's result when a box is
-    created; both raise what assigning the value raises. Values are copied
+    created; both raise what assigning the value raises, except that an array
+    default of another shape than the field's sizes raises `TypeError` when
+    the class is defined. Values are copied
     into the segment, and only the stored types exist: no lists, dicts or
     other objects. [`Capacity`][sharedbox.Capacity] goes in the
     annotation, not here.
@@ -414,7 +416,8 @@ def field_text(spec: FieldSpec) -> str:
 
 def sizing_options(cls: type, name: str) -> tuple[tuple[int, ...] | None, Any]:
     """Return the `field(shape=...)` and the plain default `cls` gives field `name`, following the rules of inherited options."""
-    value = cls.__dict__.get(name, MISSING)
+    own = name in own_annotations(cls)
+    value = cls.__dict__.get(name, MISSING) if own else MISSING
     if value is MISSING:
         option = next(
             (
@@ -426,8 +429,7 @@ def sizing_options(cls: type, name: str) -> tuple[tuple[int, ...] | None, Any]:
         )
         if option is None:
             return None, MISSING
-        redeclared = name in own_annotations(cls)
-        return (None if redeclared else option.shape), option.default
+        return (None if own else option.shape), option.default
     if isinstance(value, Field):
         return value.shape, value.default
     return None, value
@@ -458,14 +460,15 @@ def build_layout(cls: type, identity: str | None = None) -> Layout:
         if isinstance(hint, InitVar):
             continue
         ref = reference(hint)
+        given = sizing_options(cls, name)
+        if ref is not None and given[0] is not None:
+            raise TypeError(
+                f"{cls.__qualname__}.{name}: field(shape=...) applies only to an array field"
+            )
         spec = (
             None
             if ref is not None
-            else parse(
-                hint,
-                f"{cls.__qualname__}.{name}",
-                sizes=sizing_options(cls, name),
-            )
+            else parse(hint, f"{cls.__qualname__}.{name}", sizes=given)
         )
         found.append((name, spec, ref))
     if not found:
