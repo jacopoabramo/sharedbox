@@ -39,8 +39,11 @@ Two things can go in the annotation as well, as `raw` shows:
   object of `sharedbox`'s own that any DLPack library can take. `bfloat16`
   also needs a `DType`.
 
-A subclass that gives an inherited array field another default array
-changes the field's shape, unless a `Shape` or `field(shape=...)` fixes it.
+A subclass that declares an inherited array field again states its sizes
+again: nothing but a plain default carries over from the base class, so
+another default array gives the field another shape. Repeat the `Shape` or
+`field(shape=...)` in the new declaration to keep the sizes; a default of
+another shape then raises a `TypeError`.
 
 When the annotation gives the number of dimensions, as in
 `numpy.ndarray[tuple[int, int], numpy.dtype[numpy.uint8]]`, the sizes must
