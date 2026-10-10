@@ -53,8 +53,9 @@ class Shape:
 
     It goes in the annotation, as in
     `Annotated[numpy.ndarray, Shape(480, 640), DType("uint8")]`. A
-    field with a plain default array needs no `Shape`: its shape is the
-    default's. When the annotation names a number of dimensions, as in
+    field of a box with a plain default array needs no `Shape`: its shape
+    is the default's. An array inside a record or a stream item always
+    needs one. When the annotation names a number of dimensions, as in
     `numpy.ndarray[tuple[int, int], numpy.dtype[numpy.uint8]]`, the `Shape`
     or the default must have as many.
 

@@ -13,31 +13,33 @@ write it, and the two ways to save a copy when the arrays are large.
 
 ## 1. Declare the field with a shape and a dtype
 
-With `numpy`, annotate the field as `numpy.ndarray[tuple[int, int],
-numpy.dtype[numpy.uint8]]`: one `int` for each dimension, then the dtype.
-The sizes come from the array you give as the field's default, or from a
-[`Shape`][sharedbox.Shape] in the annotation:
+With `numpy`, annotate the field as
+`numpy.ndarray[tuple[int, int], numpy.dtype[numpy.uint8]]`: one `int` for
+each dimension, then the dtype. The sizes come from the array you give as
+the field's default:
 
 ```{.python}
 --8<-- "docs/examples/store_arrays.py:declare"
 ```
 
 The `frame` field holds 4 by 6 values of `uint8`, and a read gives back a
-`numpy.ndarray`. The sizes of the annotation and of the shape must agree in
-number: a `Shape(4, 6, 3)` or a 3-dimensional default under
-`tuple[int, int]` raises a `TypeError` when the class is defined. Only a
-plain default counts (`= array` or `field(default=array)`), not a
-`default_factory`.
+`numpy.ndarray`. Only a plain default gives the sizes (`= array` or
+`field(default=array)`), not a `default_factory`.
 
-Put a `Shape` and a [`DType`][sharedbox.DType] in the annotation instead,
-as `raw` does, when:
+Two things can go in the annotation as well, as `raw` shows:
 
-- the field has no default array;
-- the array type is not generic, such as `torch.Tensor`, or
-  [`SupportsDLPack`][sharedbox.SupportsDLPack], an array object of
-  `sharedbox`'s own that any DLPack library can take;
-- the dtype is `bfloat16`;
-- the annotation names no dtype, as in `numpy.typing.NDArray`.
+- A [`Shape`][sharedbox.Shape] gives the sizes. A field needs one when it
+  has no default array. An array inside a record or a stream item always
+  needs one, because its sizes are never taken from a default.
+- A [`DType`][sharedbox.DType] gives the element type. A field needs one
+  when its annotation names none: a plain `numpy.ndarray`, a
+  `torch.Tensor`, or [`SupportsDLPack`][sharedbox.SupportsDLPack], an array
+  object of `sharedbox`'s own that any DLPack library can take. `bfloat16`
+  also needs a `DType`.
+
+When the annotation gives the number of dimensions, the `Shape` or the
+default must have as many: a `Shape(4, 6, 3)` or a 3-dimensional default
+under `tuple[int, int]` raises a `TypeError` when the class is defined.
 
 ## 2. Write and read an array
 
