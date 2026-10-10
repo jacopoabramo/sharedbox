@@ -13,7 +13,7 @@ import types
 import typing
 import uuid
 from collections import abc
-from dataclasses import dataclass
+from dataclasses import MISSING, dataclass
 from typing import (
     TYPE_CHECKING,
     Annotated,
@@ -293,7 +293,7 @@ def parse(
     capacity: int | None = None,
     depth: int = 1,
     path: frozenset[int] = frozenset(),
-    default_shape: tuple[int, ...] | None = None,
+    sizes: tuple[tuple[int, ...] | None, Any] = (None, MISSING),
 ) -> TypeSpec:
     """Return how a value annotated `hint` is stored.
 
@@ -308,9 +308,10 @@ def parse(
         Nesting level of a described type here, the field's own being 1.
     path
         Type aliases being unwrapped around this one.
-    default_shape
-        Shape of the field's default array, used by an array field that has
-        no `Shape`.
+    sizes
+        The `field(shape=...)` and the plain default of the field, which an
+        array field takes its sizes from when the annotation has no
+        `Shape`.
 
     Raises
     ------
@@ -331,8 +332,10 @@ def parse(
             raise TypeError(
                 f"{where}: Capacity does not apply to an array; give its Shape"
             )
-        spec = array_spec(hint, extras, where, default_shape)
+        spec = array_spec(hint, extras, where, *sizes)
     else:
+        if sizes[0] is not None:
+            raise TypeError(f"{where}: field(shape=...) applies only to an array field")
         spec = dispatch(hint, extras, where, capacity, depth, path)
     if spec.described:
         deeper(depth, where)
@@ -385,27 +388,54 @@ def annotation_ndim(hint: Any) -> int | None:
     return None if Ellipsis in dims or not dims else len(dims)
 
 
+def given_sizes(
+    extras: list[Any],
+    where: str,
+    option: tuple[int, ...] | None,
+    default: Any,
+) -> list[tuple[str, tuple[int, ...]]]:
+    """Return the sizes an array field is given, each with the name of where it came from."""
+    shapes = [extra for extra in extras if isinstance(extra, Shape)]
+    if len(shapes) > 1:
+        raise TypeError(f"{where}: an array field takes one Shape")
+    given = [(f"Shape{shape.dims}", shape.dims) for shape in shapes]
+    if option is not None:
+        given.append((f"field(shape={option})", option))
+    shape = getattr(default, "shape", None)
+    if (
+        default is not MISSING
+        and isinstance(shape, tuple)
+        and all(type(dim) is int for dim in shape)
+    ):
+        if not 1 <= len(shape) <= 8 or min(shape) < 1:
+            raise TypeError(
+                f"{where}: the default array has shape {shape}; an array field has 1 to 8 dimensions of at least 1"
+            )
+        given.append((f"the default array's shape {shape}", shape))
+    return given
+
+
 def array_spec(
     hint: Any,
     extras: list[Any],
     where: str,
-    default_shape: tuple[int, ...] | None = None,
+    option: tuple[int, ...] | None = None,
+    default: Any = MISSING,
 ) -> TypeSpec:
-    shapes = [extra for extra in extras if isinstance(extra, Shape)]
     dtypes = [extra.name for extra in extras if isinstance(extra, DType)]
-    if len(shapes) > 1 or (not shapes and default_shape is None):
+    given = given_sizes(extras, where, option, default)
+    if not given:
         raise TypeError(
-            f"{where}: an array field needs one Shape, as in Annotated[numpy.ndarray, Shape(2, 3), DType('float32')], or a default array to take its shape from"
+            f"{where}: an array field needs its sizes from a Shape in the annotation, as in Annotated[numpy.ndarray, Shape(2, 3), DType('float32')], from field(shape=(2, 3)), or from the shape of a default array"
         )
-    if shapes:
-        dims, source = shapes[0].dims, f"Shape{shapes[0].dims}"
-    else:
-        assert default_shape is not None
-        dims, source = Shape(*default_shape).dims, "the default array"
+    for label, dims in given[1:]:
+        if dims != given[0][1]:
+            raise TypeError(f"{where}: {given[0][0]} and {label} disagree")
+    label, dims = given[0]
     ndim = annotation_ndim(hint)
     if ndim is not None and ndim != len(dims):
         raise TypeError(
-            f"{where}: the annotation names {ndim} dimensions and {source} has {len(dims)}"
+            f"{where}: the annotation names {ndim} dimensions and {label} has {len(dims)}"
         )
     named = annotation_dtype(hint, where)
     if len(dtypes) > 1 or (not dtypes and named is None):
