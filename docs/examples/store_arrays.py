@@ -4,12 +4,14 @@
 from typing import Annotated
 
 import numpy as np
+import numpy.typing as npt
 
-from sharedbox import DType, Shape, SharedBox, SupportsDLPack
+from sharedbox import DType, Shape, SharedBox, SupportsDLPack, field
 
 
 class Sensor(SharedBox, name="example-sensor"):
-    frame: np.ndarray[tuple[int, int], np.dtype[np.uint8]] = np.zeros((4, 6), np.uint8)
+    frame: npt.NDArray[np.uint8] = np.zeros((4, 6), np.uint8)
+    gain: npt.NDArray[np.float64] = field(shape=(2,), default=np.ones(2))
     raw: Annotated[SupportsDLPack, Shape(3), DType("float32")] = np.zeros(3, np.float32)
 
 

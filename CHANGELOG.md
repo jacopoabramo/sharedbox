@@ -11,15 +11,16 @@ Dates are marked as `DD-MM-YYYY`
 
 ### Added
 
-- An array field of a box takes its shape from a plain default array when it
-  has no `Shape`. A numpy annotation of `int` dimensions, as in
-  `tuple[int, int]`, fixes the number of dimensions; a `Shape` or default
-  with another number raises `TypeError`. A numpy annotation that names the
-  dtype needs no `DType`:
+- `field(shape=...)`: the sizes of an array field of a box. A box array field
+  also takes its sizes from a plain default array, so it needs no `Shape`
+  and, with a dtype in its annotation, no `DType`. A `Shape`, `field(shape=)`
+  and default array that differ raise `TypeError`, as does a number of
+  dimensions that differs from `tuple[int, int]` in the annotation:
 
   ```python
   class Grid(SharedBox):
-      cells: np.ndarray[tuple[int, int], np.dtype[np.uint8]] = np.zeros((4, 6), np.uint8)
+      cells: npt.NDArray[np.uint8] = np.zeros((4, 6), np.uint8)
+      weights: npt.NDArray[np.float32] = field(shape=(3,))
   ```
 - `FieldWatch.future()`, returning a `FieldFuture`, a
   `concurrent.futures.Future` of the next write to the field; `FieldFuture`

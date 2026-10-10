@@ -52,12 +52,13 @@ class Shape:
     """Dimensions of an array field, fixed when the class is defined.
 
     It goes in the annotation, as in
-    `Annotated[numpy.ndarray, Shape(480, 640), DType("uint8")]`. A
-    field of a box with a plain default array needs no `Shape`: its shape
-    is the default's. An array inside a record or a stream item always
-    needs one. When the annotation names a number of dimensions, as in
-    `numpy.ndarray[tuple[int, int], numpy.dtype[numpy.uint8]]`, the `Shape`
-    or the default must have as many.
+    `Annotated[numpy.ndarray, Shape(480, 640), DType("uint8")]`. A field of a
+    box also takes its sizes from `field(shape=...)` or from a plain default
+    array, and they must agree with a `Shape`. An array inside a record or a
+    stream item takes its sizes from a `Shape` only. When the annotation
+    names a number of dimensions, as in
+    `numpy.ndarray[tuple[int, int], numpy.dtype[numpy.uint8]]`, the sizes
+    must have as many.
 
     Raises
     ------

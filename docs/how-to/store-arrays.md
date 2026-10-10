@@ -13,33 +13,40 @@ write it, and the two ways to save a copy when the arrays are large.
 
 ## 1. Declare the field with a shape and a dtype
 
-With `numpy`, annotate the field as
-`numpy.ndarray[tuple[int, int], numpy.dtype[numpy.uint8]]`: one `int` for
-each dimension, then the dtype. The sizes come from the array you give as
-the field's default:
+With `numpy`, annotate the field with `numpy.typing.NDArray` and its dtype.
+The sizes come from the array you give as the field's default, or from
+`field(shape=...)`:
 
 ```{.python}
 --8<-- "docs/examples/store_arrays.py:declare"
 ```
 
-The `frame` field holds 4 by 6 values of `uint8`, and a read gives back a
-`numpy.ndarray`. Only a plain default gives the sizes (`= array` or
-`field(default=array)`), not a `default_factory`.
+The `frame` field holds 4 by 6 values of `uint8`, because that is the shape
+of its default. The `gain` field holds 2 values, because `field(shape=(2,))`
+says so; with no default, `field(shape=...)` leaves the field required. A
+read gives back a `numpy.ndarray`. Only a plain default gives the sizes
+(`= array` or `field(default=array)`), not a `default_factory`. When
+several of them are given they must agree, and a `TypeError` tells you
+which two do not.
 
 Two things can go in the annotation as well, as `raw` shows:
 
-- A [`Shape`][sharedbox.Shape] gives the sizes. A field needs one when it
-  has no default array. An array inside a record or a stream item always
-  needs one, because its sizes are never taken from a default.
+- A [`Shape`][sharedbox.Shape] gives the sizes too, and it is the only way
+  to give them to an array inside a record or a stream item.
 - A [`DType`][sharedbox.DType] gives the element type. A field needs one
   when its annotation names none: a plain `numpy.ndarray`, a
   `torch.Tensor`, or [`SupportsDLPack`][sharedbox.SupportsDLPack], an array
   object of `sharedbox`'s own that any DLPack library can take. `bfloat16`
   also needs a `DType`.
 
-When the annotation gives the number of dimensions, the `Shape` or the
-default must have as many: a `Shape(4, 6, 3)` or a 3-dimensional default
-under `tuple[int, int]` raises a `TypeError` when the class is defined.
+A subclass that gives an inherited array field another default array
+changes the field's shape, unless a `Shape` or `field(shape=...)` fixes it.
+
+When the annotation gives the number of dimensions, as in
+`numpy.ndarray[tuple[int, int], numpy.dtype[numpy.uint8]]`, the sizes must
+have as many, wherever they come from. A `Shape(4, 6, 3)` or a
+3-dimensional default under `tuple[int, int]` raises a `TypeError` when
+the class is defined.
 
 ## 2. Write and read an array
 
