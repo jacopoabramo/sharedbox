@@ -150,7 +150,7 @@ std::shared_ptr<StreamCore> make_core(stream s) {
 /// releases the GIL before it waits for it, since a wait at the gate holds calls without the GIL; so a
 /// wait never holds the GIL and a second thread waits its turn. interrupts guards interrupt against
 /// close, which the header requires never overlap. Lock order: the GIL, then interrupts, never the other
-/// way; calls is only taken with the GIL released.
+/// way; calls is only waited for with the GIL released.
 class End {
 public:
     End(std::shared_ptr<StreamCore> core, nb::handle types)
@@ -368,16 +368,20 @@ public:
         item_ = end.take(template_item);
     }
 
-    nb::object item() const { return item_; }
+    nb::object item() const {
+        check_ready();
+        return item_;
+    }
 
     void send(nb::handle value) {
+        check_ready();
         if (!open_.exchange(false))
             throw std::runtime_error("stream '" + name_ + "': this slot was already sent or given up");
         nb::cast<Sender &>(sender_).commit(value);
     }
 
     void abandon() {
-        if (open_.exchange(false))
+        if (sender_.is_valid() && open_.exchange(false))
             nb::cast<Sender &>(sender_).abandon();
     }
 
@@ -392,6 +396,11 @@ public:
     }
 
 private:
+    /// Raises StreamClosed once the collector cleared the slot.
+    void check_ready() const {
+        if (!sender_.is_valid() || !item_.is_valid())
+            throw StreamClosed("stream '" + name_ + "': this slot is closed");
+    }
     nb::object sender_;
     nb::object item_;
     std::string name_;

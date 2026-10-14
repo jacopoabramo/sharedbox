@@ -457,10 +457,10 @@ class Slot(Generic[_T]):
         Each array the item reaches through records and tuples is a writable
         array of its member's declared type, dtype and shape, which views
         the slot in shared memory and starts with the bytes of an older
-        item. The arrays keep their own mapping, so using them after the
-        block or after the stream is closed cannot crash, but writing to
-        them after [`send`][sharedbox.StreamSlot.send] changes an item
-        readers may have received and tells no one.
+        item. The arrays keep the stream's mapping alive, so using them
+        after the block or after the stream is closed cannot crash, but
+        writing to them after [`send`][sharedbox.StreamSlot.send] changes
+        an item readers may have received and tells no one.
         """
     def send(self, item: _T) -> None:
         """Encode `item` into the slot and publish it.

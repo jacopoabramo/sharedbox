@@ -109,7 +109,7 @@ public:
     /// replaced by a writable array over its place in data, which owner keeps alive. Members that lead to no
     /// array are template_item's own objects, and records are built as decode builds them. A template_item
     /// of None is taken only for an array field. Raises TypeError naming the field for a template_item of
-    /// another type.
+    /// another type, and ValueError for one that leads to no array and holds a value that does not fit.
     nb::object with_arrays(std::uint32_t index, PyObject *template_item, std::byte *data, nb::handle owner) const;
 
     int traverse(visitproc visit, void *arg) const;

@@ -990,8 +990,19 @@ bool Types::holds_array(const detail::type_ref &t) const {
 nb::object Types::with_arrays(std::uint32_t index, PyObject *template_item, std::byte *data,
                               nb::handle owner) const {
     const detail::type_ref &t = field(index);
-    if (t.kind != kind_array && template_item == Py_None)
-        raise(PyExc_TypeError, labels_[index] + " is not an array, so writing needs a template item");
+    if (template_item == Py_None) {
+        if (t.kind != kind_array)
+            raise(PyExc_TypeError, labels_[index] + " is not an array, so writing needs a template item");
+    } else if (t.kind == kind_array) {
+        // The template's array is replaced, never read, so any shape and dtype will do.
+        nb::ndarray<nb::ro> view;
+        if (!nb::try_cast(nb::handle(template_item), view, false) && !numpy_bfloat16(template_item))
+            wrong(labels_[index], "an array with __dlpack__ or the buffer protocol", template_item);
+    } else if (!holds_array(t)) {
+        // A template that leads to no array is the item itself, so it is checked as sending it would be.
+        std::unique_ptr<std::byte[]> scratch(new std::byte[t.size]);
+        encode_into(t, template_item, scratch.get(), {labels_[index]});
+    }
     return rebuild(t, template_item, data, owner, {labels_[index]});
 }
 
