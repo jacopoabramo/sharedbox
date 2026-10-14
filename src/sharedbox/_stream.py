@@ -690,6 +690,9 @@ class StreamSender(End, Generic[T]):
             If `timeout` seconds pass first; the item is not sent.
         StreamClosedError
             If this sender is closed, before or during the wait.
+        RuntimeError
+            If the caller holds this sender's slot from
+            [`writing`][sharedbox.StreamSender.writing].
 
         Notes
         -----
@@ -704,6 +707,13 @@ class StreamSender(End, Generic[T]):
 
         A cancelled `asend` may still have sent its item, if a reader made
         room just as it was cancelled.
+
+        Raises
+        ------
+        StreamClosedError
+            If this sender is closed, before or during the wait.
+        RuntimeError
+            If the caller holds this sender's slot.
         """
         self._refuse_nested()
         await self._yield()
@@ -716,7 +726,13 @@ class StreamSender(End, Generic[T]):
         await self._wait(self._submit(lambda future: self._send(item, None, future)))
 
     def send_nowait(self, item: T) -> None:
-        """Send `item`, or raise [`WouldBlock`][sharedbox.WouldBlock] if a lossless reader is a full ring behind."""
+        """Send `item`, or raise [`WouldBlock`][sharedbox.WouldBlock] if a lossless reader is a full ring behind.
+
+        Raises
+        ------
+        RuntimeError
+            If the caller holds this sender's slot.
+        """
         self._refuse_nested()
         try:
             self._native.send(item, 0.0)
@@ -793,8 +809,9 @@ class StreamSender(End, Generic[T]):
         An item that is an array needs no template. Leaving the block
         without `send`, or by an exception, gives the slot up: nothing is
         published, and the next send takes its position. While the block
-        runs, a send or `writing` on this sender from another thread waits
-        for it to end, and readers see nothing new.
+        runs, a send or `writing` on this sender from another thread or task,
+        including one that `asyncio.wait_for` or `create_task` starts, waits
+        until the slot is sent or the block ends, and readers see nothing new.
 
         Raises
         ------
@@ -821,6 +838,16 @@ class StreamSender(End, Generic[T]):
         """Reserve the next slot, as [`writing`][sharedbox.StreamSender.writing] does, without blocking the event loop.
 
         A cancelled `awriting` reserves nothing.
+
+        Raises
+        ------
+        TypeError
+            If `template` is `None` and the item is not an array, or
+            `template` is not of the item type.
+        StreamClosedError
+            If this sender is closed, before or during the wait.
+        RuntimeError
+            If the caller already holds this sender's slot.
         """
         self._refuse_nested()
         await self._yield()
@@ -856,11 +883,15 @@ class StreamSender(End, Generic[T]):
         except BaseException:
             self._native.abandon()
             raise
-        self._holder = holder()
+        me = holder()
+        with self._lock:
+            self._holder = me
         try:
             yield slot
         finally:
-            self._holder = None
+            with self._lock:
+                if self._holder == me:
+                    self._holder = None
             slot.abandon()
 
     def _after_fork(self) -> None:

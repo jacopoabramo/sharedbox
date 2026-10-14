@@ -470,7 +470,8 @@ def test_an_asend_inside_awriting_raises_runtime_error(unique_name: str) -> None
             sender = stream.sender()
             async with sender.awriting(0) as slot:
                 with pytest.raises(RuntimeError):
-                    await sender.asend(1)
+                    async with asyncio.timeout(5):
+                        await sender.asend(1)
                 slot.send(0)
             return stream.statistics().sent
 
