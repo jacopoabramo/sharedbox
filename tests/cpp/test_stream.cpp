@@ -824,3 +824,142 @@ TEST_CASE("a sender killed before its write_pos store has its last item complete
     }
     static_cast<void>(unlink(name));
 }
+
+TEST_CASE("a slot filled in place reaches readers once published, and an abandoned one never does") {
+    const std::string name = unique("stream-begin");
+    stream st = make(name, 4);
+    auto reader = st.reader(read_mode::lossless, start_at::oldest);
+    auto sender = st.sender();
+    REQUIRE((reader && sender));
+    auto slot = sender->begin(seconds(1.0));
+    REQUIRE(slot);
+    REQUIRE(slot->size() == words * 8);
+    item filled;
+    filled.fill(~std::uint64_t{0});
+    std::memcpy(slot->data(), filled.data(), slot->size());
+    sender->abandon();
+    CHECK(receive(*reader, 0.0).error().code == status::timeout);
+    CHECK(st.write_position() == 0);
+    slot = sender->begin(seconds(1.0));
+    REQUIRE(slot);
+    filled.fill(0);
+    std::memcpy(slot->data(), filled.data(), slot->size());
+    const auto position = sender->publish();
+    REQUIRE(position);
+    CHECK(*position == 0);
+    const auto got = receive(*reader);
+    CHECK((got && got->position == 0));
+    static_cast<void>(unlink(name));
+}
+
+TEST_CASE("a sender holding a reservation refuses another, and publish needs one") {
+    const std::string name = unique("stream-begin-busy");
+    stream st = make(name, 4);
+    auto sender = st.sender();
+    REQUIRE(sender);
+    REQUIRE(sender->begin(seconds(1.0)));
+    CHECK(sender->begin(seconds(0.0)).error().code == status::busy);
+    CHECK(send(*sender, 0).error().code == status::busy);
+    sender->abandon();
+    CHECK(sender->publish().error().code == status::range);
+    CHECK(send(*sender, 0));
+    static_cast<void>(unlink(name));
+}
+
+TEST_CASE("closing a sender that holds a reservation ends the stream after what it published") {
+    const std::string name = unique("stream-close-reserved");
+    stream st = make(name, 4);
+    auto reader = st.reader(read_mode::lossless, start_at::oldest);
+    auto sender = st.sender();
+    REQUIRE((reader && sender));
+    REQUIRE(send(*sender, 0));
+    REQUIRE(sender->begin(seconds(1.0)));
+    sender->close();
+    const auto first = receive(*reader);
+    CHECK((first && first->position == 0));
+    CHECK(receive(*reader, 1.0).error().code == status::ended);
+    static_cast<void>(unlink(name));
+}
+
+TEST_CASE("a sender that died holding a reservation leaves only what it published") {
+    const std::string name = unique("stream-dead-reserved");
+    stream st = make(name, 4);
+    auto reader = st.reader(read_mode::lossless, start_at::oldest);
+    auto sender = st.sender();
+    REQUIRE((reader && sender));
+    REQUIRE(send(*sender, 0));
+    REQUIRE(sender->begin(seconds(1.0)));
+    forge_dead_sender(st);
+    SUBCASE("readers end after the published item") {
+        const auto first = receive(*reader);
+        CHECK((first && first->position == 0));
+        CHECK(receive(*reader, 2.0).error().code == status::ended);
+    }
+    SUBCASE("a replacement writes the reserved position") {
+        auto next = st.sender();
+        REQUIRE(next);
+        const auto position = send(*next, 1);
+        REQUIRE(position);
+        CHECK(*position == 1);
+        for (std::uint64_t expected = 0; expected < 2; ++expected) {
+            const auto got = receive(*reader);
+            CHECK((got && got->position == expected));
+        }
+    }
+    static_cast<void>(unlink(name));
+}
+
+TEST_CASE("readers never receive a slot the sender abandoned") {
+    const std::string name = unique("stream-abandon-race");
+    stream st = make(name, 4);
+    auto lossy = st.reader(read_mode::lossy, start_at::oldest);
+    auto lossless = st.reader(read_mode::lossless, start_at::oldest);
+    auto sender = st.sender();
+    REQUIRE((lossy && lossless && sender));
+    std::uint64_t published = 0;
+    for (std::uint64_t i = 0; i < rounds; ++i)
+        published += i % 3 != 0;
+    std::atomic<bool> done{false};
+    std::uint64_t torn = 0;
+    std::uint64_t wrong = 0;
+    std::thread watcher([&] {
+        while (!done.load()) {
+            const auto got = receive(*lossy, 0.01);
+            if (!got && got.error().code != status::timeout)
+                ++torn;
+        }
+    });
+    std::thread consumer([&] {
+        for (std::uint64_t expected = 0; expected < published; ++expected) {
+            const auto got = receive(*lossless);
+            if (!got || got->position != expected)
+                ++wrong;
+        }
+    });
+    std::uint64_t failed = 0;
+    item filled;
+    for (std::uint64_t i = 0; i < rounds; ++i) {
+        auto slot = sender->begin(seconds(5.0));
+        if (!slot) {
+            ++failed;
+            continue;
+        }
+        filled.fill(~std::uint64_t{0});
+        std::memcpy(slot->data(), filled.data(), slot->size());
+        if (i % 3 == 0) {
+            sender->abandon();
+            continue;
+        }
+        filled.fill(st.write_position());
+        std::memcpy(slot->data(), filled.data(), slot->size());
+        if (!sender->publish())
+            ++failed;
+    }
+    consumer.join();
+    done.store(true);
+    watcher.join();
+    CHECK(failed == 0);
+    CHECK(wrong == 0);
+    CHECK(torn == 0);
+    static_cast<void>(unlink(name));
+}

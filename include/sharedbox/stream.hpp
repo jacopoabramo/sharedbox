@@ -365,13 +365,15 @@ struct reader_info {
 class stream;
 
 // The sender of a stream, in the process that claimed it. Move-only; destroying it closes the stream.
-// Calls on one sender must not overlap, except interrupt, which must not overlap close.
+// Calls on one sender must not overlap, except interrupt, which must not overlap close. A reservation
+// lasts from begin to publish or abandon; send, send_with and begin give status::busy while one is open,
+// and close gives it up.
 class stream_sender {
 public:
     stream_sender() noexcept = default;
     stream_sender(stream_sender &&other) noexcept
         : s_(std::exchange(other.s_, nullptr)), pid_(other.pid_), slot_(other.slot_), epoch_(other.epoch_),
-          min_(other.min_) {}
+          min_(other.min_), reserved_(std::exchange(other.reserved_, nullptr)) {}
     stream_sender &operator=(stream_sender &&other) noexcept {
         if (this != &other) {
             close();
@@ -380,6 +382,7 @@ public:
             slot_ = other.slot_;
             epoch_ = other.epoch_;
             min_ = other.min_;
+            reserved_ = std::exchange(other.reserved_, nullptr);
         }
         return *this;
     }
@@ -394,6 +397,15 @@ public:
     template <class F>
         requires std::is_nothrow_invocable_v<F &, std::span<std::byte>>
     [[nodiscard]] result<std::uint64_t> send_with(F &&fill, seconds timeout);
+    // Reserves the next slot and returns its item_size() bytes, for the caller to fill and then publish or
+    // abandon. Waits at the gate as send does; status::busy while this sender holds a reservation. Readers
+    // skip the slot until it is published.
+    [[nodiscard]] result<std::span<std::byte>> begin(seconds timeout);
+    // Publishes the reserved slot and returns its position; status::range without a reservation.
+    [[nodiscard]] result<std::uint64_t> publish() noexcept;
+    // Gives the reservation up. The slot keeps its odd seq, which readers skip, and the next begin reserves
+    // the same position.
+    void abandon() noexcept;
     // Ends a send waiting in this sender with status::interrupted. Sent while no send waits, it ends the
     // next wait.
     [[nodiscard]] result<void> interrupt();
@@ -410,6 +422,7 @@ private:
     std::uint16_t slot_ = 0;
     std::uint32_t epoch_ = 0;
     std::uint64_t min_ = 0;
+    std::byte *reserved_ = nullptr;
 };
 
 // A reader of a stream, in the process that opened it. Move-only; destroying it closes it. Calls on one
@@ -779,11 +792,11 @@ inline result<void> stream_sender::gate(std::uint64_t p, seconds timeout) {
     }
 }
 
-template <class F>
-    requires std::is_nothrow_invocable_v<F &, std::span<std::byte>>
-result<std::uint64_t> stream_sender::send_with(F &&fill, seconds timeout) {
+inline result<std::span<std::byte>> stream_sender::begin(seconds timeout) {
     if (s_ == nullptr || detail::current_pid() != pid_ || !detail::timeout_ok(timeout, true))
         return unexpected(status::range);
+    if (reserved_ != nullptr)
+        return unexpected(status::busy);
     detail::stream_state &s = *s_;
     stream_header &h = *s.hdr;
     // Only this sender stores write_pos.
@@ -791,12 +804,21 @@ result<std::uint64_t> stream_sender::send_with(F &&fill, seconds timeout) {
     if (const result<void> open = gate(p, timeout); !open)
         return unexpected(open.error());
     std::byte *slot = s.slots + p % s.capacity * s.slot_size;
-    auto seq = detail::atomic(*reinterpret_cast<std::uint64_t *>(slot));
-    seq.store(2 * p + 1, std::memory_order_relaxed);
+    detail::atomic(*reinterpret_cast<std::uint64_t *>(slot)).store(2 * p + 1, std::memory_order_relaxed);
     // Keeps the item stores that follow from moving before the odd seq, as a box write's lock does.
     std::atomic_thread_fence(std::memory_order_release);
-    fill(std::span<std::byte>(slot + s.item_offset, s.item_size));
-    seq.store(2 * p + 2, std::memory_order_release);
+    reserved_ = slot;
+    return std::span<std::byte>(slot + s.item_offset, s.item_size);
+}
+
+inline result<std::uint64_t> stream_sender::publish() noexcept {
+    if (s_ == nullptr || reserved_ == nullptr || detail::current_pid() != pid_)
+        return unexpected(status::range);
+    detail::stream_state &s = *s_;
+    stream_header &h = *s.hdr;
+    const std::uint64_t p = detail::atomic(h.write_pos).load(std::memory_order_relaxed);
+    detail::atomic(*reinterpret_cast<std::uint64_t *>(std::exchange(reserved_, nullptr)))
+        .store(2 * p + 2, std::memory_order_release);
     detail::atomic(h.write_pos).store(p + 1, std::memory_order_release);
     // A waiting reader counts itself in data_waiting before it reads write_pos, so either it sees p + 1
     // or this load sees its count. The same fence orders this send's slot stores before the next gate's
@@ -807,6 +829,18 @@ result<std::uint64_t> stream_sender::send_with(F &&fill, seconds timeout) {
         detail::wake_all(s.waiters, h.data_word);
     }
     return p;
+}
+
+inline void stream_sender::abandon() noexcept { reserved_ = nullptr; }
+
+template <class F>
+    requires std::is_nothrow_invocable_v<F &, std::span<std::byte>>
+result<std::uint64_t> stream_sender::send_with(F &&fill, seconds timeout) {
+    const result<std::span<std::byte>> slot = begin(timeout);
+    if (!slot)
+        return unexpected(slot.error());
+    fill(*slot);
+    return publish();
 }
 
 inline result<std::uint64_t> stream_sender::send(std::span<const std::byte> item, seconds timeout) {
@@ -837,6 +871,7 @@ inline void stream_sender::close() noexcept {
         detail::wake_all(s.waiters, h.data_word);
         detail::release_slot(s.waiters, slot_);
     }
+    reserved_ = nullptr;
     s_ = nullptr;
 }
 
