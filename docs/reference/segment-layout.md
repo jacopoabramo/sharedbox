@@ -810,9 +810,11 @@ Send:
 
 A sender may reserve a slot (step 1 and the odd `seq` of step 2), fill it
 for as long as it needs, and then either publish it (the rest of step 2,
-then step 3) or give it up. A slot given up keeps its odd `seq`, which
-readers skip as they skip a send in progress, and `write_pos` does not
-move, so the next send writes the same position again.
+then step 3) or give it up. The odd `seq` already ends the item
+`p - capacity` that the slot held, so a lossy reader that has not taken it
+misses it however the reservation ends. A slot given up keeps its odd
+`seq`, which readers skip as they skip a send in progress, and `write_pos`
+does not move, so the next send writes the same position again.
 
 Receive, for a reader whose next position is `r`:
 
@@ -1247,12 +1249,14 @@ Stream layout). Every function returning a `result` is `[[nodiscard]]`.
   for a timeout of 0), `status::interrupted` after `interrupt()`, and
   `status::range` for a sender that is closed, used from a child of `fork`
   or given an item of the wrong size.
-- `begin` reserves the next slot as `send` does, with the same status
-  codes, and returns its `item_size()` bytes to fill in place; `publish`
-  publishes it and returns its position, and `abandon` gives it up. While a
-  reservation is open, `begin`, `send` and `send_with` give `status::busy`;
-  `publish` without one gives `status::range`. `close` gives an open
-  reservation up.
+- `begin` reserves the next slot as `send` does and returns its
+  `item_size()` bytes to fill in place, which stay valid until `publish` or
+  `abandon`. It gives the status codes `send` gives, except the one for an
+  item of the wrong size. `publish` publishes the slot and returns its
+  position, and `abandon` gives it up. While a reservation is open, `begin`,
+  `send` and `send_with` give `status::busy`. `publish` gives
+  `status::range` without a reservation, for a closed sender and in a child
+  of `fork`. `close` gives an open reservation up.
 - `receive` copies the next item into `out` and returns its position and the
   number of items this reader skipped since its previous receive (always 0
   for a lossless reader). `receive_with` calls `copy` with the item's bytes

@@ -49,6 +49,37 @@ A call to `sender()` while another live sender exists raises
 [`StreamBusyError`][sharedbox.StreamBusyError]. Once a sender has closed the
 stream, a later `sender()` raises [`EndOfStream`][sharedbox.EndOfStream].
 
+## Fill an item in place
+
+When your code can write an item's arrays itself, such as a device library
+that fills a buffer it is given, it can write them straight into the stream
+and leave `send` no array bytes to copy. Each item lives in a slot of the
+stream's ring. [`writing`][sharedbox.StreamSender.writing] reserves the next
+slot and yields a [`StreamSlot`][sharedbox.StreamSlot], whose
+[`item`][sharedbox.StreamSlot.item] is the template item you pass with each
+of its arrays replaced by an array over the slot. The template's arrays are
+never read, so an empty array will do. Fill the slot's arrays, then send the
+item with [`slot.send`][sharedbox.StreamSlot.send], which finds those arrays
+already in place and does not copy them:
+
+```{.python}
+--8<-- "docs/examples/send_items_through_a_stream.py:writing"
+```
+
+Readers see nothing of the slot until it is sent. Leaving the block without
+`slot.send`, or by an exception, publishes nothing and gives the position to
+the next send, so the block can also drop an item it finds bad. While the
+slot is reserved, a send from another thread or task waits for it. In
+asyncio code, use
+[`awriting`][sharedbox.StreamSender.awriting] with `async with`.
+
+!!! warning "Write the item's arrays only inside the block"
+    The arrays stay usable after the block, but they still view the slot.
+    Writing to them after `slot.send` changes an item readers may already
+    have received, and nothing tells them. A child process started by `fork`
+    inherits the arrays as well, and writing to them there changes the
+    parent's slot.
+
 ## Receive items
 
 A [reader](../explanation/glossary.md#reader) is opened with

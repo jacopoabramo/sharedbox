@@ -30,6 +30,17 @@ Dates are marked as `DD-MM-YYYY`
   `receive_future`, a `concurrent.futures.Future`.
 - `StreamReader.events`, a `ReaderEvents` psygnal group whose `received`
   and `ended` signals deliver a reader's items to callbacks.
+- `StreamSender.writing()` and `StreamSender.awriting()`, which yield a
+  `StreamSlot`: `slot.item` is an item built from a template, with arrays
+  over the next slot to fill in place, and `slot.send(item)` publishes an
+  item without copying the arrays already in the slot.
+
+  ```python
+  blank = Frame(0, np.empty((0, 0), np.uint16))
+  with sender.writing(blank) as slot:
+      slot.item.image.fill(0)
+      slot.send(replace(slot.item, index=1))
+  ```
 - `StreamStatistics` and `ReaderStatistics`, returned by
   `SharedStream.statistics()`.
 - `WouldBlock`, `EndOfStream`, `StreamBusyError` and `StreamClosedError`.
@@ -46,7 +57,8 @@ Dates are marked as `DD-MM-YYYY`
   in `stream.hpp`, included by `sharedbox.hpp`: a ring in shared memory with
   one sender and up to `max_readers` readers, each reading
   `read_mode::lossless`, `read_mode::lossy` or `read_mode::latest`, laid out
-  as stream layout 1.0. C++ only.
+  as stream layout 1.0. C++ only. `stream_sender::begin`, `publish` and
+  `abandon` reserve a slot, fill it in place and publish it or give it up.
 - `status::busy` (-13), `status::ended` (-14) and `status::interrupted`
   (-15), with `SBX_E_BUSY`, `SBX_E_ENDED` and `SBX_E_INTERRUPTED` in
   `sharedbox_c.h`.

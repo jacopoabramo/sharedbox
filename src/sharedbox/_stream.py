@@ -684,6 +684,9 @@ class StreamSender(End, Generic[T]):
     def send(self, item: T, timeout: float | None = None) -> None:
         """Send `item`, waiting while a lossless reader is a full ring behind.
 
+        The item is encoded straight into its slot once the slot is free, so
+        an item that cannot be encoded raises only after that wait.
+
         Raises
         ------
         TimeoutError
@@ -808,16 +811,19 @@ class StreamSender(End, Generic[T]):
 
         An item that is an array needs no template. Leaving the block
         without `send`, or by an exception, gives the slot up: nothing is
-        published, and the next send takes its position. While the block
-        runs, a send or `writing` on this sender from another thread or task,
-        including one that `asyncio.wait_for` or `create_task` starts, waits
-        until the slot is sent or the block ends, and readers see nothing new.
+        published, and the next send takes its position. Until the slot is
+        sent or the block ends, readers see nothing new, and a send or
+        `writing` on this sender from another thread or task waits. That
+        includes a task started inside the block by `asyncio.wait_for` or
+        `create_task`.
 
         Raises
         ------
         TypeError
             If `template` is `None` and the item is not an array, or
             `template` is not of the item type.
+        ValueError
+            If a value of `template` outside its arrays does not fit.
         TimeoutError
             If `timeout` seconds pass while a lossless reader is a full ring
             behind.
