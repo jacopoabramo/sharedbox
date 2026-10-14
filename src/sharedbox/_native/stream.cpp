@@ -9,6 +9,8 @@
 
 #include <algorithm>
 #include <atomic>
+#include <chrono>
+#include <condition_variable>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -144,10 +146,11 @@ std::shared_ptr<StreamCore> make_core(stream s) {
     return core;
 }
 
-/// The calls an end makes are serialised by calls, taken after the GIL is released, so a wait never holds
-/// the GIL and a second thread waits its turn. interrupts guards interrupt against close, which the header
-/// requires never overlap. Lock order: the GIL, then interrupts, never the other way; calls is only taken
-/// with the GIL released.
+/// The calls an end makes are serialised by calls. A thread that holds the GIL only try-locks it and
+/// releases the GIL before it waits for it, since a wait at the gate holds calls without the GIL; so a
+/// wait never holds the GIL and a second thread waits its turn. interrupts guards interrupt against
+/// close, which the header requires never overlap. Lock order: the GIL, then interrupts, never the other
+/// way; calls is only taken with the GIL released.
 class End {
 public:
     End(std::shared_ptr<StreamCore> core, nb::handle types)
@@ -199,6 +202,8 @@ protected:
     }
 };
 
+class Slot;
+
 class Sender : public End {
 public:
     Sender(std::shared_ptr<StreamCore> core, nb::handle types, stream_sender end)
@@ -206,34 +211,75 @@ public:
     ~Sender() { close(); }
 
     std::uint64_t send(nb::handle value, double timeout) {
+        reserve(timeout);
+        return commit(value);
+    }
+
+    void reserve(double timeout) {
         check_open();
         const seconds wait = wait_of(timeout);
-        const Types &types = this->types();
-        EncodeBuffer buffer;
-        const std::span<const std::byte> bytes = types.encode(0, value.ptr(), buffer);
-        const bool prefixed = detail::prefixed(types.field(0).kind);
-        std::optional<result<std::uint64_t>> sent;
+        {
+            // The usual case, no other reservation and room in the ring, takes the slot without giving up the GIL.
+            std::unique_lock lock(*calls_, std::try_to_lock);
+            if (lock && !reserved_ && !closed_.load()) {
+                const result<std::span<std::byte>> got = end_.begin(seconds(0));
+                if (got) {
+                    hold(*got);
+                    return;
+                }
+                if (got.error().code != status::timeout)
+                    fail(got.error());
+            }
+        }
+        std::optional<result<std::span<std::byte>>> got;
         {
             nb::gil_scoped_release unlocked;
-            std::lock_guard lock(*calls_);
-            if (!closed_.load())
-                sent.emplace(end_.send_with(
-                    [&](std::span<std::byte> slot) noexcept {
-                        std::byte *at = slot.data();
-                        if (prefixed) {
-                            const auto length = static_cast<std::uint32_t>(bytes.size());
-                            std::memcpy(at, &length, sizeof length);
-                            at += sizeof length;
-                        }
-                        std::memcpy(at, bytes.data(), bytes.size());
-                    },
-                    wait));
+            const detail::clock::time_point deadline =
+                detail::clock::now() + std::chrono::duration_cast<detail::clock::duration>(wait);
+            std::unique_lock lock(*calls_);
+            free_->wait_until(lock, deadline, [&] { return !reserved_ || closed_.load(); });
+            if (!closed_.load()) {
+                if (reserved_) {
+                    got.emplace(unexpected(status::timeout));
+                } else {
+                    const detail::clock::duration left =
+                        (std::max)(deadline - detail::clock::now(), detail::clock::duration::zero());
+                    got.emplace(end_.begin(std::chrono::duration_cast<seconds>(left)));
+                    if (*got)
+                        hold(**got);
+                }
+            }
         }
-        if (!sent)
+        if (!got)
             check_open();
-        if (!*sent)
-            fail(sent->error());
-        return **sent;
+        if (!*got)
+            fail(got->error());
+    }
+
+    std::uint64_t commit(nb::handle value) {
+        check_open();
+        if (slot_ == nullptr)
+            throw std::runtime_error("stream '" + name_ + "': no slot is reserved");
+        try {
+            types().encode_to(0, value.ptr(), {slot_, core_->s.item_size()});
+        } catch (...) {
+            abandon();
+            throw;
+        }
+        std::unique_lock lock = lock_calls();
+        release_slot();
+        if (closed_.load())
+            throw StreamClosed("stream '" + name_ + "': this end is closed");
+        const result<std::uint64_t> sent = end_.publish();
+        if (!sent)
+            fail(sent.error());
+        return *sent;
+    }
+
+    void abandon() {
+        std::unique_lock lock = lock_calls();
+        end_.abandon();
+        release_slot();
     }
 
     void interrupt() {
@@ -256,13 +302,100 @@ public:
             nb::gil_scoped_release unlocked;
             std::lock_guard lock(*calls_);
             end_.close();
+            free_->notify_all();
         }
     }
 
-    void after_fork() { forget_locks_after_fork(); }
+    void after_fork() {
+        forget_locks_after_fork();
+        // A thread of the parent may have been waiting on it; it is left, never notified.
+        static_cast<void>(free_.release());
+        free_ = std::make_unique<std::condition_variable>();
+        reserved_ = false;
+        slot_ = nullptr;
+    }
 
 private:
+    friend class Slot;
+
+    /// The item over the reserved slot, built from template_item; called by Slot only.
+    nb::object take(nb::handle template_item) {
+        check_open();
+        if (slot_ == nullptr)
+            throw std::runtime_error("stream '" + name_ + "': no slot is reserved");
+        auto keep = std::make_unique<std::shared_ptr<StreamCore>>(core_);
+        nb::capsule owner(keep.get(),
+                          [](void *p) noexcept { delete static_cast<std::shared_ptr<StreamCore> *>(p); });
+        // Released only once the capsule exists, so a failure to make it does not leak the copy.
+        keep.release();
+        return types().with_arrays(0, template_item.ptr(), slot_, owner);
+    }
+    std::unique_lock<std::mutex> lock_calls() {
+        std::unique_lock lock(*calls_, std::try_to_lock);
+        if (!lock) {
+            nb::gil_scoped_release unlocked;
+            lock.lock();
+        }
+        return lock;
+    }
+    /// Called with calls held.
+    void hold(std::span<std::byte> slot) {
+        reserved_ = true;
+        slot_ = slot.data();
+    }
+    /// Called with calls held.
+    void release_slot() {
+        reserved_ = false;
+        slot_ = nullptr;
+        free_->notify_all();
+    }
+
     stream_sender end_;
+    /// Written with calls held; slot_ is read without it by the thread that holds the reservation. free_ is
+    /// notified when a reservation ends and when the sender closes.
+    bool reserved_ = false;
+    std::byte *slot_ = nullptr;
+    std::unique_ptr<std::condition_variable> free_ = std::make_unique<std::condition_variable>();
+};
+
+/// A slot a Sender reserved, from its reservation to its send or abandon: the Sender, and the item built
+/// over the slot.
+class Slot {
+public:
+    Slot(nb::handle sender, nb::handle template_item) : sender_(nb::borrow(sender)) {
+        Sender &end = nb::cast<Sender &>(sender_);
+        name_ = end.name_;
+        item_ = end.take(template_item);
+    }
+
+    nb::object item() const { return item_; }
+
+    void send(nb::handle value) {
+        if (!open_.exchange(false))
+            throw std::runtime_error("stream '" + name_ + "': this slot was already sent or given up");
+        nb::cast<Sender &>(sender_).commit(value);
+    }
+
+    void abandon() {
+        if (open_.exchange(false))
+            nb::cast<Sender &>(sender_).abandon();
+    }
+
+    int traverse(visitproc visit, void *arg) const {
+        Py_VISIT(sender_.ptr());
+        Py_VISIT(item_.ptr());
+        return 0;
+    }
+    void clear() {
+        sender_.release().dec_ref();
+        item_.release().dec_ref();
+    }
+
+private:
+    nb::object sender_;
+    nb::object item_;
+    std::string name_;
+    std::atomic<bool> open_{true};
 };
 
 class Reader : public End {
@@ -486,10 +619,18 @@ void bind_stream(nb::module_ &m) {
 
     nb::class_<Sender>(m, "Sender", nb::type_slots(gc_slots<Sender>))
         .def("send", &Sender::send, "value"_a.none(), "timeout"_a)
+        .def("reserve", &Sender::reserve, "timeout"_a)
+        .def("commit", &Sender::commit, "value"_a.none())
+        .def("abandon", &Sender::abandon)
         .def("interrupt", &Sender::interrupt)
         .def("close", &Sender::close)
         .def("_after_fork", &Sender::after_fork)
         .def_prop_ro("closed", &Sender::closed);
+    nb::class_<Slot>(m, "Slot", nb::is_generic(), nb::type_slots(gc_slots<Slot>))
+        .def(nb::init<nb::handle, nb::handle>(), "sender"_a, "template"_a.none())
+        .def_prop_ro("item", &Slot::item)
+        .def("send", &Slot::send, "item"_a.none())
+        .def("abandon", &Slot::abandon);
     nb::class_<Reader>(m, "Reader", nb::type_slots(gc_slots<Reader>))
         .def("receive", &Reader::receive, "timeout"_a,
              "arrays"_a = std::vector<std::pair<std::vector<std::uint32_t>, nb::object>>{})

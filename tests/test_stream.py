@@ -7,7 +7,7 @@ import threading
 import time
 import weakref
 from dataclasses import dataclass
-from typing import Annotated, Any
+from typing import Annotated, Any, NotRequired, TypedDict
 
 import numpy as np
 import pytest
@@ -36,6 +36,17 @@ class Frame:
 
 def frame(i: int) -> Frame:
     return Frame(i, np.full((4, 4), i, np.uint16))
+
+
+@dataclass(frozen=True)
+class Mixed:
+    note: int | None
+    values: Annotated[list[int], Capacity(4)]
+
+
+class Entry(TypedDict):
+    index: int
+    extra: NotRequired[int]
 
 
 def test_items_go_from_the_sender_to_a_reader(unique_name: str) -> None:
@@ -554,3 +565,38 @@ def test_a_stream_whose_ends_started_threads_is_collected_through_its_item_class
     )
     assert done.returncode == 0, done.stderr
     assert "leaked" not in done.stderr
+
+
+@pytest.mark.parametrize(
+    ("hint", "older", "newer"),
+    [
+        (Mixed, Mixed(5, [1, 2, 3]), Mixed(None, [9])),
+        (Entry, Entry(index=0, extra=1), Entry(index=2)),
+    ],
+    ids=["optional-and-list", "typeddict"],
+)
+def test_an_item_sent_over_an_older_one_keeps_nothing_of_it(
+    unique_name: str, hint: Any, older: Any, newer: Any
+) -> None:
+    """Receive a None, a missing key or a shorter list as sent, though the slot held an item with them present."""
+    with SharedStream.create(hint, unique_name, capacity=2) as stream:
+        reader = stream.reader(start="oldest")
+        sender = stream.sender()
+        sender.send(older)
+        sender.send(older)
+        assert [reader.receive(timeout=5), reader.receive(timeout=5)] == [older, older]
+        sender.send(newer)
+        assert reader.receive(timeout=5) == newer
+
+
+def test_an_item_that_fails_to_encode_is_not_sent(unique_name: str) -> None:
+    """Raise for an item of the wrong shape, send nothing, and give its position to the next item."""
+    with SharedStream.create(Frame, unique_name, capacity=2) as stream:
+        reader = stream.reader()
+        sender = stream.sender()
+        with pytest.raises(ValueError, match="Shape"):
+            sender.send(Frame(0, np.zeros((2, 2), np.uint16)))
+        assert stream.statistics().sent == 0
+        sender.send(frame(1))
+        assert reader.receive(timeout=5).index == 1
+        assert reader.position == 0
