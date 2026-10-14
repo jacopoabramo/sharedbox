@@ -27,7 +27,7 @@ from typing import Annotated, Any, Literal, TypedDict
 
 import numpy as np
 
-from sharedbox import DType, EndOfStream, Shape, SharedStream
+from sharedbox import DType, EndOfStream, Shape, SharedStream, StreamSender
 
 NAMES = count()
 Mode = Literal["lossless", "lossy", "latest"]
@@ -152,10 +152,10 @@ def stream_writer(
         for _ in range(capacity - 1):
             sender.send(SIZES[item](1, data), timeout=None)
         sender.send(SIZES[item](WARM_LAST, data), timeout=None)
-        start.wait()
-        begin = time.perf_counter()
         # The template's array is replaced by the slot's, so the timed sends copy no array bytes.
         template = SIZES[item](0, data)
+        start.wait()
+        begin = time.perf_counter()
         for _ in range(total):
             with sender.writing(template) as slot:
                 slot.send(slot.item)
@@ -787,7 +787,12 @@ def run_matrix(opts: Options) -> list[Matrix]:
 
 CONTENDERS = [
     stream_run("lossless"),
-    stream_run("lossless", writing=True),
+    # The Streams workflow runs this script against the base branch's install, which may lack `writing`.
+    *(
+        [stream_run("lossless", writing=True)]
+        if hasattr(StreamSender, "writing")
+        else []
+    ),
     stream_run("lossy"),
     stream_run("latest"),
     queue_run,
