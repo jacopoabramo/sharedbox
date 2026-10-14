@@ -53,6 +53,7 @@ def test_throughput_reports_every_contender_and_mode() -> None:
     labels = {r["contender"] for r in rows}
     assert labels == {
         "SharedStream lossless",
+        "SharedStream lossless writing",
         "SharedStream lossy",
         "SharedStream latest",
         "mp.Queue",
@@ -66,6 +67,7 @@ def test_throughput_reports_every_contender_and_mode() -> None:
         assert r["received_per_s_min"] <= r["received_per_s"] <= r["received_per_s_max"]
         if r["contender"] in (
             "SharedStream lossless",
+            "SharedStream lossless writing",
             "mp.Queue",
             "SharedMemory ring + Lock",
         ):
