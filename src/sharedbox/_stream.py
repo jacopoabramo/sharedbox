@@ -16,7 +16,14 @@ import sys
 import threading
 import time
 import weakref
-from collections.abc import AsyncIterator, Callable, Iterator, Mapping
+from collections.abc import (
+    AsyncGenerator,
+    AsyncIterator,
+    Callable,
+    Generator,
+    Iterator,
+    Mapping,
+)
 from concurrent.futures import CancelledError, Future
 from dataclasses import dataclass
 from typing import Any, Final, Generic, Literal, TypeVar, cast, overload
@@ -29,6 +36,7 @@ from ._native import (
     Reader,
     Segment,
     Sender,
+    Slot,
     Stream,
     StreamClosedError,
     Types,
@@ -643,6 +651,15 @@ def steps(timeout: float | None) -> Iterator[float]:
         yield min(STEP, left)
 
 
+def holder() -> object:
+    """Return what a slot reserved now belongs to: the running asyncio task, or else the thread."""
+    try:
+        task = asyncio.current_task()
+    except RuntimeError:
+        task = None
+    return threading.get_ident() if task is None else task
+
+
 class StreamSender(End, Generic[T]):
     """The sender of a stream: one per stream, in the process that holds it.
 
@@ -653,8 +670,13 @@ class StreamSender(End, Generic[T]):
     [`EndOfStream`][sharedbox.EndOfStream].
     """
 
-    __slots__ = ()
+    __slots__ = ("_holder",)
     _native: Sender
+    _holder: object
+
+    def __init__(self, stream: SharedStream[Any], native: Sender) -> None:
+        super().__init__(stream, native)
+        self._holder = None
 
     def _thread_role(self) -> str:
         return "sender"
@@ -674,6 +696,7 @@ class StreamSender(End, Generic[T]):
         An interrupt such as Ctrl-C during the call may leave the item sent
         although the call raised.
         """
+        self._refuse_nested()
         self._send(item, timeout)
 
     async def asend(self, item: T) -> None:
@@ -682,6 +705,7 @@ class StreamSender(End, Generic[T]):
         A cancelled `asend` may still have sent its item, if a reader made
         room just as it was cancelled.
         """
+        self._refuse_nested()
         await self._yield()
         if self._fast():
             try:
@@ -693,6 +717,7 @@ class StreamSender(End, Generic[T]):
 
     def send_nowait(self, item: T) -> None:
         """Send `item`, or raise [`WouldBlock`][sharedbox.WouldBlock] if a lossless reader is a full ring behind."""
+        self._refuse_nested()
         try:
             self._native.send(item, 0.0)
         except _Interrupted:
@@ -700,14 +725,29 @@ class StreamSender(End, Generic[T]):
                 f"stream {self._stream.name!r}: a lossless reader is a full ring behind"
             ) from None
 
-    def _send(
-        self, item: T, timeout: float | None, future: CallFuture | None = None
+    def _refuse_nested(self) -> None:
+        """Raise RuntimeError when the caller holds this sender's slot, which a send would wait for."""
+        if self._holder is not None and self._holder == holder():
+            raise RuntimeError(
+                f"stream {self._stream.name!r}: the caller holds this sender's slot; "
+                "send its item with slot.send first"
+            )
+
+    def _retry(
+        self,
+        call: Callable[[float], object],
+        timeout: float | None,
+        future: CallFuture | None,
     ) -> None:
         for step in steps(timeout):
             try:
-                self._native.send(item, step)
+                call(step)
                 return
             except WouldBlock:
+                # A wait for another thread's slot is not interrupted, so a cancel is seen at the end of a step.
+                if future is not None and self._cancelled is future:
+                    self._cancelled = None
+                    raise CancelledError() from None
                 continue
             except _Interrupted:
                 if future is not None and self._cancelled is future:
@@ -721,6 +761,111 @@ class StreamSender(End, Generic[T]):
         raise TimeoutError(
             f"stream {self._stream.name!r}: no lossless reader made room within {timeout} s"
         )
+
+    def _send(
+        self, item: T, timeout: float | None, future: CallFuture | None = None
+    ) -> None:
+        self._retry(lambda step: self._native.send(item, step), timeout, future)
+
+    def _reserve(self, timeout: float | None, future: CallFuture | None = None) -> None:
+        self._retry(self._native.reserve, timeout, future)
+
+    @contextlib.contextmanager
+    def writing(
+        self, template: T | None = None, timeout: float | None = None
+    ) -> Generator[StreamSlot[T], None, None]:
+        """Reserve the next slot and yield it, to fill the item's arrays in place and send it.
+
+        [`slot.item`][sharedbox.StreamSlot.item] is an item built from
+        `template`, with each array it reaches through records and tuples
+        replaced by a writable array over the slot. The template's own
+        arrays are never read, so they may be empty. The block fills the
+        slot's arrays and sends the item with
+        [`slot.send`][sharedbox.StreamSlot.send], which does not copy them:
+
+        ```python
+        blank = Frame(0, np.empty((0, 0), np.uint16))
+        with sender.writing(blank) as slot:
+            device.read_into(slot.item.image)
+            slot.send(replace(slot.item, index=n))
+        ```
+
+        An item that is an array needs no template. Leaving the block
+        without `send`, or by an exception, gives the slot up: nothing is
+        published, and the next send takes its position. While the block
+        runs, a send or `writing` on this sender from another thread waits
+        for it to end, and readers see nothing new.
+
+        Raises
+        ------
+        TypeError
+            If `template` is `None` and the item is not an array, or
+            `template` is not of the item type.
+        TimeoutError
+            If `timeout` seconds pass while a lossless reader is a full ring
+            behind.
+        StreamClosedError
+            If this sender is closed, before or during the wait.
+        RuntimeError
+            If the caller already holds this sender's slot.
+        """
+        self._refuse_nested()
+        self._reserve(timeout)
+        with self._held(template) as slot:
+            yield slot
+
+    @contextlib.asynccontextmanager
+    async def awriting(
+        self, template: T | None = None
+    ) -> AsyncGenerator[StreamSlot[T], None]:
+        """Reserve the next slot, as [`writing`][sharedbox.StreamSender.writing] does, without blocking the event loop.
+
+        A cancelled `awriting` reserves nothing.
+        """
+        self._refuse_nested()
+        await self._yield()
+        if not (self._fast() and self._reserve_nowait()):
+            future = self._submit(lambda future: self._reserve(None, future))
+            try:
+                await asyncio.wrap_future(future)
+            except asyncio.CancelledError:
+                self._cancel(future)
+                future.add_done_callback(self._abandon_reserved)
+                raise
+        with self._held(template) as slot:
+            yield slot
+
+    def _reserve_nowait(self) -> bool:
+        """Reserve the next slot if that needs no wait, and return whether it did."""
+        try:
+            self._native.reserve(0.0)
+        except (WouldBlock, _Interrupted):
+            return False
+        return True
+
+    def _abandon_reserved(self, future: Future[Any]) -> None:
+        """Give up the slot that a cancelled `awriting` reserved after all."""
+        if not future.cancelled() and future.exception() is None:
+            self._native.abandon()
+
+    @contextlib.contextmanager
+    def _held(self, template: T | None) -> Generator[StreamSlot[T], None, None]:
+        """Yield the reserved slot with its item built from `template`, and give it up at the end unless it was sent."""
+        try:
+            slot: StreamSlot[T] = StreamSlot(self._native, template)
+        except BaseException:
+            self._native.abandon()
+            raise
+        self._holder = holder()
+        try:
+            yield slot
+        finally:
+            self._holder = None
+            slot.abandon()
+
+    def _after_fork(self) -> None:
+        super()._after_fork()
+        self._holder = None
 
     def close(self) -> None:
         """Close the sender and end the stream. Calling it again does nothing."""
@@ -742,6 +887,19 @@ class StreamSender(End, Generic[T]):
             "a StreamSender cannot be pickled; send the SharedStream and call sender() "
             "in the other process"
         )
+
+
+class StreamSlot(Slot[T]):
+    """A slot of a stream that [`StreamSender.writing`][sharedbox.StreamSender.writing] reserved for one item.
+
+    [`writing`][sharedbox.StreamSender.writing] and
+    [`awriting`][sharedbox.StreamSender.awriting] make it. Its
+    [`item`][sharedbox.StreamSlot.item] holds arrays over the slot, which
+    the block fills, and [`send`][sharedbox.StreamSlot.send] publishes an
+    item.
+    """
+
+    __slots__ = ()
 
 
 class CountedSignal(SignalInstance):

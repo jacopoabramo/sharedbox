@@ -2,7 +2,7 @@ import asyncio
 import os
 import threading
 import traceback
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from multiprocessing.process import BaseProcess
 from multiprocessing.queues import Queue
 from multiprocessing.synchronize import Barrier, Event
@@ -156,3 +156,24 @@ def read_ints_as(
     except BaseException:
         results.put(traceback.format_exc())
         raise
+
+
+def write_frames(name: str, count: int) -> None:
+    """Fill `count` frames in place in the slots of the stream `name`, then close the sender."""
+    stream = SharedStream.attach(Frame, name)
+    blank = Frame(0, np.empty((0, 0), np.uint16))
+    with stream.sender() as sender:
+        for i in range(count):
+            with sender.writing(blank, timeout=60) as slot:
+                slot.item.image.fill(i % 65536)
+                slot.send(replace(slot.item, index=i))
+
+
+def reserve_then_die(name: str, ready: Event) -> None:
+    """Send one frame, reserve the next slot, and exit inside the block without closing anything."""
+    sender = SharedStream.attach(Frame, name).sender()
+    sender.send(frame(0))
+    with sender.writing(Frame(0, np.empty((0, 0), np.uint16))) as slot:
+        slot.item.image.fill(7)
+        ready.set()
+        os._exit(0)

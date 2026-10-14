@@ -433,3 +433,45 @@ def test_an_inherited_end_is_closed_in_the_child_and_works_in_the_parent(
         assert reader.receive_future().result(timeout=5) == 3
         sender.send(2)
         assert reader.receive_future().result(timeout=5) == 2
+
+
+def test_an_awriting_cancelled_at_the_gate_reserves_nothing(unique_name: str) -> None:
+    """Leave no slot reserved after an awriting cancelled while a lossless reader kept the ring full."""
+
+    async def run() -> list[int]:
+        with SharedStream.create(int, unique_name, capacity=2) as stream:
+            reader = stream.reader(start="oldest")
+            sender = stream.sender()
+            sender.send(0)
+            sender.send(1)
+
+            async def fill() -> None:
+                async with sender.awriting(0) as slot:
+                    slot.send(2)
+
+            task = asyncio.create_task(fill())
+            await worker_started(unique_name)
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+            got = [reader.receive(timeout=5), reader.receive(timeout=5)]
+            sender.send(3, timeout=5)
+            got.append(reader.receive(timeout=5))
+            return got
+
+    assert asyncio.run(run()) == [0, 1, 3]
+
+
+def test_an_asend_inside_awriting_raises_runtime_error(unique_name: str) -> None:
+    """Raise RuntimeError from an asend in the task that holds an awriting slot instead of waiting for itself."""
+
+    async def run() -> int:
+        with SharedStream.create(int, unique_name, capacity=2) as stream:
+            sender = stream.sender()
+            async with sender.awriting(0) as slot:
+                with pytest.raises(RuntimeError):
+                    await sender.asend(1)
+                slot.send(0)
+            return stream.statistics().sent
+
+    assert asyncio.run(run()) == 1

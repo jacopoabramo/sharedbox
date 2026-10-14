@@ -4,7 +4,13 @@ from typing import assert_type
 
 import numpy as np
 
-from sharedbox import ReaderEvents, SharedStream, StreamReader
+from sharedbox import (
+    ReaderEvents,
+    SharedStream,
+    StreamReader,
+    StreamSender,
+    StreamSlot,
+)
 
 
 @dataclass(frozen=True)
@@ -34,3 +40,16 @@ async def check_async(stream: SharedStream[Item]) -> None:
 async def check_iter_into(stream: SharedStream[np.ndarray]) -> None:
     async for frame in stream.reader().iter_into(np.empty(2)):
         assert_type(frame, np.ndarray)
+
+
+@dataclass(frozen=True)
+class Shot:
+    index: int
+    image: np.ndarray
+
+
+def check_writing(sender: StreamSender[Shot]) -> None:
+    with sender.writing(Shot(0, np.empty(0))) as slot:
+        assert_type(slot, StreamSlot[Shot])
+        assert_type(slot.item, Shot)
+        assert_type(slot.item.image, np.ndarray)
