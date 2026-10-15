@@ -19,7 +19,7 @@ jobs:
       # local hooks in prek.toml call `uv run --locked --only-group lint ...`
       - uses: astral-sh/setup-uv@v7
 
-      - uses: j178/prek-action@4e14d07f9231acabce116ccfca13b13dd9755ece # v3.0.0
+      - uses: j178/prek-action@1382ad72dea72f9d53832f2bcb65b3e87a947204 # v3.0.1
         with:
           prek-version: "0.5.3"
 
@@ -114,7 +114,7 @@ jobs:
           ref: ${{ github.event_name == 'release' && github.event.release.tag_name || '' }}
 
       - name: Build wheels
-        uses: pypa/cibuildwheel@v4.2.1
+        uses: pypa/cibuildwheel@v4.3.1
         env:
           CIBW_BUILD: ${{ matrix.python }}-${{ matrix.platform_id }}
           CIBW_CONTAINER_ENGINE: "docker; create_args: --shm-size=1g"
