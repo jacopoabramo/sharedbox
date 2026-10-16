@@ -1,6 +1,6 @@
 import sys
 from collections.abc import Callable, Mapping, Sequence
-from typing import Any, Final, Never, Self, final, overload
+from typing import Any, Final, Generic, Never, Self, TypeVar, final, overload
 
 from typing_extensions import disjoint_base
 
@@ -11,6 +11,8 @@ if sys.version_info >= (3, 13):
     from types import CapsuleType
 else:
     from typing_extensions import CapsuleType
+
+_T = TypeVar("_T")
 
 LAYOUT_VERSION: Final[tuple[int, int]]
 """`(major, minor)` of the segment layout this module reads and writes."""
@@ -436,11 +438,56 @@ class _Interrupted(Exception): ...
 @disjoint_base
 class Sender:
     def send(self, value: object, timeout: float) -> int: ...
+    def reserve(self, timeout: float) -> None: ...
+    def commit(self, value: object) -> int: ...
+    def abandon(self) -> None: ...
     def interrupt(self) -> None: ...
     def close(self) -> None: ...
     def _after_fork(self) -> None: ...
     @property
     def closed(self) -> bool: ...
+
+@disjoint_base
+class Slot(Generic[_T]):
+    def __init__(self, sender: Sender, template: _T | None) -> None: ...
+    @property
+    def item(self) -> _T:
+        """The item to fill: the template's members, with arrays over the slot.
+
+        Each array the item reaches through records and tuples is a writable
+        array of its member's declared type, dtype and shape, which views
+        the slot in shared memory and starts with the bytes of an older
+        item. The arrays keep the stream's mapping alive, so using them
+        after the block or after the stream is closed cannot crash, but
+        writing to them after [`send`][sharedbox.StreamSlot.send] changes
+        an item readers may have received and tells no one.
+        """
+    def send(self, item: _T) -> None:
+        """Encode `item` into the slot and publish it.
+
+        An array of `item` that already is its place in the slot, such as
+        one of [`item`][sharedbox.StreamSlot.item]'s arrays, is not copied;
+        any other array is copied into the slot.
+
+        Raises
+        ------
+        RuntimeError
+            If this slot was sent or given up already.
+        StreamClosedError
+            If the sender was closed after the slot was reserved; nothing is
+            published.
+        TypeError
+            If `item` does not have the stream's item type; the slot is
+            given up.
+        ValueError
+            If a value in `item` does not fit; the slot is given up.
+        """
+    def abandon(self) -> None:
+        """Give the slot up unless it was sent: nothing is published, and the next send takes its position.
+
+        Leaving the block of [`writing`][sharedbox.StreamSender.writing]
+        does this.
+        """
 
 @disjoint_base
 class Reader:

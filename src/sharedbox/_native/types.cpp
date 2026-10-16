@@ -142,6 +142,22 @@ bool contiguous(const nb::ndarray<nb::ro> &view) {
     return true;
 }
 
+// Whether the elements view reads lie in [out, out + size), in any order.
+bool overlaps(const nb::ndarray<nb::ro> &view, const std::byte *out, std::size_t size) {
+    std::int64_t low = 0;
+    std::int64_t high = 0;
+    for (std::size_t i = 0; i < view.ndim(); ++i) {
+        if (view.shape(i) == 0)
+            return false;
+        const std::int64_t reach = (static_cast<std::int64_t>(view.shape(i)) - 1) * view.stride(i);
+        (reach < 0 ? low : high) += reach;
+    }
+    const auto item = static_cast<std::int64_t>(view.itemsize());
+    const auto base = reinterpret_cast<std::intptr_t>(view.data());
+    const auto start = reinterpret_cast<std::intptr_t>(out);
+    return base + low * item < start + static_cast<std::intptr_t>(size) && start < base + (high + 1) * item;
+}
+
 // Raises the TypeError for an out that cannot be filled, naming why: it is not an array, its memory is not
 // the CPU's, it has gaps, or it is read-only.
 [[noreturn]] void refuse_out(const std::string &name, nb::handle out) {
@@ -375,6 +391,48 @@ std::span<const std::byte> Types::encode(std::uint32_t index, PyObject *value, E
     return {out, t.size};
 }
 
+void Types::encode_to(std::uint32_t index, PyObject *value, std::span<std::byte> out) const {
+    const detail::type_ref &t = field(index);
+    if (out.size() != t.size)
+        raise(PyExc_ValueError, labels_[index] + ": the destination has the wrong size");
+    std::vector<PendingArray> pending;
+    encode_into(t, value, out.data(), {labels_[index], nullptr, &pending});
+    // An array's source may lie in out, even at another array's place, so every such source is copied aside
+    // before any array is written. The other bytes are already in out, read before any array was written.
+    std::vector<bool> inside(pending.size());
+    std::size_t total = 0;
+    std::size_t aside = 0;
+    for (std::size_t i = 0; i < pending.size(); ++i) {
+        inside[i] = overlaps(pending[i].view, out.data(), out.size());
+        total += pending[i].view.nbytes();
+        aside += inside[i] ? pending[i].view.nbytes() : 0;
+    }
+    std::unique_ptr<std::byte[]> copies(aside == 0 ? nullptr : new std::byte[aside]);
+    auto write = [&] {
+        std::byte *next = copies.get();
+        for (std::size_t i = 0; i < pending.size(); ++i)
+            if (inside[i]) {
+                gather(pending[i].view, next);
+                next += pending[i].view.nbytes();
+            }
+        next = copies.get();
+        for (std::size_t i = 0; i < pending.size(); ++i) {
+            if (!inside[i]) {
+                gather(pending[i].view, pending[i].out);
+                continue;
+            }
+            std::memcpy(pending[i].out, next, pending[i].view.nbytes());
+            next += pending[i].view.nbytes();
+        }
+    };
+    if (total + aside >= detail::large_copy) {
+        nb::gil_scoped_release unlocked;
+        write();
+    } else {
+        write();
+    }
+}
+
 nb::object Types::decode(std::uint32_t index, std::span<const std::byte> bytes,
                          std::unique_ptr<std::byte[]> *owned) const {
     const detail::type_ref &t = field(index);
@@ -500,8 +558,11 @@ void Types::encode_into(const detail::type_ref &t, PyObject *value, std::byte *o
     }
     case kind_optional: {
         const detail::type_member &inner = tree_.member(tree_.node(t.node).members);
-        if (value == Py_None)
+        // out may hold an older value, as a stream slot does, so absence is written, not assumed.
+        if (value == Py_None) {
+            out[0] = std::byte{0};
             return;
+        }
         out[0] = std::byte{1};
         encode_into(inner.type, value, out + inner.offset, where);
         return;
@@ -529,9 +590,17 @@ void Types::encode_into(const detail::type_ref &t, PyObject *value, std::byte *o
     case kind_dict:
         encode_collection(t, value, out, where);
         return;
-    case kind_array:
-        copy_array(array_view(t, value, where), out);
+    case kind_array: {
+        const nb::ndarray<nb::ro> view = array_view(t, value, where);
+        // The arrays of a reserved stream slot already are their destination.
+        if (static_cast<const std::byte *>(view.data()) == out && contiguous(view))
+            return;
+        if (where.pending != nullptr)
+            where.pending->push_back({view, out});
+        else
+            copy_array(view, out);
         return;
+    }
     case kind_record:
     case kind_tuple: {
         const detail::type_node &node = tree_.node(t.node);
@@ -563,6 +632,7 @@ void Types::encode_into(const detail::type_ref &t, PyObject *value, std::byte *o
                     if (n.required[i])
                         raise(PyExc_TypeError, where.name + " needs key '" +
                                                    std::string(nb::borrow<nb::str>(n.attrs[i]).c_str()) + "'");
+                    out[member(i).offset] = std::byte{0};
                     continue;
                 }
                 const detail::type_member &m = member(i);
@@ -933,6 +1003,102 @@ nb::object Types::array_over(std::uint32_t index, std::byte *data, nb::handle ow
     if (t.kind != kind_array)
         raise(PyExc_TypeError, labels_[index] + " is not an array field");
     return wrap_array(t, data, owner);
+}
+
+bool Types::holds_array(const detail::type_ref &t) const {
+    if (t.kind == kind_array)
+        return true;
+    if (t.kind != kind_record && t.kind != kind_tuple)
+        return false;
+    const detail::type_node &node = tree_.node(t.node);
+    for (std::uint32_t i = 0; i < node.count; ++i)
+        if (holds_array(tree_.member(node.members + i).type))
+            return true;
+    return false;
+}
+
+nb::object Types::with_arrays(std::uint32_t index, PyObject *template_item, std::byte *data,
+                              nb::handle owner) const {
+    const detail::type_ref &t = field(index);
+    if (template_item == Py_None) {
+        if (t.kind != kind_array)
+            raise(PyExc_TypeError, labels_[index] + " is not an array, so writing needs a template item");
+    } else if (t.kind == kind_array) {
+        // The template's array is replaced, never read, so any shape and dtype will do.
+        nb::ndarray<nb::ro> view;
+        if (!nb::try_cast(nb::handle(template_item), view, false) && !numpy_bfloat16(template_item))
+            wrong(labels_[index], "an array with __dlpack__ or the buffer protocol", template_item);
+    } else if (!holds_array(t)) {
+        // A template that leads to no array is the item itself, so it is checked as sending it would be.
+        std::unique_ptr<std::byte[]> scratch(new std::byte[t.size]);
+        encode_into(t, template_item, scratch.get(), {labels_[index]});
+    }
+    return rebuild(t, template_item, data, owner, {labels_[index]});
+}
+
+nb::object Types::rebuild(const detail::type_ref &t, PyObject *value, std::byte *data, nb::handle owner,
+                          const Where &where) const {
+    if (t.kind == kind_array)
+        return wrap_array(t, data, owner);
+    if (!holds_array(t))
+        return nb::borrow(value);
+    const NodeInfo &n = nodes_[t.node];
+    const detail::type_node &node = tree_.node(t.node);
+    auto member = [&](std::uint32_t i) -> const detail::type_member & { return tree_.member(node.members + i); };
+    if (n.form == 3) {
+        if (!instance(value, scalars::mapping()))
+            wrong(where.name, "a mapping with the TypedDict's keys", value);
+        nb::dict out;
+        if (PyDict_Update(out.ptr(), value) != 0)
+            throw nb::python_error();
+        for (std::uint32_t i = 0; i < node.count; ++i) {
+            const detail::type_member &m = member(i);
+            if (!holds_array(m.type))
+                continue;
+            PyObject *v = PyDict_GetItemWithError(out.ptr(), n.attrs[i]);
+            if (v == nullptr && PyErr_Occurred())
+                throw nb::python_error();
+            // An array member's value is replaced, never read, so only a record or tuple member must be there.
+            if (v == nullptr && m.type.kind != kind_array)
+                raise(PyExc_TypeError,
+                      where.name + " needs key '" + std::string(nb::borrow<nb::str>(n.attrs[i]).c_str()) + "'");
+            out[nb::handle(n.attrs[i])] = rebuild(m.type, v, data + m.offset, owner, where);
+        }
+        return out;
+    }
+    if (n.form == 2 ? !PyTuple_Check(value) : !instance(value, n.cls))
+        wrong(where.name, n.form == 2 ? std::string("a tuple") : "a " + type_name(n.cls), value);
+    if (n.form != 0 && PyTuple_Size(value) != node.count)
+        raise(PyExc_ValueError, where.name + " holds a tuple of " + std::to_string(node.count) +
+                                    " items; the value has " + std::to_string(PyTuple_Size(value)));
+    nb::object items = nb::steal(PyTuple_New(node.count));
+    if (!items.is_valid())
+        throw nb::python_error();
+    for (std::uint32_t i = 0; i < node.count; ++i) {
+        nb::object v = n.form == 0 ? nb::steal(PyObject_GetAttr(value, n.attrs[i]))
+                                   : nb::borrow(PyTuple_GetItem(value, static_cast<Py_ssize_t>(i)));
+        if (!v.is_valid())
+            throw nb::python_error();
+        const detail::type_member &m = member(i);
+        if (holds_array(m.type))
+            v = rebuild(m.type, v.ptr(), data + m.offset, owner, where);
+        PyTuple_SetItem(items.ptr(), static_cast<Py_ssize_t>(i), v.release().ptr());
+    }
+    if (n.form == 2)
+        return items;
+    if (n.form == 1) {
+        PyObject *made = PyObject_CallObject(n.cls, items.ptr());
+        if (made == nullptr)
+            throw nb::python_error();
+        return nb::steal(made);
+    }
+    nb::dict kwargs;
+    for (std::uint32_t i = 0; i < node.count; ++i)
+        kwargs[nb::handle(n.keywords[i])] = nb::borrow(PyTuple_GetItem(items.ptr(), static_cast<Py_ssize_t>(i)));
+    PyObject *made = PyObject_Call(n.cls, nb::tuple().ptr(), kwargs.ptr());
+    if (made == nullptr)
+        throw nb::python_error();
+    return nb::steal(made);
 }
 
 bool Types::accepts(const detail::type_ref &t, PyObject *value) const {

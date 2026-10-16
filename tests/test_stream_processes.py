@@ -19,8 +19,10 @@ from streamproc import (
     read_frames,
     read_ints_as,
     read_then_die,
+    reserve_then_die,
     send_frames,
     send_ints_as,
+    write_frames,
 )
 
 from sharedbox import EndOfStream, SharedStream, StreamBusyError
@@ -231,3 +233,36 @@ def test_two_event_loops_in_two_threads_each_receive_everything(
             thread.join(60)
         assert not any(thread.is_alive() for thread in threads)
     assert got == {0: list(range(count)), 1: list(range(count))}
+
+
+def test_frames_filled_in_place_reach_a_reader_in_another_process(
+    unique_name: str,
+) -> None:
+    """Receive every frame another process filled in its slots, whole and in order."""
+    with SharedStream.create(Frame, unique_name, capacity=4) as stream:
+        reader = stream.reader(start="oldest")
+        child = CONTEXT.Process(target=write_frames, args=(unique_name, 50))
+        child.start()
+        image = np.empty((64, 64), np.uint16)
+        seen = []
+        for item in reader.iter_into({"image": image}):
+            assert (image == item.index).all()
+            seen.append(item.index)
+        finish(child)
+    assert seen == list(range(50))
+
+
+def test_readers_end_after_a_sender_died_inside_its_block(unique_name: str) -> None:
+    """Receive what a sender killed inside writing published, then EndOfStream within a few seconds."""
+    with SharedStream.create(Frame, unique_name, capacity=4) as stream:
+        reader = stream.reader()
+        ready = CONTEXT.Event()
+        child = CONTEXT.Process(target=reserve_then_die, args=(unique_name, ready))
+        child.start()
+        assert ready.wait(60)
+        finish(child)
+        assert reader.receive(timeout=10).index == 0
+        start = time.monotonic()
+        with pytest.raises(EndOfStream):
+            reader.receive(timeout=10)
+        assert time.monotonic() - start < 5

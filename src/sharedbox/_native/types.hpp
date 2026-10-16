@@ -67,6 +67,11 @@ public:
     /// The bytes to store for value in field index, held in buffer or in value; for a list, set or dict
     /// its length and the slots it uses. Raises a Python exception naming the field.
     std::span<const std::byte> encode(std::uint32_t index, PyObject *value, EncodeBuffer &buffer) const;
+    /// Writes value into out, the size of field index, which may still hold an older value. An array already
+    /// at its place in out is left as it is, and an array that views out elsewhere is stored with the values
+    /// it held when the call began. Raises a Python exception naming the field, possibly after writing part of
+    /// out.
+    void encode_to(std::uint32_t index, PyObject *value, std::span<std::byte> out) const;
     /// The value stored in bytes. owned, when given, holds those bytes on the heap, and an array takes it
     /// instead of copying.
     nb::object decode(std::uint32_t index, std::span<const std::byte> bytes,
@@ -101,18 +106,35 @@ public:
     /// A writable array over data, the bytes of array field index, which owner keeps alive, passed through the
     /// field's converter as a read is. Raises TypeError unless the field is an array.
     nb::object array_over(std::uint32_t index, std::byte *data, nb::handle owner) const;
+    /// The value of field index built from template_item, with each array that records and tuples lead to
+    /// replaced by a writable array over its place in data, which owner keeps alive. Members that lead to no
+    /// array are template_item's own objects, and records are built as decode builds them. A template_item
+    /// of None is taken only for an array field. Raises TypeError naming the field for a template_item of
+    /// another type, and ValueError for one that leads to no array and holds a value that does not fit.
+    nb::object with_arrays(std::uint32_t index, PyObject *template_item, std::byte *data, nb::handle owner) const;
 
     int traverse(visitproc visit, void *arg) const;
     void clear();
 
 private:
+    /// An array encode_to copies to out once every other byte of the value is written.
+    struct PendingArray {
+        nb::ndarray<nb::ro> view;
+        std::byte *out = nullptr;
+    };
     struct Where {
         const std::string &name;
         const std::unordered_map<std::uint64_t, PyObject *> *given = nullptr;
+        /// When set, an array is added here instead of copied at once.
+        std::vector<PendingArray> *pending = nullptr;
     };
     nb::ndarray<nb::c_contig, nb::device::cpu> array_out_of(const detail::type_ref &t, const std::string &name,
                                                             PyObject *out) const;
     void encode_into(const detail::type_ref &t, PyObject *value, std::byte *out, const Where &where) const;
+    /// Whether an array can be reached from t through records and tuples.
+    bool holds_array(const detail::type_ref &t) const;
+    nb::object rebuild(const detail::type_ref &t, PyObject *value, std::byte *data, nb::handle owner,
+                       const Where &where) const;
     nb::object decode_from(const detail::type_ref &t, const std::byte *data, std::uint32_t container,
                            std::uint32_t member, const Where &where) const;
     /// Writes a list, set or dict value at out: its length, then its slots; returns the bytes used.

@@ -24,6 +24,7 @@ from ._stream import (
     SharedStream,
     StreamReader,
     StreamSender,
+    StreamSlot,
     StreamStatistics,
 )
 from ._version import __version__
@@ -53,6 +54,7 @@ __all__ = [
     "StreamClosedError",
     "StreamReader",
     "StreamSender",
+    "StreamSlot",
     "StreamStatistics",
     "SupportsDLPack",
     "SupportsSharedBox",

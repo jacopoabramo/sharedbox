@@ -27,7 +27,7 @@ from typing import Annotated, Any, Literal, TypedDict
 
 import numpy as np
 
-from sharedbox import DType, EndOfStream, Shape, SharedStream
+from sharedbox import DType, EndOfStream, Shape, SharedStream, StreamSender
 
 NAMES = count()
 Mode = Literal["lossless", "lossy", "latest"]
@@ -138,6 +138,27 @@ def stream_sender(
         begin = time.perf_counter()
         for _ in range(total):
             sender.send(value, timeout=None)
+    results.put(("sender", total, time.perf_counter() - begin, 0))
+    stream.close()
+
+
+def stream_writer(
+    name: str, item: str, capacity: int, total: int, start: Barrier, results: Any
+) -> None:
+    """As `stream_sender`, sending the timed items with `writing`, whose arrays are not copied."""
+    stream = SharedStream.attach(SIZES[item], name)
+    data = zeros(item)
+    with stream.sender() as sender:
+        for _ in range(capacity - 1):
+            sender.send(SIZES[item](1, data), timeout=None)
+        sender.send(SIZES[item](WARM_LAST, data), timeout=None)
+        # The template's array is replaced by the slot's, so the timed sends copy no array bytes.
+        template = SIZES[item](0, data)
+        start.wait()
+        begin = time.perf_counter()
+        for _ in range(total):
+            with sender.writing(template) as slot:
+                slot.send(slot.item)
     results.put(("sender", total, time.perf_counter() - begin, 0))
     stream.close()
 
@@ -396,11 +417,15 @@ def fresh_stream(opts: Options, item: str) -> Generator[str, None, None]:
         SharedStream.unlink(name)
 
 
-def stream_run(mode: Mode) -> Callable[[SpawnContext, Options, str, int], Throughput]:
-    """A contender that runs a stream with readers of `mode`."""
+def stream_run(
+    mode: Mode, writing: bool = False
+) -> Callable[[SpawnContext, Options, str, int], Throughput]:
+    """A contender that runs a stream with readers of `mode`, sending with `writing` when asked."""
+    contender = f"SharedStream {mode}" + (" writing" if writing else "")
+    sender = stream_writer if writing else stream_sender
 
     def run(ctx: SpawnContext, opts: Options, item: str, readers: int) -> Throughput:
-        label = f"SharedStream {mode} ({item}, {readers} readers)"
+        label = f"{contender} ({item}, {readers} readers)"
         with fresh_stream(opts, item) as name:
             ready, start, results = (
                 ctx.Barrier(readers + 1),
@@ -412,12 +437,12 @@ def stream_run(mode: Mode) -> Callable[[SpawnContext, Options, str, int], Throug
                 opts,
                 ctx,
                 [(stream_reader, (name, mode, item))] * readers,
-                (stream_sender, (name, item, opts.capacity, opts.items[item])),
+                (sender, (name, item, opts.capacity, opts.items[item])),
                 ready,
                 start,
                 results,
             )
-        return summarise(f"SharedStream {mode}", item, readers, reports)
+        return summarise(contender, item, readers, reports)
 
     return run
 
@@ -762,6 +787,12 @@ def run_matrix(opts: Options) -> list[Matrix]:
 
 CONTENDERS = [
     stream_run("lossless"),
+    # The Streams workflow runs this script against the base branch's install, which may lack `writing`.
+    *(
+        [stream_run("lossless", writing=True)]
+        if hasattr(StreamSender, "writing")
+        else []
+    ),
     stream_run("lossy"),
     stream_run("latest"),
     queue_run,
@@ -801,10 +832,10 @@ def rate(value: float) -> str:
 
 def to_text(rows: list[Throughput]) -> str:
     lines = [
-        f"{'contender':26} {'item':8} {'readers':>7} {'received/s':>11} {'sent/s':>9} {'missed':>8}"
+        f"{'contender':30} {'item':8} {'readers':>7} {'received/s':>11} {'sent/s':>9} {'missed':>8}"
     ]
     lines += [
-        f"{r['contender']:26} {r['item']:8} {r['readers']:7} "
+        f"{r['contender']:30} {r['item']:8} {r['readers']:7} "
         f"{rate(r['received_per_s']):>11} {rate(r['sent_per_s']):>9} {r['missed']:8}"
         for r in rows
     ]

@@ -808,6 +808,14 @@ Send:
 3. A sequentially consistent fence, then, if `data_waiting` is not 0, add 1
    to `data_word` and wake it.
 
+A sender may reserve a slot (step 1 and the odd `seq` of step 2), fill it
+for as long as it needs, and then either publish it (the rest of step 2,
+then step 3) or give it up. The odd `seq` already ends the item
+`p - capacity` that the slot held, so a lossy reader that has not taken it
+misses it however the reservation ends. A slot given up keeps its odd
+`seq`, which readers skip as they skip a send in progress, and `write_pos`
+does not move, so the next send writes the same position again.
+
 Receive, for a reader whose next position is `r`:
 
 1. A lossless or lossy reader first loads the `seq` of slot `r % capacity`.
@@ -1171,6 +1179,9 @@ public:
     result<std::uint64_t> send(std::span<const std::byte> item, seconds timeout);
     template <class F> requires std::is_nothrow_invocable_v<F &, std::span<std::byte>>
     result<std::uint64_t> send_with(F &&fill, seconds timeout);
+    result<std::span<std::byte>> begin(seconds timeout);
+    result<std::uint64_t> publish() noexcept;
+    void abandon() noexcept;
     result<void> interrupt();
     void close() noexcept;
 };
@@ -1238,6 +1249,14 @@ Stream layout). Every function returning a `result` is `[[nodiscard]]`.
   for a timeout of 0), `status::interrupted` after `interrupt()`, and
   `status::range` for a sender that is closed, used from a child of `fork`
   or given an item of the wrong size.
+- `begin` reserves the next slot as `send` does and returns its
+  `item_size()` bytes to fill in place, which stay valid until `publish` or
+  `abandon`. It gives the status codes `send` gives, except the one for an
+  item of the wrong size. `publish` publishes the slot and returns its
+  position, and `abandon` gives it up. While a reservation is open, `begin`,
+  `send` and `send_with` give `status::busy`. `publish` gives
+  `status::range` without a reservation, for a closed sender and in a child
+  of `fork`. `close` gives an open reservation up.
 - `receive` copies the next item into `out` and returns its position and the
   number of items this reader skipped since its previous receive (always 0
   for a lossless reader). `receive_with` calls `copy` with the item's bytes
@@ -1252,7 +1271,9 @@ Stream layout). Every function returning a `result` is `[[nodiscard]]`.
   its entry.
 - `write_position()` is the number of items sent. `readers(out)` fills `out`
   with the open readers, as many as fit, and returns how many are open.
-- Calls on one sender or one reader must not overlap, except `interrupt`.
+- Calls on one sender or one reader must not overlap, except `interrupt`;
+  a reservation is not a call, so other calls may come between `begin` and
+  `publish`.
   Senders and readers must not outlive the `stream` that made them.
 
 ### Capsule handle
