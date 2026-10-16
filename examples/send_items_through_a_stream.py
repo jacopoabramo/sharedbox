@@ -3,7 +3,7 @@
 # --8<-- [start:types]
 import asyncio
 import multiprocessing as mp
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Annotated
 
 import numpy as np
@@ -80,6 +80,18 @@ async def print_from_any(readers: list[StreamReader[Batch]]) -> None:
 # --8<-- [end:first]
 
 
+# --8<-- [start:writing]
+def send_filled(sender: StreamSender[Batch], count: int) -> None:
+    blank = Batch(0, np.empty(0, np.float64))
+    for i in range(count):
+        with sender.writing(blank) as slot:
+            slot.item.values.fill(float(i))
+            slot.send(replace(slot.item, index=i))
+
+
+# --8<-- [end:writing]
+
+
 # --8<-- [start:main]
 if __name__ == "__main__":
     context = mp.get_context("spawn")
@@ -107,3 +119,10 @@ if __name__ == "__main__":
                 sender.send(Batch(i, np.full(1024, float(i))))
         asyncio.run(print_from_any(readers))
     SharedStream.unlink("example-pipeline:merged")
+    with SharedStream.create(Batch, "example-pipeline:filled", capacity=8) as stream:
+        reader = stream.reader()
+        with stream.sender() as sender:
+            send_filled(sender, 2)
+        for batch in reader:
+            print(batch.index, float(batch.values[0]))
+    SharedStream.unlink("example-pipeline:filled")
