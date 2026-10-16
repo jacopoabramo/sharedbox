@@ -395,7 +395,42 @@ void Types::encode_to(std::uint32_t index, PyObject *value, std::span<std::byte>
     const detail::type_ref &t = field(index);
     if (out.size() != t.size)
         raise(PyExc_ValueError, labels_[index] + ": the destination has the wrong size");
-    encode_into(t, value, out.data(), {labels_[index]});
+    std::vector<PendingArray> pending;
+    encode_into(t, value, out.data(), {labels_[index], nullptr, &pending});
+    // An array's source may lie in out, even at another array's place, so every such source is copied aside
+    // before any array is written. The other bytes are already in out, read before any array was written.
+    std::vector<bool> inside(pending.size());
+    std::size_t total = 0;
+    std::size_t aside = 0;
+    for (std::size_t i = 0; i < pending.size(); ++i) {
+        inside[i] = overlaps(pending[i].view, out.data(), out.size());
+        total += pending[i].view.nbytes();
+        aside += inside[i] ? pending[i].view.nbytes() : 0;
+    }
+    std::unique_ptr<std::byte[]> copies(aside == 0 ? nullptr : new std::byte[aside]);
+    auto write = [&] {
+        std::byte *next = copies.get();
+        for (std::size_t i = 0; i < pending.size(); ++i)
+            if (inside[i]) {
+                gather(pending[i].view, next);
+                next += pending[i].view.nbytes();
+            }
+        next = copies.get();
+        for (std::size_t i = 0; i < pending.size(); ++i) {
+            if (!inside[i]) {
+                gather(pending[i].view, pending[i].out);
+                continue;
+            }
+            std::memcpy(pending[i].out, next, pending[i].view.nbytes());
+            next += pending[i].view.nbytes();
+        }
+    };
+    if (total + aside >= detail::large_copy) {
+        nb::gil_scoped_release unlocked;
+        write();
+    } else {
+        write();
+    }
 }
 
 nb::object Types::decode(std::uint32_t index, std::span<const std::byte> bytes,
@@ -560,15 +595,10 @@ void Types::encode_into(const detail::type_ref &t, PyObject *value, std::byte *o
         // The arrays of a reserved stream slot already are their destination.
         if (static_cast<const std::byte *>(view.data()) == out && contiguous(view))
             return;
-        if (overlaps(view, out, t.size)) {
-            // A view of the destination in another order is gathered into a copy first, so no element is
-            // overwritten before it is read.
-            std::unique_ptr<std::byte[]> copy(new std::byte[t.size]);
-            copy_array(view, copy.get());
-            std::memcpy(out, copy.get(), t.size);
-            return;
-        }
-        copy_array(view, out);
+        if (where.pending != nullptr)
+            where.pending->push_back({view, out});
+        else
+            copy_array(view, out);
         return;
     }
     case kind_record:

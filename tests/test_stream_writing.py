@@ -31,6 +31,12 @@ class Outer:
     inner: Inner
 
 
+@dataclass(frozen=True)
+class Pair:
+    a: Image
+    b: Image
+
+
 BLANK = Frame(0, EMPTY)
 
 
@@ -127,6 +133,32 @@ def test_an_item_arrives_whole_whichever_array_it_holds(
         got = reader.receive(timeout=5)
         np.testing.assert_array_equal(got.inner.image, expected)
         assert (got.index, got.inner.label) == (1, 2)
+
+
+@pytest.mark.parametrize(
+    "pick",
+    [
+        lambda a, b, outside: (b, a),
+        lambda a, b, outside: (outside, a),
+    ],
+    ids=["swapped", "outside-then-slot"],
+)
+def test_an_item_arrives_whole_whichever_slot_places_its_arrays_view(
+    unique_name: str,
+    pick: Callable[[np.ndarray, np.ndarray, np.ndarray], tuple[np.ndarray, np.ndarray]],
+) -> None:
+    """Receive the values each array held at send when its source is another member's place in the slot."""
+    with SharedStream.create(Pair, unique_name, capacity=2) as stream:
+        reader = stream.reader()
+        with stream.sender().writing(Pair(EMPTY, EMPTY)) as slot:
+            slot.item.a[:] = 1
+            slot.item.b[:] = 2
+            a, b = pick(slot.item.a, slot.item.b, np.full((4, 4), 3, np.uint16))
+            expected = (a.copy(), b.copy())
+            slot.send(Pair(a, b))
+        got = reader.receive(timeout=5)
+        np.testing.assert_array_equal(got.a, expected[0])
+        np.testing.assert_array_equal(got.b, expected[1])
 
 
 def test_a_block_left_without_send_publishes_nothing(unique_name: str) -> None:

@@ -68,8 +68,9 @@ public:
     /// its length and the slots it uses. Raises a Python exception naming the field.
     std::span<const std::byte> encode(std::uint32_t index, PyObject *value, EncodeBuffer &buffer) const;
     /// Writes value into out, the size of field index, which may still hold an older value. An array already
-    /// at its place in out is left as it is. Raises a Python exception naming the field, possibly after
-    /// writing part of out.
+    /// at its place in out is left as it is, and an array that views out elsewhere is stored with the values
+    /// it held when the call began. Raises a Python exception naming the field, possibly after writing part of
+    /// out.
     void encode_to(std::uint32_t index, PyObject *value, std::span<std::byte> out) const;
     /// The value stored in bytes. owned, when given, holds those bytes on the heap, and an array takes it
     /// instead of copying.
@@ -116,9 +117,16 @@ public:
     void clear();
 
 private:
+    /// An array encode_to copies to out once every other byte of the value is written.
+    struct PendingArray {
+        nb::ndarray<nb::ro> view;
+        std::byte *out = nullptr;
+    };
     struct Where {
         const std::string &name;
         const std::unordered_map<std::uint64_t, PyObject *> *given = nullptr;
+        /// When set, an array is added here instead of copied at once.
+        std::vector<PendingArray> *pending = nullptr;
     };
     nb::ndarray<nb::c_contig, nb::device::cpu> array_out_of(const detail::type_ref &t, const std::string &name,
                                                             PyObject *out) const;

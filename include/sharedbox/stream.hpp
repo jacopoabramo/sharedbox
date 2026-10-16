@@ -398,8 +398,8 @@ public:
         requires std::is_nothrow_invocable_v<F &, std::span<std::byte>>
     [[nodiscard]] result<std::uint64_t> send_with(F &&fill, seconds timeout);
     // Reserves the next slot and returns its item_size() bytes, for the caller to fill and then publish or
-    // abandon. Waits at the gate as send does; status::busy while this sender holds a reservation. Readers
-    // skip the slot until it is published.
+    // abandon; the span is the caller's only until publish or abandon. Waits at the gate as send does;
+    // status::busy while this sender holds a reservation. Readers skip the slot until it is published.
     [[nodiscard]] result<std::span<std::byte>> begin(seconds timeout);
     // Publishes the reserved slot and returns its position; status::range without a reservation.
     [[nodiscard]] result<std::uint64_t> publish() noexcept;
