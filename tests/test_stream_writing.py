@@ -32,6 +32,11 @@ class Outer:
 
 
 @dataclass(frozen=True)
+class Tag:
+    index: int
+
+
+@dataclass(frozen=True)
 class Pair:
     a: Image
     b: Image
@@ -110,6 +115,25 @@ def test_writing_refuses_a_missing_or_wrong_template(
             pass
         sender.send(frame(1), timeout=5)
         assert reader.receive(timeout=5).index == 1
+        assert reader.position == 0
+
+
+@pytest.mark.parametrize(
+    ("hint", "template", "item"),
+    [(int, "seven", 7), (Tag, 7, Tag(1))],
+    ids=["int", "record-without-arrays"],
+)
+def test_writing_refuses_a_template_of_another_type_without_arrays(
+    unique_name: str, hint: Any, template: object, item: Any
+) -> None:
+    """Raise TypeError for a template of another type on an item without arrays, and give the position to the next send."""
+    with SharedStream.create(hint, unique_name, capacity=2) as stream:
+        reader = stream.reader()
+        sender = stream.sender()
+        with pytest.raises(TypeError), sender.writing(template, timeout=5):
+            pass
+        sender.send(item, timeout=5)
+        assert reader.receive(timeout=5) == item
         assert reader.position == 0
 
 
@@ -250,7 +274,7 @@ def test_closing_the_sender_ends_a_send_waiting_for_the_block(unique_name: str) 
 
         def other() -> None:
             try:
-                sender.send(frame(9))
+                sender.send(frame(9), timeout=10)
             except BaseException as error:
                 errors.append(error)
 
@@ -295,7 +319,7 @@ def test_writing_raises_timeout_error_while_the_ring_is_full(unique_name: str) -
 def test_a_send_inside_a_block_is_refused_after_another_block_ended(
     unique_name: str,
 ) -> None:
-    """Raise RuntimeError from a send inside a block even when the block of another thread ended after it began."""
+    """Raise RuntimeError from a send inside either of two threads' blocks, before and after the other block ends."""
     with SharedStream.create(Frame, unique_name, capacity=4) as stream:
         sender = stream.sender()
         a_sent = threading.Event()
@@ -308,6 +332,8 @@ def test_a_send_inside_a_block_is_refused_after_another_block_ended(
                     slot.send(frame(1))
                     a_sent.set()
                     assert b_entered.wait(5)
+                    with pytest.raises(RuntimeError):
+                        sender.send(frame(9), timeout=1)
             except BaseException as error:
                 errors.append(error)
 
@@ -316,7 +342,7 @@ def test_a_send_inside_a_block_is_refused_after_another_block_ended(
         assert a_sent.wait(5)
         with sender.writing(BLANK, timeout=5) as slot:
             b_entered.set()
-            thread.join(5)
+            thread.join(10)
             assert not thread.is_alive()
             with pytest.raises(RuntimeError):
                 sender.send(frame(2), timeout=5)

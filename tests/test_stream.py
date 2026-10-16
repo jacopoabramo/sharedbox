@@ -26,7 +26,6 @@ from sharedbox import (
     StreamReader,
     WouldBlock,
 )
-from sharedbox._native import Slot
 
 
 @dataclass(frozen=True)
@@ -600,25 +599,4 @@ def test_an_item_that_fails_to_encode_is_not_sent(unique_name: str) -> None:
         assert stream.statistics().sent == 0
         sender.send(frame(1))
         assert reader.receive(timeout=5).index == 1
-        assert reader.position == 0
-
-
-@pytest.mark.parametrize(
-    ("hint", "template", "item"),
-    [(int, "seven", 7), (Mixed, 7, Mixed(None, [1]))],
-    ids=["int", "record-without-arrays"],
-)
-def test_a_slot_refuses_a_template_of_another_type(
-    unique_name: str, hint: Any, template: object, item: Any
-) -> None:
-    """Raise TypeError for a slot template of another type, and give the position to the next item."""
-    with SharedStream.create(hint, unique_name, capacity=2) as stream:
-        reader = stream.reader()
-        sender = stream.sender()
-        sender._native.reserve(1.0)
-        with pytest.raises(TypeError):
-            Slot(sender._native, template)
-        sender._native.abandon()
-        sender.send(item)
-        assert reader.receive(timeout=5) == item
         assert reader.position == 0

@@ -670,13 +670,13 @@ class StreamSender(End, Generic[T]):
     [`EndOfStream`][sharedbox.EndOfStream].
     """
 
-    __slots__ = ("_holder",)
+    __slots__ = ("_holders",)
     _native: Sender
-    _holder: object
+    _holders: set[object]
 
     def __init__(self, stream: SharedStream[Any], native: Sender) -> None:
         super().__init__(stream, native)
-        self._holder = None
+        self._holders = set()
 
     def _thread_role(self) -> str:
         return "sender"
@@ -694,7 +694,7 @@ class StreamSender(End, Generic[T]):
         StreamClosedError
             If this sender is closed, before or during the wait.
         RuntimeError
-            If the caller holds this sender's slot from
+            If called inside a block of this sender's
             [`writing`][sharedbox.StreamSender.writing].
 
         Notes
@@ -716,7 +716,7 @@ class StreamSender(End, Generic[T]):
         StreamClosedError
             If this sender is closed, before or during the wait.
         RuntimeError
-            If the caller holds this sender's slot.
+            If called inside a block of this sender's `writing`.
         """
         self._refuse_nested()
         await self._yield()
@@ -729,12 +729,16 @@ class StreamSender(End, Generic[T]):
         await self._wait(self._submit(lambda future: self._send(item, None, future)))
 
     def send_nowait(self, item: T) -> None:
-        """Send `item`, or raise [`WouldBlock`][sharedbox.WouldBlock] if a lossless reader is a full ring behind.
+        """Send `item`, or raise [`WouldBlock`][sharedbox.WouldBlock] if that needs a wait.
+
+        It would wait while a lossless reader is a full ring behind, or while
+        another thread or task holds the slot from
+        [`writing`][sharedbox.StreamSender.writing].
 
         Raises
         ------
         RuntimeError
-            If the caller holds this sender's slot.
+            If called inside a block of this sender's `writing`.
         """
         self._refuse_nested()
         try:
@@ -745,11 +749,11 @@ class StreamSender(End, Generic[T]):
             ) from None
 
     def _refuse_nested(self) -> None:
-        """Raise RuntimeError when the caller holds this sender's slot, which a send would wait for."""
-        if self._holder is not None and self._holder == holder():
+        """Raise RuntimeError when called inside a `writing` block of this sender, whose slot a send would wait for."""
+        if self._holders and holder() in self._holders:
             raise RuntimeError(
-                f"stream {self._stream.name!r}: the caller holds this sender's slot; "
-                "send its item with slot.send first"
+                f"stream {self._stream.name!r}: a send inside this sender's "
+                "writing block is refused"
             )
 
     def _retry(
@@ -778,7 +782,7 @@ class StreamSender(End, Generic[T]):
                     ) from None
                 continue
         raise TimeoutError(
-            f"stream {self._stream.name!r}: no lossless reader made room within {timeout} s"
+            f"stream {self._stream.name!r}: no slot became free within {timeout} s"
         )
 
     def _send(
@@ -830,7 +834,13 @@ class StreamSender(End, Generic[T]):
         StreamClosedError
             If this sender is closed, before or during the wait.
         RuntimeError
-            If the caller already holds this sender's slot.
+            If called inside a block of this sender's `writing`.
+
+        Notes
+        -----
+        An interrupt such as Ctrl-C just before the block starts may leave
+        the slot reserved with no block to give it up, so later sends on
+        this sender wait until they time out. Closing the sender ends them.
         """
         self._refuse_nested()
         self._reserve(timeout)
@@ -853,7 +863,7 @@ class StreamSender(End, Generic[T]):
         StreamClosedError
             If this sender is closed, before or during the wait.
         RuntimeError
-            If the caller already holds this sender's slot.
+            If called inside a block of this sender's `writing`.
         """
         self._refuse_nested()
         await self._yield()
@@ -891,18 +901,17 @@ class StreamSender(End, Generic[T]):
             raise
         me = holder()
         with self._lock:
-            self._holder = me
+            self._holders.add(me)
         try:
             yield slot
         finally:
             with self._lock:
-                if self._holder == me:
-                    self._holder = None
+                self._holders.discard(me)
             slot.abandon()
 
     def _after_fork(self) -> None:
         super()._after_fork()
-        self._holder = None
+        self._holders = set()
 
     def close(self) -> None:
         """Close the sender and end the stream. Calling it again does nothing."""
