@@ -147,6 +147,7 @@ dev = [
     "pytest>=9.1.1",
     "pytest-codspeed>=5.0.3",
     "pytest-xdist>=3.8.0",
+    "towncrier>=26.9.0",
     "tox>=4.64.1",
     "tox-uv-bare>=1.36",
 ]
@@ -180,3 +181,40 @@ cache-keys = [
     { file = "src/sharedbox/_native/**/*" },
     { git = { commit = true } },
 ]
+
+[tool.towncrier]
+directory = "changelog.d"
+filename = "CHANGELOG.md"
+start_string = "<!-- towncrier release notes start -->\n"
+title_format = "## [{version}](https://github.com/jacopoabramo/sharedbox/releases/tag/v{version}) - {project_date}"
+issue_format = "[#{issue}](https://github.com/jacopoabramo/sharedbox/pull/{issue})"
+# set, even empty, so a misnamed entry fails the build instead of being skipped
+ignore = []
+
+[[tool.towncrier.type]]
+directory = "breaking"
+name = "Breaking"
+
+[[tool.towncrier.type]]
+directory = "added"
+name = "Added"
+
+[[tool.towncrier.type]]
+directory = "changed"
+name = "Changed"
+
+[[tool.towncrier.type]]
+directory = "deprecated"
+name = "Deprecated"
+
+[[tool.towncrier.type]]
+directory = "removed"
+name = "Removed"
+
+[[tool.towncrier.type]]
+directory = "fixed"
+name = "Fixed"
+
+[[tool.towncrier.type]]
+directory = "security"
+name = "Security"

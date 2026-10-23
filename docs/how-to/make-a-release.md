@@ -4,55 +4,45 @@ icon: lucide/package
 
 # How to make a release
 
-Releasing `sharedbox` means publishing a GitHub release. CI then builds the
-wheels, tests them and uploads them to PyPI, so most of this guide is about
-getting the details right before you publish.
+Releasing `sharedbox` means writing its changelog section and then
+publishing a GitHub release. CI then builds the wheels, tests them and
+uploads them to PyPI, so most of this guide is about getting the section
+right before you publish.
 
 ## Before you start
 
-[`gh`](https://cli.github.com) signed in with write access to the
-repository, and a clone of it.
+You need write access to the repository. Every step happens in GitHub's web
+interface.
 
-## 1. Date the changelog
+Don't merge other pull requests between the first step and the last,
+because the release takes `main` as it is when you publish it.
 
-`CHANGELOG.md` collects the entries of the next release under a heading
-marked `Unreleased`, as
-[How to write commits and pull requests](commits-and-prs.md#changelog-entries)
-describes. On an up-to-date `main`, make a release branch and replace
-`Unreleased` with today's date, written `DD-MM-YYYY`:
+## 1. Write the changelog section
 
-```bash
-git switch main
-git pull
-git switch -c release/v0.3.0
-```
+The entries of the next release wait in `changelog.d/`, one file per change,
+as [How to write commits and pull requests](commits-and-prs.md#changelog-entries)
+describes. The `Prepare release` workflow collects them into a section of
+`CHANGELOG.md`. Open Actions -> Prepare release -> Run workflow, and give it
+the version without its `v`, such as `0.6.0`.
 
-```markdown
-## [0.3.0] - 14-10-2026
-```
+The run writes the section, dated today, deletes the entry files and opens
+the pull request "docs: write the 0.6.0 changelog", whose description is the
+section. To read the section first without changing anything, tick "Only
+show the changelog section": the run then shows it in its summary and opens
+no pull request.
 
-Read the section once more, then commit it, open a pull request and merge
-it once the checks pass:
+## 2. Merge the changelog pull request
 
-```bash
-git commit -am "docs: date the 0.3.0 changelog"
-git push origin release/v0.3.0
-gh pr create --base main --title "docs: date the 0.3.0 changelog" \
-  --body "Dates the changelog section for 0.3.0."
-```
+Read the section in `CHANGELOG.md` on the pull request's branch, and fix any
+entry that reads badly there. Checks of a pull request opened by a workflow
+wait for approval, so click "Approve workflows to run", then merge once they
+pass.
 
-## 2. Publish the release
+## 3. Publish the release
 
-Create the release on the merge commit. `gh` creates the tag too:
-
-```bash
-git switch main
-git pull
-gh release create v0.3.0 --target main --title v0.3.0 \
-  --notes "Changes: https://github.com/jacopoabramo/sharedbox/blob/v0.3.0/CHANGELOG.md"
-```
-
-The release notes link to the changelog as it is in the tag.
+Open Releases -> Draft a new release. Under "Choose a tag", type `v0.6.0`,
+pick "Create new tag on publish" and target `main`. Title the release
+`v0.6.0`, leave the description empty, and publish it.
 
 The tag is `vX.Y.Z`. The package version comes from it, through
 setuptools-scm, so the tag must be on the commit you want to release.
@@ -62,27 +52,25 @@ setuptools-scm, so the tag must be on the commit you want to release.
 Publishing the release runs CI on the tagged commit. It first builds the
 wheels and tests each one. It then checks that the tag has the form
 `vX.Y.Z` or `vX.Y.ZrcN`, that the pre-release flag matches (set for `rc`
-tags, not set for the others), builds the source distribution and checks
-that its version is the tag's. A mismatch fails the build before anything
-is uploaded to PyPI.
+tags, not set for the others), and that `CHANGELOG.md` has a section for a
+final release. Then it builds the source distribution and checks that its
+version is the tag's. A failed check stops the build before anything is
+uploaded to PyPI.
 
 Once the lint checks, the docs build and the C++ tests pass as well, CI
 uploads the wheels and the source distribution to
-[PyPI](https://pypi.org/project/sharedbox/). A final release also
-publishes the documentation site. The site is published on every push to
-`main` as well.
+[PyPI](https://pypi.org/project/sharedbox/). For a final release it then
+writes the changelog section into the release's description, and publishes
+the documentation site. The site is published on every push to `main` as
+well.
+
+A release published before its changelog pull request merged fails that
+check, so nothing reaches PyPI. Delete the release and its tag, merge the
+pull request, and publish again.
 
 ## Release candidates
 
-Leave `Unreleased` in the changelog, tag the candidate `vX.Y.ZrcN` and
-mark the release as a pre-release:
-
-```bash
-gh release create v0.3.0rc1 --target main --title v0.3.0rc1 --prerelease \
-  --notes "Changes: https://github.com/jacopoabramo/sharedbox/blob/main/CHANGELOG.md#unreleased"
-```
-
-Its notes link to the `Unreleased` section of the changelog on `main`.
-
-A candidate uploads the package to PyPI and leaves the documentation site
-as it is.
+A release candidate skips the first two steps. Publish the release as in
+step 3 with a tag such as `v0.6.0rc1`, and tick "Set as a pre-release".
+CI uploads the package to PyPI, writes no notes and leaves the documentation
+site as it is. The entries stay in `changelog.d/` for the final release.

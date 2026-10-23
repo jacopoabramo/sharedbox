@@ -83,6 +83,7 @@ sharedbox/
 |   `-- test_bench_stream.py   pytest-codspeed stream benchmarks: send plus receive_into
 |-- scripts/
 |   |-- stream_compare.py      base against head table of two benchbox stream runs, for the Streams workflow
+|   |-- release_notes.py       prints a release's CHANGELOG.md section, for the release workflows
 |   |-- vscode_setup.py        points VS Code's C/C++ extension at the build headers
 |   `-- check_xrefs.py         reports unresolved cross-references, unread snippets and broken links in site/
 |-- docs/                      Diataxis site built by Zensical: tutorials/, how-to/, explanation/, reference/
@@ -94,7 +95,9 @@ sharedbox/
 |-- includes/abbreviations.md  acronym tooltips appended to every page
 |-- zensical.toml              site configuration and navigation
 |-- .github/workflows/ci.yaml  lint, docs check, C++ tests, cibuildwheel wheels, tests, stress,
-|                              PyPI publish, site publish
+|                              PyPI publish, release notes, site publish
+|-- .github/workflows/check-changelog.yaml  requires a changelog.d entry unless labelled skip-changelog
+|-- .github/workflows/prepare-release.yaml  writes a release's changelog section and opens its pull request
 |-- .github/workflows/check-docs.yaml    builds the site and runs check_xrefs.py
 |-- .github/workflows/publish-docs.yaml  deploys the checked site to GitHub Pages
 |-- .github/workflows/codspeed.yml  benchmarks on CodSpeed
@@ -104,6 +107,7 @@ sharedbox/
 |                              request on Windows cp311, for pull requests that touch the native code
 |-- .github/workflows/streams.yaml  benchbox stream, base branch against the pull request on Linux and
 |                              Windows, for pull requests that touch the stream
+|-- changelog.d/               towncrier entry files of the next release
 |-- CMakeLists.txt             sharedbox::headers, sharedbox::c, extension build
 |-- stubtest-allowlist.txt     stubtest exceptions for nanobind types
 |-- .clang-format              clang-format style for the C and C++ sources
@@ -296,7 +300,9 @@ runs pytest against each wheel, and publishes to PyPI. Its `docs` job runs
 Publishing to PyPI runs only from a GitHub release tagged `vX.Y.Z` and
 marked as a release, or `vX.Y.ZrcN` and marked as a pre-release; any other
 tag or mismatch between the tag and the pre-release flag fails the build
-before it uploads. Docker runs with `--shm-size=1g`, so keep test
+before it uploads, and so does a final release whose section is missing
+from `CHANGELOG.md`. After the upload, `github_release` writes that section
+into a final release's notes. Docker runs with `--shm-size=1g`, so keep test
 segments under that.
 
 ## Usage
@@ -354,7 +360,11 @@ the Contributing section in `zensical.toml`.
 
 ## Conventions
 
-- Changelog: `CHANGELOG.md`, Keep a Changelog format, dates as `DD-MM-YYYY`.
+- Changelog: one towncrier entry file per user-visible change in
+  `changelog.d/`, named `<pull request>.<kind>.md`; a pull request with none
+  carries the `skip-changelog` label. Nobody edits `CHANGELOG.md` by hand;
+  the `Prepare release` workflow writes each section, dated `DD-MM-YYYY`.
+  See `docs/how-to/commits-and-prs.md` and `docs/how-to/make-a-release.md`.
 - Lint and format Python with `ruff` and C and C++ with `clang-format`
   (`src/sharedbox/_native/`, `include/sharedbox/`, `tests/cpp/`), both run
   through prek: `uv run prek run --all-files`, `uv run tox -e lint`.
