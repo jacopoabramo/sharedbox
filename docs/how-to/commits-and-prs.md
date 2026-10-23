@@ -56,17 +56,38 @@ bullets:
 
 ## Changelog entries
 
-A change that someone using sharedbox would notice adds an entry to
-`CHANGELOG.md` in the same pull request. The file follows
-[Keep a Changelog](https://keepachangelog.com/en/1.1.0/): entries go under
-the release at the top, marked `Unreleased`, in one of the sections
-`Added`, `Changed`, `Deprecated`, `Removed`, `Fixed` and `Security`.
+Each change someone using sharedbox would notice gets a file in
+`changelog.d/`, named after the pull request and the kind of change, such as
+`61.fixed.md`. Open the pull request first, so you know its number. A
+release collects the files into [the changelog](../reference/changelog.md),
+one entry each, and links each entry to its pull request.
 
-Each entry names the public symbol first, then says what changed:
+| kind | use it when |
+| --- | --- |
+| `breaking` | code that uses sharedbox has to change |
+| `added` | something new: a class, a function, a keyword, an option |
+| `changed` | something that already existed behaves differently |
+| `deprecated` | something still works but warns, and goes in a later release |
+| `removed` | something is gone |
+| `fixed` | something now works as its documentation says |
+| `security` | a vulnerability is closed |
 
-```markdown
-- `SharedBox.watch()`: no longer yields the same value twice.
+`towncrier`, the tool that collects the entries at release time, writes the
+file for you. Keep the text in single quotes, so the shell leaves its
+backticks alone:
+
+```bash
+uv run towncrier create 61.fixed.md --content '`SharedBox.watch()`: no longer yields the same value twice.'
 ```
 
-An entry records what changed and nothing else. The reasons belong in the
-pull request.
+A second change of the same kind in one pull request goes in `61.fixed.2.md`.
+
+An entry names the public symbol first, then says in a line or two what
+changed. It records the change and nothing else, because the reasons belong
+in the pull request. A change to something not released yet gets no entry
+of its own: edit the entry that added it instead, so the release says what
+users get.
+
+A pull request nobody using sharedbox would notice, such as tests, CI, a
+refactor or docs alone, needs no entry. A maintainer gives it the
+`skip-changelog` label, and CI accepts it without one.
