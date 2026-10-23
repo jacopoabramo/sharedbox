@@ -27,7 +27,16 @@ from collections.abc import (
 )
 from concurrent.futures import CancelledError, Future
 from dataclasses import dataclass
-from typing import Any, Final, Generic, Literal, TypeVar, cast, overload
+from typing import (
+    Any,
+    Final,
+    Generic,
+    Literal,
+    NoReturn,
+    TypeVar,
+    cast,
+    overload,
+)
 
 from psygnal import Signal, SignalGroup, SignalInstance
 
@@ -953,7 +962,7 @@ class SharedSendStream(End, Generic[T]):
     def __exit__(self, *exc_info: object) -> None:
         self.close()
 
-    def __reduce__(self) -> Any:
+    def __reduce__(self) -> NoReturn:
         raise TypeError(
             "a SharedSendStream cannot be pickled; "
             "send its stream and call sender() in the other process"
@@ -1473,7 +1482,7 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T]):
     def __exit__(self, *exc_info: object) -> None:
         self.close()
 
-    def __reduce__(self) -> Any:
+    def __reduce__(self) -> NoReturn:
         raise TypeError(
             "a SharedReceiveStream cannot be pickled; "
             "send its stream and call reader() in the other process"
