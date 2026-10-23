@@ -12,6 +12,7 @@ import itertools
 import logging
 import os
 import queue
+import secrets
 import sys
 import threading
 import time
@@ -26,7 +27,16 @@ from collections.abc import (
 )
 from concurrent.futures import CancelledError, Future
 from dataclasses import dataclass
-from typing import Any, Final, Generic, Literal, TypeVar, cast, overload
+from typing import (
+    Any,
+    Final,
+    Generic,
+    Literal,
+    NoReturn,
+    TypeVar,
+    cast,
+    overload,
+)
 
 from psygnal import Signal, SignalGroup, SignalInstance
 
@@ -34,6 +44,7 @@ from ._box import check_name
 from ._native import (
     EndOfStream,
     Reader,
+    SchemaMismatchError,
     Segment,
     Sender,
     Slot,
@@ -221,10 +232,12 @@ class SharedStreamStatistics:
 class SharedStream(Generic[T]):
     """A ring of items in shared memory, sent by one process and received by up to `max_readers` readers.
 
-    Create it with [`create`][sharedbox.SharedStream.create] in one process and
-    open it with [`attach`][sharedbox.SharedStream.attach] in others. Every
-    item has the type given there: any type a `SharedBox` field takes, except
-    a reference to a box.
+    Create it with [`create`][sharedbox.SharedStream.create] in one process,
+    and open it with [`attach`][sharedbox.SharedStream.attach] in others or
+    pass it to them, as a process argument for instance: a pickled stream
+    attaches again, and refuses a stream created since under the same name
+    with [`SchemaMismatchError`][sharedbox.SchemaMismatchError]. Every item has the type given there: any type a
+    `SharedBox` field takes, except a reference to a box.
     """
 
     __slots__ = (
@@ -247,21 +260,40 @@ class SharedStream(Generic[T]):
     @overload
     @classmethod
     def create(
-        cls, item_type: type[T], name: str, *, capacity: int, max_readers: int = 8
+        cls,
+        item_type: type[T],
+        name: str | None = None,
+        *,
+        capacity: int,
+        max_readers: int = 8,
     ) -> SharedStream[T]: ...
     @overload
     @classmethod
     def create(
-        cls, item_type: object, name: str, *, capacity: int, max_readers: int = 8
+        cls,
+        item_type: object,
+        name: str | None = None,
+        *,
+        capacity: int,
+        max_readers: int = 8,
     ) -> SharedStream[Any]: ...
     @classmethod
     def create(
-        cls, item_type: object, name: str, *, capacity: int, max_readers: int = 8
+        cls,
+        item_type: object,
+        name: str | None = None,
+        *,
+        capacity: int,
+        max_readers: int = 8,
     ) -> SharedStream[Any]:
         """Create the stream `name` holding `capacity` items of `item_type`.
 
         Parameters
         ----------
+        name
+            Without one, the stream gets a new name of 16 hex digits. A
+            process the stream is passed to opens it without being told the
+            name, so only code that calls `attach` needs to know it.
         capacity
             Items the ring holds, at least 2. A lossless reader may fall
             this many items behind before `send` waits for it.
@@ -280,7 +312,7 @@ class SharedStream(Generic[T]):
         """
         item = item_of(item_type)
         native = Stream.create(
-            check_name(name),
+            secrets.token_hex(8) if name is None else check_name(name),
             item.types,
             item.entry,
             item.schema_hash,
@@ -441,22 +473,31 @@ class SharedStream(Generic[T]):
     def __exit__(self, *exc_info: object) -> None:
         self.close()
 
-    def __reduce__(self) -> tuple[Callable[..., SharedStream[Any]], tuple[object, str]]:
-        return (attach_stream, (self._hint, self.name))
+    def __reduce__(
+        self,
+    ) -> tuple[Callable[..., SharedStream[Any]], tuple[object, str, int]]:
+        return (attach_stream, (self._hint, self.name, self._native.create_id))
 
     def __repr__(self) -> str:
         state = " closed" if self.closed else ""
         return f"<SharedStream[{self._item.label}] {self.name!r}{state}>"
 
 
-def attach_stream(item_type: object, name: str) -> SharedStream[Any]:
-    """Attach to the stream a pickle refers to."""
-    return SharedStream.attach(item_type, name)
+def attach_stream(item_type: object, name: str, create_id: int) -> SharedStream[Any]:
+    """Attach to the stream a pickle refers to, if it is still the stream that was pickled.
 
-
-def open_reader(item_type: object, name: str, mode: Mode) -> SharedReceiveStream[Any]:
-    """Open a new reader of the stream a pickled reader refers to."""
-    return SharedStream.attach(item_type, name).reader(mode)
+    Raises
+    ------
+    SchemaMismatchError
+        If the stream under `name` was created after the pickle was taken.
+    """
+    stream = SharedStream.attach(item_type, name)
+    if stream._native.create_id != create_id:
+        stream.close()
+        raise SchemaMismatchError(
+            f"a SharedStream was pickled from a different stream named {name!r}"
+        )
+    return stream
 
 
 class CallFuture(Future[Any]):
@@ -679,6 +720,11 @@ class SharedSendStream(End, Generic[T]):
     def __init__(self, stream: SharedStream[Any], native: Sender) -> None:
         super().__init__(stream, native)
         self._holders = set()
+
+    @property
+    def stream(self) -> SharedStream[T]:
+        """The stream this sender sends to."""
+        return self._stream
 
     def _thread_role(self) -> str:
         return "sender"
@@ -932,10 +978,10 @@ class SharedSendStream(End, Generic[T]):
     def __exit__(self, *exc_info: object) -> None:
         self.close()
 
-    def __reduce__(self) -> Any:
+    def __reduce__(self) -> NoReturn:
         raise TypeError(
             "a SharedSendStream cannot be pickled; "
-            "send the SharedStream and call sender() in the other process"
+            "send its stream and call sender() in the other process"
         )
 
 
@@ -1029,6 +1075,11 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T]):
         self._events: ReceiveEvents | None = None
         self._delivering = False
         self._generation = 0
+
+    @property
+    def stream(self) -> SharedStream[T]:
+        """The stream this reader receives from."""
+        return self._stream
 
     @property
     def mode(self) -> Mode:
@@ -1447,10 +1498,11 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T]):
     def __exit__(self, *exc_info: object) -> None:
         self.close()
 
-    def __reduce__(
-        self,
-    ) -> tuple[Callable[..., SharedReceiveStream[Any]], tuple[object, str, Mode]]:
-        return (open_reader, (self._stream._hint, self._stream.name, self.mode))
+    def __reduce__(self) -> NoReturn:
+        raise TypeError(
+            "a SharedReceiveStream cannot be pickled; "
+            "send its stream and call reader() in the other process"
+        )
 
 
 class IterInto(Iterator[T], AsyncIterator[T], Generic[T]):
