@@ -735,7 +735,8 @@ class SharedSendStream(End, Generic[T]):
 
         It would wait while a lossless reader is a full ring behind, or while
         another thread or task holds the slot from
-        [`writing`][sharedbox.SharedSendStream.writing].
+        [`writing`][sharedbox.SharedSendStream.writing] or
+        [`awriting`][sharedbox.SharedSendStream.awriting].
 
         Raises
         ------
@@ -832,7 +833,8 @@ class SharedSendStream(End, Generic[T]):
             If a value of `template` outside its arrays does not fit.
         TimeoutError
             If `timeout` seconds pass while a lossless reader is a full ring
-            behind.
+            behind, or while another thread or task holds the slot from
+            `writing` or `awriting`.
         StreamClosedError
             If this sender is closed, before or during the wait.
         RuntimeError
