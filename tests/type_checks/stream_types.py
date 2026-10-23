@@ -27,6 +27,9 @@ def check(stream: SharedStream[Item]) -> None:
     for item in reader:
         assert_type(item, Item)
     assert_type(SharedStream.attach(Item, "name"), SharedStream[Item])
+    assert_type(SharedStream.create(Item, capacity=2), SharedStream[Item])
+    assert_type(reader.stream, SharedStream[Item])
+    assert_type(stream.sender().stream, SharedStream[Item])
 
 
 async def check_async(stream: SharedStream[Item]) -> None:

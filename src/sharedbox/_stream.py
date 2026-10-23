@@ -12,6 +12,7 @@ import itertools
 import logging
 import os
 import queue
+import secrets
 import sys
 import threading
 import time
@@ -247,21 +248,41 @@ class SharedStream(Generic[T]):
     @overload
     @classmethod
     def create(
-        cls, item_type: type[T], name: str, *, capacity: int, max_readers: int = 8
+        cls,
+        item_type: type[T],
+        name: str | None = None,
+        *,
+        capacity: int,
+        max_readers: int = 8,
     ) -> SharedStream[T]: ...
     @overload
     @classmethod
     def create(
-        cls, item_type: object, name: str, *, capacity: int, max_readers: int = 8
+        cls,
+        item_type: object,
+        name: str | None = None,
+        *,
+        capacity: int,
+        max_readers: int = 8,
     ) -> SharedStream[Any]: ...
     @classmethod
     def create(
-        cls, item_type: object, name: str, *, capacity: int, max_readers: int = 8
+        cls,
+        item_type: object,
+        name: str | None = None,
+        *,
+        capacity: int,
+        max_readers: int = 8,
     ) -> SharedStream[Any]:
         """Create the stream `name` holding `capacity` items of `item_type`.
 
         Parameters
         ----------
+        name
+            Without one, the stream gets a new name of 16 hex digits. A
+            process the stream is handed to as an argument attaches to it
+            by that name, so only a process that opens the stream by name
+            needs to know it.
         capacity
             Items the ring holds, at least 2. A lossless reader may fall
             this many items behind before `send` waits for it.
@@ -280,7 +301,7 @@ class SharedStream(Generic[T]):
         """
         item = item_of(item_type)
         native = Stream.create(
-            check_name(name),
+            secrets.token_hex(8) if name is None else check_name(name),
             item.types,
             item.entry,
             item.schema_hash,
@@ -680,6 +701,11 @@ class SharedSendStream(End, Generic[T]):
         super().__init__(stream, native)
         self._holders = set()
 
+    @property
+    def stream(self) -> SharedStream[T]:
+        """The stream this sender sends to."""
+        return self._stream
+
     def _thread_role(self) -> str:
         return "sender"
 
@@ -1029,6 +1055,11 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T]):
         self._events: ReceiveEvents | None = None
         self._delivering = False
         self._generation = 0
+
+    @property
+    def stream(self) -> SharedStream[T]:
+        """The stream this reader receives from."""
+        return self._stream
 
     @property
     def mode(self) -> Mode:
