@@ -44,6 +44,7 @@ from ._box import check_name
 from ._native import (
     EndOfStream,
     Reader,
+    SchemaMismatchError,
     Segment,
     Sender,
     Slot,
@@ -234,7 +235,8 @@ class SharedStream(Generic[T]):
     Create it with [`create`][sharedbox.SharedStream.create] in one process,
     and open it with [`attach`][sharedbox.SharedStream.attach] in others or
     pass it to them, as a process argument for instance: a pickled stream
-    attaches again. Every item has the type given there: any type a
+    attaches again, and refuses a stream created since under the same name
+    with [`SchemaMismatchError`][sharedbox.SchemaMismatchError]. Every item has the type given there: any type a
     `SharedBox` field takes, except a reference to a box.
     """
 
@@ -471,17 +473,31 @@ class SharedStream(Generic[T]):
     def __exit__(self, *exc_info: object) -> None:
         self.close()
 
-    def __reduce__(self) -> tuple[Callable[..., SharedStream[Any]], tuple[object, str]]:
-        return (attach_stream, (self._hint, self.name))
+    def __reduce__(
+        self,
+    ) -> tuple[Callable[..., SharedStream[Any]], tuple[object, str, int]]:
+        return (attach_stream, (self._hint, self.name, self._native.create_id))
 
     def __repr__(self) -> str:
         state = " closed" if self.closed else ""
         return f"<SharedStream[{self._item.label}] {self.name!r}{state}>"
 
 
-def attach_stream(item_type: object, name: str) -> SharedStream[Any]:
-    """Attach to the stream a pickle refers to."""
-    return SharedStream.attach(item_type, name)
+def attach_stream(item_type: object, name: str, create_id: int) -> SharedStream[Any]:
+    """Attach to the stream a pickle refers to, if it is still the stream that was pickled.
+
+    Raises
+    ------
+    SchemaMismatchError
+        If the stream under `name` was created after the pickle was taken.
+    """
+    stream = SharedStream.attach(item_type, name)
+    if stream._native.create_id != create_id:
+        stream.close()
+        raise SchemaMismatchError(
+            f"a SharedStream was pickled from a different stream named {name!r}"
+        )
+    return stream
 
 
 class CallFuture(Future[Any]):

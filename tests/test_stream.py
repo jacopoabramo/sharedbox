@@ -370,6 +370,19 @@ def test_a_pickled_stream_attaches_and_its_ends_refuse(unique_name: str) -> None
         copy.close()
 
 
+def test_a_pickle_of_a_stream_made_again_is_refused(unique_name: str) -> None:
+    """Raise SchemaMismatchError for a pickle taken before the stream was created again."""
+    stream = SharedStream.create(int, unique_name, capacity=2)
+    data = pickle.dumps(stream)
+    stream.close()
+    SharedStream.unlink(unique_name)
+    with (
+        SharedStream.create(int, unique_name, capacity=2),
+        pytest.raises(SchemaMismatchError, match="pickled from a different stream"),
+    ):
+        pickle.loads(data)
+
+
 def test_a_stream_without_a_name_gets_one_its_ends_lead_back_to() -> None:
     """Name a stream created without a name and reach it from its ends."""
     with SharedStream.create(int, capacity=2) as stream:
