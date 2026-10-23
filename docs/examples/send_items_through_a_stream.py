@@ -12,9 +12,9 @@ from sharedbox import (
     DType,
     EndOfStream,
     Shape,
+    SharedReceiveStream,
+    SharedSendStream,
     SharedStream,
-    StreamReader,
-    StreamSender,
 )
 
 
@@ -41,13 +41,13 @@ def process_batches(name: str, ready: "mp.synchronize.Event") -> None:
 
 
 # --8<-- [start:tasks]
-async def produce(sender: StreamSender[Batch]) -> None:
+async def produce(sender: SharedSendStream[Batch]) -> None:
     async with sender:
         for i in range(3):
             await sender.asend(Batch(i, np.full(1024, float(i))))
 
 
-async def consume(reader: StreamReader[Batch]) -> None:
+async def consume(reader: SharedReceiveStream[Batch]) -> None:
     async with reader:
         async for batch in reader:
             print(batch.index)
@@ -63,7 +63,7 @@ async def run_tasks(stream: SharedStream[Batch]) -> None:
 
 
 # --8<-- [start:first]
-async def print_from_any(readers: list[StreamReader[Batch]]) -> None:
+async def print_from_any(readers: list[SharedReceiveStream[Batch]]) -> None:
     pending = {asyncio.wrap_future(r.receive_future()): r for r in readers}
     while pending:
         done, _ = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
@@ -81,7 +81,7 @@ async def print_from_any(readers: list[StreamReader[Batch]]) -> None:
 
 
 # --8<-- [start:writing]
-def send_filled(sender: StreamSender[Batch], count: int) -> None:
+def send_filled(sender: SharedSendStream[Batch], count: int) -> None:
     blank = Batch(0, np.empty(0, np.float64))
     for i in range(count):
         with sender.writing(blank) as slot:

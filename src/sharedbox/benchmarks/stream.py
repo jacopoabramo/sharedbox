@@ -27,7 +27,7 @@ from typing import Annotated, Any, Literal, TypedDict
 
 import numpy as np
 
-from sharedbox import DType, EndOfStream, Shape, SharedStream, StreamSender
+from sharedbox import DType, EndOfStream, Shape, SharedStream
 
 NAMES = count()
 Mode = Literal["lossless", "lossy", "latest"]
@@ -787,12 +787,7 @@ def run_matrix(opts: Options) -> list[Matrix]:
 
 CONTENDERS = [
     stream_run("lossless"),
-    # The Streams workflow runs this script against the base branch's install, which may lack `writing`.
-    *(
-        [stream_run("lossless", writing=True)]
-        if hasattr(StreamSender, "writing")
-        else []
-    ),
+    stream_run("lossless", writing=True),
     stream_run("lossy"),
     stream_run("latest"),
     queue_run,

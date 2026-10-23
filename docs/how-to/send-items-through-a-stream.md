@@ -38,7 +38,7 @@ once. A stream name follows the same rules as [a box name](name-a-box.md).
 
 A stream has one [sender](../explanation/glossary.md#sender). You get it from
 [`sender()`][sharedbox.SharedStream.sender] and send with
-[`send`][sharedbox.StreamSender.send]. Closing the sender ends the stream,
+[`send`][sharedbox.SharedSendStream.send]. Closing the sender ends the stream,
 and `with` closes it at the end of the block:
 
 ```{.python}
@@ -54,12 +54,12 @@ stream, a later `sender()` raises [`EndOfStream`][sharedbox.EndOfStream].
 When your code can write an item's arrays itself, such as a device library
 that fills a buffer it is given, it can write them straight into the stream
 and leave `send` no array bytes to copy. Each item lives in a slot of the
-stream's ring. [`writing`][sharedbox.StreamSender.writing] reserves the next
-slot and yields a [`StreamSlot`][sharedbox.StreamSlot], whose
-[`item`][sharedbox.StreamSlot.item] is the template item you pass with each
+stream's ring. [`writing`][sharedbox.SharedSendStream.writing] reserves
+the next slot and yields a [`SendSlot`][sharedbox.SendSlot], whose
+[`item`][sharedbox.SendSlot.item] is the template item you pass with each
 of its arrays replaced by an array over the slot. The template's arrays are
 never read, so an empty array will do. Fill the slot's arrays, then send the
-item with [`slot.send`][sharedbox.StreamSlot.send], which finds those arrays
+item with [`slot.send`][sharedbox.SendSlot.send], which finds those arrays
 already in place and does not copy them:
 
 ```{.python}
@@ -71,7 +71,7 @@ Readers see nothing of the slot until it is sent. Leaving the block without
 the next send, so the block can also drop an item it finds bad. While the
 slot is reserved, a send from another thread or task waits for it. In
 asyncio code, use
-[`awriting`][sharedbox.StreamSender.awriting] with `async with`.
+[`awriting`][sharedbox.SharedSendStream.awriting] with `async with`.
 
 !!! warning "Write the item's arrays only inside the block"
     The arrays stay usable after the block, but they still view the slot.
@@ -90,8 +90,8 @@ happens when it is slower than the sender:
   falls `capacity` items behind. Use it for a consumer that must see
   everything, such as a writer that saves each item.
 - `"lossy"` skips the items the sender has already overwritten, and
-  [`missed`][sharedbox.StreamReader.missed] counts them. Use it for a viewer
-  or a GUI that can drop items.
+  [`missed`][sharedbox.SharedReceiveStream.missed] counts them. Use it for
+  a viewer or a GUI that can drop items.
 - `"latest"` always receives the newest item. Use it for a display that
   shows only the current state.
 
@@ -112,11 +112,12 @@ for batch in stream.reader(mode="lossy"):
 
 ## Read into arrays you already have
 
-[`receive`][sharedbox.StreamReader.receive] builds new arrays for every item.
-Between processes an item is always copied, so reading into the same arrays
-each time saves allocating a new one per item. Allocate them once and pass
-them to [`receive_into`][sharedbox.StreamReader.receive_into], or to
-[`iter_into`][sharedbox.StreamReader.iter_into] for a `for` loop:
+[`receive`][sharedbox.SharedReceiveStream.receive] builds new arrays for
+every item. Between processes an item is always copied, so reading into
+the same arrays each time saves allocating a new one per item. Allocate
+them once and pass them to
+[`receive_into`][sharedbox.SharedReceiveStream.receive_into], or to
+[`iter_into`][sharedbox.SharedReceiveStream.iter_into] for a `for` loop:
 
 ```{.python}
 --8<-- "docs/examples/send_items_through_a_stream.py:reader"
@@ -135,8 +136,8 @@ that is itself a collection has no arrays to read into.
 
 ## Run a callback for each item
 
-[`reader.events`][sharedbox.StreamReader.events] is a
-[`ReaderEvents`][sharedbox.ReaderEvents] group with two `psygnal` signals:
+[`reader.events`][sharedbox.SharedReceiveStream.events] is a
+[`ReceiveEvents`][sharedbox.ReceiveEvents] group with two `psygnal` signals:
 `received`, emitted with `(item, position)` for each item, and `ended`, once
 when the stream ends:
 
@@ -169,12 +170,12 @@ three private names that the test suite checks against the installed
 
 ## Wait, poll or give up
 
-[`receive`][sharedbox.StreamReader.receive] and
-[`send`][sharedbox.StreamSender.send] take a `timeout` in seconds and raise
+[`receive`][sharedbox.SharedReceiveStream.receive] and
+[`send`][sharedbox.SharedSendStream.send] take a `timeout` in seconds and raise
 `TimeoutError` when it passes. The `_nowait` forms,
-[`receive_nowait`][sharedbox.StreamReader.receive_nowait],
-[`receive_into_nowait`][sharedbox.StreamReader.receive_into_nowait] and
-[`send_nowait`][sharedbox.StreamSender.send_nowait], raise
+[`receive_nowait`][sharedbox.SharedReceiveStream.receive_nowait],
+[`receive_into_nowait`][sharedbox.SharedReceiveStream.receive_into_nowait] and
+[`send_nowait`][sharedbox.SharedSendStream.send_nowait], raise
 [`WouldBlock`][sharedbox.WouldBlock] when there is nothing to receive or no
 room to send. A `KeyboardInterrupt` that lands while a receive is returning
 may lose the item it was taking, as `queue.Queue.get` can.
@@ -182,7 +183,7 @@ may lose the item it was taking, as `queue.Queue.get` can.
 ## Use a stream with asyncio
 
 A reader works with `async for` and `anext`, and a sender has
-[`asend`][sharedbox.StreamSender.asend]. Neither blocks the event loop:
+[`asend`][sharedbox.SharedSendStream.asend]. Neither blocks the event loop:
 
 ```python
 async for batch in reader:
@@ -220,7 +221,7 @@ because a reader's `async for` ends only when the stream does:
 The reader is opened before either task starts, so it sees every item.
 
 To wait for whichever of several readers has an item first,
-[`receive_future`][sharedbox.StreamReader.receive_future] returns a
+[`receive_future`][sharedbox.SharedReceiveStream.receive_future] returns a
 `concurrent.futures.Future`, which `asyncio.wrap_future` turns into one the
 event loop can wait on. A future that has started receiving cannot be
 cancelled, and an item it takes after you stop waiting on it is lost. Keep

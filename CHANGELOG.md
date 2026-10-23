@@ -23,15 +23,15 @@ Dates are marked as `DD-MM-YYYY`
 - `FieldWatch.future()`, returning a `FieldFuture`, a
   `concurrent.futures.Future` of the next write to the field; `FieldFuture`
   is exported from `sharedbox`.
-- `SharedStream`, `StreamSender` and `StreamReader`: send items of any type a
-  `SharedBox` field takes from one process to up to `max_readers` readers,
-  each reading `lossless`, `lossy` or `latest`, with blocking, non-blocking
-  and asyncio calls, `receive_into` into the caller's arrays and
-  `receive_future`, a `concurrent.futures.Future`.
-- `StreamReader.events`, a `ReaderEvents` psygnal group whose `received`
-  and `ended` signals deliver a reader's items to callbacks.
-- `StreamSender.writing()` and `StreamSender.awriting()`, which yield a
-  `StreamSlot`: `slot.item` is an item built from a template, with arrays
+- `SharedStream`, `SharedSendStream` and `SharedReceiveStream`: send items
+  of any type a `SharedBox` field takes from one process to up to
+  `max_readers` readers, each reading `lossless`, `lossy` or `latest`, with
+  blocking, non-blocking and asyncio calls, `receive_into` into the caller's
+  arrays and `receive_future`, a `concurrent.futures.Future`.
+- `SharedReceiveStream.events`, a `ReceiveEvents` psygnal group whose
+  `received` and `ended` signals deliver a reader's items to callbacks.
+- `SharedSendStream.writing()` and `SharedSendStream.awriting()`, which yield a
+  `SendSlot`: `slot.item` is an item built from a template, with arrays
   over the next slot to fill in place, and `slot.send(item)` publishes an
   item without copying the arrays already in the slot.
 
@@ -41,7 +41,7 @@ Dates are marked as `DD-MM-YYYY`
       slot.item.image.fill(0)
       slot.send(replace(slot.item, index=1))
   ```
-- `StreamStatistics` and `ReaderStatistics`, returned by
+- `SharedStreamStatistics` and `ReceiveStreamStatistics`, returned by
   `SharedStream.statistics()`.
 - `WouldBlock`, `EndOfStream`, `StreamBusyError` and `StreamClosedError`.
 - `WaiterSlotsFullError` is exported from `sharedbox`; opening a reader

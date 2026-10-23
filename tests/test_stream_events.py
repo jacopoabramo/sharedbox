@@ -16,11 +16,11 @@ from streamproc import exit_while_delivering, send_ints
 from sharedbox import (
     DType,
     EndOfStream,
-    ReaderEvents,
+    ReceiveEvents,
     Shape,
+    SharedReceiveStream,
     SharedStream,
     StreamClosedError,
-    StreamReader,
 )
 from sharedbox._stream import CountedSignal
 
@@ -73,7 +73,7 @@ def test_callbacks_on_the_main_thread_run_from_emit_queued(unique_name: str) -> 
         assert got == [(1, threading.main_thread())]
 
 
-def drain(reader: StreamReader[int]) -> list[int]:
+def drain(reader: SharedReceiveStream[int]) -> list[int]:
     """Receive with plain calls up to the end of the stream."""
     rest: list[int] = []
     try:
@@ -84,7 +84,7 @@ def drain(reader: StreamReader[int]) -> list[int]:
     return rest
 
 
-async def anext_of(reader: StreamReader[int]) -> int:
+async def anext_of(reader: SharedReceiveStream[int]) -> int:
     return await anext(reader)
 
 
@@ -112,7 +112,7 @@ async def anext_of(reader: StreamReader[int]) -> int:
     ],
 )
 def test_receiving_raises_while_delivering(
-    unique_name: str, call: Callable[[StreamReader[int]], object]
+    unique_name: str, call: Callable[[SharedReceiveStream[int]], object]
 ) -> None:
     """Raise RuntimeError from every way of receiving while callbacks are connected."""
     with SharedStream.create(int, unique_name, capacity=4) as stream:
@@ -314,16 +314,16 @@ def test_an_error_while_receiving_is_logged_and_stops_delivery(
     """Log an exception from the receive itself, stop delivering, and let receive work again."""
     with SharedStream.create(int, unique_name, capacity=4) as stream:
         reader = stream.reader()
-        take = StreamReader._take
+        take = SharedReceiveStream._take
         failed = threading.Event()
 
-        def broken(self: StreamReader[int], *args: Any) -> int:
+        def broken(self: SharedReceiveStream[int], *args: Any) -> int:
             if threading.current_thread() is not threading.main_thread():
                 failed.set()
                 raise ValueError("cannot decode")
             return take(self, *args)
 
-        monkeypatch.setattr(StreamReader, "_take", broken)
+        monkeypatch.setattr(SharedReceiveStream, "_take", broken)
         reader.events.received.connect(lambda *_: None)
         assert failed.wait(5)
         stream.sender().send(1)
@@ -340,8 +340,8 @@ def test_an_error_while_receiving_is_logged_and_stops_delivery(
 
 
 def test_a_group_without_a_reader_accepts_callbacks() -> None:
-    """Connect to a ReaderEvents that no reader owns without raising."""
-    events = ReaderEvents()
+    """Connect to a ReceiveEvents that no reader owns without raising."""
+    events = ReceiveEvents()
     events.received.connect(lambda item, position: None)
     assert len(events.received) == 1
 
@@ -424,7 +424,7 @@ def fork(target: Callable[..., object], *args: object) -> BaseProcess:
         return process
 
 
-def use_inherited_delivering_reader(reader: StreamReader[int]) -> None:
+def use_inherited_delivering_reader(reader: SharedReceiveStream[int]) -> None:
     """Check in a forked child that a reader that was delivering is closed."""
     with pytest.raises(StreamClosedError):
         reader.receive()
@@ -449,7 +449,7 @@ def test_a_forked_child_of_a_delivering_reader_gets_stream_closed_error(
 
 def test_an_item_handed_back_does_not_move_the_position(unique_name: str) -> None:
     """Keep reader.position at the last item delivered when delivery hands one back."""
-    take = StreamReader._take
+    take = SharedReceiveStream._take
     calls: list[int] = []
     positions: list[int | None] = []
     got: list[tuple[int, int]] = []
@@ -457,7 +457,7 @@ def test_an_item_handed_back_does_not_move_the_position(unique_name: str) -> Non
     def keep(item: int, position: int) -> None:
         got.append((item, position))
 
-    def patched(self: StreamReader[int], *args: Any) -> int:
+    def patched(self: SharedReceiveStream[int], *args: Any) -> int:
         calls.append(1)
         if len(calls) == 3:
             positions.append(self.position)
@@ -472,7 +472,7 @@ def test_an_item_handed_back_does_not_move_the_position(unique_name: str) -> Non
         sender.send(10)
         sender.send(11)
         with pytest.MonkeyPatch.context() as patch:
-            patch.setattr(StreamReader, "_take", patched)
+            patch.setattr(SharedReceiveStream, "_take", patched)
             reader.events.received.connect(keep)
             deadline = time.monotonic() + 5
             while True:

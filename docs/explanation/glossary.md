@@ -85,7 +85,7 @@ a lossless reader waits for it. See [`reader`][sharedbox.SharedStream.reader].
 
 Lossy is a [reader](#reader) mode in which the reader skips the items the
 [sender](#sender) overwrote while it was busy, and counts them in
-[`missed`][sharedbox.StreamReader.missed]. See
+[`missed`][sharedbox.SharedReceiveStream.missed]. See
 [`reader`][sharedbox.SharedStream.reader].
 
 ### Reader
@@ -93,7 +93,7 @@ Lossy is a [reader](#reader) mode in which the reader skips the items the
 A reader is an object that receives the items of a [stream](#stream) in one
 process. Each reader has its own position in the stream and a mode:
 [lossless](#lossless), [lossy](#lossy) or [latest](#latest). See
-[`StreamReader`][sharedbox.StreamReader].
+[`SharedReceiveStream`][sharedbox.SharedReceiveStream].
 
 ### Reference field
 
@@ -125,7 +125,7 @@ which any process can open it. See
 
 A sender is the object that sends the items of a [stream](#stream). A stream
 has one at a time, and closing it ends the stream. See
-[`StreamSender`][sharedbox.StreamSender].
+[`SharedSendStream`][sharedbox.SharedSendStream].
 
 ### Sequence lock
 

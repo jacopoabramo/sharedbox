@@ -459,14 +459,14 @@ class Slot(Generic[_T]):
         the slot in shared memory and starts with the bytes of an older
         item. The arrays keep the stream's mapping alive, so using them
         after the block or after the stream is closed cannot crash, but
-        writing to them after [`send`][sharedbox.StreamSlot.send] changes
+        writing to them after [`send`][sharedbox.SendSlot.send] changes
         an item readers may have received and tells no one.
         """
     def send(self, item: _T) -> None:
         """Encode `item` into the slot and publish it.
 
         An array of `item` that already is its place in the slot, such as
-        one of [`item`][sharedbox.StreamSlot.item]'s arrays, is not copied;
+        one of [`item`][sharedbox.SendSlot.item]'s arrays, is not copied;
         any other array is copied into the slot.
 
         Raises
@@ -485,7 +485,7 @@ class Slot(Generic[_T]):
     def abandon(self) -> None:
         """Give the slot up unless it was sent: nothing is published, and the next send takes its position.
 
-        Leaving the block of [`writing`][sharedbox.StreamSender.writing]
+        Leaving the block of [`writing`][sharedbox.SharedSendStream.writing]
         does this.
         """
 
