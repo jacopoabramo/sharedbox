@@ -20,7 +20,6 @@ from sharedbox import (
     SchemaMismatchError,
     Shape,
     SharedBox,
-    SharedReceiveStream,
     SharedStream,
     StreamBusyError,
     StreamClosedError,
@@ -355,25 +354,19 @@ def test_statistics_report_each_reader(unique_name: str) -> None:
         )
 
 
-def test_a_pickled_stream_and_reader_open_again(unique_name: str) -> None:
-    """Unpickle a stream as an attach and a reader as a new reader of the same mode."""
+def test_a_pickled_stream_attaches_and_its_ends_refuse(unique_name: str) -> None:
+    """Unpickle a stream as an attach, and refuse to pickle its sender or a reader."""
     with SharedStream.create(int, unique_name, capacity=2) as stream:
         copy = pickle.loads(pickle.dumps(stream))
         assert copy.name == stream.name
+        reader = copy.reader()
         sender = stream.sender()
         sender.send(1)
-        reader = pickle.loads(pickle.dumps(stream.reader(mode="latest")))
-        assert isinstance(reader, SharedReceiveStream)
-        assert reader.mode == "latest"
-        assert reader.position is None
         assert reader.receive_nowait() == 1
-        with pytest.raises(WouldBlock):
-            reader.receive_nowait()
-        sender.send(2)
-        assert reader.receive_nowait() == 2
-        with pytest.raises(TypeError, match="SharedStream"):
+        with pytest.raises(TypeError, match=r"call sender\(\)"):
             pickle.dumps(sender)
-        reader.close()
+        with pytest.raises(TypeError, match=r"call reader\(\)"):
+            pickle.dumps(reader)
         copy.close()
 
 

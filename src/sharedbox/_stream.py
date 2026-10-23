@@ -475,11 +475,6 @@ def attach_stream(item_type: object, name: str) -> SharedStream[Any]:
     return SharedStream.attach(item_type, name)
 
 
-def open_reader(item_type: object, name: str, mode: Mode) -> SharedReceiveStream[Any]:
-    """Open a new reader of the stream a pickled reader refers to."""
-    return SharedStream.attach(item_type, name).reader(mode)
-
-
 class CallFuture(Future[Any]):
     """The future of one call on a worker; `position` is where a receive stopped."""
 
@@ -961,7 +956,7 @@ class SharedSendStream(End, Generic[T]):
     def __reduce__(self) -> Any:
         raise TypeError(
             "a SharedSendStream cannot be pickled; "
-            "send the SharedStream and call sender() in the other process"
+            "send its stream and call sender() in the other process"
         )
 
 
@@ -1478,10 +1473,11 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T]):
     def __exit__(self, *exc_info: object) -> None:
         self.close()
 
-    def __reduce__(
-        self,
-    ) -> tuple[Callable[..., SharedReceiveStream[Any]], tuple[object, str, Mode]]:
-        return (open_reader, (self._stream._hint, self._stream.name, self.mode))
+    def __reduce__(self) -> Any:
+        raise TypeError(
+            "a SharedReceiveStream cannot be pickled; "
+            "send its stream and call reader() in the other process"
+        )
 
 
 class IterInto(Iterator[T], AsyncIterator[T], Generic[T]):
