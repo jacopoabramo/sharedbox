@@ -373,16 +373,18 @@ def test_a_pickled_stream_attaches_and_its_ends_refuse(unique_name: str) -> None
 def test_a_stream_without_a_name_gets_one_its_ends_lead_back_to() -> None:
     """Name a stream created without a name and reach it from its ends."""
     with SharedStream.create(int, capacity=2) as stream:
-        assert re.fullmatch(r"[0-9a-f]{16}", stream.name)
-        sender = stream.sender()
-        assert sender.stream is stream
-        other = SharedStream.attach(int, stream.name)
-        reader = other.reader()
-        sender.send(1)
-        assert reader.receive_nowait() == 1
-        assert reader.stream.statistics().sent == 1
-        SharedStream.unlink(stream.name)
-        other.close()
+        try:
+            assert re.fullmatch(r"[0-9a-f]{16}", stream.name)
+            sender = stream.sender()
+            assert sender.stream is stream
+            other = SharedStream.attach(int, stream.name)
+            reader = other.reader()
+            sender.send(1)
+            assert reader.receive_nowait() == 1
+            assert reader.stream.statistics().sent == 1
+            other.close()
+        finally:
+            SharedStream.unlink(stream.name)
 
 
 def test_a_reader_iterates_until_the_stream_ends(unique_name: str) -> None:
