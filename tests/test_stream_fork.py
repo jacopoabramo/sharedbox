@@ -54,3 +54,19 @@ def test_an_inherited_sender_is_closed_in_the_child_and_keeps_the_stream_open(
         assert process.exitcode == 0
         sender.send(2)
         assert reader.receive(timeout=5) == 2
+
+
+def test_an_inherited_stream_opens_a_reader_in_the_child(unique_name: str) -> None:
+    """Open a reader in a forked child from the stream it inherited, and receive what the parent sent."""
+    with SharedStream.create(int, unique_name, capacity=4) as stream:
+        sender = stream.sender()
+        sender.send(1)
+
+        def child() -> None:
+            own = stream.reader(start="oldest")
+            assert own.receive(timeout=5) == 1
+            own.close()
+
+        process = fork(child)
+        process.join(60)
+        assert process.exitcode == 0
