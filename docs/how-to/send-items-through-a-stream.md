@@ -29,10 +29,26 @@ stream = SharedStream.create(Batch, "example-pipeline:batches", capacity=8)
 
 A larger capacity lets a reader fall further behind before a lossless
 reader holds the sender back or a lossy one misses items, and costs memory
-for that many items. Other processes call
-[`attach`][sharedbox.SharedStream.attach] with the same type and name.
-`max_readers` (8 unless you set it) limits how many readers may be open at
-once. A stream name follows the same rules as [a box name](name-a-box.md).
+for that many items. `max_readers` (8 unless you set it) limits how many
+readers may be open at once. A stream name follows the same rules as
+[a box name](name-a-box.md).
+
+Other processes reach the stream in one of two ways. A process you start can
+take the stream as an argument, and it arrives attached under the same name,
+as in the example below. Any other process calls
+[`attach`][sharedbox.SharedStream.attach] with the same type and name. When
+only processes you start use the stream, leave the name out and `create`
+gives the stream a new one:
+
+```python
+stream = SharedStream.create(Batch, capacity=8)
+```
+
+The sender and the readers cannot be passed to another process: pickling
+one raises `TypeError`. Pass the stream, and open each end in the process
+that uses it. Code that is given only an end reaches its stream through
+[`stream`][sharedbox.SharedReceiveStream.stream], to open another reader
+or read its [`statistics`][sharedbox.SharedStream.statistics].
 
 ## Send items
 
@@ -239,7 +255,7 @@ get [`EndOfStream`][sharedbox.EndOfStream]. A `for` loop treats that as its
 end, and a direct `receive` raises it. Closing a reader, or the stream with
 [`close`][sharedbox.SharedStream.close], raises
 [`StreamClosedError`][sharedbox.StreamClosedError] in a call still waiting on
-it. On Linux, `SharedStream.unlink(name)` removes the name.
+it. On Linux, `SharedStream.unlink(stream.name)` removes the name.
 
 When a process dies, the others notice it during a wait. Readers end after a
 dead sender, and the sender stops waiting for a dead lossless reader. A

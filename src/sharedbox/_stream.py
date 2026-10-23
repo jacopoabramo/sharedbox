@@ -222,10 +222,11 @@ class SharedStreamStatistics:
 class SharedStream(Generic[T]):
     """A ring of items in shared memory, sent by one process and received by up to `max_readers` readers.
 
-    Create it with [`create`][sharedbox.SharedStream.create] in one process and
-    open it with [`attach`][sharedbox.SharedStream.attach] in others. Every
-    item has the type given there: any type a `SharedBox` field takes, except
-    a reference to a box.
+    Create it with [`create`][sharedbox.SharedStream.create] in one process,
+    and open it with [`attach`][sharedbox.SharedStream.attach] in others or
+    pass it to them, as a process argument for instance: a pickled stream
+    attaches again. Every item has the type given there: any type a
+    `SharedBox` field takes, except a reference to a box.
     """
 
     __slots__ = (

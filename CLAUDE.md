@@ -337,7 +337,9 @@ C++ and C code take a box through `__sharedbox_box__` or open it by name; see
 `docs/how-to/accept-a-box-in-cpp.md`, `docs/how-to/accept-a-box-in-c.md` and
 `docs/how-to/open-a-box-from-a-program.md`.
 
-`SharedStream.create(Item, name, capacity=8)` makes a ring of typed items.
+`SharedStream.create(Item, name, capacity=8)` makes a ring of typed items;
+without `name` it gets a new name, and a child process given the stream
+attaches to it.
 One `SharedSendStream` fills it, and up to `max_readers` readers read it,
 each a `SharedReceiveStream` in mode `lossless`, `lossy` or `latest`;
 `receive_into` reads into arrays the caller allocated. See

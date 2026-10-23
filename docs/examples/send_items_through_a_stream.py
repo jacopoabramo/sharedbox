@@ -28,8 +28,7 @@ class Batch:
 
 
 # --8<-- [start:reader]
-def process_batches(name: str, ready: "mp.synchronize.Event") -> None:
-    stream = SharedStream.attach(Batch, name)
+def process_batches(stream: SharedStream[Batch], ready: "mp.synchronize.Event") -> None:
     reader = stream.reader(mode="lossless")
     ready.set()
     values = np.empty(1024, np.float64)
@@ -96,15 +95,15 @@ def send_filled(sender: SharedSendStream[Batch], count: int) -> None:
 if __name__ == "__main__":
     context = mp.get_context("spawn")
     ready = context.Event()
-    with SharedStream.create(Batch, "example-pipeline:batches", capacity=8) as stream:
-        child = context.Process(target=process_batches, args=(stream.name, ready))
+    with SharedStream.create(Batch, capacity=8) as stream:
+        child = context.Process(target=process_batches, args=(stream, ready))
         child.start()
         ready.wait(60)
         with stream.sender() as sender:
             for i in range(3):
                 sender.send(Batch(i, np.full(1024, float(i))))
         child.join(60)
-    SharedStream.unlink("example-pipeline:batches")
+    SharedStream.unlink(stream.name)
 # --8<-- [end:main]
 
 
