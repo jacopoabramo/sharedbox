@@ -3202,16 +3202,63 @@ bullets:</p>
 <li><code>## Testing</code>: the checks you ran and their result.</li>
 </ul>
 <h2 id="changelog-entries">Changelog entries<a class="headerlink" href="#changelog-entries" title="Permanent link">&para;</a></h2>
-<p>A change that someone using sharedbox would notice adds an entry to
-<code>CHANGELOG.md</code> in the same pull request. The file follows
-<a href="https://keepachangelog.com/en/1.1.0/">Keep a Changelog</a>: entries go under
-the release at the top, marked <code>Unreleased</code>, in one of the sections
-<code>Added</code>, <code>Changed</code>, <code>Deprecated</code>, <code>Removed</code>, <code>Fixed</code> and <code>Security</code>.</p>
-<p>Each entry names the public symbol first, then says what changed:</p>
-<div class="language-markdown highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="k">-</span><span class="w"> </span><span class="sb">`SharedBox.watch()`</span>: no longer yields the same value twice.
+<p>Each change someone using sharedbox would notice gets a file in
+<code>changelog.d/</code>, named after the pull request and the kind of change, such as
+<code>61.fixed.md</code>. Open the pull request first, so you know its number. A
+release collects the files into <a href="../../reference/changelog/">the changelog</a>,
+one entry each, and links each entry to its pull request.</p>
+<table>
+<thead>
+<tr>
+<th>kind</th>
+<th>use it when</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>breaking</code></td>
+<td>code that uses sharedbox has to change</td>
+</tr>
+<tr>
+<td><code>added</code></td>
+<td>something new: a class, a function, a keyword, an option</td>
+</tr>
+<tr>
+<td><code>changed</code></td>
+<td>something that already existed behaves differently</td>
+</tr>
+<tr>
+<td><code>deprecated</code></td>
+<td>something still works but warns, and goes in a later release</td>
+</tr>
+<tr>
+<td><code>removed</code></td>
+<td>something is gone</td>
+</tr>
+<tr>
+<td><code>fixed</code></td>
+<td>something now works as its documentation says</td>
+</tr>
+<tr>
+<td><code>security</code></td>
+<td>a vulnerability is closed</td>
+</tr>
+</tbody>
+</table>
+<p><code>towncrier</code>, the tool that collects the entries at release time, writes the
+file for you. Keep the text in single quotes, so the shell leaves its
+backticks alone:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>uv<span class="w"> </span>run<span class="w"> </span>towncrier<span class="w"> </span>create<span class="w"> </span><span class="m">61</span>.fixed.md<span class="w"> </span>--content<span class="w"> </span><span class="s1">'`SharedBox.watch()`: no longer yields the same value twice.'</span>
 </span></code></pre></div>
-<p>An entry records what changed and nothing else. The reasons belong in the
-pull request.</p>
+<p>A second change of the same kind in one pull request goes in <code>61.fixed.2.md</code>.</p>
+<p>An entry names the public symbol first, then says in a line or two what
+changed. It records the change and nothing else, because the reasons belong
+in the pull request. A change to something not released yet gets no entry
+of its own: edit the entry that added it instead, so the release says what
+users get.</p>
+<p>A pull request nobody using sharedbox would notice, such as tests, <abbr title="Continuous integration. The builds and tests GitHub runs on pushes and pull requests to the main branch.">CI</abbr>, a
+refactor or docs alone, needs no entry. A maintainer gives it the
+<code>skip-changelog</code> label, and <abbr title="Continuous integration. The builds and tests GitHub runs on pushes and pull requests to the main branch.">CI</abbr> accepts it without one.</p>
 
 
 

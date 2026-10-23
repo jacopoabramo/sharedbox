@@ -2777,10 +2777,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#1-date-the-changelog" class="md-nav__link">
+  <a href="#1-write-the-changelog-section" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        1. Date the changelog
+        1. Write the changelog section
       </span>
     </span>
   </a>
@@ -2788,10 +2788,21 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#2-publish-the-release" class="md-nav__link">
+  <a href="#2-merge-the-changelog-pull-request" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        2. Publish the release
+        2. Merge the changelog pull request
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-publish-the-release" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        3. Publish the release
       </span>
     </span>
   </a>
@@ -3025,10 +3036,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#1-date-the-changelog" class="md-nav__link">
+  <a href="#1-write-the-changelog-section" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        1. Date the changelog
+        1. Write the changelog section
       </span>
     </span>
   </a>
@@ -3036,10 +3047,21 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#2-publish-the-release" class="md-nav__link">
+  <a href="#2-merge-the-changelog-pull-request" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        2. Publish the release
+        2. Merge the changelog pull request
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#3-publish-the-release" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        3. Publish the release
       </span>
     </span>
   </a>
@@ -3185,62 +3207,59 @@
 
 
 <h1 id="how-to-make-a-release">How to make a release<a class="headerlink" href="#how-to-make-a-release" title="Permanent link">&para;</a></h1>
-<p>Releasing <code>sharedbox</code> means publishing a GitHub release. <abbr title="Continuous integration. The builds and tests GitHub runs on pushes and pull requests to the main branch.">CI</abbr> then builds the
-wheels, tests them and uploads them to PyPI, so most of this guide is about
-getting the details right before you publish.</p>
+<p>Releasing <code>sharedbox</code> means writing its changelog section and then
+publishing a GitHub release. <abbr title="Continuous integration. The builds and tests GitHub runs on pushes and pull requests to the main branch.">CI</abbr> then builds the wheels, tests them and
+uploads them to PyPI, so most of this guide is about getting the section
+right before you publish.</p>
 <h2 id="before-you-start">Before you start<a class="headerlink" href="#before-you-start" title="Permanent link">&para;</a></h2>
-<p><a href="https://cli.github.com"><code>gh</code></a> signed in with write access to the
-repository, and a clone of it.</p>
-<h2 id="1-date-the-changelog">1. Date the changelog<a class="headerlink" href="#1-date-the-changelog" title="Permanent link">&para;</a></h2>
-<p><code>CHANGELOG.md</code> collects the entries of the next release under a heading
-marked <code>Unreleased</code>, as
-<a href="../commits-and-prs/#changelog-entries">How to write commits and pull requests</a>
-describes. On an up-to-date <code>main</code>, make a release branch and replace
-<code>Unreleased</code> with today's date, written <code>DD-MM-YYYY</code>:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>git<span class="w"> </span>switch<span class="w"> </span>main
-</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>git<span class="w"> </span>pull
-</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>git<span class="w"> </span>switch<span class="w"> </span>-c<span class="w"> </span>release/v0.3.0
-</span></code></pre></div>
-<div class="language-markdown highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="gu">## [0.3.0] - 14-10-2026</span>
-</span></code></pre></div>
-<p>Read the section once more, then commit it, open a pull request and merge
-it once the checks pass:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>git<span class="w"> </span>commit<span class="w"> </span>-am<span class="w"> </span><span class="s2">"docs: date the 0.3.0 changelog"</span>
-</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>git<span class="w"> </span>push<span class="w"> </span>origin<span class="w"> </span>release/v0.3.0
-</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>gh<span class="w"> </span>pr<span class="w"> </span>create<span class="w"> </span>--base<span class="w"> </span>main<span class="w"> </span>--title<span class="w"> </span><span class="s2">"docs: date the 0.3.0 changelog"</span><span class="w"> </span><span class="se">\</span>
-</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="w">  </span>--body<span class="w"> </span><span class="s2">"Dates the changelog section for 0.3.0."</span>
-</span></code></pre></div>
-<h2 id="2-publish-the-release">2. Publish the release<a class="headerlink" href="#2-publish-the-release" title="Permanent link">&para;</a></h2>
-<p>Create the release on the merge commit. <code>gh</code> creates the tag too:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>git<span class="w"> </span>switch<span class="w"> </span>main
-</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>git<span class="w"> </span>pull
-</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>gh<span class="w"> </span>release<span class="w"> </span>create<span class="w"> </span>v0.3.0<span class="w"> </span>--target<span class="w"> </span>main<span class="w"> </span>--title<span class="w"> </span>v0.3.0<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="w">  </span>--notes<span class="w"> </span><span class="s2">"Changes: https://github.com/jacopoabramo/sharedbox/blob/v0.3.0/CHANGELOG.md"</span>
-</span></code></pre></div>
-<p>The release notes link to the changelog as it is in the tag.</p>
+<p>You need write access to the repository. Every step happens in GitHub's web
+interface.</p>
+<p>Don't merge other pull requests between the first step and the last,
+because the release takes <code>main</code> as it is when you publish it.</p>
+<h2 id="1-write-the-changelog-section">1. Write the changelog section<a class="headerlink" href="#1-write-the-changelog-section" title="Permanent link">&para;</a></h2>
+<p>The entries of the next release wait in <code>changelog.d/</code>, one file per change,
+as <a href="../commits-and-prs/#changelog-entries">How to write commits and pull requests</a>
+describes. The <code>Prepare release</code> workflow collects them into a section of
+<code>CHANGELOG.md</code>. Open Actions -&gt; Prepare release -&gt; Run workflow, and give it
+the version without its <code>v</code>, such as <code>0.6.0</code>.</p>
+<p>The run writes the section, dated today, deletes the entry files and opens
+the pull request "docs: write the 0.6.0 changelog", whose description is the
+section. To read the section first without changing anything, tick "Only
+show the changelog section": the run then shows it in its summary and opens
+no pull request.</p>
+<h2 id="2-merge-the-changelog-pull-request">2. Merge the changelog pull request<a class="headerlink" href="#2-merge-the-changelog-pull-request" title="Permanent link">&para;</a></h2>
+<p>Read the section in <code>CHANGELOG.md</code> on the pull request's branch, and fix any
+entry that reads badly there. Checks of a pull request opened by a workflow
+wait for approval, so click "Approve workflows to run", then merge once they
+pass.</p>
+<h2 id="3-publish-the-release">3. Publish the release<a class="headerlink" href="#3-publish-the-release" title="Permanent link">&para;</a></h2>
+<p>Open Releases -&gt; Draft a new release. Under "Choose a tag", type <code>v0.6.0</code>,
+pick "Create new tag on publish" and target <code>main</code>. Title the release
+<code>v0.6.0</code>, leave the description empty, and publish it.</p>
 <p>The tag is <code>vX.Y.Z</code>. The package version comes from it, through
 setuptools-scm, so the tag must be on the commit you want to release.</p>
 <h2 id="what-ci-does-with-it">What <abbr title="Continuous integration. The builds and tests GitHub runs on pushes and pull requests to the main branch.">CI</abbr> does with it<a class="headerlink" href="#what-ci-does-with-it" title="Permanent link">&para;</a></h2>
 <p>Publishing the release runs <abbr title="Continuous integration. The builds and tests GitHub runs on pushes and pull requests to the main branch.">CI</abbr> on the tagged commit. It first builds the
 wheels and tests each one. It then checks that the tag has the form
 <code>vX.Y.Z</code> or <code>vX.Y.ZrcN</code>, that the pre-release flag matches (set for <code>rc</code>
-tags, not set for the others), builds the source distribution and checks
-that its version is the tag's. A mismatch fails the build before anything
-is uploaded to PyPI.</p>
+tags, not set for the others), and that <code>CHANGELOG.md</code> has a section for a
+final release. Then it builds the source distribution and checks that its
+version is the tag's. A failed check stops the build before anything is
+uploaded to PyPI.</p>
 <p>Once the lint checks, the docs build and the C++ tests pass as well, <abbr title="Continuous integration. The builds and tests GitHub runs on pushes and pull requests to the main branch.">CI</abbr>
 uploads the wheels and the source distribution to
-<a href="https://pypi.org/project/sharedbox/">PyPI</a>. A final release also
-publishes the documentation site. The site is published on every push to
-<code>main</code> as well.</p>
+<a href="https://pypi.org/project/sharedbox/">PyPI</a>. For a final release it then
+writes the changelog section into the release's description, and publishes
+the documentation site. The site is published on every push to <code>main</code> as
+well.</p>
+<p>A release published before its changelog pull request merged fails that
+check, so nothing reaches PyPI. Delete the release and its tag, merge the
+pull request, and publish again.</p>
 <h2 id="release-candidates">Release candidates<a class="headerlink" href="#release-candidates" title="Permanent link">&para;</a></h2>
-<p>Leave <code>Unreleased</code> in the changelog, tag the candidate <code>vX.Y.ZrcN</code> and
-mark the release as a pre-release:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a>gh<span class="w"> </span>release<span class="w"> </span>create<span class="w"> </span>v0.3.0rc1<span class="w"> </span>--target<span class="w"> </span>main<span class="w"> </span>--title<span class="w"> </span>v0.3.0rc1<span class="w"> </span>--prerelease<span class="w"> </span><span class="se">\</span>
-</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="w">  </span>--notes<span class="w"> </span><span class="s2">"Changes: https://github.com/jacopoabramo/sharedbox/blob/main/CHANGELOG.md#unreleased"</span>
-</span></code></pre></div>
-<p>Its notes link to the <code>Unreleased</code> section of the changelog on <code>main</code>.</p>
-<p>A candidate uploads the package to PyPI and leaves the documentation site
-as it is.</p>
+<p>A release candidate skips the first two steps. Publish the release as in
+step 3 with a tag such as <code>v0.6.0rc1</code>, and tick "Set as a pre-release".
+<abbr title="Continuous integration. The builds and tests GitHub runs on pushes and pull requests to the main branch.">CI</abbr> uploads the package to PyPI, writes no notes and leaves the documentation
+site as it is. The entries stay in <code>changelog.d/</code> for the final release.</p>
 
 
 
