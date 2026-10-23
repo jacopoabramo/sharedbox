@@ -45,7 +45,8 @@ stream = SharedStream.create(Batch, capacity=8)
 ```
 
 The sender and the readers cannot be passed to another process: pickling
-one raises `TypeError`. Pass the stream, and open each end in the process
+one raises `TypeError`, and a child made by `fork` inherits them closed.
+Pass the stream, and open each end in the process
 that uses it. Code that is given only an end reaches its stream through
 [`stream`][sharedbox.SharedReceiveStream.stream], to open another reader
 or read its [`statistics`][sharedbox.SharedStream.statistics].
@@ -273,7 +274,7 @@ short delay.
 
 A child made by `fork` inherits the parent's ends, but they are closed in the
 child: using one raises [`StreamClosedError`][sharedbox.StreamClosedError].
-Open new ends in the child instead. Do not connect callbacks to an inherited
+Open new ends in the child from the inherited stream instead. Do not connect callbacks to an inherited
 reader's events either: if the parent was delivering to callbacks when it
 forked, the child can block on the lock the parent's delivery thread held.
 

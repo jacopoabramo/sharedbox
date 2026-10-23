@@ -281,9 +281,8 @@ class SharedStream(Generic[T]):
         ----------
         name
             Without one, the stream gets a new name of 16 hex digits. A
-            process the stream is handed to as an argument attaches to it
-            by that name, so only a process that opens the stream by name
-            needs to know it.
+            process the stream is passed to opens it without being told the
+            name, so only code that calls `attach` needs to know it.
         capacity
             Items the ring holds, at least 2. A lossless reader may fall
             this many items behind before `send` waits for it.
