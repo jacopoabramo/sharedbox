@@ -248,6 +248,14 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.event_name == 'release' && github.event.release.tag_name || '' }}
 
+      - name: Check the changelog has a section for a final release
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          if [[ "$TAG" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            python3 scripts/release_notes.py extract "${TAG#v}" > /dev/null
+          fi
+
       - name: Build SDist
         run: pipx run build --sdist
 
@@ -280,3 +288,25 @@ jobs:
           merge-multiple: true
 
       - uses: pypa/gh-action-pypi-publish@release/v1
+
+  # final releases only: a release candidate's entries stay in changelog.d
+  # for the final release's section
+  github_release:
+    name: Write the GitHub release notes
+    needs: [upload_pypi]
+    if: github.event_name == 'release' && !github.event.release.prerelease
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.release.tag_name }}
+
+      - name: Write the release's notes from its changelog section
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          python3 scripts/release_notes.py extract "${TAG#v}" > notes.md
+          gh release edit "$TAG" --title "$TAG" --notes-file notes.md
