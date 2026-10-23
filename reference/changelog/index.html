@@ -3750,15 +3750,15 @@ and this project adheres to <a href="https://semver.org/spec/v2.0.0.html">Semant
 - <code>FieldWatch.future()</code>, returning a <code>FieldFuture</code>, a
   <code>concurrent.futures.Future</code> of the next write to the field; <code>FieldFuture</code>
   is exported from <code>sharedbox</code>.
-- <code>SharedStream</code>, <code>StreamSender</code> and <code>StreamReader</code>: send items of any type a
-  <code>SharedBox</code> field takes from one process to up to <code>max_readers</code> readers,
-  each reading <code>lossless</code>, <code>lossy</code> or <code>latest</code>, with blocking, non-blocking
-  and asyncio calls, <code>receive_into</code> into the caller's arrays and
-  <code>receive_future</code>, a <code>concurrent.futures.Future</code>.
-- <code>StreamReader.events</code>, a <code>ReaderEvents</code> psygnal group whose <code>received</code>
-  and <code>ended</code> signals deliver a reader's items to callbacks.
-- <code>StreamSender.writing()</code> and <code>StreamSender.awriting()</code>, which yield a
-  <code>StreamSlot</code>: <code>slot.item</code> is an item built from a template, with arrays
+- <code>SharedStream</code>, <code>SharedSendStream</code> and <code>SharedReceiveStream</code>: send items
+  of any type a <code>SharedBox</code> field takes from one process to up to
+  <code>max_readers</code> readers, each reading <code>lossless</code>, <code>lossy</code> or <code>latest</code>, with
+  blocking, non-blocking and asyncio calls, <code>receive_into</code> into the caller's
+  arrays and <code>receive_future</code>, a <code>concurrent.futures.Future</code>.
+- <code>SharedReceiveStream.events</code>, a <code>ReceiveEvents</code> psygnal group whose
+  <code>received</code> and <code>ended</code> signals deliver a reader's items to callbacks.
+- <code>SharedSendStream.writing()</code> and <code>SharedSendStream.awriting()</code>, which yield a
+  <code>SendSlot</code>: <code>slot.item</code> is an item built from a template, with arrays
   over the next slot to fill in place, and <code>slot.send(item)</code> publishes an
   item without copying the arrays already in the slot.</p>
 <p><div class="language-python highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">blank</span> <span class="o">=</span> <span class="n">Frame</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">uint16</span><span class="p">))</span>
@@ -3766,7 +3766,7 @@ and this project adheres to <a href="https://semver.org/spec/v2.0.0.html">Semant
 </span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>    <span class="n">slot</span><span class="o">.</span><span class="n">item</span><span class="o">.</span><span class="n">image</span><span class="o">.</span><span class="n">fill</span><span class="p">(</span><span class="mi">0</span><span class="p">)</span>
 </span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>    <span class="n">slot</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">replace</span><span class="p">(</span><span class="n">slot</span><span class="o">.</span><span class="n">item</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="mi">1</span><span class="p">))</span>
 </span></code></pre></div>
-- <code>StreamStatistics</code> and <code>ReaderStatistics</code>, returned by
+- <code>SharedStreamStatistics</code> and <code>ReceiveStreamStatistics</code>, returned by
   <code>SharedStream.statistics()</code>.
 - <code>WouldBlock</code>, <code>EndOfStream</code>, <code>StreamBusyError</code> and <code>StreamClosedError</code>.
 - <code>WaiterSlotsFullError</code> is exported from <code>sharedbox</code>; opening a reader

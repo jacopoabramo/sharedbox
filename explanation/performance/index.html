@@ -3389,7 +3389,7 @@ against 2.0k for <code>mp.Queue</code> and 16k for the ring, which is 12 and 1.5
 faster. With four readers it is 18k against 1.2k and 7.0k, 15 and 2.6 times
 faster. Part of the gap to <code>mp.Queue</code> comes from how the readers receive:
 the stream's readers copy each item into one array they reuse, with
-<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;iter_into&lt;/span&gt;" href="../../reference/api/streams/#sharedbox.StreamReader.iter_into"><code>iter_into</code></a>, while a queue's reader
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;iter_into&lt;/span&gt;" href="../../reference/api/streams/#sharedbox.SharedReceiveStream.iter_into"><code>iter_into</code></a>, while a queue's reader
 unpickles every item into a new one.</p>
 <p>The reader mode costs little. At 1 KiB with one reader, the
 <a href="../glossary/#lossless">lossless</a>, <a href="../glossary/#lossy">lossy</a> and
@@ -3433,13 +3433,13 @@ chart above because these readers use <code>receive</code>, <code>async for</cod
 <code>events.received</code>, which put each item in new memory, twice for an item that
 is a record: first the whole item, then its array into an array of its own.
 The throughput readers copy every item into one array they reuse, with
-<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;iter_into&lt;/span&gt;" href="../../reference/api/streams/#sharedbox.StreamReader.iter_into"><code>iter_into</code></a>. The row
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;iter_into&lt;/span&gt;" href="../../reference/api/streams/#sharedbox.SharedReceiveStream.iter_into"><code>iter_into</code></a>. The row
 <code>async for (buffered)</code> shows the cost on its own: it only times reading
 items already in the ring, and still reaches 4k per second. On this Windows
 machine a fresh 512 KiB buffer costs about 100 us, so two of them plus the
 copy come to about 240 us per item, which is 4k per second. If your items
 are large, read them with <code>iter_into</code> or
-<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;receive_into&lt;/span&gt;" href="../../reference/api/streams/#sharedbox.StreamReader.receive_into"><code>receive_into</code></a>.</p>
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;receive_into&lt;/span&gt;" href="../../reference/api/streams/#sharedbox.SharedReceiveStream.receive_into"><code>receive_into</code></a>.</p>
 <details class="note">
 <summary>The numbers in the chart</summary>
 <table>

@@ -3552,13 +3552,13 @@ a lossless reader waits for it. See <a class="autorefs autorefs-internal" title=
 
   &lt;span class=&quot;doc doc-labels&quot;&gt;
       &lt;small class=&quot;doc doc-label doc-label-property&quot;&gt;&lt;code&gt;property&lt;/code&gt;&lt;/small&gt;
-  &lt;/span&gt;" href="../../reference/api/streams/#sharedbox.StreamReader.missed"><code>missed</code></a>. See
+  &lt;/span&gt;" href="../../reference/api/streams/#sharedbox.SharedReceiveStream.missed"><code>missed</code></a>. See
 <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;reader&lt;/span&gt;" href="../../reference/api/streams/#sharedbox.SharedStream.reader"><code>reader</code></a>.</p>
 <h3 id="reader">Reader<a class="headerlink" href="#reader" title="Permanent link">&para;</a></h3>
 <p>A reader is an object that receives the items of a <a href="#stream">stream</a> in one
 process. Each reader has its own position in the stream and a mode:
 <a href="#lossless">lossless</a>, <a href="#lossy">lossy</a> or <a href="#latest">latest</a>. See
-<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;StreamReader&lt;/span&gt;" href="../../reference/api/streams/#sharedbox.StreamReader"><code>StreamReader</code></a>.</p>
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;SharedReceiveStream&lt;/span&gt;" href="../../reference/api/streams/#sharedbox.SharedReceiveStream"><code>SharedReceiveStream</code></a>.</p>
 <h3 id="reference-field">Reference field<a class="headerlink" href="#reference-field" title="Permanent link">&para;</a></h3>
 <p>A reference field is a <a href="#field">field</a> annotated with another <code>SharedBox</code>
 subclass, or with that class <code>| None</code>, so one box can point at another. It
@@ -3582,7 +3582,7 @@ which any process can open it. See
 <h3 id="sender">Sender<a class="headerlink" href="#sender" title="Permanent link">&para;</a></h3>
 <p>A sender is the object that sends the items of a <a href="#stream">stream</a>. A stream
 has one at a time, and closing it ends the stream. See
-<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;StreamSender&lt;/span&gt;" href="../../reference/api/streams/#sharedbox.StreamSender"><code>StreamSender</code></a>.</p>
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;SharedSendStream&lt;/span&gt;" href="../../reference/api/streams/#sharedbox.SharedSendStream"><code>SharedSendStream</code></a>.</p>
 <h3 id="sequence-lock">Sequence lock<a class="headerlink" href="#sequence-lock" title="Permanent link">&para;</a></h3>
 <p>The sequence lock is how a <a href="#box">box</a> keeps readers from seeing half a
 write. It is a counter in the segment that is even when no write is running
