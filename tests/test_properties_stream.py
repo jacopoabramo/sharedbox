@@ -11,7 +11,7 @@ from hypothesis.stateful import (
     rule,
 )
 
-from sharedbox import SharedStream, StreamReader, StreamSender, WouldBlock
+from sharedbox import SharedReceiveStream, SharedSendStream, SharedStream, WouldBlock
 
 CAPACITY = 4
 MAX_READERS = 4
@@ -21,7 +21,7 @@ MAX_READERS = 4
 class Model:
     """What a reader should do, in the stream ring's own terms: the next position and the items skipped."""
 
-    reader: StreamReader[int]
+    reader: SharedReceiveStream[int]
     mode: str
     position: int
     missed: int = 0
@@ -34,7 +34,7 @@ class StreamMachine(RuleBasedStateMachine):
         super().__init__()
         self.name = ""
         self.stream: SharedStream[int]
-        self.sender: StreamSender[int]
+        self.sender: SharedSendStream[int]
         self.sent: list[int] = []
         self.readers: list[Model] = []
 

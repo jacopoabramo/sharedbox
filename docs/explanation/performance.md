@@ -139,7 +139,7 @@ against 2.0k for `mp.Queue` and 16k for the ring, which is 12 and 1.5 times
 faster. With four readers it is 18k against 1.2k and 7.0k, 15 and 2.6 times
 faster. Part of the gap to `mp.Queue` comes from how the readers receive:
 the stream's readers copy each item into one array they reuse, with
-[`iter_into`][sharedbox.StreamReader.iter_into], while a queue's reader
+[`iter_into`][sharedbox.SharedReceiveStream.iter_into], while a queue's reader
 unpickles every item into a new one.
 
 The reader mode costs little. At 1 KiB with one reader, the
@@ -189,13 +189,13 @@ chart above because these readers use `receive`, `async for` and
 `events.received`, which put each item in new memory, twice for an item that
 is a record: first the whole item, then its array into an array of its own.
 The throughput readers copy every item into one array they reuse, with
-[`iter_into`][sharedbox.StreamReader.iter_into]. The row
+[`iter_into`][sharedbox.SharedReceiveStream.iter_into]. The row
 `async for (buffered)` shows the cost on its own: it only times reading
 items already in the ring, and still reaches 4k per second. On this Windows
 machine a fresh 512 KiB buffer costs about 100 us, so two of them plus the
 copy come to about 240 us per item, which is 4k per second. If your items
 are large, read them with `iter_into` or
-[`receive_into`][sharedbox.StreamReader.receive_into].
+[`receive_into`][sharedbox.SharedReceiveStream.receive_into].
 
 ??? note "The numbers in the chart"
 

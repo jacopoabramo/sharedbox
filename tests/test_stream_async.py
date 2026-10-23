@@ -17,10 +17,10 @@ from crossproc import fork
 from sharedbox import (
     DType,
     Shape,
+    SharedReceiveStream,
+    SharedSendStream,
     SharedStream,
     StreamClosedError,
-    StreamReader,
-    StreamSender,
     WouldBlock,
     _stream,
 )
@@ -58,7 +58,7 @@ class Hold:
 
         self.type: type[Any] = Held
 
-    def send_and_wait(self, sender: StreamSender[Any]) -> None:
+    def send_and_wait(self, sender: SharedSendStream[Any]) -> None:
         """Send item 1 and return once a reader's thread stopped decoding it."""
         item = self.type(1)
         self.armed.set()
@@ -398,7 +398,9 @@ def test_a_process_exits_while_anext_waits(unique_name: str) -> None:
     assert time.monotonic() - started < 15
 
 
-def use_inherited_ends(reader: StreamReader[int], sender: StreamSender[int]) -> None:
+def use_inherited_ends(
+    reader: SharedReceiveStream[int], sender: SharedSendStream[int]
+) -> None:
     """Check in a forked child that both inherited ends are closed, then close them."""
     with pytest.raises(StreamClosedError):
         reader.receive_nowait()

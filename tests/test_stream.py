@@ -16,14 +16,14 @@ from sharedbox import (
     Capacity,
     DType,
     EndOfStream,
-    ReaderStatistics,
+    ReceiveStreamStatistics,
     SchemaMismatchError,
     Shape,
     SharedBox,
+    SharedReceiveStream,
     SharedStream,
     StreamBusyError,
     StreamClosedError,
-    StreamReader,
     WouldBlock,
 )
 
@@ -350,7 +350,9 @@ def test_statistics_report_each_reader(unique_name: str) -> None:
         lossy.receive_nowait()
         stats = stream.statistics()
         assert (stats.sent, stats.buffered, stats.capacity) == (3, 3, 4)
-        assert stats.readers == (ReaderStatistics("lossy", 1, 2, stats.sender_pid),)
+        assert stats.readers == (
+            ReceiveStreamStatistics("lossy", 1, 2, stats.sender_pid),
+        )
 
 
 def test_a_pickled_stream_and_reader_open_again(unique_name: str) -> None:
@@ -361,7 +363,7 @@ def test_a_pickled_stream_and_reader_open_again(unique_name: str) -> None:
         sender = stream.sender()
         sender.send(1)
         reader = pickle.loads(pickle.dumps(stream.reader(mode="latest")))
-        assert isinstance(reader, StreamReader)
+        assert isinstance(reader, SharedReceiveStream)
         assert reader.mode == "latest"
         assert reader.position is None
         assert reader.receive_nowait() == 1
