@@ -3754,7 +3754,12 @@ and this project adheres to <a href="https://semver.org/spec/v2.0.0.html">Semant
   of any type a <code>SharedBox</code> field takes from one process to up to
   <code>max_readers</code> readers, each reading <code>lossless</code>, <code>lossy</code> or <code>latest</code>, with
   blocking, non-blocking and asyncio calls, <code>receive_into</code> into the caller's
-  arrays and <code>receive_future</code>, a <code>concurrent.futures.Future</code>.
+  arrays and <code>receive_future</code>, a <code>concurrent.futures.Future</code>. A stream
+  passed to another process arrives attached, or raises
+  <code>SchemaMismatchError</code> if its name now holds a stream created since, and
+  <code>SharedStream.create</code> without a name gives the stream a new one. The ends cannot be pickled;
+  <code>SharedSendStream.stream</code> and <code>SharedReceiveStream.stream</code> return their
+  stream.
 - <code>SharedReceiveStream.events</code>, a <code>ReceiveEvents</code> psygnal group whose
   <code>received</code> and <code>ended</code> signals deliver a reader's items to callbacks.
 - <code>SharedSendStream.writing()</code> and <code>SharedSendStream.awriting()</code>, which yield a
