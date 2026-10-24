@@ -173,7 +173,10 @@ def make(annotation: object) -> type:
             ],
             "collection element",
         ),
-        (Annotated[np.ndarray, Shape(2), DType("float32")] | None, "not optional"),
+        (
+            Annotated[np.ndarray, Shape(2), DType("float32")] | int,
+            "not a union member",
+        ),
         (
             Annotated[npt.NDArray[np.object_], Shape(2), DType("float32")],
             "element type",
@@ -183,9 +186,35 @@ def make(annotation: object) -> type:
 def test_array_annotations_that_cannot_be_kept_are_refused(
     annotation: object, message: str
 ) -> None:
-    """Check that a missing Shape or DType, disagreeing dtypes, an unregistered type and an array in a collection or optional raise TypeError."""
+    """Check that a missing Shape or DType, disagreeing dtypes, an unregistered type and an array in a collection or union raise TypeError."""
     with pytest.raises(TypeError, match=message):
         build_layout(make(annotation))
+
+
+class Envelope(SharedBox):
+    scan: npt.NDArray[np.uint8] | None = field(default=None, shape=(32, 32))
+    thumb: Annotated[np.ndarray, Shape(2, 2), DType("float32")] | None = None
+
+
+def test_an_optional_array_field_holds_none_or_an_array(unique_name: str) -> None:
+    """Read None from an empty optional array field and the array after one is written."""
+    with Envelope.create(unique_name) as envelope:
+        assert envelope.scan is None and envelope.thumb is None
+        envelope.scan = np.ones((32, 32), np.uint8)
+        assert np.array_equal(envelope.scan, np.ones((32, 32), np.uint8))
+        envelope.scan = None
+        assert envelope.scan is None
+
+
+def test_an_optional_array_refuses_a_wrong_shape(unique_name: str) -> None:
+    """Raise the ValueError a plain array field raises for an array of another shape."""
+    with (
+        Envelope.create(unique_name) as envelope,
+        pytest.raises(
+            ValueError, match="Envelope.thumb holds an array of the field's Shape"
+        ),
+    ):
+        envelope.thumb = np.ones((2, 3), np.float32)
 
 
 def test_a_registered_type_reads_back_through_its_converter(unique_name: str) -> None:

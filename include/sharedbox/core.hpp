@@ -1227,7 +1227,7 @@ inline status type_parser::describe(std::uint8_t kind, std::uint32_t at, std::ui
         entries = c.at;
         entry_count = head.count;
         c.skip(std::size_t{head.count} * 8);
-        members_take_arrays = kind == kind_record || kind == kind_tuple;
+        members_take_arrays = kind == kind_record || kind == kind_tuple || kind == kind_optional;
         if (ok && kind == kind_record)
             ok = names(c, head.count, node.names);
         break;

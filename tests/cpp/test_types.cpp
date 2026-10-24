@@ -268,6 +268,19 @@ TEST_CASE("create refuses a table that does not check") {
     CHECK(created.error().code == status::range);
 }
 
+TEST_CASE("an optional over an array opens") {
+    table_builder t;
+    t.head(kind_optional, 1, 128);
+    t.entry(64, kind_array, 16);
+    t.head(kind_array, 0, 64);
+    t.put(dl_dtype{2, 32, 1});
+    t.put(std::uint8_t{1});
+    t.put(std::uint8_t{0});
+    t.put(std::uint16_t{0});
+    t.put(std::uint64_t{16});
+    CHECK(parse(t, entry_of(kind_optional, 0)) == status::ok);
+}
+
 TEST_CASE("a list whose slots end before its alignment is padded to it") {
     for (const auto &[size, expected] :
          {std::pair{8u, status::ok}, {6u, status::corrupt}, {12u, status::corrupt}}) {

@@ -184,7 +184,24 @@ To read fields back as an array type other than `numpy`'s and `torch`'s,
 call [`register_array_type`][sharedbox.register_array_type] with the type
 and its `from_dlpack` function before you define the box class.
 
-## 6. Handle the wrong shape or dtype
+## 6. Leave an array field empty
+
+An array field annotated `X | None` holds either `None` or an array of its
+sizes, which suits a value that isn't always there, such as the scan of an
+envelope nobody has scanned yet:
+
+```{.python}
+--8<-- "docs/examples/store_arrays.py:optional"
+```
+
+The field takes its sizes in the same ways as any array field, so with
+`None` as its default it needs a `Shape` or `field(shape=...)`. It works as
+a record member and as a member of a stream item too. Because the field may
+hold no array, `read_into` and `writing` refuse it, and
+[`receive_into`][sharedbox.SharedReceiveStream.receive_into] doesn't fill
+it; a plain read or `receive` gives you a new array or `None`.
+
+## 7. Handle the wrong shape or dtype
 
 ```{.python}
 --8<-- "docs/examples/store_arrays.py:wrong-shape"

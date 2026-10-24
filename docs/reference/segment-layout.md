@@ -315,7 +315,8 @@ members lie inside their parent, aligned and apart; every size the
 description implies is computed without overflow and matches the head; an
 array's code is one of 0, 1, 2, 4, 5, 6, its bits a multiple of 8 and every
 dimension at least 1. A failure refuses the segment. A reference may only
-be a field, and an array only a field or a record member.
+be a field, and an array only a field, a record or tuple member, or the
+member of an optional.
 
 ### Decoding checks
 
@@ -541,7 +542,9 @@ layout version of its kind, for the rest. Each has a major and a minor.
   version may add kinds: a reader of an older minor opens a top-level box
   field of a kind it does not know as opaque bytes, and refuses, with
   `status::corrupt`, a segment that uses one inside a described type or as
-  a stream item.
+  a stream item. Box layout 3.1 and stream layout 1.1 also allow an array
+  as the member of an optional, which a reader of box layout 3.0 or stream
+  layout 1.0 refuses with `status::corrupt`.
 - A change to how existing bytes are read or written raises a major: the
   core's (the common line, the object names, liveness) raises `core_major`,
   and a kind's own (the sequence lock, field encoding, the slot layout)

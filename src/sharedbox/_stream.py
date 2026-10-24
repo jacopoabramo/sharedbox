@@ -1211,6 +1211,8 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T]):
     def _targets(self, out: Any) -> list[tuple[tuple[int, ...], Any]]:
         item = self._stream._item
         if not item.has_arrays:
+            # An array given for a member, such as an optional array, gets the member's own message.
+            targets_of(item.spec, out, item.label)
             raise TypeError(f"{item.label} holds no array; use receive()")
         return targets_of(item.spec, out, item.label)
 
