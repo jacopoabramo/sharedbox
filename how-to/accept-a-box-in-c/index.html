@@ -855,6 +855,8 @@
       
         
       
+        
+      
     
     
     
@@ -1035,6 +1037,35 @@
     
   
   How to store arrays
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../store-numpy-numbers/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-wrench" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  How to store numpy numbers
 
     
   </span>
@@ -3253,9 +3284,11 @@ imports a box (<code>sbx_open</code>, <code>sbx_import</code>), checks its schem
 <code>sbx_write</code>) and releases the box (<code>sbx_release</code>). For fields of the
 described types it also has <code>sbx_field_desc</code>, which gives you a field's kind
 code and description, a typed <code>sbx_read_*</code> and <code>sbx_write_*</code> pair for
-dates, times, datetimes, timedeltas, UUIDs, complex numbers, flags and the
-position of an enum member or literal value, and <code>sbx_read_present</code>, which
-tells you whether an optional field holds a value.</p>
+dates, times, datetimes, timedeltas, UUIDs, complex numbers, 16-bit and
+32-bit floats, flags and the position of an enum member or literal value,
+and <code>sbx_read_present</code>, which tells you whether an optional field holds a
+value. The fixed-width integers, <code>complex64</code> and <code>datetime64</code> fields hold
+plain C types, so <code>sbx_read</code> and <code>sbx_write</code> copy them as they are.</p>
 <p>Waiting for changes, creating a box, <code>force_unlock</code> and <code>unlink</code> are only
 in the C++ <abbr title="Application programming interface. The functions and classes a library offers to code that uses it.">API</abbr>, and <code>sharedbox_c.h</code> may be removed in a future major
 version, so prefer <code>sharedbox.hpp</code> when you can use C++.</p>

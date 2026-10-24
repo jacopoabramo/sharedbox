@@ -847,6 +847,8 @@
       
         
       
+        
+      
     
     
     
@@ -1024,6 +1026,35 @@
     
   
   How to store arrays
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../how-to/store-numpy-numbers/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-wrench" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  How to store numpy numbers
 
     
   </span>
@@ -3792,9 +3823,10 @@ to understand the ideas first, read
 <code>include/sharedbox/core.hpp</code>, <code>include/sharedbox/box.hpp</code> and
 <code>include/sharedbox/stream.hpp</code> implement this contract, and the Python
 extension runs on the first two.</p>
-<p>It describes core version 1.0, box layout 3.0 and stream layout 1.0, which
-<code>sharedbox</code> 0.6.0 writes. It opens nothing older: box layouts 1.0 and 2.0,
-which 0.5 and earlier wrote, are refused.</p>
+<p>It describes core version 1.0, box layout 3.1 and stream layout 1.1. It
+also opens box layout 3.0 and stream layout 1.0, which <code>sharedbox</code> 0.6.0
+writes, and nothing older: box layouts 1.0 and 2.0, which 0.5 and earlier
+wrote, are refused.</p>
 <h2 id="goal">Goal<a class="headerlink" href="#goal" title="Permanent link">&para;</a></h2>
 <p>C++ and C code can use a sharedbox box, both as an extension loaded in a
 Python process and as a standalone program with no Python, without linking
@@ -4002,8 +4034,8 @@ box with three fields and 64 slots stays in one page up to about 1.8 KB of
 record (4096 - 2240 = 1856).</p>
 <ul>
 <li>Versions: bytes 8 to 11 are <code>01 00 00 00</code> (core 1.0: <code>core_major</code> 1,
-  <code>core_minor</code> 0) and bytes 12 to 15 are <code>03 00 00 00</code> (box layout 3.0:
-  <code>kind_major</code> 3, <code>kind_minor</code> 0). The two versions count the segment
+  <code>core_minor</code> 0) and bytes 12 to 15 are <code>03 00 01 00</code> (box layout 3.1:
+  <code>kind_major</code> 3, <code>kind_minor</code> 1). The two versions count the segment
   format and are not tied to the package version.</li>
 <li>Magic: <code>SBX_BOX_</code> for a box and <code>SBX_STRM</code> for a stream, each read as a
   little-endian <code>u64</code>. The magic names the kind, so attach checks it first.
@@ -4135,6 +4167,72 @@ record (4096 - 2240 = 1856).</p>
 <td>4 + capacity, 4</td>
 </tr>
 <tr>
+<td>13</td>
+<td>int8</td>
+<td>1</td>
+<td>1, 1</td>
+</tr>
+<tr>
+<td>14</td>
+<td>int16</td>
+<td>2</td>
+<td>2, 2</td>
+</tr>
+<tr>
+<td>15</td>
+<td>int32</td>
+<td>4</td>
+<td>4, 4</td>
+</tr>
+<tr>
+<td>16</td>
+<td>uint8</td>
+<td>1</td>
+<td>1, 1</td>
+</tr>
+<tr>
+<td>17</td>
+<td>uint16</td>
+<td>2</td>
+<td>2, 2</td>
+</tr>
+<tr>
+<td>18</td>
+<td>uint32</td>
+<td>4</td>
+<td>4, 4</td>
+</tr>
+<tr>
+<td>19</td>
+<td>uint64</td>
+<td>8</td>
+<td>8, 8</td>
+</tr>
+<tr>
+<td>20</td>
+<td>float16</td>
+<td>2</td>
+<td>2, 2</td>
+</tr>
+<tr>
+<td>21</td>
+<td>float32</td>
+<td>4</td>
+<td>4, 4</td>
+</tr>
+<tr>
+<td>22</td>
+<td>complex64</td>
+<td>8</td>
+<td>8, 4</td>
+</tr>
+<tr>
+<td>23</td>
+<td>datetime64</td>
+<td>8</td>
+<td>8, 8</td>
+</tr>
+<tr>
 <td>64</td>
 <td>enum</td>
 <td>description offset</td>
@@ -4204,7 +4302,9 @@ record (4096 - 2240 = 1856).</p>
 </table>
 <p>A field of a kind the reader does not know is opened as opaque bytes: a
 kind below 64 is sized by its entry, one from 64 by its description's
-head. Every described size is a multiple of its alignment.</p>
+head. A member entry inside a description records no size, so a reader
+refuses, with <code>status::corrupt</code>, a description that holds a kind below 64
+it does not know. Every described size is a multiple of its alignment.</p>
 <h3 id="encodings">Encodings<a class="headerlink" href="#encodings" title="Permanent link">&para;</a></h3>
 <p>Little-endian.</p>
 <ul>
@@ -4224,6 +4324,12 @@ head. Every described size is a multiple of its alignment.</p>
 <li><code>timedelta</code>: <code>i32</code> days, <code>i32</code> seconds, <code>i32</code> microseconds.</li>
 <li><code>uuid</code>: <code>UUID.bytes</code>, in network byte order.</li>
 <li><code>decimal</code>: <code>u32</code> length, then the text of <code>str(value)</code>.</li>
+<li><code>int8</code> to <code>int32</code>: signed, two's complement, at their width; <code>uint8</code> to
+  <code>uint64</code>: unsigned, at their width.</li>
+<li><code>float16</code>: IEEE 754 binary16; <code>float32</code>: IEEE 754 binary32.</li>
+<li><code>complex64</code>: two <code>f32</code>, real then imaginary.</li>
+<li><code>datetime64</code>: <code>i64</code> nanoseconds since 1970-01-01T00:00 <abbr title="Coordinated Universal Time. The time standard that offsets such as +02:00 are measured from.">UTC</abbr>, with
+  <code>-2**63</code> for NaT.</li>
 <li><code>enum</code>, <code>literal</code>: <code>u16</code> position; <code>flag</code>: <code>u64</code> bits.</li>
 <li><code>optional</code>: a presence byte, padding to the member's alignment <code>A</code>, then
   the member; size <code>round_up(A + member size, A)</code>.</li>
@@ -4231,7 +4337,8 @@ head. Every described size is a multiple of its alignment.</p>
   the member; size <code>round_up(A + largest member size, A)</code>.</li>
 <li><code>record</code>, <code>tuple</code>: members at the offsets their entries give.</li>
 <li><code>list</code>, <code>set</code>: <code>u32</code> length, padding to <code>max(4, A)</code>, then <code>capacity</code>
-  slots of <code>round_up(element size, element alignment)</code> bytes.</li>
+  slots of <code>round_up(element size, element alignment)</code> bytes, and padding
+  that rounds the whole up to a multiple of <code>max(4, A)</code>.</li>
 <li><code>dict</code>: as <code>list</code>, with a key and value pair as the slot: the key at 0,
   the value at <code>round_up(key size, value alignment)</code>.</li>
 <li><code>array</code>: the elements in C order.</li>
@@ -4341,9 +4448,13 @@ attacher agree on it and on the class's meaning.</p>
 <p>A field of a kind from 6 on enters as <code>name:&lt;type text&gt;</code>. The type text
   of each kind, with <code>T</code> for the type text of a member:</p>
 <ul>
-<li><code>complex</code>, <code>date</code>, <code>time</code>, <code>datetime</code>, <code>timedelta</code>, <code>uuid</code>: the kind
-  name alone. <code>bool:1</code>, <code>int:8</code> and <code>float:8</code> are the texts of those
-  kinds inside a described type.</li>
+<li><code>complex</code>, <code>date</code>, <code>time</code>, <code>datetime</code>, <code>timedelta</code>, <code>uuid</code> and the
+  kinds 13 to 23 (<code>int8</code> to <code>datetime64</code>): the kind name alone.
+  <code>bool:1</code>, <code>int:8</code> and <code>float:8</code> are the texts of those kinds inside a
+  described type.</li>
+<li><code>numpy.int64</code>, <code>numpy.float64</code>, <code>numpy.complex128</code> and <code>numpy.bool_</code>
+  have the bytes of kinds 1, 2, 6 and 0, so they enter as <code>int:8</code>,
+  <code>float:8</code>, <code>complex</code> and <code>bool:1</code>, as the Python types do.</li>
 <li><code>str:n</code>, <code>bytes:n</code> and <code>decimal:n</code>: <code>n</code> is the capacity in bytes.
   A <code>bytearray</code> is <code>bytes:n</code>.</li>
 <li><code>enum(A,B)</code>: the member names in definition order.
@@ -4393,16 +4504,22 @@ attacher agree on it and on the class's meaning.</p>
 </span><span id="__span-4-10"><a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a>
 </span><span id="__span-4-11"><a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a>demo/1|when:date|mode:enum(RED,BLUE)|tags:list[2](str:4)|note:optional(int:8)
 </span><span id="__span-4-12"><a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a>schema_hash  = 0x2a9e5c5cc2876a4c
+</span><span id="__span-4-13"><a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a>
+</span><span id="__span-4-14"><a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a>scale/1|grams:uint16|reading:float32|raw:int:8|left_at:datetime64|parts:list[4](int8)
+</span><span id="__span-4-15"><a id="__codelineno-4-15" name="__codelineno-4-15" href="#__codelineno-4-15"></a>schema_hash  = 0x3c1107337e5bf226
 </span></code></pre></div>
-<p>The last line is a class with <code>identity="demo/1"</code> and the fields
+<p>The <code>demo/1</code> line is a class with <code>identity="demo/1"</code> and the fields
   <code>when: date</code>, <code>mode: Color</code> (members <code>RED</code> and <code>BLUE</code>),
   <code>tags: Annotated[list[Annotated[str, Capacity(4)]], Capacity(2)]</code> and
-  <code>note: int | None</code>.</p>
+  <code>note: int | None</code>. The <code>scale/1</code> line is a class with
+  <code>identity="scale/1"</code> and the fields <code>grams: np.uint16</code>,
+  <code>reading: np.float32</code>, <code>raw: np.int64</code>, <code>left_at: np.datetime64</code> and
+  <code>parts: Annotated[list[np.int8], Capacity(4)]</code>.</p>
 <h2 id="stream-layout">Stream layout<a class="headerlink" href="#stream-layout" title="Permanent link">&para;</a></h2>
 <p>A stream is a ring of <code>capacity</code> slots, at least 2, that one sender writes
 and up to <code>max_readers</code> readers (1 to 4095) copy out of. Its common line
 holds the magic <code>SBX_STRM</code> (<code>0x4D5254535F584253</code>), <code>kind_major</code> 1 and
-<code>kind_minor</code> 0 (stream layout 1.0), and a <code>waiter_slots</code> of
+<code>kind_minor</code> 1 (stream layout 1.1), and a <code>waiter_slots</code> of
 <code>max_readers + 1</code>, one slot for each reader and one for the sender. Every
 size and offset is 64-bit, so a ring may pass 4 GiB; the slots end at or
 below 2^46 bytes. The mapping holds, from offset 0:</p>
@@ -4511,8 +4628,11 @@ layout version of its kind, for the rest. Each has a major and a minor.</p>
   kind from 64 on, the low 24 bits are the offset of its description, whose
   head's <code>size</code> is the span, and no alignment is asked either.</li>
 <li>Box layout 3.0 has the description table and the kinds 6 to 12 and 64 to</li>
-<li>A later 3.x minor version may add kinds; a reader opens a field of a
-  kind it does not know as opaque bytes.</li>
+<li>Box layout 3.1 and stream layout 1.1 add the kinds 13 to 23. A minor
+  version may add kinds: a reader of an older minor opens a top-level box
+  field of a kind it does not know as opaque bytes, and refuses, with
+  <code>status::corrupt</code>, a segment that uses one inside a described type or as
+  a stream item.</li>
 <li>A change to how existing bytes are read or written raises a major: the
   core's (the common line, the object names, liveness) raises <code>core_major</code>,
   and a kind's own (the sequence lock, field encoding, the slot layout)
@@ -5327,12 +5447,18 @@ layout.</p>
   <code>SBX_E_FOREIGN</code> for a magic they do not know (see Attach). A C caller
   gets the code only, without the <code>error</code>'s <abbr title="Operating system.">OS</abbr> error and <code>found</code>.</li>
 <li><code>sbx_field_desc</code> returns a field's kind code and its description's
-  bytes. <code>sbx_read_*</code> and <code>sbx_write_*</code> exist for <code>complex</code>, <code>date</code>,
-  <code>time</code>, <code>datetime</code>, <code>timedelta</code>, <code>uuid</code>, enum and literal positions
-  (<code>position</code>), flag bits (<code>flag</code>) and an optional's presence (<code>present</code>,
-  read only). A read gives <code>SBX_E_RANGE</code> for a field of another kind and
-  <code>SBX_E_CORRUPT</code> for a stored value no Python value has; a write gives
-  <code>SBX_E_RANGE</code> for a value out of range.</li>
+  bytes. <code>sbx_read_*</code> and <code>sbx_write_*</code> exist for <code>complex</code>, <code>float16</code>,
+  <code>float32</code>, <code>date</code>, <code>time</code>, <code>datetime</code>, <code>timedelta</code>, <code>uuid</code>, enum and
+  literal positions (<code>position</code>), flag bits (<code>flag</code>) and an optional's
+  presence (<code>present</code>, read only). A read gives <code>SBX_E_RANGE</code> for a field
+  of another kind and <code>SBX_E_CORRUPT</code> for a stored value no Python value
+  has; a write gives <code>SBX_E_RANGE</code> for a value out of range.</li>
+<li><code>sbx_read_float16</code> and <code>sbx_read_float32</code> give a <code>float</code>;
+  <code>sbx_write_float16</code> and <code>sbx_write_float32</code> take a <code>double</code>, round it to
+  the field's width, and give <code>SBX_E_RANGE</code> for a finite value past it. NaN
+  and the infinities are stored as they are. The integer kinds,
+  <code>complex64</code> and <code>datetime64</code> hold plain C types, which <code>sbx_read</code> and
+  <code>sbx_write</code> copy.</li>
 <li><code>sbx_time</code> and <code>sbx_datetime</code> hold <code>int64_t micros</code>, <code>int16_t
   offset_minutes</code> and <code>uint8_t naive, fold</code>; <code>sbx_timedelta</code> holds
   <code>int32_t days, seconds, microseconds</code>. A <code>sbx_time</code> counts microseconds

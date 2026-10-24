@@ -847,6 +847,8 @@
       
         
       
+        
+      
     
     
     
@@ -1024,6 +1026,35 @@
     
   
   How to store arrays
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../store-numpy-numbers/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-wrench" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  How to store numpy numbers
 
     
   </span>
@@ -3204,9 +3235,16 @@ bullets:</p>
 <h2 id="changelog-entries">Changelog entries<a class="headerlink" href="#changelog-entries" title="Permanent link">&para;</a></h2>
 <p>Each change someone using sharedbox would notice gets a file in
 <code>changelog.d/</code>, named after the pull request and the kind of change, such as
-<code>61.fixed.md</code>. Open the pull request first, so you know its number. A
-release collects the files into <a href="../../reference/changelog/">the changelog</a>,
-one entry each, and links each entry to its pull request.</p>
+<code>61.fixed.md</code>. Commit the entries with the changes, before you push. The
+pull request has no number yet, so take the newest number of a pull request
+or an issue, which share one count, and add 1:</p>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>gh<span class="w"> </span>pr<span class="w"> </span>list<span class="w"> </span>--state<span class="w"> </span>all<span class="w"> </span>--limit<span class="w"> </span><span class="m">1</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>gh<span class="w"> </span>issue<span class="w"> </span>list<span class="w"> </span>--state<span class="w"> </span>all<span class="w"> </span>--limit<span class="w"> </span><span class="m">1</span>
+</span></code></pre></div>
+<p>If someone else opens one first and takes that number, rename the files
+once your pull request is open, and push again. A release collects the
+files into <a href="../../reference/changelog/">the changelog</a>, one entry each, and
+links each entry to its pull request.</p>
 <table>
 <thead>
 <tr>
@@ -3248,7 +3286,7 @@ one entry each, and links each entry to its pull request.</p>
 <p><code>towncrier</code>, the tool that collects the entries at release time, writes the
 file for you. Keep the text in single quotes, so the shell leaves its
 backticks alone:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a>uv<span class="w"> </span>run<span class="w"> </span>towncrier<span class="w"> </span>create<span class="w"> </span><span class="m">61</span>.fixed.md<span class="w"> </span>--content<span class="w"> </span><span class="s1">'`SharedBox.watch()`: no longer yields the same value twice.'</span>
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a>uv<span class="w"> </span>run<span class="w"> </span>towncrier<span class="w"> </span>create<span class="w"> </span><span class="m">61</span>.fixed.md<span class="w"> </span>--content<span class="w"> </span><span class="s1">'`SharedBox.watch()`: no longer yields the same value twice.'</span>
 </span></code></pre></div>
 <p>A second change of the same kind in one pull request goes in <code>61.fixed.2.md</code>.</p>
 <p>An entry names the public symbol first, then says in a line or two what
