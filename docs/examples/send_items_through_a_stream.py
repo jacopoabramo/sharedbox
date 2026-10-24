@@ -9,6 +9,7 @@ from typing import Annotated
 import numpy as np
 
 from sharedbox import (
+    Capacity,
     DType,
     EndOfStream,
     Shape,
@@ -19,40 +20,41 @@ from sharedbox import (
 
 
 @dataclass(frozen=True)
-class Batch:
+class Letter:
     index: int
-    values: Annotated[np.ndarray, Shape(1024), DType("float64")]
+    recipient: Annotated[str, Capacity(32)]
+    scan: Annotated[np.ndarray, Shape(32, 32), DType("uint8")]
 
 
 # --8<-- [end:types]
 
 
 # --8<-- [start:reader]
-def process_batches(stream: SharedStream[Batch], ready: "mp.synchronize.Event") -> None:
+def register(stream: SharedStream[Letter], ready: "mp.synchronize.Event") -> None:
     reader = stream.reader(mode="lossless")
     ready.set()
-    values = np.empty(1024, np.float64)
-    for batch in reader.iter_into({"values": values}):
-        print(batch.index, float(batch.values[0]))
+    scan = np.empty((32, 32), np.uint8)
+    for letter in reader.iter_into({"scan": scan}):
+        print(letter.index, letter.recipient, int(letter.scan[0, 0]))
 
 
 # --8<-- [end:reader]
 
 
 # --8<-- [start:tasks]
-async def produce(sender: SharedSendStream[Batch]) -> None:
+async def produce(sender: SharedSendStream[Letter]) -> None:
     async with sender:
         for i in range(3):
-            await sender.asend(Batch(i, np.full(1024, float(i))))
+            await sender.asend(Letter(i, "Ada", np.full((32, 32), i, np.uint8)))
 
 
-async def consume(reader: SharedReceiveStream[Batch]) -> None:
+async def consume(reader: SharedReceiveStream[Letter]) -> None:
     async with reader:
-        async for batch in reader:
-            print(batch.index)
+        async for letter in reader:
+            print(letter.index)
 
 
-async def run_tasks(stream: SharedStream[Batch]) -> None:
+async def run_tasks(stream: SharedStream[Letter]) -> None:
     async with asyncio.TaskGroup() as group:
         group.create_task(consume(stream.reader()))
         group.create_task(produce(stream.sender()))
@@ -62,17 +64,17 @@ async def run_tasks(stream: SharedStream[Batch]) -> None:
 
 
 # --8<-- [start:first]
-async def print_from_any(readers: list[SharedReceiveStream[Batch]]) -> None:
+async def print_from_any(readers: list[SharedReceiveStream[Letter]]) -> None:
     pending = {asyncio.wrap_future(r.receive_future()): r for r in readers}
     while pending:
         done, _ = await asyncio.wait(pending, return_when=asyncio.FIRST_COMPLETED)
         for future in done:
             reader = pending.pop(future)
             try:
-                batch = future.result()
+                letter = future.result()
             except EndOfStream:
                 continue
-            print(batch.index)
+            print(letter.index)
             pending[asyncio.wrap_future(reader.receive_future())] = reader
 
 
@@ -80,11 +82,11 @@ async def print_from_any(readers: list[SharedReceiveStream[Batch]]) -> None:
 
 
 # --8<-- [start:writing]
-def send_filled(sender: SharedSendStream[Batch], count: int) -> None:
-    blank = Batch(0, np.empty(0, np.float64))
+def send_filled(sender: SharedSendStream[Letter], count: int) -> None:
+    blank = Letter(0, "Ada", np.empty((0, 0), np.uint8))
     for i in range(count):
         with sender.writing(blank) as slot:
-            slot.item.values.fill(float(i))
+            slot.item.scan.fill(i)
             slot.send(replace(slot.item, index=i))
 
 
@@ -95,33 +97,33 @@ def send_filled(sender: SharedSendStream[Batch], count: int) -> None:
 if __name__ == "__main__":
     context = mp.get_context("spawn")
     ready = context.Event()
-    with SharedStream.create(Batch, capacity=8) as stream:
-        child = context.Process(target=process_batches, args=(stream, ready))
-        child.start()
+    with SharedStream.create(Letter, capacity=8) as stream:
+        desk = context.Process(target=register, args=(stream, ready))
+        desk.start()
         ready.wait(60)
         with stream.sender() as sender:
             for i in range(3):
-                sender.send(Batch(i, np.full(1024, float(i))))
-        child.join(60)
+                sender.send(Letter(i, "Ada", np.full((32, 32), i, np.uint8)))
+        desk.join(60)
     SharedStream.unlink(stream.name)
 # --8<-- [end:main]
 
 
 if __name__ == "__main__":
-    with SharedStream.create(Batch, "example-pipeline:tasks", capacity=8) as stream:
+    with SharedStream.create(Letter, "example-sorting:tasks", capacity=8) as stream:
         asyncio.run(run_tasks(stream))
-    SharedStream.unlink("example-pipeline:tasks")
-    with SharedStream.create(Batch, "example-pipeline:merged", capacity=8) as stream:
+    SharedStream.unlink("example-sorting:tasks")
+    with SharedStream.create(Letter, "example-sorting:merged", capacity=8) as stream:
         readers = [stream.reader(), stream.reader()]
         with stream.sender() as sender:
             for i in range(2):
-                sender.send(Batch(i, np.full(1024, float(i))))
+                sender.send(Letter(i, "Ada", np.full((32, 32), i, np.uint8)))
         asyncio.run(print_from_any(readers))
-    SharedStream.unlink("example-pipeline:merged")
-    with SharedStream.create(Batch, "example-pipeline:filled", capacity=8) as stream:
+    SharedStream.unlink("example-sorting:merged")
+    with SharedStream.create(Letter, "example-sorting:filled", capacity=8) as stream:
         reader = stream.reader()
         with stream.sender() as sender:
             send_filled(sender, 2)
-        for batch in reader:
-            print(batch.index, float(batch.values[0]))
-    SharedStream.unlink("example-pipeline:filled")
+        for letter in reader:
+            print(letter.index, int(letter.scan[0, 0]))
+    SharedStream.unlink("example-sorting:filled")
