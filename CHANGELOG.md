@@ -9,6 +9,138 @@ Dates are marked as `DD-MM-YYYY`
 
 <!-- towncrier release notes start -->
 
+## [0.6.0](https://github.com/jacopoabramo/sharedbox/releases/tag/v0.6.0) - 24-10-2026
+
+### Added
+
+- `status::foreign` and `SBX_E_FOREIGN` (-12): the segment's magic is not
+  one this version knows. Python raises `SchemaMismatchError`. ([#47](https://github.com/jacopoabramo/sharedbox/pull/47))
+- `sharedbox::to_expected` and `sharedbox::from_expected`: convert a
+  `sharedbox::result` to a `std::expected` and back on C++23. ([#47](https://github.com/jacopoabramo/sharedbox/pull/47))
+- `KindMismatchError`, a `SchemaMismatchError` raised when a name holds a
+  segment of another kind; `status::kind_mismatch` and `SBX_E_KIND` (-11)
+  in `sharedbox.hpp` and `sharedbox_c.h`. ([#47](https://github.com/jacopoabramo/sharedbox/pull/47))
+- `sharedbox::stream`, `sharedbox::stream_sender` and `sharedbox::stream_reader`
+  in `stream.hpp`, included by `sharedbox.hpp`: a ring in shared memory with
+  one sender and up to `max_readers` readers, each reading
+  `read_mode::lossless`, `read_mode::lossy` or `read_mode::latest`, laid out
+  as stream layout 1.0. C++ only. `stream_sender::begin`, `publish` and
+  `abandon` reserve a slot, fill it in place and publish it or give it up. ([#48](https://github.com/jacopoabramo/sharedbox/pull/48))
+- `status::busy` (-13), `status::ended` (-14) and `status::interrupted`
+  (-15), with `SBX_E_BUSY`, `SBX_E_ENDED` and `SBX_E_INTERRUPTED` in
+  `sharedbox_c.h`. ([#48](https://github.com/jacopoabramo/sharedbox/pull/48))
+- `SharedStream`, `SharedSendStream` and `SharedReceiveStream`: send items of
+  any type a `SharedBox` field takes from one process to up to `max_readers`
+  readers, each reading `lossless`, `lossy` or `latest`, with blocking,
+  non-blocking and asyncio calls, `receive_into` into the caller's arrays and
+  `receive_future`, a `concurrent.futures.Future`. A stream passed to another
+  process arrives attached, or raises `SchemaMismatchError` if its name now
+  holds a stream created since, and `SharedStream.create` without a name gives
+  the stream a new one. The ends cannot be pickled; `SharedSendStream.stream`
+  and `SharedReceiveStream.stream` return their stream. ([#49](https://github.com/jacopoabramo/sharedbox/pull/49))
+- `SharedReceiveStream.events`, a `ReceiveEvents` psygnal group whose
+  `received` and `ended` signals deliver a reader's items to callbacks. ([#49](https://github.com/jacopoabramo/sharedbox/pull/49))
+- `WouldBlock`, `EndOfStream`, `StreamBusyError` and `StreamClosedError`. ([#49](https://github.com/jacopoabramo/sharedbox/pull/49))
+- `SharedStreamStatistics` and `ReceiveStreamStatistics`, returned by
+  `SharedStream.statistics()`. ([#49](https://github.com/jacopoabramo/sharedbox/pull/49))
+- `WaiterSlotsFullError` is exported from `sharedbox`; opening a reader
+  raises it when `max_readers` readers are open. ([#49](https://github.com/jacopoabramo/sharedbox/pull/49))
+- `benchbox ops`: the row `watched write int`, a write while another process
+  has a watcher open. ([#50](https://github.com/jacopoabramo/sharedbox/pull/50))
+- `sharedbox::handle::sleepers()`: the number of threads inside a wait on
+  the box, in any process. ([#51](https://github.com/jacopoabramo/sharedbox/pull/51))
+- `benchbox stream`: items per second of `SharedStream` readers in each mode
+  against `mp.Queue` and a `SharedMemory` ring with a lock, and a table of
+  `send` and `asend` with `receive`, `async for` and `events.received`,
+  with the 50th, 90th and 99th percentile latency. `--short`, `--table`,
+  `--json` and `--markdown` are its options; `benchbox all` runs it and
+  writes `stream.json`. ([#53](https://github.com/jacopoabramo/sharedbox/pull/53))
+- `Streams` workflow: `benchbox stream` on the base branch against the pull
+  request, with `scripts/stream_compare.py` writing the table. ([#53](https://github.com/jacopoabramo/sharedbox/pull/53))
+- `benchbox roundtrip`: the row `SharedStream`. ([#53](https://github.com/jacopoabramo/sharedbox/pull/53))
+- `benchmarks/test_bench_stream.py`: a CodSpeed benchmark of `send` plus
+  `receive_into`. ([#53](https://github.com/jacopoabramo/sharedbox/pull/53))
+- `FieldWatch.future()`, returning a `FieldFuture`, a
+  `concurrent.futures.Future` of the next write to the field; `FieldFuture`
+  is exported from `sharedbox`. ([#55](https://github.com/jacopoabramo/sharedbox/pull/55))
+- `field(shape=...)`: the sizes of an array field of a box.
+
+  ```python
+  class Grid(SharedBox):
+      cells: npt.NDArray[np.uint8] = np.zeros((4, 6), np.uint8)
+      weights: npt.NDArray[np.float32] = field(shape=(3,))
+  ```
+
+  A box array field also takes its sizes from a plain default array, so it
+  needs no `Shape` and, with a dtype in its annotation, no `DType`. ([#56](https://github.com/jacopoabramo/sharedbox/pull/56))
+- `SharedSendStream.writing()` and `SharedSendStream.awriting()`, which yield a
+  `SendSlot`:
+
+  ```python
+  blank = Frame(0, np.empty((0, 0), np.uint16))
+  with sender.writing(blank) as slot:
+      slot.item.image.fill(0)
+      slot.send(replace(slot.item, index=1))
+  ```
+
+  `slot.item` is an item built from a template, with arrays over the next slot
+  to fill in place, and `slot.send(item)` publishes an item without copying the
+  arrays already in the slot. ([#58](https://github.com/jacopoabramo/sharedbox/pull/58))
+
+### Changed
+
+- `sharedbox.hpp`: split into `core.hpp` and `box.hpp`, which it includes.
+  `sharedbox::result` is the library's own type on C++20 and C++23 alike,
+  and its `error()` is a `sharedbox::error` holding the status, the OS error
+  and what was found. The C++ names moved from `sharedbox::v2` to
+  `sharedbox::v3`. ([#47](https://github.com/jacopoabramo/sharedbox/pull/47))
+- `sharedbox::header`: the magic, versions, schema hash, creator, waiter
+  slot count and size moved into its first member, `common`, a
+  `sharedbox::common_header`; `layout_major` and `layout_minor` became
+  `common.kind_major` and `common.kind_minor`. ([#47](https://github.com/jacopoabramo/sharedbox/pull/47))
+- `sharedbox::error`: a `status::os` failure carries the OS error in
+  `error().os`; `errno` and `GetLastError()` no longer hold it reliably
+  when the call returns. ([#47](https://github.com/jacopoabramo/sharedbox/pull/47))
+- Segment layout: every segment starts with a common first line (magic,
+  core version, layout version of its kind, schema hash, creator), and
+  boxes use layout 3.0. A box made by 0.5 cannot be opened by 0.6, nor the
+  other way round. ([#47](https://github.com/jacopoabramo/sharedbox/pull/47))
+- `sharedbox::inspect`: returns `result<common_header>`. ([#47](https://github.com/jacopoabramo/sharedbox/pull/47))
+- `sharedbox::magic`: renamed `sharedbox::box_magic`. ([#47](https://github.com/jacopoabramo/sharedbox/pull/47))
+- `box_ref`: a reference field stores the name of its target in 240 bytes,
+  so the field takes 256 bytes. ([#47](https://github.com/jacopoabramo/sharedbox/pull/47))
+- `SharedBox` names: one or more segments of `[A-Za-z0-9_-]` joined by
+  `:`, up to 240 characters, such as `bl01:camera:det1:frames`. `.` is no
+  longer allowed. The shared memory is `/dev/shm/SBX:<name>` on Linux and
+  `Local\SBX:<name>` on Windows, and Windows waiter events end in `#w<i>`. ([#47](https://github.com/jacopoabramo/sharedbox/pull/47))
+- `SharedBox.attach`: a segment whose magic this version does not know,
+  such as a box made by 0.5, raises `SchemaMismatchError` at once, instead
+  of `SegmentNotFoundError` after the timeout. ([#47](https://github.com/jacopoabramo/sharedbox/pull/47))
+- `SharedBox` write: makes a wake call only when a thread is waiting on the
+  box. `sleepers`, at offset 84 of box layout 3.0, counts the threads inside
+  a wait. It adds 1 to `wake_word` only when `sleepers` is not 0. ([#51](https://github.com/jacopoabramo/sharedbox/pull/51))
+- `sharedbox::waiter_slot`: 32 bytes, with `asleep_on`, at offset 24, the
+  offset of the count the slot's current wait added 1 to, and a reserved
+  word. Freeing the slot of a process killed inside a wait takes that
+  thread out of `sleepers` for a box, and out of `data_waiting` or
+  `space_waiting` for a stream. ([#51](https://github.com/jacopoabramo/sharedbox/pull/51))
+- `benchbox plot`: writes plotly figure JSON (`charts/ops.json`,
+  `roundtrip.json`, `stream-throughput.json`, `stream-matrix.json`) instead
+  of SVG files. ([#53](https://github.com/jacopoabramo/sharedbox/pull/53))
+- `benchmarks` extra and group: depend on `plotly` instead of `matplotlib`. ([#53](https://github.com/jacopoabramo/sharedbox/pull/53))
+- Array fields: an annotation that names its number of dimensions, as in
+  `numpy.ndarray[tuple[int, int], numpy.dtype[numpy.uint8]]`, raises
+  `TypeError` when its `Shape` has another number, in a box, a record and a
+  stream item. ([#56](https://github.com/jacopoabramo/sharedbox/pull/56))
+- Array fields: a default array whose shape differs from the field's `Shape`
+  raises `TypeError` instead of `ValueError` when the class is defined. ([#56](https://github.com/jacopoabramo/sharedbox/pull/56))
+
+### Removed
+
+- Reading box layouts 1.0 and 2.0. ([#47](https://github.com/jacopoabramo/sharedbox/pull/47))
+- `sharedbox::oldest_layout_major`. ([#47](https://github.com/jacopoabramo/sharedbox/pull/47))
+
+
 ## [0.5.0] - 09-10-2026
 
 ### Added
