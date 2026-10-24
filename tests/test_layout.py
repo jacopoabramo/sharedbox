@@ -1,6 +1,7 @@
 from dataclasses import KW_ONLY
 from typing import Annotated, ClassVar
 
+import numpy as np
 import pytest
 
 from sharedbox import SharedBox
@@ -148,6 +149,22 @@ def test_schema_hash_matches_the_published_vector() -> None:
         build_layout(motor, identity="__main__.Motor").schema_hash == 0x82CE467598596A72
     )
     assert build_layout(motor, identity="motor/2").schema_hash != 0x82CE467598596A72
+
+
+def test_numpy_types_that_keep_their_kinds_hash_as_python_types() -> None:
+    """Check that np.int64 and np.bool_ fields give the schema hash of int and bool fields."""
+
+    def plain(raw: type, ok: type) -> type:
+        return type(
+            "Plain",
+            (),
+            {"__annotations__": {"raw": raw, "ok": ok}, "__module__": "__main__"},
+        )
+
+    assert (
+        build_layout(plain(np.int64, np.bool_), identity="plain/1").schema_hash
+        == build_layout(plain(int, bool), identity="plain/1").schema_hash
+    )
 
 
 def test_schema_hash_tracks_layout() -> None:

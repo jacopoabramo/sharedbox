@@ -97,3 +97,71 @@ def test_values_the_input_rule_adds_are_taken(unique_name: str) -> None:
         counter.parcels = np.array(5)  # type: ignore[assignment]
         counter.weight = Fraction(1, 4)  # type: ignore[assignment]
         assert (counter.parcels, counter.weight) == (5, 0.25)
+
+
+class Wide(SharedBox):
+    raw: np.int64 = np.int64(0)
+    ratio: np.float64 = np.float64(0.0)
+    phase: np.complex128 = np.complex128(0)
+    ready: np.bool_ = np.False_
+
+
+@dataclasses.dataclass(frozen=True)
+class Reading:
+    raw: np.int64
+    ratio: np.float64
+
+
+class Log(SharedBox):
+    reading: Reading = Reading(np.int64(0), np.float64(0.0))
+    raws: Annotated[list[np.int64], Capacity(4)] = field(default_factory=list)
+
+
+def test_numpy_types_with_python_bytes_read_back_as_numpy(unique_name: str) -> None:
+    """Read np.int64, np.float64, np.complex128 and np.bool_ fields back as those types, whatever was written."""
+    with Wide.create(unique_name) as box:
+        box.update(raw=5, ratio=0.5, phase=1j, ready=True)
+        assert [type(v) for v in (box.raw, box.ratio, box.phase, box.ready)] == [
+            np.int64,
+            np.float64,
+            np.complex128,
+            np.bool_,
+        ]
+        assert (box.raw, box.ratio, box.phase, box.ready) == (5, 0.5, 1j, True)  # type: ignore[comparison-overlap]
+        assert type(box.snapshot()["raw"]) is np.int64
+
+
+def test_numpy_members_and_elements_read_back_as_numpy(unique_name: str) -> None:
+    """Read np.int64 record members and list elements back as np.int64."""
+    with Log.create(unique_name) as log:
+        log.reading = Reading(3, 0.25)  # type: ignore[arg-type]
+        log.raws = [1, np.int32(2)]  # type: ignore[list-item]
+        assert [type(v) for v in (log.reading.raw, log.reading.ratio)] == [
+            np.int64,
+            np.float64,
+        ]
+        assert [type(v) for v in log.raws] == [np.int64, np.int64]
+
+
+def test_a_stream_of_np_int64_items_receives_np_int64(unique_name: str) -> None:
+    """Receive np.int64 items from a stream declared np.int64, sent as Python ints."""
+    with SharedStream.create(np.int64, unique_name, capacity=4) as stream:
+        reader = stream.reader()
+        with stream.sender() as sender:
+            sender.send(7)  # type: ignore[arg-type]
+        assert [(type(i), i) for i in reader] == [(np.int64, 7)]  # type: ignore[comparison-overlap]
+
+
+class Plain(SharedBox, identity="counter/1"):
+    raw: int = 0
+
+
+class Numpy(SharedBox, identity="counter/1"):
+    raw: np.int64 = np.int64(0)
+
+
+def test_int_and_np_int64_classes_of_one_identity_share_a_box(unique_name: str) -> None:
+    """Attach an np.int64 class to a box an int class created, each reading its own declared type."""
+    with Plain.create(unique_name, 9) as plain, Numpy.attach(unique_name) as numpy_view:
+        assert (type(plain.raw), type(numpy_view.raw)) == (int, np.int64)
+        assert numpy_view.raw == 9

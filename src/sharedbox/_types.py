@@ -44,6 +44,8 @@ from ._arrays import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from ._box import SharedBox
 
 READ_ONLY: Final[Any] = getattr(typing, "ReadOnly", None)
@@ -79,7 +81,8 @@ CODES: Final[dict[str, int]] = {
 }
 PREFIXED: Final[frozenset[str]] = frozenset({"str", "bytes", "decimal"})
 SUPPORTED: Final[str] = (
-    "bool, int, float, complex, Annotated[str | bytes | bytearray | Decimal, Capacity(n)], "
+    "bool, int, float, complex, numpy.bool_, numpy.int64, numpy.float64, numpy.complex128, "
+    "Annotated[str | bytes | bytearray | Decimal, Capacity(n)], "
     "date, time, datetime, timedelta, UUID, an Enum or Flag, a Literal, X | None, a union, "
     "a tuple, a NamedTuple, a dataclass, a TypedDict, an attrs class, a msgspec Struct, "
     "Annotated[list | set | frozenset | dict | tuple[T, ...], Capacity(n)] and their "
@@ -153,6 +156,10 @@ class TypeSpec:
     """A bytes value read back as `bytearray`."""
     reusable: bool = False
     """Whether a value read back cannot be changed, so a later read may return it again."""
+    read_as: Callable[[Any], Any] | None = None
+    """Called on each value read back, to give the declared type."""
+    write_as: Callable[[Any], Any] | None = None
+    """Called on each value before it is stored, to give one the kind takes."""
 
     @property
     def code(self) -> int:
@@ -196,6 +203,13 @@ SCALARS: Final[dict[type, TypeSpec]] = {
     datetime.timedelta: fixed("timedelta", 12, 4, datetime.timedelta),
     uuid.UUID: fixed("uuid", 16, 1, uuid.UUID),
 }
+NUMPY_SCALARS: Final[dict[str, tuple[str, int, int, str]]] = {
+    "bool": ("bool", 1, 1, "bool:1"),
+    "int64": ("int", 8, 8, "int:8"),
+    "float64": ("float", 8, 8, "float:8"),
+    "complex128": ("complex", 16, 8, "complex"),
+}
+"""A numpy scalar type's dtype name -> its kind, size, alignment and schema text."""
 TEXT: Final[dict[type, str]] = {
     str: "str",
     bytes: "bytes",
@@ -219,6 +233,26 @@ DICTS: Final[dict[Any, type]] = {
     abc.Mapping: dict,
     abc.MutableMapping: dict,
 }
+
+
+def numpy_spec(hint: Any) -> TypeSpec | None:
+    """Return how values of the numpy scalar type `hint` are stored, or None if it is not one."""
+    if not isinstance(hint, type) or hint.__module__ != "numpy":
+        return None
+    found = NUMPY_SCALARS.get(dtype_name(hint))
+    if found is None:
+        return None
+    kind, size, alignment, text = found
+    return TypeSpec(
+        kind,
+        size,
+        alignment,
+        text,
+        match=(hint,),
+        exact=hint,
+        reusable=True,
+        read_as=hint,
+    )
 
 
 def unsupported(where: str, hint: object) -> TypeError:
@@ -531,6 +565,8 @@ def dispatch(
         raise TypeError(f"{where}: Capacity does not apply to {hint!r}")
     if isinstance(hint, type) and hint in SCALARS:
         return SCALARS[hint]
+    if (spec := numpy_spec(hint)) is not None:
+        return spec
     if isinstance(hint, type) and issubclass(hint, enum.Flag):
         return flag_spec(hint, where)
     if isinstance(hint, type) and issubclass(hint, enum.Enum):
@@ -1083,6 +1119,9 @@ class Table:
         self.data = bytearray()
         self.info: dict[int, tuple[Any, ...]] = {}
         self.bytearrays: list[tuple[int, int]] = []
+        self.converts: list[
+            tuple[int, int, Callable[[Any], Any] | None, Callable[[Any], Any] | None]
+        ] = []
 
     def entry(self, spec: TypeSpec, offset: int) -> bytes:
         """Return the 8-byte entry of a member at `offset`, writing its description first if it has one."""
@@ -1107,5 +1146,10 @@ class Table:
         self.info[at] = spec.info
         self.bytearrays += [
             (at, i) for i, m in enumerate(spec.members) if m.type.bytearray
+        ]
+        self.converts += [
+            (at, i, m.type.read_as, m.type.write_as)
+            for i, m in enumerate(spec.members)
+            if m.type.read_as is not None or m.type.write_as is not None
         ]
         return at

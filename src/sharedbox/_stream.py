@@ -103,8 +103,15 @@ def item_of(hint: object) -> Item:
     low = table.describe(spec) if spec.described else spec.entry_low
     if spec.bytearray:
         table.bytearrays.append((-1, 0))
+    if spec.read_as is not None or spec.write_as is not None:
+        table.converts.append((-1, 0, spec.read_as, spec.write_as))
     types = Types(
-        [(0, low, spec.code)], [label], bytes(table.data), table.info, table.bytearrays
+        [(0, low, spec.code)],
+        [label],
+        bytes(table.data),
+        table.info,
+        table.bytearrays,
+        converts=table.converts,
     )
     digest = hashlib.sha256(f"stream|{spec.text}".encode()).digest()
     return Item(

@@ -62,8 +62,7 @@ const sharedbox::Types *types_of(nb::handle types) {
 nb::object decode_read(const sharedbox::Types *types, std::uint32_t index, sharedbox::FieldRead &read) {
     const auto *data = reinterpret_cast<const std::byte *>(read.bytes.data());
     if (static_cast<std::uint8_t>(read.field->kind) <= sharedbox::kind_ref) {
-        if (read.field->kind == sharedbox::FieldKind::Bytes && types != nullptr &&
-            types->field_is_bytearray(index)) [[unlikely]]
+        if (types != nullptr && types->field_via_types(index)) [[unlikely]]
             return types->decode(index, {data, read.bytes.size()}, nullptr);
         return decode_value(*read.field, read.bytes);
     }
@@ -77,8 +76,7 @@ nb::object decode_payload(const sharedbox::Types *types, const sharedbox::FieldD
     const std::string_view bytes = sharedbox::payload(field, record);
     const auto data = std::as_bytes(std::span(bytes.data(), bytes.size()));
     if (static_cast<std::uint8_t>(field.kind) <= sharedbox::kind_ref) {
-        if (field.kind == sharedbox::FieldKind::Bytes && types != nullptr && types->field_is_bytearray(index))
-            [[unlikely]]
+        if (types != nullptr && types->field_via_types(index)) [[unlikely]]
             return types->decode(index, data, nullptr);
         return decode_value(field, bytes);
     }
@@ -1059,12 +1057,12 @@ NB_MODULE(_native, m) {
                const std::vector<std::tuple<std::uint32_t, std::uint32_t, std::uint32_t>> &fields,
                std::vector<std::string> labels, nb::bytes table, const nb::dict &info,
                const std::vector<std::pair<std::int64_t, std::uint32_t>> &bytearrays,
-               const std::vector<std::uint32_t> &reusable) {
+               const std::vector<std::uint32_t> &reusable, const std::vector<sharedbox::Convert> &converts) {
                 new (self) sharedbox::Types(fields, std::move(labels), std::string(table.c_str(), table.size()),
-                                            info, bytearrays, reusable);
+                                            info, bytearrays, reusable, converts);
             },
             "fields"_a, "labels"_a, "table"_a, "info"_a, "bytearrays"_a,
-            "reusable"_a = std::vector<std::uint32_t>())
+            "reusable"_a = std::vector<std::uint32_t>(), "converts"_a = std::vector<sharedbox::Convert>())
         .def_prop_ro("table",
                      [](const sharedbox::Types &t) { return nb::bytes(t.table().data(), t.table().size()); })
         .def(
