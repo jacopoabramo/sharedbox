@@ -3363,6 +3363,11 @@ scan of its envelope as an array:</p>
 </span><span id="__span-0-22"><a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a>    <span class="n">recipient</span><span class="p">:</span> <span class="n">Annotated</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Capacity</span><span class="p">(</span><span class="mi">32</span><span class="p">)]</span>
 </span><span id="__span-0-23"><a id="__codelineno-0-23" name="__codelineno-0-23" href="#__codelineno-0-23"></a>    <span class="n">scan</span><span class="p">:</span> <span class="n">Annotated</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">Shape</span><span class="p">(</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">),</span> <span class="n">DType</span><span class="p">(</span><span class="s2">"uint8"</span><span class="p">)]</span>
 </span></code></pre></div>
+<p>The scan takes its sizes from the <code>Shape</code> in its annotation. Because
+<code>Letter</code> is a dataclass, the sizes could go in the field's metadata instead,
+as in <code>scan: npt.NDArray[np.uint8] = field(metadata={"shape": (32, 32)})</code>,
+which works for an <code>attrs</code> class too. A <code>NamedTuple</code> or a <code>msgspec</code>
+<code>Struct</code> has no field metadata and keeps the <code>Shape</code>.</p>
 <p>The creating process calls <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;create&lt;/span&gt;
 
 
