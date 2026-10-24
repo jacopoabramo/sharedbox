@@ -23,6 +23,14 @@ std::string decimal_text(PyObject *value, std::uint32_t capacity, const std::str
 /// or nullptr with a Python exception set. A stored value that fails the decoding checks raises
 /// ValueError naming name.
 PyObject *decode(std::uint8_t kind, std::span<const std::byte> bytes, const std::string &name);
+/// Whether value is an integer other than a bool or a numpy bool: an int, or a value with __index__.
+bool is_integer(PyObject *value);
+/// Whether value is a numbers.Real other than a bool or a numpy bool.
+bool is_real(PyObject *value);
+/// Whether value is a numbers.Complex other than a bool or a numpy bool.
+bool is_complex(PyObject *value);
+/// Whether value is a numpy.bool_; false while numpy is not imported, since no such value exists then.
+bool is_numpy_bool(PyObject *value);
 /// collections.abc.Mapping, Sequence and Set, borrowed.
 PyObject *mapping();
 PyObject *sequence();

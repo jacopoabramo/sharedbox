@@ -1155,11 +1155,11 @@ nb::object Types::rebuild(const detail::type_ref &t, PyObject *value, std::byte 
 bool Types::accepts(const detail::type_ref &t, PyObject *value) const {
     switch (t.kind) {
     case kind_bool:
-        return PyBool_Check(value);
+        return PyBool_Check(value) || scalars::is_numpy_bool(value);
     case kind_int:
-        return PyLong_Check(value) && !PyBool_Check(value);
+        return scalars::is_integer(value);
     case kind_float:
-        return (PyFloat_Check(value) || PyLong_Check(value)) && !PyBool_Check(value);
+        return scalars::is_real(value);
     case kind_str:
         return PyUnicode_Check(value);
     case kind_bytes:

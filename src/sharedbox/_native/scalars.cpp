@@ -28,6 +28,11 @@ PyObject *decimal_type = nullptr;
 PyObject *mapping_abc = nullptr;
 PyObject *sequence_abc = nullptr;
 PyObject *set_abc = nullptr;
+PyObject *real_abc = nullptr;
+PyObject *complex_abc = nullptr;
+PyObject *numpy_name = nullptr;
+// numpy.bool_, found the first time a check runs after numpy is imported.
+std::atomic<PyObject *> numpy_bool{nullptr};
 PyObject *utcoffset_name = nullptr;
 PyObject *bytes_name = nullptr;
 PyObject *fold_name = nullptr;
@@ -259,6 +264,9 @@ void init() {
     mapping_abc = nb::object(abc.attr("Mapping")).release().ptr();
     sequence_abc = nb::object(abc.attr("Sequence")).release().ptr();
     set_abc = nb::object(abc.attr("Set")).release().ptr();
+    const nb::module_ numbers = nb::module_::import_("numbers");
+    real_abc = nb::object(numbers.attr("Real")).release().ptr();
+    complex_abc = nb::object(numbers.attr("Complex")).release().ptr();
     const auto checked = [](PyObject *made) {
         if (made == nullptr)
             throw nb::python_error();
@@ -269,6 +277,7 @@ void init() {
     fold_name = checked(PyUnicode_InternFromString("fold"));
     tzinfo_name = checked(PyUnicode_InternFromString("tzinfo"));
     empty_tuple = checked(PyTuple_New(0));
+    numpy_name = checked(PyUnicode_InternFromString("numpy"));
 #ifdef Py_LIMITED_API
     const char *attrs[10] = {"year",   "month",       "day",  "hour",    "minute",
                              "second", "microsecond", "days", "seconds", "microseconds"};
@@ -281,6 +290,59 @@ void init() {
 #endif
 }
 
+bool is_numpy_bool(PyObject *value) {
+    PyObject *type = numpy_bool.load(std::memory_order_acquire);
+    if (type == nullptr) {
+        PyObject *numpy = PyImport_GetModule(numpy_name);
+        if (numpy == nullptr) {
+            if (PyErr_Occurred())
+                throw nb::python_error();
+            return false;
+        }
+        PyObject *found = PyObject_GetAttrString(numpy, "bool_");
+        Py_DECREF(numpy);
+        if (found == nullptr)
+            throw nb::python_error();
+        // Two threads may both look it up; the one whose swap fails drops its own.
+        if (numpy_bool.compare_exchange_strong(type, found, std::memory_order_acq_rel, std::memory_order_acquire))
+            type = found;
+        else
+            Py_DECREF(found);
+    }
+    return reinterpret_cast<PyObject *>(Py_TYPE(value)) == type;
+}
+
+bool is_integer(PyObject *value) {
+    if (PyBool_Check(value))
+        return false;
+    return PyLong_Check(value) || (PyIndex_Check(value) && !is_numpy_bool(value));
+}
+
+namespace {
+
+bool is_abc(PyObject *value, PyObject *abc) {
+    if (is_numpy_bool(value))
+        return false;
+    const int found = PyObject_IsInstance(value, abc);
+    if (found < 0)
+        throw nb::python_error();
+    return found == 1;
+}
+
+} // namespace
+
+bool is_real(PyObject *value) {
+    if (PyBool_Check(value))
+        return false;
+    return PyFloat_Check(value) || PyLong_Check(value) || is_abc(value, real_abc);
+}
+
+bool is_complex(PyObject *value) {
+    if (PyBool_Check(value))
+        return false;
+    return PyComplex_Check(value) || PyFloat_Check(value) || PyLong_Check(value) || is_abc(value, complex_abc);
+}
+
 PyObject *mapping() { return mapping_abc; }
 PyObject *sequence() { return sequence_abc; }
 PyObject *set() { return set_abc; }
@@ -288,7 +350,7 @@ PyObject *set() { return set_abc; }
 bool accepts(std::uint8_t kind, PyObject *value) {
     switch (kind) {
     case kind_complex:
-        return PyComplex_Check(value) || PyFloat_Check(value) || (PyLong_Check(value) && !PyBool_Check(value));
+        return is_complex(value);
     case kind_date:
         return instance(value, date_type) && !instance(value, datetime_type);
     case kind_time:
@@ -312,6 +374,14 @@ void encode(std::uint8_t kind, PyObject *value, std::span<std::byte> out, const 
     status rc = status::ok;
     switch (kind) {
     case kind_complex: {
+        nb::object converted;
+        if (!PyComplex_Check(value) && !PyFloat_Check(value) && !PyLong_Check(value)) {
+            converted = nb::steal(
+                PyObject_CallFunctionObjArgs(reinterpret_cast<PyObject *>(&PyComplex_Type), value, nullptr));
+            if (!converted.is_valid())
+                throw nb::python_error();
+            value = converted.ptr();
+        }
         const double re = PyComplex_RealAsDouble(value);
         // ImagAsDouble may run Python code, which must not start with an exception set.
         const double im = PyErr_Occurred() ? 0.0 : PyComplex_ImagAsDouble(value);
