@@ -205,4 +205,4 @@ def test_a_stored_element_that_fails_the_checks_raises(unique_name: str) -> None
     with Flags.create(unique_name) as box:
         box._segment._write([(0, struct.pack("<IB", 1, 2))])
         with pytest.raises(ValueError, match="Flags.flags"):
-            box.flags
+            _ = box.flags
