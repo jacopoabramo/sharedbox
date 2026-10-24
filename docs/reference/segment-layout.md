@@ -15,9 +15,10 @@ to understand the ideas first, read
 `include/sharedbox/stream.hpp` implement this contract, and the Python
 extension runs on the first two.
 
-It describes core version 1.0, box layout 3.0 and stream layout 1.0, which
-`sharedbox` 0.6.0 writes. It opens nothing older: box layouts 1.0 and 2.0,
-which 0.5 and earlier wrote, are refused.
+It describes core version 1.0, box layout 3.1 and stream layout 1.1. It
+also opens box layout 3.0 and stream layout 1.0, which `sharedbox` 0.6.0
+writes, and nothing older: box layouts 1.0 and 2.0, which 0.5 and earlier
+wrote, are refused.
 
 ## Goal
 
@@ -154,8 +155,8 @@ box with three fields and 64 slots stays in one page up to about 1.8 KB of
 record (4096 - 2240 = 1856).
 
 - Versions: bytes 8 to 11 are `01 00 00 00` (core 1.0: `core_major` 1,
-  `core_minor` 0) and bytes 12 to 15 are `03 00 00 00` (box layout 3.0:
-  `kind_major` 3, `kind_minor` 0). The two versions count the segment
+  `core_minor` 0) and bytes 12 to 15 are `03 00 01 00` (box layout 3.1:
+  `kind_major` 3, `kind_minor` 1). The two versions count the segment
   format and are not tied to the package version.
 - Magic: `SBX_BOX_` for a box and `SBX_STRM` for a stream, each read as a
   little-endian `u64`. The magic names the kind, so attach checks it first.
@@ -218,6 +219,17 @@ record (4096 - 2240 = 1856).
 | 10 | timedelta | 12 | 12, 4 |
 | 11 | uuid | 16 | 16, 1 |
 | 12 | decimal | capacity | 4 + capacity, 4 |
+| 13 | int8 | 1 | 1, 1 |
+| 14 | int16 | 2 | 2, 2 |
+| 15 | int32 | 4 | 4, 4 |
+| 16 | uint8 | 1 | 1, 1 |
+| 17 | uint16 | 2 | 2, 2 |
+| 18 | uint32 | 4 | 4, 4 |
+| 19 | uint64 | 8 | 8, 8 |
+| 20 | float16 | 2 | 2, 2 |
+| 21 | float32 | 4 | 4, 4 |
+| 22 | complex64 | 8 | 8, 4 |
+| 23 | datetime64 | 8 | 8, 8 |
 | 64 | enum | description offset | 2, 2 |
 | 65 | flag | description offset | 8, 8 |
 | 66 | literal | description offset | 2, 2 |
@@ -232,7 +244,9 @@ record (4096 - 2240 = 1856).
 
 A field of a kind the reader does not know is opened as opaque bytes: a
 kind below 64 is sized by its entry, one from 64 by its description's
-head. Every described size is a multiple of its alignment.
+head. A member entry inside a description records no size, so a reader
+refuses, with `status::corrupt`, a description that holds a kind below 64
+it does not know. Every described size is a multiple of its alignment.
 
 ### Encodings
 
@@ -254,6 +268,12 @@ Little-endian.
 - `timedelta`: `i32` days, `i32` seconds, `i32` microseconds.
 - `uuid`: `UUID.bytes`, in network byte order.
 - `decimal`: `u32` length, then the text of `str(value)`.
+- `int8` to `int32`: signed, two's complement, at their width; `uint8` to
+  `uint64`: unsigned, at their width.
+- `float16`: IEEE 754 binary16; `float32`: IEEE 754 binary32.
+- `complex64`: two `f32`, real then imaginary.
+- `datetime64`: `i64` nanoseconds since 1970-01-01T00:00 UTC, with
+  `-2**63` for NaT.
 - `enum`, `literal`: `u16` position; `flag`: `u64` bits.
 - `optional`: a presence byte, padding to the member's alignment `A`, then
   the member; size `round_up(A + member size, A)`.
@@ -331,9 +351,13 @@ attacher agree on it and on the class's meaning.
   the identity of the class it refers to in place of the capacity.
 - A field of a kind from 6 on enters as `name:<type text>`. The type text
   of each kind, with `T` for the type text of a member:
-    - `complex`, `date`, `time`, `datetime`, `timedelta`, `uuid`: the kind
-      name alone. `bool:1`, `int:8` and `float:8` are the texts of those
-      kinds inside a described type.
+    - `complex`, `date`, `time`, `datetime`, `timedelta`, `uuid` and the
+      kinds 13 to 23 (`int8` to `datetime64`): the kind name alone.
+      `bool:1`, `int:8` and `float:8` are the texts of those kinds inside a
+      described type.
+    - `numpy.int64`, `numpy.float64`, `numpy.complex128` and `numpy.bool_`
+      have the bytes of kinds 1, 2, 6 and 0, so they enter as `int:8`,
+      `float:8`, `complex` and `bool:1`, as the Python types do.
     - `str:n`, `bytes:n` and `decimal:n`: `n` is the capacity in bytes.
       A `bytearray` is `bytes:n`.
     - `enum(A,B)`: the member names in definition order.
@@ -381,19 +405,25 @@ attacher agree on it and on the class's meaning.
 
   demo/1|when:date|mode:enum(RED,BLUE)|tags:list[2](str:4)|note:optional(int:8)
   schema_hash  = 0x2a9e5c5cc2876a4c
+
+  scale/1|grams:uint16|reading:float32|raw:int:8|left_at:datetime64|parts:list[4](int8)
+  schema_hash  = 0x3c1107337e5bf226
   ```
 
-  The last line is a class with `identity="demo/1"` and the fields
+  The `demo/1` line is a class with `identity="demo/1"` and the fields
   `when: date`, `mode: Color` (members `RED` and `BLUE`),
   `tags: Annotated[list[Annotated[str, Capacity(4)]], Capacity(2)]` and
-  `note: int | None`.
+  `note: int | None`. The `scale/1` line is a class with
+  `identity="scale/1"` and the fields `grams: np.uint16`,
+  `reading: np.float32`, `raw: np.int64`, `left_at: np.datetime64` and
+  `parts: Annotated[list[np.int8], Capacity(4)]`.
 
 ## Stream layout
 
 A stream is a ring of `capacity` slots, at least 2, that one sender writes
 and up to `max_readers` readers (1 to 4095) copy out of. Its common line
 holds the magic `SBX_STRM` (`0x4D5254535F584253`), `kind_major` 1 and
-`kind_minor` 0 (stream layout 1.0), and a `waiter_slots` of
+`kind_minor` 1 (stream layout 1.1), and a `waiter_slots` of
 `max_readers + 1`, one slot for each reader and one for the sender. Every
 size and offset is 64-bit, so a ring may pass 4 GiB; the slots end at or
 below 2^46 bytes. The mapping holds, from offset 0:
@@ -507,8 +537,11 @@ layout version of its kind, for the rest. Each has a major and a minor.
   kind from 64 on, the low 24 bits are the offset of its description, whose
   head's `size` is the span, and no alignment is asked either.
 - Box layout 3.0 has the description table and the kinds 6 to 12 and 64 to
-  74. A later 3.x minor version may add kinds; a reader opens a field of a
-  kind it does not know as opaque bytes.
+  74. Box layout 3.1 and stream layout 1.1 add the kinds 13 to 23. A minor
+  version may add kinds: a reader of an older minor opens a top-level box
+  field of a kind it does not know as opaque bytes, and refuses, with
+  `status::corrupt`, a segment that uses one inside a described type or as
+  a stream item.
 - A change to how existing bytes are read or written raises a major: the
   core's (the common line, the object names, liveness) raises `core_major`,
   and a kind's own (the sequence lock, field encoding, the slot layout)
@@ -1346,12 +1379,18 @@ void     sbx_release(sbx_handle *h);
   `SBX_E_FOREIGN` for a magic they do not know (see Attach). A C caller
   gets the code only, without the `error`'s OS error and `found`.
 - `sbx_field_desc` returns a field's kind code and its description's
-  bytes. `sbx_read_*` and `sbx_write_*` exist for `complex`, `date`,
-  `time`, `datetime`, `timedelta`, `uuid`, enum and literal positions
-  (`position`), flag bits (`flag`) and an optional's presence (`present`,
-  read only). A read gives `SBX_E_RANGE` for a field of another kind and
-  `SBX_E_CORRUPT` for a stored value no Python value has; a write gives
-  `SBX_E_RANGE` for a value out of range.
+  bytes. `sbx_read_*` and `sbx_write_*` exist for `complex`, `float16`,
+  `float32`, `date`, `time`, `datetime`, `timedelta`, `uuid`, enum and
+  literal positions (`position`), flag bits (`flag`) and an optional's
+  presence (`present`, read only). A read gives `SBX_E_RANGE` for a field
+  of another kind and `SBX_E_CORRUPT` for a stored value no Python value
+  has; a write gives `SBX_E_RANGE` for a value out of range.
+- `sbx_read_float16` and `sbx_read_float32` give a `float`;
+  `sbx_write_float16` and `sbx_write_float32` take a `double`, round it to
+  the field's width, and give `SBX_E_RANGE` for a finite value past it. NaN
+  and the infinities are stored as they are. The integer kinds,
+  `complex64` and `datetime64` hold plain C types, which `sbx_read` and
+  `sbx_write` copy.
 - `sbx_time` and `sbx_datetime` hold `int64_t micros`, `int16_t
   offset_minutes` and `uint8_t naive, fold`; `sbx_timedelta` holds
   `int32_t days, seconds, microseconds`. A `sbx_time` counts microseconds

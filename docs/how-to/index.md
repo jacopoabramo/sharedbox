@@ -28,6 +28,8 @@ items through a [stream](../explanation/glossary.md#stream).
   with a capacity in elements
 - [How to store arrays](store-arrays.md): a shape, a dtype and any DLPack
   library
+- [How to store numpy numbers](store-numpy-numbers.md): numpy scalars in
+  number fields, and fields of numpy's fixed-width types
 - [How to set defaults and check values](set-defaults-and-check-values.md):
   defaults, keyword-only fields and `__post_init__`
 - [How to change several fields at once](change-several-fields-at-once.md):

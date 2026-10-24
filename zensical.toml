@@ -27,6 +27,7 @@ nav = [
             "how-to/store-records.md",
             "how-to/store-collections.md",
             "how-to/store-arrays.md",
+            "how-to/store-numpy-numbers.md",
             "how-to/set-defaults-and-check-values.md",
             "how-to/change-several-fields-at-once.md",
             "how-to/send-a-box-to-another-process.md",

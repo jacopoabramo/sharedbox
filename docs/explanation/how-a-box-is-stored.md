@@ -44,7 +44,7 @@ header: "header  0x000 - 0x07F" {
   shape: sql_table
   tooltip: The first line, up to 0x03F, has the same fields in every kind of segment and is written once when the box is created. The second line, from 0x040, starts with the words that writes and waits change, then holds the box's geometry.
   "0x000": "magic  \"SBX_BOX_\", written last"
-  "0x008": "core version 1.0, box layout 3.0"
+  "0x008": "core version 1.0, box layout 3.1"
   "0x010": "schema_hash"
   "0x018": "create_id"
   "0x020": "creator start and pid namespace"

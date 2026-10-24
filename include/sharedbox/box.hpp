@@ -1,4 +1,4 @@
-// box.hpp: layout 3.0 of a box segment and the protocols that use it.
+// box.hpp: layout 3.1 of a box segment and the protocols that use it.
 #ifndef SHAREDBOX_BOX_HPP
 #define SHAREDBOX_BOX_HPP
 

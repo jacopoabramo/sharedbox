@@ -75,9 +75,11 @@ imports a box (`sbx_open`, `sbx_import`), checks its schema hash
 `sbx_write`) and releases the box (`sbx_release`). For fields of the
 described types it also has `sbx_field_desc`, which gives you a field's kind
 code and description, a typed `sbx_read_*` and `sbx_write_*` pair for
-dates, times, datetimes, timedeltas, UUIDs, complex numbers, flags and the
-position of an enum member or literal value, and `sbx_read_present`, which
-tells you whether an optional field holds a value.
+dates, times, datetimes, timedeltas, UUIDs, complex numbers, 16-bit and
+32-bit floats, flags and the position of an enum member or literal value,
+and `sbx_read_present`, which tells you whether an optional field holds a
+value. The fixed-width integers, `complex64` and `datetime64` fields hold
+plain C types, so `sbx_read` and `sbx_write` copy them as they are.
 
 Waiting for changes, creating a box, `force_unlock` and `unlink` are only
 in the C++ API, and `sharedbox_c.h` may be removed in a future major

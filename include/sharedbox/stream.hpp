@@ -1,4 +1,4 @@
-// stream.hpp: layout 1.0 of a stream segment, a ring that one sender writes and readers copy out of.
+// stream.hpp: layout 1.1 of a stream segment, a ring that one sender writes and readers copy out of.
 #ifndef SHAREDBOX_STREAM_HPP
 #define SHAREDBOX_STREAM_HPP
 
