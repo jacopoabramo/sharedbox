@@ -314,9 +314,7 @@ def datetime64_ns(value: Any) -> int:
     if unit in ("Y", "M"):
         # Years and months have no fixed length, so they go through days, which numpy computes in 64 bits.
         if abs(count) > (1000 if unit == "Y" else 12_000):
-            raise OverflowError(
-                f"{value} is not between 1678 and 2262, which datetime64 fields hold"
-            )
+            raise OverflowError(f"holds times from 1678 to 2262; {value} does not fit")
         ns = int(value.astype("datetime64[D]").astype(numpy.int64)) * NS_PER_UNIT["D"]
     elif unit in UNITS_PER_NS:
         ns = count // UNITS_PER_NS[unit]
@@ -325,9 +323,7 @@ def datetime64_ns(value: Any) -> int:
     else:
         raise TypeError(f"expects a numpy.datetime64 with a unit, got {value!r}")
     if not NAT < ns < -NAT:
-        raise OverflowError(
-            f"{value} is not between 1678 and 2262, which datetime64 fields hold"
-        )
+        raise OverflowError(f"holds times from 1678 to 2262; {value} does not fit")
     return ns
 
 

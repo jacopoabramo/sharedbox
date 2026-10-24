@@ -31,9 +31,11 @@ PyObject *set_abc = nullptr;
 PyObject *real_abc = nullptr;
 PyObject *complex_abc = nullptr;
 PyObject *numpy_name = nullptr;
-// numpy.bool_ and numpy.datetime64, found the first time a check runs after numpy is imported.
+// numpy.bool_, numpy.datetime64 and numpy.timedelta64, found the first time a check runs after numpy is
+// imported.
 std::atomic<PyObject *> numpy_bool{nullptr};
 std::atomic<PyObject *> numpy_datetime64{nullptr};
+std::atomic<PyObject *> numpy_timedelta64{nullptr};
 PyObject *utcoffset_name = nullptr;
 PyObject *bytes_name = nullptr;
 PyObject *fold_name = nullptr;
@@ -353,6 +355,40 @@ std::int64_t micros_of_day(const clock_fields &f) {
     raise(PyExc_ValueError, name + ": the stored " + what + " is not a value Python can hold");
 }
 
+// Whether value's type is numpy's attribute name, kept in slot once found; false while numpy is not
+// imported, since no such value exists then.
+bool is_numpy_type(std::atomic<PyObject *> &slot, const char *name, PyObject *value) {
+    PyObject *type = slot.load(std::memory_order_acquire);
+    if (type == nullptr) {
+        PyObject *numpy = PyImport_GetModule(numpy_name);
+        if (numpy == nullptr) {
+            if (PyErr_Occurred())
+                throw nb::python_error();
+            return false;
+        }
+        PyObject *found = PyObject_GetAttrString(numpy, name);
+        Py_DECREF(numpy);
+        if (found == nullptr)
+            throw nb::python_error();
+        // Two threads may both look it up; the one whose swap fails drops its own.
+        if (slot.compare_exchange_strong(type, found, std::memory_order_acq_rel, std::memory_order_acquire))
+            type = found;
+        else
+            Py_DECREF(found);
+    }
+    return reinterpret_cast<PyObject *>(Py_TYPE(value)) == type;
+}
+
+bool is_abc(PyObject *value, PyObject *abc) {
+    // numpy registers timedelta64 as a numbers.Real, but float() refuses it.
+    if (is_numpy_bool(value) || is_numpy_type(numpy_timedelta64, "timedelta64", value))
+        return false;
+    const int found = PyObject_IsInstance(value, abc);
+    if (found < 0)
+        throw nb::python_error();
+    return found == 1;
+}
+
 } // namespace
 
 void init() {
@@ -394,34 +430,6 @@ void init() {
 #endif
 }
 
-namespace {
-
-// Whether value's type is numpy's attribute name, kept in slot once found; false while numpy is not
-// imported, since no such value exists then.
-bool is_numpy_type(std::atomic<PyObject *> &slot, const char *name, PyObject *value) {
-    PyObject *type = slot.load(std::memory_order_acquire);
-    if (type == nullptr) {
-        PyObject *numpy = PyImport_GetModule(numpy_name);
-        if (numpy == nullptr) {
-            if (PyErr_Occurred())
-                throw nb::python_error();
-            return false;
-        }
-        PyObject *found = PyObject_GetAttrString(numpy, name);
-        Py_DECREF(numpy);
-        if (found == nullptr)
-            throw nb::python_error();
-        // Two threads may both look it up; the one whose swap fails drops its own.
-        if (slot.compare_exchange_strong(type, found, std::memory_order_acq_rel, std::memory_order_acquire))
-            type = found;
-        else
-            Py_DECREF(found);
-    }
-    return reinterpret_cast<PyObject *>(Py_TYPE(value)) == type;
-}
-
-} // namespace
-
 bool is_numpy_bool(PyObject *value) { return is_numpy_type(numpy_bool, "bool_", value); }
 
 bool is_integer(PyObject *value) {
@@ -429,19 +437,6 @@ bool is_integer(PyObject *value) {
         return false;
     return PyLong_Check(value) || (PyIndex_Check(value) && !is_numpy_bool(value));
 }
-
-namespace {
-
-bool is_abc(PyObject *value, PyObject *abc) {
-    if (is_numpy_bool(value))
-        return false;
-    const int found = PyObject_IsInstance(value, abc);
-    if (found < 0)
-        throw nb::python_error();
-    return found == 1;
-}
-
-} // namespace
 
 bool is_real(PyObject *value) {
     if (PyBool_Check(value))

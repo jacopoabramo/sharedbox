@@ -366,3 +366,91 @@ def test_an_overflowing_member_does_not_pass_to_the_next(unique_name: str) -> No
     """Raise OverflowError when the integer member cannot hold the value, without trying the float one."""
     with Envelope.create(unique_name) as envelope, pytest.raises(OverflowError):
         envelope.weight = 70000
+
+
+class Lapse(SharedBox):
+    f: float = 0.0
+    g: np.float32 = np.float32(0)
+    z: complex = 0j
+    u: float | int = 0
+
+
+@pytest.mark.parametrize("field", ["f", "g", "z", "u"])
+def test_a_timedelta64_is_refused_naming_the_field(
+    unique_name: str, field: str
+) -> None:
+    """Raise TypeError naming the field for a numpy timedelta64 in float, float32, complex and union fields."""
+    with (
+        Lapse.create(unique_name) as lapse,
+        pytest.raises(TypeError, match=rf"^Lapse\.{field} "),
+    ):
+        setattr(lapse, field, np.timedelta64(5, "s"))
+
+
+@pytest.mark.parametrize(
+    ("value", "error"),
+    [(0, TypeError), (np.datetime64("3000-01-01"), OverflowError)],
+)
+def test_a_datetime64_error_names_the_field(
+    unique_name: str, value: object, error: type[Exception]
+) -> None:
+    """Name the field in the TypeError and OverflowError a datetime64 field raises."""
+    with (
+        Delivery.create(unique_name) as delivery,
+        pytest.raises(error, match=r"^Delivery\.left_at "),
+    ):
+        delivery.left_at = value  # type: ignore[assignment]
+
+
+@dataclasses.dataclass(frozen=True)
+class Shipment:
+    tag: np.int8
+    phase: np.complex64
+    small: np.float16
+    reading: np.float32
+    count: np.uint64
+    left_at: np.datetime64
+
+
+SHIPMENT = Shipment(
+    np.int8(-1),
+    np.complex64(1.5 - 2j),
+    np.float16(0.1),
+    np.float32(0.1),
+    np.uint64(2**64 - 1),
+    np.datetime64("2026-10-24T09:30:00.000000001"),
+)
+
+
+class Yard(SharedBox):
+    last: Shipment = Shipment(
+        np.int8(0),
+        np.complex64(0),
+        np.float16(0),
+        np.float32(0),
+        np.uint64(0),
+        np.datetime64("NaT", "ns"),
+    )
+
+
+def member_types(item: Shipment) -> list[type]:
+    return [type(getattr(item, f.name)) for f in dataclasses.fields(item)]
+
+
+def test_every_new_kind_round_trips_as_a_record_member(unique_name: str) -> None:
+    """Read back every new kind as a record member with its type and value."""
+    with Yard.create(unique_name) as yard:
+        yard.last = SHIPMENT
+        assert yard.last == SHIPMENT
+        assert member_types(yard.last) == member_types(SHIPMENT)
+
+
+def test_every_new_kind_round_trips_in_a_stream_item(unique_name: str) -> None:
+    """Receive every new kind as a member of a stream item with its type and value."""
+    with SharedStream.create(Shipment, unique_name, capacity=4) as stream:
+        reader = stream.reader()
+        with stream.sender() as sender:
+            sender.send(SHIPMENT)
+        (got,) = list(reader)
+        assert got == SHIPMENT
+        assert member_types(got) == member_types(SHIPMENT)

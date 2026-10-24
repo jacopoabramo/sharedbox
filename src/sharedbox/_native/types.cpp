@@ -605,7 +605,14 @@ std::size_t Types::encode_collection(const detail::type_ref &t, PyObject *value,
 void Types::encode_into(const detail::type_ref &t, PyObject *value, std::byte *out, const Where &where) const {
     nb::object converted;
     if (const Conversion *c = conversion(t); c != nullptr && !c->write_as.is_none()) {
-        converted = through(c->write_as, nb::borrow(value));
+        try {
+            converted = through(c->write_as, nb::borrow(value));
+        } catch (nb::python_error &error) {
+            // The conversion's message starts with a verb; the field's name goes in front of it.
+            if (!error.matches(PyExc_TypeError) && !error.matches(PyExc_OverflowError))
+                throw;
+            raise(error.type().ptr(), where.name + " " + nb::str(error.value()).c_str());
+        }
         value = converted.ptr();
     }
     if (t.kind <= kind_bytes) {
