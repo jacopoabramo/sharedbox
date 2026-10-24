@@ -133,7 +133,8 @@ member.
 
 ## numpy numbers
 
-An `int`, `float` or `bool` field also takes `numpy`'s scalars, and reads
+An `int`, `float`, `complex` or `bool` field also takes `numpy`'s scalars,
+and reads
 back the type it declares, so `numpy.uint16(7)` written to an `int` field
 reads back as the `int` 7. A field can declare a `numpy` type too: the
 fixed-width integers from `int8` to `uint64`, `float16`, `float32`,

@@ -6,8 +6,8 @@ icon: lucide/wrench
 
 Numbers that come out of `numpy`, such as the largest of a row of scans or
 a reading from a sensor driver, go into a box without converting them
-first. An `int`, `float` or `bool` [field](../explanation/glossary.md#field)
-takes `numpy`'s scalars, and a field can also declare one of `numpy`'s
+first. An `int`, `float`, `complex` or `bool`
+[field](../explanation/glossary.md#field) takes `numpy`'s scalars, and a field can also declare one of `numpy`'s
 fixed-width types, so it takes exactly the bytes of that width. This guide
 shows both, and what happens when a number doesn't fit.
 
@@ -22,8 +22,8 @@ Python number, here one taken out of an array:
 
 The field reads back the type its annotation names, whatever type you
 wrote, so `parcels` reads back the `int` 7, not a `numpy.uint16`. An `int`
-field takes any integer `numpy` makes, and a `float` field any real
-number. A `bool` field takes `numpy.bool_`, but neither an `int` nor a
+field takes any integer `numpy` makes, a `float` field any real number, and
+a `complex` field any complex number. A `bool` field takes `numpy.bool_`, but neither an `int` nor a
 `float` field takes a `bool`.
 
 ## 2. Declare a field of a fixed-width type
@@ -36,9 +36,10 @@ record, annotate the field with the `numpy` type itself:
 ```
 
 `grams` takes 2 bytes and `reading` takes 4, and each reads back as its
-`numpy` type. The types you can declare are the integers `int8`, `int16`,
-`int32`, `uint8`, `uint16`, `uint32` and `uint64`, and `float16`,
-`float32` and `complex64`.
+`numpy` type. You can declare the integers `int8`, `int16`, `int32`,
+`int64`, `uint8`, `uint16`, `uint32` and `uint64`, the floats `float16`,
+`float32` and `float64`, `complex64` and `complex128`, `bool_`, and
+`datetime64`, which section 4 covers.
 
 A Python number works too: `scale.grams = 1200` stores
 `numpy.uint16(1200)`, and a `float32` field rounds a Python `float` to the
@@ -80,8 +81,8 @@ covers the years 1678 to 2262:
 
 It takes a `datetime64` of any unit and reads back one in nanoseconds,
 so the time you wrote in minutes comes back with nine digits after the
-seconds. A time past 2262 raises an `OverflowError`. `NaT`, `numpy`'s value
-for no time, is stored and reads back as `NaT`.
+seconds. A time before 1678 or after 2262 raises an `OverflowError`.
+`NaT`, `numpy`'s value for no time, is stored and reads back as `NaT`.
 
 ## 5. Write numpy numbers to a union
 
