@@ -243,7 +243,7 @@ TEST_CASE("float16 values encode as numpy rounds them") {
     const std::pair<double, std::uint16_t> cases[] = {{0.1, 0x2E66},     {65519.99, 0x7BFF}, {0x1p-24, 0x0001},
                                                       {0x1p-25, 0x0000}, {0x3p-26, 0x0001},  {-0.0, 0x8000},
                                                       {1.0 / 3, 0x3555}, {0x1p-14, 0x0400}};
-    for (const auto [value, bits] : cases) {
+    for (const auto &[value, bits] : cases) {
         std::array<std::byte, 2> out{};
         REQUIRE(encode_float16(value, out) == status::ok);
         CHECK(detail::load<std::uint16_t>(out, 0) == bits);
