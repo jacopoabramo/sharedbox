@@ -181,3 +181,15 @@ def test_an_alias_that_names_itself_is_refused() -> None:
     exec("type Tree = Annotated[list[Tree], Capacity(2)]", namespace)  # noqa: S102
     with pytest.raises(TypeError, match="refers to itself"):
         build_layout(make(namespace["Tree"]))
+
+
+class Long(SharedBox):
+    values: Annotated[list[int], Capacity(64)] = []
+
+
+def test_a_collection_past_the_read_buffer_round_trips(unique_name: str) -> None:
+    """Read back lists whose used slots are above, below and again above the 256-byte read buffer."""
+    with Long.create(unique_name) as box:
+        for values in (list(range(64)), [1, 2], list(range(40))):
+            box.values = values
+            assert box.values == values
