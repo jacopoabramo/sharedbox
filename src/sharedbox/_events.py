@@ -533,7 +533,7 @@ class BoxEvents(SignalGroup):
         [`nested`][sharedbox.BoxEvents.nested].
 
         The group `follow(field)` returns has `follow` and `unfollow` too,
-        so `stage.events.follow("motor").follow("encoder")` reaches one
+        so `office.events.follow("carrier").follow("bag")` reaches one
         level further. Its signals are those of the annotated class: a
         field that only a subclass has is left out.
 

@@ -1188,7 +1188,7 @@ class SharedBox(metaclass=SharedBoxMeta):
     unlink = Unlink()
     """Remove the segment's name, so no later process can attach to it.
 
-    `Motor.unlink(name=None)` on the class removes `name`, by default the
+    `Mailbox.unlink(name=None)` on the class removes `name`, by default the
     class's name; `box.unlink()` on a box removes the name of its segment.
     Boxes already open keep working. On Linux, later
     [`attach`][sharedbox.SharedBox.attach] calls fail. On Windows this does
