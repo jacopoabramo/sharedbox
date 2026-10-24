@@ -59,7 +59,7 @@ code: "" {
   style.fill: transparent
   code: |python
     1 -> context = mp.get_context("spawn")
-    2    child = context.Process(target=report, args=(status,))
+    2    child = context.Process(target=report, args=(sorter,))
     3    child.start()
   |
 }
@@ -73,7 +73,7 @@ scenarios: {
     pic.child.tooltip: The parent's box object goes on working after the fork.
     code.code: |python
       1 -> context = mp.get_context("fork")
-      2    child = context.Process(target=report, args=(status,))
+      2    child = context.Process(target=report, args=(sorter,))
       3    child.start()
     |
   }
@@ -96,7 +96,7 @@ initializer instead, and attach there, once per worker:
 --8<-- "docs/examples/send_a_box_to_another_process.py:pool"
 ```
 
-`main` above starts the pool with `initargs=(status.name,)`.
+`main` above starts the pool with `initargs=(sorter.name,)`.
 
 ## 3. Choose the start method
 

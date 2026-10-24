@@ -7,48 +7,48 @@ from dataclasses import KW_ONLY, InitVar
 from sharedbox import SharedBox, field, fields
 
 
-class Pump(SharedBox, name="example-pump"):
-    flow: float = 0.0
-    started: float = field(default_factory=time.time)
+class Counter(SharedBox, name="example-counter"):
+    till: float = 0.0
+    opened: float = field(default_factory=time.time)
 
 
-with Pump() as pump:
-    print(pump.flow, pump.started > 0)  # 0.0 True
-Pump.unlink()
+with Counter() as counter:
+    print(counter.till, counter.opened > 0)  # 0.0 True
+Counter.unlink()
 # --8<-- [end:defaults]
 
 
 # --8<-- [start:keyword-only]
-class Valve(SharedBox, name="example-valve"):
-    opening: float
+class Postage(SharedBox, name="example-postage"):
+    weight: float
     _: KW_ONLY
-    limit: float = 1.0
-    closing_time: float = 0.5
+    rate: float = 1.0
+    surcharge: float = 0.5
 
 
-with Valve(0.2, closing_time=2.0) as valve:
-    print(valve)  # Valve(opening=0.2, limit=1.0, closing_time=2.0)
-Valve.unlink()
+with Postage(0.2, surcharge=2.0) as postage:
+    print(postage)  # Postage(weight=0.2, rate=1.0, surcharge=2.0)
+Postage.unlink()
 # --8<-- [end:keyword-only]
 
 
 # --8<-- [start:check]
-class Heater(SharedBox, name="example-heater"):
-    target: float
-    limit: float = 80.0
+class Parcel(SharedBox, name="example-parcel"):
+    weight: float
+    limit: float = 30.0
 
     def __post_init__(self) -> None:
-        if self.target > self.limit:
-            raise ValueError(f"target {self.target} is above the limit {self.limit}")
+        if self.weight > self.limit:
+            raise ValueError(f"weight {self.weight} is above the limit {self.limit}")
 
 
 try:
-    Heater(95.0)
+    Parcel(35.0)
 except ValueError as error:
-    print(error)  # target 95.0 is above the limit 80.0
-with Heater(60.0) as heater:
-    print(heater.target)  # 60.0
-Heater.unlink()
+    print(error)  # weight 35.0 is above the limit 30.0
+with Parcel(12.0) as parcel:
+    print(parcel.weight)  # 12.0
+Parcel.unlink()
 # --8<-- [end:check]
 
 
@@ -68,12 +68,12 @@ Scale.unlink()
 
 
 # --8<-- [start:describe]
-class Stage(SharedBox, name="example-stage"):
-    position: float = field(
-        default=0.0, metadata={"unit": "mm"}, doc="Distance from home."
+class Route(SharedBox, name="example-route"):
+    distance: float = field(
+        default=0.0, metadata={"unit": "km"}, doc="Distance from the post office."
     )
 
 
-print(fields(Stage)[0].metadata["unit"])  # mm
-print(fields(Stage)[0].doc)  # Distance from home.
+print(fields(Route)[0].metadata["unit"])  # km
+print(fields(Route)[0].doc)  # Distance from the post office.
 # --8<-- [end:describe]

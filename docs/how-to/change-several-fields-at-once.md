@@ -4,9 +4,9 @@ icon: lucide/wrench
 
 # How to change several fields at once
 
-When you assign `point.x` and then `point.y`, that's two writes, and another
-process can read the [box](../explanation/glossary.md#box) in between and see a new `x` with an old
-`y`. Reading two [fields](../explanation/glossary.md#field) one after the other has the same
+When you assign `parcel.width` and then `parcel.height`, that's two writes,
+and another process can read the [box](../explanation/glossary.md#box) in between and see a new
+`width` with an old `height`. Reading two [fields](../explanation/glossary.md#field) one after the other has the same
 problem. This guide shows how to write and read several fields together, so
 nobody sees a half-finished change.
 

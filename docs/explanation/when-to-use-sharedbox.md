@@ -4,9 +4,14 @@ icon: lucide/lightbulb
 
 # When to use sharedbox
 
-Should you use a box, or would something simpler do? A
-[box](glossary.md#box) is made for sharing a record between processes, and
-that has a price: every write turns the value into bytes in shared memory,
+sharedbox serves programs made of several processes on one machine, and
+it meets two needs they have: one current value that many processes read
+and write, which is a [box](glossary.md#box), and a flow of items that each
+reader receives once, which is a [stream](glossary.md#stream). Both work
+without a server and without pickling.
+
+Should you use a box, or would something simpler do? A box is made for
+sharing a record between processes, and that has a price: every write turns the value into bytes in shared memory,
 and a read turns the bytes back into a value unless the value can't be
 changed and an earlier read built it since the last write. That costs some
 tens to hundreds of nanoseconds, and a value you can change comes back as a
@@ -28,16 +33,16 @@ from psygnal import evented
 
 @evented
 @dataclass
-class Motor:
-    position: int = 0
-    enabled: bool = False
+class Mailbox:
+    letters: int = 0
+    flag_up: bool = False
 
 
-motor = Motor()
+mailbox = Mailbox()
 lock = threading.Lock()
-motor.events.position.connect(lambda new, old: print(old, "->", new))
+mailbox.events.letters.connect(lambda new, old: print(old, "->", new))
 with lock:
-    motor.position = 10              # prints: 0 -> 10
+    mailbox.letters = 1              # prints: 0 -> 1
 ```
 
 Unlike a box's signals, these callbacks run on the thread that changes the
@@ -46,7 +51,7 @@ field, before the assignment returns. A box's callbacks run on its
 changes](waiting-for-changes.md) explains why.
 
 If what you share is a flow of items rather than a current value, such as
-the batches of a data pipeline, use a [stream](glossary.md#stream) instead.
+the letters passing through a sorting office, use a stream instead.
 A box keeps only the latest value, so a reader that is slow misses the ones
 in between, while a stream keeps the last `capacity` items and lets each
 [reader](glossary.md#reader) choose whether to receive every item or only

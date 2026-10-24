@@ -7,40 +7,40 @@ from typing import Any
 from sharedbox import SharedBox
 
 
-class Encoder(SharedBox, name="example-encoder"):
-    count: int = 0
+class Bag(SharedBox, name="example-bag"):
+    letters: int = 0
 
 
-class Motor(SharedBox, name="example-motor"):
-    position: int = 0
-    encoder: Encoder | None = None
+class Carrier(SharedBox, name="example-carrier"):
+    parcels: int = 0
+    bag: Bag | None = None
 
 
-class Stage(SharedBox, name="example-stage"):
-    motor: Motor | None = None
+class PostOffice(SharedBox, name="example-post-office"):
+    carrier: Carrier | None = None
 
 
 # --8<-- [end:classes]
 
-with Encoder() as encoder, Motor(0, encoder) as motor, Stage(motor) as stage:
+with Bag() as bag, Carrier(0, bag) as carrier, PostOffice(carrier) as office:
     # --8<-- [start:follow-all]
     changes: queue.Queue[tuple[tuple[str, ...], Any]] = queue.Queue()
-    stage.events.follow()
-    stage.events.nested.connect(lambda path, new, old: changes.put((path, new)))
-    encoder.count = 3
-    print(changes.get(timeout=5))  # (('motor', 'encoder', 'count'), 3)
-    motor.position = 7
-    print(changes.get(timeout=5))  # (('motor', 'position'), 7)
+    office.events.follow()
+    office.events.nested.connect(lambda path, new, old: changes.put((path, new)))
+    bag.letters = 3
+    print(changes.get(timeout=5))  # (('carrier', 'bag', 'letters'), 3)
+    carrier.parcels = 7
+    print(changes.get(timeout=5))  # (('carrier', 'parcels'), 7)
     # --8<-- [end:follow-all]
 
     # --8<-- [start:follow-one-path]
-    stage.events.unfollow()
+    office.events.unfollow()
     counts: queue.Queue[int] = queue.Queue()
-    encoder_events = stage.events.follow("motor").follow("encoder")
-    encoder_events.count.connect(lambda new, old: counts.put(new))
-    encoder.count = 4
+    bag_events = office.events.follow("carrier").follow("bag")
+    bag_events.letters.connect(lambda new, old: counts.put(new))
+    bag.letters = 4
     print(counts.get(timeout=5))  # 4
     # --8<-- [end:follow-one-path]
-Stage.unlink()
-Motor.unlink()
-Encoder.unlink()
+PostOffice.unlink()
+Carrier.unlink()
+Bag.unlink()
