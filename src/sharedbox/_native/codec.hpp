@@ -16,6 +16,12 @@
 
 #include "segment.hpp"
 
+#if defined(_MSC_VER)
+#define SBX_NOINLINE __declspec(noinline)
+#else
+#define SBX_NOINLINE [[gnu::noinline]]
+#endif
+
 namespace sharedbox {
 
 class Types;

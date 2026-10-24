@@ -190,6 +190,11 @@ private:
     }
     /// value passed through f, or value itself when f is None.
     static nb::object through(const nb::object &f, nb::object value);
+    /// encode_into without the write conversion.
+    void encode_plain(const detail::type_ref &t, PyObject *value, std::byte *out, const Where &where) const;
+    /// encode_plain of value passed through c.write_as, with the field's name in front of its error.
+    SBX_NOINLINE void encode_converted(const Conversion &c, const detail::type_ref &t, PyObject *value,
+                                       std::byte *out, const Where &where) const;
 };
 
 } // namespace sharedbox
