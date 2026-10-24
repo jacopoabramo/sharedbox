@@ -4,7 +4,7 @@ icon: lucide/lightbulb
 
 # How a box is stored
 
-When you write `motor.position = 10`, the number has to end up somewhere
+When you write `mailbox.letters = 2`, the number has to end up somewhere
 every process can see, in a form every process understands. This page
 explains where a [box](glossary.md#box) lives in memory, how its values are
 stored, and how two processes make sure they agree on what the bytes mean.
@@ -32,11 +32,11 @@ never attaches to a block that another program created first.
 ## A fixed layout: header, field table, record
 
 Inside the block, everything has a fixed place. Here is the memory of the
-tutorial's `Motor` box, with its `int`, its `bool` and its 32-byte `str`,
-after the second process set `position` to 10. The left column is the
+tutorial's `Mailbox` box, with its `int`, its `bool` and its 32-byte `str`,
+after the second process set `letters` to 2. The left column is the
 address, the right one what is stored there; point at a part to read more:
 
-```d2 title="The memory of a Motor box"
+```d2 title="The memory of a Mailbox box"
 ...@diagrams/style
 grid-columns: 1
 vertical-gap: 0
@@ -63,16 +63,16 @@ header: "header  0x000 - 0x07F" {
 fields: "field table  0x080 - 0x097" {
   shape: sql_table
   tooltip: One 8-byte entry per field in declaration order. Each gives the offset in the record and, in one u32, the kind code and the size. A process that opens the box copies this table once.
-  "0x080": "position  +0x00, int, 8"
-  "0x088": "enabled  +0x2C, bool, 1"
-  "0x090": "label  +0x08, str, 32"
+  "0x080": "letters  +0x00, int, 8"
+  "0x088": "flag_up  +0x2C, bool, 1"
+  "0x090": "owner  +0x08, str, 32"
 }
 counts: "write counts  0x098 - 0x0AF" {
   shape: sql_table
   tooltip: One u64 per field, raised by every write to it, so a watcher can tell which fields changed.
-  "0x098": "position  1"
-  "0x0A0": "enabled  0"
-  "0x0A8": "label  0"
+  "0x098": "letters  1"
+  "0x0A0": "flag_up  0"
+  "0x0A8": "owner  0"
 }
 slots: "waiter slots  0x0B0 - 0x8AF" {
   shape: sql_table
@@ -85,10 +85,10 @@ slots: "waiter slots  0x0B0 - 0x8AF" {
 record: "record  0x8C0 - 0x8EF" {
   shape: sql_table
   tooltip: The field values, ordered by alignment, largest first. Every value is little-endian.
-  "0x8C0": "position = 10 | 0A 00 00 00 00 00 00 00"
-  "0x8C8": "label length = 6 | 06 00 00 00"
-  "0x8CC": "label = \"x-axis\" | 78 2D 61 78 69 73, then unused"
-  "0x8EC": "enabled = False | 00"
+  "0x8C0": "letters = 2 | 02 00 00 00 00 00 00 00"
+  "0x8C8": "owner length = 3 | 03 00 00 00"
+  "0x8CC": "owner = \"Ada\" | 41 64 61, then unused"
+  "0x8EC": "flag_up = False | 00"
   "0x8ED": "padding to 48 bytes"
 }
 rest: "unused  0x8F0 - 0xFFF" {
@@ -156,7 +156,7 @@ Imagine one process declares the field at offset 16 as a `float` and
 another, running older code, as an `int`. The second would read the first
 one's numbers as nonsense, with no error to warn it. The field table can't
 catch that: it gives each field's offset, capacity and kind, but not which
-field is called `position`, and only the classes know what the fields
+field is called `letters`, and only the classes know what the fields
 mean. So when a process opens a block, something has to confirm that its
 class agrees with the creator's about every byte.
 

@@ -8,7 +8,7 @@ A C extension can take a [box](../explanation/glossary.md#box) from Python just 
 does, through the C interface `sharedbox/sharedbox_c.h`. Most of the work is
 the same, so this guide only shows what differs from
 [How to accept a box in a C++ extension](accept-a-box-in-cpp.md). It uses
-the same `Frame` class and constants as
+the same `Parcel` class and constants as
 [that guide](accept-a-box-in-cpp.md#know-the-box-you-expect).
 
 ## Before you start
@@ -36,10 +36,10 @@ you're done:
 #include <Python.h>
 #include <sharedbox/sharedbox_c.h>
 
-#define FRAME_SCHEMA UINT64_C(0x544efbe0815c923d)
+#define PARCEL_SCHEMA UINT64_C(0x223e63b5a4e2ee25)
 
-static PyObject *run(PyObject *self, PyObject *frame) {
-    PyObject *capsule = PyObject_CallMethod(frame, "__sharedbox_box__", NULL);
+static PyObject *run(PyObject *self, PyObject *parcel) {
+    PyObject *capsule = PyObject_CallMethod(parcel, "__sharedbox_box__", NULL);
     if (capsule == NULL)
         return NULL;
     sbx_handle *given = PyCapsule_GetPointer(capsule, "sharedbox_box");
@@ -54,9 +54,9 @@ static PyObject *run(PyObject *self, PyObject *frame) {
     Py_DECREF(capsule);
     if (rc != SBX_OK)
         return PyErr_Format(PyExc_ValueError, "not a box sharedbox_c.h can open: %d", rc);
-    if (sbx_schema_hash(&own) != FRAME_SCHEMA) {
+    if (sbx_schema_hash(&own) != PARCEL_SCHEMA) {
         sbx_release(&own);
-        return PyErr_Format(PyExc_TypeError, "expected a Frame box");
+        return PyErr_Format(PyExc_TypeError, "expected a Parcel box");
     }
     int64_t count = 0;
     rc = sbx_read(&own, 1, &count, sizeof count, NULL, NULL);

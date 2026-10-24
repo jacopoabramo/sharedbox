@@ -6,9 +6,9 @@ icon: lucide/wrench
 
 A C++ or C program doesn't need Python to use a [box](../explanation/glossary.md#box): it can
 open one by name, as long as some process created it. This guide reads,
-writes and waits for changes in the `Frame` box of
+writes and waits for changes in the `Parcel` box of
 [How to accept a box in a C++ extension](accept-a-box-in-cpp.md#know-the-box-you-expect),
-whose default name is `d8dfe7af542f1d91`.
+whose default name is `e73ca265fa48187e`.
 
 ## Before you start
 
@@ -43,11 +43,11 @@ it back to 0:
 
 #include <cstdio>
 
-constexpr std::uint64_t FRAME_SCHEMA = 0x544efbe0815c923d;
+constexpr std::uint64_t PARCEL_SCHEMA = 0x223e63b5a4e2ee25;
 
 int main() {
-    auto box = sharedbox::handle::open("d8dfe7af542f1d91", sharedbox::seconds(1.0));
-    if (!box || box->schema_hash() != FRAME_SCHEMA)
+    auto box = sharedbox::handle::open("e73ca265fa48187e", sharedbox::seconds(1.0));
+    if (!box || box->schema_hash() != PARCEL_SCHEMA)
         return 1;
     auto slot = box->register_waiter();
     if (!slot)

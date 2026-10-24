@@ -107,7 +107,7 @@ code: "" {
   style.fill: transparent
   code: |python
     1     # a writer, in any process
-    2  -> motor.position = 10
+    2  -> mailbox.letters = 1
     3     # the watcher thread of each box handle
     4     while not stopped:
     5         segment.wait(slot)
@@ -127,7 +127,7 @@ steps: {
     (pic.segment -> pic.watcher)[0].style.opacity: 1
     code.code: |python
       1     # a writer, in any process
-      2     motor.position = 10
+      2     mailbox.letters = 1
       3     # the watcher thread of each box handle
       4     while not stopped:
       5  ->     segment.wait(slot)
@@ -149,7 +149,7 @@ steps: {
     (pic.watcher -> pic.watch)[0].style.opacity: 1
     code.code: |python
       1     # a writer, in any process
-      2     motor.position = 10
+      2     mailbox.letters = 1
       3     # the watcher thread of each box handle
       4     while not stopped:
       5         segment.wait(slot)
