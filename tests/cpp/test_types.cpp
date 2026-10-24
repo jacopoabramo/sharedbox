@@ -269,7 +269,7 @@ TEST_CASE("create refuses a table that does not check") {
 }
 
 TEST_CASE("a list whose slots end before its alignment is padded to it") {
-    for (const auto [size, expected] :
+    for (const auto &[size, expected] :
          {std::pair{8u, status::ok}, {6u, status::corrupt}, {12u, status::corrupt}}) {
         table_builder t;
         t.head(kind_list, 1, size);
