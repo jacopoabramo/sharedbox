@@ -351,6 +351,17 @@ def test_a_union_keeps_a_value_in_its_own_family(unique_name: str) -> None:
         assert (type(envelope.weight), envelope.weight) == (np.int16, np.int16(3))  # type: ignore[comparison-overlap]
 
 
+class Sample(SharedBox):
+    level: complex | np.float32 = 0j
+
+
+def test_a_numpy_float64_goes_to_a_real_member(unique_name: str) -> None:
+    """Store a numpy float64 through the first real member, as a numpy float32 is stored."""
+    with Sample.create(unique_name) as sample:
+        sample.level = np.float64(2.0)
+        assert type(sample.level) is np.float32
+
+
 def test_an_overflowing_member_does_not_pass_to_the_next(unique_name: str) -> None:
     """Raise OverflowError when the integer member cannot hold the value, without trying the float one."""
     with Envelope.create(unique_name) as envelope, pytest.raises(OverflowError):

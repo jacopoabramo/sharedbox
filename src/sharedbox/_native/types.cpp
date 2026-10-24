@@ -38,14 +38,12 @@ std::string type_name(PyObject *type) {
 
 enum class family { none, boolean, integer, real, complex, time };
 
-// The family of number a union value belongs to. A subclass of int, float or complex, such as an IntEnum,
-// has none, so a union picks its member by the accepts order as 0.6 did.
+// The family of number a union value belongs to. A subclass of int, such as an IntEnum, has none, so a
+// union picks its member by the accepts order as 0.6 did.
 family value_family(PyObject *value) {
     if (PyBool_Check(value) || scalars::is_numpy_bool(value))
         return family::boolean;
-    if ((PyLong_Check(value) && !PyLong_CheckExact(value)) ||
-        (PyFloat_Check(value) && !PyFloat_CheckExact(value)) ||
-        (PyComplex_Check(value) && !PyComplex_CheckExact(value)))
+    if (PyLong_Check(value) && !PyLong_CheckExact(value))
         return family::none;
     if (scalars::is_integer(value))
         return family::integer;
