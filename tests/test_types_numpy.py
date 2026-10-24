@@ -347,11 +347,11 @@ def test_a_union_keeps_a_value_in_its_own_family(unique_name: str) -> None:
         assert (type(envelope.stamp), envelope.stamp) == (int, 5)
         envelope.stamp = np.float32(0.5)  # type: ignore[assignment]
         assert (type(envelope.stamp), envelope.stamp) == (float, 0.5)
-        envelope.weight = 3  # type: ignore[assignment]
-        assert (type(envelope.weight), envelope.weight) == (np.int16, np.int16(3))
+        envelope.weight = 3
+        assert (type(envelope.weight), envelope.weight) == (np.int16, np.int16(3))  # type: ignore[comparison-overlap]
 
 
 def test_an_overflowing_member_does_not_pass_to_the_next(unique_name: str) -> None:
     """Raise OverflowError when the integer member cannot hold the value, without trying the float one."""
     with Envelope.create(unique_name) as envelope, pytest.raises(OverflowError):
-        envelope.weight = 70000  # type: ignore[assignment]
+        envelope.weight = 70000
