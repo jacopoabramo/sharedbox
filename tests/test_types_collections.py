@@ -1,4 +1,5 @@
 # ruff: noqa: RUF012, PYI025
+import struct
 import sys
 import typing
 from collections.abc import Iterator, Mapping, Sequence, Set
@@ -193,3 +194,15 @@ def test_a_collection_past_the_read_buffer_round_trips(unique_name: str) -> None
         for values in (list(range(64)), [1, 2], list(range(40))):
             box.values = values
             assert box.values == values
+
+
+class Flags(SharedBox):
+    flags: Annotated[frozenset[bool], Capacity(4)] = frozenset()
+
+
+def test_a_stored_element_that_fails_the_checks_raises(unique_name: str) -> None:
+    """Raise ValueError, not crash, for a frozenset whose stored element is no bool."""
+    with Flags.create(unique_name) as box:
+        box._segment._write([(0, struct.pack("<IB", 1, 2))])
+        with pytest.raises(ValueError, match="Flags.flags"):
+            box.flags
