@@ -167,6 +167,40 @@ int sbx_write_complex(sbx_handle *h, uint16_t field, const double value[2], doub
     });
 }
 
+int sbx_read_float16(const sbx_handle *h, uint16_t field, float *out) {
+    if (out == nullptr)
+        return SBX_E_RANGE;
+    return read_as(h, field, is(sharedbox::kind_float16), [&](sharedbox::type_view, bytes_in b) {
+        const auto got = sharedbox::decode_float16(b);
+        if (!got)
+            return static_cast<int>(got.error().code);
+        *out = static_cast<float>(*got);
+        return SBX_OK;
+    });
+}
+
+int sbx_write_float16(sbx_handle *h, uint16_t field, double value, double lock_timeout) {
+    return write_as<2>(h, field, sharedbox::kind_float16, lock_timeout,
+                       [&](sharedbox::type_view, bytes_out b) { return sharedbox::encode_float16(value, b); });
+}
+
+int sbx_read_float32(const sbx_handle *h, uint16_t field, float *out) {
+    if (out == nullptr)
+        return SBX_E_RANGE;
+    return read_as(h, field, is(sharedbox::kind_float32), [&](sharedbox::type_view, bytes_in b) {
+        const auto got = sharedbox::decode_float32(b);
+        if (!got)
+            return static_cast<int>(got.error().code);
+        *out = static_cast<float>(*got);
+        return SBX_OK;
+    });
+}
+
+int sbx_write_float32(sbx_handle *h, uint16_t field, double value, double lock_timeout) {
+    return write_as<4>(h, field, sharedbox::kind_float32, lock_timeout,
+                       [&](sharedbox::type_view, bytes_out b) { return sharedbox::encode_float32(value, b); });
+}
+
 int sbx_read_date(const sbx_handle *h, uint16_t field, int32_t *ordinal) {
     if (ordinal == nullptr)
         return SBX_E_RANGE;
