@@ -151,6 +151,25 @@ def test_schema_hash_matches_the_published_vector() -> None:
     assert build_layout(motor, identity="motor/2").schema_hash != 0x82CE467598596A72
 
 
+def test_numpy_kinds_match_the_published_vector() -> None:
+    """Check that a class of the fixed-width and datetime64 kinds has the published schema hash."""
+    scale = type(
+        "Scale",
+        (),
+        {
+            "__annotations__": {
+                "grams": np.uint16,
+                "reading": np.float32,
+                "raw": np.int64,
+                "left_at": np.datetime64,
+                "parts": Annotated[list[np.int8], Capacity(4)],
+            },
+            "__module__": "__main__",
+        },
+    )
+    assert build_layout(scale, identity="scale/1").schema_hash == 0x3C1107337E5BF226
+
+
 def test_numpy_types_that_keep_their_kinds_hash_as_python_types() -> None:
     """Check that np.int64 and np.bool_ fields give the schema hash of int and bool fields."""
 

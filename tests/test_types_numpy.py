@@ -1,4 +1,5 @@
 import dataclasses
+import datetime
 from decimal import Decimal
 from fractions import Fraction
 from typing import Annotated
@@ -289,3 +290,46 @@ def test_a_numpy_type_with_no_kind_is_refused() -> None:
     """Refuse np.longdouble where it is wider than 64 bits."""
     with pytest.raises(TypeError, match="unsupported annotation"):
         build_layout(type("C", (), {"__annotations__": {"x": np.longdouble}}))
+
+
+class Delivery(SharedBox):
+    left_at: np.datetime64 = np.datetime64("NaT")
+
+
+def test_a_datetime64_field_stores_nanoseconds(unique_name: str) -> None:
+    """Store a datetime64 of any unit and read it back in nanoseconds."""
+    with Delivery.create(unique_name) as delivery:
+        assert np.isnat(delivery.left_at)
+        delivery.left_at = np.datetime64("2026-10-24T09:30", "m")
+        assert delivery.left_at == np.datetime64("2026-10-24T09:30:00.000000000")
+        assert np.datetime_data(delivery.left_at.dtype) == ("ns", 1)
+        delivery.left_at = np.datetime64("2026-10", "M")
+        assert delivery.left_at == np.datetime64("2026-10-01", "ns")
+        delivery.left_at = np.datetime64(-(2**63) + 1, "ns")
+        assert delivery.left_at.astype(np.int64) == -(2**63) + 1
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        np.datetime64("3000-01-01"),
+        np.datetime64("1600-01-01", "s"),
+        np.datetime64(10**15, "Y"),
+        np.datetime64(10**17, "M"),
+    ],
+)
+def test_a_datetime64_past_2262_or_before_1678_raises_overflow(
+    unique_name: str, value: np.datetime64
+) -> None:
+    """Raise OverflowError for a datetime64 that nanoseconds since 1970 cannot hold."""
+    with Delivery.create(unique_name) as delivery, pytest.raises(OverflowError):
+        delivery.left_at = value
+
+
+@pytest.mark.parametrize("value", [0, datetime.datetime(2026, 10, 24), "2026-10-24"])  # noqa: DTZ001
+def test_a_datetime64_field_refuses_other_values(
+    unique_name: str, value: object
+) -> None:
+    """Raise TypeError for an int, a datetime and a string in a datetime64 field."""
+    with Delivery.create(unique_name) as delivery, pytest.raises(TypeError):
+        delivery.left_at = value  # type: ignore[assignment]

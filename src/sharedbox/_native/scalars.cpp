@@ -31,8 +31,9 @@ PyObject *set_abc = nullptr;
 PyObject *real_abc = nullptr;
 PyObject *complex_abc = nullptr;
 PyObject *numpy_name = nullptr;
-// numpy.bool_, found the first time a check runs after numpy is imported.
+// numpy.bool_ and numpy.datetime64, found the first time a check runs after numpy is imported.
 std::atomic<PyObject *> numpy_bool{nullptr};
+std::atomic<PyObject *> numpy_datetime64{nullptr};
 PyObject *utcoffset_name = nullptr;
 PyObject *bytes_name = nullptr;
 PyObject *fold_name = nullptr;
@@ -81,6 +82,8 @@ const char *kind_name(std::uint8_t kind) {
         return "a float";
     case kind_complex64:
         return "a complex";
+    case kind_datetime64:
+        return "a numpy.datetime64";
     default:
         return "a Decimal";
     }
@@ -391,8 +394,12 @@ void init() {
 #endif
 }
 
-bool is_numpy_bool(PyObject *value) {
-    PyObject *type = numpy_bool.load(std::memory_order_acquire);
+namespace {
+
+// Whether value's type is numpy's attribute name, kept in slot once found; false while numpy is not
+// imported, since no such value exists then.
+bool is_numpy_type(std::atomic<PyObject *> &slot, const char *name, PyObject *value) {
+    PyObject *type = slot.load(std::memory_order_acquire);
     if (type == nullptr) {
         PyObject *numpy = PyImport_GetModule(numpy_name);
         if (numpy == nullptr) {
@@ -400,18 +407,22 @@ bool is_numpy_bool(PyObject *value) {
                 throw nb::python_error();
             return false;
         }
-        PyObject *found = PyObject_GetAttrString(numpy, "bool_");
+        PyObject *found = PyObject_GetAttrString(numpy, name);
         Py_DECREF(numpy);
         if (found == nullptr)
             throw nb::python_error();
         // Two threads may both look it up; the one whose swap fails drops its own.
-        if (numpy_bool.compare_exchange_strong(type, found, std::memory_order_acq_rel, std::memory_order_acquire))
+        if (slot.compare_exchange_strong(type, found, std::memory_order_acq_rel, std::memory_order_acquire))
             type = found;
         else
             Py_DECREF(found);
     }
     return reinterpret_cast<PyObject *>(Py_TYPE(value)) == type;
 }
+
+} // namespace
+
+bool is_numpy_bool(PyObject *value) { return is_numpy_type(numpy_bool, "bool_", value); }
 
 bool is_integer(PyObject *value) {
     if (PyBool_Check(value))
@@ -477,12 +488,28 @@ bool accepts(std::uint8_t kind, PyObject *value) {
         return is_real(value);
     case kind_complex64:
         return is_complex(value);
+    case kind_datetime64:
+        return is_numpy_type(numpy_datetime64, "datetime64", value);
     default:
         return false;
     }
 }
 
 void encode(std::uint8_t kind, PyObject *value, std::span<std::byte> out, const std::string &name) {
+    if (kind == kind_datetime64) {
+        // The field's write conversion has turned the datetime64 into its nanoseconds.
+        int overflow = 0;
+        const long long ns = PyLong_Check(value) ? PyLong_AsLongLongAndOverflow(value, &overflow) : 0;
+        if (!PyLong_Check(value))
+            wrong_type(kind, value, name);
+        if (ns == -1 && overflow == 0 && PyErr_Occurred())
+            throw nb::python_error();
+        if (overflow != 0)
+            does_not_fit(name, "nanoseconds in a signed 64-bit integer");
+        const std::int64_t stored = ns;
+        std::memcpy(out.data(), &stored, 8);
+        return;
+    }
     if (!accepts(kind, value))
         wrong_type(kind, value, name);
     status rc = status::ok;
@@ -592,6 +619,8 @@ PyObject *decode(std::uint8_t kind, std::span<const std::byte> bytes, const std:
             return PyLong_FromUnsignedLong(detail::load<std::uint32_t>(bytes, 0));
         case kind_uint64:
             return PyLong_FromUnsignedLongLong(detail::load<std::uint64_t>(bytes, 0));
+        case kind_datetime64:
+            return PyLong_FromLongLong(detail::load<std::int64_t>(bytes, 0));
         case kind_float16:
             return PyFloat_FromDouble(*decode_float16(bytes));
         case kind_float32:

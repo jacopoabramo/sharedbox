@@ -93,7 +93,7 @@ CODES: Final[dict[str, int]] = {
 PREFIXED: Final[frozenset[str]] = frozenset({"str", "bytes", "decimal"})
 SUPPORTED: Final[str] = (
     "bool, int, float, complex, a numpy scalar type: bool_, int8 to int64, uint8 to uint64, "
-    "float16 to float64, complex64 or complex128, "
+    "float16 to float64, complex64, complex128 or datetime64, "
     "Annotated[str | bytes | bytearray | Decimal, Capacity(n)], "
     "date, time, datetime, timedelta, UUID, an Enum or Flag, a Literal, X | None, a union, "
     "a tuple, a NamedTuple, a dataclass, a TypedDict, an attrs class, a msgspec Struct, "
@@ -230,6 +230,7 @@ NUMPY_SCALARS: Final[dict[str, tuple[str, int, int, str]]] = {
     "float16": ("float16", 2, 2, "float16"),
     "float32": ("float32", 4, 4, "float32"),
     "complex64": ("complex64", 8, 4, "complex64"),
+    "datetime64": ("datetime64", 8, 8, "datetime64"),
 }
 """A numpy scalar type's dtype name -> its kind, size, alignment and schema text."""
 TEXT: Final[dict[type, str]] = {
@@ -265,6 +266,7 @@ def numpy_spec(hint: Any) -> TypeSpec | None:
     if found is None:
         return None
     kind, size, alignment, text = found
+    timed = kind == "datetime64"
     return TypeSpec(
         kind,
         size,
@@ -273,8 +275,60 @@ def numpy_spec(hint: Any) -> TypeSpec | None:
         match=(hint,),
         exact=hint,
         reusable=True,
-        read_as=hint,
+        read_as=(lambda ns: hint(ns, "ns")) if timed else hint,
+        write_as=datetime64_ns if timed else None,
     )
+
+
+NS_PER_UNIT: Final[dict[str, int]] = {
+    "W": 7 * 86_400 * 10**9,
+    "D": 86_400 * 10**9,
+    "h": 3_600 * 10**9,
+    "m": 60 * 10**9,
+    "s": 10**9,
+    "ms": 10**6,
+    "us": 10**3,
+    "ns": 1,
+}
+UNITS_PER_NS: Final[dict[str, int]] = {"ps": 10**3, "fs": 10**6, "as": 10**9}
+NAT: Final[int] = -(2**63)
+
+
+def datetime64_ns(value: Any) -> int:
+    """Return the nanoseconds since 1970-01-01T00:00 of the numpy datetime64 `value`, `-2**63` for NaT.
+
+    Raises
+    ------
+    TypeError
+        If `value` is not a numpy datetime64.
+    OverflowError
+        If `value` is before 1678 or after 2262, which nanoseconds in 64 bits cannot hold.
+    """
+    numpy = sys.modules.get("numpy")
+    if numpy is None or not isinstance(value, numpy.datetime64):
+        raise TypeError(f"expects a numpy.datetime64, got {type(value).__name__}")
+    if numpy.isnat(value):
+        return NAT
+    unit, step = numpy.datetime_data(value.dtype)
+    count = int(value.astype(numpy.int64)) * step
+    if unit in ("Y", "M"):
+        # Years and months have no fixed length, so they go through days, which numpy computes in 64 bits.
+        if abs(count) > (1000 if unit == "Y" else 12_000):
+            raise OverflowError(
+                f"{value} is not between 1678 and 2262, which datetime64 fields hold"
+            )
+        ns = int(value.astype("datetime64[D]").astype(numpy.int64)) * NS_PER_UNIT["D"]
+    elif unit in UNITS_PER_NS:
+        ns = count // UNITS_PER_NS[unit]
+    elif unit in NS_PER_UNIT:
+        ns = count * NS_PER_UNIT[unit]
+    else:
+        raise TypeError(f"expects a numpy.datetime64 with a unit, got {value!r}")
+    if not NAT < ns < -NAT:
+        raise OverflowError(
+            f"{value} is not between 1678 and 2262, which datetime64 fields hold"
+        )
+    return ns
 
 
 def unsupported(where: str, hint: object) -> TypeError:
