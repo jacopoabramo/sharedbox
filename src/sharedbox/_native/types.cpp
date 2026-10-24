@@ -36,6 +36,42 @@ std::string type_name(PyObject *type) {
     raise(PyExc_ValueError, where + ": the stored value is not one Python can hold");
 }
 
+enum class family { none, boolean, integer, real, complex, time };
+
+// The family of number a union value belongs to. A subclass of int, float or complex, such as an IntEnum,
+// has none, so a union picks its member by the accepts order as 0.6 did.
+family value_family(PyObject *value) {
+    if (PyBool_Check(value) || scalars::is_numpy_bool(value))
+        return family::boolean;
+    if ((PyLong_Check(value) && !PyLong_CheckExact(value)) ||
+        (PyFloat_Check(value) && !PyFloat_CheckExact(value)) ||
+        (PyComplex_Check(value) && !PyComplex_CheckExact(value)))
+        return family::none;
+    if (scalars::is_integer(value))
+        return family::integer;
+    if (scalars::is_real(value))
+        return family::real;
+    if (scalars::is_complex(value))
+        return family::complex;
+    if (scalars::accepts(kind_datetime64, value))
+        return family::time;
+    return family::none;
+}
+
+family kind_family(std::uint32_t kind) {
+    if (kind == kind_bool)
+        return family::boolean;
+    if (kind == kind_int || (kind >= kind_int8 && kind <= kind_uint64))
+        return family::integer;
+    if (kind == kind_float || kind == kind_float16 || kind == kind_float32)
+        return family::real;
+    if (kind == kind_complex || kind == kind_complex64)
+        return family::complex;
+    if (kind == kind_datetime64)
+        return family::time;
+    return family::none;
+}
+
 bool instance(PyObject *value, PyObject *type) {
     const int found = PyObject_IsInstance(value, type);
     if (found < 0)
@@ -645,6 +681,16 @@ void Types::encode_into(const detail::type_ref &t, PyObject *value, std::byte *o
                 chosen = tag;
                 break;
             }
+        // A number goes to the first member of its own family, which raises OverflowError if it does not
+        // fit, rather than to a wider member of another family.
+        if (chosen < 0) {
+            const family f = value_family(value);
+            for (std::uint32_t tag = 0; f != family::none && tag < node.count; ++tag)
+                if (kind_family(tree_.member(node.members + tag).type.kind) == f) {
+                    chosen = static_cast<int>(tag);
+                    break;
+                }
+        }
         for (std::size_t k = 0; chosen < 0 && k < n.order.size(); ++k)
             if (accepts(tree_.member(node.members + n.order[k]).type, value))
                 chosen = n.order[k];

@@ -119,6 +119,20 @@ def test_unions_the_layout_cannot_tell_apart_are_refused(
         build_layout(make(annotation))
 
 
+class Kept(SharedBox):
+    when: datetime.date | datetime.datetime = datetime.date(2026, 1, 1)
+    level: float | int = 0.0
+
+
+def test_subclass_values_keep_the_member_0_6_chose(unique_name: str) -> None:
+    """Store a datetime subclass through the datetime member and an IntEnum through the float member, as 0.6 did."""
+    with Kept.create(unique_name) as box:
+        box.update(when=Stamp(2026, 10, 24), level=Level.HIGH)
+        assert type(box.when) is datetime.datetime
+        assert type(box.level) is float
+    Kept.unlink(unique_name)
+
+
 @pytest.mark.parametrize(
     ("field", "value"),
     [

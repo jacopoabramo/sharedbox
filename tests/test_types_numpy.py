@@ -333,3 +333,25 @@ def test_a_datetime64_field_refuses_other_values(
     """Raise TypeError for an int, a datetime and a string in a datetime64 field."""
     with Delivery.create(unique_name) as delivery, pytest.raises(TypeError):
         delivery.left_at = value  # type: ignore[assignment]
+
+
+class Envelope(SharedBox):
+    stamp: float | int = 0
+    weight: float | np.int16 = 0.0
+
+
+def test_a_union_keeps_a_value_in_its_own_family(unique_name: str) -> None:
+    """Store numpy integers through the integer member and numpy floats through the float member."""
+    with Envelope.create(unique_name) as envelope:
+        envelope.stamp = np.int64(5)  # type: ignore[assignment]
+        assert (type(envelope.stamp), envelope.stamp) == (int, 5)
+        envelope.stamp = np.float32(0.5)  # type: ignore[assignment]
+        assert (type(envelope.stamp), envelope.stamp) == (float, 0.5)
+        envelope.weight = 3  # type: ignore[assignment]
+        assert (type(envelope.weight), envelope.weight) == (np.int16, np.int16(3))
+
+
+def test_an_overflowing_member_does_not_pass_to_the_next(unique_name: str) -> None:
+    """Raise OverflowError when the integer member cannot hold the value, without trying the float one."""
+    with Envelope.create(unique_name) as envelope, pytest.raises(OverflowError):
+        envelope.weight = 70000  # type: ignore[assignment]
