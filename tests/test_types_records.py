@@ -317,7 +317,7 @@ Wide = dataclasses.make_dataclass(
 
 
 class Wall(SharedBox):
-    wide: Wide = Wide(*range(40))
+    wide: Wide = Wide(*range(40))  # type: ignore[valid-type]
 
 
 def test_a_record_of_many_keyword_members_round_trips(unique_name: str) -> None:
