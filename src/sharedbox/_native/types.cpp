@@ -585,7 +585,7 @@ void Types::encode_into(const detail::type_ref &t, PyObject *value, std::byte *o
             std::memcpy(out, bytes.data(), bytes.size());
         return;
     }
-    if (t.kind >= kind_complex && t.kind <= kind_uuid) {
+    if ((t.kind >= kind_complex && t.kind <= kind_uuid) || (t.kind >= kind_int8 && t.kind <= kind_datetime64)) {
         scalars::encode(t.kind, value, {out, t.size}, where.name);
         return;
     }
@@ -767,7 +767,7 @@ nb::object Types::decode_stored(const detail::type_ref &t, const std::byte *data
             throw nb::python_error();
         return nb::steal(value);
     }
-    if (t.kind >= kind_complex && t.kind <= kind_uuid) {
+    if ((t.kind >= kind_complex && t.kind <= kind_uuid) || (t.kind >= kind_int8 && t.kind <= kind_datetime64)) {
         PyObject *value = scalars::decode(t.kind, {data, t.size}, where.name);
         if (value == nullptr)
             throw nb::python_error();
@@ -1225,7 +1225,7 @@ bool Types::accepts(const detail::type_ref &t, PyObject *value) const {
     default:
         break;
     }
-    if (t.kind >= kind_complex && t.kind <= kind_decimal)
+    if (t.kind >= kind_complex && t.kind <= kind_datetime64)
         return scalars::accepts(t.kind, value);
     const NodeInfo &n = nodes_[t.node];
     switch (t.kind) {

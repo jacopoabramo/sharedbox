@@ -67,6 +67,17 @@ CODES: Final[dict[str, int]] = {
     "timedelta": 10,
     "uuid": 11,
     "decimal": 12,
+    "int8": 13,
+    "int16": 14,
+    "int32": 15,
+    "uint8": 16,
+    "uint16": 17,
+    "uint32": 18,
+    "uint64": 19,
+    "float16": 20,
+    "float32": 21,
+    "complex64": 22,
+    "datetime64": 23,
     "enum": 64,
     "flag": 65,
     "literal": 66,
@@ -81,7 +92,8 @@ CODES: Final[dict[str, int]] = {
 }
 PREFIXED: Final[frozenset[str]] = frozenset({"str", "bytes", "decimal"})
 SUPPORTED: Final[str] = (
-    "bool, int, float, complex, numpy.bool_, numpy.int64, numpy.float64, numpy.complex128, "
+    "bool, int, float, complex, a numpy scalar type: bool_, int8 to int64, uint8 to uint64, "
+    "float16 to float64, complex64 or complex128, "
     "Annotated[str | bytes | bytearray | Decimal, Capacity(n)], "
     "date, time, datetime, timedelta, UUID, an Enum or Flag, a Literal, X | None, a union, "
     "a tuple, a NamedTuple, a dataclass, a TypedDict, an attrs class, a msgspec Struct, "
@@ -208,6 +220,16 @@ NUMPY_SCALARS: Final[dict[str, tuple[str, int, int, str]]] = {
     "int64": ("int", 8, 8, "int:8"),
     "float64": ("float", 8, 8, "float:8"),
     "complex128": ("complex", 16, 8, "complex"),
+    "int8": ("int8", 1, 1, "int8"),
+    "int16": ("int16", 2, 2, "int16"),
+    "int32": ("int32", 4, 4, "int32"),
+    "uint8": ("uint8", 1, 1, "uint8"),
+    "uint16": ("uint16", 2, 2, "uint16"),
+    "uint32": ("uint32", 4, 4, "uint32"),
+    "uint64": ("uint64", 8, 8, "uint64"),
+    "float16": ("float16", 2, 2, "float16"),
+    "float32": ("float32", 4, 4, "float32"),
+    "complex64": ("complex64", 8, 4, "complex64"),
 }
 """A numpy scalar type's dtype name -> its kind, size, alignment and schema text."""
 TEXT: Final[dict[type, str]] = {

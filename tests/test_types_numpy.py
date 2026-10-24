@@ -7,6 +7,7 @@ import numpy as np
 import pytest
 
 from sharedbox import Capacity, SharedBox, SharedStream, field
+from sharedbox._layout import build_layout
 
 
 class Counter(SharedBox):
@@ -165,3 +166,126 @@ def test_int_and_np_int64_classes_of_one_identity_share_a_box(unique_name: str) 
     with Plain.create(unique_name, 9) as plain, Numpy.attach(unique_name) as numpy_view:
         assert (type(plain.raw), type(numpy_view.raw)) == (int, np.int64)
         assert numpy_view.raw == 9
+
+
+class Scale(SharedBox):
+    grams: np.uint16 = np.uint16(0)
+    reading: np.float32 = np.float32(0.0)
+    small: np.float16 = np.float16(0.0)
+    count: np.uint64 = np.uint64(0)
+    level: np.int8 = np.int8(0)
+    phase: np.complex64 = np.complex64(0)
+
+
+@dataclasses.dataclass(frozen=True)
+class Weighing:
+    grams: np.uint16
+    parts: Annotated[list[np.int8], Capacity(4)]
+
+
+def test_fixed_width_fields_round_trip_with_their_type(unique_name: str) -> None:
+    """Store Python and numpy numbers in fixed-width fields and read back the declared numpy type."""
+    with Scale.create(unique_name) as scale:
+        scale.grams = 1200  # type: ignore[assignment]
+        scale.reading = 0.1  # type: ignore[assignment]
+        scale.small = 0.1  # type: ignore[assignment]
+        scale.level = np.int64(-3)  # type: ignore[assignment]
+        scale.phase = 1.5 - 2j  # type: ignore[assignment]
+        assert (type(scale.grams), scale.grams) == (np.uint16, np.uint16(1200))
+        assert (type(scale.reading), scale.reading) == (np.float32, np.float32(0.1))
+        assert (type(scale.small), scale.small) == (np.float16, np.float16(0.1))
+        assert (type(scale.level), scale.level) == (np.int8, np.int8(-3))
+        assert (type(scale.phase), scale.phase) == (
+            np.complex64,
+            np.complex64(1.5 - 2j),
+        )
+        scale.reading = float("nan")  # type: ignore[assignment]
+        assert np.isnan(scale.reading)
+        assert type(scale.reading) is np.float32
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("grams", 70000),
+        ("grams", -1),
+        ("level", 128),
+        ("reading", 1e300),
+        ("small", 70000.0),
+        ("small", 65520.0),
+        ("reading", float.fromhex("0x1.ffffffp127")),
+        ("phase", complex(1e300, 0)),
+        ("count", 2**64),
+        ("count", -1),
+        ("count", np.int64(-1)),
+    ],
+)
+def test_values_past_the_width_raise_overflow(
+    unique_name: str, field: str, value: object
+) -> None:
+    """Raise OverflowError for integers out of range and finite floats past the width."""
+    with Scale.create(unique_name) as scale, pytest.raises(OverflowError):
+        setattr(scale, field, value)
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "stored"),
+    [
+        ("small", 65519.99, np.float16(65504)),
+        ("reading", float.fromhex("0x1.fffffep127"), np.finfo(np.float32).max),
+        ("count", 2**64 - 1, np.uint64(2**64 - 1)),
+        ("count", np.uint64(2**64 - 1), np.uint64(2**64 - 1)),
+        ("small", float("inf"), np.float16("inf")),
+    ],
+)
+def test_values_at_the_edge_of_the_width_are_stored(
+    unique_name: str, field: str, value: object, stored: np.generic
+) -> None:
+    """Store values that round to the largest finite value, the largest uint64, and infinities."""
+    with Scale.create(unique_name) as scale:
+        setattr(scale, field, value)
+        assert getattr(scale, field) == stored
+
+
+def test_fixed_width_members_and_stream_items_round_trip(unique_name: str) -> None:
+    """Send a record of fixed-width members through a stream and receive the declared types."""
+    with SharedStream.create(Weighing, unique_name, capacity=4) as stream:
+        reader = stream.reader()
+        with stream.sender() as sender:
+            sender.send(Weighing(np.uint16(5), [1, -2]))  # type: ignore[list-item]
+        (got,) = list(reader)
+        assert (type(got.grams), got.grams) == (np.uint16, np.uint16(5))
+        assert [(type(p), p) for p in got.parts] == [
+            (np.int8, np.int8(1)),
+            (np.int8, np.int8(-2)),
+        ]
+
+
+@pytest.mark.parametrize(
+    ("hint", "same_as"),
+    [
+        (np.intc, np.int32),
+        (np.longlong, np.int64),
+        (np.double, np.float64),
+        (np.int_, np.int64),
+    ],
+)
+def test_numpy_aliases_declare_the_kind_of_their_width(
+    hint: type, same_as: type
+) -> None:
+    """Give an alias of a numpy type the schema hash of the type it names."""
+    one = type("A", (), {"__annotations__": {"x": hint}})
+    two = type("B", (), {"__annotations__": {"x": same_as}})
+    assert (
+        build_layout(one, identity="alias/1").schema_hash
+        == build_layout(two, identity="alias/1").schema_hash
+    )
+
+
+@pytest.mark.skipif(
+    np.dtype(np.longdouble).itemsize == 8, reason="longdouble is float64 here"
+)
+def test_a_numpy_type_with_no_kind_is_refused() -> None:
+    """Refuse np.longdouble where it is wider than 64 bits."""
+    with pytest.raises(TypeError, match="unsupported annotation"):
+        build_layout(type("C", (), {"__annotations__": {"x": np.longdouble}}))
