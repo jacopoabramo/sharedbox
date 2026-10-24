@@ -309,3 +309,19 @@ def test_a_record_field_class_is_freed_at_exit() -> None:
         timeout=60,
     )
     assert "leaked" not in done.stderr
+
+
+Wide = dataclasses.make_dataclass(
+    "Wide", [(f"m{i}", int) for i in range(40)], frozen=True
+)
+
+
+class Wall(SharedBox):
+    wide: Wide = Wide(*range(40))
+
+
+def test_a_record_of_many_keyword_members_round_trips(unique_name: str) -> None:
+    """Read back a 40-member dataclass with every member in its place."""
+    with Wall.create(unique_name) as box:
+        box.wide = Wide(*range(40, 80))
+        assert box.wide == Wide(*range(40, 80))

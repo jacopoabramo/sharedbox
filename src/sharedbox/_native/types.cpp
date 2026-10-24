@@ -1,6 +1,7 @@
 #include "types.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cstring>
 #include <stdexcept>
 
@@ -360,6 +361,8 @@ void Types::prepare(std::uint32_t node, std::uint8_t kind, nb::object info) {
             n.attrs.push_back(PyTuple_GetItem(attrs, i));
             n.keywords.push_back(PyTuple_GetItem(keywords, i));
         }
+        if (n.form == 0)
+            n.keyword_names = keywords;
         for (Py_ssize_t i = 0; n.form == 3 && i < count; ++i)
             n.required.push_back(PyTuple_GetItem(required, i) == Py_True);
         break;
@@ -843,10 +846,19 @@ nb::object Types::decode_from(const detail::type_ref &t, const std::byte *data, 
             return out;
         }
         if (n.form == 0) {
-            nb::dict kwargs;
-            for (std::uint32_t i = 0; i < node.count; ++i)
-                kwargs[nb::handle(n.keywords[i])] = nb::steal(element(member(i).type, data + member(i).offset, i));
-            PyObject *made = PyObject_Call(n.cls, nb::tuple().ptr(), kwargs.ptr());
+            // Each member is owned by an nb::object, so a member that fails to decode releases the ones
+            // before it. A class without vectorcall gets its keyword dict built by CPython instead.
+            std::array<nb::object, 16> few;
+            std::vector<nb::object> many(node.count > few.size() ? node.count : 0);
+            nb::object *held = node.count > few.size() ? many.data() : few.data();
+            std::array<PyObject *, 16> few_args;
+            std::vector<PyObject *> many_args(node.count > few_args.size() ? node.count : 0);
+            PyObject **args = node.count > few_args.size() ? many_args.data() : few_args.data();
+            for (std::uint32_t i = 0; i < node.count; ++i) {
+                held[i] = nb::steal(element(member(i).type, data + member(i).offset, i));
+                args[i] = held[i].ptr();
+            }
+            PyObject *made = PyObject_Vectorcall(n.cls, args, 0, n.keyword_names);
             if (made == nullptr)
                 throw nb::python_error();
             return nb::steal(made);

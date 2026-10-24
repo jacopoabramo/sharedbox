@@ -38,6 +38,8 @@ struct NodeInfo {
     /// record: the name each member is read by (attribute or key), and the keyword it is passed as.
     std::vector<PyObject *> attrs;
     std::vector<PyObject *> keywords;
+    /// record built by keyword: the keywords as one tuple, the names a vectorcall takes.
+    PyObject *keyword_names = nullptr;
     /// TypedDict: whether each key must be present.
     std::vector<bool> required;
     /// array: hand the converter uint16 elements, which it reinterprets (numpy has no bfloat16).
