@@ -15,17 +15,20 @@ hide:
 
 # `sharedbox`
 
-`sharedbox` lets several Python processes share one record, as if they all
-held the same dataclass. You declare the fields once, and every process that
-opens the record reads and writes the same values. The values sit in shared
-memory, a block of memory the operating system lets several processes use
-at once, so no process has to send them to another. Such a record is a
-[box](explanation/glossary.md#box).
+`sharedbox` lets Python processes on one machine share data without a
+server and without pickling. A [box](explanation/glossary.md#box) is one
+record that every process reads and writes, as if they all held the same
+dataclass, and a [stream](explanation/glossary.md#stream) is a flow of typed
+items that one process sends and each reader receives once. You declare the
+fields once, and every process that opens the box or the stream works on
+the same bytes. The bytes sit in shared memory, a block of memory the
+operating system lets several processes use at once, so nothing passes
+through a pipe or a socket between the processes.
 
 ## A first look
 
-Here a parent process creates a box, starts a child that moves the motor,
-and prints the change the moment it happens:
+Here a parent process creates a mailbox, starts a carrier process that
+drops a letter in, and prints the change the moment it happens:
 
 ```python
 import multiprocessing as mp
@@ -34,39 +37,39 @@ from typing import Annotated
 from sharedbox import Capacity, SharedBox
 
 
-class Motor(SharedBox):
-    position: int
-    enabled: bool
-    label: Annotated[str, Capacity(32)]
+class Mailbox(SharedBox):
+    letters: int
+    flag_up: bool
+    owner: Annotated[str, Capacity(32)]
 
 
-def worker() -> None:
-    motor = Motor.attach()          # finds the box by its class
-    motor.position = 10
-    motor.close()
+def deliver() -> None:
+    mailbox = Mailbox.attach()      # finds the box by its class
+    mailbox.letters = 1
+    mailbox.close()
 
 
 if __name__ == "__main__":
-    with Motor(1, False, "x-axis") as motor:
-        motor.events.position.connect(lambda new, old: print(old, "->", new))
-        child = mp.Process(target=worker)
-        child.start()
-        child.join()                      # prints: 1 -> 10
-    Motor.unlink()
+    with Mailbox(0, False, "Ada") as mailbox:
+        mailbox.events.letters.connect(lambda new, old: print(old, "->", new))
+        carrier = mp.Process(target=deliver)
+        carrier.start()
+        carrier.join()                    # prints: 0 -> 1
+    Mailbox.unlink()
 ```
 
 `Capacity(32)` gives the text field room for 32 bytes, since every field
 has a fixed size. Running the script prints:
 
 ```text
-1 -> 10
+0 -> 1
 ```
 
 Step through what happens, and point at a shape to read more:
 
 ```d2 title="One box, two processes"
 ...@diagrams/style
-label: "The parent creates the box and connects a callback to position."
+label: "The parent creates the box and connects a callback to letters."
 grid-columns: 1
 vertical-gap: 30
 pic: "" {
@@ -76,17 +79,17 @@ pic: "" {
   horizontal-gap: 160
   parent: "parent process" {
     class: process
-    tooltip: Creates the box with Motor(1, False, "x-axis") and connects a callback to events.position.
+    tooltip: Creates the box with Mailbox(0, False, "Ada") and connects a callback to events.letters.
   }
   box: "the box\nin shared memory" {
     class: hardware
-    tooltip: One named block of shared memory holding position, enabled and label. Every process that opens it reads and writes the same bytes.
+    tooltip: One named block of shared memory holding letters, flag_up and owner. Every process that opens it reads and writes the same bytes.
   }
-  child: "child process" {class: [process; hidden]}
+  child: "carrier process" {class: [process; hidden]}
   parent -> box: "creates"
   child -> box: "attaches by class" {style.opacity: 0}
-  child -> box: "position = 10" {style.opacity: 0}
-  box -> parent: "prints 1 -> 10" {style.opacity: 0}
+  child -> box: "letters = 1" {style.opacity: 0}
+  box -> parent: "prints 0 -> 1" {style.opacity: 0}
 }
 code: "" {
   style.stroke-width: 0
@@ -94,61 +97,61 @@ code: "" {
   grid-columns: 2
   horizontal-gap: 60
   parent: |python
-    1 -> with Motor(1, False, "x-axis") as motor:
-    2        motor.events.position.connect(lambda new, old: ...)
-    3        child.start()
+    1 -> with Mailbox(0, False, "Ada") as mailbox:
+    2        mailbox.events.letters.connect(lambda new, old: ...)
+    3        carrier.start()
   |
   child: |python
-    1    motor = Motor.attach()
-    2    motor.position = 10
-    3    motor.close()
+    1    mailbox = Mailbox.attach()
+    2    mailbox.letters = 1
+    3    mailbox.close()
   |
 }
 steps: {
   1: {
-    label: "The child starts and attaches to the box. Nobody hands it the box: Motor.attach() works out its name from the class."
+    label: "The carrier starts and attaches to the box. Nobody hands it the box: Mailbox.attach() works out its name from the class."
     pic.child.class: process
-    pic.child.tooltip: Runs worker() in a separate process.
+    pic.child.tooltip: Runs deliver() in a separate process.
     (pic.child -> pic.box)[0].style.opacity: 1
     code.parent: |python
-      1    with Motor(1, False, "x-axis") as motor:
-      2        motor.events.position.connect(lambda new, old: ...)
-      3 ->     child.start()
+      1    with Mailbox(0, False, "Ada") as mailbox:
+      2        mailbox.events.letters.connect(lambda new, old: ...)
+      3 ->     carrier.start()
     |
     code.child: |python
-      1 -> motor = Motor.attach()
-      2    motor.position = 10
-      3    motor.close()
+      1 -> mailbox = Mailbox.attach()
+      2    mailbox.letters = 1
+      3    mailbox.close()
     |
   }
   2: {
-    label: "The child writes position. The new value is in shared memory at once, for every process."
+    label: "The carrier writes letters. The new value is in shared memory at once, for every process."
     (pic.child -> pic.box)[0].style.opacity: 0
     (pic.child -> pic.box)[1].style.opacity: 1
     code.parent: |python
-      1    with Motor(1, False, "x-axis") as motor:
-      2        motor.events.position.connect(lambda new, old: ...)
-      3 ->     child.start()
+      1    with Mailbox(0, False, "Ada") as mailbox:
+      2        mailbox.events.letters.connect(lambda new, old: ...)
+      3 ->     carrier.start()
     |
     code.child: |python
-      1    motor = Motor.attach()
-      2 -> motor.position = 10
-      3    motor.close()
+      1    mailbox = Mailbox.attach()
+      2 -> mailbox.letters = 1
+      3    mailbox.close()
     |
   }
   3: {
-    label: "The parent's watcher thread wakes on the write and calls the callback, which prints 1 -> 10."
+    label: "The parent's watcher thread wakes on the write and calls the callback, which prints 0 -> 1."
     (pic.parent -> pic.box)[0].style.opacity: 0
     (pic.box -> pic.parent)[0].style.opacity: 1
     code.parent: |python
-      1    with Motor(1, False, "x-axis") as motor:
-      2 ->     motor.events.position.connect(lambda new, old: ...)
-      3        child.start()
+      1    with Mailbox(0, False, "Ada") as mailbox:
+      2 ->     mailbox.events.letters.connect(lambda new, old: ...)
+      3        carrier.start()
     |
     code.child: |python
-      1    motor = Motor.attach()
-      2    motor.position = 10
-      3    motor.close()
+      1    mailbox = Mailbox.attach()
+      2    mailbox.letters = 1
+      3    mailbox.close()
     |
   }
 }
@@ -156,8 +159,10 @@ steps: {
 
 ## Is it for you?
 
-`sharedbox` fits when separate processes need the same small set of values,
-such as the state of a device that one process controls and another shows.
+`sharedbox` fits when separate processes on one machine need the same data
+at once: web workers sharing state with a dashboard, a GUI and the backend
+process that does its work, the stages of a data pipeline, the state of a
+game or a simulation, or lab instruments and the programs that show them.
 Reading or writing a number or a short string takes well under a
 microsecond, and a process that is reading never holds up one that is
 writing.

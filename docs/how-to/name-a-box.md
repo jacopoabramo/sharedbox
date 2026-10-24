@@ -22,7 +22,7 @@ same box:
 
 The name comes from the class's [identity](../explanation/glossary.md#identity): normally where
 the class is defined, `module.qualname`, or the `identity` keyword if the
-class sets one, as `Motor` does here. Every process that imports the class
+class sets one, as `Mailbox` does here. Every process that imports the class
 works out the same name, so you never have to pass it around.
 
 Set `identity` when you might move the class to another module or rename
@@ -47,12 +47,12 @@ class:
 A readable name is easier to spot, for example when you list `/dev/shm` on
 Linux to see which boxes exist. [`SharedBox`][sharedbox.SharedBox] lists the
 characters a name may use. A name can have levels joined by `:`, such as
-`bl01:camera:det1`, which on Linux keeps the boxes of one setup together
-when you list `/dev/shm`. Windows has no such listing.
+`office-3:mailbox:north`, which on Linux keeps the boxes of one post office
+together when you list `/dev/shm`. Windows has no such listing.
 
 ## Name each box when you create it
 
-When you need several boxes of the same class, say one per motor, give
+When you need several boxes of the same class, say one per street, give
 each its own name when you create it with
 [`create`][sharedbox.SharedBox.create], and pass the same name to `attach`:
 

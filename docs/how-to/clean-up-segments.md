@@ -55,7 +55,7 @@ If you try to create a box under a name that is left over, you get
 [`SegmentExistsError`][sharedbox.SegmentExistsError], and its message says
 whether the process that created it is still running. If it isn't, remove
 the segment with `unlink` and the part of the file name after `SBX:`,
-for example `Job.unlink("job-1")`, or simply delete the file.
+for example `Delivery.unlink("delivery-1")`, or simply delete the file.
 
 On Windows nothing is left behind: a segment goes away with the last
 process that has it open.

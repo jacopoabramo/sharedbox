@@ -107,7 +107,7 @@ code: "" {
   style.fill: transparent
   code: |python
     1     # a writer, in any process
-    2  -> motor.position = 10
+    2  -> mailbox.letters = 1
     3     # the watcher thread of each box handle
     4     while not stopped:
     5         segment.wait(slot)
@@ -127,7 +127,7 @@ steps: {
     (pic.segment -> pic.watcher)[0].style.opacity: 1
     code.code: |python
       1     # a writer, in any process
-      2     motor.position = 10
+      2     mailbox.letters = 1
       3     # the watcher thread of each box handle
       4     while not stopped:
       5  ->     segment.wait(slot)
@@ -149,7 +149,7 @@ steps: {
     (pic.watcher -> pic.watch)[0].style.opacity: 1
     code.code: |python
       1     # a writer, in any process
-      2     motor.position = 10
+      2     mailbox.letters = 1
       3     # the watcher thread of each box handle
       4     while not stopped:
       5         segment.wait(slot)
@@ -188,23 +188,23 @@ from psygnal import throttled
 from sharedbox import SharedBox
 
 
-class Pump(SharedBox):
-    flow: float = 0.0
+class Scale(SharedBox):
+    weight: float = 0.0
 
 
 @throttled(timeout=100)
-def show_flow(new: float, old: float) -> None:
-    print("flow", new)
+def show_weight(new: float, old: float) -> None:
+    print("weight", new)
 
 
-pump = Pump()
-pump.events.flow.connect(show_flow)
+scale = Scale()
+scale.events.weight.connect(show_weight)
 for i in range(20):
-    pump.flow = float(i)
+    scale.weight = float(i)
     time.sleep(0.01)
 time.sleep(0.3)  # prints a few values, not twenty
-pump.close()
-Pump.unlink()
+scale.close()
+Scale.unlink()
 ```
 
 ## Forwarding costs

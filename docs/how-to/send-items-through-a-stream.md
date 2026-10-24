@@ -5,8 +5,9 @@ icon: lucide/wrench
 # How to send items through a stream
 
 A [stream](../explanation/glossary.md#stream) carries a series of items from
-one process to others, such as the batches of a data pipeline, and keeps the
-last few in shared memory so that a reader that falls behind can catch up.
+one process to others, such as the letters a sorting office passes on, and
+keeps the last few in shared memory so that a reader that falls behind can
+catch up.
 Use it when the items are a flow: a [box](../explanation/glossary.md#box)
 holds one current value that every process reads and writes, while a stream
 holds items that each reader receives once.
@@ -14,7 +15,8 @@ holds items that each reader receives once.
 ## Create the stream
 
 The item type can be anything a box field takes, except a reference to a box.
-This guide sends a record with an index and an array:
+This guide sends letters, each a record with an index, a recipient and the
+scan of its envelope as an array:
 
 ```{.python}
 --8<-- "docs/examples/send_items_through_a_stream.py:types"
@@ -24,7 +26,7 @@ The creating process calls [`create`][sharedbox.SharedStream.create] with the
 item type, a name and a `capacity`, the number of items the ring holds:
 
 ```python
-stream = SharedStream.create(Batch, "example-pipeline:batches", capacity=8)
+stream = SharedStream.create(Letter, "example-sorting:letters", capacity=8)
 ```
 
 A larger capacity lets a reader fall further behind before a lossless
@@ -41,7 +43,7 @@ only processes you start use the stream, leave the name out and `create`
 gives the stream a new one:
 
 ```python
-stream = SharedStream.create(Batch, capacity=8)
+stream = SharedStream.create(Letter, capacity=8)
 ```
 
 The sender and the readers cannot be passed to another process: pickling
@@ -105,10 +107,10 @@ happens when it is slower than the sender:
 
 - `"lossless"` receives every item, and the sender waits for it when it
   falls `capacity` items behind. Use it for a consumer that must see
-  everything, such as a writer that saves each item.
+  everything, such as the registered-mail desk, which logs every letter.
 - `"lossy"` skips the items the sender has already overwritten, and
   [`missed`][sharedbox.SharedReceiveStream.missed] counts them. Use it for
-  a viewer or a GUI that can drop items.
+  a viewer that can drop items, such as a display board in the hall.
 - `"latest"` always receives the newest item. Use it for a display that
   shows only the current state.
 
@@ -117,8 +119,8 @@ A reader starts at the newest item already sent, or, with
 receives until the stream ends:
 
 ```python
-for batch in stream.reader(mode="lossy"):
-    print(batch.index)
+for letter in stream.reader(mode="lossy"):
+    print(letter.index)
 ```
 
 !!! warning "A reader opened late misses earlier items"
@@ -203,17 +205,17 @@ A reader works with `async for` and `anext`, and a sender has
 [`asend`][sharedbox.SharedSendStream.asend]. Neither blocks the event loop:
 
 ```python
-async for batch in reader:
-    print(batch.index)
+async for letter in reader:
+    print(letter.index)
 
-await sender.asend(batch)
+await sender.asend(letter)
 ```
 
 To give up after a while, put `asyncio.timeout()` around the receive:
 
 ```python
 async with asyncio.timeout(5):
-    batch = await anext(reader)
+    letter = await anext(reader)
 ```
 
 !!! warning "A cancelled receive keeps its item for the next one"

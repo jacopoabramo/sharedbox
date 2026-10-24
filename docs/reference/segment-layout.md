@@ -56,7 +56,7 @@ Every OS object of a box is named from the box name:
 | waiter slot `i` | inside the mapping, no name | auto-reset event `Local\SBX:<name>#w<i>` |
 
 - A name is one or more segments of `[A-Za-z0-9_-]` joined by `:`, such as
-  `bl01:camera:det1:frames`, up to 240 characters. A segment is never
+  `office-3:sorting:letters`, up to 240 characters. A segment is never
   empty, so a name neither starts nor ends with `:` and has no `::`. `.` is
   reserved for a later `name.field` address, and `#` for the waiter event
   suffix. Every function that takes a name returns `status::range` for one
@@ -360,7 +360,7 @@ attacher agree on it and on the class's meaning.
 - A set identity lets another language agree with Python on a string both
   sides write down, rather than on a Python module path. Moving or renaming
   the Python class then keeps the hash, two packages can each declare a
-  matching class and share a box, and changing the identity (`"motor/2"`)
+  matching class and share a box, and changing the identity (`"mailbox/2"`)
   refuses processes of the old meaning when no field changed (a change of
   units, for instance).
 - `sharedbox.hpp` does not carry SHA-256; C and C++ callers compute the
@@ -368,15 +368,15 @@ attacher agree on it and on the class's meaning.
 - Test vector:
 
   ```text
-  __main__.Motor|position:int:8|enabled:bool:1|label:str:32
-  schema_hash  = 0x82ce467598596a72
-  default name = 5b4f7004d44277b7    (16 hex digits of SHA-256 over "__main__.Motor")
+  __main__.Mailbox|letters:int:8|flag_up:bool:1|owner:str:32
+  schema_hash  = 0x8538759c8a4421cd
+  default name = e0c7ece8401e643a    (16 hex digits of SHA-256 over "__main__.Mailbox")
 
-  __main__.Stage|label:str:4|motor:ref:motor/1
-  schema_hash  = 0xe33ffd91e10fab6d
+  __main__.Carrier|label:str:4|stop:ref:mailbox/1
+  schema_hash  = 0xd7d5cb9582628433
 
-  __main__.Stage|label:str:4|motor:ref?:motor/1
-  schema_hash  = 0xe58153f79aa6fdf6
+  __main__.Carrier|label:str:4|stop:ref?:mailbox/1
+  schema_hash  = 0xbc2d9647a100ee6b
 
   demo/1|when:date|mode:enum(RED,BLUE)|tags:list[2](str:4)|note:optional(int:8)
   schema_hash  = 0x2a9e5c5cc2876a4c
@@ -1376,13 +1376,13 @@ void     sbx_release(sbx_handle *h);
 ## The PyCapsule interface
 
 ```python
-class Frame(SharedBox, identity="camera/frame/1", max_waiters=64):
-    exposure: float
+class Parcel(SharedBox, identity="post/parcel/1", max_waiters=64):
+    weight: float
     count: int
 
 
-with Frame(0.01, 0) as frame:
-    camera.run(frame)  # an extension that supports sharedbox
+with Parcel(0.5, 0) as parcel:
+    printer.run(parcel)  # an extension that supports sharedbox
 ```
 
 The dunder is a protocol for library authors, as `__arrow_c_array__` and

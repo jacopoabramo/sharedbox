@@ -51,11 +51,11 @@ the first matching class "that is still alive".
 ## Broken references
 
 A reference can outlive the box it names, and the name alone can't show
-it. Step through a stage whose motor is replaced under the same name:
+it. Step through a carrier whose stop is replaced under the same name:
 
 ```d2 title="A reference that breaks"
 ...@diagrams/style
-label: "The field stage.motor stores the name motor-x and the create id 41 of the box it points at."
+label: "The field carrier.stop stores the name mailbox-north and the create id 41 of the box it points at."
 grid-columns: 1
 vertical-gap: 30
 pic: "" {
@@ -63,15 +63,15 @@ pic: "" {
   style.fill: transparent
   grid-columns: 2
   horizontal-gap: 160
-  stage: "stage.motor" {
+  carrier: "carrier.stop" {
     class: step
-    tooltip: "The reference field stores the motor's name, schema hash and create id."
+    tooltip: "The reference field stores the mailbox's name, schema hash and create id."
   }
-  motor: "motor-x\ncreate id 41" {
+  mailbox: "mailbox-north\ncreate id 41" {
     class: hardware
     tooltip: The box the reference was made for.
   }
-  stage -> motor: "points at"
+  carrier -> mailbox: "points at"
 }
 code: "" {
   style.stroke-width: 0
@@ -79,39 +79,39 @@ code: "" {
   grid-columns: 2
   horizontal-gap: 60
   replacer: |python
-    1    Motor.unlink("motor-x")
-    2    Motor.create("motor-x")
+    1    Mailbox.unlink("mailbox-north")
+    2    Mailbox.create("mailbox-north")
   |
   reader: |python
-    1    stage = Stage.attach()
-    2    motor = stage.motor
+    1    carrier = Carrier.attach()
+    2    stop = carrier.stop
   |
 }
 steps: {
   1: {
-    label: "Another process unlinks motor-x and creates a new box under the same name. The new box gets create id 77."
-    pic.motor.label: "motor-x\ncreate id 77"
-    pic.motor.style.stroke-width: 4
+    label: "Another process unlinks mailbox-north and creates a new box under the same name. The new box gets create id 77."
+    pic.mailbox.label: "mailbox-north\ncreate id 77"
+    pic.mailbox.style.stroke-width: 4
     code.replacer: |python
-      1 -> Motor.unlink("motor-x")
-      2 -> Motor.create("motor-x")
+      1 -> Mailbox.unlink("mailbox-north")
+      2 -> Mailbox.create("mailbox-north")
     |
     code.reader: |python
-      1    stage = Stage.attach()
-      2    motor = stage.motor
+      1    carrier = Carrier.attach()
+      2    stop = carrier.stop
     |
   }
   2: {
-    label: "A process that now reads stage.motor finds create id 77 where the field stored 41, so it raises BrokenReferenceError instead of opening the wrong box."
-    pic.stage.class: failed
-    (pic.stage -> pic.motor)[0].label: "41, not 77"
+    label: "A process that now reads carrier.stop finds create id 77 where the field stored 41, so it raises BrokenReferenceError instead of opening the wrong box."
+    pic.carrier.class: failed
+    (pic.carrier -> pic.mailbox)[0].label: "41, not 77"
     code.replacer: |python
-      1    Motor.unlink("motor-x")
-      2    Motor.create("motor-x")
+      1    Mailbox.unlink("mailbox-north")
+      2    Mailbox.create("mailbox-north")
     |
     code.reader: |python
-      1    stage = Stage.attach()
-      2 -> motor = stage.motor
+      1    carrier = Carrier.attach()
+      2 -> stop = carrier.stop
     |
   }
 }

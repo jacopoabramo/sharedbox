@@ -6,29 +6,29 @@ import multiprocessing as mp
 from sharedbox import SharedBox
 
 
-class Status(SharedBox, name="example-status"):
-    last_item: int = -1
+class Sorter(SharedBox, name="example-sorter"):
+    last_letter: int = -1
 
 
-def report(status: Status) -> None:
-    status.last_item = 99
-    status.close()
+def report(sorter: Sorter) -> None:
+    sorter.last_letter = 99
+    sorter.close()
 
 
 # --8<-- [end:argument]
 
 
 # --8<-- [start:pool]
-worker_status: Status
+worker_sorter: Sorter
 
 
 def start_worker(name: str) -> None:
-    global worker_status
-    worker_status = Status.attach(name)
+    global worker_sorter
+    worker_sorter = Sorter.attach(name)
 
 
 def work(item: int) -> int:
-    worker_status.last_item = item
+    worker_sorter.last_letter = item
     return item * 2
 
 
@@ -38,12 +38,12 @@ def work(item: int) -> int:
 # --8<-- [start:main]
 if __name__ == "__main__":
     context = mp.get_context("spawn")
-    with Status() as status:
-        child = context.Process(target=report, args=(status,))
+    with Sorter() as sorter:
+        child = context.Process(target=report, args=(sorter,))
         child.start()
         child.join()
-        print(status.last_item)  # 99
-        with context.Pool(4, initializer=start_worker, initargs=(status.name,)) as pool:
+        print(sorter.last_letter)  # 99
+        with context.Pool(4, initializer=start_worker, initargs=(sorter.name,)) as pool:
             print(sum(pool.map(work, range(100))))  # 9900
-    Status.unlink()
+    Sorter.unlink()
 # --8<-- [end:main]

@@ -40,12 +40,12 @@ code: "" {
   grid-columns: 2
   horizontal-gap: 60
   a: |python
-    1 -> box = Motor(1, False, "x-axis")
+    1 -> box = Mailbox(0, False, "Ada")
     2    box.close()
-    3    Motor.unlink()
+    3    Mailbox.unlink()
   |
   b: |python
-    1    box = Motor.attach()
+    1    box = Mailbox.attach()
     2    box.close()
   |
 }
@@ -55,12 +55,12 @@ scenarios: {
     pic.created.class: done
     pic.shared.class: current
     code.a: |python
-      1    box = Motor(1, False, "x-axis")
+      1    box = Mailbox(0, False, "Ada")
       2    box.close()
-      3    Motor.unlink()
+      3    Mailbox.unlink()
     |
     code.b: |python
-      1 -> box = Motor.attach()
+      1 -> box = Mailbox.attach()
       2    box.close()
     |
   }
@@ -70,12 +70,12 @@ scenarios: {
     pic.shared.class: done
     pic.a_closed.class: current
     code.a: |python
-      1    box = Motor(1, False, "x-axis")
+      1    box = Mailbox(0, False, "Ada")
       2 -> box.close()
-      3    Motor.unlink()
+      3    Mailbox.unlink()
     |
     code.b: |python
-      1    box = Motor.attach()
+      1    box = Mailbox.attach()
       2    box.close()
     |
   }
@@ -86,12 +86,12 @@ scenarios: {
     pic.a_closed.class: done
     pic.unlinked.class: current
     code.a: |python
-      1    box = Motor(1, False, "x-axis")
+      1    box = Mailbox(0, False, "Ada")
       2    box.close()
-      3 -> Motor.unlink()
+      3 -> Mailbox.unlink()
     |
     code.b: |python
-      1    box = Motor.attach()
+      1    box = Mailbox.attach()
       2    box.close()
     |
   }
@@ -103,12 +103,12 @@ scenarios: {
     pic.unlinked.class: done
     pic.freed.class: current
     code.a: |python
-      1    box = Motor(1, False, "x-axis")
+      1    box = Mailbox(0, False, "Ada")
       2    box.close()
-      3    Motor.unlink()
+      3    Mailbox.unlink()
     |
     code.b: |python
-      1    box = Motor.attach()
+      1    box = Mailbox.attach()
       2 -> box.close()
     |
   }

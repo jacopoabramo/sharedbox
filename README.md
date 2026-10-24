@@ -10,10 +10,22 @@
 > [!WARNING]
 > This project is a work in progress; be patient or feel free to contribute.
 
-`sharedbox` lets several Python processes share one record, as if they all
-held the same dataclass. You declare the fields once, and every process that
-opens the record reads and writes the same values in shared memory, so no
-process has to send them to another.
+`sharedbox` lets Python processes on one machine share data in shared
+memory, without a server and without pickling. It gives you two things to
+share:
+
+- a box, one record that every process reads and writes, as if they all held
+  the same dataclass;
+- a stream, a flow of typed items that one process sends and each reader
+  receives once.
+
+You declare the fields once, and every process that opens the box or the
+stream works on the same bytes in shared memory, so nothing passes through
+a pipe or a socket between the processes.
+That fits wherever separate processes need the same data at once: web
+workers sharing state with a dashboard, a GUI and the backend process that
+does its work, the stages of a data pipeline, the state of a game or a
+simulation, or lab instruments and the programs that show them.
 
 ## Installation
 
@@ -39,35 +51,36 @@ from typing import Annotated
 from sharedbox import Capacity, SharedBox
 
 
-class Motor(SharedBox):
-    position: int
-    enabled: bool
-    label: Annotated[str, Capacity(32)]
+class Mailbox(SharedBox):
+    letters: int
+    flag_up: bool
+    owner: Annotated[str, Capacity(32)]
 
 
-def worker() -> None:
-    motor = Motor.attach()          # finds the box by its class
-    motor.position = 10
-    motor.close()
+def deliver() -> None:
+    mailbox = Mailbox.attach()      # finds the box by its class
+    mailbox.letters = 1
+    mailbox.close()
 
 
 if __name__ == "__main__":
-    with Motor(1, False, "x-axis") as motor:
-        motor.events.position.connect(lambda new, old: print(old, "->", new))
-        child = mp.Process(target=worker)
-        child.start()
-        child.join()                      # prints: 1 -> 10
-    Motor.unlink()
+    with Mailbox(0, False, "Ada") as mailbox:
+        mailbox.events.letters.connect(lambda new, old: print(old, "->", new))
+        carrier = mp.Process(target=deliver)
+        carrier.start()
+        carrier.join()                    # prints: 0 -> 1
+    Mailbox.unlink()
 ```
 
-The child finds the box by its class alone, and the parent prints the change
-as soon as the child makes it.
+The carrier process finds the box by its class alone, and the parent prints
+the change as soon as the carrier makes it.
 
 ## Documentation
 
 The [documentation site](https://jacopoabramo.github.io/sharedbox) starts
-with three tutorials, then has how-to guides, explanations of how a
-box works, and the API reference. C and C++ code can use a box too, either
+with three tutorials, then has how-to guides, among them
+[sending items through a stream](https://jacopoabramo.github.io/sharedbox/how-to/send-items-through-a-stream/),
+explanations of how a box works, and the API reference. C and C++ code can use a box too, either
 handed over from Python or opened by name; the
 [C and C++ guides](https://jacopoabramo.github.io/sharedbox/how-to/accept-a-box-in-cpp/)
 show how.
@@ -89,4 +102,4 @@ has the details.
 
 ## License
 
-Licensed under [Apache 2.0](./LICENSE)
+Licensed under [Apache 2.0](https://github.com/jacopoabramo/sharedbox/blob/main/LICENSE)

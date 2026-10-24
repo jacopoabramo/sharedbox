@@ -63,7 +63,7 @@ sharedbox/
 |   |-- test_benchbox_plot.py  benchbox plot; skipped without plotly and pyperf
 |   |-- test_capsule.py        __sharedbox_box__, and the C consumer in tests/cpp/consumer/
 |   |-- test_doc_examples.py   runs each docs/examples/*.py script
-|   |-- test_doc_tutorials.py  runs docs/tutorials/motor.py and checks the output its pages show
+|   |-- test_doc_tutorials.py  runs docs/tutorials/mailbox.py and checks the output its pages show
 |   |-- test_follow.py         BoxEvents.follow, unfollow and nested
 |   |-- test_native_waiters.py waiter slots, dead owners, interrupt
 |   |-- test_box_sync_async.py a sync and an async watch on one box in two threads
@@ -87,7 +87,7 @@ sharedbox/
 |   |-- vscode_setup.py        points VS Code's C/C++ extension at the build headers
 |   `-- check_xrefs.py         reports unresolved cross-references, unread snippets and broken links in site/
 |-- docs/                      Diataxis site built by Zensical: tutorials/, how-to/, explanation/, reference/
-|   |-- tutorials/motor.py     the script the three tutorials build and include
+|   |-- tutorials/mailbox.py   the script the three tutorials build and include
 |   |-- examples/              one script per how-to guide, included by the guide
 |   |-- javascripts/charts.js  draws each div of class sbx-chart from a plotly figure JSON file
 |   |-- assets/benchmarks/     the figure JSON files of the performance page, from benchbox plot
@@ -314,25 +314,25 @@ from typing import Annotated
 from sharedbox import Capacity, SharedBox
 
 
-class Motor(SharedBox):
-    position: int
-    enabled: bool
-    label: Annotated[str, Capacity(32)]
+class Mailbox(SharedBox):
+    letters: int
+    flag_up: bool
+    owner: Annotated[str, Capacity(32)]
 
 
-def worker() -> None:
-    motor = Motor.attach()  # finds the box by its class
-    motor.position = 10
-    motor.close()
+def deliver() -> None:
+    mailbox = Mailbox.attach()  # finds the box by its class
+    mailbox.letters = 1
+    mailbox.close()
 
 
 if __name__ == "__main__":
-    with Motor(1, False, "x-axis") as motor:
-        motor.events.position.connect(lambda new, old: print(old, "->", new))
-        child = mp.Process(target=worker)
-        child.start()
-        child.join()  # prints: 1 -> 10
-    Motor.unlink()
+    with Mailbox(0, False, "Ada") as mailbox:
+        mailbox.events.letters.connect(lambda new, old: print(old, "->", new))
+        carrier = mp.Process(target=deliver)
+        carrier.start()
+        carrier.join()  # prints: 0 -> 1
+    Mailbox.unlink()
 ```
 
 A read decodes the stored bytes; a value that cannot be changed (a

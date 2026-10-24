@@ -4,7 +4,7 @@ icon: lucide/wrench
 
 # How to store arrays
 
-A box can hold arrays too, such as an image from a camera or a block of
+A box can hold arrays too, such as the scan of an envelope or a block of
 samples. An array [field](../explanation/glossary.md#field) has a fixed shape and element type,
 and it takes arrays from `numpy`, `torch` or any other library that can
 hand its arrays over through DLPack or the buffer protocol, as long as they
@@ -21,7 +21,7 @@ The sizes come from the array you give as the field's default, or from
 --8<-- "docs/examples/store_arrays.py:declare"
 ```
 
-The `frame` field holds 4 by 6 values of `uint8`, because that is the shape
+The `scan` field holds 4 by 6 values of `uint8`, because that is the shape
 of its default. The `gain` field holds 2 values, because `field(shape=(2,))`
 says so; with no default, `field(shape=...)` leaves the field required. A
 read gives back a `numpy.ndarray`. Only a plain default gives the sizes
@@ -86,11 +86,11 @@ code: "" {
   style.stroke-width: 0
   style.fill: transparent
   code: |python
-    1 -> sensor.frame = np.full((4, 6), 7, np.uint8)
-    2 -> frame = sensor.frame
-    3    sensor.read_into("frame", frame)
-    4    with sensor.writing("frame") as frame:
-    5        frame[0, :] = 255
+    1 -> scanner.scan = np.full((4, 6), 7, np.uint8)
+    2 -> scan = scanner.scan
+    3    scanner.read_into("scan", scan)
+    4    with scanner.writing("scan") as scan:
+    5        scan[0, :] = 255
   |
 }
 scenarios: {
@@ -102,11 +102,11 @@ scenarios: {
     (pic.field -> pic.yours)[0].style.opacity: 1
     (pic.field -> pic.yours)[0].style.stroke-width: 4
     code.code: |python
-      1    sensor.frame = np.full((4, 6), 7, np.uint8)
-      2    frame = sensor.frame
-      3 -> sensor.read_into("frame", frame)
-      4    with sensor.writing("frame") as frame:
-      5        frame[0, :] = 255
+      1    scanner.scan = np.full((4, 6), 7, np.uint8)
+      2    scan = scanner.scan
+      3 -> scanner.read_into("scan", scan)
+      4    with scanner.writing("scan") as scan:
+      5        scan[0, :] = 255
     |
   }
   writing: {
@@ -118,11 +118,11 @@ scenarios: {
     pic.field.label: "field in the box,\nfilled in place"
     pic.field.style.stroke-width: 4
     code.code: |python
-      1    sensor.frame = np.full((4, 6), 7, np.uint8)
-      2    frame = sensor.frame
-      3    sensor.read_into("frame", frame)
-      4 -> with sensor.writing("frame") as frame:
-      5 ->     frame[0, :] = 255
+      1    scanner.scan = np.full((4, 6), 7, np.uint8)
+      2    scan = scanner.scan
+      3    scanner.read_into("scan", scan)
+      4 -> with scanner.writing("scan") as scan:
+      5 ->     scan[0, :] = 255
     |
   }
 }
@@ -131,7 +131,7 @@ scenarios: {
 ## 3. Read into an array you already have
 
 A plain read gets fresh memory for a new array every time. If you read the
-same field again and again, for example once per frame, pass an array you
+same field again and again, for example once per envelope, pass an array you
 already have to [`read_into`][sharedbox.SharedBox.read_into] instead. It
 copies the field into that array and returns it:
 
@@ -148,7 +148,7 @@ there.
 ## 4. Fill an array field in place
 
 If your data comes from something that can write straight into memory you
-hand it, such as a camera driver, [`writing`][sharedbox.SharedBox.writing]
+hand it, such as a scanner driver, [`writing`][sharedbox.SharedBox.writing]
 saves you the extra copy. It gives you the field itself to fill:
 
 ```{.python}

@@ -4,13 +4,13 @@ icon: lucide/wrench
 
 # How to accept a box in a C++ extension
 
-If you write a C++ extension, say a camera driver, your users can hand it a
+If you write a C++ extension, say a label printer driver, your users can hand it a
 [box](../explanation/glossary.md#box) directly, and your code reads and writes the same fields
 their Python code does:
 
 ```python
-with Frame() as frame:
-    camera.run(frame)            # camera: an extension that supports sharedbox
+with Parcel() as parcel:
+    printer.run(parcel)          # printer: an extension that supports sharedbox
 ```
 
 Your extension reads and writes the box through `sharedbox/sharedbox.hpp`, a
@@ -40,19 +40,19 @@ pages use this class:
 from sharedbox import SharedBox
 
 
-class Frame(SharedBox, identity="camera/frame/1"):
-    exposure: float = 0.01
+class Parcel(SharedBox, identity="post/parcel/1"):
+    weight: float = 0.5
     count: int = 0
 ```
 
 From it you work out two values once and keep them as constants:
 
 - The [schema hash](../explanation/glossary.md#schema-hash): the first 8
-  bytes of SHA-256 over `camera/frame/1|exposure:float:8|count:int:8`,
-  read little-endian. For `Frame` it is `0x544efbe0815c923d`.
+  bytes of SHA-256 over `post/parcel/1|weight:float:8|count:int:8`,
+  read little-endian. For `Parcel` it is `0x223e63b5a4e2ee25`.
 - The default box name, needed only to open the box by name: 16 hex digits
   of SHA-256 over the [identity](../explanation/glossary.md#identity)
-  `camera/frame/1`. For `Frame` it is `d8dfe7af542f1d91`.
+  `post/parcel/1`. For `Parcel` it is `e73ca265fa48187e`.
 
 `sharedbox.hpp` doesn't compute SHA-256, so work both out once, for
 example in Python, and paste the results into your code:
@@ -60,18 +60,18 @@ example in Python, and paste the results into your code:
 ```python
 import hashlib
 
-identity = b"camera/frame/1"
-schema = b"camera/frame/1|exposure:float:8|count:int:8"
-print(hashlib.sha256(identity).hexdigest()[:16])        # d8dfe7af542f1d91
+identity = b"post/parcel/1"
+schema = b"post/parcel/1|weight:float:8|count:int:8"
+print(hashlib.sha256(identity).hexdigest()[:16])        # e73ca265fa48187e
 digest = hashlib.sha256(schema).digest()
-print(hex(int.from_bytes(digest[:8], "little")))        # 0x544efbe0815c923d
+print(hex(int.from_bytes(digest[:8], "little")))        # 0x223e63b5a4e2ee25
 ```
 
 [The schema hash](../explanation/how-a-box-is-stored.md#the-schema-hash)
 explains how to write the hashed text for your own class.
 
 In C++ you name a [field](../explanation/glossary.md#field) by its position in the class, counting
-from 0: `exposure` is field 0 and `count` is field 1.
+from 0: `weight` is field 0 and `count` is field 1.
 
 ## Declare the parameter
 
@@ -82,7 +82,7 @@ extension's stubs:
 ```python
 from sharedbox import SupportsSharedBox
 
-def run(frame: SupportsSharedBox) -> None: ...
+def run(parcel: SupportsSharedBox) -> None: ...
 ```
 
 ## Build against the header
@@ -150,10 +150,10 @@ With the build set up, taking the box is four steps:
 #include <Python.h>
 #include <sharedbox/sharedbox.hpp>
 
-constexpr std::uint64_t FRAME_SCHEMA = 0x544efbe0815c923d;
+constexpr std::uint64_t PARCEL_SCHEMA = 0x223e63b5a4e2ee25;
 
-static PyObject *run(PyObject *, PyObject *frame) {
-    PyObject *capsule = PyObject_CallMethod(frame, "__sharedbox_box__", nullptr);
+static PyObject *run(PyObject *, PyObject *parcel) {
+    PyObject *capsule = PyObject_CallMethod(parcel, "__sharedbox_box__", nullptr);
     if (capsule == nullptr)
         return nullptr;
     auto *given = static_cast<sbx_handle *>(PyCapsule_GetPointer(capsule, "sharedbox_box"));
@@ -167,8 +167,8 @@ static PyObject *run(PyObject *, PyObject *frame) {
     Py_DECREF(capsule);
     if (!box)
         return PyErr_Format(PyExc_ValueError, "not a box this sharedbox.hpp can open");
-    if (box->schema_hash() != FRAME_SCHEMA)
-        return PyErr_Format(PyExc_TypeError, "expected a Frame box");
+    if (box->schema_hash() != PARCEL_SCHEMA)
+        return PyErr_Format(PyExc_TypeError, "expected a Parcel box");
     // box is independent of the Python box from here on, and may move to another thread.
     std::int64_t count = 0;
     const auto read = box->read(1, std::as_writable_bytes(std::span(&count, 1)));

@@ -4,8 +4,8 @@ icon: lucide/wrench
 
 # How to follow a whole reference graph
 
-Boxes can point at boxes that point at further boxes: a stage at a motor, the
-motor at an encoder. When a [box](../explanation/glossary.md#box)'s
+Boxes can point at boxes that point at further boxes: a post office at its
+carrier, the carrier at the bag of letters it carries. When a [box](../explanation/glossary.md#box)'s
 [reference fields](../explanation/glossary.md#reference-field) lead on like this, they form a
 graph. This guide shows how one callback can hear about a change anywhere in
 it.
@@ -14,8 +14,8 @@ it.
 
 !!! note "What you need"
 
-    Classes with reference fields. This guide uses a stage that refers to a
-    motor, which refers to an encoder:
+    Classes with reference fields. This guide uses a post office that
+    refers to a carrier, which refers to a bag:
 
     ```{.python}
     --8<-- "docs/examples/follow_a_whole_reference_graph.py:classes"
@@ -26,9 +26,9 @@ single reference field; here you follow all of them at once.
 
 ## 1. Follow every reference
 
-The script creates an encoder, a motor that points at it and a stage that
-points at the motor. Call [`follow`][sharedbox.BoxEvents.follow] on the
-stage's events without naming a field, then connect to the
+The script creates a bag, a carrier that points at it and a post office
+that points at the carrier. Call [`follow`][sharedbox.BoxEvents.follow] on
+the post office's events without naming a field, then connect to the
 [`nested`][sharedbox.BoxEvents.nested] signal:
 
 ```{.python}
@@ -36,7 +36,7 @@ stage's events without naming a field, then connect to the
 ```
 
 Your callback gets `(path, new, old)`, where `path` lists the field names
-on the way from the stage to the field that changed. When any process points
+on the way from the post office to the field that changed. When any process points
 a reference field at a different box, the following moves to the new box by
 itself.
 
