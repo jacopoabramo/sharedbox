@@ -86,7 +86,9 @@ public:
     /// Whether field index is a bytes field read back as bytearray.
     bool field_is_bytearray(std::uint32_t index) const { return read_as_bytearray(field_container, index); }
     /// Whether a read of field index, of kind 0 to 5, must go through decode: a bytearray or a conversion.
-    bool field_via_types(std::uint32_t index) const noexcept { return index < via_types_.size() && via_types_[index]; }
+    bool field_via_types(std::uint32_t index) const noexcept {
+        return index < via_types_.size() && via_types_[index];
+    }
 
     /// Whether a read of field index may return the value an earlier read decoded.
     bool field_reusable(std::uint32_t index) const { return index < reusable_.size() && reusable_[index]; }
@@ -147,7 +149,7 @@ private:
     nb::object decode_from(const detail::type_ref &t, const std::byte *data, std::uint32_t container,
                            std::uint32_t member, const Where &where) const;
     nb::object decode_stored(const detail::type_ref &t, const std::byte *data, std::uint32_t container,
-                           std::uint32_t member, const Where &where) const;
+                             std::uint32_t member, const Where &where) const;
     /// Writes a list, set or dict value at out: its length, then its slots; returns the bytes used.
     std::size_t encode_collection(const detail::type_ref &t, PyObject *value, std::byte *out,
                                   const Where &where) const;
