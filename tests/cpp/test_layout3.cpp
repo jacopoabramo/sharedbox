@@ -51,7 +51,7 @@ TEST_CASE("a core major this build does not read is refused with the version fou
     auto other = handle::open(name, seconds(0.2));
     REQUIRE_FALSE(other);
     CHECK(other.error().code == status::layout);
-    CHECK(other.error().found == (std::uint64_t{2} << 48 | std::uint64_t{layout_major} << 16));
+    CHECK(other.error().found == (std::uint64_t{2} << 48 | std::uint64_t{layout_major} << 16 | layout_minor));
     static_cast<void>(unlink(name));
 }
 
@@ -63,7 +63,7 @@ TEST_CASE("a box layout major this build does not read is refused with the versi
     auto other = handle::open(name, seconds(0.2));
     REQUIRE_FALSE(other);
     CHECK(other.error().code == status::layout);
-    CHECK(other.error().found == (std::uint64_t{core_major} << 48 | std::uint64_t{4} << 16));
+    CHECK(other.error().found == (std::uint64_t{core_major} << 48 | std::uint64_t{4} << 16 | layout_minor));
     static_cast<void>(unlink(name));
 }
 
@@ -160,7 +160,7 @@ TEST_CASE("kinds 6 to 12 are fixed kinds with their sizes") {
     CHECK(detail::kind_alignment(kind_timedelta) == 4);
     CHECK(detail::kind_alignment(kind_uuid) == 1);
     CHECK(detail::kind_known(kind_array));
-    CHECK_FALSE(detail::kind_known(13));
+    CHECK_FALSE(detail::kind_known(24));
     CHECK_FALSE(detail::kind_known(75));
     const std::string name = unique("l3-kinds");
     const field_spec typed[3] = {{0, 16, kind_datetime}, {16, 12, kind_timedelta}, {28, 10, kind_decimal}};

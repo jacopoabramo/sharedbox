@@ -35,7 +35,7 @@ TEST_CASE("create open and unlink") {
     const std::string name = unique("basic");
     auto owner = create(name);
     REQUIRE(owner.has_value());
-    CHECK((owner->size() == 4096 && owner->minor_version() == 0));
+    CHECK((owner->size() == 4096 && owner->minor_version() == 1));
     CHECK(header_of(*owner).record == 2240);
     CHECK(create(name).error().code == status::exists);
     auto other = handle::open(name, seconds(1.0));
@@ -112,11 +112,11 @@ TEST_CASE("checks on open") {
     CHECK(open_status(name) == status::ok);
     h.common.kind_minor = 7;
     auto newer = handle::open(name, seconds(1.0));
-    CHECK((newer && newer->minor_version() == 0));
+    CHECK((newer && newer->minor_version() == 1));
     CHECK(forged(h.common.kind_major, std::uint16_t{4}) == status::layout);
     const auto seen = sharedbox::inspect(name);
     CHECK((seen && seen->kind_minor == 7));
-    h.common.kind_minor = 0;
+    h.common.kind_minor = 1;
     static_cast<void>(sharedbox::unlink(name));
 }
 
@@ -233,16 +233,16 @@ TEST_CASE("open accepts a kind it does not know") {
     auto owner = create(name);
     REQUIRE(owner.has_value());
     auto *table = reinterpret_cast<sharedbox::stored_field *>(static_cast<std::byte *>(owner->base()) + 128);
-    // Kind 13 at offset 9: open asks no alignment of a kind it does not know.
-    table[1] = {9u, 16u | 13u << 24};
+    // Kind 24 at offset 9: open asks no alignment of a kind it does not know.
+    table[1] = {9u, 16u | 24u << 24};
     auto opened = handle::open(name, seconds(1.0));
     REQUIRE(opened.has_value());
-    CHECK((opened->field(1).kind == 13 && opened->field(1).offset == 9 && opened->field(1).capacity == 16));
+    CHECK((opened->field(1).kind == 24 && opened->field(1).offset == 9 && opened->field(1).capacity == 16));
     const char text[16] = "opaque bytes";
     const sharedbox::value value{1, std::as_bytes(std::span(text))};
     const auto written = opened->write({&value, 1}, seconds(1.0));
     CHECK((!written && written.error().code == status::range));
-    // Stands for a newer writer that knows kind 13.
+    // Stands for a newer writer that knows kind 24.
     std::memcpy(static_cast<std::byte *>(owner->base()) + header_of(*owner).record + 9, text, 16);
     char back[16] = {};
     const auto got = opened->read(1, std::as_writable_bytes(std::span(back)));
@@ -254,7 +254,7 @@ TEST_CASE("open accepts a kind it does not know") {
     REQUIRE(capsule != nullptr);
     {
         auto taken = handle::from_capsule(capsule);
-        CHECK((taken && taken->field(1).kind == 13));
+        CHECK((taken && taken->field(1).kind == 24));
         if (!taken)
             capsule->release(capsule);
     }

@@ -8,7 +8,7 @@ namespace sharedbox {
 inline namespace v3 {
 
 inline constexpr std::uint16_t layout_major = 3;
-inline constexpr std::uint16_t layout_minor = 0;
+inline constexpr std::uint16_t layout_minor = 1;
 inline constexpr std::uint32_t handle_version = 1;
 inline constexpr std::uint32_t header_size = 128;
 inline constexpr std::uint32_t record_alignment = 64;

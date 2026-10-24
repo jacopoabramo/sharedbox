@@ -431,7 +431,7 @@ def test_another_major_version_is_refused(unique_name: str) -> None:
     segment = create(unique_name)
     patch_header(unique_name, 12, "<H", 4)
     with pytest.raises(
-        SchemaMismatchError, match=r"uses core version 1\.0 and box layout 4\.0"
+        SchemaMismatchError, match=r"uses core version 1\.0 and box layout 4\.1"
     ):
         attach(unique_name)
     segment.close()
@@ -752,10 +752,10 @@ def test_an_unpublished_segment_is_attached_only_after_publish(
 def test_attach_refuses_a_field_of_a_kind_it_cannot_read(unique_name: str) -> None:
     """Check that attach refuses a segment with a field of an unknown kind, naming the kind."""
     owner = create(unique_name)
-    # Field 0 becomes kind 13, which sharedbox.hpp opens as opaque bytes.
-    patch_header(unique_name, 132, "<I", 8 | 13 << 24)
+    # Field 0 becomes kind 24, which sharedbox.hpp opens as opaque bytes.
+    patch_header(unique_name, 132, "<I", 8 | 24 << 24)
     with pytest.raises(
-        SchemaMismatchError, match="kind 13, which this version cannot read"
+        SchemaMismatchError, match="kind 24, which this version cannot read"
     ):
         attach(unique_name)
     owner.close()
