@@ -261,7 +261,8 @@ Little-endian.
   the member; size `round_up(A + largest member size, A)`.
 - `record`, `tuple`: members at the offsets their entries give.
 - `list`, `set`: `u32` length, padding to `max(4, A)`, then `capacity`
-  slots of `round_up(element size, element alignment)` bytes.
+  slots of `round_up(element size, element alignment)` bytes, and padding
+  that rounds the whole up to a multiple of `max(4, A)`.
 - `dict`: as `list`, with a key and value pair as the slot: the key at 0,
   the value at `round_up(key size, value alignment)`.
 - `array`: the elements in C order.

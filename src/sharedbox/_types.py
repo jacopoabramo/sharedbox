@@ -1048,7 +1048,7 @@ def collection_spec(
                 f"{where}: an array can be a field or a record member, not a collection element"
             )
     slots = round_up(4, a)
-    size = slots + capacity * stride
+    size = round_up(slots + capacity * stride, a)
     if size >= 1 << 32:
         raise TypeError(
             f"{where}: {capacity} elements take {size} bytes; a record holds less than 4 GiB"

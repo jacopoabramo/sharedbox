@@ -206,3 +206,21 @@ def test_a_stored_element_that_fails_the_checks_raises(unique_name: str) -> None
         box._segment._write([(0, struct.pack("<IB", 1, 2))])
         with pytest.raises(ValueError, match="Flags.flags"):
             _ = box.flags
+
+
+class Switches(SharedBox):
+    pair: Annotated[list[bool], Capacity(2)] = []
+    one: Annotated[frozenset[bool], Capacity(1)] = frozenset()
+    flags: Annotated[dict[bool, bool], Capacity(3)] = {}
+
+
+def test_a_collection_shorter_than_its_alignment_round_trips(unique_name: str) -> None:
+    """Read back bool collections whose slots end before a multiple of 4 bytes."""
+    with Switches.create(unique_name) as box:
+        box.update(pair=[True, False], one=frozenset({True}), flags={True: False})
+        assert (box.pair, box.one, box.flags) == (
+            [True, False],
+            frozenset({True}),
+            {True: False},
+        )
+    Switches.unlink(unique_name)

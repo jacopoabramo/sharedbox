@@ -1317,8 +1317,8 @@ inline status type_parser::place(std::uint8_t kind, const type_head &head, type_
         node.stride = static_cast<std::uint32_t>(stride);
         node.slots = static_cast<std::uint32_t>(round_up(4, a));
         out.alignment = a;
-        return m[0].offset == node.slots && size == node.slots + std::uint64_t{node.capacity} * node.stride &&
-                       size % a == 0
+        return m[0].offset == node.slots &&
+                       size == round_up(node.slots + std::uint64_t{node.capacity} * node.stride, a)
                    ? status::ok
                    : status::corrupt;
     }
@@ -1335,8 +1335,8 @@ inline status type_parser::place(std::uint8_t kind, const type_head &head, type_
         node.stride = static_cast<std::uint32_t>(stride);
         node.slots = static_cast<std::uint32_t>(round_up(4, a));
         out.alignment = a;
-        return size == node.slots + std::uint64_t{node.capacity} * node.stride && size % a == 0 ? status::ok
-                                                                                                : status::corrupt;
+        return size == round_up(node.slots + std::uint64_t{node.capacity} * node.stride, a) ? status::ok
+                                                                                            : status::corrupt;
     }
     default:
         return status::corrupt;
