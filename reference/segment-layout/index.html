@@ -4417,7 +4417,8 @@ members lie inside their parent, aligned and apart; every size the
 description implies is computed without overflow and matches the head; an
 array's code is one of 0, 1, 2, 4, 5, 6, its bits a multiple of 8 and every
 dimension at least 1. A failure refuses the segment. A reference may only
-be a field, and an array only a field or a record member.</p>
+be a field, and an array only a field, a record or tuple member, or the
+member of an optional.</p>
 <h3 id="decoding-checks">Decoding checks<a class="headerlink" href="#decoding-checks" title="Permanent link">&para;</a></h3>
 <p>A stable sequence number shows a copy is consistent, not that it holds a
 value Python can have. Readers check presence bytes and <code>bool</code> (0 or 1),
@@ -4632,7 +4633,9 @@ layout version of its kind, for the rest. Each has a major and a minor.</p>
   version may add kinds: a reader of an older minor opens a top-level box
   field of a kind it does not know as opaque bytes, and refuses, with
   <code>status::corrupt</code>, a segment that uses one inside a described type or as
-  a stream item.</li>
+  a stream item. Box layout 3.1 and stream layout 1.1 also allow an array
+  as the member of an optional, which a reader of box layout 3.0 or stream
+  layout 1.0 refuses with <code>status::corrupt</code>.</li>
 <li>A change to how existing bytes are read or written raises a major: the
   core's (the common line, the object names, liveness) raises <code>core_major</code>,
   and a kind's own (the sequence lock, field encoding, the slot layout)
