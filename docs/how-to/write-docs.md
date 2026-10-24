@@ -156,7 +156,7 @@ Where it can, the Python code of a tutorial or a how-to guide lives in a
 script that the tests run, and the page includes parts of it, so the page
 shows what runs.
 
-- The three tutorials build one script, `docs/tutorials/motor.py`.
+- The three tutorials build one script, `docs/tutorials/mailbox.py`.
 - Each how-to guide that shows Python has a script of its own in
   `docs/examples/`, named after the guide: `name_a_box.py` for
   `name-a-box.md`.
@@ -171,7 +171,7 @@ collapsed block.
 The scripts are type checked with the rest of the code by
 `uv run tox -e mypy`, and the tests run them:
 
-- `tests/test_doc_tutorials.py` runs `motor.py` and compares what it prints
+- `tests/test_doc_tutorials.py` runs `mailbox.py` and compares what it prints
   with the output the tutorial pages show. When you change what the script
   prints, change the pages and the test together.
 - `tests/test_doc_examples.py` runs each script in `docs/examples/`.

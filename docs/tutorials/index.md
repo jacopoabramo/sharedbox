@@ -4,7 +4,7 @@ icon: lucide/graduation-cap
 
 # Tutorials
 
-These three tutorials walk you through one script, `motor.py`, which grows a
+These three tutorials walk you through one script, `mailbox.py`, which grows a
 little with each page. Follow them in order, since each one adds to the
 script you finished in the one before.
 
