@@ -166,6 +166,20 @@ def test_a_presence_or_bool_byte_of_2_reads_as_corrupt(annotation: object) -> No
         layout.types.decode(0, b"" + bytes(size - 1))
 
 
+@dataclass(frozen=True)
+class Switches:
+    first: bool
+    second: bool
+
+
+def test_a_corrupt_second_member_of_a_positional_record_reads_as_corrupt() -> None:
+    """Raise ValueError naming the field when the second bool of a record built by position holds 2."""
+    layout = build_layout(make(Switches))
+    with pytest.raises(ValueError, match="T.x"):
+        layout.types.decode(0, b"\x01\x02")
+    assert layout.types.decode(0, b"\x01\x00") == Switches(True, False)
+
+
 @dataclass
 class Hidden:
     a: int

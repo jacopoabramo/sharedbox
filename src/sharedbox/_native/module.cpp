@@ -1004,7 +1004,8 @@ NB_MODULE(_native, m) {
                 const auto index = nb::cast<std::uint32_t>(spec.attr("index"));
                 const sharedbox::Types *t = types_of(types);
                 const bool reusable = t != nullptr && !values_slot.is_none() && t->field_reusable(index);
-                // A read or write of a kind 0 to 5 field needs Types only for a bytearray or a conversion.
+                // A read of a kind 0 to 5 field needs Types only for a bytearray or a read conversion; a write
+                // never does.
                 if (t != nullptr && t->field(index).kind <= sharedbox::kind_ref && !t->field_via_types(index))
                     t = nullptr;
                 descrgetfunc read_values = nullptr;
