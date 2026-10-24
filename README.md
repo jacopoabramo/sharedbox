@@ -20,7 +20,8 @@ share:
   receives once.
 
 You declare the fields once, and every process that opens the box or the
-stream works on the same bytes, so no process has to send them to another.
+stream works on the same bytes in shared memory, so nothing passes through
+a pipe or a socket between the processes.
 That fits wherever separate processes need the same data at once: web
 workers sharing state with a dashboard, a GUI and the backend process that
 does its work, the stages of a data pipeline, the state of a game or a

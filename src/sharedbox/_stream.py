@@ -856,9 +856,9 @@ class SharedSendStream(End, Generic[T]):
         [`slot.send`][sharedbox.SendSlot.send], which does not copy them:
 
         ```python
-        blank = Frame(0, np.empty((0, 0), np.uint16))
+        blank = Letter(0, "", np.empty((0, 0), np.uint8))
         with sender.writing(blank) as slot:
-            device.read_into(slot.item.image)
+            scanner.read_into(slot.item.scan)
             slot.send(replace(slot.item, index=n))
         ```
 
@@ -1135,8 +1135,8 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T]):
         decoded as usual. The item returned holds your arrays, filled in
         place. Allocate the arrays once and pass them to every call:
 
-            image = np.empty((480, 640), np.uint16)
-            frame = reader.receive_into({"image": image})
+            scan = np.empty((32, 32), np.uint8)
+            letter = reader.receive_into({"scan": scan})
 
         An item that a cancelled `receive_future` or `anext` had already
         received is returned by the next receive of any kind, and holds the

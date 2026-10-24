@@ -188,23 +188,23 @@ from psygnal import throttled
 from sharedbox import SharedBox
 
 
-class Pump(SharedBox):
-    flow: float = 0.0
+class Scale(SharedBox):
+    weight: float = 0.0
 
 
 @throttled(timeout=100)
-def show_flow(new: float, old: float) -> None:
-    print("flow", new)
+def show_weight(new: float, old: float) -> None:
+    print("weight", new)
 
 
-pump = Pump()
-pump.events.flow.connect(show_flow)
+scale = Scale()
+scale.events.weight.connect(show_weight)
 for i in range(20):
-    pump.flow = float(i)
+    scale.weight = float(i)
     time.sleep(0.01)
 time.sleep(0.3)  # prints a few values, not twenty
-pump.close()
-Pump.unlink()
+scale.close()
+Scale.unlink()
 ```
 
 ## Forwarding costs

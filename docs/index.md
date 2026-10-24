@@ -20,10 +20,10 @@ server and without pickling. A [box](explanation/glossary.md#box) is one
 record that every process reads and writes, as if they all held the same
 dataclass, and a [stream](explanation/glossary.md#stream) is a flow of typed
 items that one process sends and each reader receives once. You declare the
-fields once, and every process that opens the box or the stream reads and
-writes the same values. The values sit in shared memory, a block of memory
-the operating system lets several processes use at once, so no process has
-to send them to another.
+fields once, and every process that opens the box or the stream works on
+the same bytes. The bytes sit in shared memory, a block of memory the
+operating system lets several processes use at once, so nothing passes
+through a pipe or a socket between the processes.
 
 ## A first look
 
