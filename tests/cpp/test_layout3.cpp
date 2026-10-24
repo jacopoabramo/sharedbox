@@ -27,7 +27,7 @@ status open_status(const std::string &name) {
 
 } // namespace
 
-TEST_CASE("a new box is core 1.0, box layout 3.0") {
+TEST_CASE("a new box is core 1.0, box layout 3.1") {
     const std::string name = unique("layout3");
     auto owner = handle::create(name, fields, 32, 0x5EED, 4, {});
     REQUIRE(owner);
@@ -35,6 +35,7 @@ TEST_CASE("a new box is core 1.0, box layout 3.0") {
     CHECK(h.common.magic == box_magic);
     CHECK(h.common.core_major == core_major);
     CHECK(h.common.kind_major == 3);
+    CHECK(h.common.kind_minor == 1);
     CHECK(h.tail == header_size);
     CHECK(owner->major_version() == 3);
     auto other = handle::open(name, seconds(1.0));
