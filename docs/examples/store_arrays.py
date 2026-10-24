@@ -40,6 +40,20 @@ raw = scanner.raw
 print(np.from_dlpack(raw))  # [0. 0. 0.]
 # --8<-- [end:any-library]
 
+
+# --8<-- [start:optional]
+class Tray(SharedBox, name="example-tray"):
+    scan: npt.NDArray[np.uint8] | None = field(default=None, shape=(4, 6))
+
+
+tray = Tray()
+print(tray.scan)  # None
+tray.scan = np.ones((4, 6), np.uint8)
+print(int(tray.scan.sum()))  # 24
+tray.scan = None
+print(tray.scan)  # None
+# --8<-- [end:optional]
+
 # --8<-- [start:wrong-shape]
 try:
     scanner.scan = np.zeros((6, 4), np.uint8)
@@ -50,3 +64,5 @@ except ValueError as error:
 
 scanner.close()
 Scanner.unlink()
+tray.close()
+Tray.unlink()

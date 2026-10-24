@@ -10,6 +10,7 @@ from dataclasses import dataclass
 from typing import Annotated, Any, NotRequired, TypedDict
 
 import numpy as np
+import numpy.typing as npt
 import pytest
 
 from sharedbox import (
@@ -57,6 +58,35 @@ def test_items_go_from_the_sender_to_a_reader(unique_name: str) -> None:
                 sender.send(frame(i))
         assert [item.index for item in reader] == [0, 1, 2]
         assert reader.position == 2
+
+
+@dataclass
+class Notice:
+    index: int
+    scan: Annotated[npt.NDArray[np.uint8], Shape(4)] | None = None
+
+
+def test_an_optional_array_member_crosses_a_stream(unique_name: str) -> None:
+    """Receive a Notice with no scan and one with a scan, as sent."""
+    with SharedStream.create(Notice, unique_name, capacity=4) as stream:
+        reader = stream.reader()
+        with stream.sender() as sender:
+            sender.send(Notice(0))
+            sender.send(Notice(1, np.arange(4, dtype=np.uint8)))
+        empty, full = list(reader)
+        assert (empty.index, empty.scan) == (0, None)
+        assert full.index == 1
+        assert full.scan is not None
+        assert np.array_equal(full.scan, np.arange(4, dtype=np.uint8))
+
+
+def test_receive_into_refuses_an_optional_array(unique_name: str) -> None:
+    """Raise TypeError when receive_into is given an array for an optional array member."""
+    with SharedStream.create(Notice, unique_name, capacity=4) as stream:
+        reader = stream.reader()
+        stream.sender().send(Notice(1, np.arange(4, dtype=np.uint8)))
+        with pytest.raises(TypeError, match="is an optional member"):
+            reader.receive_into({"scan": np.zeros(4, np.uint8)})
 
 
 def test_receive_into_fills_the_given_array(unique_name: str) -> None:

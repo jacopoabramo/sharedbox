@@ -417,8 +417,9 @@ def parse(
         Type aliases being unwrapped around this one.
     sizes
         The `field(shape=...)` and the plain default of a box field, which an
-        array field takes its sizes from when the annotation has no
-        `Shape`; None for anything that is not a box field.
+        array field, or the array of an optional field, takes its sizes from
+        when the annotation has no `Shape`; None for anything that is not a
+        box field.
 
     Raises
     ------
@@ -441,9 +442,10 @@ def parse(
             )
         spec = array_spec(hint, extras, where, sizes)
     else:
-        if sizes is not None and sizes[0] is not None:
+        spec = dispatch(hint, extras, where, capacity, depth, path, sizes)
+        holds_array = spec.kind == "optional" and spec.members[0].type.kind == "array"
+        if sizes is not None and sizes[0] is not None and not holds_array:
             raise TypeError(f"{where}: field(shape=...) applies only to an array field")
-        spec = dispatch(hint, extras, where, capacity, depth, path)
     if spec.described:
         deeper(depth, where)
     return spec
@@ -605,6 +607,7 @@ def dispatch(
     capacity: int | None,
     depth: int,
     path: frozenset[int],
+    sizes: tuple[tuple[int, ...] | None, Any] | None = None,
 ) -> TypeSpec:
     """Return the `TypeSpec` of an unwrapped annotation; `parse` documents the parameters."""
     if isinstance(hint, type) and hint in TEXT:
@@ -628,7 +631,7 @@ def dispatch(
     if get_origin(hint) in (Union, types.UnionType):
         if capacity is not None and not takes_capacity(hint, where, path):
             raise TypeError(f"{where}: Capacity does not apply to {hint!r}")
-        return union_spec(hint, where, capacity, depth, path)
+        return union_spec(hint, where, capacity, depth, path, sizes)
     if is_box_class(hint):
         raise TypeError(
             f"{where}: a reference to a box must be a field of its own, annotated X or X | None, not part of another type"
@@ -766,7 +769,12 @@ def narrower(a: TypeSpec, b: TypeSpec) -> bool:
 
 
 def union_spec(
-    hint: Any, where: str, capacity: int | None, depth: int, path: frozenset[int]
+    hint: Any,
+    where: str,
+    capacity: int | None,
+    depth: int,
+    path: frozenset[int],
+    sizes: tuple[tuple[int, ...] | None, Any] | None = None,
 ) -> TypeSpec:
     args = get_args(hint)
     rest = tuple(arg for arg in args if arg is not NoneType)
@@ -778,11 +786,8 @@ def union_spec(
             capacity=capacity,
             depth=below,
             path=path,
+            sizes=sizes if len(rest) == 1 else None,
         )
-        if inner.kind == "array":
-            raise TypeError(
-                f"{where}: an array can be a field or a record member, not optional"
-            )
         return optional_of(inner)
     takers = [arg for arg in rest if takes_capacity(arg, where, path)]
     if capacity is not None and len(takers) != 1:
