@@ -362,7 +362,7 @@ void Types::prepare(std::uint32_t node, std::uint8_t kind, nb::object info) {
             n.keywords.push_back(PyTuple_GetItem(keywords, i));
         }
         if (n.form == 0)
-            n.keyword_names = keywords;
+            n.by_position = item(n.info, 5) == Py_True;
         for (Py_ssize_t i = 0; n.form == 3 && i < count; ++i)
             n.required.push_back(PyTuple_GetItem(required, i) == Py_True);
         break;
@@ -845,9 +845,10 @@ nb::object Types::decode_from(const detail::type_ref &t, const std::byte *data, 
             }
             return out;
         }
-        if (n.form == 0) {
+        if (n.form == 0 && n.by_position) {
             // Each member is owned by an nb::object, so a member that fails to decode releases the ones
-            // before it. A class without vectorcall gets its keyword dict built by CPython instead.
+            // before it. Without keywords, a class that has no vectorcall of its own gets a tuple from
+            // CPython, which its __init__ unpacks without a dict.
             std::array<nb::object, 16> few;
             std::vector<nb::object> many(node.count > few.size() ? node.count : 0);
             nb::object *held = node.count > few.size() ? many.data() : few.data();
@@ -858,7 +859,16 @@ nb::object Types::decode_from(const detail::type_ref &t, const std::byte *data, 
                 held[i] = nb::steal(element(member(i).type, data + member(i).offset, i));
                 args[i] = held[i].ptr();
             }
-            PyObject *made = PyObject_Vectorcall(n.cls, args, 0, n.keyword_names);
+            PyObject *made = PyObject_Vectorcall(n.cls, args, node.count, nullptr);
+            if (made == nullptr)
+                throw nb::python_error();
+            return nb::steal(made);
+        }
+        if (n.form == 0) {
+            nb::dict kwargs;
+            for (std::uint32_t i = 0; i < node.count; ++i)
+                kwargs[nb::handle(n.keywords[i])] = nb::steal(element(member(i).type, data + member(i).offset, i));
+            PyObject *made = PyObject_Call(n.cls, nb::tuple().ptr(), kwargs.ptr());
             if (made == nullptr)
                 throw nb::python_error();
             return nb::steal(made);

@@ -320,8 +320,35 @@ class Wall(SharedBox):
     wide: Wide = Wide(*range(40))  # type: ignore[valid-type]
 
 
-def test_a_record_of_many_keyword_members_round_trips(unique_name: str) -> None:
+def test_a_record_of_many_members_round_trips(unique_name: str) -> None:
     """Read back a 40-member dataclass with every member in its place."""
     with Wall.create(unique_name) as box:
         box.wide = Wide(*range(40, 80))
         assert box.wide == Wide(*range(40, 80))
+
+
+@dataclass(frozen=True)
+class Tagged:
+    a: int
+    b: int = dataclasses.field(kw_only=True)
+    c: int = 0
+
+
+@dataclass
+class Scaled(Base):
+    a: int = 0
+
+
+class Shuffled(SharedBox):
+    tagged: Tagged = Tagged(0, b=0)
+    scaled: Scaled = Scaled()
+
+
+def test_a_record_whose_constructor_reorders_its_members_round_trips(
+    unique_name: str,
+) -> None:
+    """Read back dataclasses whose constructor takes a member by keyword only or after an InitVar."""
+    with Shuffled.create(unique_name) as box:
+        box.update(tagged=Tagged(1, b=2, c=3), scaled=Scaled(a=4))
+        assert (box.tagged, box.scaled) == (Tagged(1, b=2, c=3), Scaled(a=4))
+    Shuffled.unlink(unique_name)
