@@ -14,8 +14,8 @@ the layout and the native module converts values.
 sharedbox/
 |-- include/sharedbox/
 |   |-- core.hpp               what every segment kind uses: result and error, liveness, names, mappings, the open step, waiter slots, the type codec
-|   |-- box.hpp                box layout 3.0 and its protocols: create, publish, open, lock, read, write, capsule handle
-|   |-- stream.hpp             stream layout 1.0: create, open, the sender, readers, the gate, dead ends
+|   |-- box.hpp                box layout 3.1 and its protocols: create, publish, open, lock, read, write, capsule handle
+|   |-- stream.hpp             stream layout 1.1: create, open, the sender, readers, the gate, dead ends
 |   |-- sharedbox.hpp          includes every kind; the header consumers include
 |   |-- sharedbox_c.h          minimal C interface: sbx_open, sbx_import, sbx_read, sbx_write, sbx_schema_hash, sbx_release, sbx_field_desc, typed sbx_read_* and sbx_write_*
 |   `-- sharedbox_c.cpp        its implementation, compiled by the consumer (CMake target sharedbox::c)
@@ -53,7 +53,7 @@ sharedbox/
 |       |                      checks every value of an update before any is written,
 |       |                      with_record reads the whole record at once
 |       |-- types.{hpp,cpp}    Types: conversions of kinds above 5, arrays
-|       |-- scalars.{hpp,cpp}  kinds 6 to 12, the datetime C API on full-API builds
+|       |-- scalars.{hpp,cpp}  kinds 6 to 23, the datetime C API on full-API builds
 |       |-- segment.{hpp,cpp}  Segment: a sharedbox::handle plus error messages and the lifetime lock
 |       `-- stream.{hpp,cpp}   Stream, Sender and Reader: the Python binding of a stream and its errors
 |-- tests/                     pytest; many tests spawn processes
@@ -91,7 +91,7 @@ sharedbox/
 |   |-- examples/              one script per how-to guide, included by the guide
 |   |-- javascripts/charts.js  draws each div of class sbx-chart from a plotly figure JSON file
 |   |-- assets/benchmarks/     the figure JSON files of the performance page, from benchbox plot
-|   `-- reference/segment-layout.md  core 1.0, box layout 3.0, names and protocols
+|   `-- reference/segment-layout.md  core 1.0, box layout 3.1, names and protocols
 |-- includes/abbreviations.md  acronym tooltips appended to every page
 |-- zensical.toml              site configuration and navigation
 |-- .github/workflows/ci.yaml  lint, docs check, C++ tests, cibuildwheel wheels, tests, stress,
@@ -135,11 +135,11 @@ class's identity (the `identity` class keyword, by default
 always asks for a new name and raises `SegmentExistsError` if it is taken.
 
 Every segment starts with the same 64-byte line, whatever its kind. Core
-version 1.0, box layout 3.0, from offset 0:
+version 1.0, box layout 3.1, from offset 0:
 
 - Common line 0, written once at creation: `magic` (`SBX_BOX_` for a box,
   `SBX_STRM` for a stream), `core_major` 1, `core_minor` 0, `kind_major` 3,
-  `kind_minor` 0, `schema_hash`, `create_id`, `creator_start`,
+  `kind_minor` 1, `schema_hash`, `create_id`, `creator_start`,
   `creator_pidns`, `creator_pid`, `waiter_slots`, `size`.
 - Box line 1, at offset 64: `seq` (sequence lock; the generation is
   `seq >> 1`, there is no generation field), `writer_pid`, `wake_word`,
@@ -155,7 +155,8 @@ version 1.0, box layout 3.0, from offset 0:
   `asleep_on`: the offset of the count the slot's current wait added 1 to,
   which freeing a dead owner's slot takes back), then the description
   table of `types_size` bytes. Kinds are 0 to 5, 6 to 12 (fixed-size
-  scalars) and 64 to 74 (described types).
+  scalars), 13 to 23 (fixed-width numbers and `datetime64`) and 64 to 74
+  (described types).
 - The record, at a multiple of 64. The mapping size is rounded up to 4 KiB.
   `record + record_size <= 2**32 - 4096`.
 

@@ -106,6 +106,11 @@ SBX_API int sbx_field_desc(const sbx_handle *h, uint16_t field, uint8_t *kind, c
  * stored value no Python value has; a write gives SBX_E_RANGE for a value out of range. */
 SBX_API int sbx_read_complex(const sbx_handle *h, uint16_t field, double out[2]);
 SBX_API int sbx_write_complex(sbx_handle *h, uint16_t field, const double value[2], double lock_timeout);
+/* A write rounds value to the field's width; a finite value past it gives SBX_E_RANGE. */
+SBX_API int sbx_read_float16(const sbx_handle *h, uint16_t field, float *out);
+SBX_API int sbx_write_float16(sbx_handle *h, uint16_t field, double value, double lock_timeout);
+SBX_API int sbx_read_float32(const sbx_handle *h, uint16_t field, float *out);
+SBX_API int sbx_write_float32(sbx_handle *h, uint16_t field, double value, double lock_timeout);
 /* A date as date.toordinal(): 1 is 0001-01-01. */
 SBX_API int sbx_read_date(const sbx_handle *h, uint16_t field, int32_t *ordinal);
 SBX_API int sbx_write_date(sbx_handle *h, uint16_t field, int32_t ordinal, double lock_timeout);

@@ -28,6 +28,14 @@ PyObject *decimal_type = nullptr;
 PyObject *mapping_abc = nullptr;
 PyObject *sequence_abc = nullptr;
 PyObject *set_abc = nullptr;
+PyObject *real_abc = nullptr;
+PyObject *complex_abc = nullptr;
+PyObject *numpy_name = nullptr;
+// numpy.bool_, numpy.datetime64 and numpy.timedelta64, found the first time a check runs after numpy is
+// imported.
+std::atomic<PyObject *> numpy_bool{nullptr};
+std::atomic<PyObject *> numpy_datetime64{nullptr};
+std::atomic<PyObject *> numpy_timedelta64{nullptr};
 PyObject *utcoffset_name = nullptr;
 PyObject *bytes_name = nullptr;
 PyObject *fold_name = nullptr;
@@ -63,9 +71,112 @@ const char *kind_name(std::uint8_t kind) {
         return "a timedelta";
     case kind_uuid:
         return "a UUID";
+    case kind_int8:
+    case kind_int16:
+    case kind_int32:
+    case kind_uint8:
+    case kind_uint16:
+    case kind_uint32:
+    case kind_uint64:
+        return "an int";
+    case kind_float16:
+    case kind_float32:
+        return "a float";
+    case kind_complex64:
+        return "a complex";
+    case kind_datetime64:
+        return "a numpy.datetime64";
     default:
         return "a Decimal";
     }
+}
+
+[[noreturn]] void does_not_fit(const std::string &name, const char *holds) {
+    raise(PyExc_OverflowError, name + " holds " + holds + "; the value does not fit");
+}
+
+// The integer kinds 13 to 19: the smallest and largest value, and what the overflow message says the field
+// holds. uint64 is checked by PyLong_AsUnsignedLongLong instead.
+struct integer_range {
+    long long low;
+    long long high;
+    const char *holds;
+};
+
+integer_range range_of(std::uint8_t kind) {
+    switch (kind) {
+    case kind_int8:
+        return {-128, 127, "a signed 8-bit integer"};
+    case kind_int16:
+        return {-32768, 32767, "a signed 16-bit integer"};
+    case kind_int32:
+        return {-2147483648LL, 2147483647LL, "a signed 32-bit integer"};
+    case kind_uint8:
+        return {0, 255, "an unsigned 8-bit integer"};
+    case kind_uint16:
+        return {0, 65535, "an unsigned 16-bit integer"};
+    case kind_uint32:
+        return {0, 4294967295LL, "an unsigned 32-bit integer"};
+    default:
+        return {0, 0, "an unsigned 64-bit integer"};
+    }
+}
+
+void encode_integer(std::uint8_t kind, PyObject *value, std::span<std::byte> out, const std::string &name) {
+    const nb::object index = nb::steal(owned(PyNumber_Index(value)));
+    const integer_range range = range_of(kind);
+    if (kind == kind_uint64) {
+        const unsigned long long number = PyLong_AsUnsignedLongLong(index.ptr());
+        if (number == static_cast<unsigned long long>(-1) && PyErr_Occurred()) {
+            if (!PyErr_ExceptionMatches(PyExc_OverflowError))
+                throw nb::python_error();
+            PyErr_Clear();
+            does_not_fit(name, range.holds);
+        }
+        const std::uint64_t stored = number;
+        std::memcpy(out.data(), &stored, 8);
+        return;
+    }
+    int overflow = 0;
+    const long long number = PyLong_AsLongLongAndOverflow(index.ptr(), &overflow);
+    if (number == -1 && overflow == 0 && PyErr_Occurred())
+        throw nb::python_error();
+    if (overflow != 0 || number < range.low || number > range.high)
+        does_not_fit(name, range.holds);
+    // Little-endian, so the low bytes of the 64-bit value are the value at its width.
+    const auto stored = static_cast<std::uint64_t>(number);
+    std::memcpy(out.data(), &stored, out.size());
+}
+
+double real_of(PyObject *value, const std::string &name, const char *holds) {
+    const double number = PyFloat_AsDouble(value);
+    if (number == -1.0 && PyErr_Occurred()) {
+        if (!PyErr_ExceptionMatches(PyExc_OverflowError))
+            throw nb::python_error();
+        PyErr_Clear();
+        does_not_fit(name, holds);
+    }
+    return number;
+}
+
+// value's real and imaginary parts; a value that is not a complex, float or int is converted by complex().
+std::complex<double> complex_of(PyObject *value, const std::string &name, const char *holds) {
+    nb::object converted;
+    if (!PyComplex_Check(value) && !PyFloat_Check(value) && !PyLong_Check(value)) {
+        converted = nb::steal(
+            owned(PyObject_CallFunctionObjArgs(reinterpret_cast<PyObject *>(&PyComplex_Type), value, nullptr)));
+        value = converted.ptr();
+    }
+    const double re = PyComplex_RealAsDouble(value);
+    // ImagAsDouble may run Python code, which must not start with an exception set.
+    const double im = PyErr_Occurred() ? 0.0 : PyComplex_ImagAsDouble(value);
+    if (PyErr_Occurred()) {
+        if (!PyErr_ExceptionMatches(PyExc_OverflowError))
+            throw nb::python_error();
+        PyErr_Clear();
+        does_not_fit(name, holds);
+    }
+    return {re, im};
 }
 
 [[noreturn]] void wrong_type(std::uint8_t kind, PyObject *value, const std::string &name) {
@@ -244,6 +355,40 @@ std::int64_t micros_of_day(const clock_fields &f) {
     raise(PyExc_ValueError, name + ": the stored " + what + " is not a value Python can hold");
 }
 
+// Whether value's type is numpy's attribute name, kept in slot once found; false while numpy is not
+// imported, since no such value exists then.
+bool is_numpy_type(std::atomic<PyObject *> &slot, const char *name, PyObject *value) {
+    PyObject *type = slot.load(std::memory_order_acquire);
+    if (type == nullptr) {
+        PyObject *numpy = PyImport_GetModule(numpy_name);
+        if (numpy == nullptr) {
+            if (PyErr_Occurred())
+                throw nb::python_error();
+            return false;
+        }
+        PyObject *found = PyObject_GetAttrString(numpy, name);
+        Py_DECREF(numpy);
+        if (found == nullptr)
+            throw nb::python_error();
+        // Two threads may both look it up; the one whose swap fails drops its own.
+        if (slot.compare_exchange_strong(type, found, std::memory_order_acq_rel, std::memory_order_acquire))
+            type = found;
+        else
+            Py_DECREF(found);
+    }
+    return reinterpret_cast<PyObject *>(Py_TYPE(value)) == type;
+}
+
+bool is_abc(PyObject *value, PyObject *abc) {
+    // numpy registers timedelta64 as a numbers.Real, but float() refuses it.
+    if (is_numpy_bool(value) || is_numpy_type(numpy_timedelta64, "timedelta64", value))
+        return false;
+    const int found = PyObject_IsInstance(value, abc);
+    if (found < 0)
+        throw nb::python_error();
+    return found == 1;
+}
+
 } // namespace
 
 void init() {
@@ -259,6 +404,9 @@ void init() {
     mapping_abc = nb::object(abc.attr("Mapping")).release().ptr();
     sequence_abc = nb::object(abc.attr("Sequence")).release().ptr();
     set_abc = nb::object(abc.attr("Set")).release().ptr();
+    const nb::module_ numbers = nb::module_::import_("numbers");
+    real_abc = nb::object(numbers.attr("Real")).release().ptr();
+    complex_abc = nb::object(numbers.attr("Complex")).release().ptr();
     const auto checked = [](PyObject *made) {
         if (made == nullptr)
             throw nb::python_error();
@@ -269,6 +417,7 @@ void init() {
     fold_name = checked(PyUnicode_InternFromString("fold"));
     tzinfo_name = checked(PyUnicode_InternFromString("tzinfo"));
     empty_tuple = checked(PyTuple_New(0));
+    numpy_name = checked(PyUnicode_InternFromString("numpy"));
 #ifdef Py_LIMITED_API
     const char *attrs[10] = {"year",   "month",       "day",  "hour",    "minute",
                              "second", "microsecond", "days", "seconds", "microseconds"};
@@ -281,6 +430,26 @@ void init() {
 #endif
 }
 
+bool is_numpy_bool(PyObject *value) { return is_numpy_type(numpy_bool, "bool_", value); }
+
+bool is_integer(PyObject *value) {
+    if (PyBool_Check(value))
+        return false;
+    return PyLong_Check(value) || (PyIndex_Check(value) && !is_numpy_bool(value));
+}
+
+bool is_real(PyObject *value) {
+    if (PyBool_Check(value))
+        return false;
+    return PyFloat_Check(value) || PyLong_Check(value) || is_abc(value, real_abc);
+}
+
+bool is_complex(PyObject *value) {
+    if (PyBool_Check(value))
+        return false;
+    return PyComplex_Check(value) || PyFloat_Check(value) || PyLong_Check(value) || is_abc(value, complex_abc);
+}
+
 PyObject *mapping() { return mapping_abc; }
 PyObject *sequence() { return sequence_abc; }
 PyObject *set() { return set_abc; }
@@ -288,7 +457,7 @@ PyObject *set() { return set_abc; }
 bool accepts(std::uint8_t kind, PyObject *value) {
     switch (kind) {
     case kind_complex:
-        return PyComplex_Check(value) || PyFloat_Check(value) || (PyLong_Check(value) && !PyBool_Check(value));
+        return is_complex(value);
     case kind_date:
         return instance(value, date_type) && !instance(value, datetime_type);
     case kind_time:
@@ -301,27 +470,70 @@ bool accepts(std::uint8_t kind, PyObject *value) {
         return instance(value, uuid_type);
     case kind_decimal:
         return instance(value, decimal_type);
+    case kind_int8:
+    case kind_int16:
+    case kind_int32:
+    case kind_uint8:
+    case kind_uint16:
+    case kind_uint32:
+    case kind_uint64:
+        return is_integer(value);
+    case kind_float16:
+    case kind_float32:
+        return is_real(value);
+    case kind_complex64:
+        return is_complex(value);
+    case kind_datetime64:
+        return is_numpy_type(numpy_datetime64, "datetime64", value);
     default:
         return false;
     }
 }
 
 void encode(std::uint8_t kind, PyObject *value, std::span<std::byte> out, const std::string &name) {
+    if (kind == kind_datetime64) {
+        // The field's write conversion has turned the datetime64 into its nanoseconds.
+        int overflow = 0;
+        const long long ns = PyLong_Check(value) ? PyLong_AsLongLongAndOverflow(value, &overflow) : 0;
+        if (!PyLong_Check(value))
+            wrong_type(kind, value, name);
+        if (ns == -1 && overflow == 0 && PyErr_Occurred())
+            throw nb::python_error();
+        if (overflow != 0)
+            does_not_fit(name, "nanoseconds in a signed 64-bit integer");
+        const std::int64_t stored = ns;
+        std::memcpy(out.data(), &stored, 8);
+        return;
+    }
     if (!accepts(kind, value))
         wrong_type(kind, value, name);
     status rc = status::ok;
     switch (kind) {
-    case kind_complex: {
-        const double re = PyComplex_RealAsDouble(value);
-        // ImagAsDouble may run Python code, which must not start with an exception set.
-        const double im = PyErr_Occurred() ? 0.0 : PyComplex_ImagAsDouble(value);
-        if (PyErr_Occurred()) {
-            if (!PyErr_ExceptionMatches(PyExc_OverflowError))
-                throw nb::python_error();
-            PyErr_Clear();
-            raise(PyExc_OverflowError, name + " holds two 64-bit floats; the value does not fit");
-        }
-        rc = encode_complex({re, im}, out);
+    case kind_complex:
+        rc = encode_complex(complex_of(value, name, "two 64-bit floats"), out);
+        break;
+    case kind_int8:
+    case kind_int16:
+    case kind_int32:
+    case kind_uint8:
+    case kind_uint16:
+    case kind_uint32:
+    case kind_uint64:
+        encode_integer(kind, value, out, name);
+        break;
+    case kind_float16:
+        if (encode_float16(real_of(value, name, "a 16-bit float"), out) == status::range)
+            does_not_fit(name, "a 16-bit float");
+        break;
+    case kind_float32:
+        if (encode_float32(real_of(value, name, "a 32-bit float"), out) == status::range)
+            does_not_fit(name, "a 32-bit float");
+        break;
+    case kind_complex64: {
+        const std::complex<double> z = complex_of(value, name, "two 32-bit floats");
+        if (encode_float32(z.real(), out.first(4)) == status::range ||
+            encode_float32(z.imag(), out.subspan(4)) == status::range)
+            does_not_fit(name, "two 32-bit floats");
         break;
     }
     case kind_date: {
@@ -388,6 +600,28 @@ PyObject *decode(std::uint8_t kind, std::span<const std::byte> bytes, const std:
             const auto z = decode_complex(bytes);
             return PyComplex_FromDoubles(z->real(), z->imag());
         }
+        case kind_int8:
+            return PyLong_FromLong(detail::load<std::int8_t>(bytes, 0));
+        case kind_int16:
+            return PyLong_FromLong(detail::load<std::int16_t>(bytes, 0));
+        case kind_int32:
+            return PyLong_FromLong(detail::load<std::int32_t>(bytes, 0));
+        case kind_uint8:
+            return PyLong_FromUnsignedLong(detail::load<std::uint8_t>(bytes, 0));
+        case kind_uint16:
+            return PyLong_FromUnsignedLong(detail::load<std::uint16_t>(bytes, 0));
+        case kind_uint32:
+            return PyLong_FromUnsignedLong(detail::load<std::uint32_t>(bytes, 0));
+        case kind_uint64:
+            return PyLong_FromUnsignedLongLong(detail::load<std::uint64_t>(bytes, 0));
+        case kind_datetime64:
+            return PyLong_FromLongLong(detail::load<std::int64_t>(bytes, 0));
+        case kind_float16:
+            return PyFloat_FromDouble(*decode_float16(bytes));
+        case kind_float32:
+            return PyFloat_FromDouble(*decode_float32(bytes));
+        case kind_complex64:
+            return PyComplex_FromDoubles(*decode_float32(bytes.first(4)), *decode_float32(bytes.subspan(4)));
         case kind_date: {
             const auto day = decode_date(bytes);
             if (!day)

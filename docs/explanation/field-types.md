@@ -26,6 +26,9 @@ numbers: "numbers and text" {
   "str \"été\", capacity 8": "05 00 00 00 | C3 A9 74 C3 A9 | 3 unused"
   "bytes or bytearray b\"abc\"": "03 00 00 00 | 61 62 63 | unused"
   "Decimal(\"1.50\")": "04 00 00 00 | 31 2E 35 30, the text"
+  "numpy.uint16 1200": "B0 04"
+  "numpy.float32 1.5": "00 00 C0 3F"
+  "numpy.datetime64 1970-01-01T00:00:01": "00 CA 9A 3B 00 00 00 00, nanoseconds"
 }
 times: "dates and times" {
   shape: sql_table
@@ -121,6 +124,27 @@ comes before `int`, and `float | int` keeps `3` an `int`. Two members that
 take values of the same class, such as `list[int] | list[str]`, are refused
 with `TypeError` when you define the class, because the box couldn't tell
 which one a stored value belongs to.
+
+A `numpy` number whose class is no member's class goes to the first member
+of its own kind of number, so `numpy.int64(5)` written to `float | int` is
+stored through the `int` member and reads back as `5`. If that member can't
+hold the value, you get an `OverflowError`; the box doesn't try the next
+member.
+
+## numpy numbers
+
+An `int`, `float`, `complex` or `bool` field also takes `numpy`'s scalars,
+and reads
+back the type it declares, so `numpy.uint16(7)` written to an `int` field
+reads back as the `int` 7. A field can declare a `numpy` type too: the
+fixed-width integers from `int8` to `uint64`, `float16`, `float32`,
+`complex64` and `datetime64` each take the bytes of their width, and read
+back as that `numpy` type. `numpy.int64`, `numpy.float64`,
+`numpy.complex128` and `numpy.bool_` store the same bytes as `int`,
+`float`, `complex` and `bool`, so two classes with the same
+[identity](glossary.md#identity), one declaring `int` and the other
+`numpy.int64`, attach to the same box, and each reads its own type. [How to store numpy numbers](../how-to/store-numpy-numbers.md) shows
+each of them.
 
 ## When a field counts as changed
 

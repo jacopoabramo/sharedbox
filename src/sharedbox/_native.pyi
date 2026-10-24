@@ -335,6 +335,9 @@ class Types:
         info: Mapping[int, tuple[object, ...]],
         bytearrays: Sequence[tuple[int, int]],
         reusable: Sequence[int] = (),
+        converts: Sequence[
+            tuple[int, int, Callable[[Any], Any] | None, Callable[[Any], Any] | None]
+        ] = (),
     ) -> None: ...
     @property
     def table(self) -> bytes:

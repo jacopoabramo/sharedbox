@@ -21,12 +21,11 @@ extern "C" const char *smoke_create(void) {
         t.pad();
         return t;
     }();
-    const sharedbox::field_spec fields[4] = {{0, 8, sharedbox::kind_int},
-                                             {8, 16, sharedbox::kind_datetime},
-                                             {24, 16, sharedbox::kind_complex},
-                                             {40, 0, sharedbox::kind_enum}};
+    const sharedbox::field_spec fields[6] = {{0, 8, sharedbox::kind_int},       {8, 16, sharedbox::kind_datetime},
+                                             {24, 16, sharedbox::kind_complex}, {40, 0, sharedbox::kind_enum},
+                                             {48, 2, sharedbox::kind_float16},  {52, 4, sharedbox::kind_float32}};
     box_name = unique("c-smoke");
-    auto made = sharedbox::handle::create(box_name, fields, 48, 0x5EED, 4, {}, types.span());
+    auto made = sharedbox::handle::create(box_name, fields, 56, 0x5EED, 4, {}, types.span());
     if (!made)
         return nullptr;
     box.emplace(std::move(*made));

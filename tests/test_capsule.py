@@ -9,6 +9,7 @@ import subprocess
 import sys
 from pathlib import Path
 
+import numpy as np
 import pytest
 
 import sharedbox
@@ -105,6 +106,12 @@ def consumer(tmp_path_factory: pytest.TempPathFactory) -> ctypes.CDLL:
         ctypes.c_uint16,
         ctypes.POINTER(ctypes.c_uint16),
     ]
+    library.consumer_read_float32.restype = ctypes.c_int
+    library.consumer_read_float32.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_uint16,
+        ctypes.POINTER(ctypes.c_float),
+    ]
     library.consumer_release.restype = None
     library.consumer_release.argtypes = [ctypes.c_void_p]
     return library
@@ -193,6 +200,28 @@ def test_a_c_library_keeps_the_box_after_close_and_unlink(
     assert consumer.consumer_read_int(taken, count, ctypes.byref(value)) == 0
     assert value.value == 9
     consumer.consumer_release(taken)
+
+
+class Weighing(SharedBox):
+    grams: np.float32 = np.float32(1.5)
+
+
+def test_a_c_library_reads_a_float32(unique_name: str, consumer: ctypes.CDLL) -> None:
+    """Read a float32 field from C through sbx_read_float32."""
+    value = ctypes.c_float()
+    with Weighing.create(unique_name) as box:
+        capsule = box.__sharedbox_box__()
+        taken = consumer.consumer_take(
+            get_pointer(capsule, b"sharedbox_box"), Weighing.__layout__.schema_hash
+        )
+        assert taken
+        assert set_name(capsule, USED_NAME) == 0
+        try:
+            assert consumer.consumer_read_float32(taken, 0, ctypes.byref(value)) == 0
+        finally:
+            consumer.consumer_release(taken)
+    assert value.value == 1.5
+    Weighing.unlink(unique_name)
 
 
 class Level(enum.Enum):

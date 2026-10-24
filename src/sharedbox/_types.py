@@ -44,6 +44,8 @@ from ._arrays import (
 )
 
 if TYPE_CHECKING:
+    from collections.abc import Callable
+
     from ._box import SharedBox
 
 READ_ONLY: Final[Any] = getattr(typing, "ReadOnly", None)
@@ -65,6 +67,17 @@ CODES: Final[dict[str, int]] = {
     "timedelta": 10,
     "uuid": 11,
     "decimal": 12,
+    "int8": 13,
+    "int16": 14,
+    "int32": 15,
+    "uint8": 16,
+    "uint16": 17,
+    "uint32": 18,
+    "uint64": 19,
+    "float16": 20,
+    "float32": 21,
+    "complex64": 22,
+    "datetime64": 23,
     "enum": 64,
     "flag": 65,
     "literal": 66,
@@ -79,7 +92,9 @@ CODES: Final[dict[str, int]] = {
 }
 PREFIXED: Final[frozenset[str]] = frozenset({"str", "bytes", "decimal"})
 SUPPORTED: Final[str] = (
-    "bool, int, float, complex, Annotated[str | bytes | bytearray | Decimal, Capacity(n)], "
+    "bool, int, float, complex, a numpy scalar type: bool_, int8 to int64, uint8 to uint64, "
+    "float16 to float64, complex64, complex128 or datetime64, "
+    "Annotated[str | bytes | bytearray | Decimal, Capacity(n)], "
     "date, time, datetime, timedelta, UUID, an Enum or Flag, a Literal, X | None, a union, "
     "a tuple, a NamedTuple, a dataclass, a TypedDict, an attrs class, a msgspec Struct, "
     "Annotated[list | set | frozenset | dict | tuple[T, ...], Capacity(n)] and their "
@@ -153,6 +168,10 @@ class TypeSpec:
     """A bytes value read back as `bytearray`."""
     reusable: bool = False
     """Whether a value read back cannot be changed, so a later read may return it again."""
+    read_as: Callable[[Any], Any] | None = None
+    """Called on each value read back, to give the declared type."""
+    write_as: Callable[[Any], Any] | None = None
+    """Called on each value before it is stored, to give one the kind takes."""
 
     @property
     def code(self) -> int:
@@ -196,6 +215,24 @@ SCALARS: Final[dict[type, TypeSpec]] = {
     datetime.timedelta: fixed("timedelta", 12, 4, datetime.timedelta),
     uuid.UUID: fixed("uuid", 16, 1, uuid.UUID),
 }
+NUMPY_SCALARS: Final[dict[str, tuple[str, int, int, str]]] = {
+    "bool": ("bool", 1, 1, "bool:1"),
+    "int64": ("int", 8, 8, "int:8"),
+    "float64": ("float", 8, 8, "float:8"),
+    "complex128": ("complex", 16, 8, "complex"),
+    "int8": ("int8", 1, 1, "int8"),
+    "int16": ("int16", 2, 2, "int16"),
+    "int32": ("int32", 4, 4, "int32"),
+    "uint8": ("uint8", 1, 1, "uint8"),
+    "uint16": ("uint16", 2, 2, "uint16"),
+    "uint32": ("uint32", 4, 4, "uint32"),
+    "uint64": ("uint64", 8, 8, "uint64"),
+    "float16": ("float16", 2, 2, "float16"),
+    "float32": ("float32", 4, 4, "float32"),
+    "complex64": ("complex64", 8, 4, "complex64"),
+    "datetime64": ("datetime64", 8, 8, "datetime64"),
+}
+"""A numpy scalar type's dtype name -> its kind, size, alignment and schema text."""
 TEXT: Final[dict[type, str]] = {
     str: "str",
     bytes: "bytes",
@@ -219,6 +256,75 @@ DICTS: Final[dict[Any, type]] = {
     abc.Mapping: dict,
     abc.MutableMapping: dict,
 }
+
+
+def numpy_spec(hint: Any) -> TypeSpec | None:
+    """Return how values of the numpy scalar type `hint` are stored, or None if it is not one."""
+    if not isinstance(hint, type) or hint.__module__ != "numpy":
+        return None
+    found = NUMPY_SCALARS.get(dtype_name(hint))
+    if found is None:
+        return None
+    kind, size, alignment, text = found
+    timed = kind == "datetime64"
+    return TypeSpec(
+        kind,
+        size,
+        alignment,
+        text,
+        match=(hint,),
+        exact=hint,
+        reusable=True,
+        read_as=(lambda ns: hint(ns, "ns")) if timed else hint,
+        write_as=datetime64_ns if timed else None,
+    )
+
+
+NS_PER_UNIT: Final[dict[str, int]] = {
+    "W": 7 * 86_400 * 10**9,
+    "D": 86_400 * 10**9,
+    "h": 3_600 * 10**9,
+    "m": 60 * 10**9,
+    "s": 10**9,
+    "ms": 10**6,
+    "us": 10**3,
+    "ns": 1,
+}
+UNITS_PER_NS: Final[dict[str, int]] = {"ps": 10**3, "fs": 10**6, "as": 10**9}
+NAT: Final[int] = -(2**63)
+
+
+def datetime64_ns(value: Any) -> int:
+    """Return the nanoseconds since 1970-01-01T00:00 of the numpy datetime64 `value`, `-2**63` for NaT.
+
+    Raises
+    ------
+    TypeError
+        If `value` is not a numpy datetime64.
+    OverflowError
+        If `value` is before 1678 or after 2262, which nanoseconds in 64 bits cannot hold.
+    """
+    numpy = sys.modules.get("numpy")
+    if numpy is None or not isinstance(value, numpy.datetime64):
+        raise TypeError(f"expects a numpy.datetime64, got {type(value).__name__}")
+    if numpy.isnat(value):
+        return NAT
+    unit, step = numpy.datetime_data(value.dtype)
+    count = int(value.astype(numpy.int64)) * step
+    if unit in ("Y", "M"):
+        # Years and months have no fixed length, so they go through days, which numpy computes in 64 bits.
+        if abs(count) > (1000 if unit == "Y" else 12_000):
+            raise OverflowError(f"holds times from 1678 to 2262; {value} does not fit")
+        ns = int(value.astype("datetime64[D]").astype(numpy.int64)) * NS_PER_UNIT["D"]
+    elif unit in UNITS_PER_NS:
+        ns = count // UNITS_PER_NS[unit]
+    elif unit in NS_PER_UNIT:
+        ns = count * NS_PER_UNIT[unit]
+    else:
+        raise TypeError(f"expects a numpy.datetime64 with a unit, got {value!r}")
+    if not NAT < ns < -NAT:
+        raise OverflowError(f"holds times from 1678 to 2262; {value} does not fit")
+    return ns
 
 
 def unsupported(where: str, hint: object) -> TypeError:
@@ -531,6 +637,8 @@ def dispatch(
         raise TypeError(f"{where}: Capacity does not apply to {hint!r}")
     if isinstance(hint, type) and hint in SCALARS:
         return SCALARS[hint]
+    if (spec := numpy_spec(hint)) is not None:
+        return spec
     if isinstance(hint, type) and issubclass(hint, enum.Flag):
         return flag_spec(hint, where)
     if isinstance(hint, type) and issubclass(hint, enum.Enum):
@@ -1048,7 +1156,7 @@ def collection_spec(
                 f"{where}: an array can be a field or a record member, not a collection element"
             )
     slots = round_up(4, a)
-    size = slots + capacity * stride
+    size = round_up(slots + capacity * stride, a)
     if size >= 1 << 32:
         raise TypeError(
             f"{where}: {capacity} elements take {size} bytes; a record holds less than 4 GiB"
@@ -1083,6 +1191,9 @@ class Table:
         self.data = bytearray()
         self.info: dict[int, tuple[Any, ...]] = {}
         self.bytearrays: list[tuple[int, int]] = []
+        self.converts: list[
+            tuple[int, int, Callable[[Any], Any] | None, Callable[[Any], Any] | None]
+        ] = []
 
     def entry(self, spec: TypeSpec, offset: int) -> bytes:
         """Return the 8-byte entry of a member at `offset`, writing its description first if it has one."""
@@ -1107,5 +1218,10 @@ class Table:
         self.info[at] = spec.info
         self.bytearrays += [
             (at, i) for i, m in enumerate(spec.members) if m.type.bytearray
+        ]
+        self.converts += [
+            (at, i, m.type.read_as, m.type.write_as)
+            for i, m in enumerate(spec.members)
+            if m.type.read_as is not None or m.type.write_as is not None
         ]
         return at

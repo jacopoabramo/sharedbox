@@ -1,4 +1,5 @@
 #include "codec.hpp"
+#include "scalars.hpp"
 #include "types.hpp"
 
 #include <nanobind/nanobind.h>
@@ -69,13 +70,25 @@ std::span<const std::byte> encode(const FieldDesc &field, const std::string &nam
     std::size_t size = 0;
     switch (field.kind) {
     case FieldKind::Bool: {
-        if (!PyBool_Check(value))
+        if (PyBool_Check(value))
+            return {&bool_bytes[value == Py_True ? 1 : 0], 1};
+        if (!scalars::is_numpy_bool(value))
             goto wrong_type;
-        return {&bool_bytes[value == Py_True ? 1 : 0], 1};
+        const int truth = PyObject_IsTrue(value);
+        if (truth < 0)
+            throw nb::python_error();
+        return {&bool_bytes[truth], 1};
     }
     case FieldKind::Int: {
-        if (PyBool_Check(value) || !PyLong_Check(value))
-            goto wrong_type;
+        nb::object index;
+        if (PyBool_Check(value) || !PyLong_Check(value)) {
+            if (!scalars::is_integer(value))
+                goto wrong_type;
+            index = nb::steal(PyNumber_Index(value));
+            if (!index.is_valid())
+                throw nb::python_error();
+            value = index.ptr();
+        }
         int overflow = 0;
         long long number = PyLong_AsLongLongAndOverflow(value, &overflow);
         if (overflow != 0)
@@ -86,7 +99,7 @@ std::span<const std::byte> encode(const FieldDesc &field, const std::string &nam
         return {buffer.small, 8};
     }
     case FieldKind::Float: {
-        if (PyBool_Check(value) || !(PyFloat_Check(value) || PyLong_Check(value)))
+        if ((PyBool_Check(value) || !(PyFloat_Check(value) || PyLong_Check(value))) && !scalars::is_real(value))
             goto wrong_type;
         double number = PyFloat_AsDouble(value);
         if (number == -1.0 && PyErr_Occurred()) {

@@ -9,10 +9,13 @@
 #include <algorithm>
 #include <array>
 #include <chrono>
+#include <cmath>
 #include <cstring>
+#include <limits>
 #include <memory>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 using namespace sharedbox;
@@ -234,4 +237,31 @@ TEST_CASE("large copies run the wait hooks once around themselves") {
     CHECK(std::memcmp(record.data(), bytes.data(), size) == 0);
     CHECK((hooks_before == 1 && hooks_after == 1));
     static_cast<void>(unlink(name));
+}
+
+TEST_CASE("float16 values encode as numpy rounds them") {
+    const std::pair<double, std::uint16_t> cases[] = {{0.1, 0x2E66},     {65519.99, 0x7BFF}, {0x1p-24, 0x0001},
+                                                      {0x1p-25, 0x0000}, {0x3p-26, 0x0001},  {-0.0, 0x8000},
+                                                      {1.0 / 3, 0x3555}, {0x1p-14, 0x0400}};
+    for (const auto &[value, bits] : cases) {
+        std::array<std::byte, 2> out{};
+        REQUIRE(encode_float16(value, out) == status::ok);
+        CHECK(detail::load<std::uint16_t>(out, 0) == bits);
+    }
+}
+
+TEST_CASE("a finite value past float16 or float32 range is refused") {
+    std::array<std::byte, 2> half{};
+    std::array<std::byte, 4> single{};
+    CHECK(encode_float16(65520.0, half) == status::range);
+    CHECK(encode_float16(-1e300, half) == status::range);
+    // volatile, or MSVC folds the call and warns about the float cast the check skips.
+    volatile double past_float32 = 0x1.ffffffp127;
+    CHECK(encode_float32(past_float32, single) == status::range);
+    REQUIRE(encode_float32(0x1.fffffep127, single) == status::ok);
+    CHECK(*decode_float32(single) == 0x1.fffffep127);
+    REQUIRE(encode_float16(std::numeric_limits<double>::infinity(), half) == status::ok);
+    CHECK(std::isinf(*decode_float16(half)));
+    REQUIRE(encode_float32(std::numeric_limits<double>::quiet_NaN(), single) == status::ok);
+    CHECK(std::isnan(*decode_float32(single)));
 }

@@ -58,9 +58,19 @@ bullets:
 
 Each change someone using sharedbox would notice gets a file in
 `changelog.d/`, named after the pull request and the kind of change, such as
-`61.fixed.md`. Open the pull request first, so you know its number. A
-release collects the files into [the changelog](../reference/changelog.md),
-one entry each, and links each entry to its pull request.
+`61.fixed.md`. Commit the entries with the changes, before you push. The
+pull request has no number yet, so take the newest number of a pull request
+or an issue, which share one count, and add 1:
+
+```bash
+gh pr list --state all --limit 1
+gh issue list --state all --limit 1
+```
+
+If someone else opens one first and takes that number, rename the files
+once your pull request is open, and push again. A release collects the
+files into [the changelog](../reference/changelog.md), one entry each, and
+links each entry to its pull request.
 
 | kind | use it when |
 | --- | --- |

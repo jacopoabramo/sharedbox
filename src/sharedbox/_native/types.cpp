@@ -36,6 +36,40 @@ std::string type_name(PyObject *type) {
     raise(PyExc_ValueError, where + ": the stored value is not one Python can hold");
 }
 
+enum class family { none, boolean, integer, real, complex, time };
+
+// The family of number a union value belongs to. A subclass of int, such as an IntEnum, has none, so a
+// union picks its member by the accepts order as 0.6 did.
+family value_family(PyObject *value) {
+    if (PyBool_Check(value) || scalars::is_numpy_bool(value))
+        return family::boolean;
+    if (PyLong_Check(value) && !PyLong_CheckExact(value))
+        return family::none;
+    if (scalars::is_integer(value))
+        return family::integer;
+    if (scalars::is_real(value))
+        return family::real;
+    if (scalars::is_complex(value))
+        return family::complex;
+    if (scalars::accepts(kind_datetime64, value))
+        return family::time;
+    return family::none;
+}
+
+family kind_family(std::uint32_t kind) {
+    if (kind == kind_bool)
+        return family::boolean;
+    if (kind == kind_int || (kind >= kind_int8 && kind <= kind_uint64))
+        return family::integer;
+    if (kind == kind_float || kind == kind_float16 || kind == kind_float32)
+        return family::real;
+    if (kind == kind_complex || kind == kind_complex64)
+        return family::complex;
+    if (kind == kind_datetime64)
+        return family::time;
+    return family::none;
+}
+
 bool instance(PyObject *value, PyObject *type) {
     const int found = PyObject_IsInstance(value, type);
     if (found < 0)
@@ -228,7 +262,7 @@ const Types &need(const Types *types, std::uint32_t index) {
 Types::Types(const std::vector<std::tuple<std::uint32_t, std::uint32_t, std::uint32_t>> &fields,
              std::vector<std::string> labels, std::string table, const nb::dict &info,
              const std::vector<std::pair<std::int64_t, std::uint32_t>> &bytearrays,
-             const std::vector<std::uint32_t> &reusable)
+             const std::vector<std::uint32_t> &reusable, const std::vector<Convert> &converts)
     : labels_(std::move(labels)), table_(std::move(table)) {
     check_names(labels_, fields.size());
     std::vector<std::uint32_t> entries;
@@ -255,19 +289,40 @@ Types::Types(const std::vector<std::tuple<std::uint32_t, std::uint32_t, std::uin
         std::memcpy(&kind, bytes + node.at, 1);
         prepare(n, kind, std::move(item));
     }
+    const auto node_at = [&](std::int64_t offset, const char *list) {
+        for (std::uint32_t n = 0; n < tree_.node_count(); ++n)
+            if (tree_.node(n).at == static_cast<std::uint64_t>(offset))
+                return n;
+        throw std::invalid_argument(std::string(list) + " names no description at offset " +
+                                    std::to_string(offset));
+    };
+    via_types_.resize(fields.size());
     for (const auto &[offset, member] : bytearrays) {
-        std::uint32_t container = field_container;
-        if (offset >= 0) {
-            container = UINT32_MAX - 1;
-            for (std::uint32_t n = 0; n < tree_.node_count(); ++n)
-                if (tree_.node(n).at == static_cast<std::uint64_t>(offset))
-                    container = n;
-            if (container == UINT32_MAX - 1)
-                throw std::invalid_argument("bytearrays names no description at offset " + std::to_string(offset));
+        const std::uint32_t container = offset >= 0 ? node_at(offset, "bytearrays") : field_container;
+        if (offset < 0) {
+            check_index(member, fields.size());
+            via_types_[member] = true;
         }
         bytearrays_.push_back(bytearray_key(container, member));
     }
     std::sort(bytearrays_.begin(), bytearrays_.end());
+    for (const auto &[offset, member, read_as, write_as] : converts) {
+        const detail::type_ref *t = nullptr;
+        if (offset < 0) {
+            check_index(member, fields.size());
+            via_types_[member] = true;
+            t = &tree_.field(static_cast<std::uint16_t>(member));
+        } else {
+            const detail::type_node &node = tree_.node(node_at(offset, "converts"));
+            if (member >= node.count)
+                throw std::invalid_argument("converts names a member past its description's count");
+            t = &tree_.member(node.members + member).type;
+        }
+        // Only a fixed-size kind above ref is always encoded here, so only it can take a write conversion.
+        if (!write_as.is_none() && (t->kind <= kind_ref || detail::fixed_capacity(t->kind) == 0))
+            throw std::invalid_argument("a write conversion needs a fixed-size kind above ref");
+        conversions_[t] = {read_as, write_as};
+    }
     reusable_.resize(fields.size());
     for (const std::uint32_t index : reusable) {
         check_index(index, fields.size());
@@ -375,17 +430,37 @@ void Types::prepare(std::uint32_t node, std::uint8_t kind, nb::object info) {
 int Types::traverse(visitproc visit, void *arg) const {
     for (const NodeInfo &n : nodes_)
         Py_VISIT(n.info.ptr());
+    for (const auto &[t, c] : conversions_) {
+        Py_VISIT(c.read_as.ptr());
+        Py_VISIT(c.write_as.ptr());
+    }
     return 0;
 }
 
 void Types::clear() {
     for (NodeInfo &n : nodes_)
         n = NodeInfo{};
+    conversions_.clear();
+}
+
+nb::object Types::through(const nb::object &f, nb::object value) {
+    if (f.is_none())
+        return value;
+    PyObject *args[1] = {value.ptr()};
+    PyObject *made = PyObject_Vectorcall(f.ptr(), args, 1, nullptr);
+    if (made == nullptr)
+        throw nb::python_error();
+    return nb::steal(made);
 }
 
 std::span<const std::byte> Types::encode(std::uint32_t index, PyObject *value, EncodeBuffer &buffer) const {
     const detail::type_ref &t = field(index);
     const std::string &name = labels_[index];
+    if (const Conversion *c = conversion(t); c != nullptr && !c->write_as.is_none()) {
+        std::byte *out = buffer.reserve(t.size);
+        encode_into(t, value, out, {name});
+        return {out, t.size};
+    }
     if (t.kind <= kind_ref)
         return sharedbox::encode(desc_of(t), name, value, buffer);
     if (t.kind == kind_decimal) {
@@ -484,12 +559,16 @@ nb::object Types::decode(std::uint32_t index, std::span<const std::byte> bytes,
             sharedbox::decode(desc_of(t), reinterpret_cast<const char *>(bytes.data()), bytes.size());
         if (value == nullptr)
             throw nb::python_error();
+        if (const Conversion *c = conversion(t))
+            return through(c->read_as, nb::steal(value));
         return nb::steal(value);
     }
     if (t.kind == kind_decimal) {
         PyObject *value = scalars::decode(kind_decimal, bytes, name);
         if (value == nullptr)
             throw nb::python_error();
+        if (const Conversion *c = conversion(t))
+            return through(c->read_as, nb::steal(value));
         return nb::steal(value);
     }
     return decode_from(t, bytes.data(), field_container, index, {name});
@@ -524,6 +603,18 @@ std::size_t Types::encode_collection(const detail::type_ref &t, PyObject *value,
 }
 
 void Types::encode_into(const detail::type_ref &t, PyObject *value, std::byte *out, const Where &where) const {
+    nb::object converted;
+    if (const Conversion *c = conversion(t); c != nullptr && !c->write_as.is_none()) {
+        try {
+            converted = through(c->write_as, nb::borrow(value));
+        } catch (nb::python_error &error) {
+            // The conversion's message starts with a verb; the field's name goes in front of it.
+            if (!error.matches(PyExc_TypeError) && !error.matches(PyExc_OverflowError))
+                throw;
+            raise(error.type().ptr(), where.name + " " + nb::str(error.value()).c_str());
+        }
+        value = converted.ptr();
+    }
     if (t.kind <= kind_bytes) {
         EncodeBuffer scratch;
         const std::span<const std::byte> bytes = sharedbox::encode(desc_of(t), where.name, value, scratch);
@@ -535,7 +626,7 @@ void Types::encode_into(const detail::type_ref &t, PyObject *value, std::byte *o
             std::memcpy(out, bytes.data(), bytes.size());
         return;
     }
-    if (t.kind >= kind_complex && t.kind <= kind_uuid) {
+    if ((t.kind >= kind_complex && t.kind <= kind_uuid) || (t.kind >= kind_int8 && t.kind <= kind_datetime64)) {
         scalars::encode(t.kind, value, {out, t.size}, where.name);
         return;
     }
@@ -595,6 +686,16 @@ void Types::encode_into(const detail::type_ref &t, PyObject *value, std::byte *o
                 chosen = tag;
                 break;
             }
+        // A number goes to the first member of its own family, which raises OverflowError if it does not
+        // fit, rather than to a wider member of another family.
+        if (chosen < 0) {
+            const family f = value_family(value);
+            for (std::uint32_t tag = 0; f != family::none && tag < node.count; ++tag)
+                if (kind_family(tree_.member(node.members + tag).type.kind) == f) {
+                    chosen = static_cast<int>(tag);
+                    break;
+                }
+        }
         for (std::size_t k = 0; chosen < 0 && k < n.order.size(); ++k)
             if (accepts(tree_.member(node.members + n.order[k]).type, value))
                 chosen = n.order[k];
@@ -690,6 +791,14 @@ void Types::encode_into(const detail::type_ref &t, PyObject *value, std::byte *o
 
 nb::object Types::decode_from(const detail::type_ref &t, const std::byte *data, std::uint32_t container,
                               std::uint32_t member, const Where &where) const {
+    nb::object value = decode_stored(t, data, container, member, where);
+    if (const Conversion *c = conversion(t))
+        return through(c->read_as, std::move(value));
+    return value;
+}
+
+nb::object Types::decode_stored(const detail::type_ref &t, const std::byte *data, std::uint32_t container,
+                                std::uint32_t member, const Where &where) const {
     if (t.kind <= kind_bytes) {
         std::size_t size = t.size;
         if (detail::prefixed(t.kind)) {
@@ -709,7 +818,7 @@ nb::object Types::decode_from(const detail::type_ref &t, const std::byte *data, 
             throw nb::python_error();
         return nb::steal(value);
     }
-    if (t.kind >= kind_complex && t.kind <= kind_uuid) {
+    if ((t.kind >= kind_complex && t.kind <= kind_uuid) || (t.kind >= kind_int8 && t.kind <= kind_datetime64)) {
         PyObject *value = scalars::decode(t.kind, {data, t.size}, where.name);
         if (value == nullptr)
             throw nb::python_error();
@@ -733,7 +842,7 @@ nb::object Types::decode_from(const detail::type_ref &t, const std::byte *data, 
             if (found != where.given->end())
                 return Py_NewRef(found->second);
         }
-        if (m.kind > kind_str)
+        if (m.kind > kind_str || !conversions_.empty())
             return decode_from(m, at, t.node, index, where).release().ptr();
         PyObject *value = decode_plain(m, at, where.name);
         if (value == nullptr)
@@ -1155,11 +1264,11 @@ nb::object Types::rebuild(const detail::type_ref &t, PyObject *value, std::byte 
 bool Types::accepts(const detail::type_ref &t, PyObject *value) const {
     switch (t.kind) {
     case kind_bool:
-        return PyBool_Check(value);
+        return PyBool_Check(value) || scalars::is_numpy_bool(value);
     case kind_int:
-        return PyLong_Check(value) && !PyBool_Check(value);
+        return scalars::is_integer(value);
     case kind_float:
-        return (PyFloat_Check(value) || PyLong_Check(value)) && !PyBool_Check(value);
+        return scalars::is_real(value);
     case kind_str:
         return PyUnicode_Check(value);
     case kind_bytes:
@@ -1167,7 +1276,7 @@ bool Types::accepts(const detail::type_ref &t, PyObject *value) const {
     default:
         break;
     }
-    if (t.kind >= kind_complex && t.kind <= kind_decimal)
+    if (t.kind >= kind_complex && t.kind <= kind_datetime64)
         return scalars::accepts(t.kind, value);
     const NodeInfo &n = nodes_[t.node];
     switch (t.kind) {

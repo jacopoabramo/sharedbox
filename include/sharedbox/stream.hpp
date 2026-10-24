@@ -1,4 +1,4 @@
-// stream.hpp: layout 1.0 of a stream segment, a ring that one sender writes and readers copy out of.
+// stream.hpp: layout 1.1 of a stream segment, a ring that one sender writes and readers copy out of.
 #ifndef SHAREDBOX_STREAM_HPP
 #define SHAREDBOX_STREAM_HPP
 
@@ -8,7 +8,7 @@ namespace sharedbox {
 inline namespace v3 {
 
 inline constexpr std::uint16_t stream_layout_major = 1;
-inline constexpr std::uint16_t stream_layout_minor = 0;
+inline constexpr std::uint16_t stream_layout_minor = 1;
 inline constexpr std::uint32_t stream_header_size = 256;
 inline constexpr std::uint64_t min_stream_capacity = 2;
 // Each reader and the sender hold one waiter slot.

@@ -14,6 +14,7 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <complex>
 #include <concepts>
 #include <cstddef>
@@ -21,6 +22,7 @@
 #include <cstdio>
 #include <cstring>
 #include <exception>
+#include <limits>
 #include <memory>
 #include <new>
 #include <span>
@@ -108,6 +110,17 @@ inline constexpr std::uint8_t kind_datetime = 9;
 inline constexpr std::uint8_t kind_timedelta = 10;
 inline constexpr std::uint8_t kind_uuid = 11;
 inline constexpr std::uint8_t kind_decimal = 12;
+inline constexpr std::uint8_t kind_int8 = 13;
+inline constexpr std::uint8_t kind_int16 = 14;
+inline constexpr std::uint8_t kind_int32 = 15;
+inline constexpr std::uint8_t kind_uint8 = 16;
+inline constexpr std::uint8_t kind_uint16 = 17;
+inline constexpr std::uint8_t kind_uint32 = 18;
+inline constexpr std::uint8_t kind_uint64 = 19;
+inline constexpr std::uint8_t kind_float16 = 20;
+inline constexpr std::uint8_t kind_float32 = 21;
+inline constexpr std::uint8_t kind_complex64 = 22;
+inline constexpr std::uint8_t kind_datetime64 = 23;
 // From here on a field entry's low 24 bits are the offset of the field's description, not a size.
 inline constexpr std::uint8_t first_described_kind = 64;
 inline constexpr std::uint8_t kind_enum = 64;
@@ -816,7 +829,7 @@ inline bool prefixed(std::uint32_t kind) noexcept {
 }
 
 inline bool kind_known(std::uint32_t kind) noexcept {
-    return kind <= kind_decimal || (kind >= kind_enum && kind <= kind_array);
+    return kind <= kind_datetime64 || (kind >= kind_enum && kind <= kind_array);
 }
 
 // Alignment of a fixed kind within the record; 1 for a kind this header does not know, whose alignment
@@ -829,13 +842,23 @@ inline std::uint32_t kind_alignment(std::uint32_t kind) noexcept {
     case kind_complex:
     case kind_time:
     case kind_datetime:
+    case kind_uint64:
+    case kind_datetime64:
         return 8u;
     case kind_str:
     case kind_bytes:
     case kind_decimal:
     case kind_date:
     case kind_timedelta:
+    case kind_int32:
+    case kind_uint32:
+    case kind_float32:
+    case kind_complex64:
         return 4u;
+    case kind_int16:
+    case kind_uint16:
+    case kind_float16:
+        return 2u;
     default:
         return 1u;
     }
@@ -845,9 +868,22 @@ inline std::uint32_t kind_alignment(std::uint32_t kind) noexcept {
 inline std::uint32_t fixed_capacity(std::uint32_t kind) noexcept {
     switch (kind) {
     case kind_bool:
+    case kind_int8:
+    case kind_uint8:
         return 1u;
+    case kind_int16:
+    case kind_uint16:
+    case kind_float16:
+        return 2u;
+    case kind_int32:
+    case kind_uint32:
+    case kind_float32:
+        return 4u;
     case kind_int:
     case kind_float:
+    case kind_uint64:
+    case kind_complex64:
+    case kind_datetime64:
         return 8u;
     case kind_ref:
         return sizeof(box_ref);
@@ -1317,8 +1353,8 @@ inline status type_parser::place(std::uint8_t kind, const type_head &head, type_
         node.stride = static_cast<std::uint32_t>(stride);
         node.slots = static_cast<std::uint32_t>(round_up(4, a));
         out.alignment = a;
-        return m[0].offset == node.slots && size == node.slots + std::uint64_t{node.capacity} * node.stride &&
-                       size % a == 0
+        return m[0].offset == node.slots &&
+                       size == round_up(node.slots + std::uint64_t{node.capacity} * node.stride, a)
                    ? status::ok
                    : status::corrupt;
     }
@@ -1335,8 +1371,8 @@ inline status type_parser::place(std::uint8_t kind, const type_head &head, type_
         node.stride = static_cast<std::uint32_t>(stride);
         node.slots = static_cast<std::uint32_t>(round_up(4, a));
         out.alignment = a;
-        return size == node.slots + std::uint64_t{node.capacity} * node.stride && size % a == 0 ? status::ok
-                                                                                                : status::corrupt;
+        return size == round_up(node.slots + std::uint64_t{node.capacity} * node.stride, a) ? status::ok
+                                                                                            : status::corrupt;
     }
     default:
         return status::corrupt;
@@ -2167,6 +2203,72 @@ inline bool wall_ok(std::int64_t micros, std::int16_t offset, bool naive) noexce
     detail::put(out, 0, value.real());
     detail::put(out, 8, value.imag());
     return status::ok;
+}
+
+// Rounds to nearest even straight from the double, since going through float would round twice.
+[[nodiscard]] inline status encode_float16(double value, std::span<std::byte> out) noexcept {
+    if (out.size() != 2)
+        return status::range;
+    std::uint64_t bits;
+    std::memcpy(&bits, &value, sizeof bits);
+    const auto sign = static_cast<std::uint16_t>((bits >> 48) & 0x8000u);
+    const double magnitude = std::fabs(value);
+    std::uint16_t half;
+    if (std::isnan(value))
+        half = static_cast<std::uint16_t>(sign | 0x7E00u | ((bits >> 42) & 0x3FFu));
+    else if (std::isinf(value))
+        half = static_cast<std::uint16_t>(sign | 0x7C00u);
+    else if (magnitude >= 65520.0)
+        return status::range;
+    else if (magnitude < 0x1p-14)
+        half = static_cast<std::uint16_t>(sign | static_cast<std::uint16_t>(std::nearbyint(magnitude * 0x1p24)));
+    else {
+        int exponent = 0;
+        static_cast<void>(std::frexp(magnitude, &exponent));
+        // magnitude is m * 2^(exponent - 1) with m in [1, 2); 1024 to 2048 after scaling, and 2048 carries
+        // into the exponent.
+        const auto scaled = static_cast<std::uint32_t>(std::nearbyint(std::ldexp(magnitude, 11 - exponent)));
+        half =
+            static_cast<std::uint16_t>(sign | ((static_cast<std::uint32_t>(exponent + 14) << 10) + scaled - 1024));
+    }
+    detail::put(out, 0, half);
+    return status::ok;
+}
+
+[[nodiscard]] inline result<double> decode_float16(std::span<const std::byte> bytes) noexcept {
+    if (bytes.size() != 2)
+        return unexpected(status::range);
+    const auto half = detail::load<std::uint16_t>(bytes, 0);
+    const std::uint32_t exponent = (half >> 10) & 0x1Fu;
+    const std::uint32_t mantissa = half & 0x3FFu;
+    double magnitude;
+    if (exponent == 0x1F && mantissa != 0) {
+        const std::uint64_t bits =
+            (std::uint64_t{half & 0x8000u} << 48) | 0x7FF8000000000000u | (std::uint64_t{mantissa} << 42);
+        double nan;
+        std::memcpy(&nan, &bits, sizeof nan);
+        return nan;
+    }
+    if (exponent == 0x1F)
+        magnitude = std::numeric_limits<double>::infinity();
+    else if (exponent == 0)
+        magnitude = std::ldexp(static_cast<double>(mantissa), -24);
+    else
+        magnitude = std::ldexp(static_cast<double>(mantissa + 1024), static_cast<int>(exponent) - 25);
+    return (half & 0x8000u) != 0 ? -magnitude : magnitude;
+}
+
+[[nodiscard]] inline status encode_float32(double value, std::span<std::byte> out) noexcept {
+    if (out.size() != 4 || (std::isfinite(value) && std::fabs(value) >= 0x1.ffffffp127))
+        return status::range;
+    detail::put(out, 0, static_cast<float>(value));
+    return status::ok;
+}
+
+[[nodiscard]] inline result<double> decode_float32(std::span<const std::byte> bytes) noexcept {
+    if (bytes.size() != 4)
+        return unexpected(status::range);
+    return static_cast<double>(detail::load<float>(bytes, 0));
 }
 
 [[nodiscard]] inline result<std::chrono::sys_days> decode_date(std::span<const std::byte> bytes) noexcept {

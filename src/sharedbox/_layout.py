@@ -57,6 +57,17 @@ Kind = Literal[
     "timedelta",
     "uuid",
     "decimal",
+    "int8",
+    "int16",
+    "int32",
+    "uint8",
+    "uint16",
+    "uint32",
+    "uint64",
+    "float16",
+    "float32",
+    "complex64",
+    "datetime64",
     "enum",
     "flag",
     "literal",
@@ -506,6 +517,8 @@ def build_layout(cls: type, identity: str | None = None) -> Layout:
         description = table.describe(spec) if spec.described else -1
         if spec.bytearray:
             table.bytearrays.append((-1, i))
+        if spec.read_as is not None or spec.write_as is not None:
+            table.converts.append((-1, i, spec.read_as, spec.write_as))
         specs.append(
             FieldSpec(
                 name,
@@ -531,12 +544,16 @@ def build_layout(cls: type, identity: str | None = None) -> Layout:
         bytes(table.data),
         table.info,
         table.bytearrays,
-        # A value of kind 0 to 5 costs no more to build than the check that would reuse it.
+        # A value of kind 0 to 5 costs no more to build than the check that would reuse it, unless a
+        # conversion follows.
         [
             s.index
             for s in specs
-            if s.type is not None and s.type.reusable and s.type.code > CODES["ref"]
+            if s.type is not None
+            and s.type.reusable
+            and (s.type.code > CODES["ref"] or s.type.read_as is not None)
         ],
+        table.converts,
     )
     return Layout(
         tuple(specs),

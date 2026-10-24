@@ -46,6 +46,9 @@ struct NodeInfo {
     bool as_uint16 = false;
 };
 
+/// One entry of the converts list: description offset (-1 for a field), member, read_as, write_as.
+using Convert = std::tuple<std::int64_t, std::uint32_t, nb::object, nb::object>;
+
 /// The field types of one class: the description table, parsed by sharedbox.hpp, each field's label,
 /// and what converting values needs from Python. Fixed once made.
 /// The field's container index in bytearray keys.
@@ -55,11 +58,12 @@ class Types {
 public:
     /// fields as Segment.create takes them; info maps a description's offset to its tuple; bytearrays
     /// lists (description offset, member) of each bytes member read back as bytearray, offset -1 for a
-    /// field; reusable lists the fields whose values cannot be changed once read.
+    /// field; reusable lists the fields whose values cannot be changed once read; converts lists the
+    /// callables a member's values pass through when read and before they are written, either may be None.
     Types(const std::vector<std::tuple<std::uint32_t, std::uint32_t, std::uint32_t>> &fields,
           std::vector<std::string> labels, std::string table, const nb::dict &info,
           const std::vector<std::pair<std::int64_t, std::uint32_t>> &bytearrays,
-          const std::vector<std::uint32_t> &reusable = {});
+          const std::vector<std::uint32_t> &reusable = {}, const std::vector<Convert> &converts = {});
 
     const std::string &table() const { return table_; }
     std::size_t field_count() const { return labels_.size(); }
@@ -81,6 +85,10 @@ public:
 
     /// Whether field index is a bytes field read back as bytearray.
     bool field_is_bytearray(std::uint32_t index) const { return read_as_bytearray(field_container, index); }
+    /// Whether a read of field index, of kind 0 to 5, must go through decode: a bytearray or a conversion.
+    bool field_via_types(std::uint32_t index) const noexcept {
+        return index < via_types_.size() && via_types_[index];
+    }
 
     /// Whether a read of field index may return the value an earlier read decoded.
     bool field_reusable(std::uint32_t index) const { return index < reusable_.size() && reusable_[index]; }
@@ -137,8 +145,11 @@ private:
     bool holds_array(const detail::type_ref &t) const;
     nb::object rebuild(const detail::type_ref &t, PyObject *value, std::byte *data, nb::handle owner,
                        const Where &where) const;
+    /// decode_stored, then t's read conversion.
     nb::object decode_from(const detail::type_ref &t, const std::byte *data, std::uint32_t container,
                            std::uint32_t member, const Where &where) const;
+    nb::object decode_stored(const detail::type_ref &t, const std::byte *data, std::uint32_t container,
+                             std::uint32_t member, const Where &where) const;
     /// Writes a list, set or dict value at out: its length, then its slots; returns the bytes used.
     std::size_t encode_collection(const detail::type_ref &t, PyObject *value, std::byte *out,
                                   const Where &where) const;
@@ -163,6 +174,22 @@ private:
     std::vector<NodeInfo> nodes_;
     std::vector<std::uint64_t> bytearrays_;
     std::vector<bool> reusable_;
+    std::vector<bool> via_types_;
+    /// The read and write conversions of a field or member, found by its type_ref in tree_.
+    struct Conversion {
+        nb::object read_as;
+        nb::object write_as;
+    };
+    std::unordered_map<const detail::type_ref *, Conversion> conversions_;
+    /// The conversion of t, or nullptr; one test while there are none.
+    const Conversion *conversion(const detail::type_ref &t) const {
+        if (conversions_.empty()) [[likely]]
+            return nullptr;
+        const auto found = conversions_.find(&t);
+        return found == conversions_.end() ? nullptr : &found->second;
+    }
+    /// value passed through f, or value itself when f is None.
+    static nb::object through(const nb::object &f, nb::object value);
 };
 
 } // namespace sharedbox

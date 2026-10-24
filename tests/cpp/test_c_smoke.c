@@ -37,6 +37,7 @@ int main(void) {
     {
         sbx_datetime when, back = {0, 0, 0, 0};
         double z[2] = {1.5, -2.0}, zback[2] = {0, 0};
+        float f = 0;
         uint16_t position = 0;
         uint8_t kind = 0;
         const void *desc = NULL;
@@ -56,6 +57,13 @@ int main(void) {
         ok = ok && sbx_read_position(&h, 3, &position) == SBX_OK && position == 1;
         ok = ok && sbx_write_position(&h, 3, 2, 1.0) == SBX_E_RANGE;
         ok = ok && sbx_read_complex(&h, 1, zback) == SBX_E_RANGE;
+        ok = ok && sbx_write_float16(&h, 4, 0.1, 1.0) == SBX_OK;
+        ok = ok && sbx_read_float16(&h, 4, &f) == SBX_OK && f == 0.0999755859375f;
+        ok = ok && sbx_write_float16(&h, 4, 65520.0, 1.0) == SBX_E_RANGE;
+        ok = ok && sbx_write_float32(&h, 5, 1.5, 1.0) == SBX_OK;
+        ok = ok && sbx_read_float32(&h, 5, &f) == SBX_OK && f == 1.5f;
+        ok = ok && sbx_write_float32(&h, 5, 1e300, 1.0) == SBX_E_RANGE;
+        ok = ok && sbx_read_float16(&h, 0, &f) == SBX_E_RANGE;
         /* Kind 64 is enum. Its description is an 8-byte head, the names OFF and ON with their u16
          * lengths (9 bytes), padded to 24. */
         ok = ok && sbx_field_desc(&h, 3, &kind, &desc, &desc_len) == SBX_OK;

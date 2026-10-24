@@ -267,3 +267,54 @@ TEST_CASE("create refuses a table that does not check") {
     REQUIRE_FALSE(created);
     CHECK(created.error().code == status::range);
 }
+
+TEST_CASE("a list whose slots end before its alignment is padded to it") {
+    for (const auto &[size, expected] :
+         {std::pair{8u, status::ok}, {6u, status::corrupt}, {12u, status::corrupt}}) {
+        table_builder t;
+        t.head(kind_list, 1, size);
+        t.put(std::uint32_t{2});
+        t.entry(4, kind_bool, 1);
+        t.pad();
+        CHECK(parse(t, entry_of(kind_list, 0)) == expected);
+    }
+}
+
+namespace {
+
+// record { a: int8 at 0, b: uint16 at b_offset, c: float32 at 4, d: complex64 at 8, e: datetime64 at 16 }.
+table_builder new_kinds(std::uint32_t b_offset) {
+    table_builder t;
+    t.head(kind_record, 5, 24);
+    t.entry(0, kind_int8, 1);
+    t.entry(b_offset, kind_uint16, 2);
+    t.entry(4, kind_float32, 4);
+    t.entry(8, kind_complex64, 8);
+    t.entry(16, kind_datetime64, 8);
+    for (const char *name : {"a", "b", "c", "d", "e"})
+        t.name(name);
+    t.pad();
+    return t;
+}
+
+} // namespace
+
+TEST_CASE("a record holding the new kinds as members opens") {
+    const table_builder t = new_kinds(2);
+    const std::string name = unique("types-new-kinds");
+    const field_spec fields[1] = {{0, 0, kind_record}};
+    auto owner = handle::create(name, fields, 24, 1, 4, {}, t.span());
+    REQUIRE(owner.has_value());
+    auto other = handle::open(name, seconds(1.0));
+    REQUIRE(other.has_value());
+    const type_view record = other->field_type(0);
+    CHECK((record.size() == 24 && record.alignment() == 8));
+    const std::uint8_t kinds[] = {kind_int8, kind_uint16, kind_float32, kind_complex64, kind_datetime64};
+    for (std::uint16_t i = 0; i < 5; ++i)
+        CHECK(record.member(i).kind() == kinds[i]);
+    static_cast<void>(unlink(name));
+}
+
+TEST_CASE("a misaligned member of a new kind is refused") {
+    CHECK(parse(new_kinds(1), entry_of(kind_record, 0)) == status::corrupt);
+}

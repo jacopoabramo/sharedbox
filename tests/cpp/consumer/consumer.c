@@ -52,6 +52,10 @@ CONSUMER_API int consumer_read_position(const sbx_handle *h, uint16_t field, uin
     return sbx_read_position(h, field, position);
 }
 
+CONSUMER_API int consumer_read_float32(const sbx_handle *h, uint16_t field, float *out) {
+    return sbx_read_float32(h, field, out);
+}
+
 CONSUMER_API void consumer_release(sbx_handle *h) {
     sbx_release(h);
     free(h);
