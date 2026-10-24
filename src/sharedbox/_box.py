@@ -669,6 +669,10 @@ class SharedBox(metaclass=SharedBoxMeta):
                     raise TypeError(
                         f"{cls.__qualname__}.{attr}: field(shape=...) applies only to an array field"
                     )
+                if param.capacity is not None:
+                    raise TypeError(
+                        f"{cls.__qualname__}.{attr}: field(capacity=...) applies only to a field"
+                    )
                 if param.default_factory is not MISSING or not param.init:
                     raise TypeError(
                         f"{cls.__qualname__}: InitVar {attr!r} takes neither default_factory nor init=False"

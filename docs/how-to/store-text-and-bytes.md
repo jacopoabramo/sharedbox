@@ -12,7 +12,10 @@ happens when a value doesn't fit.
 
 ## 1. Declare the field with a capacity
 
-Wrap the type in `Annotated` and add a [`Capacity`][sharedbox.Capacity]:
+Wrap the type in `Annotated` and add a [`Capacity`][sharedbox.Capacity],
+as `owner` does below, or keep the annotation plain and give the capacity
+to [`field`][sharedbox.field], as `barcode` does. Both lay out the field
+the same way:
 
 ```{.python}
 --8<-- "docs/examples/store_text_and_bytes.py:declare"

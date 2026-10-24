@@ -109,6 +109,8 @@ class Capacity:
 
     It goes in the annotation, as in `Annotated[str, Capacity(32)]` or
     `Annotated[list[int], Capacity(16)]`, and allows 1 to 1048576 (1 Mi).
+    A box field can take the same number from `field(capacity=...)`
+    instead.
 
     Raises
     ------

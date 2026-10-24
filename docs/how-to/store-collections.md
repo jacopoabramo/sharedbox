@@ -20,6 +20,10 @@ the element type inside:
 --8<-- "docs/examples/store_collections.py:declare"
 ```
 
+The collection's own capacity can also go to [`field`][sharedbox.field]
+instead of the annotation, as it does for `services`, while an element's
+capacity stays on the element type.
+
 Set elements and dict keys are read back into a new set or dict, so their
 type has to be hashable, meaning Python can use it as a set element or dict
 key. A `list`, `set`, `dict`, `bytearray`, `TypedDict`
