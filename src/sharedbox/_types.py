@@ -109,6 +109,8 @@ class Capacity:
 
     It goes in the annotation, as in `Annotated[str, Capacity(32)]` or
     `Annotated[list[int], Capacity(16)]`, and allows 1 to 1048576 (1 Mi).
+    A box field can take the same number from `field(capacity=...)`
+    instead.
 
     Raises
     ------
@@ -418,8 +420,8 @@ def parse(
     sizes
         The `field(shape=...)` and the plain default of a box field, which an
         array field, or the array of an optional field, takes its sizes from
-        when the annotation has no `Shape`; None for anything that is not a
-        box field.
+        when the annotation has no `Shape`. A record member passes its
+        metadata shape and no default. None when neither is given.
 
     Raises
     ------
@@ -445,7 +447,7 @@ def parse(
         spec = dispatch(hint, extras, where, capacity, depth, path, sizes)
         holds_array = spec.kind == "optional" and spec.members[0].type.kind == "array"
         if sizes is not None and sizes[0] is not None and not holds_array:
-            raise TypeError(f"{where}: field(shape=...) applies only to an array field")
+            raise TypeError(f"{where}: a shape applies only to an array")
     if spec.described:
         deeper(depth, where)
     return spec
@@ -972,11 +974,17 @@ def record_spec(
             required.append(needed)
             items.append((key, spec))
     else:
-        for name, keyword, member in record_members(hint, hints, form, where):
+        for name, keyword, member, shape in record_members(hint, hints, form, where):
             attrs.append(name)
             keywords.append(keyword)
+            sizes = None if shape is None else (Shape(*shape).dims, MISSING)
             items.append(
-                (name, parse(member, f"{where}.{name}", depth=below, path=path))
+                (
+                    name,
+                    parse(
+                        member, f"{where}.{name}", depth=below, path=path, sizes=sizes
+                    ),
+                )
             )
     members, size, alignment = lay_out("record", items, where)
     hashable = (
@@ -1033,13 +1041,17 @@ def by_position(hint: type, keywords: list[str]) -> bool:
 
 def record_members(
     hint: type, hints: dict[str, Any], form: int, where: str
-) -> list[tuple[str, str, Any]]:
-    """Return `(attribute, keyword, annotation)` of each stored member of a dataclass, attrs class, Struct or NamedTuple."""
+) -> list[tuple[str, str, Any, Any]]:
+    """Return `(attribute, keyword, annotation, shape)` of each stored member of a dataclass, attrs class, Struct or NamedTuple.
+
+    The shape is the `"shape"` entry of a dataclass field's or attrs
+    attribute's metadata, or None.
+    """
     if form == 1:
         for name in hint._fields:  # type: ignore[attr-defined]
             if name not in hints:
                 raise TypeError(f"{where}: {hint.__qualname__}.{name} has no type")
-        return [(name, name, hints[name]) for name in hint._fields]  # type: ignore[attr-defined]
+        return [(name, name, hints[name], None) for name in hint._fields]  # type: ignore[attr-defined]
     if dataclasses.is_dataclass(hint):
         if not hint.__dataclass_params__.init:  # type: ignore[attr-defined]
             raise TypeError(
@@ -1056,7 +1068,7 @@ def record_members(
                 raise TypeError(
                     f"{where}: {hint.__qualname__}.{f.name} has init=False, so a read could not rebuild it"
                 )
-            found.append((f.name, f.name, hints[f.name]))
+            found.append((f.name, f.name, hints[f.name], f.metadata.get("shape")))
         return found
     if hasattr(hint, "__attrs_attrs__"):
         if "__init__" not in vars(hint):
@@ -1073,9 +1085,9 @@ def record_members(
             if member is None:
                 raise TypeError(f"{where}: {hint.__qualname__}.{a.name} has no type")
             keyword = getattr(a, "alias", None) or a.name.lstrip("_")
-            found.append((a.name, keyword, member))
+            found.append((a.name, keyword, member, a.metadata.get("shape")))
         return found
-    return [(name, name, hints[name]) for name in hint.__struct_fields__]  # type: ignore[attr-defined]
+    return [(name, name, hints[name], None) for name in hint.__struct_fields__]  # type: ignore[attr-defined]
 
 
 def tuple_spec(hint: Any, where: str, depth: int, path: frozenset[int]) -> TypeSpec:

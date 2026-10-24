@@ -2,6 +2,8 @@ from collections.abc import Callable
 from typing import Annotated, Any
 
 import attrs
+import numpy as np
+import numpy.typing as npt
 import pytest
 from crossproc import snapshot_in_child
 
@@ -81,3 +83,19 @@ def test_an_attrs_record_that_can_change_is_never_shared(
         assert second is not first
         assert second == STORED[name]
     Marks.unlink(unique_name)
+
+
+@attrs.frozen
+class Strip:
+    pixels: npt.NDArray[np.uint8] = attrs.field(metadata={"shape": (4,)})
+
+
+class Scanner(SharedBox):
+    strip: Strip
+
+
+def test_an_attrs_member_takes_its_array_sizes_from_metadata(unique_name: str) -> None:
+    """Store an attrs member array whose sizes come from the attribute's metadata."""
+    with Scanner.create(unique_name, Strip(np.arange(4, dtype=np.uint8))) as box:
+        assert np.array_equal(box.strip.pixels, np.arange(4, dtype=np.uint8))
+    Scanner.unlink(unique_name)

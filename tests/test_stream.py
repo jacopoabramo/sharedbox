@@ -6,7 +6,7 @@ import sys
 import threading
 import time
 import weakref
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Annotated, Any, NotRequired, TypedDict
 
 import numpy as np
@@ -78,6 +78,25 @@ def test_an_optional_array_member_crosses_a_stream(unique_name: str) -> None:
         assert full.index == 1
         assert full.scan is not None
         assert np.array_equal(full.scan, np.arange(4, dtype=np.uint8))
+
+
+@dataclass
+class Letter:
+    index: int
+    scan: npt.NDArray[np.uint8] = field(metadata={"shape": (32, 32)})
+
+
+def test_a_dataclass_member_takes_its_array_sizes_from_metadata(
+    unique_name: str,
+) -> None:
+    """Send a Letter whose scan sizes come from the dataclass field's metadata."""
+    with SharedStream.create(Letter, unique_name, capacity=2) as stream:
+        reader = stream.reader()
+        with stream.sender() as sender:
+            sender.send(Letter(1, np.full((32, 32), 7, np.uint8)))
+        (got,) = list(reader)
+        assert got.index == 1
+        assert np.array_equal(got.scan, np.full((32, 32), 7, np.uint8))
 
 
 def test_receive_into_refuses_an_optional_array(unique_name: str) -> None:

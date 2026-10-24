@@ -352,3 +352,31 @@ def test_a_record_whose_constructor_reorders_its_members_round_trips(
         box.update(tagged=Tagged(1, b=2, c=3), scaled=Scaled(a=4))
         assert (box.tagged, box.scaled) == (Tagged(1, b=2, c=3), Scaled(a=4))
     Shuffled.unlink(unique_name)
+
+
+def test_a_metadata_shape_on_a_member_that_is_no_array_is_refused() -> None:
+    """Raise TypeError for a metadata shape on an int member."""
+
+    @dataclass
+    class Counted:
+        x: int = dataclasses.field(metadata={"shape": (2,)})
+
+    with pytest.raises(TypeError, match="Box.c.x: a shape applies only to an array"):
+
+        class Box(SharedBox):
+            c: Counted
+
+
+def test_a_metadata_shape_and_an_annotated_shape_that_disagree_are_refused() -> None:
+    """Raise TypeError when a member's metadata shape and its Shape differ."""
+
+    @dataclass
+    class Scanned:
+        scan: Annotated[SupportsDLPack, Shape(2), DType("uint8")] = dataclasses.field(
+            metadata={"shape": (3,)}
+        )
+
+    with pytest.raises(TypeError, match="disagree"):
+
+        class Box(SharedBox):
+            s: Scanned

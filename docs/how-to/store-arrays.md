@@ -32,12 +32,25 @@ which two do not.
 Two things can go in the annotation as well, as `raw` shows:
 
 - A [`Shape`][sharedbox.Shape] gives the sizes too, and it is the only way
-  to give them to an array inside a record or a stream item.
+  to give them to a stream item that is an array, or to an array inside a
+  tuple, a `NamedTuple` or a `msgspec` `Struct`.
 - A [`DType`][sharedbox.DType] gives the element type. A field needs one
   when its annotation names none: a plain `numpy.ndarray`, a
   `torch.Tensor`, or [`SupportsDLPack`][sharedbox.SupportsDLPack], an array
   object of `sharedbox`'s own that any DLPack library can take. `bfloat16`
   also needs a `DType`.
+
+An array member of a dataclass or `attrs` record can take its sizes from
+its field's metadata, under the key `"shape"`, when its annotation has no
+`Shape`. A member's default array does not give them:
+
+```{.python}
+--8<-- "docs/examples/store_arrays.py:record"
+```
+
+The record works the same way as a stream item. A `NamedTuple` or a
+`msgspec` `Struct` has no metadata on its fields, so its array members keep
+the `Shape` in the annotation.
 
 A subclass that declares an inherited array field again states its sizes
 again: nothing but a plain default carries over from the base class, so

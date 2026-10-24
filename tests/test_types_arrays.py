@@ -369,7 +369,7 @@ def test_a_field_shape_that_is_not_a_sequence_is_refused() -> None:
 
 def test_a_field_shape_on_a_field_that_is_not_an_array_is_refused() -> None:
     """Check that field(shape=) on an int field raises TypeError naming the field."""
-    with pytest.raises(TypeError, match=r"Bad.x: field\(shape=\.\.\.\) applies only"):
+    with pytest.raises(TypeError, match="Bad.x: a shape applies only to an array"):
 
         class Bad(SharedBox):
             x: int = field(shape=(2,))

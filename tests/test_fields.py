@@ -799,3 +799,51 @@ def test_field_objects_compare_and_hash_by_identity() -> None:
     first, second = field(default=1), field(default=1)
     assert first != second
     assert len({first, second}) == 2
+
+
+class Van(SharedBox, identity="van"):
+    stops: list[int] = field(capacity=16, default_factory=list)
+    plate: str = field(capacity=8, default="")
+
+
+def test_field_capacity_sizes_a_field_without_annotated(unique_name: str) -> None:
+    """Store up to the capacity given to field() and hash as the Annotated form does."""
+
+    class AnnotatedVan(SharedBox, identity="van"):
+        stops: Annotated[list[int], Capacity(16)] = field(default_factory=list)
+        plate: Annotated[str, Capacity(8)] = ""
+
+    with Van.create(unique_name) as van:
+        van.stops = list(range(16))
+        van.plate = "AB123CD"
+        with pytest.raises(ValueError, match="Van.stops"):
+            van.stops = list(range(17))
+        assert (van.stops, van.plate) == (list(range(16)), "AB123CD")
+    Van.unlink(unique_name)
+    assert AnnotatedVan.__layout__.schema_hash == Van.__layout__.schema_hash
+
+
+@pytest.mark.parametrize(
+    ("annotation", "message"),
+    [
+        (Annotated[str, Capacity(4)], "more than one Capacity applies"),
+        (int, "Capacity does not apply"),
+        (Stage, "Capacity does not apply to a reference"),
+    ],
+)
+def test_field_capacity_refuses_a_second_capacity_or_a_type_without_one(
+    annotation: object, message: str
+) -> None:
+    """Raise TypeError for field(capacity=...) beside an Annotated Capacity, on an int or on a reference."""
+    with pytest.raises(TypeError, match=message):
+        type(
+            "Bad",
+            (SharedBox,),
+            {"__annotations__": {"x": annotation}, "x": field(capacity=4)},
+        )
+
+
+def test_field_capacity_is_checked_like_capacity() -> None:
+    """Raise ValueError for a capacity of 0, as Capacity(0) does."""
+    with pytest.raises(ValueError, match="capacity must be between"):
+        field(capacity=0)

@@ -1,6 +1,7 @@
 """The script of the guide "How to store arrays"."""
 
 # --8<-- [start:declare]
+import dataclasses
 from typing import Annotated
 
 import numpy as np
@@ -16,6 +17,22 @@ class Scanner(SharedBox, name="example-scanner"):
 
 
 # --8<-- [end:declare]
+
+
+# --8<-- [start:record]
+@dataclasses.dataclass
+class Page:
+    number: int
+    scan: npt.NDArray[np.uint8] = dataclasses.field(metadata={"shape": (4, 6)})
+
+
+class Binder(SharedBox, name="example-binder"):
+    page: Page
+
+
+binder = Binder(Page(1, np.zeros((4, 6), np.uint8)))
+print(binder.page.scan.shape)  # (4, 6)
+# --8<-- [end:record]
 
 # --8<-- [start:write]
 scanner = Scanner()
@@ -66,3 +83,5 @@ scanner.close()
 Scanner.unlink()
 tray.close()
 Tray.unlink()
+binder.close()
+Binder.unlink()

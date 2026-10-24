@@ -11,7 +11,7 @@ Service = Annotated[str, Capacity(8)]
 
 class Van(SharedBox, name="example-van"):
     parcels: Annotated[tuple[Tracking, ...], Capacity(8)] = ()
-    services: Annotated[frozenset[Service], Capacity(4)] = frozenset()
+    services: frozenset[Service] = field(capacity=4, default=frozenset())
     attempts: Annotated[dict[Tracking, int], Capacity(8)] = field(default_factory=dict)
 
 
