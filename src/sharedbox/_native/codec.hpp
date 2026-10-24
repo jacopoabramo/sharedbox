@@ -55,7 +55,6 @@ private:
     T *data_;
 };
 
-
 /// Room for the bytes of one encoded value: a number, a reference or a short bytes value fits in
 /// place, a longer bytes value goes on the heap. The constructor leaves the bytes uninitialised.
 struct EncodeBuffer {
