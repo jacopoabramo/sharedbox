@@ -358,7 +358,9 @@ class SharedBox(metaclass=SharedBoxMeta):
 
     | Annotation | Stored as |
     | --- | --- |
-    | `bool`, `int`, `float`, `complex` | fixed-size numbers; a `float` field takes an `int` |
+    | `bool`, `int`, `float`, `complex` | fixed-size numbers; a `float` field takes an `int`, and each takes `numpy`'s scalars of its kind |
+    | `numpy.int8` to `numpy.uint64`, `numpy.float16` to `numpy.float64`, `numpy.complex64`, `numpy.complex128`, `numpy.bool_` | numbers at their own width, read back as that `numpy` type |
+    | `numpy.datetime64` | nanoseconds since 1970, read back in `ns` |
     | `Annotated[str, Capacity(n)]`, `bytes`, `bytearray`, `Decimal` | at most `n` bytes |
     | `date`, `time`, `datetime`, `timedelta`, `UUID` | fixed-size values; times naive or with a fixed offset |
     | an `Enum`, `Flag` or `Literal` | the member's position, the bits, or the value's position |
