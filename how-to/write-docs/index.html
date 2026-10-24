@@ -3451,7 +3451,7 @@ Fix a wrong <abbr title="Application programming interface. The functions and cl
 script that the tests run, and the page includes parts of it, so the page
 shows what runs.</p>
 <ul>
-<li>The three tutorials build one script, <code>docs/tutorials/motor.py</code>.</li>
+<li>The three tutorials build one script, <code>docs/tutorials/mailbox.py</code>.</li>
 <li>Each how-to guide that shows Python has a script of its own in
   <code>docs/examples/</code>, named after the guide: <code>name_a_box.py</code> for
   <code>name-a-box.md</code>.</li>
@@ -3465,7 +3465,7 @@ collapsed block.</p>
 <p>The scripts are type checked with the rest of the code by
 <code>uv run tox -e mypy</code>, and the tests run them:</p>
 <ul>
-<li><code>tests/test_doc_tutorials.py</code> runs <code>motor.py</code> and compares what it prints
+<li><code>tests/test_doc_tutorials.py</code> runs <code>mailbox.py</code> and compares what it prints
   with the output the tutorial pages show. When you change what the script
   prints, change the pages and the test together.</li>
 <li><code>tests/test_doc_examples.py</code> runs each script in <code>docs/examples/</code>.</li>

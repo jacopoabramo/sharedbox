@@ -3190,8 +3190,8 @@
 
 <h1 id="sharing-a-record-between-processes">Sharing a record between processes<a class="headerlink" href="#sharing-a-record-between-processes" title="Permanent link">&para;</a></h1>
 <p>In this tutorial you build a small script in which two processes share one
-record: the first creates it, the second changes a value in it, and the
-first reads the change. Such a record is a <a href="../../explanation/glossary/#box">box</a>, and on the way
+record, a mailbox: the first creates it, the second plays the mail carrier
+and changes a value in it, and the first reads the change. Such a record is a <a href="../../explanation/glossary/#box">box</a>, and on the way
 you meet the three calls you will use most: <code>create</code>, <code>attach</code> and <code>close</code>.</p>
 <h2 id="before-you-start">Before you start<a class="headerlink" href="#before-you-start" title="Permanent link">&para;</a></h2>
 <div class="admonition note">
@@ -3203,7 +3203,7 @@ you meet the three calls you will use most: <code>create</code>, <code>attach</c
 <div class="language-bash highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a>uv<span class="w"> </span>init<span class="w"> </span>--bare<span class="w"> </span>--pin-python<span class="w"> </span>--python<span class="w"> </span><span class="m">3</span>.11
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a>uv<span class="w"> </span>add<span class="w"> </span>sharedbox
 </span></code></pre></div>
-<p>In the folder, create an empty file called <code>motor.py</code> and start it with
+<p>In the folder, create an empty file called <code>mailbox.py</code> and start it with
 these imports:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">multiprocessing</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">mp</span>
 </span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="kn">import</span><span class="w"> </span><span class="nn">queue</span>
@@ -3217,27 +3217,27 @@ these imports:</p>
 coming back to this line.</p>
 <h2 id="1-define-the-record">1. Define the record<a class="headerlink" href="#1-define-the-record" title="Permanent link">&para;</a></h2>
 <p>Below the imports, describe the record as a class:</p>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="k">class</span><span class="w"> </span><span class="nc">Motor</span><span class="p">(</span><span class="n">SharedBox</span><span class="p">):</span>
-</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>    <span class="n">position</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span>
-</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>    <span class="n">enabled</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
-</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>    <span class="n">label</span><span class="p">:</span> <span class="n">Annotated</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Capacity</span><span class="p">(</span><span class="mi">32</span><span class="p">)]</span> <span class="o">=</span> <span class="s2">""</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="k">class</span><span class="w"> </span><span class="nc">Mailbox</span><span class="p">(</span><span class="n">SharedBox</span><span class="p">):</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>    <span class="n">letters</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>    <span class="n">flag_up</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>    <span class="n">owner</span><span class="p">:</span> <span class="n">Annotated</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Capacity</span><span class="p">(</span><span class="mi">32</span><span class="p">)]</span> <span class="o">=</span> <span class="s2">""</span>
 </span></code></pre></div>
 <p>This reads like a dataclass, and it works like one: each annotated
 attribute is a <a href="../../explanation/glossary/#field">field</a>, and the value after <code>=</code> is its default.
-The difference is that <code>Motor</code> subclasses
+The difference is that <code>Mailbox</code> subclasses
 <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;SharedBox&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox"><code>SharedBox</code></a>, so its fields live in shared memory
 instead of inside one Python object.</p>
-<p>Text needs a size limit, its <a href="../../explanation/glossary/#capacity">capacity</a>: <code>label</code> holds at most
+<p>Text needs a size limit, its <a href="../../explanation/glossary/#capacity">capacity</a>: <code>owner</code> holds at most
 32 bytes. Every field has a fixed size so that all processes agree on where
 each value sits; <a href="../../explanation/how-a-box-is-stored/">How a box is stored</a>
 explains why that matters.</p>
 <h2 id="2-change-it-from-another-process">2. Change it from another process<a class="headerlink" href="#2-change-it-from-another-process" title="Permanent link">&para;</a></h2>
-<p>Next, add the function the second process will run. It opens the box,
-writes one field and lets go:</p>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="k">def</span><span class="w"> </span><span class="nf">move</span><span class="p">(</span><span class="n">position</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>    <span class="n">motor</span> <span class="o">=</span> <span class="n">Motor</span><span class="o">.</span><span class="n">attach</span><span class="p">(</span><span class="s2">"tutorial-motor"</span><span class="p">)</span>
-</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>    <span class="n">motor</span><span class="o">.</span><span class="n">position</span> <span class="o">=</span> <span class="n">position</span>
-</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>    <span class="n">motor</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+<p>Next, add the function the second process, the carrier, will run. It opens
+the box, writes one field and lets go:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="k">def</span><span class="w"> </span><span class="nf">deliver</span><span class="p">(</span><span class="n">letters</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>    <span class="n">mailbox</span> <span class="o">=</span> <span class="n">Mailbox</span><span class="o">.</span><span class="n">attach</span><span class="p">(</span><span class="s2">"tutorial-mailbox"</span><span class="p">)</span>
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>    <span class="n">mailbox</span><span class="o">.</span><span class="n">letters</span> <span class="o">=</span> <span class="n">letters</span>
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>    <span class="n">mailbox</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
 </span></code></pre></div>
 <p><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;attach&lt;/span&gt;
 
@@ -3245,8 +3245,8 @@ writes one field and lets go:</p>
   &lt;span class=&quot;doc doc-labels&quot;&gt;
       &lt;small class=&quot;doc doc-label doc-label-classmethod&quot;&gt;&lt;code&gt;classmethod&lt;/code&gt;&lt;/small&gt;
   &lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.attach"><code>attach</code></a> opens the box named
-<code>tutorial-motor</code>, which the first process creates in the next step. Setting
-<code>motor.position</code> writes the new value straight into shared memory, where
+<code>tutorial-mailbox</code>, which the first process creates in the next step. Setting
+<code>mailbox.letters</code> writes the new value straight into shared memory, where
 every process can see it. <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;close&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.close"><code>close</code></a> then drops
 this process's <a href="../../explanation/glossary/#handle">handle</a> on the box, and the box itself stays
 for the processes still using it.</p>
@@ -3254,12 +3254,12 @@ for the processes still using it.</p>
 <p>Now add the function the first process runs. It creates the box, starts the
 second process and reads what that process wrote:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="k">def</span><span class="w"> </span><span class="nf">share</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>    <span class="k">with</span> <span class="n">Motor</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="s2">"tutorial-motor"</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s2">"x-axis"</span><span class="p">)</span> <span class="k">as</span> <span class="n">motor</span><span class="p">:</span>
-</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>        <span class="n">other</span> <span class="o">=</span> <span class="n">mp</span><span class="o">.</span><span class="n">Process</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="n">move</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="p">(</span><span class="mi">10</span><span class="p">,))</span>
-</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>        <span class="n">other</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
-</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>        <span class="n">other</span><span class="o">.</span><span class="n">join</span><span class="p">()</span>
-</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>        <span class="nb">print</span><span class="p">(</span><span class="s2">"position set by the other process:"</span><span class="p">,</span> <span class="n">motor</span><span class="o">.</span><span class="n">position</span><span class="p">)</span>
-</span><span id="__span-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>    <span class="n">Motor</span><span class="o">.</span><span class="n">unlink</span><span class="p">(</span><span class="s2">"tutorial-motor"</span><span class="p">)</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>    <span class="k">with</span> <span class="n">Mailbox</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="s2">"tutorial-mailbox"</span><span class="p">,</span> <span class="n">owner</span><span class="o">=</span><span class="s2">"Ada"</span><span class="p">)</span> <span class="k">as</span> <span class="n">mailbox</span><span class="p">:</span>
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>        <span class="n">carrier</span> <span class="o">=</span> <span class="n">mp</span><span class="o">.</span><span class="n">Process</span><span class="p">(</span><span class="n">target</span><span class="o">=</span><span class="n">deliver</span><span class="p">,</span> <span class="n">args</span><span class="o">=</span><span class="p">(</span><span class="mi">2</span><span class="p">,))</span>
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>        <span class="n">carrier</span><span class="o">.</span><span class="n">start</span><span class="p">()</span>
+</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>        <span class="n">carrier</span><span class="o">.</span><span class="n">join</span><span class="p">()</span>
+</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>        <span class="nb">print</span><span class="p">(</span><span class="s2">"letters left by the carrier:"</span><span class="p">,</span> <span class="n">mailbox</span><span class="o">.</span><span class="n">letters</span><span class="p">)</span>
+</span><span id="__span-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>    <span class="n">Mailbox</span><span class="o">.</span><span class="n">unlink</span><span class="p">(</span><span class="s2">"tutorial-mailbox"</span><span class="p">)</span>
 </span></code></pre></div>
 <p><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;create&lt;/span&gt;
 
@@ -3268,10 +3268,10 @@ second process and reads what that process wrote:</p>
       &lt;small class=&quot;doc doc-label doc-label-classmethod&quot;&gt;&lt;code&gt;classmethod&lt;/code&gt;&lt;/small&gt;
   &lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.create"><code>create</code></a> puts the box in a new
 <a href="../../explanation/glossary/#segment">segment</a> of shared memory under the name you give it. It
-takes field values the way calling the class does, so here you set <code>label</code>
-and leave <code>position</code> and <code>enabled</code> at their defaults.</p>
-<p>The second process runs <code>move(10)</code>. Once <code>join</code> returns, that process has
-finished, so reading <code>motor.position</code> finds the value it wrote.</p>
+takes field values the way calling the class does, so here you set <code>owner</code>
+and leave <code>letters</code> and <code>flag_up</code> at their defaults.</p>
+<p>The second process runs <code>deliver(2)</code>. Once <code>join</code> returns, that process has
+finished, so reading <code>mailbox.letters</code> finds the value it wrote.</p>
 <p>When the <code>with</code> block ends it closes the box, and
 <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-attribute&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-attribute-name&quot;&gt;unlink&lt;/span&gt;
 
@@ -3288,17 +3288,17 @@ shows other ways to choose a name.</p>
 </span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>    <span class="n">share</span><span class="p">()</span>
 </span></code></pre></div>
 <p>You need them because, depending on your system, the second process starts a
-fresh Python that imports your script to find <code>move</code>. Without the <code>if</code>, that
+fresh Python that imports your script to find <code>deliver</code>. Without the <code>if</code>, that
 import would call <code>share()</code> again and try to create the box a second time.
 Now run the script:</p>
-<div class="language-bash highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>uv<span class="w"> </span>run<span class="w"> </span>motor.py
+<div class="language-bash highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a>uv<span class="w"> </span>run<span class="w"> </span>mailbox.py
 </span></code></pre></div>
 <p>You should see:</p>
-<div class="language-text highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>position set by the other process: 10
+<div class="language-text highlight"><pre><span></span><code><span id="__span-7-1"><a id="__codelineno-7-1" name="__codelineno-7-1" href="#__codelineno-7-1"></a>letters left by the carrier: 2
 </span></code></pre></div>
 <h2 id="what-you-built">What you built<a class="headerlink" href="#what-you-built" title="Permanent link">&para;</a></h2>
 <p>You have a record in shared memory that two processes read and write: the
-first created it, the second changed <code>position</code>, and the first read the
+first created it, the second changed <code>letters</code>, and the first read the
 new value.</p>
 <h2 id="next-steps">Next steps<a class="headerlink" href="#next-steps" title="Permanent link">&para;</a></h2>
 <ul>

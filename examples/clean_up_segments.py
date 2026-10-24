@@ -4,35 +4,35 @@
 from sharedbox import LockTimeoutError, SharedBox
 
 
-class Job(SharedBox, name="example-job"):
+class Delivery(SharedBox, name="example-delivery"):
     done: bool = False
 
 
-job = Job()
-job.events.done.connect(lambda new, old: print(job.name, "done:", new))
-job.done = True
-job.close()
+delivery = Delivery()
+delivery.events.done.connect(lambda new, old: print(delivery.name, "done:", new))
+delivery.done = True
+delivery.close()
 # --8<-- [end:close]
 
 # --8<-- [start:unlink]
-Job.unlink()
+Delivery.unlink()
 # --8<-- [end:unlink]
 
-creator = Job(True)
+creator = Delivery(True)
 
 # --8<-- [start:force-unlock]
-job = Job.attach()
+delivery = Delivery.attach()
 try:
-    job.done = False
+    delivery.done = False
 except LockTimeoutError as error:
     print(error)  # ... locked by pid 1234 ...
     # only once process 1234 is no longer running
-    job.force_unlock()
-    print(job.done)  # True: the write that timed out did not happen
-    job.done = False
-print(job.done)  # False
+    delivery.force_unlock()
+    print(delivery.done)  # True: the write that timed out did not happen
+    delivery.done = False
+print(delivery.done)  # False
 # --8<-- [end:force-unlock]
 
-job.close()
+delivery.close()
 creator.close()
-Job.unlink()
+Delivery.unlink()

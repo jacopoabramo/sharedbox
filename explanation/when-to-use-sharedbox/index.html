@@ -2999,9 +2999,13 @@
 
 
 <h1 id="when-to-use-sharedbox">When to use sharedbox<a class="headerlink" href="#when-to-use-sharedbox" title="Permanent link">&para;</a></h1>
-<p>Should you use a box, or would something simpler do? A
-<a href="../glossary/#box">box</a> is made for sharing a record between processes, and
-that has a price: every write turns the value into bytes in shared memory,
+<p>sharedbox serves programs made of several processes on one machine, and
+it meets two needs they have: one current value that many processes read
+and write, which is a <a href="../glossary/#box">box</a>, and a flow of items that each
+reader receives once, which is a <a href="../glossary/#stream">stream</a>. Both work
+without a server and without pickling.</p>
+<p>Should you use a box, or would something simpler do? A box is made for
+sharing a record between processes, and that has a price: every write turns the value into bytes in shared memory,
 and a read turns the bytes back into a value unless the value can't be
 changed and an earlier read built it since the last write. That costs some
 tens to hundreds of nanoseconds, and a value you can change comes back as a
@@ -3020,23 +3024,23 @@ dataclasses give such an object the same <code>events</code> interface as a box,
 </span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>
 </span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="nd">@evented</span>
 </span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="nd">@dataclass</span>
-</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="k">class</span><span class="w"> </span><span class="nc">Motor</span><span class="p">:</span>
-</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>    <span class="n">position</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span>
-</span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>    <span class="n">enabled</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
+</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="k">class</span><span class="w"> </span><span class="nc">Mailbox</span><span class="p">:</span>
+</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>    <span class="n">letters</span><span class="p">:</span> <span class="nb">int</span> <span class="o">=</span> <span class="mi">0</span>
+</span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>    <span class="n">flag_up</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span>
 </span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>
 </span><span id="__span-0-13"><a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a>
-</span><span id="__span-0-14"><a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="n">motor</span> <span class="o">=</span> <span class="n">Motor</span><span class="p">()</span>
+</span><span id="__span-0-14"><a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="n">mailbox</span> <span class="o">=</span> <span class="n">Mailbox</span><span class="p">()</span>
 </span><span id="__span-0-15"><a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a><span class="n">lock</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Lock</span><span class="p">()</span>
-</span><span id="__span-0-16"><a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a><span class="n">motor</span><span class="o">.</span><span class="n">events</span><span class="o">.</span><span class="n">position</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="k">lambda</span> <span class="n">new</span><span class="p">,</span> <span class="n">old</span><span class="p">:</span> <span class="nb">print</span><span class="p">(</span><span class="n">old</span><span class="p">,</span> <span class="s2">"-&gt;"</span><span class="p">,</span> <span class="n">new</span><span class="p">))</span>
+</span><span id="__span-0-16"><a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a><span class="n">mailbox</span><span class="o">.</span><span class="n">events</span><span class="o">.</span><span class="n">letters</span><span class="o">.</span><span class="n">connect</span><span class="p">(</span><span class="k">lambda</span> <span class="n">new</span><span class="p">,</span> <span class="n">old</span><span class="p">:</span> <span class="nb">print</span><span class="p">(</span><span class="n">old</span><span class="p">,</span> <span class="s2">"-&gt;"</span><span class="p">,</span> <span class="n">new</span><span class="p">))</span>
 </span><span id="__span-0-17"><a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a><span class="k">with</span> <span class="n">lock</span><span class="p">:</span>
-</span><span id="__span-0-18"><a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>    <span class="n">motor</span><span class="o">.</span><span class="n">position</span> <span class="o">=</span> <span class="mi">10</span>              <span class="c1"># prints: 0 -&gt; 10</span>
+</span><span id="__span-0-18"><a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>    <span class="n">mailbox</span><span class="o">.</span><span class="n">letters</span> <span class="o">=</span> <span class="mi">1</span>              <span class="c1"># prints: 0 -&gt; 1</span>
 </span></code></pre></div>
 <p>Unlike a box's signals, these callbacks run on the thread that changes the
 field, before the assignment returns. A box's callbacks run on its
 <a href="../glossary/#watcher">watcher</a> thread; <a href="../waiting-for-changes/">Waiting for
 changes</a> explains why.</p>
 <p>If what you share is a flow of items rather than a current value, such as
-the batches of a data pipeline, use a <a href="../glossary/#stream">stream</a> instead.
+the letters passing through a sorting office, use a stream instead.
 A box keeps only the latest value, so a reader that is slow misses the ones
 in between, while a stream keeps the last <code>capacity</code> items and lets each
 <a href="../glossary/#reader">reader</a> choose whether to receive every item or only

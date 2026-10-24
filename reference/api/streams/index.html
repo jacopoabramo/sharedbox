@@ -4906,9 +4906,9 @@ replaced by a writable array over the slot. The template's own
 arrays are never read, so they may be empty. The block fills the
 slot's arrays and sends the item with
 <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;send&lt;/span&gt;" href="./#sharedbox.SendSlot.send"><code>slot.send</code></a>, which does not copy them:</p>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">blank</span> <span class="o">=</span> <span class="n">Frame</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">uint16</span><span class="p">))</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">blank</span> <span class="o">=</span> <span class="n">Letter</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="s2">""</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">uint8</span><span class="p">))</span>
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="k">with</span> <span class="n">sender</span><span class="o">.</span><span class="n">writing</span><span class="p">(</span><span class="n">blank</span><span class="p">)</span> <span class="k">as</span> <span class="n">slot</span><span class="p">:</span>
-</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    <span class="n">device</span><span class="o">.</span><span class="n">read_into</span><span class="p">(</span><span class="n">slot</span><span class="o">.</span><span class="n">item</span><span class="o">.</span><span class="n">image</span><span class="p">)</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    <span class="n">scanner</span><span class="o">.</span><span class="n">read_into</span><span class="p">(</span><span class="n">slot</span><span class="o">.</span><span class="n">item</span><span class="o">.</span><span class="n">scan</span><span class="p">)</span>
 </span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    <span class="n">slot</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">replace</span><span class="p">(</span><span class="n">slot</span><span class="o">.</span><span class="n">item</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="n">n</span><span class="p">))</span>
 </span></code></pre></div>
 <p>An item that is an array needs no template. Leaving the block
@@ -5566,8 +5566,8 @@ for a member decoded as usual, or, for a member that is a record or a
 tuple, an <code>out</code> of its own shape. A name left out of a mapping is
 decoded as usual. The item returned holds your arrays, filled in
 place. Allocate the arrays once and pass them to every call:</p>
-<div class="language-text highlight"><pre><span></span><code>image = np.empty((480, 640), np.uint16)
-frame = reader.receive_into({"image": image})
+<div class="language-text highlight"><pre><span></span><code>scan = np.empty((32, 32), np.uint8)
+letter = reader.receive_into({"scan": scan})
 </code></pre></div>
 <p>An item that a cancelled <code>receive_future</code> or <code>anext</code> had already
 received is returned by the next receive of any kind, and holds the

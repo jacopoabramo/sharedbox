@@ -6,26 +6,26 @@ from typing import Annotated
 from sharedbox import Capacity, SharedBox
 
 
-class Camera(SharedBox, name="example-camera"):
-    label: Annotated[str, Capacity(16)] = ""
-    frame: Annotated[bytes, Capacity(1024)] = b""
+class Envelope(SharedBox, name="example-envelope"):
+    owner: Annotated[str, Capacity(16)] = ""
+    barcode: Annotated[bytes, Capacity(1024)] = b""
 
 
 # --8<-- [end:declare]
 
 # --8<-- [start:write]
-camera = Camera()
-camera.label = "front"
-camera.frame = bytes(range(8))
-print(camera.label, len(camera.frame))  # front 8
+envelope = Envelope()
+envelope.owner = "Ada"
+envelope.barcode = bytes(range(8))
+print(envelope.owner, len(envelope.barcode))  # Ada 8
 # --8<-- [end:write]
 
 # --8<-- [start:too-long]
 try:
-    camera.label = "front camera, left side"
+    envelope.owner = "Ada Lovelace, 12 High St"
 except ValueError as error:
-    print(error)  # Camera.label holds at most 16 bytes; the value encodes to 23
-print(camera.label)  # front
+    print(error)  # Envelope.owner holds at most 16 bytes; the value encodes to 24
+print(envelope.owner)  # Ada
 # --8<-- [end:too-long]
 
 # --8<-- [start:bytes-not-characters]
@@ -38,9 +38,9 @@ def fit(text: str, size: int) -> str:
     return text.encode()[:size].decode(errors="ignore")
 
 
-camera.label = fit("front camera, left side", 16)
-print(camera.label)  # front camera, le
+envelope.owner = fit("Ada Lovelace, 12 High St", 16)
+print(envelope.owner)  # Ada Lovelace, 12
 # --8<-- [end:fit]
 
-camera.close()
-Camera.unlink()
+envelope.close()
+Envelope.unlink()
