@@ -272,15 +272,28 @@ struct Segment::Impl {
         const FieldDesc &field = fields[f];
         const std::size_t size = field.capacity;
         std::byte *buf = reinterpret_cast<std::byte *>(out.words);
+        // A collection usually uses far less than its capacity, so it is read into words first and
+        // gets a heap buffer only at the length it reports.
+        if (detail::is_collection(static_cast<std::uint32_t>(field.kind))) {
+            read_value got = check(box.read_used(f, {buf, sizeof out.words}));
+            std::size_t held = sizeof out.words;
+            while (got.len > held) {
+                held = got.len;
+                out.large.reset(new std::byte[held]);
+                buf = out.large.get();
+                got = check(box.read_used(f, {buf, held}));
+            }
+            out.bytes = {reinterpret_cast<const char *>(buf), got.len};
+            out.version = got.version;
+            return;
+        }
         // An array is read straight into the heap buffer its decoded value then owns.
         if (size > sizeof out.words || static_cast<std::uint8_t>(field.kind) == kind_array) {
             out.large.reset(new std::byte[size]);
             buf = out.large.get();
         }
         read_value got{};
-        if (detail::is_collection(static_cast<std::uint32_t>(field.kind)))
-            got = check(box.read_used(f, {buf, size}));
-        else if (size >= detail::large_copy)
+        if (size >= detail::large_copy)
             got = check(box.read_large(f, {buf, size}));
         else
             got = check(box.read(f, {buf, size}));

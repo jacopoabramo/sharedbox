@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from itertools import count
 from typing import Annotated
 
+import msgspec
 import pytest
 from pytest_codspeed import BenchmarkFixture
 
@@ -32,6 +33,27 @@ class Quad:
 
 class Quads(SharedBox):
     quad: Quad
+
+
+Tag = Annotated[str, Capacity(8)]
+
+
+class Collections(SharedBox):
+    long: Annotated[list[int], Capacity(64)]
+    names: Annotated[tuple[Tag, ...], Capacity(8)]
+    tags: Annotated[frozenset[int], Capacity(16)]
+    scores: Annotated[dict[Tag, int], Capacity(8)]
+
+
+class Ticket(msgspec.Struct):
+    a: int
+    b: float
+    c: bool
+    d: int
+
+
+class Tickets(SharedBox):
+    ticket: Ticket
 
 
 @pytest.fixture
@@ -96,3 +118,62 @@ def quads() -> Iterator[Quads]:
 
 def test_read_record(benchmark: BenchmarkFixture, quads: Quads) -> None:
     benchmark(getattr, quads, "quad")
+
+
+@pytest.fixture
+def bag() -> Iterator[Collections]:
+    name = f"bench-codspeed-{os.getpid()}-{next(NAMES)}"
+    with Collections.create(
+        name,
+        list(range(64)),
+        ("a",) * 8,
+        frozenset(range(16)),
+        {f"k{i}": i for i in range(8)},
+    ) as box:
+        yield box
+    Collections.unlink(name)
+
+
+def test_read_long_list(benchmark: BenchmarkFixture, bag: Collections) -> None:
+    """Time reading a list of 64 ints."""
+    benchmark(getattr, bag, "long")
+
+
+def test_write_read_str_tuple(benchmark: BenchmarkFixture, bag: Collections) -> None:
+    """Time writing and reading a tuple of 8 strings."""
+    names = ("a",) * 8
+
+    def write_read() -> object:
+        bag.names = names
+        return bag.names
+
+    benchmark(write_read)
+
+
+def test_write_read_frozenset(benchmark: BenchmarkFixture, bag: Collections) -> None:
+    """Time writing and reading a frozenset of 16 ints."""
+    tags = frozenset(range(16))
+
+    def write_read() -> object:
+        bag.tags = tags
+        return bag.tags
+
+    benchmark(write_read)
+
+
+def test_read_dict(benchmark: BenchmarkFixture, bag: Collections) -> None:
+    """Time reading a dict of 8 string keys."""
+    benchmark(getattr, bag, "scores")
+
+
+@pytest.fixture
+def tickets() -> Iterator[Tickets]:
+    name = f"bench-codspeed-{os.getpid()}-{next(NAMES)}"
+    with Tickets.create(name, Ticket(1, 1.5, True, 2)) as box:
+        yield box
+    Tickets.unlink(name)
+
+
+def test_read_msgspec_record(benchmark: BenchmarkFixture, tickets: Tickets) -> None:
+    """Time reading a msgspec Struct field."""
+    benchmark(getattr, tickets, "ticket")

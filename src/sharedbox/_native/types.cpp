@@ -1,6 +1,7 @@
 #include "types.hpp"
 
 #include <algorithm>
+#include <array>
 #include <cstring>
 #include <stdexcept>
 
@@ -70,6 +71,23 @@ template <class T> void put(std::byte *out, T value) { std::memcpy(out, &value, 
 
 std::uint64_t bytearray_key(std::uint32_t container, std::uint32_t member) {
     return (std::uint64_t{container} << 32) | member;
+}
+
+// Stores item, a new reference the container takes, at index of a list or tuple made a moment ago. The
+// macros skip the checks a new container has no use for; the Limited API has only the functions.
+void store_new_item(PyObject *container, bool is_list, std::uint32_t index, PyObject *item) noexcept {
+    const auto i = static_cast<Py_ssize_t>(index);
+#ifndef Py_LIMITED_API
+    if (is_list)
+        PyList_SET_ITEM(container, i, item);
+    else
+        PyTuple_SET_ITEM(container, i, item);
+#else
+    if (is_list)
+        PyList_SetItem(container, i, item);
+    else
+        PyTuple_SetItem(container, i, item);
+#endif
 }
 
 FieldDesc desc_of(const detail::type_ref &t) {
@@ -343,6 +361,8 @@ void Types::prepare(std::uint32_t node, std::uint8_t kind, nb::object info) {
             n.attrs.push_back(PyTuple_GetItem(attrs, i));
             n.keywords.push_back(PyTuple_GetItem(keywords, i));
         }
+        if (n.form == 0)
+            n.by_position = item(n.info, 5) == Py_True;
         for (Py_ssize_t i = 0; n.form == 3 && i < count; ++i)
             n.required.push_back(PyTuple_GetItem(required, i) == Py_True);
         break;
@@ -769,24 +789,33 @@ nb::object Types::decode_from(const detail::type_ref &t, const std::byte *data, 
             for (std::uint32_t i = 0; i < length; ++i) {
                 const std::byte *slot = data + node.slots + std::size_t{i} * node.stride;
                 nb::object key = nb::steal(element(first.type, slot, 0));
-                out[key] = nb::steal(element(value_member.type, slot + value_member.offset, 1));
+                nb::object value = nb::steal(element(value_member.type, slot + value_member.offset, 1));
+                if (PyDict_SetItem(out.ptr(), key.ptr(), value.ptr()) != 0)
+                    throw nb::python_error();
             }
             return out;
         }
-        nb::object list = nb::steal(PyList_New(length));
-        if (!list.is_valid())
+        auto slot = [&](std::uint32_t i) { return data + node.slots + std::size_t{i} * node.stride; };
+        const bool is_list = n.cls == reinterpret_cast<PyObject *>(&PyList_Type);
+        if (is_list || n.cls == reinterpret_cast<PyObject *>(&PyTuple_Type)) {
+            nb::object out = nb::steal(is_list ? PyList_New(length) : PyTuple_New(length));
+            if (!out.is_valid())
+                throw nb::python_error();
+            for (std::uint32_t i = 0; i < length; ++i)
+                store_new_item(out.ptr(), is_list, i, element(first.type, slot(i), 0));
+            return out;
+        }
+        // PySet_Add may fill a frozenset that no other code has seen yet.
+        const bool frozen = n.cls == reinterpret_cast<PyObject *>(&PyFrozenSet_Type);
+        nb::object out = nb::steal(frozen ? PyFrozenSet_New(nullptr) : PySet_New(nullptr));
+        if (!out.is_valid())
             throw nb::python_error();
-        for (std::uint32_t i = 0; i < length; ++i)
-            PyList_SetItem(list.ptr(), static_cast<Py_ssize_t>(i),
-                           element(first.type, data + node.slots + std::size_t{i} * node.stride, 0));
-        if (n.cls == reinterpret_cast<PyObject *>(&PyList_Type))
-            return list;
-        PyObject *made = n.cls == reinterpret_cast<PyObject *>(&PyTuple_Type)       ? PyList_AsTuple(list.ptr())
-                         : n.cls == reinterpret_cast<PyObject *>(&PyFrozenSet_Type) ? PyFrozenSet_New(list.ptr())
-                                                                                    : PySet_New(list.ptr());
-        if (made == nullptr)
-            throw nb::python_error();
-        return nb::steal(made);
+        for (std::uint32_t i = 0; i < length; ++i) {
+            nb::object item = nb::steal(element(first.type, slot(i), 0));
+            if (PySet_Add(out.ptr(), item.ptr()) != 0)
+                throw nb::python_error();
+        }
+        return out;
     }
     case kind_record:
     case kind_tuple: {
@@ -798,7 +827,9 @@ nb::object Types::decode_from(const detail::type_ref &t, const std::byte *data, 
             for (std::uint32_t i = 0; i < node.count; ++i) {
                 const detail::type_member &m = member(i);
                 if (n.required[i]) {
-                    out[nb::handle(n.attrs[i])] = nb::steal(element(m.type, data + m.offset, i));
+                    nb::object value = nb::steal(element(m.type, data + m.offset, i));
+                    if (PyDict_SetItem(out.ptr(), n.attrs[i], value.ptr()) != 0)
+                        throw nb::python_error();
                     continue;
                 }
                 const auto present = load<std::uint8_t>(data + m.offset);
@@ -806,11 +837,32 @@ nb::object Types::decode_from(const detail::type_ref &t, const std::byte *data, 
                     corrupt(where.name);
                 if (present == 1) {
                     const detail::type_member &inner = tree_.member(tree_.node(m.type.node).members);
-                    out[nb::handle(n.attrs[i])] =
+                    nb::object value =
                         decode_from(inner.type, data + m.offset + inner.offset, m.type.node, 0, where);
+                    if (PyDict_SetItem(out.ptr(), n.attrs[i], value.ptr()) != 0)
+                        throw nb::python_error();
                 }
             }
             return out;
+        }
+        if (n.form == 0 && n.by_position) {
+            // Each member is owned by an nb::object, so a member that fails to decode releases the ones
+            // before it. Without keywords, a class that has no vectorcall of its own gets a tuple from
+            // CPython, which its __init__ unpacks without a dict.
+            std::array<nb::object, 16> few;
+            std::vector<nb::object> many(node.count > few.size() ? node.count : 0);
+            nb::object *held = node.count > few.size() ? many.data() : few.data();
+            std::array<PyObject *, 16> few_args;
+            std::vector<PyObject *> many_args(node.count > few_args.size() ? node.count : 0);
+            PyObject **args = node.count > few_args.size() ? many_args.data() : few_args.data();
+            for (std::uint32_t i = 0; i < node.count; ++i) {
+                held[i] = nb::steal(element(member(i).type, data + member(i).offset, i));
+                args[i] = held[i].ptr();
+            }
+            PyObject *made = PyObject_Vectorcall(n.cls, args, node.count, nullptr);
+            if (made == nullptr)
+                throw nb::python_error();
+            return nb::steal(made);
         }
         if (n.form == 0) {
             nb::dict kwargs;
@@ -825,8 +877,7 @@ nb::object Types::decode_from(const detail::type_ref &t, const std::byte *data, 
         if (!items.is_valid())
             throw nb::python_error();
         for (std::uint32_t i = 0; i < node.count; ++i)
-            PyTuple_SetItem(items.ptr(), static_cast<Py_ssize_t>(i),
-                            element(member(i).type, data + member(i).offset, i));
+            store_new_item(items.ptr(), false, i, element(member(i).type, data + member(i).offset, i));
         if (n.form == 2)
             return items;
         PyObject *made = PyObject_CallObject(n.cls, items.ptr());

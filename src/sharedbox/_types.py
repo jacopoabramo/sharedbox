@@ -6,6 +6,7 @@ import dataclasses
 import datetime
 import decimal
 import enum
+import inspect
 import math
 import struct
 import sys
@@ -896,11 +897,24 @@ def record_spec(
             tuple(sys.intern(a) for a in attrs),
             tuple(sys.intern(k) for k in (keywords or attrs)),
             tuple(required),
+            form == 0 and by_position(hint, keywords),
         ),
         match=(abc.Mapping,) if form == 3 else (hint,),
         exact=None if form == 3 else hint,
         hashable=hashable,
         reusable=frozen(hint, form) and all(m.type.reusable for m in members),
+    )
+
+
+def by_position(hint: type, keywords: list[str]) -> bool:
+    """Whether calling `hint` with the members in order, each by position, passes each as its keyword."""
+    try:
+        parameters = list(inspect.signature(hint).parameters.values())
+    except (TypeError, ValueError):
+        return False
+    return len(parameters) >= len(keywords) and all(
+        p.kind is p.POSITIONAL_OR_KEYWORD and p.name == k
+        for p, k in zip(parameters, keywords, strict=False)
     )
 
 
