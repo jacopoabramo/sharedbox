@@ -22,6 +22,12 @@ scan of its envelope as an array:
 --8<-- "docs/examples/send_items_through_a_stream.py:types"
 ```
 
+The scan takes its sizes from the `Shape` in its annotation. Because
+`Letter` is a dataclass, the sizes could go in the field's metadata instead,
+as in `scan: npt.NDArray[np.uint8] = field(metadata={"shape": (32, 32)})`,
+which works for an `attrs` class too. A `NamedTuple` or a `msgspec`
+`Struct` has no field metadata and keeps the `Shape`.
+
 The creating process calls [`create`][sharedbox.SharedStream.create] with the
 item type, a name and a `capacity`, the number of items the ring holds:
 
