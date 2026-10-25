@@ -49,11 +49,11 @@ struct NodeInfo {
 /// One entry of the converts list: description offset (-1 for a field), member, read_as, write_as.
 using Convert = std::tuple<std::int64_t, std::uint32_t, nb::object, nb::object>;
 
-/// The field types of one class: the description table, parsed by sharedbox.hpp, each field's label,
-/// and what converting values needs from Python. Fixed once made.
 /// The field's container index in bytearray keys.
 inline constexpr std::uint32_t field_container = detail::no_node;
 
+/// The field types of one class: the description table, parsed by sharedbox.hpp, each field's label,
+/// and what converting values needs from Python. Fixed once made.
 class Types {
 public:
     /// fields as Segment.create takes them; info maps a description's offset to its tuple; bytearrays

@@ -68,8 +68,8 @@ struct FieldRead {
     std::uint64_t version = 0;
     std::string_view bytes;
     // Most values fit in words. Words rather than chars, so MSVC's /GS adds no stack cookie check to
-    // every read. A value longer than words is read again into large, sized from its stored length or,
-    // for a described kind, its size; new[] leaves it uninitialised.
+    // every read. A value longer than words is read into large: a collection at the length it uses, any
+    // other kind at its stored length or size; new[] leaves it uninitialised.
     std::uint64_t words[32];
     std::unique_ptr<std::byte[]> large;
 };

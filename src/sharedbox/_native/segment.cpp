@@ -35,7 +35,8 @@ void check_values(const std::vector<FieldDesc> &fields, std::span<const value> v
     for (const value &v : values) {
         check_index(v.field, fields.size());
         const FieldDesc &f = fields[v.field];
-        const bool shorter_ok = detail::prefixed(static_cast<std::uint32_t>(f.kind)) || detail::is_collection(static_cast<std::uint32_t>(f.kind));
+        const bool shorter_ok = detail::prefixed(static_cast<std::uint32_t>(f.kind)) ||
+                                detail::is_collection(static_cast<std::uint32_t>(f.kind));
         if (shorter_ok ? v.bytes.size() > f.capacity : v.bytes.size() != f.capacity)
             throw std::invalid_argument("value for field " + std::to_string(v.field) + " is " +
                                         std::to_string(v.bytes.size()) + " bytes; the field holds " +

@@ -10,11 +10,6 @@
 namespace sharedbox {
 namespace {
 
-[[noreturn]] void raise(PyObject *type, const std::string &message) {
-    PyErr_SetString(type, message.c_str());
-    throw nb::python_error();
-}
-
 // Item i of a description's Python tuple, borrowed; invalid_argument if the tuple has another shape.
 PyObject *item(const nb::object &info, Py_ssize_t i) {
     if (!PyTuple_Check(info.ptr()) || PyTuple_Size(info.ptr()) <= i)
@@ -57,24 +52,35 @@ family value_family(PyObject *value) {
 }
 
 family kind_family(std::uint32_t kind) {
-    if (kind == kind_bool)
+    switch (kind) {
+    case kind_bool:
         return family::boolean;
-    if (kind == kind_int || (kind >= kind_int8 && kind <= kind_uint64))
+    case kind_int:
+    case kind_int8:
+    case kind_int16:
+    case kind_int32:
+    case kind_uint8:
+    case kind_uint16:
+    case kind_uint32:
+    case kind_uint64:
         return family::integer;
-    if (kind == kind_float || kind == kind_float16 || kind == kind_float32)
+    case kind_float:
+    case kind_float16:
+    case kind_float32:
         return family::real;
-    if (kind == kind_complex || kind == kind_complex64)
+    case kind_complex:
+    case kind_complex64:
         return family::complex;
-    if (kind == kind_datetime64)
+    case kind_datetime64:
         return family::time;
-    return family::none;
+    default:
+        return family::none;
+    }
 }
 
-bool instance(PyObject *value, PyObject *type) {
-    const int found = PyObject_IsInstance(value, type);
-    if (found < 0)
-        throw nb::python_error();
-    return found == 1;
+// A fixed-size kind that scalars encodes and decodes.
+bool is_scalar(std::uint32_t kind) {
+    return kind >= kind_complex && kind <= kind_datetime64 && kind != kind_decimal;
 }
 
 // The position of value among a literal's values, matching type and value, so 1 and True stay apart;
@@ -448,9 +454,7 @@ nb::object Types::through(const nb::object &f, nb::object value) {
         return value;
     PyObject *args[1] = {value.ptr()};
     PyObject *made = PyObject_Vectorcall(f.ptr(), args, 1, nullptr);
-    if (made == nullptr)
-        throw nb::python_error();
-    return nb::steal(made);
+    return nb::steal(owned(made));
 }
 
 std::span<const std::byte> Types::encode(std::uint32_t index, PyObject *value, EncodeBuffer &buffer) const {
@@ -634,7 +638,7 @@ void Types::encode_plain(const detail::type_ref &t, PyObject *value, std::byte *
             std::memcpy(out, bytes.data(), bytes.size());
         return;
     }
-    if ((t.kind >= kind_complex && t.kind <= kind_uuid) || (t.kind >= kind_int8 && t.kind <= kind_datetime64)) {
+    if (is_scalar(t.kind)) {
         scalars::encode(t.kind, value, {out, t.size}, where.name);
         return;
     }
@@ -826,7 +830,7 @@ nb::object Types::decode_stored(const detail::type_ref &t, const std::byte *data
             throw nb::python_error();
         return nb::steal(value);
     }
-    if ((t.kind >= kind_complex && t.kind <= kind_uuid) || (t.kind >= kind_int8 && t.kind <= kind_datetime64)) {
+    if (is_scalar(t.kind)) {
         PyObject *value = scalars::decode(t.kind, {data, t.size}, where.name);
         if (value == nullptr)
             throw nb::python_error();
@@ -977,18 +981,14 @@ nb::object Types::decode_stored(const detail::type_ref &t, const std::byte *data
             for (std::uint32_t i = 0; i < node.count; ++i)
                 args[i] = element(member(i).type, data + member(i).offset, i);
             PyObject *made = PyObject_Vectorcall(n.cls, args.span().data(), node.count, nullptr);
-            if (made == nullptr)
-                throw nb::python_error();
-            return nb::steal(made);
+            return nb::steal(owned(made));
         }
         if (n.form == 0) {
             nb::dict kwargs;
             for (std::uint32_t i = 0; i < node.count; ++i)
                 kwargs[nb::handle(n.keywords[i])] = nb::steal(element(member(i).type, data + member(i).offset, i));
             PyObject *made = PyObject_Call(n.cls, nb::tuple().ptr(), kwargs.ptr());
-            if (made == nullptr)
-                throw nb::python_error();
-            return nb::steal(made);
+            return nb::steal(owned(made));
         }
         nb::object items = nb::steal(PyTuple_New(node.count));
         if (!items.is_valid())
@@ -998,9 +998,7 @@ nb::object Types::decode_stored(const detail::type_ref &t, const std::byte *data
         if (n.form == 2)
             return items;
         PyObject *made = PyObject_CallObject(n.cls, items.ptr());
-        if (made == nullptr)
-            throw nb::python_error();
-        return nb::steal(made);
+        return nb::steal(owned(made));
     }
     case kind_array:
         return decode_array(t, data, nullptr);
@@ -1161,9 +1159,7 @@ nb::object Types::wrap_array(const detail::type_ref &t, std::byte *raw, nb::hand
     if (n.cls == Py_None)
         return array;
     PyObject *made = PyObject_CallFunctionObjArgs(n.cls, array.ptr(), nullptr);
-    if (made == nullptr)
-        throw nb::python_error();
-    return nb::steal(made);
+    return nb::steal(owned(made));
 }
 
 nb::object Types::array_over(std::uint32_t index, std::byte *data, nb::handle owner) const {
@@ -1256,17 +1252,13 @@ nb::object Types::rebuild(const detail::type_ref &t, PyObject *value, std::byte 
         return items;
     if (n.form == 1) {
         PyObject *made = PyObject_CallObject(n.cls, items.ptr());
-        if (made == nullptr)
-            throw nb::python_error();
-        return nb::steal(made);
+        return nb::steal(owned(made));
     }
     nb::dict kwargs;
     for (std::uint32_t i = 0; i < node.count; ++i)
         kwargs[nb::handle(n.keywords[i])] = nb::borrow(PyTuple_GetItem(items.ptr(), static_cast<Py_ssize_t>(i)));
     PyObject *made = PyObject_Call(n.cls, nb::tuple().ptr(), kwargs.ptr());
-    if (made == nullptr)
-        throw nb::python_error();
-    return nb::steal(made);
+    return nb::steal(owned(made));
 }
 
 bool Types::accepts(const detail::type_ref &t, PyObject *value) const {
