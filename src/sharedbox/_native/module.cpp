@@ -218,7 +218,7 @@ struct Field {
     // SharedBox's _segment slot, and the function that reads it from a box.
     nb::object segment_slot;
     descrgetfunc read_slot;
-    // The class's Types, or None; t points into it, or is nullptr for a kind 0 to 5 field read without it.
+    // The class's Types, or None; t points into it.
     nb::object types;
     const sharedbox::Types *t;
     // SharedBox's _values slot and the function that reads it; set only when reads of this field
@@ -1004,10 +1004,6 @@ NB_MODULE(_native, m) {
                 const auto index = nb::cast<std::uint32_t>(spec.attr("index"));
                 const sharedbox::Types *t = types_of(types);
                 const bool reusable = t != nullptr && !values_slot.is_none() && t->field_reusable(index);
-                // A read of a kind 0 to 5 field needs Types only for a bytearray or a read conversion; a write
-                // never does.
-                if (t != nullptr && t->field(index).kind <= sharedbox::kind_ref && !t->field_via_types(index))
-                    t = nullptr;
                 descrgetfunc read_values = nullptr;
                 if (reusable) {
                     read_values = reinterpret_cast<descrgetfunc>(
