@@ -32,11 +32,6 @@ const char *kind_name(FieldKind kind) {
     return "?";
 }
 
-[[noreturn]] void raise(PyObject *type, const std::string &message) {
-    PyErr_SetString(type, message.c_str());
-    throw nb::python_error();
-}
-
 std::uint64_t to_u64(PyObject *number, const std::string &name, const char *what) {
     const unsigned long long value = PyLong_AsUnsignedLongLong(number);
     if (value == static_cast<unsigned long long>(-1) && PyErr_Occurred()) {

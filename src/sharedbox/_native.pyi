@@ -148,8 +148,8 @@ class Segment:
     ) -> Segment:
         """Open an existing segment whose schema hash matches.
 
-        With `types`, the segment's description table must also equal
-        `types.table`. A segment whose field count differs from the number
+        With `types`, the segment's description table must also equal the
+        one `types` holds. A segment whose field count differs from the number
         of `names` raises `SchemaMismatchError`.
         """
 
@@ -339,9 +339,6 @@ class Types:
             tuple[int, int, Callable[[Any], Any] | None, Callable[[Any], Any] | None]
         ] = (),
     ) -> None: ...
-    @property
-    def table(self) -> bytes:
-        """The description table, as the segment stores it."""
     def check(self, field: int, value: object) -> None:
         """Raise what writing `value` to `field` would raise."""
     def decode(self, field: int, data: bytes) -> object:
@@ -526,8 +523,6 @@ class Stream:
     def capacity(self) -> int: ...
     @property
     def max_readers(self) -> int: ...
-    @property
-    def item_size(self) -> int: ...
     @property
     def create_id(self) -> int: ...
     @property

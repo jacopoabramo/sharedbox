@@ -27,6 +27,27 @@ namespace sharedbox {
 
 class Types;
 
+/// Sets a Python exception of type and throws it.
+[[noreturn]] inline void raise(PyObject *type, const std::string &message) {
+    PyErr_SetString(type, message.c_str());
+    throw nanobind::python_error();
+}
+
+/// isinstance(value, type), throwing the error it raises.
+inline bool instance(PyObject *value, PyObject *type) {
+    const int found = PyObject_IsInstance(value, type);
+    if (found < 0)
+        throw nanobind::python_error();
+    return found == 1;
+}
+
+/// made, a new reference from the C API, or the error it set thrown when it is nullptr.
+inline PyObject *owned(PyObject *made) {
+    if (made == nullptr)
+        throw nanobind::python_error();
+    return made;
+}
+
 // Holds size value-initialised entries: up to N in place, more on the heap. Only the entries in use are
 // constructed, since MSVC constructs and destroys a whole array of a class type through a call per
 // element, which costs more than the rest of a small update.

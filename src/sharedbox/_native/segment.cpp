@@ -35,7 +35,8 @@ void check_values(const std::vector<FieldDesc> &fields, std::span<const value> v
     for (const value &v : values) {
         check_index(v.field, fields.size());
         const FieldDesc &f = fields[v.field];
-        const bool shorter_ok = is_prefixed(f.kind) || detail::is_collection(static_cast<std::uint32_t>(f.kind));
+        const bool shorter_ok = detail::prefixed(static_cast<std::uint32_t>(f.kind)) ||
+                                detail::is_collection(static_cast<std::uint32_t>(f.kind));
         if (shorter_ok ? v.bytes.size() > f.capacity : v.bytes.size() != f.capacity)
             throw std::invalid_argument("value for field " + std::to_string(v.field) + " is " +
                                         std::to_string(v.bytes.size()) + " bytes; the field holds " +
@@ -163,14 +164,6 @@ void check_names(const std::vector<std::string> &names, std::size_t count) {
     if (names.size() != count)
         throw std::invalid_argument("got " + std::to_string(names.size()) + " field names for " +
                                     std::to_string(count) + " fields");
-}
-
-bool is_prefixed(FieldKind kind) { return detail::prefixed(static_cast<std::uint32_t>(kind)); }
-
-std::size_t field_alignment(FieldKind kind) { return detail::kind_alignment(static_cast<std::uint32_t>(kind)); }
-
-std::size_t field_span(const FieldDesc &field) {
-    return static_cast<std::size_t>(detail::field_span(to_spec(field)));
 }
 
 std::string_view payload(const FieldDesc &field, const std::byte *record) {

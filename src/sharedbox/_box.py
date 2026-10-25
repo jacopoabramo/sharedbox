@@ -49,12 +49,12 @@ from ._native import (
 from ._native import Field as FieldDescriptor
 from ._refs import (
     MAX_NAME,
-    NAME,
     Reference,
     attach_reference,
     box_ref,
     register,
     stored,
+    valid_name,
 )
 
 if TYPE_CHECKING:
@@ -90,7 +90,7 @@ LIVE: weakref.WeakSet[SharedBox] = weakref.WeakSet()
 
 
 def check_name(name: str) -> str:
-    if len(name) > MAX_NAME or not NAME.fullmatch(name):
+    if not valid_name(name):
         raise ValueError(
             f"segment names are segments of [A-Za-z0-9_-] joined by ':', "
             f"at most {MAX_NAME} characters; got {name!r}"

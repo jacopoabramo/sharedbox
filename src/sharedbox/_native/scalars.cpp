@@ -1,4 +1,5 @@
 #include "scalars.hpp"
+#include "codec.hpp"
 
 #include <nanobind/nanobind.h>
 #include <sharedbox/sharedbox.hpp>
@@ -45,17 +46,6 @@ PyObject *empty_tuple = nullptr;
 // One timezone per offset in minutes, made on first use and never freed. Two threads may both make one;
 // the one whose swap fails drops its own.
 std::array<std::atomic<PyObject *>, 2 * max_offset_minutes + 1> zones{};
-
-[[noreturn]] void raise(PyObject *type, const std::string &message) {
-    PyErr_SetString(type, message.c_str());
-    throw nb::python_error();
-}
-
-PyObject *owned(PyObject *made) {
-    if (made == nullptr)
-        throw nb::python_error();
-    return made;
-}
 
 const char *kind_name(std::uint8_t kind) {
     switch (kind) {
@@ -183,13 +173,6 @@ std::complex<double> complex_of(PyObject *value, const std::string &name, const 
     const nb::object type_name = nb::handle(reinterpret_cast<PyObject *>(Py_TYPE(value))).attr("__name__");
     raise(PyExc_TypeError,
           name + " expects " + kind_name(kind) + ", got " + nb::borrow<nb::str>(type_name).c_str());
-}
-
-bool instance(PyObject *value, PyObject *type) {
-    const int found = PyObject_IsInstance(value, type);
-    if (found < 0)
-        throw nb::python_error();
-    return found == 1;
 }
 
 // Days from 1970-01-01 to y-m-d in the proleptic Gregorian calendar.
@@ -407,22 +390,17 @@ void init() {
     const nb::module_ numbers = nb::module_::import_("numbers");
     real_abc = nb::object(numbers.attr("Real")).release().ptr();
     complex_abc = nb::object(numbers.attr("Complex")).release().ptr();
-    const auto checked = [](PyObject *made) {
-        if (made == nullptr)
-            throw nb::python_error();
-        return made;
-    };
-    utcoffset_name = checked(PyUnicode_InternFromString("utcoffset"));
-    bytes_name = checked(PyUnicode_InternFromString("bytes"));
-    fold_name = checked(PyUnicode_InternFromString("fold"));
-    tzinfo_name = checked(PyUnicode_InternFromString("tzinfo"));
-    empty_tuple = checked(PyTuple_New(0));
-    numpy_name = checked(PyUnicode_InternFromString("numpy"));
+    utcoffset_name = owned(PyUnicode_InternFromString("utcoffset"));
+    bytes_name = owned(PyUnicode_InternFromString("bytes"));
+    fold_name = owned(PyUnicode_InternFromString("fold"));
+    tzinfo_name = owned(PyUnicode_InternFromString("tzinfo"));
+    empty_tuple = owned(PyTuple_New(0));
+    numpy_name = owned(PyUnicode_InternFromString("numpy"));
 #ifdef Py_LIMITED_API
     const char *attrs[10] = {"year",   "month",       "day",  "hour",    "minute",
                              "second", "microsecond", "days", "seconds", "microseconds"};
     for (int i = 0; i < 10; ++i)
-        names[i] = checked(PyUnicode_InternFromString(attrs[i]));
+        names[i] = owned(PyUnicode_InternFromString(attrs[i]));
 #else
     PyDateTime_IMPORT;
     if (PyDateTimeAPI == nullptr)

@@ -493,7 +493,15 @@ def build_layout(cls: type, identity: str | None = None) -> Layout:
         spec = (
             None
             if ref is not None
-            else parse(hint, where, capacity=capacity, sizes=(shape, default))
+            else parse(
+                hint,
+                where,
+                capacity=capacity,
+                sizes=(
+                    None if shape is None else (f"field(shape={shape})", shape),
+                    default,
+                ),
+            )
         )
         found.append((name, spec, ref))
     if not found:

@@ -552,7 +552,6 @@ public:
     const std::string &name() const { return core().name; }
     std::uint64_t capacity() const { return core().s.capacity(); }
     std::uint32_t max_readers() const { return core().s.max_readers(); }
-    std::uint64_t item_size() const { return core().s.item_size(); }
     std::uint64_t create_id() const { return core().s.create_id(); }
     bool closed() const { return core_ == nullptr; }
 
@@ -656,7 +655,6 @@ void bind_stream(nb::module_ &m) {
         .def_prop_ro("name", &Stream::name, nb::lock_self())
         .def_prop_ro("capacity", &Stream::capacity, nb::lock_self())
         .def_prop_ro("max_readers", &Stream::max_readers, nb::lock_self())
-        .def_prop_ro("item_size", &Stream::item_size, nb::lock_self())
         .def_prop_ro("create_id", &Stream::create_id, nb::lock_self())
         .def_prop_ro("closed", &Stream::closed, nb::lock_self())
         .def("statistics", &Stream::statistics, nb::lock_self())

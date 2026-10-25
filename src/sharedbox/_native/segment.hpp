@@ -28,11 +28,6 @@ struct FieldDesc {
 void check_index(std::uint32_t index, std::size_t count);
 /// Throws std::invalid_argument unless there is one name per field.
 void check_names(const std::vector<std::string> &names, std::size_t count);
-/// True for str and bytes, whose payload follows a 4-byte length.
-bool is_prefixed(FieldKind kind);
-std::size_t field_alignment(FieldKind kind);
-/// Bytes the field occupies in the record, the length prefix included.
-std::size_t field_span(const FieldDesc &field);
 /// The stored bytes of field inside a copy of the record made by Segment::read_record.
 std::string_view payload(const FieldDesc &field, const std::byte *record);
 
@@ -73,8 +68,9 @@ struct FieldRead {
     std::uint64_t version = 0;
     std::string_view bytes;
     // Most values fit in words. Words rather than chars, so MSVC's /GS adds no stack cookie check to
-    // every read. A value longer than words is read again into large, sized from its stored length or,
-    // for a described kind, its size; new[] leaves it uninitialised.
+    // every read. A value longer than words, and an array at any size, since its decoded value takes the
+    // buffer, is read into large: a collection at the length it uses, any other kind at its stored length
+    // or size; new[] leaves it uninitialised.
     std::uint64_t words[32];
     std::unique_ptr<std::byte[]> large;
 };
