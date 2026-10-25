@@ -57,7 +57,9 @@ box. Build the new collection and assign it back:
 ```
 
 If you annotate the field as `tuple[T, ...]` or `Sequence[T]`, a type
-checker will point out an `append` that would only change the copy.
+checker will point out an `append` that would only change the copy. For a
+list of thousands of elements, where building every element on each read
+is what costs time, see [How to store a large list](store-a-large-list.md).
 
 ## 4. Handle a collection that is too large
 

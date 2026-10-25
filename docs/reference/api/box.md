@@ -10,6 +10,7 @@ icon: lucide/code
 | [`field`][sharedbox.field] | sets the options of one field of a `SharedBox` class, as `dataclasses.field` does |
 | [`fields`][sharedbox.fields] | returns one `Field` per field of a `SharedBox` subclass or [box](../../explanation/glossary.md#box), in declaration order |
 | [`Field`][sharedbox.Field] | options of one field of a `SharedBox` class, as `field` takes them |
+| [`BoundedList`][sharedbox.BoundedList] | a list value that keeps the stored form of a list field, so reading and writing it copies bytes instead of converting every element |
 | [`Capacity`][sharedbox.Capacity] | maximum size of a field: bytes for text and bytes, elements for a collection. See [capacity](../../explanation/glossary.md#capacity) |
 
 ::: sharedbox.SharedBox
@@ -27,6 +28,11 @@ icon: lucide/code
 ::: sharedbox.Field
     options:
       show_root_heading: true
+
+::: sharedbox.BoundedList
+    options:
+      show_root_heading: true
+      inherited_members: true
 
 ::: sharedbox.Capacity
     options:
