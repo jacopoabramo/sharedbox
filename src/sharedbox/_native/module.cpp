@@ -1126,6 +1126,25 @@ NB_MODULE(_native, m) {
              [](nb::pointer_and_handle<sharedbox::NativeCollection> self) {
                  return CollectionIterator{nb::borrow(self.h), self.p->size(), true};
              })
+        .def("copy", &sharedbox::NativeCollection::copy)
+        .def("__copy__", &sharedbox::NativeCollection::copy)
+        // Elements are decoded anew on every read, so a copy of the bytes shares nothing and needs no memo.
+        .def(
+            "__deepcopy__",
+            [](nb::pointer_and_handle<sharedbox::NativeCollection> self, nb::handle) {
+                return sharedbox::NativeCollection::copy(self);
+            },
+            nb::arg().none())
+        .def("__add__", &sharedbox::NativeCollection::add, nb::arg().none())
+        .def("__mul__", &sharedbox::NativeCollection::multiply, nb::arg().none())
+        .def("__rmul__", &sharedbox::NativeCollection::multiply, nb::arg().none())
+        .def("__imul__",
+             [](nb::pointer_and_handle<sharedbox::NativeCollection> self, nb::handle times) {
+                 self.p->repeat(times);
+                 return nb::borrow(self.h);
+             })
+        .def_prop_ro("element_annotation", &sharedbox::NativeCollection::element_annotation)
+        .def_prop_ro("capacity", &sharedbox::NativeCollection::capacity)
         .def("_stored", &sharedbox::NativeCollection::stored);
     // Equality compares elements that can change, so a value has no hash, as a list has none.
     collection.attr("__hash__") = nb::none();

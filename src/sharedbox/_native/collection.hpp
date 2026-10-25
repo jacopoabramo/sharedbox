@@ -37,6 +37,19 @@ public:
     /// Element index, counted from the end when negative, or for a slice a new value of self's class
     /// holding those elements; raises IndexError outside the value.
     static nb::object getitem(nb::pointer_and_handle<NativeCollection> self, nb::handle index);
+    /// A new value of self's class holding the same elements, copied without decoding one.
+    static nb::object copy(nb::pointer_and_handle<NativeCollection> self);
+    /// A copy of self extended with the elements of other, a list or a NativeCollection; NotImplemented
+    /// for anything else, as list + refuses it.
+    static nb::object add(nb::pointer_and_handle<NativeCollection> self, nb::handle other);
+    /// A new value of self's class holding its elements times times over, or none for times below 1;
+    /// NotImplemented when times is not an integer.
+    static nb::object multiply(nb::pointer_and_handle<NativeCollection> self, nb::handle times);
+    /// Repeats the elements in place times times over, or removes them for times below 1.
+    void repeat(nb::handle times);
+    /// The element annotation of the list node, as the layout gave it.
+    nb::object element_annotation() const;
+    std::uint32_t capacity() const { return capacity_; }
     /// Replaces element index, or the elements of a slice with those of an iterable, after checking each
     /// as a write to the field would. A slice of step 1 may change the length within the capacity; one of
     /// another step takes as many elements as it covers. Leaves the value as it was on any error.
@@ -95,6 +108,20 @@ private:
     [[noreturn]] void out_of_range(Py_ssize_t index) const;
     /// Raises the ValueError of a mutation that would leave length elements.
     [[noreturn]] void too_many(std::size_t length) const;
+    /// Raises the ValueError of a repetition of count elements times times over, whose product may not
+    /// fit a std::size_t.
+    [[noreturn]] void too_many(std::size_t count, Py_ssize_t times) const;
+    /// Whether count elements times times over pass the capacity; times is at least 1.
+    bool too_many_times(std::size_t count, Py_ssize_t times) const {
+        return count != 0 && static_cast<std::size_t>(times) > capacity_ / count;
+    }
+    /// The first slots_ bytes of a stored form holding count elements: the count and the padding before the
+    /// first slot. The caller holds the mutex.
+    std::vector<std::byte> header(std::size_t count) const;
+    /// A new value of self's class holding stored, with self's Types and label.
+    static nb::object like(nb::pointer_and_handle<NativeCollection> self, std::span<const std::byte> stored);
+    /// A new value of self's class holding its elements times times over, or none for times below 1.
+    static nb::object repeated(nb::pointer_and_handle<NativeCollection> self, Py_ssize_t times);
     /// Replaces element index; the caller does not hold the mutex.
     void set(Py_ssize_t index, nb::handle value);
     /// Replaces the elements a slice of a step other than 1 covers with the elements of value.

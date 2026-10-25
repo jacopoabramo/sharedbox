@@ -1,5 +1,12 @@
 import sys
-from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from collections.abc import (
+    Callable,
+    Iterable,
+    Iterator,
+    Mapping,
+    MutableSequence,
+    Sequence,
+)
 from typing import (
     Any,
     ClassVar,
@@ -356,11 +363,11 @@ class Types:
         """Return the value stored as `data`, as `read_versioned` returns it."""
 
 @disjoint_base
-class NativeCollection(Generic[_T]):
+class NativeCollection(MutableSequence[_T]):
     """A list value held as its field stores it: the count and the slots it uses.
 
-    A read of a list field makes one, and so does a slice of one; Python
-    code cannot construct it.
+    A read of a list field makes one, and so do a slice, a copy, `+` and
+    `*`; Python code cannot construct it.
     """
 
     __hash__: ClassVar[None]  # type: ignore[assignment]
@@ -505,6 +512,59 @@ class NativeCollection(Generic[_T]):
         """Compare the elements in order with those of a list or another value."""
     def __reversed__(self) -> Iterator[_T]: ...
     def __iter__(self) -> Iterator[_T]: ...
+    @property
+    def element_annotation(self) -> object:
+        """The annotation of the elements, as the field declares it."""
+    @property
+    def capacity(self) -> int:
+        """The most elements the value can hold."""
+    def copy(self) -> Self:
+        """Return a new value of the same element type and capacity holding the same elements.
+
+        The slots are copied without decoding an element.
+        """
+    def __copy__(self) -> Self:
+        """Return a copy, as `copy` does."""
+    def __deepcopy__(self, memo: dict[int, Any] | None, /) -> Self:
+        """Return a copy, as `copy` does.
+
+        Every read decodes an element anew, so the copy shares no element
+        with this value.
+        """
+    def __add__(self, other: list[_T] | NativeCollection[_T], /) -> Self:
+        """Return a copy extended with the elements of `other`.
+
+        Raises
+        ------
+        TypeError
+            If an element is not of the field's element type.
+        ValueError
+            If an element does not fit, or the result would hold more
+            elements than the capacity.
+        """
+    def __mul__(self, times: SupportsIndex, /) -> Self:
+        """Return a new value holding the elements `times` times over, none below 1.
+
+        Raises
+        ------
+        OverflowError
+            If `times` does not fit a C `Py_ssize_t`.
+        ValueError
+            If the result would hold more elements than the capacity.
+        """
+    def __rmul__(self, times: SupportsIndex, /) -> Self:
+        """Return the elements `times` times over, as `*` does."""
+    def __imul__(self, times: SupportsIndex, /) -> Self:
+        """Repeat the elements in place `times` times over, removing them below 1.
+
+        Raises
+        ------
+        OverflowError
+            If `times` does not fit a C `Py_ssize_t`.
+        ValueError
+            If the value would hold more elements than the capacity; it is
+            left as it was.
+        """
     def _stored(self) -> bytes:
         """Return the count and used slots, as a list field stores them."""
 

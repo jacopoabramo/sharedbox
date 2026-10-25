@@ -111,6 +111,14 @@ void NativeCollection::too_many(std::size_t length) const {
                                 " elements; the value would have " + std::to_string(length));
 }
 
+void NativeCollection::too_many(std::size_t count, Py_ssize_t times) const {
+    const nb::object length = nb::steal(PyNumber_Multiply(nb::int_(count).ptr(), nb::int_(times).ptr()));
+    if (!length.is_valid())
+        throw nb::python_error();
+    raise(PyExc_ValueError, label_ + " holds at most " + std::to_string(capacity_) +
+                                " elements; the value would have " + nb::str(length).c_str());
+}
+
 nb::object NativeCollection::element(Py_ssize_t index) const {
     // Decoded from a copy taken under the mutex, because decoding may run Python code, which could
     // change this value while the decode reads it.
@@ -143,16 +151,12 @@ nb::object NativeCollection::getitem(nb::pointer_and_handle<NativeCollection> se
         return value;
     }
     const Slice asked = unpack(index);
-    // Raises for a value the collector cleared, before its empty types_ is copied into the new value.
-    c.codec();
     std::vector<std::byte> part;
     {
         nb::ft_lock_guard guard(c.mutex_);
         const auto [s, length] = c.fit(asked);
-        const auto count = static_cast<std::uint32_t>(length);
+        part = c.header(length);
         part.resize(c.slots_ + length * c.stride_);
-        std::memcpy(part.data(), c.data_.get(), c.slots_);
-        std::memcpy(part.data(), &count, 4);
         std::byte *out = part.data() + c.slots_;
         if (s.step == 1)
             std::memcpy(out, c.slot(static_cast<std::size_t>(s.start)), length * c.stride_);
@@ -161,10 +165,92 @@ nb::object NativeCollection::getitem(nb::pointer_and_handle<NativeCollection> se
                 std::memcpy(out + k * c.stride_,
                             c.slot(static_cast<std::size_t>(s.start + Py_ssize_t(k) * s.step)), c.stride_);
     }
+    return like(self, part);
+}
+
+std::vector<std::byte> NativeCollection::header(std::size_t count) const {
+    std::vector<std::byte> out(data_.get(), data_.get() + slots_);
+    const auto stored = static_cast<std::uint32_t>(count);
+    std::memcpy(out.data(), &stored, 4);
+    return out;
+}
+
+nb::object NativeCollection::like(nb::pointer_and_handle<NativeCollection> self,
+                                  std::span<const std::byte> stored) {
+    const NativeCollection &c = *self.p;
+    // Raises for a value the collector cleared, before its empty types_ is copied into the new value.
+    c.codec();
     // Built with the mutex released, because allocating the instance may run the collector.
     return make(nb::handle(reinterpret_cast<PyObject *>(Py_TYPE(self.h.ptr()))), c.types_, c.list_, c.label_,
-                part);
+                stored);
 }
+
+nb::object NativeCollection::repeated(nb::pointer_and_handle<NativeCollection> self, Py_ssize_t times) {
+    const NativeCollection &c = *self.p;
+    std::vector<std::byte> part;
+    std::size_t count = 0;
+    bool refused = false;
+    {
+        nb::ft_lock_guard guard(c.mutex_);
+        count = c.count_;
+        if (times < 1) {
+            part = c.header(0);
+        } else if (c.too_many_times(count, times)) {
+            refused = true;
+        } else {
+            const std::size_t used = count * c.stride_;
+            part = c.header(count * static_cast<std::size_t>(times));
+            part.resize(c.slots_ + used * static_cast<std::size_t>(times));
+            for (Py_ssize_t k = 0; k < times; ++k)
+                std::memcpy(part.data() + c.slots_ + static_cast<std::size_t>(k) * used, c.slot(0), used);
+        }
+    }
+    if (refused)
+        c.too_many(count, times);
+    return like(self, part);
+}
+
+nb::object NativeCollection::copy(nb::pointer_and_handle<NativeCollection> self) { return repeated(self, 1); }
+
+nb::object NativeCollection::add(nb::pointer_and_handle<NativeCollection> self, nb::handle other) {
+    if (!PyList_Check(other.ptr()) && !nb::isinstance<NativeCollection>(other))
+        return nb::borrow(Py_NotImplemented);
+    nb::object out = copy(self);
+    nb::inst_ptr<NativeCollection>(out)->extend(other);
+    return out;
+}
+
+nb::object NativeCollection::multiply(nb::pointer_and_handle<NativeCollection> self, nb::handle times) {
+    if (!PyIndex_Check(times.ptr()))
+        return nb::borrow(Py_NotImplemented);
+    return repeated(self, as_index(times, PyExc_OverflowError));
+}
+
+void NativeCollection::repeat(nb::handle times) {
+    const Py_ssize_t n = as_index(times, PyExc_OverflowError);
+    std::size_t count = 0;
+    bool refused = false;
+    {
+        nb::ft_lock_guard guard(mutex_);
+        count = count_;
+        if (n < 1) {
+            splice(0, count_, nullptr, 0);
+        } else if (too_many_times(count, n)) {
+            refused = true;
+        } else if (n > 1) {
+            // Copied aside, because growing the buffer moves the slots the copies are taken from.
+            const std::size_t used = count * stride_;
+            std::vector<std::byte> copies(used * static_cast<std::size_t>(n - 1));
+            for (Py_ssize_t k = 0; k + 1 < n; ++k)
+                std::memcpy(copies.data() + static_cast<std::size_t>(k) * used, slot(0), used);
+            splice(count_, count_, copies.data(), count * static_cast<std::size_t>(n - 1));
+        }
+    }
+    if (refused)
+        too_many(count, n);
+}
+
+nb::object NativeCollection::element_annotation() const { return nb::borrow(codec().element_annotation(list_)); }
 
 void NativeCollection::set(Py_ssize_t index, nb::handle value) {
     bool inside = false;

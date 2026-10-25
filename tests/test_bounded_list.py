@@ -1,12 +1,14 @@
 import collections.abc
+import copy
 import enum
+import pickle
 import queue
 import threading
 from dataclasses import dataclass
-from typing import Annotated
+from typing import Annotated, Any
 
 import pytest
-from crossproc import update_in_child
+from crossproc import repr_in_child, update_in_child
 
 from sharedbox import BoundedList, Capacity, SharedBox, SharedStream, field
 from sharedbox._layout import build_layout
@@ -398,3 +400,135 @@ def test_a_bounded_list_that_was_never_built_is_refused(unique_name: str) -> Non
         ):
             box.update(points=BoundedList.__new__(BoundedList))
         assert box.points == [1.0]
+
+
+def test_a_bounded_list_is_built_outside_a_box() -> None:
+    """Build a BoundedList from values and refuse one past its capacity or of the wrong element type."""
+    assert BoundedList[float]([1.0, 2.0], capacity=4) == [1.0, 2.0]
+    assert BoundedList[float](capacity=4) == []
+    with pytest.raises(ValueError, match=r"BoundedList\[float\] holds at most 4"):
+        BoundedList[float]([1.0] * 5, capacity=4)
+    with pytest.raises(TypeError, match=r"BoundedList\[float\] expects float"):
+        BoundedList[float](["x"], capacity=4)  # type: ignore[list-item]
+    with pytest.raises(TypeError, match=r"BoundedList\[float\]\(values, capacity=n\)"):
+        BoundedList([1.0], capacity=4)
+
+
+def test_repr_shows_the_element_type_and_capacity(unique_name: str) -> None:
+    """Show the element type, the elements and the capacity, for a value built or read."""
+    assert (
+        repr(BoundedList[float]([1.0, 2.0], capacity=4))
+        == "BoundedList[float]([1.0, 2.0], capacity=4)"
+    )
+    with Scan.create(unique_name, [1.5]) as box:
+        assert repr(box.points) == "BoundedList[float]([1.5], capacity=8)"
+
+
+@pytest.mark.parametrize(
+    "make_copy",
+    [
+        copy.copy,
+        copy.deepcopy,
+        lambda bl: bl.copy(),
+        lambda bl: bl[:],
+        lambda bl: bl + [3.0],
+        lambda bl: bl * 2,
+        lambda bl: 2 * bl,
+        lambda bl: bl * 0,
+        lambda bl: bl * -1,
+    ],
+)
+def test_copies_add_and_multiply_keep_the_type(make_copy: Any) -> None:
+    """Return a new BoundedList of the same element type and capacity that equals the list result."""
+    bl = BoundedList[float]([1.0, 2.0], capacity=8)
+    result = make_copy(bl)
+    assert type(result) is BoundedList
+    assert result is not bl
+    assert result == make_copy([1.0, 2.0])
+    assert result.capacity == 8
+    assert result.element_annotation is float
+    result.append(9.0)
+    assert bl == [1.0, 2.0]
+
+
+def test_two_bounded_lists_concatenate() -> None:
+    """Concatenate two BoundedLists into a value of the left one's capacity."""
+    joined = BoundedList[float]([1.0], capacity=4) + BoundedList[float](
+        [2.0], capacity=1
+    )
+    assert joined == [1.0, 2.0]
+    assert joined.capacity == 4
+
+
+def test_multiply_in_place_repeats_the_elements() -> None:
+    """Repeat the elements in place with *=, and clear the value for a count below one."""
+    bl = BoundedList[float]([1.0, 2.0], capacity=4)
+    same = bl
+    bl *= 2
+    assert bl is same
+    assert bl == [1.0, 2.0, 1.0, 2.0]
+    bl *= 0
+    assert bl == []
+
+
+@pytest.mark.parametrize(
+    "grow",
+    [
+        lambda bl: bl * 3,
+        lambda bl: 3 * bl,
+        lambda bl: bl.__imul__(3),
+        lambda bl: bl * 2**62,
+        lambda bl: bl + [1.0, 1.0, 1.0],
+    ],
+)
+def test_add_and_multiply_past_the_capacity_raise(grow: Any) -> None:
+    """Raise ValueError naming the length the result would have and leave the value as it was."""
+    bl = BoundedList[float]([1.0, 2.0], capacity=4)
+    with pytest.raises(
+        ValueError,
+        match=r"BoundedList\[float\] holds at most 4 elements; the value would have \d+",
+    ):
+        grow(bl)
+    assert bl == [1.0, 2.0]
+
+
+def test_multiply_refuses_what_list_refuses() -> None:
+    """Raise TypeError for a count that is not an integer and OverflowError for one past Py_ssize_t."""
+    bl = BoundedList[float]([1.0], capacity=4)
+    with pytest.raises(TypeError):
+        bl * 1.5  # type: ignore[operator]
+    with pytest.raises(OverflowError):
+        bl * 2**70
+    with pytest.raises(TypeError):
+        bl + (1.0,)  # type: ignore[operator]
+
+
+def test_a_deep_copy_of_record_elements_shares_nothing(unique_name: str) -> None:
+    """Deep-copy a BoundedList of records with a memo and change the copy without changing the original."""
+    with Trace.create(unique_name, [Point(1.0, 2.0)]) as box:
+        points = box.points
+    memo: dict[int, Any] = {}
+    copied = copy.deepcopy([points, points], memo)
+    assert copied[0] is copied[1]
+    copied[0][0] = Point(5.0, 6.0)
+    assert points == [Point(1.0, 2.0)]
+
+
+def test_a_pickled_bounded_list_reads_back_in_a_spawned_process(
+    unique_name: str,
+) -> None:
+    """Pickle a BoundedList of records read from a box and read it back in a spawned process."""
+    with Trace.create(unique_name, [Point(1.0, 2.0), Point(3.0, 4.0)]) as box:
+        points = box.points
+    assert pickle.loads(pickle.dumps(points)) == points
+    assert repr_in_child(points) == repr(points)
+
+
+def test_unpickling_a_count_past_the_capacity_reads_as_corrupt() -> None:
+    """Raise the codec's corrupt-value ValueError when pickled bytes hold more elements than the capacity."""
+    rebuild, (element, capacity, stored) = BoundedList[float](
+        [1.0, 2.0], capacity=4
+    ).__reduce__()
+    forged = (5).to_bytes(4, "little") + stored[4:]
+    with pytest.raises(ValueError, match="the stored value is not one Python can hold"):
+        rebuild(element, capacity, forged)

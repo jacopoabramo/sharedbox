@@ -1,7 +1,6 @@
 # metaclass is nanobind's nb_type, not type
 sharedbox._native.Field
 sharedbox._native.FieldWriter
-sharedbox._native.NativeCollection
 sharedbox._native.NativeCollectionIterator
 sharedbox._native.Reader
 sharedbox._native.Segment
