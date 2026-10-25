@@ -613,7 +613,7 @@ class End:
 
     @property
     def closed(self) -> bool:
-        return self._shut or self._native.closed
+        return self._shut
 
     def _submit(self, call: Call) -> CallFuture:
         with self._lock:
@@ -812,13 +812,21 @@ class SharedSendStream(End, Generic[T]):
 
     def _retry(
         self,
-        call: Callable[[float], object],
+        call: Callable[..., object],
         timeout: float | None,
         future: CallFuture | None,
+        *args: object,
     ) -> None:
+        if future is None:
+            # A free slot needs no wait; without one, the loop below waits as before.
+            try:
+                call(*args, 0.0)
+                return
+            except (WouldBlock, _Interrupted):
+                pass
         for step in steps(timeout):
             try:
-                call(step)
+                call(*args, step)
                 return
             except WouldBlock:
                 # A wait for another thread's slot is not interrupted, so a cancel is seen at the end of a step.
@@ -842,7 +850,7 @@ class SharedSendStream(End, Generic[T]):
     def _send(
         self, item: T, timeout: float | None, future: CallFuture | None = None
     ) -> None:
-        self._retry(lambda step: self._native.send(item, step), timeout, future)
+        self._retry(self._native.send, timeout, future, item)
 
     def _reserve(self, timeout: float | None, future: CallFuture | None = None) -> None:
         self._retry(self._native.reserve, timeout, future)
@@ -1481,6 +1489,11 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T]):
     ) -> T:
         if future is None and delivering is None:
             timeout = self._after_worker(timeout)
+            # A waiting item needs no wait; without one, the loop below waits as before.
+            try:
+                return self._take(targets, 0.0)
+            except (WouldBlock, _Interrupted):
+                pass
         for step in steps(timeout):
             try:
                 return self._take(targets, step, future)

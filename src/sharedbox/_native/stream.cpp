@@ -154,14 +154,18 @@ std::shared_ptr<StreamCore> make_core(stream s) {
 class End {
 public:
     End(std::shared_ptr<StreamCore> core, nb::handle types)
-        : name_(core->name), core_(std::move(core)), types_(nb::borrow(types)) {}
+        : name_(core->name), core_(std::move(core)), types_(nb::borrow(types)),
+          item_types_(nb::cast<const Types *>(types)) {}
     bool closed() const { return closed_.load(); }
 
     int traverse(visitproc visit, void *arg) const {
         Py_VISIT(types_.ptr());
         return 0;
     }
-    void clear() { types_.release().dec_ref(); }
+    void clear() {
+        item_types_ = nullptr;
+        types_.release().dec_ref();
+    }
 
 protected:
     void check_open() const {
@@ -180,11 +184,13 @@ protected:
     }
     std::shared_ptr<StreamCore> core_;
     nb::object types_;
-    /// The item type, which this end's own reference keeps alive; empty once the collector cleared the end.
+    /// The Types inside types_, found once, so a call casts nothing; null once the collector cleared the end.
+    const Types *item_types_;
+    /// The item type, which this end's own reference keeps alive.
     const Types &types() const {
-        if (!types_.is_valid())
+        if (item_types_ == nullptr)
             throw StreamClosed("stream '" + name_ + "': this end is closed");
-        return nb::cast<const Types &>(types_);
+        return *item_types_;
     }
     // unique_ptr so after_fork can replace a mutex another thread of the parent held, rather than unlock it.
     std::unique_ptr<std::mutex> calls_ = std::make_unique<std::mutex>();
@@ -423,12 +429,15 @@ public:
         // here, with the GIL held and before the wait, so a bad array consumes no item. The arguments keep
         // each array alive for the whole call.
         std::vector<Types::ArrayTarget> targets;
-        std::unordered_map<std::uint64_t, PyObject *> given;
+        // Made only when arrays are given, so a plain receive builds no map.
+        std::optional<std::unordered_map<std::uint64_t, PyObject *>> given;
+        if (!arrays.empty())
+            given.emplace();
         nb::object whole;
         for (const auto &[path, out] : arrays) {
             Types::ArrayTarget &target = targets.emplace_back(types.array_target(0, path, out.ptr()));
-            const bool fresh =
-                path.empty() ? !std::exchange(whole, out).is_valid() : given.emplace(target.key, out.ptr()).second;
+            const bool fresh = path.empty() ? !std::exchange(whole, out).is_valid()
+                                            : given->emplace(target.key, out.ptr()).second;
             if (!fresh)
                 throw std::invalid_argument("stream '" + name_ + "': two arrays given for one member");
         }
@@ -478,8 +487,9 @@ public:
         const std::span<const std::byte> bytes = value_bytes(t, {scratch, size}, name_);
         if (whole.is_valid())
             return nb::make_tuple(whole, (*got)->position);
-        nb::object value = given.empty() ? types.decode(0, bytes, large && targets.empty() ? &large : nullptr)
-                                         : types.decode_given(0, bytes, given);
+        nb::object value = !given || given->empty()
+                               ? types.decode(0, bytes, large && targets.empty() ? &large : nullptr)
+                               : types.decode_given(0, bytes, *given);
         return nb::make_tuple(value, (*got)->position);
     }
 
