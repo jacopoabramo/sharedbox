@@ -157,13 +157,22 @@ def test_an_enum_literal_or_array_17_deep_is_refused(leaf: object) -> None:
         build_layout(make(nested(16, leaf)))
 
 
-@pytest.mark.parametrize("annotation", [int | None, tuple[bool]])
-def test_a_presence_or_bool_byte_of_2_reads_as_corrupt(annotation: object) -> None:
-    """Check that an optional's presence byte or a bool inside a tuple holding 2 raises ValueError naming the field."""
+@pytest.mark.parametrize(
+    ("annotation", "data"),
+    [
+        (int | None, b"\x02" + bytes(15)),
+        (tuple[bool], b"\x02"),
+        (tuple[bool, bool], b"\x01\x02"),
+        (Annotated[list[bool], Capacity(2)], b"\x02\x00\x00\x00\x01\x02"),
+    ],
+)
+def test_a_presence_or_bool_byte_of_2_reads_as_corrupt(
+    annotation: object, data: bytes
+) -> None:
+    """Raise ValueError naming the field when an optional's presence byte, or a bool of a tuple or list after a valid one, holds 2."""
     layout = build_layout(make(annotation))
-    size = layout.fields[0].type.size  # type: ignore[union-attr]
     with pytest.raises(ValueError, match="T.x"):
-        layout.types.decode(0, b"" + bytes(size - 1))
+        layout.types.decode(0, data)
 
 
 @dataclass(frozen=True)
@@ -390,7 +399,9 @@ def test_a_metadata_shape_and_an_annotated_shape_that_disagree_are_refused() -> 
             metadata={"shape": (3,)}
         )
 
-    with pytest.raises(TypeError, match="disagree"):
+    with pytest.raises(
+        TypeError, match=r"Box.s.scan: Shape\(2\) and metadata shape \(3\) disagree"
+    ):
 
         class Box(SharedBox):
             s: Scanned

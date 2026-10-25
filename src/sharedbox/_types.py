@@ -402,7 +402,7 @@ def parse(
     capacity: int | None = None,
     depth: int = 1,
     path: frozenset[int] = frozenset(),
-    sizes: tuple[tuple[int, ...] | None, Any] | None = None,
+    sizes: tuple[tuple[str, tuple[int, ...]] | None, Any] | None = None,
 ) -> TypeSpec:
     """Return how a value annotated `hint` is stored.
 
@@ -418,10 +418,11 @@ def parse(
     path
         Type aliases being unwrapped around this one.
     sizes
-        The `field(shape=...)` and the plain default of a box field, which an
-        array field, or the array of an optional field, takes its sizes from
-        when the annotation has no `Shape`. A record member passes its
-        metadata shape and no default. None when neither is given.
+        The `field(shape=...)` of a box field, as the name a message gives it
+        and its sizes, and the field's plain default, which an array field,
+        or the array of an optional field, takes its sizes from when the
+        annotation has no `Shape`. A record member passes its metadata shape
+        and no default. None when neither is given.
 
     Raises
     ------
@@ -517,7 +518,7 @@ def shape_text(dims: tuple[int, ...]) -> str:
 def given_sizes(
     extras: list[Any],
     where: str,
-    option: tuple[int, ...] | None,
+    option: tuple[str, tuple[int, ...]] | None,
     default: Any,
 ) -> list[tuple[str, tuple[int, ...]]]:
     """Return the sizes an array field is given, each with the name of where it came from."""
@@ -526,7 +527,7 @@ def given_sizes(
         raise TypeError(f"{where}: an array field takes one Shape")
     given = [(f"Shape{shape_text(shape.dims)}", shape.dims) for shape in shapes]
     if option is not None:
-        given.append((f"field(shape={option})", option))
+        given.append(option)
     shape = getattr(default, "shape", None)
     if (
         default is not MISSING
@@ -546,7 +547,7 @@ def array_spec(
     hint: Any,
     extras: list[Any],
     where: str,
-    sizes: tuple[tuple[int, ...] | None, Any] | None = None,
+    sizes: tuple[tuple[str, tuple[int, ...]] | None, Any] | None = None,
 ) -> TypeSpec:
     dtypes = [extra.name for extra in extras if isinstance(extra, DType)]
     option, default = sizes or (None, MISSING)
@@ -609,7 +610,7 @@ def dispatch(
     capacity: int | None,
     depth: int,
     path: frozenset[int],
-    sizes: tuple[tuple[int, ...] | None, Any] | None = None,
+    sizes: tuple[tuple[str, tuple[int, ...]] | None, Any] | None = None,
 ) -> TypeSpec:
     """Return the `TypeSpec` of an unwrapped annotation; `parse` documents the parameters."""
     if isinstance(hint, type) and hint in TEXT:
@@ -776,7 +777,7 @@ def union_spec(
     capacity: int | None,
     depth: int,
     path: frozenset[int],
-    sizes: tuple[tuple[int, ...] | None, Any] | None = None,
+    sizes: tuple[tuple[str, tuple[int, ...]] | None, Any] | None = None,
 ) -> TypeSpec:
     args = get_args(hint)
     rest = tuple(arg for arg in args if arg is not NoneType)
@@ -977,7 +978,12 @@ def record_spec(
         for name, keyword, member, shape in record_members(hint, hints, form, where):
             attrs.append(name)
             keywords.append(keyword)
-            sizes = None if shape is None else (Shape(*shape).dims, MISSING)
+            dims = None if shape is None else Shape(*shape).dims
+            sizes = (
+                None
+                if dims is None
+                else ((f"metadata shape {shape_text(dims)}", dims), MISSING)
+            )
             items.append(
                 (
                     name,
