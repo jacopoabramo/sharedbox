@@ -43,7 +43,7 @@ from ._arrays import (
     dtype_name,
     key,
 )
-from ._native import NativeCollection
+from ._native import NativeCollection, NativeSet
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -1136,39 +1136,111 @@ def is_collection(hint: Any) -> bool:
         or origin in LISTS
         or origin in SETS
         or origin in DICTS
-        or list_class(hint) is not None
+        or bounded_class(hint) is not None
     )
 
 
-def list_class(hint: Any) -> type[NativeCollection[Any]] | None:
-    """Return the strict `NativeCollection` subclass `hint` is, alone or parametrised, or None."""
+BOUNDED: Final[tuple[type, ...]] = (NativeCollection, NativeSet)
+NUMBER_KINDS: Final[frozenset[str]] = frozenset(
+    {
+        "bool",
+        "int",
+        "int8",
+        "int16",
+        "int32",
+        "uint8",
+        "uint16",
+        "uint32",
+        "uint64",
+        "float",
+        "float16",
+        "float32",
+        "complex",
+        "complex64",
+        "flag",
+    }
+)
+"""The kinds whose values may equal a value of another number kind, as `1 == 1.0 == True`."""
+INEXACT_KINDS: Final[frozenset[str]] = frozenset(
+    {
+        "float",
+        "float16",
+        "float32",
+        "complex",
+        "complex64",
+        "datetime",
+        "time",
+        "datetime64",
+    }
+)
+"""The kinds whose stored bytes a key check rewrites or refuses."""
+
+
+def bounded_class(hint: Any) -> type | None:
+    """Return the strict subclass of `NativeCollection` or `NativeSet` that `hint` is, alone or parametrised, or None."""
     origin = get_origin(hint) or hint
     if (
         isinstance(origin, type)
-        and issubclass(origin, NativeCollection)
-        and origin is not NativeCollection
+        and issubclass(origin, BOUNDED)
+        and origin not in BOUNDED
     ):
         return origin
     return None
 
 
-def list_element(hint: Any) -> Any:
-    """Return the element annotation of a `NativeCollection` subclass, alone or parametrised.
+def bounded_args(hint: Any) -> tuple[Any, ...] | None:
+    """Return the type arguments of a `NativeCollection` or `NativeSet` subclass, alone or parametrised.
 
-    A class alone gives the argument of the parametrised `NativeCollection`
-    subclass it derives from, as `class Points(BoundedList[float])` gives
-    `float`. None when `hint` gives no element type, or a type variable.
+    A class alone gives the arguments of the parametrised subclass it
+    derives from, as `class Points(BoundedList[float])` gives `(float,)`.
+    None when `hint` gives none, or one is a type variable.
     """
     bases = (
         base
         for cls in (get_origin(hint) or hint).__mro__
         for base in vars(cls).get("__orig_bases__", ())
-        if list_class(base) is not None
+        if bounded_class(base) is not None
     )
     args = get_args(hint) or get_args(next(bases, None))
-    if len(args) != 1 or isinstance(args[0], TypeVar):
+    if not args or any(isinstance(arg, TypeVar) for arg in args):
         return None
-    return args[0]
+    return args
+
+
+def is_number(spec: TypeSpec) -> bool:
+    """Whether values of `spec` may equal those of another number kind."""
+    match spec.kind:
+        case "enum":
+            return any(isinstance(m.value, int) for m in spec.info[1])
+        case "literal":
+            return any(isinstance(v, int) for v in spec.info[0])
+        case kind:
+            return kind in NUMBER_KINDS
+
+
+def key_refusal(spec: TypeSpec, inside: str | None = None) -> str | None:
+    """Return what a key of `spec` cannot hold, because equal keys could differ in bytes, or None.
+
+    `inside` names the union or `tuple[T, ...]` around `spec`, whose
+    members a key check cannot reach.
+    """
+    if spec.kind == "decimal":
+        return "a Decimal"
+    if spec.kind == "set":
+        return "a frozenset"
+    if inside is not None and spec.kind in INEXACT_KINDS:
+        return f"a {spec.text} inside {inside}"
+    if spec.kind == "union":
+        numbers = [m.type.text for m in spec.members if is_number(m.type)]
+        if len(numbers) > 1:
+            return f"a union of {numbers[0]} and {numbers[1]}"
+        inside = inside or "a union"
+    elif spec.kind == "list":
+        inside = inside or "a tuple[T, ...]"
+    return next(
+        (r for m in spec.members if (r := key_refusal(m.type, inside)) is not None),
+        None,
+    )
 
 
 def collection_spec(
@@ -1180,15 +1252,16 @@ def collection_spec(
             f"{where}: {hint!r} needs a Capacity in elements, as in Annotated[{hint!r}, Capacity(n)]"
         )
     below = deeper(depth, where)
-    bounded = list_class(hint)
+    bounded = bounded_class(hint)
     if bounded is not None:
-        given = list_element(hint)
+        given = bounded_args(hint)
         if given is None:
             name = bounded.__name__
+            example = "float" if issubclass(bounded, NativeCollection) else "str"
             raise TypeError(
-                f"{where}: {name} needs its element type, as in Annotated[{name}[float], Capacity(n)]"
+                f"{where}: {name} needs its element type, as in Annotated[{name}[{example}], Capacity(n)]"
             )
-        args: tuple[Any, ...] = (given,)
+        args: tuple[Any, ...] = given
     else:
         args = get_args(hint)
     if len(args) != (2 if origin in DICTS or origin is tuple else 1):
@@ -1211,7 +1284,8 @@ def collection_spec(
         if origin is tuple:
             kind, read = "list", tuple
         elif bounded is not None:
-            kind, read = "list", bounded
+            kind = "list" if issubclass(bounded, NativeCollection) else "set"
+            read = bounded
         elif origin in LISTS:
             kind, read = "list", LISTS[origin]
         else:
@@ -1221,6 +1295,12 @@ def collection_spec(
             raise TypeError(
                 f"{where}: set elements of {element.text} are not hashable when read back"
             )
+        if bounded is not None and kind == "set":
+            reason = key_refusal(element)
+            if reason is not None:
+                raise TypeError(
+                    f"{where}: {bounded.__name__} keys cannot hold {reason}"
+                )
         stride = round_up(element.size, element.alignment)
         a = max(4, element.alignment)
         members = (Member(round_up(4, a), element),)  # type: ignore[assignment]
@@ -1245,7 +1325,7 @@ def collection_spec(
         members=members,
         count=len(members),
         before=struct.pack("<I", capacity),
-        info=(read, element.text, args[0]) if kind == "list" else (read,),
+        info=(read, element.text, args[0]) if kind != "dict" else (read,),
         match=(
             (abc.Mapping,)
             if kind == "dict"

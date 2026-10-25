@@ -2,6 +2,7 @@
 
 #include <Python.h>
 #include <nanobind/nanobind.h>
+#include <sharedbox/sharedbox.hpp>
 
 #include <cstddef>
 #include <cstdint>
@@ -11,11 +12,14 @@
 #include <utility>
 #include <vector>
 
-#include "types.hpp"
+#include "codec.hpp"
 
 namespace sharedbox {
 
 namespace nb = nanobind;
+
+class Types;
+
 /// The bytes of one slot, on the stack when they fit.
 class SlotBuffer {
 public:
@@ -28,8 +32,8 @@ private:
 };
 
 /// The slots of a collection value in their stored form: the count and the slots it uses, copied out of a
-/// record and owned here, with the Types that converts their elements. Each method holds the object's mutex
-/// on the free-threaded build and decodes or encodes one element at a time.
+/// record and owned here, with the Types that converts their elements. Each public method holds the object's
+/// mutex on the free-threaded build and decodes or encodes one element at a time.
 class SlotStore {
 public:
     SlotStore(const SlotStore &) = delete;
@@ -54,7 +58,7 @@ public:
     std::uint32_t capacity() const { return capacity_; }
     /// Element index, or an invalid object outside the value.
     nb::object element(Py_ssize_t index) const;
-    /// The count and used slots, as a list field stores them.
+    /// The count and used slots, as the field stores them.
     nb::bytes stored() const;
     /// Whether the elements have the schema text and annotation given.
     bool has_elements(const std::string &text, PyObject *annotation) const;
@@ -172,8 +176,10 @@ public:
     /// Equality with a list or another NativeCollection, element by element; NotImplemented otherwise.
     nb::object equals(nb::handle other) const;
 
-private:
+protected:
     using SlotStore::too_many;
+
+private:
     /// A slice's start, stop and step as it gives them, before they are fitted to a count.
     struct Slice {
         Py_ssize_t start = 0;

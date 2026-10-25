@@ -7,6 +7,7 @@
 
 #include "collection.hpp"
 #include "scalars.hpp"
+#include "set.hpp"
 
 namespace sharedbox {
 namespace {
@@ -271,7 +272,8 @@ Types::Types(const std::vector<std::tuple<std::uint32_t, std::uint32_t, std::uin
              const std::vector<std::pair<std::int64_t, std::uint32_t>> &bytearrays,
              const std::vector<std::uint32_t> &reusable, const std::vector<Convert> &converts)
     : labels_(std::move(labels)), table_(std::move(table)),
-      collection_type_(reinterpret_cast<PyTypeObject *>(nb::type<NativeCollection>().ptr())) {
+      collection_type_(reinterpret_cast<PyTypeObject *>(nb::type<NativeCollection>().ptr())),
+      set_type_(reinterpret_cast<PyTypeObject *>(nb::type<NativeSet>().ptr())) {
     check_names(labels_, fields.size());
     std::vector<std::uint32_t> entries;
     entries.reserve(fields.size());
@@ -396,19 +398,22 @@ void Types::prepare(std::uint32_t node, std::uint8_t kind, nb::object info) {
         }
         break;
     }
-    case kind_list: {
+    case kind_list:
+    case kind_set: {
         n.cls = item(n.info, 0);
         PyObject *text = item(n.info, 1);
         if (!PyUnicode_Check(text))
-            throw std::invalid_argument("a list's element text is not a str");
+            throw std::invalid_argument("a list's or set's element text is not a str");
         n.element_text = nb::borrow<nb::str>(text).c_str();
-        const int stored = PyObject_IsSubclass(n.cls, nb::type<NativeCollection>().ptr());
+        const nb::handle base = kind == kind_list ? nb::type<NativeCollection>() : nb::type<NativeSet>();
+        const int stored = PyObject_IsSubclass(n.cls, base.ptr());
         if (stored < 0)
             throw nb::python_error();
         n.stored = stored == 1;
+        if (n.stored && kind == kind_set)
+            n.key = plan_of(tree_, tree_.member(tree_.node(node).members).type);
         break;
     }
-    case kind_set:
     case kind_dict:
         n.cls = item(n.info, 0);
         break;
@@ -569,11 +574,15 @@ nb::object Types::decode(std::uint32_t index, std::span<const std::byte> bytes,
         if (bytes.size() < 4 || length > node.capacity ||
             bytes.size() < node.slots + std::uint64_t{length} * node.stride)
             corrupt(name);
-        // A list read as a NativeCollection takes over the read's heap buffer, as an array does.
+        // A list or set read as a NativeCollection or NativeSet takes over the read's heap buffer, as an array
+        // does.
         const NodeInfo &n = nodes_[t.node];
-        if (t.kind == kind_list && n.stored && owned != nullptr && owned->get() == bytes.data())
-            return SlotStore::make<NativeCollection>(n.cls, nb::find(*this), t, name, std::move(*owned),
-                                                     bytes.size());
+        if (n.stored && owned != nullptr && owned->get() == bytes.data()) {
+            if (t.kind == kind_list)
+                return SlotStore::make<NativeCollection>(n.cls, nb::find(*this), t, name, std::move(*owned),
+                                                         bytes.size());
+            return SlotStore::make<NativeSet>(n.cls, nb::find(*this), t, name, std::move(*owned), bytes.size());
+        }
     }
     if (t.kind <= kind_ref) {
         if (t.kind == kind_bytes && field_is_bytearray(index))
@@ -602,14 +611,16 @@ PyObject *Types::element_annotation(const detail::type_ref &t) const { return it
 
 std::size_t Types::encode_collection(const detail::type_ref &t, PyObject *value, std::byte *out,
                                      const Where &where) const {
-    if (t.kind == kind_list && PyObject_TypeCheck(value, collection_type_)) {
+    const bool list = t.kind == kind_list && PyObject_TypeCheck(value, collection_type_);
+    if (list || (t.kind == kind_set && PyObject_TypeCheck(value, set_type_))) {
         if (!nb::inst_ready(value))
             raise(PyExc_TypeError, where.name + " got a " +
                                        type_name(reinterpret_cast<PyObject *>(Py_TYPE(value))) +
                                        " that was never built");
-        const NativeCollection &collection = *nb::inst_ptr<NativeCollection>(value);
-        if (collection.has_elements(nodes_[t.node].element_text, element_annotation(t)))
-            return collection.copy_to(out, tree_.node(t.node).capacity, where.name);
+        const SlotStore &stored = list ? static_cast<const SlotStore &>(*nb::inst_ptr<NativeCollection>(value))
+                                       : *nb::inst_ptr<NativeSet>(value);
+        if (stored.has_elements(nodes_[t.node].element_text, element_annotation(t)))
+            return stored.copy_to(out, tree_.node(t.node).capacity, where.name);
     }
     if (!accepts(t, value))
         wrong(where.name, t.kind == kind_dict ? "a mapping" : t.kind == kind_set ? "a set" : "a sequence", value);
@@ -620,6 +631,10 @@ std::size_t Types::encode_collection(const detail::type_ref &t, PyObject *value,
         raise(PyExc_ValueError, where.name + " holds at most " + std::to_string(node.capacity) +
                                     " elements; the value has " + std::to_string(length));
     put(out, static_cast<std::uint32_t>(length));
+    // Set elements are compared by their bytes, and out may hold an older value, as a stream slot does, so the
+    // slots are zeroed first: the bytes an element leaves unwritten, such as padding, then read as zero.
+    if (t.kind == kind_set)
+        std::memset(out + node.slots, 0, static_cast<std::size_t>(length) * node.stride);
     const detail::type_member &first = tree_.member(node.members);
     for (Py_ssize_t i = 0; i < length; ++i) {
         std::byte *slot = out + node.slots + static_cast<std::size_t>(i) * node.stride;
@@ -947,10 +962,12 @@ nb::object Types::decode_stored(const detail::type_ref &t, const std::byte *data
             }
             return out;
         }
-        if (n.stored)
-            return SlotStore::make<NativeCollection>(
-                n.cls, nb::find(*this), t, where.name,
-                std::span<const std::byte>(data, node.slots + std::size_t{length} * node.stride));
+        if (n.stored) {
+            const std::span<const std::byte> stored(data, node.slots + std::size_t{length} * node.stride);
+            if (t.kind == kind_list)
+                return SlotStore::make<NativeCollection>(n.cls, nb::find(*this), t, where.name, stored);
+            return SlotStore::make<NativeSet>(n.cls, nb::find(*this), t, where.name, stored);
+        }
         auto slot = [&](std::uint32_t i) { return data + node.slots + std::size_t{i} * node.stride; };
         const bool is_list = n.cls == reinterpret_cast<PyObject *>(&PyList_Type);
         if (is_list || n.cls == reinterpret_cast<PyObject *>(&PyTuple_Type)) {

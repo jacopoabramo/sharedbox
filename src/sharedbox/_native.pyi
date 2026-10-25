@@ -6,6 +6,7 @@ from collections.abc import (
     Mapping,
     MutableSequence,
     Sequence,
+    Sized,
 )
 from typing import (
     Any,
@@ -563,6 +564,39 @@ class NativeCollection(MutableSequence[_T]):
 @final
 class NativeCollectionIterator(Generic[_T]):
     """Decodes one element of a `NativeCollection` per step, forward or from the end."""
+
+    def __iter__(self) -> Self: ...
+    def __next__(self) -> _T: ...
+
+@disjoint_base
+class NativeSet(Iterable[_T], Sized):
+    """A set value held as its field stores it: the count and the slots it uses.
+
+    A read of a set field declared with a `NativeSet` subclass makes one,
+    and so does a copy; Python code cannot construct it.
+    """
+
+    __hash__: ClassVar[None]  # type: ignore[assignment]
+    def __len__(self) -> int: ...
+    def __iter__(self) -> Iterator[_T]:
+        """Decode one element per step, in the order the slots hold them."""
+    @property
+    def _element_annotation(self) -> object:
+        """The annotation of the elements, as the field declares it."""
+    @property
+    def capacity(self) -> int:
+        """The most elements the value can hold."""
+    def copy(self) -> Self:
+        """Return a new value of the same element type and capacity holding the same elements.
+
+        The slots are copied without decoding an element.
+        """
+    def _stored(self) -> bytes:
+        """Return the count and used slots, as a set field stores them."""
+
+@final
+class NativeSetIterator(Generic[_T]):
+    """Decodes one element of a `NativeSet` per step, in slot order."""
 
     def __iter__(self) -> Self: ...
     def __next__(self) -> _T: ...

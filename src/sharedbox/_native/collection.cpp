@@ -5,6 +5,8 @@
 #include <new>
 #include <utility>
 
+#include "types.hpp"
+
 namespace sharedbox {
 
 SlotStore::SlotStore(nb::object types, const detail::type_ref &node, std::string label,
