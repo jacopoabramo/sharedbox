@@ -2,7 +2,7 @@
 
 The contenders that compare against the standard library hold the same
 record: an int, a float and a string of up to 32 bytes. Rows for a datetime,
-a record, a list and an array time SharedBox alone; they have no
+a record, a list, a set, a dict and an array time SharedBox alone; they have no
 standard-library counterpart. `mp.Value/Array` takes one lock per value, so
 its "update two fields" and "read all" rows take two or three locks one after
 the other.
@@ -155,6 +155,12 @@ class Typed(SharedBox):
     b16: Annotated[BoundedList[float], Capacity(16)]
     b1k: Annotated[BoundedList[float], Capacity(1024)]
     b64k: Annotated[BoundedList[float], Capacity(65536)]
+    s16: Annotated[set[int], Capacity(16)]
+    s1k: Annotated[set[int], Capacity(1024)]
+    s64k: Annotated[set[int], Capacity(65536)]
+    d16: Annotated[dict[int, float], Capacity(16)]
+    d1k: Annotated[dict[int, float], Capacity(1024)]
+    d64k: Annotated[dict[int, float], Capacity(65536)]
     image: Annotated[np.ndarray, Shape(512, 512), DType("float32")]
 
 
@@ -166,6 +172,12 @@ F64K = [0.5] * 65536
 B16 = BoundedList[float](FLOATS, capacity=16)
 B1K = BoundedList[float](F1K, capacity=1024)
 B64K = BoundedList[float](F64K, capacity=65536)
+S16 = set(range(16))
+S1K = set(range(1024))
+S64K = set(range(65536))
+D16 = dict.fromkeys(range(16), 0.5)
+D1K = dict.fromkeys(range(1024), 0.5)
+D64K = dict.fromkeys(range(65536), 0.5)
 IMAGE = np.ones((512, 512), np.float32)
 OUT = np.empty_like(IMAGE)
 
@@ -177,7 +189,24 @@ def fill_image(box: Typed) -> None:
 
 def open_typed() -> tuple[Any, ...]:
     name = f"bench-ops-typed-{os.getpid()}"
-    box = Typed.create(name, WHEN, QUAD, FLOATS, F1K, F64K, B16, B1K, B64K, IMAGE)
+    box = Typed.create(
+        name,
+        WHEN,
+        QUAD,
+        FLOATS,
+        F1K,
+        F64K,
+        B16,
+        B1K,
+        B64K,
+        S16,
+        S1K,
+        S64K,
+        D16,
+        D1K,
+        D64K,
+        IMAGE,
+    )
     atexit.register(Typed.unlink, name)
     atexit.register(box.close)
     return (box,)
@@ -387,6 +416,30 @@ BENCHMARKS: list[tuple[str, str, str, list[str]]] = [
     ("index list1k", "BoundedList", TYPED, ["typed.b1k[512]"]),
     ("iterate list64k", "BoundedList", TYPED, ["for _ in typed.b64k: pass"]),
     ("index list64k", "BoundedList", TYPED, ["typed.b64k[32768]"]),
+    ("write set16", "SharedBox", TYPED, ["typed.s16 = S16"]),
+    ("read set16", "SharedBox", TYPED, ["typed.s16"]),
+    ("in set16", "SharedBox", TYPED, ["8 in typed.s16"]),
+    ("iterate set16", "SharedBox", TYPED, ["for _ in typed.s16: pass"]),
+    ("write set1k", "SharedBox", TYPED, ["typed.s1k = S1K"]),
+    ("read set1k", "SharedBox", TYPED, ["typed.s1k"]),
+    ("in set1k", "SharedBox", TYPED, ["512 in typed.s1k"]),
+    ("iterate set1k", "SharedBox", TYPED, ["for _ in typed.s1k: pass"]),
+    ("write set64k", "SharedBox", TYPED, ["typed.s64k = S64K"]),
+    ("read set64k", "SharedBox", TYPED, ["typed.s64k"]),
+    ("in set64k", "SharedBox", TYPED, ["32768 in typed.s64k"]),
+    ("iterate set64k", "SharedBox", TYPED, ["for _ in typed.s64k: pass"]),
+    ("write dict16", "SharedBox", TYPED, ["typed.d16 = D16"]),
+    ("read dict16", "SharedBox", TYPED, ["typed.d16"]),
+    ("in dict16", "SharedBox", TYPED, ["8 in typed.d16"]),
+    ("iterate dict16", "SharedBox", TYPED, ["for _ in typed.d16: pass"]),
+    ("write dict1k", "SharedBox", TYPED, ["typed.d1k = D1K"]),
+    ("read dict1k", "SharedBox", TYPED, ["typed.d1k"]),
+    ("in dict1k", "SharedBox", TYPED, ["512 in typed.d1k"]),
+    ("iterate dict1k", "SharedBox", TYPED, ["for _ in typed.d1k: pass"]),
+    ("write dict64k", "SharedBox", TYPED, ["typed.d64k = D64K"]),
+    ("read dict64k", "SharedBox", TYPED, ["typed.d64k"]),
+    ("in dict64k", "SharedBox", TYPED, ["32768 in typed.d64k"]),
+    ("iterate dict64k", "SharedBox", TYPED, ["for _ in typed.d64k: pass"]),
     ("write array 1 MiB", "SharedBox", TYPED, ["typed.image = IMAGE"]),
     ("read array 1 MiB", "SharedBox", TYPED, ["typed.image"]),
     ("read_into array 1 MiB", "SharedBox", TYPED, ["typed.read_into('image', OUT)"]),
