@@ -40,7 +40,7 @@ bool same(const nb::object &element, nb::handle value) {
 } // namespace
 
 NativeCollection::NativeCollection(nb::object types, const detail::type_ref &list, std::string label,
-                                   std::span<const std::byte> stored)
+                                   std::span<const std::byte> stored, std::unique_ptr<std::byte[]> *owned)
     : types_(std::move(types)), codec_(&nb::cast<const Types &>(types_)), list_(list), label_(std::move(label)) {
     const detail::type_node &node = codec_->node_of(list_);
     slots_ = node.slots;
@@ -52,6 +52,10 @@ NativeCollection::NativeCollection(nb::object types, const detail::type_ref &lis
     if (stored.size() < 4 || count_ > node.capacity || stored.size() < used)
         corrupt(label_);
     room_ = count_;
+    if (owned != nullptr) {
+        data_ = std::move(*owned);
+        return;
+    }
     data_.reset(new std::byte[used]);
     if (used >= detail::large_copy) {
         nb::gil_scoped_release unlocked;
@@ -59,15 +63,6 @@ NativeCollection::NativeCollection(nb::object types, const detail::type_ref &lis
     } else {
         std::memcpy(data_.get(), stored.data(), used);
     }
-}
-
-nb::object NativeCollection::make(nb::handle cls, nb::object types, const detail::type_ref &list,
-                                  std::string label, std::span<const std::byte> stored) {
-    nb::object self = nb::inst_alloc(cls);
-    // An instance left unready by a constructor that throws is freed without running the destructor.
-    new (nb::inst_ptr<NativeCollection>(self)) NativeCollection(std::move(types), list, std::move(label), stored);
-    nb::inst_mark_ready(self);
-    return self;
 }
 
 const Types &NativeCollection::codec() const {

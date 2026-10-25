@@ -25,13 +25,27 @@ public:
     /// Takes the count and used slots of stored, the bytes of the list node list of types. Raises
     /// ValueError naming label when the count passes the capacity or the slots it names are missing.
     NativeCollection(nb::object types, const detail::type_ref &list, std::string label,
-                     std::span<const std::byte> stored);
+                     std::span<const std::byte> stored)
+        : NativeCollection(std::move(types), list, std::move(label), stored, nullptr) {}
+    /// Takes over the buffer stored, length bytes long, instead of copying it, checked as above.
+    NativeCollection(nb::object types, const detail::type_ref &list, std::string label,
+                     std::unique_ptr<std::byte[]> stored, std::size_t length)
+        : NativeCollection(std::move(types), list, std::move(label), {stored.get(), length}, &stored) {}
     NativeCollection(const NativeCollection &) = delete;
     NativeCollection &operator=(const NativeCollection &) = delete;
 
-    /// A new instance of cls, NativeCollection or a Python subclass of it, built as the constructor builds.
+    /// A new instance of cls, NativeCollection or a Python subclass of it, built from stored as a constructor
+    /// builds.
+    template <typename... Stored>
     static nb::object make(nb::handle cls, nb::object types, const detail::type_ref &list, std::string label,
-                           std::span<const std::byte> stored);
+                           Stored &&...stored) {
+        nb::object self = nb::inst_alloc(cls);
+        // An instance left unready by a constructor that throws is freed without running the destructor.
+        new (nb::inst_ptr<NativeCollection>(self))
+            NativeCollection(std::move(types), list, std::move(label), std::forward<Stored>(stored)...);
+        nb::inst_mark_ready(self);
+        return self;
+    }
 
     std::size_t size() const;
     /// Element index, counted from the end when negative, or for a slice a new value of self's class
@@ -91,6 +105,10 @@ public:
     void clear();
 
 private:
+    /// Checks stored, then copies it, or takes over *owned when owned is not null.
+    NativeCollection(nb::object types, const detail::type_ref &list, std::string label,
+                     std::span<const std::byte> stored, std::unique_ptr<std::byte[]> *owned);
+
     /// A slice's start, stop and step as it gives them, before they are fitted to a count.
     struct Slice {
         Py_ssize_t start = 0;

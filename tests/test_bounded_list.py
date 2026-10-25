@@ -151,6 +151,10 @@ class Counts(SharedBox):
     values: Annotated[BoundedList[int], Capacity(1000)]
 
 
+class Long(SharedBox):
+    points: Annotated[BoundedList[float], Capacity(1024)]
+
+
 def make(annotation: object) -> type:
     return type(
         "T", (), {"__annotations__": {"x": annotation}, "__module__": "__main__"}
@@ -264,6 +268,18 @@ def test_a_stored_count_past_the_capacity_reads_as_corrupt(
     data = before + (9).to_bytes(4, "little") + bytes(4 + 8 * 8)
     with pytest.raises(ValueError, match="T.x: the stored value"):
         layout.types.decode(0, data)
+
+
+def test_a_large_value_read_is_its_own_copy(unique_name: str) -> None:
+    """Change and grow a value read from a large field without changing the box or a second read."""
+    stored = [float(i) for i in range(1000)]
+    with Long.create(unique_name, stored) as box:
+        first, second = box.points, box.points
+        first[0] = -1.0
+        first.append(1000.0)
+        assert list(first) == [-1.0, *stored[1:], 1000.0]
+        assert list(second) == stored
+        assert list(box.points) == stored
 
 
 def test_a_mutation_past_the_capacity_names_the_lengths(unique_name: str) -> None:
