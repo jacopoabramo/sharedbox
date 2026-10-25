@@ -384,9 +384,9 @@ def test_a_bounded_list_of_another_class_is_refused_as_a_list_is(
         with pytest.raises(TypeError) as listed:
             other.update(v=[first])
         with pytest.raises(TypeError) as bounded:
-            other.update(v=one.v)
+            other.update(v=one.snapshot()["v"])
         assert str(bounded.value) == str(listed.value)
-        assert list(other.v) == [second]
+        assert other.snapshot()["v"] == [second]
 
 
 @pytest.mark.filterwarnings("ignore:nanobind")
