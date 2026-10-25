@@ -818,7 +818,7 @@ class SharedSendStream(End, Generic[T]):
         *args: object,
     ) -> None:
         if future is None:
-            # A free slot needs no wait; a failure here is retried by the loop, whose first call reports a closed end.
+            # A free slot needs no wait; without one, the loop below waits as before.
             try:
                 call(*args, 0.0)
                 return
@@ -1489,7 +1489,7 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T]):
     ) -> T:
         if future is None and delivering is None:
             timeout = self._after_worker(timeout)
-            # A waiting item needs no wait; a failure here is retried by the loop, whose first call reports a closed end.
+            # A waiting item needs no wait; without one, the loop below waits as before.
             try:
                 return self._take(targets, 0.0)
             except (WouldBlock, _Interrupted):
