@@ -1089,7 +1089,8 @@ NB_MODULE(_native, m) {
             },
             nb::lock_self());
 
-    nb::class_<sharedbox::NativeCollection>(m, "NativeCollection", nb::type_slots(collection_slots))
+    nb::class_<sharedbox::NativeCollection>(m, "NativeCollection", nb::is_generic(),
+                                            nb::type_slots(collection_slots))
         .def("__len__", &sharedbox::NativeCollection::size)
         .def("__getitem__", &sharedbox::NativeCollection::get)
         .def("__setitem__", &sharedbox::NativeCollection::set, nb::arg(), nb::arg().none())

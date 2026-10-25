@@ -31,4 +31,5 @@ sharedbox._native.Sender.__init__
 sharedbox._native.Stream.__init__
 # nb::is_generic adds __class_getitem__ as a built-in method, which the stub
 # declares through Generic instead
+sharedbox._native.NativeCollection.__class_getitem__
 sharedbox._native.Slot.__class_getitem__

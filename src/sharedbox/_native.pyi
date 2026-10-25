@@ -345,14 +345,14 @@ class Types:
         """Return the value stored as `data`, as `read_versioned` returns it."""
 
 @disjoint_base
-class NativeCollection:
+class NativeCollection(Generic[_T]):
     """A list value held as its field stores it: the count and the slots it uses.
 
     Only a read of a list field makes one; Python code cannot construct it.
     """
 
     def __len__(self) -> int: ...
-    def __getitem__(self, arg: int, /) -> Any:
+    def __getitem__(self, index: int, /) -> _T:
         """Decode one element, counted from the end when negative.
 
         Raises
@@ -360,7 +360,7 @@ class NativeCollection:
         IndexError
             If the value has no such element.
         """
-    def __setitem__(self, arg0: int, arg1: Any, /) -> None:
+    def __setitem__(self, index: int, value: _T, /) -> None:
         """Replace one element after checking it as a write to the field would.
 
         Raises
@@ -368,16 +368,16 @@ class NativeCollection:
         IndexError
             If the value has no such element.
         """
-    def __iter__(self) -> Iterator[Any]: ...
+    def __iter__(self) -> Iterator[_T]: ...
     def _stored(self) -> bytes:
         """Return the count and used slots, as a list field stores them."""
 
 @final
-class NativeCollectionIterator:
+class NativeCollectionIterator(Generic[_T]):
     """Decodes one element of a `NativeCollection` per step."""
 
     def __iter__(self) -> Self: ...
-    def __next__(self) -> Any: ...
+    def __next__(self) -> _T: ...
 
 @disjoint_base
 class Field:
