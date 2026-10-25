@@ -131,6 +131,15 @@ class BoundedMachine(RuleBasedStateMachine):
         at = self.position(data)
         self.change(lambda s: operator.delitem(s, at))
 
+    @rule()
+    def write_the_value(self) -> None:
+        """Write the value to the second field and check it stores the bytes the elements would."""
+        self.box.second = self.bounded
+        assert self.box.second._stored() == self.bounded._stored()
+        self.box.first = list(self.mirror)
+        assert self.box.first._stored() == self.box.second._stored()
+        self.bounded = self.box.first
+
     @rule(data=st.data())
     def get_slice(self, data: st.DataObject) -> None:
         """Read a slice as a BoundedList of the same elements."""

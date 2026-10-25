@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from typing import Annotated
 
 import pytest
+from crossproc import update_in_child
 
 from sharedbox import BoundedList, Capacity, SharedBox, SharedStream, field
 from sharedbox._layout import build_layout
@@ -17,6 +18,26 @@ class Scan(SharedBox):
 @dataclass(frozen=True)
 class Shot:
     values: Annotated[BoundedList[int], Capacity(4)]
+
+
+class Roomy(SharedBox):
+    points: Annotated[BoundedList[float], Capacity(16)]
+
+
+class Floats(SharedBox):
+    points: Annotated[list[float], Capacity(8)]
+
+
+class Whole(SharedBox):
+    points: Annotated[BoundedList[int], Capacity(8)]
+
+
+class Listed(SharedBox, identity="sbtest/bounded/attach"):
+    points: Annotated[list[float], Capacity(8)]
+
+
+class Bounded(SharedBox, identity="sbtest/bounded/attach"):
+    points: Annotated[BoundedList[float], Capacity(8)]
 
 
 class Places(SharedBox):
@@ -269,3 +290,41 @@ def test_an_extended_slice_takes_as_many_elements_as_it_covers(
         ):
             points[::2] = [9.0]
         assert list(points) == [1.0, 2.0, 3.0]
+
+
+def test_a_smaller_bounded_list_fits_a_larger_field(unique_name: str) -> None:
+    """Write a value read from one field to a roomier field, and refuse one that passes the capacity."""
+    with (
+        Scan.create(unique_name + "-a", [1.0, 2.0, 3.0]) as small,
+        Roomy.create(unique_name + "-b", []) as large,
+    ):
+        large.points = small.points
+        assert large.points == [1.0, 2.0, 3.0]
+        large.update(points=[float(i) for i in range(9)])
+        with pytest.raises(
+            ValueError, match="holds at most 8 elements; the value has 9"
+        ):
+            small.points = large.points
+
+
+def test_a_bounded_list_of_another_element_type_is_encoded_per_element(
+    unique_name: str,
+) -> None:
+    """Store the floats of an int BoundedList written to a list[float] field."""
+    with (
+        Whole.create(unique_name + "-a", [1, 2]) as ints,
+        Floats.create(unique_name + "-b", []) as floats,
+    ):
+        floats.update(points=ints.points)
+        assert floats.points == [1.0, 2.0]
+        assert all(type(p) is float for p in floats.points)
+
+
+def test_list_and_bounded_list_declarations_attach_to_each_other(
+    unique_name: str,
+) -> None:
+    """Update from a spawned process through a BoundedList declaration a box made with list."""
+    with Listed.create(unique_name, [1.0]) as made:
+        with Bounded.attach(unique_name) as attached:
+            update_in_child(attached, points=[2.0, 3.0])
+        assert made.points == [2.0, 3.0]

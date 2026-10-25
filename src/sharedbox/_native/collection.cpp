@@ -486,6 +486,8 @@ nb::bytes NativeCollection::stored() const {
     return nb::bytes(data_.get(), slots_ + std::size_t{count_} * stride_);
 }
 
+const std::string &NativeCollection::element_text() const { return codec().element_text(list_); }
+
 int NativeCollection::traverse(visitproc visit, void *arg) const {
     Py_VISIT(types_.ptr());
     return 0;

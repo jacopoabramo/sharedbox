@@ -68,6 +68,8 @@ public:
     nb::object element(Py_ssize_t index) const;
     /// The count and used slots, as a list field stores them.
     nb::bytes stored() const;
+    /// The schema text of the elements.
+    const std::string &element_text() const;
 
     int traverse(visitproc visit, void *arg) const;
     void clear();

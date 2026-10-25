@@ -131,6 +131,8 @@ public:
     nb::object with_arrays(std::uint32_t index, PyObject *template_item, std::byte *data, nb::handle owner) const;
 
     const detail::type_node &node_of(const detail::type_ref &t) const { return tree_.node(t.node); }
+    /// The schema text of the elements of the list node t.
+    const std::string &element_text(const detail::type_ref &t) const { return nodes_[t.node].element_text; }
     /// The element of the list node list stored at slot; errors name label.
     nb::object decode_element(const detail::type_ref &list, const std::byte *slot, const std::string &label) const;
     /// Writes value at slot as an element of the list node list, the way a write of the list would; errors
@@ -187,6 +189,8 @@ private:
     std::vector<std::string> labels_;
     std::string table_;
     std::vector<NodeInfo> nodes_;
+    /// NativeCollection, which encode_collection tests every value against.
+    PyTypeObject *collection_type_ = nullptr;
     std::vector<std::uint64_t> bytearrays_;
     std::vector<bool> reusable_;
     std::vector<bool> via_types_;

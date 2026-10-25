@@ -270,7 +270,8 @@ Types::Types(const std::vector<std::tuple<std::uint32_t, std::uint32_t, std::uin
              std::vector<std::string> labels, std::string table, const nb::dict &info,
              const std::vector<std::pair<std::int64_t, std::uint32_t>> &bytearrays,
              const std::vector<std::uint32_t> &reusable, const std::vector<Convert> &converts)
-    : labels_(std::move(labels)), table_(std::move(table)) {
+    : labels_(std::move(labels)), table_(std::move(table)),
+      collection_type_(reinterpret_cast<PyTypeObject *>(nb::type<NativeCollection>().ptr())) {
     check_names(labels_, fields.size());
     std::vector<std::uint32_t> entries;
     entries.reserve(fields.size());
@@ -594,6 +595,21 @@ nb::object Types::decode(std::uint32_t index, std::span<const std::byte> bytes,
 
 std::size_t Types::encode_collection(const detail::type_ref &t, PyObject *value, std::byte *out,
                                      const Where &where) const {
+    if (PyObject_TypeCheck(value, collection_type_) && t.kind == kind_list) [[unlikely]] {
+        const NativeCollection &collection = *nb::inst_ptr<NativeCollection>(value);
+        if (collection.element_text() == nodes_[t.node].element_text) {
+            // Copied out before the segment is touched, so the value's mutex is not held meanwhile.
+            const nb::bytes bytes = collection.stored();
+            std::uint32_t length = 0;
+            std::memcpy(&length, bytes.c_str(), sizeof length);
+            if (length > tree_.node(t.node).capacity)
+                raise(PyExc_ValueError, where.name + " holds at most " +
+                                            std::to_string(tree_.node(t.node).capacity) +
+                                            " elements; the value has " + std::to_string(length));
+            std::memcpy(out, bytes.c_str(), bytes.size());
+            return bytes.size();
+        }
+    }
     if (!accepts(t, value))
         wrong(where.name, t.kind == kind_dict ? "a mapping" : t.kind == kind_set ? "a set" : "a sequence", value);
     const detail::type_node &node = tree_.node(t.node);
