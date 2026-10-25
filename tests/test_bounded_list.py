@@ -340,6 +340,7 @@ def test_a_smaller_bounded_list_fits_a_larger_field(unique_name: str) -> None:
             ValueError, match="holds at most 8 elements; the value has 9"
         ):
             small.points = large.points
+        assert small.points == [1.0, 2.0, 3.0]
 
 
 def test_a_bounded_list_of_another_element_type_is_encoded_per_element(
@@ -389,11 +390,11 @@ def test_a_bounded_list_of_another_class_is_refused_as_a_list_is(
         assert other.snapshot()["v"] == [second]
 
 
-@pytest.mark.filterwarnings("ignore:nanobind")
-def test_a_bounded_list_that_was_never_built_takes_the_per_element_path(
-    unique_name: str,
-) -> None:
-    """Write a BoundedList made by __new__ alone as an empty sequence."""
+def test_a_bounded_list_that_was_never_built_is_refused(unique_name: str) -> None:
+    """Refuse a BoundedList made by __new__ alone and keep the field's value."""
     with Scan.create(unique_name, [1.0]) as box:
-        box.update(points=BoundedList.__new__(BoundedList))
-        assert box.points == []
+        with pytest.raises(
+            TypeError, match=r"Scan.points got a BoundedList that was never built"
+        ):
+            box.update(points=BoundedList.__new__(BoundedList))
+        assert box.points == [1.0]

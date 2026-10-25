@@ -597,7 +597,11 @@ PyObject *Types::element_annotation(const detail::type_ref &t) const { return it
 
 std::size_t Types::encode_collection(const detail::type_ref &t, PyObject *value, std::byte *out,
                                      const Where &where) const {
-    if (t.kind == kind_list && PyObject_TypeCheck(value, collection_type_) && nb::inst_ready(value)) {
+    if (t.kind == kind_list && PyObject_TypeCheck(value, collection_type_)) {
+        if (!nb::inst_ready(value))
+            raise(PyExc_TypeError, where.name + " got a " +
+                                       type_name(reinterpret_cast<PyObject *>(Py_TYPE(value))) +
+                                       " that was never built");
         const NativeCollection &collection = *nb::inst_ptr<NativeCollection>(value);
         if (collection.has_elements(nodes_[t.node].element_text, element_annotation(t)))
             return collection.copy_to(out, tree_.node(t.node).capacity, where.name);
