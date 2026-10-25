@@ -52,7 +52,9 @@ class BoundedList(NativeCollection[T]):
         """Build a value of `capacity` holding `values`, of the element type `cls` fixes.
 
         Other arguments are left to `__init__`, as `list.__new__` leaves
-        them, so a subclass's `__init__` may take more.
+        them, so a subclass's `__init__` may take more. It receives the same
+        `values` object after `__new__` has consumed it, so a generator
+        arrives empty.
 
         Raises
         ------
