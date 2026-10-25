@@ -37,6 +37,8 @@ INT64 = st.integers(-(2**63), 2**63 - 1)
 # nan is left out because remove, index and the comparison with the mirror find
 # an element by equality, which nan never has.
 FLOAT = st.floats(allow_nan=False)
+# Of no element type the machines use, so every encode refuses it.
+WRONG = object()
 
 
 class BoundedMachine(RuleBasedStateMachine):
@@ -74,7 +76,7 @@ class BoundedMachine(RuleBasedStateMachine):
         assert mutate(self.bounded) == result
         self.mirror = expected
 
-    def index(self, data: st.DataObject) -> int:
+    def position(self, data: st.DataObject) -> int:
         return data.draw(st.integers(-len(self.mirror), len(self.mirror) - 1))
 
     def some(self, data: st.DataObject) -> list[Any]:
@@ -118,7 +120,7 @@ class BoundedMachine(RuleBasedStateMachine):
     @rule(data=st.data())
     def setitem(self, data: st.DataObject) -> None:
         """Replace one element."""
-        at = self.index(data)
+        at = self.position(data)
         value = data.draw(self.values)
         self.change(lambda s: operator.setitem(s, at, value))
 
@@ -126,7 +128,7 @@ class BoundedMachine(RuleBasedStateMachine):
     @rule(data=st.data())
     def delitem(self, data: st.DataObject) -> None:
         """Delete one element."""
-        at = self.index(data)
+        at = self.position(data)
         self.change(lambda s: operator.delitem(s, at))
 
     @rule(data=st.data())
@@ -182,6 +184,55 @@ class BoundedMachine(RuleBasedStateMachine):
         value = data.draw(self.values)
         assert self.bounded.count(value) == self.mirror.count(value)
         assert (value in self.bounded) == (value in self.mirror)
+
+    @rule(data=st.data())
+    def find(self, data: st.DataObject) -> None:
+        """Find an element between a start and a stop that may lie past either end."""
+        n = len(self.mirror)
+        present = st.sampled_from(self.mirror) if self.mirror else self.values
+        value = data.draw(present | self.values)
+        start = data.draw(st.integers(-n - 3, n + 3))
+        stop = data.draw(st.integers(-n - 3, n + 3))
+        try:
+            expected = self.mirror.index(value, start, stop)
+        except ValueError:
+            with pytest.raises(ValueError):
+                self.bounded.index(value, start, stop)
+        else:
+            assert self.bounded.index(value, start, stop) == expected
+
+    @rule()
+    def read_reversed(self) -> None:
+        """Iterate from the end."""
+        assert list(reversed(self.bounded)) == self.mirror[::-1]
+
+    @rule(data=st.data())
+    def refuse_a_wrong_element(self, data: st.DataObject) -> None:
+        """Refuse an extend or a slice assignment holding one element of another type, changing nothing."""
+        n = len(self.mirror)
+        how = data.draw(st.sampled_from(["extend", "slice", "extended slice"]))
+        ends = st.none() | st.integers(-n - 2, n + 2)
+        step = st.integers(2, 4) | st.integers(-4, -2)
+        match how:
+            case "extend":
+                part = slice(n, n)
+            case "slice":
+                part = slice(data.draw(ends), data.draw(ends))
+            case _:
+                part = slice(data.draw(ends), data.draw(ends), data.draw(step))
+        covered = len(range(*part.indices(n)))
+        # Within the capacity, so the element type is what refuses the values.
+        room = covered if how == "extended slice" else self.capacity - n + covered
+        if room == 0:
+            return
+        size = room if how == "extended slice" else data.draw(st.integers(1, room))
+        values = data.draw(st.lists(self.values, min_size=size, max_size=size))
+        values[data.draw(st.integers(0, size - 1))] = WRONG
+        with pytest.raises(TypeError):
+            if how == "extend":
+                self.bounded.extend(values)
+            else:
+                self.bounded[part] = values
 
     @invariant()
     def holds_the_mirror(self) -> None:
