@@ -28,6 +28,15 @@ class Samples(SharedBox):
     b64k: Annotated[BoundedList[float], Capacity(65536)]
 
 
+class Keyed(SharedBox):
+    s16: Annotated[set[int], Capacity(16)]
+    s1k: Annotated[set[int], Capacity(1024)]
+    s64k: Annotated[set[int], Capacity(65536)]
+    d16: Annotated[dict[int, float], Capacity(16)]
+    d1k: Annotated[dict[int, float], Capacity(1024)]
+    d64k: Annotated[dict[int, float], Capacity(65536)]
+
+
 @dataclass(frozen=True)
 class Quad:
     a: int
@@ -191,6 +200,91 @@ def test_index_bounded_list(
 ) -> None:
     """Time reading the middle element of a BoundedList field."""
     benchmark(lambda: getattr(samples, field)[size // 2])
+
+
+@pytest.fixture
+def keyed() -> Iterator[Keyed]:
+    name = f"bench-codspeed-{os.getpid()}-{next(NAMES)}"
+    with Keyed.create(
+        name,
+        set(range(16)),
+        set(range(1024)),
+        set(range(65536)),
+        dict.fromkeys(range(16), 0.5),
+        dict.fromkeys(range(1024), 0.5),
+        dict.fromkeys(range(65536), 0.5),
+    ) as box:
+        yield box
+    Keyed.unlink(name)
+
+
+SET_FIELDS = [("s16", 16), ("s1k", 1024), ("s64k", 65536)]
+DICT_FIELDS = [("d16", 16), ("d1k", 1024), ("d64k", 65536)]
+
+
+def walk_keys(values: set[int] | dict[int, float]) -> None:
+    for _ in values:
+        pass
+
+
+@pytest.mark.parametrize("field", [f for f, _ in SET_FIELDS])
+def test_read_int_set(benchmark: BenchmarkFixture, keyed: Keyed, field: str) -> None:
+    """Time reading a set field."""
+    benchmark(getattr, keyed, field)
+
+
+@pytest.mark.parametrize(("field", "size"), SET_FIELDS)
+def test_write_int_set(
+    benchmark: BenchmarkFixture, keyed: Keyed, field: str, size: int
+) -> None:
+    """Time writing a set field."""
+    value = set(range(size))
+    benchmark(setattr, keyed, field, value)
+
+
+@pytest.mark.parametrize(("field", "size"), SET_FIELDS)
+def test_contains_int_set(
+    benchmark: BenchmarkFixture, keyed: Keyed, field: str, size: int
+) -> None:
+    """Time a membership test of the middle key in a set field."""
+    benchmark(lambda: size // 2 in getattr(keyed, field))
+
+
+@pytest.mark.parametrize("field", [f for f, _ in SET_FIELDS])
+def test_iterate_int_set(benchmark: BenchmarkFixture, keyed: Keyed, field: str) -> None:
+    """Time walking the elements of a set field."""
+    benchmark(lambda: walk_keys(getattr(keyed, field)))
+
+
+@pytest.mark.parametrize("field", [f for f, _ in DICT_FIELDS])
+def test_read_int_dict(benchmark: BenchmarkFixture, keyed: Keyed, field: str) -> None:
+    """Time reading a dict field."""
+    benchmark(getattr, keyed, field)
+
+
+@pytest.mark.parametrize(("field", "size"), DICT_FIELDS)
+def test_write_int_dict(
+    benchmark: BenchmarkFixture, keyed: Keyed, field: str, size: int
+) -> None:
+    """Time writing a dict field."""
+    value = dict.fromkeys(range(size), 0.5)
+    benchmark(setattr, keyed, field, value)
+
+
+@pytest.mark.parametrize(("field", "size"), DICT_FIELDS)
+def test_contains_int_dict(
+    benchmark: BenchmarkFixture, keyed: Keyed, field: str, size: int
+) -> None:
+    """Time a membership test of the middle key in a dict field."""
+    benchmark(lambda: size // 2 in getattr(keyed, field))
+
+
+@pytest.mark.parametrize("field", [f for f, _ in DICT_FIELDS])
+def test_iterate_int_dict(
+    benchmark: BenchmarkFixture, keyed: Keyed, field: str
+) -> None:
+    """Time walking the elements of a dict field."""
+    benchmark(lambda: walk_keys(getattr(keyed, field)))
 
 
 @pytest.fixture
