@@ -214,7 +214,7 @@ nb::object NativeCollection::repeated(nb::pointer_and_handle<NativeCollection> s
 nb::object NativeCollection::copy(nb::pointer_and_handle<NativeCollection> self) { return repeated(self, 1); }
 
 nb::object NativeCollection::add(nb::pointer_and_handle<NativeCollection> self, nb::handle other) {
-    if (!PyList_Check(other.ptr()) && !nb::isinstance<NativeCollection>(other))
+    if (!PyList_Check(other.ptr()) && !(nb::isinstance<NativeCollection>(other) && nb::inst_ready(other)))
         return nb::borrow(Py_NotImplemented);
     nb::object out = copy(self);
     nb::inst_ptr<NativeCollection>(out)->extend(other);
@@ -545,7 +545,7 @@ std::size_t NativeCollection::splice(std::size_t start, std::size_t stop, const 
 
 nb::object NativeCollection::equals(nb::handle other) const {
     const bool list = PyList_Check(other.ptr());
-    if (!list && !nb::isinstance<NativeCollection>(other))
+    if (!list && !(nb::isinstance<NativeCollection>(other) && nb::inst_ready(other)))
         return nb::borrow(Py_NotImplemented);
     const NativeCollection *collection = list ? nullptr : nb::inst_ptr<NativeCollection>(other);
     const Py_ssize_t length = list ? PyObject_Size(other.ptr()) : static_cast<Py_ssize_t>(collection->size());
