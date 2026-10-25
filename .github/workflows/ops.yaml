@@ -47,7 +47,7 @@ jobs:
             for side in base head; do
               for rows in int record list; do
                 case "$rows" in
-                  list) pattern="*list*" ;;
+                  list) pattern="*list*/*" ;;
                   *) pattern="*$rows/SharedBox" ;;
                 esac
                 (cd "$side" && uv run --no-sync benchbox ops --fast \
