@@ -1,9 +1,11 @@
 import collections.abc
 import copy
 import enum
+import gc
 import pickle
 import queue
 import threading
+import weakref
 from dataclasses import dataclass, make_dataclass
 from typing import Annotated, Any, TypeVar, get_origin
 
@@ -714,3 +716,47 @@ def test_a_subclass_value_is_written_as_one_byte_copy(unique_name: str) -> None:
         box.points = Unreadable([1.0, 2.0], capacity=4)
         assert type(box.points) is BoundedList
         assert box.points == [1.0, 2.0]
+
+
+class Holder(BoundedList[float]):
+    pass
+
+
+def test_a_cycle_through_an_iterator_is_collected() -> None:
+    """Free a value that holds an iterator over itself, and track iterators."""
+    holder = Holder([1.0], capacity=4)
+    holder.it = iter(holder)  # type: ignore[attr-defined]
+    ref = weakref.ref(holder)
+    del holder
+    gc.collect()
+    assert ref() is None
+    assert gc.is_tracked(iter(BoundedList[float]([1.0], capacity=4)))
+
+
+@pytest.mark.parametrize("make_iterator", [iter, reversed])
+def test_a_stopped_iterator_stays_stopped(make_iterator: Any) -> None:
+    """Keep an exhausted iterator exhausted after the value grows, as list does."""
+    value = BoundedList[float]([1.0], capacity=4)
+    it = make_iterator(value)
+    assert list(it) == [1.0]
+    value.append(2.0)
+    assert list(it) == []
+
+
+def test_an_unbuilt_collection_is_not_compared_or_added() -> None:
+    """Return NotImplemented from == and + for a collection that was never built."""
+    unbuilt = NativeCollection.__new__(BoundedList)
+    value = BoundedList[float]([], capacity=4)
+    assert value.__eq__(unbuilt) is NotImplemented
+    assert value.__add__(unbuilt) is NotImplemented
+    with pytest.raises(TypeError):
+        value + unbuilt
+
+
+def test_an_index_beyond_ssize_t_overflows() -> None:
+    """Raise OverflowError for insert and pop at an index too large, as list does."""
+    value = BoundedList[float]([1.0], capacity=4)
+    with pytest.raises(OverflowError):
+        value.insert(2**70, 2.0)
+    with pytest.raises(OverflowError):
+        value.pop(2**70)
