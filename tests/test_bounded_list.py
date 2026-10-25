@@ -743,6 +743,20 @@ def test_a_stopped_iterator_stays_stopped(make_iterator: Any) -> None:
     assert list(it) == []
 
 
+@pytest.mark.parametrize("make_iterator", [iter, reversed])
+def test_an_element_that_fails_to_decode_stops_iteration_with_its_error(
+    make_iterator: Any,
+) -> None:
+    """Raise the decode error from next() instead of ending the iteration quietly."""
+    rebuild, (cls, element, capacity, stored), _ = BoundedList[Red](
+        [Red.r], capacity=4
+    ).__reduce__()
+    forged = stored[:4] + b"\xff" * (len(stored) - 4)
+    it = make_iterator(rebuild(cls, element, capacity, forged))
+    with pytest.raises(ValueError, match="the stored value is not one Python can hold"):
+        next(it)
+
+
 def test_an_unbuilt_collection_is_not_compared_or_added() -> None:
     """Return NotImplemented from == and + for a collection that was never built."""
     unbuilt = NativeCollection.__new__(BoundedList)

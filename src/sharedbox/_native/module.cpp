@@ -763,7 +763,35 @@ int collection_iterator_clear(PyObject *self) {
     return 0;
 }
 
+// A slot rather than a bound __next__, so the end returns nullptr with no error set instead of throwing
+// StopIteration through C++, whose unwinding costs microseconds per loop.
+PyObject *collection_iterator_next(PyObject *self) {
+    nb::ft_object_guard guard(self);
+    try {
+        CollectionIterator &it = *nb::inst_ptr<CollectionIterator>(self);
+        if (!it.collection.is_valid())
+            return nullptr;
+        if (it.backward && it.index == 0) {
+            it.collection.reset();
+            return nullptr;
+        }
+        const auto *c = nb::inst_ptr<sharedbox::NativeCollection>(it.collection);
+        nb::object value = c->element(static_cast<Py_ssize_t>(it.backward ? it.index - 1 : it.index));
+        if (!value.is_valid()) {
+            // An exhausted iterator drops the collection so it stays exhausted, as list's does.
+            it.collection.reset();
+            return nullptr;
+        }
+        it.backward ? --it.index : ++it.index;
+        return value.release().ptr();
+    } catch (...) {
+        set_error();
+        return nullptr;
+    }
+}
+
 PyType_Slot collection_iterator_slots[] = {
+    {Py_tp_iternext, reinterpret_cast<void *>(collection_iterator_next)},
     {Py_tp_traverse, reinterpret_cast<void *>(collection_iterator_traverse)},
     {Py_tp_clear, reinterpret_cast<void *>(collection_iterator_clear)},
     {0, nullptr}};
@@ -1099,27 +1127,7 @@ NB_MODULE(_native, m) {
 
     nb::class_<CollectionIterator>(m, "NativeCollectionIterator", nb::is_final(),
                                    nb::type_slots(collection_iterator_slots))
-        .def("__iter__", [](nb::handle self) { return nb::borrow(self); })
-        .def(
-            "__next__",
-            [](CollectionIterator &it) {
-                if (!it.collection.is_valid())
-                    throw nb::stop_iteration();
-                if (it.backward && it.index == 0) {
-                    it.collection.reset();
-                    throw nb::stop_iteration();
-                }
-                const auto *c = nb::inst_ptr<sharedbox::NativeCollection>(it.collection);
-                nb::object value = c->element(static_cast<Py_ssize_t>(it.backward ? it.index - 1 : it.index));
-                if (!value.is_valid()) {
-                    // An exhausted iterator drops the collection so it stays exhausted, as list's does.
-                    it.collection.reset();
-                    throw nb::stop_iteration();
-                }
-                it.backward ? --it.index : ++it.index;
-                return value;
-            },
-            nb::lock_self());
+        .def("__iter__", [](nb::handle self) { return nb::borrow(self); });
 
     nb::class_<sharedbox::NativeCollection> collection(m, "NativeCollection", nb::is_generic(),
                                                        nb::type_slots(collection_slots));
