@@ -18,7 +18,7 @@
         <link rel="prev" href="../store-records/">
       
       
-        <link rel="next" href="../store-arrays/">
+        <link rel="next" href="../store-a-large-list/">
       
       
         
@@ -859,6 +859,8 @@
       
         
       
+        
+      
     
     
     
@@ -1110,6 +1112,35 @@
   
 </nav>
       
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../store-a-large-list/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-wrench" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  How to store a large list
+
+    
+  </span>
+  
+  
+
+      </a>
     </li>
   
 
@@ -3187,6 +3218,8 @@
       
         
       
+        
+      
     
     
     
@@ -3275,7 +3308,9 @@ box. Build the new collection and assign it back:</p>
 </span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="nb">print</span><span class="p">(</span><span class="nb">len</span><span class="p">(</span><span class="n">van</span><span class="o">.</span><span class="n">parcels</span><span class="p">))</span>  <span class="c1"># 3</span>
 </span></code></pre></div>
 <p>If you annotate the field as <code>tuple[T, ...]</code> or <code>Sequence[T]</code>, a type
-checker will point out an <code>append</code> that would only change the copy.</p>
+checker will point out an <code>append</code> that would only change the copy. For a
+list of thousands of elements, where building every element on each read
+is what costs time, see <a href="../store-a-large-list/">How to store a large list</a>.</p>
 <h2 id="4-handle-a-collection-that-is-too-large">4. Handle a collection that is too large<a class="headerlink" href="#4-handle-a-collection-that-is-too-large" title="Permanent link">&para;</a></h2>
 <p>Assigning more elements than the capacity raises <code>ValueError</code>, and the field
 keeps its old value:</p>
@@ -3379,13 +3414,13 @@ keeps its old value:</p>
         
         
           
-          <a href="../store-arrays/" class="md-footer__link md-footer__link--next" aria-label="Next: How to store arrays">
+          <a href="../store-a-large-list/" class="md-footer__link md-footer__link--next" aria-label="Next: How to store a large list">
             <div class="md-footer__title">
               <span class="md-footer__direction">
                 Next
               </span>
               <div class="md-ellipsis">
-                How to store arrays
+                How to store a large list
               </div>
             </div>
             <div class="md-footer__button md-icon">
