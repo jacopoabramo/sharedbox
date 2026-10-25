@@ -513,7 +513,7 @@ class NativeCollection(MutableSequence[_T]):
     def __reversed__(self) -> Iterator[_T]: ...
     def __iter__(self) -> Iterator[_T]: ...
     @property
-    def element_annotation(self) -> object:
+    def _element_annotation(self) -> object:
         """The annotation of the elements, as the field declares it."""
     @property
     def capacity(self) -> int:

@@ -91,7 +91,7 @@ class BoundedList(NativeCollection[T]):
 
     def __repr__(self) -> str:
         return (
-            f"{type(self).__name__}[{_name(self.element_annotation)}]"
+            f"{type(self).__name__}[{_name(self._element_annotation)}]"
             f"({list(self)!r}, capacity={self.capacity})"
         )
 
@@ -121,7 +121,7 @@ class BoundedList(NativeCollection[T]):
     ]:
         return (
             _rebuild,
-            (type(self), self.element_annotation, self.capacity, self._stored()),
+            (type(self), self._element_annotation, self.capacity, self._stored()),
             self.__getstate__(),
         )
 

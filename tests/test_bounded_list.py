@@ -498,7 +498,7 @@ def test_copies_add_and_multiply_keep_the_type(make_copy: Any) -> None:
     assert result is not bl
     assert result == make_copy([1.0, 2.0])
     assert result.capacity == 8
-    assert result.element_annotation is float
+    assert result._element_annotation is float
     result.append(9.0)
     assert bl == [1.0, 2.0]
 

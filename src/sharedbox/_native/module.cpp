@@ -1166,7 +1166,7 @@ NB_MODULE(_native, m) {
                  self.p->repeat(times);
                  return nb::borrow(self.h);
              })
-        .def_prop_ro("element_annotation", &sharedbox::NativeCollection::element_annotation)
+        .def_prop_ro("_element_annotation", &sharedbox::NativeCollection::element_annotation)
         .def_prop_ro("capacity", &sharedbox::NativeCollection::capacity)
         .def("_stored", &sharedbox::NativeCollection::stored);
     // Equality compares elements that can change, so a value has no hash, as a list has none.
