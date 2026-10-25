@@ -7,18 +7,173 @@
 
 namespace sharedbox {
 
+SlotStore::SlotStore(nb::object types, const detail::type_ref &node, std::string label,
+                     std::span<const std::byte> stored, std::unique_ptr<std::byte[]> *owned)
+    : types_(std::move(types)), codec_(&nb::cast<const Types &>(types_)), node_(node), label_(std::move(label)) {
+    const detail::type_node &described = codec_->node_of(node_);
+    slots_ = described.slots;
+    stride_ = described.stride;
+    capacity_ = described.capacity;
+    if (stored.size() >= 4)
+        std::memcpy(&count_, stored.data(), 4);
+    const std::size_t used = slots_ + std::size_t{count_} * stride_;
+    if (stored.size() < 4 || count_ > described.capacity || stored.size() < used)
+        corrupt(label_);
+    room_ = count_;
+    if (owned != nullptr) {
+        data_ = std::move(*owned);
+        return;
+    }
+    data_.reset(new std::byte[used]);
+    if (used >= detail::large_copy) {
+        nb::gil_scoped_release unlocked;
+        std::memcpy(data_.get(), stored.data(), used);
+    } else {
+        std::memcpy(data_.get(), stored.data(), used);
+    }
+}
+
+std::size_t SlotStore::position(Py_ssize_t index) const {
+    const auto count = static_cast<Py_ssize_t>(count_);
+    const Py_ssize_t at = index < 0 ? index + count : index;
+    if (at < 0 || at >= count)
+        return no_position;
+    return static_cast<std::size_t>(at);
+}
+
+std::size_t SlotStore::size() const {
+    nb::ft_lock_guard guard(mutex_);
+    return count_;
+}
+
+void SlotStore::set_count(std::size_t count) {
+    count_ = static_cast<std::uint32_t>(count);
+    std::memcpy(data_.get(), &count_, 4);
+}
+
+void SlotStore::too_many(std::size_t length) const {
+    raise(PyExc_ValueError, label_ + " holds at most " + std::to_string(capacity_) +
+                                " elements; the value would have " + std::to_string(length));
+}
+
+nb::object SlotStore::element(Py_ssize_t index) const {
+    // Decoded from a copy taken under the mutex, because decoding may run Python code, which could
+    // change this value while the decode reads it.
+    // ponytail: copies the whole slot, so a str element of a large capacity costs its capacity per read.
+    SlotBuffer copy(stride_);
+    {
+        nb::ft_lock_guard guard(mutex_);
+        const std::size_t at = position(index);
+        if (at == no_position)
+            return {};
+        std::memcpy(copy.data(), slot(at), stride_);
+    }
+    return codec().decode_element(node_, copy.data(), label_);
+}
+
+std::vector<std::byte> SlotStore::header(std::size_t count) const {
+    std::vector<std::byte> out(data_.get(), data_.get() + slots_);
+    const auto stored = static_cast<std::uint32_t>(count);
+    std::memcpy(out.data(), &stored, 4);
+    return out;
+}
+
+nb::object SlotStore::element_annotation() const { return nb::borrow(codec().element_annotation(node_)); }
+
+std::vector<std::byte> SlotStore::encode_all(nb::handle iterable, std::size_t base) const {
+    const Types &types = codec();
+    std::vector<std::byte> encoded;
+    const Py_ssize_t sized = PyObject_Size(iterable.ptr());
+    if (sized >= 0) {
+        if (base + static_cast<std::size_t>(sized) > capacity_)
+            too_many(base + static_cast<std::size_t>(sized));
+        encoded.reserve(static_cast<std::size_t>(sized) * stride_);
+    } else if (PyErr_ExceptionMatches(PyExc_TypeError)) {
+        PyErr_Clear();
+    } else {
+        throw nb::python_error();
+    }
+    const nb::object items = nb::steal(PyObject_GetIter(iterable.ptr()));
+    if (!items.is_valid())
+        throw nb::python_error();
+    for (std::size_t n = base;; ++n) {
+        const nb::object item = nb::steal(PyIter_Next(items.ptr()));
+        if (!item.is_valid())
+            break;
+        if (n >= capacity_)
+            too_many(n + 1);
+        const std::size_t at = encoded.size();
+        encoded.resize(at + stride_);
+        types.encode_element(node_, item.ptr(), encoded.data() + at, label_);
+    }
+    if (PyErr_Occurred())
+        throw nb::python_error();
+    return encoded;
+}
+
+std::size_t SlotStore::splice(std::size_t start, std::size_t stop, const std::byte *encoded, std::size_t n) {
+    const std::size_t count = count_ - (stop - start) + n;
+    if (count > capacity_)
+        return count;
+    if (count > room_) {
+        const auto room = static_cast<std::uint32_t>(
+            std::min<std::size_t>(capacity_, std::max<std::size_t>(count, std::size_t{room_} * 2)));
+        std::unique_ptr<std::byte[]> grown(new std::byte[slots_ + std::size_t{room} * stride_]);
+        std::memcpy(grown.get(), data_.get(), slots_ + std::size_t{count_} * stride_);
+        data_ = std::move(grown);
+        room_ = room;
+    }
+    std::memmove(slot(start + n), slot(stop), (count_ - stop) * stride_);
+    if (n != 0)
+        std::memcpy(slot(start), encoded, n * stride_);
+    set_count(count);
+    return 0;
+}
+
+nb::bytes SlotStore::stored() const {
+    nb::ft_lock_guard guard(mutex_);
+    return nb::bytes(data_.get(), slots_ + std::size_t{count_} * stride_);
+}
+
+bool SlotStore::has_elements(const std::string &text, PyObject *annotation) const {
+    const Types &types = codec();
+    if (types.element_text(node_) != text)
+        return false;
+    const int equal = PyObject_RichCompareBool(types.element_annotation(node_), annotation, Py_EQ);
+    if (equal < 0)
+        throw nb::python_error();
+    return equal != 0;
+}
+
+std::size_t SlotStore::copy_to(std::byte *out, std::uint32_t capacity, const std::string &name) const {
+    nb::ft_lock_guard guard(mutex_);
+    if (count_ > capacity)
+        raise(PyExc_ValueError, name + " holds at most " + std::to_string(capacity) + " elements; the value has " +
+                                    std::to_string(count_));
+    const std::size_t size = slots_ + std::size_t{count_} * stride_;
+    std::memcpy(out, data_.get(), size);
+    return size;
+}
+
+int SlotStore::traverse(visitproc visit, void *arg) const {
+    Py_VISIT(types_.ptr());
+    return 0;
+}
+
+void SlotStore::clear() {
+    codec_ = nullptr;
+    // Moved out and dropped on return, so code the decref runs finds this value already cleared.
+    nb::object types = std::move(types_);
+}
+
+const Types &SlotStore::codec() const {
+    // tp_clear empties types_ only on a value the collector is about to free.
+    if (codec_ == nullptr)
+        raise(PyExc_ValueError, label_ + ": the value has been cleared");
+    return *codec_;
+}
+
 namespace {
-
-/// The bytes of one slot, on the stack when they fit.
-class SlotBuffer {
-public:
-    explicit SlotBuffer(std::size_t size) : heap_(size > sizeof local_ ? new std::byte[size] : nullptr) {}
-    std::byte *data() { return heap_ ? heap_.get() : local_; }
-
-private:
-    alignas(std::max_align_t) std::byte local_[64];
-    std::unique_ptr<std::byte[]> heap_;
-};
 
 /// An integer index; error, when given, is raised for one past the range of Py_ssize_t, which is clamped
 /// otherwise. One that is not an integer raises TypeError.
@@ -39,71 +194,15 @@ bool same(const nb::object &element, nb::handle value) {
 
 } // namespace
 
-NativeCollection::NativeCollection(nb::object types, const detail::type_ref &list, std::string label,
-                                   std::span<const std::byte> stored, std::unique_ptr<std::byte[]> *owned)
-    : types_(std::move(types)), codec_(&nb::cast<const Types &>(types_)), list_(list), label_(std::move(label)) {
-    const detail::type_node &node = codec_->node_of(list_);
-    slots_ = node.slots;
-    stride_ = node.stride;
-    capacity_ = node.capacity;
-    if (stored.size() >= 4)
-        std::memcpy(&count_, stored.data(), 4);
-    const std::size_t used = slots_ + std::size_t{count_} * stride_;
-    if (stored.size() < 4 || count_ > node.capacity || stored.size() < used)
-        corrupt(label_);
-    room_ = count_;
-    if (owned != nullptr) {
-        data_ = std::move(*owned);
-        return;
-    }
-    data_.reset(new std::byte[used]);
-    if (used >= detail::large_copy) {
-        nb::gil_scoped_release unlocked;
-        std::memcpy(data_.get(), stored.data(), used);
-    } else {
-        std::memcpy(data_.get(), stored.data(), used);
-    }
-}
-
-const Types &NativeCollection::codec() const {
-    // tp_clear empties types_ only on a value the collector is about to free.
-    if (codec_ == nullptr)
-        raise(PyExc_ValueError, label_ + ": the value has been cleared");
-    return *codec_;
-}
-
-std::size_t NativeCollection::size() const {
-    nb::ft_lock_guard guard(mutex_);
-    return count_;
-}
-
-std::size_t NativeCollection::position(Py_ssize_t index) const {
-    const auto count = static_cast<Py_ssize_t>(count_);
-    const Py_ssize_t at = index < 0 ? index + count : index;
-    if (at < 0 || at >= count)
-        return no_position;
-    return static_cast<std::size_t>(at);
-}
-
 std::pair<NativeCollection::Slice, std::size_t> NativeCollection::fit(Slice slice) const {
     const Py_ssize_t length =
         PySlice_AdjustIndices(static_cast<Py_ssize_t>(count_), &slice.start, &slice.stop, slice.step);
     return {slice, static_cast<std::size_t>(length)};
 }
 
-void NativeCollection::set_count(std::size_t count) {
-    count_ = static_cast<std::uint32_t>(count);
-    std::memcpy(data_.get(), &count_, 4);
-}
-
 void NativeCollection::out_of_range(Py_ssize_t index) const {
     raise(PyExc_IndexError, label_ + ": index " + std::to_string(index) + " is out of range for " +
                                 std::to_string(size()) + " elements");
-}
-
-void NativeCollection::too_many(std::size_t length) const {
-    raise(PyExc_ValueError, label_ + " holds at most " + std::to_string(capacity_) +
-                                " elements; the value would have " + std::to_string(length));
 }
 
 void NativeCollection::too_many(std::size_t count, Py_ssize_t times) const {
@@ -112,21 +211,6 @@ void NativeCollection::too_many(std::size_t count, Py_ssize_t times) const {
         throw nb::python_error();
     raise(PyExc_ValueError, label_ + " holds at most " + std::to_string(capacity_) +
                                 " elements; the value would have " + nb::str(length).c_str());
-}
-
-nb::object NativeCollection::element(Py_ssize_t index) const {
-    // Decoded from a copy taken under the mutex, because decoding may run Python code, which could
-    // change this value while the decode reads it.
-    // ponytail: copies the whole slot, so a str element of a large capacity costs its capacity per read.
-    SlotBuffer copy(stride_);
-    {
-        nb::ft_lock_guard guard(mutex_);
-        const std::size_t at = position(index);
-        if (at == no_position)
-            return {};
-        std::memcpy(copy.data(), slot(at), stride_);
-    }
-    return codec().decode_element(list_, copy.data(), label_);
 }
 
 NativeCollection::Slice NativeCollection::unpack(nb::handle slice) {
@@ -161,23 +245,6 @@ nb::object NativeCollection::getitem(nb::pointer_and_handle<NativeCollection> se
                             c.slot(static_cast<std::size_t>(s.start + Py_ssize_t(k) * s.step)), c.stride_);
     }
     return like(self, part);
-}
-
-std::vector<std::byte> NativeCollection::header(std::size_t count) const {
-    std::vector<std::byte> out(data_.get(), data_.get() + slots_);
-    const auto stored = static_cast<std::uint32_t>(count);
-    std::memcpy(out.data(), &stored, 4);
-    return out;
-}
-
-nb::object NativeCollection::like(nb::pointer_and_handle<NativeCollection> self,
-                                  std::span<const std::byte> stored) {
-    const NativeCollection &c = *self.p;
-    // Raises for a value the collector cleared, before its empty types_ is copied into the new value.
-    c.codec();
-    // Built with the mutex released, because allocating the instance may run the collector.
-    return make(nb::handle(reinterpret_cast<PyObject *>(Py_TYPE(self.h.ptr()))), c.types_, c.list_, c.label_,
-                stored);
 }
 
 nb::object NativeCollection::repeated(nb::pointer_and_handle<NativeCollection> self, Py_ssize_t times) {
@@ -246,8 +313,6 @@ void NativeCollection::repeat(nb::handle times) {
         too_many(count, n);
 }
 
-nb::object NativeCollection::element_annotation() const { return nb::borrow(codec().element_annotation(list_)); }
-
 void NativeCollection::set(Py_ssize_t index, nb::handle value) {
     bool inside = false;
     {
@@ -260,7 +325,7 @@ void NativeCollection::set(Py_ssize_t index, nb::handle value) {
     // runs cannot change the slot while it is written.
     SlotBuffer encoded(stride_);
     std::memset(encoded.data(), 0, stride_);
-    codec().encode_element(list_, value.ptr(), encoded.data(), label_);
+    codec().encode_element(node_, value.ptr(), encoded.data(), label_);
     std::size_t at = no_position;
     {
         nb::ft_lock_guard guard(mutex_);
@@ -370,7 +435,7 @@ void NativeCollection::delitem(nb::handle index) {
 void NativeCollection::insert_at(Py_ssize_t index, nb::handle value) {
     SlotBuffer encoded(stride_);
     std::memset(encoded.data(), 0, stride_);
-    codec().encode_element(list_, value.ptr(), encoded.data(), label_);
+    codec().encode_element(node_, value.ptr(), encoded.data(), label_);
     std::size_t refused = 0;
     {
         nb::ft_lock_guard guard(mutex_);
@@ -419,7 +484,7 @@ nb::object NativeCollection::pop(nb::handle index) {
         if (at == no_position)
             raise(PyExc_IndexError, "pop index out of range");
         // Decoded before the slot is removed, so a decode that raises leaves the value as it was.
-        nb::object value = types.decode_element(list_, copy.data(), label_);
+        nb::object value = types.decode_element(node_, copy.data(), label_);
         bool removed = false;
         {
             // Removed only while the slot still holds the bytes decoded; when another thread changed it
@@ -487,57 +552,6 @@ void NativeCollection::remove_all() {
     splice(0, count_, nullptr, 0);
 }
 
-std::vector<std::byte> NativeCollection::encode_all(nb::handle iterable, std::size_t base) const {
-    const Types &types = codec();
-    std::vector<std::byte> encoded;
-    const Py_ssize_t sized = PyObject_Size(iterable.ptr());
-    if (sized >= 0) {
-        if (base + static_cast<std::size_t>(sized) > capacity_)
-            too_many(base + static_cast<std::size_t>(sized));
-        encoded.reserve(static_cast<std::size_t>(sized) * stride_);
-    } else if (PyErr_ExceptionMatches(PyExc_TypeError)) {
-        PyErr_Clear();
-    } else {
-        throw nb::python_error();
-    }
-    const nb::object items = nb::steal(PyObject_GetIter(iterable.ptr()));
-    if (!items.is_valid())
-        throw nb::python_error();
-    for (std::size_t n = base;; ++n) {
-        const nb::object item = nb::steal(PyIter_Next(items.ptr()));
-        if (!item.is_valid())
-            break;
-        if (n >= capacity_)
-            too_many(n + 1);
-        const std::size_t at = encoded.size();
-        encoded.resize(at + stride_);
-        types.encode_element(list_, item.ptr(), encoded.data() + at, label_);
-    }
-    if (PyErr_Occurred())
-        throw nb::python_error();
-    return encoded;
-}
-
-std::size_t NativeCollection::splice(std::size_t start, std::size_t stop, const std::byte *encoded,
-                                     std::size_t n) {
-    const std::size_t count = count_ - (stop - start) + n;
-    if (count > capacity_)
-        return count;
-    if (count > room_) {
-        const auto room = static_cast<std::uint32_t>(
-            std::min<std::size_t>(capacity_, std::max<std::size_t>(count, std::size_t{room_} * 2)));
-        std::unique_ptr<std::byte[]> grown(new std::byte[slots_ + std::size_t{room} * stride_]);
-        std::memcpy(grown.get(), data_.get(), slots_ + std::size_t{count_} * stride_);
-        data_ = std::move(grown);
-        room_ = room;
-    }
-    std::memmove(slot(start + n), slot(stop), (count_ - stop) * stride_);
-    if (n != 0)
-        std::memcpy(slot(start), encoded, n * stride_);
-    set_count(count);
-    return 0;
-}
-
 nb::object NativeCollection::equals(nb::handle other) const {
     const bool list = PyList_Check(other.ptr());
     if (!list && !(nb::isinstance<NativeCollection>(other) && nb::inst_ready(other)))
@@ -561,42 +575,6 @@ nb::object NativeCollection::equals(nb::handle other) const {
             return nb::bool_(false);
     }
     return nb::bool_(true);
-}
-
-nb::bytes NativeCollection::stored() const {
-    nb::ft_lock_guard guard(mutex_);
-    return nb::bytes(data_.get(), slots_ + std::size_t{count_} * stride_);
-}
-
-bool NativeCollection::has_elements(const std::string &text, PyObject *annotation) const {
-    const Types &types = codec();
-    if (types.element_text(list_) != text)
-        return false;
-    const int equal = PyObject_RichCompareBool(types.element_annotation(list_), annotation, Py_EQ);
-    if (equal < 0)
-        throw nb::python_error();
-    return equal != 0;
-}
-
-std::size_t NativeCollection::copy_to(std::byte *out, std::uint32_t capacity, const std::string &name) const {
-    nb::ft_lock_guard guard(mutex_);
-    if (count_ > capacity)
-        raise(PyExc_ValueError, name + " holds at most " + std::to_string(capacity) + " elements; the value has " +
-                                    std::to_string(count_));
-    const std::size_t size = slots_ + std::size_t{count_} * stride_;
-    std::memcpy(out, data_.get(), size);
-    return size;
-}
-
-int NativeCollection::traverse(visitproc visit, void *arg) const {
-    Py_VISIT(types_.ptr());
-    return 0;
-}
-
-void NativeCollection::clear() {
-    codec_ = nullptr;
-    // Moved out and dropped on return, so code the decref runs finds this value already cleared.
-    nb::object types = std::move(types_);
 }
 
 } // namespace sharedbox

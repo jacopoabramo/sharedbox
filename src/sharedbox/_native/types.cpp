@@ -572,7 +572,8 @@ nb::object Types::decode(std::uint32_t index, std::span<const std::byte> bytes,
         // A list read as a NativeCollection takes over the read's heap buffer, as an array does.
         const NodeInfo &n = nodes_[t.node];
         if (t.kind == kind_list && n.stored && owned != nullptr && owned->get() == bytes.data())
-            return NativeCollection::make(n.cls, nb::find(*this), t, name, std::move(*owned), bytes.size());
+            return SlotStore::make<NativeCollection>(n.cls, nb::find(*this), t, name, std::move(*owned),
+                                                     bytes.size());
     }
     if (t.kind <= kind_ref) {
         if (t.kind == kind_bytes && field_is_bytearray(index))
@@ -947,7 +948,7 @@ nb::object Types::decode_stored(const detail::type_ref &t, const std::byte *data
             return out;
         }
         if (n.stored)
-            return NativeCollection::make(
+            return SlotStore::make<NativeCollection>(
                 n.cls, nb::find(*this), t, where.name,
                 std::span<const std::byte>(data, node.slots + std::size_t{length} * node.stride));
         auto slot = [&](std::uint32_t i) { return data + node.slots + std::size_t{i} * node.stride; };
