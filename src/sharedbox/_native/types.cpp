@@ -569,6 +569,10 @@ nb::object Types::decode(std::uint32_t index, std::span<const std::byte> bytes,
         if (bytes.size() < 4 || length > node.capacity ||
             bytes.size() < node.slots + std::uint64_t{length} * node.stride)
             corrupt(name);
+        // A list read as a NativeCollection takes over the read's heap buffer, as an array does.
+        const NodeInfo &n = nodes_[t.node];
+        if (t.kind == kind_list && n.stored && owned != nullptr && owned->get() == bytes.data())
+            return NativeCollection::make(n.cls, nb::find(*this), t, name, std::move(*owned), bytes.size());
     }
     if (t.kind <= kind_ref) {
         if (t.kind == kind_bytes && field_is_bytearray(index))
@@ -943,8 +947,9 @@ nb::object Types::decode_stored(const detail::type_ref &t, const std::byte *data
             return out;
         }
         if (n.stored)
-            return NativeCollection::make(n.cls, nb::find(*this), t, where.name,
-                                          {data, node.slots + std::size_t{length} * node.stride});
+            return NativeCollection::make(
+                n.cls, nb::find(*this), t, where.name,
+                std::span<const std::byte>(data, node.slots + std::size_t{length} * node.stride));
         auto slot = [&](std::uint32_t i) { return data + node.slots + std::size_t{i} * node.stride; };
         const bool is_list = n.cls == reinterpret_cast<PyObject *>(&PyList_Type);
         if (is_list || n.cls == reinterpret_cast<PyObject *>(&PyTuple_Type)) {
