@@ -749,6 +749,25 @@ struct CollectionIterator {
     bool backward = false;
 };
 
+int collection_iterator_traverse(PyObject *self, visitproc visit, void *arg) {
+    Py_VISIT(Py_TYPE(self));
+    if (!nb::inst_ready(self))
+        return 0;
+    Py_VISIT(nb::inst_ptr<CollectionIterator>(self)->collection.ptr());
+    return 0;
+}
+
+int collection_iterator_clear(PyObject *self) {
+    if (nb::inst_ready(self))
+        nb::inst_ptr<CollectionIterator>(self)->collection.reset();
+    return 0;
+}
+
+PyType_Slot collection_iterator_slots[] = {
+    {Py_tp_traverse, reinterpret_cast<void *>(collection_iterator_traverse)},
+    {Py_tp_clear, reinterpret_cast<void *>(collection_iterator_clear)},
+    {0, nullptr}};
+
 PyType_Slot types_slots[] = {{Py_tp_traverse, reinterpret_cast<void *>(types_traverse)},
                              {Py_tp_clear, reinterpret_cast<void *>(types_clear)},
                              {0, nullptr}};
@@ -1078,19 +1097,23 @@ NB_MODULE(_native, m) {
             },
             "field"_a, "data"_a);
 
-    nb::class_<CollectionIterator>(m, "NativeCollectionIterator", nb::is_final())
+    nb::class_<CollectionIterator>(m, "NativeCollectionIterator", nb::is_final(),
+                                   nb::type_slots(collection_iterator_slots))
         .def("__iter__", [](nb::handle self) { return nb::borrow(self); })
         .def(
             "__next__",
             [](CollectionIterator &it) {
-                const auto *c = nb::inst_ptr<sharedbox::NativeCollection>(it.collection);
-                if (it.backward && it.index == 0)
+                if (!it.collection.is_valid())
                     throw nb::stop_iteration();
+                if (it.backward && it.index == 0) {
+                    it.collection.reset();
+                    throw nb::stop_iteration();
+                }
+                const auto *c = nb::inst_ptr<sharedbox::NativeCollection>(it.collection);
                 nb::object value = c->element(static_cast<Py_ssize_t>(it.backward ? it.index - 1 : it.index));
                 if (!value.is_valid()) {
-                    // A backward iterator past a value that shrank ends, as list's reversed iterator does.
-                    if (it.backward)
-                        it.index = 0;
+                    // An exhausted iterator drops the collection so it stays exhausted, as list's does.
+                    it.collection.reset();
                     throw nb::stop_iteration();
                 }
                 it.backward ? --it.index : ++it.index;
