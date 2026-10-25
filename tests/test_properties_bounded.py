@@ -266,7 +266,7 @@ class Int8Machine(BoundedMachine):
 
 class StrMachine(BoundedMachine):
     element = Annotated[str, Capacity(8)]
-    values = st.text(max_size=8).filter(lambda t: len(t.encode()) <= 8)
+    values = st.text(max_size=8).map(lambda t: t.encode()[:8].decode("utf-8", "ignore"))
 
 
 class SpotMachine(BoundedMachine):
