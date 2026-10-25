@@ -8,9 +8,9 @@ A `list` field builds one Python object per element on every read and
 encodes every element again on every write, so a list of tens of thousands
 of numbers costs milliseconds each way. Declare the field as
 [`BoundedList`][sharedbox.BoundedList] instead, and a read copies the
-stored bytes once without building any element, while assigning a
-`BoundedList` to the field copies its bytes back in one step. Use it for a large list that you read or
-write whole and of which you touch only a few elements. A list you always
+stored bytes without building any element, while assigning a `BoundedList`
+to the field copies its bytes back in one step. Use it for a large list that
+you read or write whole and of which you touch only a few elements. A list you always
 convert to a `list` gains nothing, because the conversion decodes every
 element anyway.
 
