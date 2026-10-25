@@ -44,7 +44,14 @@ struct NodeInfo {
     std::vector<bool> required;
     /// array: hand the converter uint16 elements, which it reinterprets (numpy has no bfloat16).
     bool as_uint16 = false;
+    /// list: read back as a NativeCollection holding the stored bytes, its class cls.
+    bool stored = false;
+    /// list: the element's schema text.
+    std::string element_text;
 };
+
+/// Raises the ValueError for a stored value that Python cannot hold, naming where.
+[[noreturn]] void corrupt(const std::string &where);
 
 /// One entry of the converts list: description offset (-1 for a field), member, read_as, write_as.
 using Convert = std::tuple<std::int64_t, std::uint32_t, nb::object, nb::object>;
@@ -122,6 +129,14 @@ public:
     /// of None is taken only for an array field. Raises TypeError naming the field for a template_item of
     /// another type, and ValueError for one that leads to no array and holds a value that does not fit.
     nb::object with_arrays(std::uint32_t index, PyObject *template_item, std::byte *data, nb::handle owner) const;
+
+    const detail::type_node &node_of(const detail::type_ref &t) const { return tree_.node(t.node); }
+    /// The element of the list node list stored at slot; errors name label.
+    nb::object decode_element(const detail::type_ref &list, const std::byte *slot, const std::string &label) const;
+    /// Writes value at slot as an element of the list node list, the way a write of the list would; errors
+    /// name label.
+    void encode_element(const detail::type_ref &list, PyObject *value, std::byte *slot,
+                        const std::string &label) const;
 
     int traverse(visitproc visit, void *arg) const;
     void clear();

@@ -5,6 +5,7 @@
 #include <cstring>
 #include <stdexcept>
 
+#include "collection.hpp"
 #include "scalars.hpp"
 
 namespace sharedbox {
@@ -25,10 +26,6 @@ std::string type_name(PyObject *type) {
 [[noreturn]] void wrong(const std::string &where, const std::string &expected, PyObject *value) {
     raise(PyExc_TypeError,
           where + " expects " + expected + ", got " + type_name(reinterpret_cast<PyObject *>(Py_TYPE(value))));
-}
-
-[[noreturn]] void corrupt(const std::string &where) {
-    raise(PyExc_ValueError, where + ": the stored value is not one Python can hold");
 }
 
 enum class family { none, boolean, integer, real, complex, time };
@@ -258,6 +255,10 @@ PyObject *at(PyObject *items, Py_ssize_t i) {
 
 } // namespace
 
+void corrupt(const std::string &where) {
+    raise(PyExc_ValueError, where + ": the stored value is not one Python can hold");
+}
+
 const Types &need(const Types *types, std::uint32_t index) {
     if (types == nullptr)
         raise(PyExc_TypeError,
@@ -394,7 +395,18 @@ void Types::prepare(std::uint32_t node, std::uint8_t kind, nb::object info) {
         }
         break;
     }
-    case kind_list:
+    case kind_list: {
+        n.cls = item(n.info, 0);
+        PyObject *text = item(n.info, 1);
+        if (!PyUnicode_Check(text))
+            throw std::invalid_argument("a list's element text is not a str");
+        n.element_text = nb::borrow<nb::str>(text).c_str();
+        const int stored = PyObject_IsSubclass(n.cls, nb::type<NativeCollection>().ptr());
+        if (stored < 0)
+            throw nb::python_error();
+        n.stored = stored == 1;
+        break;
+    }
     case kind_set:
     case kind_dict:
         n.cls = item(n.info, 0);
@@ -918,6 +930,9 @@ nb::object Types::decode_stored(const detail::type_ref &t, const std::byte *data
             }
             return out;
         }
+        if (n.stored)
+            return NativeCollection::make(n.cls, nb::find(*this), t, where.name,
+                                          {data, node.slots + std::size_t{length} * node.stride});
         auto slot = [&](std::uint32_t i) { return data + node.slots + std::size_t{i} * node.stride; };
         const bool is_list = n.cls == reinterpret_cast<PyObject *>(&PyList_Type);
         if (is_list || n.cls == reinterpret_cast<PyObject *>(&PyTuple_Type)) {
@@ -1008,6 +1023,19 @@ nb::object Types::decode_stored(const detail::type_ref &t, const std::byte *data
         raise(PyExc_TypeError,
               where.name + ": values of kind " + std::to_string(t.kind) + " are not supported yet");
     }
+}
+
+nb::object Types::decode_element(const detail::type_ref &list, const std::byte *slot,
+                                 const std::string &label) const {
+    const detail::type_ref &m = tree_.member(tree_.node(list.node).members).type;
+    if (m.kind <= kind_str && conversions_.empty())
+        return nb::steal(owned(decode_plain(m, slot, label)));
+    return decode_from(m, slot, list.node, 0, {label});
+}
+
+void Types::encode_element(const detail::type_ref &list, PyObject *value, std::byte *slot,
+                           const std::string &label) const {
+    encode_into(tree_.member(tree_.node(list.node).members).type, value, slot, {label});
 }
 
 nb::ndarray<nb::ro> Types::array_view(const detail::type_ref &t, PyObject *value, const Where &where) const {

@@ -1,6 +1,7 @@
 from pathlib import Path
 
 from ._arrays import DType, Shape, SupportsDLPack, register_array_type
+from ._bounded import BoundedList
 from ._box import SharedBox, SupportsSharedBox, fields
 from ._events import BoxEvents, FieldFuture, FieldWatch
 from ._layout import Capacity, Field, field
@@ -30,6 +31,7 @@ from ._stream import (
 from ._version import __version__
 
 __all__ = [
+    "BoundedList",
     "BoxClosedError",
     "BoxEvents",
     "BoxRef",

@@ -25,6 +25,7 @@
 #endif
 
 #include "codec.hpp"
+#include "collection.hpp"
 #include "scalars.hpp"
 #include "segment.hpp"
 #include "stream.hpp"
@@ -723,6 +724,29 @@ PyType_Slot value_cache_slots[] = {{Py_tp_traverse, reinterpret_cast<void *>(val
                                    {Py_tp_clear, reinterpret_cast<void *>(value_cache_clear)},
                                    {0, nullptr}};
 
+int collection_traverse(PyObject *self, visitproc visit, void *arg) {
+    Py_VISIT(Py_TYPE(self));
+    if (!nb::inst_ready(self))
+        return 0;
+    return nb::inst_ptr<sharedbox::NativeCollection>(self)->traverse(visit, arg);
+}
+
+int collection_clear(PyObject *self) {
+    if (nb::inst_ready(self))
+        nb::inst_ptr<sharedbox::NativeCollection>(self)->clear();
+    return 0;
+}
+
+PyType_Slot collection_slots[] = {{Py_tp_traverse, reinterpret_cast<void *>(collection_traverse)},
+                                  {Py_tp_clear, reinterpret_cast<void *>(collection_clear)},
+                                  {0, nullptr}};
+
+/// The iterator of a NativeCollection: one element decoded per step, up to the length the value has then.
+struct CollectionIterator {
+    nb::object collection;
+    std::size_t index = 0;
+};
+
 PyType_Slot types_slots[] = {{Py_tp_traverse, reinterpret_cast<void *>(types_traverse)},
                              {Py_tp_clear, reinterpret_cast<void *>(types_clear)},
                              {0, nullptr}};
@@ -1051,6 +1075,26 @@ NB_MODULE(_native, m) {
                 return t.decode(index, std::as_bytes(std::span(data.c_str(), data.size())), nullptr);
             },
             "field"_a, "data"_a);
+
+    nb::class_<CollectionIterator>(m, "NativeCollectionIterator")
+        .def("__iter__", [](nb::handle self) { return nb::borrow(self); })
+        .def(
+            "__next__",
+            [](CollectionIterator &it) {
+                nb::object value = nb::inst_ptr<sharedbox::NativeCollection>(it.collection)->next(it.index);
+                if (!value.is_valid())
+                    throw nb::stop_iteration();
+                ++it.index;
+                return value;
+            },
+            nb::lock_self());
+
+    nb::class_<sharedbox::NativeCollection>(m, "NativeCollection", nb::type_slots(collection_slots))
+        .def("__len__", &sharedbox::NativeCollection::size)
+        .def("__getitem__", &sharedbox::NativeCollection::get)
+        .def("__setitem__", &sharedbox::NativeCollection::set, nb::arg(), nb::arg().none())
+        .def("__iter__", [](nb::handle self) { return CollectionIterator{nb::borrow(self)}; })
+        .def("_stored", &sharedbox::NativeCollection::stored);
 
     method_type = nb::object(nb::module_::import_("types").attr("MethodType")).release().ptr();
     getattr_function = nb::object(nb::module_::import_("builtins").attr("getattr")).release().ptr();

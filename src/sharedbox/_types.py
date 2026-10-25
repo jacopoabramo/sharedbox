@@ -42,6 +42,7 @@ from ._arrays import (
     dtype_name,
     key,
 )
+from ._bounded import BoundedList
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -244,6 +245,7 @@ TEXT: Final[dict[type, str]] = {
 
 LISTS: Final[dict[Any, type]] = {
     list: list,
+    BoundedList: BoundedList,
     abc.Sequence: list,
     abc.MutableSequence: list,
 }
@@ -1194,7 +1196,7 @@ def collection_spec(
         members=members,
         count=len(members),
         before=struct.pack("<I", capacity),
-        info=(read,),
+        info=(read, element.text, args[0]) if kind == "list" else (read,),
         match=(
             (abc.Mapping,)
             if kind == "dict"

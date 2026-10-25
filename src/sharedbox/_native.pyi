@@ -1,5 +1,5 @@
 import sys
-from collections.abc import Callable, Mapping, Sequence
+from collections.abc import Callable, Iterator, Mapping, Sequence
 from typing import Any, Final, Generic, Never, Self, TypeVar, final, overload
 
 from typing_extensions import disjoint_base
@@ -343,6 +343,41 @@ class Types:
         """Raise what writing `value` to `field` would raise."""
     def decode(self, field: int, data: bytes) -> object:
         """Return the value stored as `data`, as `read_versioned` returns it."""
+
+@disjoint_base
+class NativeCollection:
+    """A list value held as its field stores it: the count and the slots it uses.
+
+    Only a read of a list field makes one; Python code cannot construct it.
+    """
+
+    def __len__(self) -> int: ...
+    def __getitem__(self, arg: int, /) -> Any:
+        """Decode one element, counted from the end when negative.
+
+        Raises
+        ------
+        IndexError
+            If the value has no such element.
+        """
+    def __setitem__(self, arg0: int, arg1: Any, /) -> None:
+        """Replace one element after checking it as a write to the field would.
+
+        Raises
+        ------
+        IndexError
+            If the value has no such element.
+        """
+    def __iter__(self) -> Iterator[Any]: ...
+    def _stored(self) -> bytes:
+        """Return the count and used slots, as a list field stores them."""
+
+@final
+class NativeCollectionIterator:
+    """Decodes one element of a `NativeCollection` per step."""
+
+    def __iter__(self) -> Self: ...
+    def __next__(self) -> Any: ...
 
 @disjoint_base
 class Field:
