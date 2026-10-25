@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
+import copy
 import functools
 import types
-from collections.abc import Callable, Iterable, MutableSequence
+from collections.abc import Callable, Iterable
 from typing import Annotated, Any, Self, TypeVar, cast
 
 from ._layout import Capacity
@@ -33,13 +34,25 @@ class BoundedList(NativeCollection[T]):
     A subclass is declared and read back the same way, generic as
     `class MyList(BoundedList[T])` used as `MyList[float]`, or with its
     element type fixed as `class Points(BoundedList[float])`. A read from a
-    box calls neither `__new__` nor `__init__`.
+    box calls neither `__new__` nor `__init__`. `copy.copy`,
+    `copy.deepcopy` and pickling keep a subclass's attributes, as for a
+    `list` subclass, while slices, `+` and `*` return the class without
+    them.
     """
 
     __slots__ = ()
 
-    def __new__(cls, values: Iterable[T] = (), *, capacity: int) -> Self:
+    def __new__(
+        cls,
+        values: Iterable[T] = (),
+        *args: Any,
+        capacity: int,
+        **kwargs: Any,
+    ) -> Self:
         """Build a value of `capacity` holding `values`, of the element type `cls` fixes.
+
+        Other arguments are left to `__init__`, as `list.__new__` leaves
+        them, so a subclass's `__init__` may take more.
 
         Raises
         ------
@@ -55,6 +68,23 @@ class BoundedList(NativeCollection[T]):
         """Do nothing; `__new__` has built the value."""
 
     def __class_getitem__(cls, element: object) -> types.GenericAlias:
+        """Return `cls` with its element type `element`.
+
+        Raises
+        ------
+        TypeError
+            If `element` is several types, or `cls` already fixes one.
+        """
+        # typing rebuilds an alias it evaluates with its arguments as a tuple.
+        if isinstance(element, tuple):
+            if len(element) != 1:
+                raise TypeError(
+                    f"{cls.__name__} takes one element type, got {len(element)}"
+                )
+            (element,) = element
+        fixed = list_element(cls)
+        if fixed is not None:
+            raise TypeError(f"{cls.__name__} already has element type {_name(fixed)}")
         return _Alias(cls, element)
 
     def __repr__(self) -> str:
@@ -63,17 +93,34 @@ class BoundedList(NativeCollection[T]):
             f"({list(self)!r}, capacity={self.capacity})"
         )
 
+    def __copy__(self) -> Self:
+        """Return a copy, with a shallow copy of a subclass's attributes."""
+        value = self.copy()
+        _restore(value, self.__getstate__())
+        return value
+
+    def __deepcopy__(self, memo: dict[int, Any]) -> Self:
+        """Return a copy, with a deep copy of a subclass's attributes.
+
+        The elements are copied as bytes, since every read decodes an
+        element anew and the copy shares none with this value.
+        """
+        value = self.copy()
+        memo[id(self)] = value
+        _restore(value, copy.deepcopy(self.__getstate__(), memo))
+        return value
+
     def __reduce__(
         self,
     ) -> tuple[
         Callable[[type[Any], object, int, bytes], BoundedList[Any]],
         tuple[type[Any], object, int, bytes],
-        dict[str, Any] | None,
+        object,
     ]:
         return (
             _rebuild,
             (type(self), self.element_annotation, self.capacity, self._stored()),
-            getattr(self, "__dict__", None),
+            self.__getstate__(),
         )
 
 
@@ -81,10 +128,25 @@ class _Alias(types.GenericAlias):
     """`BoundedList[T]` or a subclass's, which builds a value of element type `T` when called."""
 
     def __call__(
-        self, values: Iterable[object] = (), *, capacity: int
+        self,
+        values: Iterable[object] = (),
+        *args: Any,
+        capacity: int,
+        **kwargs: Any,
     ) -> BoundedList[Any]:
         cls = cast("type[BoundedList[Any]]", self.__origin__)
-        return _build(cls, list_element(self), values, capacity)
+        value = _build(cls, list_element(self), values, capacity)
+        cls.__init__(value, values, *args, capacity=capacity, **kwargs)
+        return value
+
+
+def _restore(value: object, state: object) -> None:
+    """Set the attributes `object.__getstate__` gave on `value`, as unpickling sets them."""
+    attrs, slots = state if isinstance(state, tuple) else (state, None)
+    if attrs:
+        value.__dict__.update(attrs)
+    for name, member in (slots or {}).items():
+        setattr(value, name, member)
 
 
 def _name(element: object) -> str:
@@ -130,6 +192,3 @@ def _rebuild(
 ) -> BoundedList[Any]:
     """Return the `cls` whose stored form is `stored`, as pickling gave it."""
     return cast("BoundedList[Any]", _codec(cls, element, capacity)[0].decode(0, stored))
-
-
-MutableSequence.register(NativeCollection)

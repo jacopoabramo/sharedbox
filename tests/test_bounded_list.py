@@ -29,6 +29,22 @@ class Points(BoundedList[float]):
     __slots__ = ()
 
 
+class Tagged(BoundedList[float]):
+    __slots__ = ("tag",)
+    tag: object
+
+
+class Labelled(BoundedList[T]):
+    def __init__(
+        self, values: collections.abc.Iterable[T] = (), *, capacity: int, tag: str
+    ) -> None:
+        self.tag = tag
+
+
+class LabelledPoints(Labelled[float]):
+    pass
+
+
 class Unreadable(BoundedList[float]):
     __slots__ = ()
 
@@ -634,18 +650,62 @@ def test_a_class_without_its_element_type_is_refused(cls: Any) -> None:
 
 
 def described(values: list[Any]) -> list[tuple[str, str, object]]:
-    return [
-        (type(v).__qualname__, repr(v), getattr(v, "__dict__", None)) for v in values
-    ]
+    return [(type(v).__qualname__, repr(v), v.__getstate__()) for v in values]
 
 
 def test_a_pickled_subclass_reads_back_as_itself_in_a_spawned_process() -> None:
-    """Unpickle subclass values in a spawned process as their own class, with their attributes."""
+    """Unpickle subclass values in a spawned process as their own class, with their attributes and slots."""
     generic = MyList[float]([1.0], capacity=4)
     generic.tag = "a"  # type: ignore[attr-defined]
-    values = [generic, Points([2.0], capacity=4)]
+    slotted = Tagged([3.0], capacity=4)
+    slotted.tag = "b"
+    values = [generic, Points([2.0], capacity=4), slotted]
     assert call_in_child(described, values) == described(values)
-    assert described(values)[0][2] == {"tag": "a"}
+    assert [d[2] for d in described(values)] == [
+        {"tag": "a"},
+        None,
+        (None, {"tag": "b"}),
+    ]
+
+
+@pytest.mark.parametrize("cls", [Labelled[float], LabelledPoints])
+def test_a_subclass_init_takes_its_own_arguments(cls: Any) -> None:
+    """Pass arguments the class's __init__ takes beyond those __new__ uses."""
+    value = cls([1.0], capacity=4, tag="y")
+    assert value.tag == "y"
+    assert value == [1.0]
+
+
+def test_copies_keep_a_subclass_state() -> None:
+    """Copy a subclass's attributes and slots shallowly with copy.copy and deeply with copy.deepcopy."""
+    generic = MyList[float]([1.0], capacity=4)
+    generic.marks = [1]  # type: ignore[attr-defined]
+    slotted = Tagged([2.0], capacity=4)
+    slotted.tag = ["b"]
+    for value, name in [(generic, "marks"), (slotted, "tag")]:
+        shallow = copy.copy(value)
+        deep = copy.deepcopy(value)
+        assert getattr(shallow, name) is getattr(value, name)
+        assert getattr(deep, name) == getattr(value, name)
+        assert getattr(deep, name) is not getattr(value, name)
+        assert [shallow, deep] == [value, value]
+    assert not hasattr(slotted[:], "tag")
+
+
+def test_a_second_element_type_is_refused() -> None:
+    """Refuse two element types, or one for a class whose bases already fix it."""
+    with pytest.raises(TypeError, match="BoundedList takes one element type, got 2"):
+        BoundedList[float, int]  # type: ignore[misc]
+    with pytest.raises(TypeError, match="MyList takes one element type, got 2"):
+        MyList[float, int]  # type: ignore[misc]
+    with pytest.raises(TypeError, match="Points already has element type float"):
+        Points[int]  # type: ignore[misc]
+
+
+def test_native_collection_is_not_an_annotation() -> None:
+    """Refuse NativeCollection itself as a field annotation."""
+    with pytest.raises(TypeError, match="T.x"):
+        build_layout(make(Annotated[NativeCollection[float], Capacity(4)]))
 
 
 def test_a_subclass_value_is_written_as_one_byte_copy(unique_name: str) -> None:

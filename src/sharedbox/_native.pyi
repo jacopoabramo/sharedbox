@@ -523,14 +523,6 @@ class NativeCollection(MutableSequence[_T]):
 
         The slots are copied without decoding an element.
         """
-    def __copy__(self) -> Self:
-        """Return a copy, as `copy` does."""
-    def __deepcopy__(self, memo: dict[int, Any] | None, /) -> Self:
-        """Return a copy, as `copy` does.
-
-        Every read decodes an element anew, so the copy shares no element
-        with this value.
-        """
     def __add__(self, other: list[_T] | NativeCollection[_T], /) -> Self:
         """Return a copy extended with the elements of `other`.
 

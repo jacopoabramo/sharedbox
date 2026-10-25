@@ -1141,9 +1141,13 @@ def is_collection(hint: Any) -> bool:
 
 
 def list_class(hint: Any) -> type[NativeCollection[Any]] | None:
-    """Return the `NativeCollection` subclass `hint` is, alone or parametrised, or None."""
+    """Return the strict `NativeCollection` subclass `hint` is, alone or parametrised, or None."""
     origin = get_origin(hint) or hint
-    if isinstance(origin, type) and issubclass(origin, NativeCollection):
+    if (
+        isinstance(origin, type)
+        and issubclass(origin, NativeCollection)
+        and origin is not NativeCollection
+    ):
         return origin
     return None
 
