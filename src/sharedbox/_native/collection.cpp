@@ -486,7 +486,25 @@ nb::bytes NativeCollection::stored() const {
     return nb::bytes(data_.get(), slots_ + std::size_t{count_} * stride_);
 }
 
-const std::string &NativeCollection::element_text() const { return codec().element_text(list_); }
+bool NativeCollection::has_elements(const std::string &text, PyObject *annotation) const {
+    const Types &types = codec();
+    if (types.element_text(list_) != text)
+        return false;
+    const int equal = PyObject_RichCompareBool(types.element_annotation(list_), annotation, Py_EQ);
+    if (equal < 0)
+        throw nb::python_error();
+    return equal != 0;
+}
+
+std::size_t NativeCollection::copy_to(std::byte *out, std::uint32_t capacity, const std::string &name) const {
+    nb::ft_lock_guard guard(mutex_);
+    if (count_ > capacity)
+        raise(PyExc_ValueError, name + " holds at most " + std::to_string(capacity) + " elements; the value has " +
+                                    std::to_string(count_));
+    const std::size_t size = slots_ + std::size_t{count_} * stride_;
+    std::memcpy(out, data_.get(), size);
+    return size;
+}
 
 int NativeCollection::traverse(visitproc visit, void *arg) const {
     Py_VISIT(types_.ptr());

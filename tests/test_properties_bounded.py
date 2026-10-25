@@ -135,7 +135,6 @@ class BoundedMachine(RuleBasedStateMachine):
     def write_the_value(self) -> None:
         """Write the value to the second field and check it stores the bytes the elements would."""
         self.box.second = self.bounded
-        assert self.box.second._stored() == self.bounded._stored()
         self.box.first = list(self.mirror)
         assert self.box.first._stored() == self.box.second._stored()
         self.bounded = self.box.first

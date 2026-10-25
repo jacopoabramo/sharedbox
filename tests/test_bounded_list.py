@@ -1,4 +1,5 @@
 import collections.abc
+import enum
 import queue
 import threading
 from dataclasses import dataclass
@@ -38,6 +39,40 @@ class Listed(SharedBox, identity="sbtest/bounded/attach"):
 
 class Bounded(SharedBox, identity="sbtest/bounded/attach"):
     points: Annotated[BoundedList[float], Capacity(8)]
+
+
+class Red(enum.Enum):
+    r = 1
+
+
+class Blue(enum.Enum):
+    r = 1
+
+
+@dataclass(frozen=True)
+class Left:
+    x: float
+
+
+@dataclass(frozen=True)
+class Right:
+    x: float
+
+
+class Reds(SharedBox):
+    v: Annotated[BoundedList[Red], Capacity(4)]
+
+
+class Blues(SharedBox):
+    v: Annotated[BoundedList[Blue], Capacity(4)]
+
+
+class Lefts(SharedBox):
+    v: Annotated[BoundedList[Left], Capacity(4)]
+
+
+class Rights(SharedBox):
+    v: Annotated[BoundedList[Right], Capacity(4)]
 
 
 class Places(SharedBox):
@@ -328,3 +363,37 @@ def test_list_and_bounded_list_declarations_attach_to_each_other(
         with Bounded.attach(unique_name) as attached:
             update_in_child(attached, points=[2.0, 3.0])
         assert made.points == [2.0, 3.0]
+
+
+@pytest.mark.parametrize(
+    ("source", "target", "first", "second"),
+    [(Reds, Blues, Red.r, Blue.r), (Lefts, Rights, Left(1.0), Right(2.0))],
+)
+def test_a_bounded_list_of_another_class_is_refused_as_a_list_is(
+    unique_name: str,
+    source: type[SharedBox],
+    target: type[SharedBox],
+    first: object,
+    second: object,
+) -> None:
+    """Refuse a BoundedList whose elements are of a same-shaped class and keep the field's value."""
+    with (
+        source.create(unique_name + "-a", [first]) as one,
+        target.create(unique_name + "-b", [second]) as other,
+    ):
+        with pytest.raises(TypeError) as listed:
+            other.update(v=[first])
+        with pytest.raises(TypeError) as bounded:
+            other.update(v=one.v)
+        assert str(bounded.value) == str(listed.value)
+        assert list(other.v) == [second]
+
+
+@pytest.mark.filterwarnings("ignore:nanobind")
+def test_a_bounded_list_that_was_never_built_takes_the_per_element_path(
+    unique_name: str,
+) -> None:
+    """Write a BoundedList made by __new__ alone as an empty sequence."""
+    with Scan.create(unique_name, [1.0]) as box:
+        box.update(points=BoundedList.__new__(BoundedList))
+        assert box.points == []

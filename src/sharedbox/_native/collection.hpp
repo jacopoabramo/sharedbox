@@ -68,8 +68,11 @@ public:
     nb::object element(Py_ssize_t index) const;
     /// The count and used slots, as a list field stores them.
     nb::bytes stored() const;
-    /// The schema text of the elements.
-    const std::string &element_text() const;
+    /// Whether the elements have the schema text and annotation given.
+    bool has_elements(const std::string &text, PyObject *annotation) const;
+    /// Copies the stored form to out and returns its size. Raises ValueError naming name when the count
+    /// passes capacity, before copying anything.
+    std::size_t copy_to(std::byte *out, std::uint32_t capacity, const std::string &name) const;
 
     int traverse(visitproc visit, void *arg) const;
     void clear();
