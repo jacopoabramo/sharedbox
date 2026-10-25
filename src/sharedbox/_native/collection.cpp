@@ -193,7 +193,8 @@ nb::object NativeCollection::repeated(nb::pointer_and_handle<NativeCollection> s
     {
         nb::ft_lock_guard guard(c.mutex_);
         count = c.count_;
-        if (times < 1) {
+        // An empty value repeated any number of times stays empty, so it is never looped over.
+        if (times < 1 || count == 0) {
             part = c.header(0);
         } else if (c.too_many_times(count, times)) {
             refused = true;
@@ -237,7 +238,7 @@ void NativeCollection::repeat(nb::handle times) {
             splice(0, count_, nullptr, 0);
         } else if (too_many_times(count, n)) {
             refused = true;
-        } else if (n > 1) {
+        } else if (n > 1 && count != 0) {
             // Copied aside, because growing the buffer moves the slots the copies are taken from.
             const std::size_t used = count * stride_;
             std::vector<std::byte> copies(used * static_cast<std::size_t>(n - 1));

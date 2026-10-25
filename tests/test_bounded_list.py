@@ -532,3 +532,11 @@ def test_unpickling_a_count_past_the_capacity_reads_as_corrupt() -> None:
     forged = (5).to_bytes(4, "little") + stored[4:]
     with pytest.raises(ValueError, match="the stored value is not one Python can hold"):
         rebuild(element, capacity, forged)
+
+
+def test_repeating_an_empty_value_returns_at_once() -> None:
+    """Repeat an empty value any number of times, in place or not, without looping over the count."""
+    empty = BoundedList[float](capacity=4)
+    assert empty * 2**62 == []
+    empty *= 2**62
+    assert empty == []
