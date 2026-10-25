@@ -48,6 +48,26 @@ std::uint64_t to_u64(PyObject *number, const std::string &name, const char *what
     return value;
 }
 
+std::span<const std::byte> int_bytes(PyObject *number, const std::string &name, EncodeBuffer &buffer) {
+    int overflow = 0;
+    long long value = PyLong_AsLongLongAndOverflow(number, &overflow);
+    if (overflow != 0)
+        raise(PyExc_OverflowError, name + " holds a signed 64-bit integer; the value does not fit");
+    if (value == -1 && PyErr_Occurred())
+        throw nb::python_error();
+    std::memcpy(buffer.small, &value, 8);
+    return {buffer.small, 8};
+}
+
+// Out of line, so a plain int's write holds no object of its own.
+SBX_NOINLINE std::span<const std::byte> index_bytes(PyObject *value, const std::string &name,
+                                                    EncodeBuffer &buffer) {
+    const nb::object index = nb::steal(PyNumber_Index(value));
+    if (!index.is_valid())
+        throw nb::python_error();
+    return int_bytes(index.ptr(), name, buffer);
+}
+
 // Releases the buffer on every way out of encode(), exceptions included.
 class Buffer {
 public:
@@ -80,23 +100,12 @@ std::span<const std::byte> encode(const FieldDesc &field, const std::string &nam
         return {&bool_bytes[truth], 1};
     }
     case FieldKind::Int: {
-        nb::object index;
-        if (PyBool_Check(value) || !PyLong_Check(value)) {
+        if (PyBool_Check(value) || !PyLong_Check(value)) [[unlikely]] {
             if (!scalars::is_integer(value))
                 goto wrong_type;
-            index = nb::steal(PyNumber_Index(value));
-            if (!index.is_valid())
-                throw nb::python_error();
-            value = index.ptr();
+            return index_bytes(value, name, buffer);
         }
-        int overflow = 0;
-        long long number = PyLong_AsLongLongAndOverflow(value, &overflow);
-        if (overflow != 0)
-            raise(PyExc_OverflowError, name + " holds a signed 64-bit integer; the value does not fit");
-        if (number == -1 && PyErr_Occurred())
-            throw nb::python_error();
-        std::memcpy(buffer.small, &number, 8);
-        return {buffer.small, 8};
+        return int_bytes(value, name, buffer);
     }
     case FieldKind::Float: {
         if ((PyBool_Check(value) || !(PyFloat_Check(value) || PyLong_Check(value))) && !scalars::is_real(value))

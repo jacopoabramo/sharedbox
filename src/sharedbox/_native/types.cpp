@@ -603,18 +603,26 @@ std::size_t Types::encode_collection(const detail::type_ref &t, PyObject *value,
 }
 
 void Types::encode_into(const detail::type_ref &t, PyObject *value, std::byte *out, const Where &where) const {
+    if (const Conversion *c = conversion(t); c != nullptr && !c->write_as.is_none()) [[unlikely]]
+        return encode_converted(*c, t, value, out, where);
+    encode_plain(t, value, out, where);
+}
+
+void Types::encode_converted(const Conversion &c, const detail::type_ref &t, PyObject *value, std::byte *out,
+                             const Where &where) const {
     nb::object converted;
-    if (const Conversion *c = conversion(t); c != nullptr && !c->write_as.is_none()) {
-        try {
-            converted = through(c->write_as, nb::borrow(value));
-        } catch (nb::python_error &error) {
-            // The conversion's message starts with a verb; the field's name goes in front of it.
-            if (!error.matches(PyExc_TypeError) && !error.matches(PyExc_OverflowError))
-                throw;
-            raise(error.type().ptr(), where.name + " " + nb::str(error.value()).c_str());
-        }
-        value = converted.ptr();
+    try {
+        converted = through(c.write_as, nb::borrow(value));
+    } catch (nb::python_error &error) {
+        // The conversion's message starts with a verb; the field's name goes in front of it.
+        if (!error.matches(PyExc_TypeError) && !error.matches(PyExc_OverflowError))
+            throw;
+        raise(error.type().ptr(), where.name + " " + nb::str(error.value()).c_str());
     }
+    encode_plain(t, converted.ptr(), out, where);
+}
+
+void Types::encode_plain(const detail::type_ref &t, PyObject *value, std::byte *out, const Where &where) const {
     if (t.kind <= kind_bytes) {
         EncodeBuffer scratch;
         const std::span<const std::byte> bytes = sharedbox::encode(desc_of(t), where.name, value, scratch);
@@ -955,20 +963,20 @@ nb::object Types::decode_stored(const detail::type_ref &t, const std::byte *data
             return out;
         }
         if (n.form == 0 && n.by_position) {
-            // Each member is owned by an nb::object, so a member that fails to decode releases the ones
-            // before it. Without keywords, a class that has no vectorcall of its own gets a tuple from
-            // CPython, which its __init__ unpacks without a dict.
-            std::array<nb::object, 16> few;
-            std::vector<nb::object> many(node.count > few.size() ? node.count : 0);
-            nb::object *held = node.count > few.size() ? many.data() : few.data();
-            std::array<PyObject *, 16> few_args;
-            std::vector<PyObject *> many_args(node.count > few_args.size() ? node.count : 0);
-            PyObject **args = node.count > few_args.size() ? many_args.data() : few_args.data();
-            for (std::uint32_t i = 0; i < node.count; ++i) {
-                held[i] = nb::steal(element(member(i).type, data + member(i).offset, i));
-                args[i] = held[i].ptr();
-            }
-            PyObject *made = PyObject_Vectorcall(n.cls, args, node.count, nullptr);
+            // The entries start as nullptr and the guard releases every one, so a member that fails to
+            // decode releases the ones before it. Without keywords, a class that has no vectorcall of its
+            // own gets a tuple from CPython, which its __init__ unpacks without a dict.
+            Scratch<PyObject *, 16> args(node.count);
+            struct Release {
+                std::span<PyObject *> held;
+                ~Release() {
+                    for (PyObject *p : held)
+                        Py_XDECREF(p);
+                }
+            } release{args.span()};
+            for (std::uint32_t i = 0; i < node.count; ++i)
+                args[i] = element(member(i).type, data + member(i).offset, i);
+            PyObject *made = PyObject_Vectorcall(n.cls, args.span().data(), node.count, nullptr);
             if (made == nullptr)
                 throw nb::python_error();
             return nb::steal(made);

@@ -369,33 +369,7 @@ struct BoxMethod {
 
 enum BoxMethodKind { kind_update = 0, kind_snapshot = 1 };
 
-// Holds size value-initialised entries: up to N in place, more on the heap. Only the entries in use are
-// constructed, since MSVC constructs and destroys a whole array of a class type through a call per
-// element, which costs more than the rest of a small update.
-template <typename T, std::size_t N> class Scratch {
-    // The constructor builds the entries outside any cleanup that would free the heap block.
-    static_assert(std::is_nothrow_default_constructible_v<T>);
-
-public:
-    explicit Scratch(std::size_t size)
-        : size_(size), data_(size <= N ? reinterpret_cast<T *>(local_) : std::allocator<T>().allocate(size)) {
-        std::uninitialized_value_construct_n(data_, size_);
-    }
-    Scratch(const Scratch &) = delete;
-    Scratch &operator=(const Scratch &) = delete;
-    ~Scratch() {
-        std::destroy_n(data_, size_);
-        if (size_ > N)
-            std::allocator<T>().deallocate(data_, size_);
-    }
-    T &operator[](std::size_t i) { return data_[i]; }
-    std::span<T> span() { return {data_, size_}; }
-
-private:
-    alignas(T) std::byte local_[N * sizeof(T)];
-    std::size_t size_;
-    T *data_;
-};
+using sharedbox::Scratch;
 
 // The index of the field called name, or -1. Keyword names written in code are interned like the
 // field names, so a pointer match finds them; a name built at run time needs the text compared.

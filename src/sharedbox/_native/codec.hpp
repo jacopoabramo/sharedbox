@@ -11,14 +11,49 @@
 #include <optional>
 #include <span>
 #include <string>
+#include <type_traits>
 
 #include <sharedbox/sharedbox.hpp>
 
 #include "segment.hpp"
 
+#if defined(_MSC_VER)
+#define SBX_NOINLINE __declspec(noinline)
+#else
+#define SBX_NOINLINE [[gnu::noinline]]
+#endif
+
 namespace sharedbox {
 
 class Types;
+
+// Holds size value-initialised entries: up to N in place, more on the heap. Only the entries in use are
+// constructed, since MSVC constructs and destroys a whole array of a class type through a call per
+// element, which costs more than the rest of a small update.
+template <typename T, std::size_t N> class Scratch {
+    // The constructor builds the entries outside any cleanup that would free the heap block.
+    static_assert(std::is_nothrow_default_constructible_v<T>);
+
+public:
+    explicit Scratch(std::size_t size)
+        : size_(size), data_(size <= N ? reinterpret_cast<T *>(local_) : std::allocator<T>().allocate(size)) {
+        std::uninitialized_value_construct_n(data_, size_);
+    }
+    Scratch(const Scratch &) = delete;
+    Scratch &operator=(const Scratch &) = delete;
+    ~Scratch() {
+        std::destroy_n(data_, size_);
+        if (size_ > N)
+            std::allocator<T>().deallocate(data_, size_);
+    }
+    T &operator[](std::size_t i) { return data_[i]; }
+    std::span<T> span() { return {data_, size_}; }
+
+private:
+    alignas(T) std::byte local_[N * sizeof(T)];
+    std::size_t size_;
+    T *data_;
+};
 
 /// Room for the bytes of one encoded value: a number, a reference or a short bytes value fits in
 /// place, a longer bytes value goes on the heap. The constructor leaves the bytes uninitialised.
