@@ -45,9 +45,13 @@ jobs:
           mkdir results
           for round in 1 2 3; do
             for side in base head; do
-              for rows in int record; do
+              for rows in int record list; do
+                case "$rows" in
+                  list) pattern="*list*" ;;
+                  *) pattern="*$rows/SharedBox" ;;
+                esac
                 (cd "$side" && uv run --no-sync benchbox ops --fast \
-                  --filter "*$rows/SharedBox" --json "../results/$side-$round-$rows.json")
+                  --filter "$pattern" --json "../results/$side-$round-$rows.json")
               done
             done
           done
