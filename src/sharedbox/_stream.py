@@ -1489,6 +1489,11 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T]):
     ) -> T:
         if future is None and delivering is None:
             timeout = self._after_worker(timeout)
+            # A waiting item needs no wait; without one, the loop below waits as before.
+            try:
+                return self._take(targets, 0.0)
+            except (WouldBlock, _Interrupted):
+                pass
         for step in steps(timeout):
             try:
                 return self._take(targets, step, future)
