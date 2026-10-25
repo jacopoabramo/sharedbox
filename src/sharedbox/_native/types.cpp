@@ -444,9 +444,11 @@ int Types::traverse(visitproc visit, void *arg) const {
 }
 
 void Types::clear() {
-    for (NodeInfo &n : nodes_)
-        n = NodeInfo{};
-    conversions_.clear();
+    // Swapped out and dropped on return, so code a decref runs finds this Types already cleared.
+    std::vector<NodeInfo> nodes(nodes_.size());
+    nodes_.swap(nodes);
+    std::unordered_map<const detail::type_ref *, Conversion> conversions;
+    conversions_.swap(conversions);
 }
 
 nb::object Types::through(const nb::object &f, nb::object value) {

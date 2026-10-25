@@ -593,6 +593,8 @@ int box_method_traverse(PyObject *self, visitproc visit, void *arg) {
 
 int box_method_clear(PyObject *self) {
     auto *m = reinterpret_cast<BoxMethod *>(self);
+    // Cleared first, since t is the Types inside types, which a decref below can free.
+    m->t = nullptr;
     Py_CLEAR(m->cls);
     Py_CLEAR(m->qualname);
     Py_CLEAR(m->names);
@@ -602,7 +604,6 @@ int box_method_clear(PyObject *self) {
     Py_CLEAR(m->fallback);
     Py_CLEAR(m->segment_slot);
     Py_CLEAR(m->types);
-    m->t = nullptr;
     return 0;
 }
 
