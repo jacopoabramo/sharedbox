@@ -150,12 +150,16 @@ class Typed(SharedBox):
     when: datetime.datetime
     quad: Quad
     floats: Annotated[list[float], Capacity(16)]
+    l1k: Annotated[list[float], Capacity(1024)]
+    l64k: Annotated[list[float], Capacity(65536)]
     image: Annotated[np.ndarray, Shape(512, 512), DType("float32")]
 
 
 WHEN = datetime.datetime(2026, 10, 2, 9, 30, tzinfo=datetime.UTC)
 QUAD = Quad(1, 1.5, True, 2)
 FLOATS = [0.5] * 16
+F1K = [0.5] * 1024
+F64K = [0.5] * 65536
 IMAGE = np.ones((512, 512), np.float32)
 OUT = np.empty_like(IMAGE)
 
@@ -167,7 +171,7 @@ def fill_image(box: Typed) -> None:
 
 def open_typed() -> tuple[Any, ...]:
     name = f"bench-ops-typed-{os.getpid()}"
-    box = Typed.create(name, WHEN, QUAD, FLOATS, IMAGE)
+    box = Typed.create(name, WHEN, QUAD, FLOATS, F1K, F64K, IMAGE)
     atexit.register(Typed.unlink, name)
     atexit.register(box.close)
     return (box,)
@@ -355,6 +359,16 @@ BENCHMARKS: list[tuple[str, str, str, list[str]]] = [
     ("write+read record", "SharedBox", TYPED, ["typed.quad = QUAD", "typed.quad"]),
     ("write list16", "SharedBox", TYPED, ["typed.floats = FLOATS"]),
     ("read list16", "SharedBox", TYPED, ["typed.floats"]),
+    ("write list1k", "SharedBox", TYPED, ["typed.l1k = F1K"]),
+    ("read list1k", "SharedBox", TYPED, ["typed.l1k"]),
+    ("write list64k", "SharedBox", TYPED, ["typed.l64k = F64K"]),
+    ("read list64k", "SharedBox", TYPED, ["typed.l64k"]),
+    ("iterate list16", "SharedBox", TYPED, ["for _ in typed.floats: pass"]),
+    ("index list16", "SharedBox", TYPED, ["typed.floats[8]"]),
+    ("iterate list1k", "SharedBox", TYPED, ["for _ in typed.l1k: pass"]),
+    ("index list1k", "SharedBox", TYPED, ["typed.l1k[512]"]),
+    ("iterate list64k", "SharedBox", TYPED, ["for _ in typed.l64k: pass"]),
+    ("index list64k", "SharedBox", TYPED, ["typed.l64k[32768]"]),
     ("write array 1 MiB", "SharedBox", TYPED, ["typed.image = IMAGE"]),
     ("read array 1 MiB", "SharedBox", TYPED, ["typed.image"]),
     ("read_into array 1 MiB", "SharedBox", TYPED, ["typed.read_into('image', OUT)"]),

@@ -45,9 +45,14 @@ jobs:
           mkdir results
           for round in 1 2 3; do
             for side in base head; do
-              for rows in int record; do
+              for rows in int record list; do
+                [ "$rows" = list ] && [ "$round" != 1 ] && continue # not gated, one round is enough
+                case "$rows" in
+                  list) pattern="*list*/*" ;;
+                  *) pattern="*$rows/SharedBox" ;;
+                esac
                 (cd "$side" && uv run --no-sync benchbox ops --fast \
-                  --filter "*$rows/SharedBox" --json "../results/$side-$round-$rows.json")
+                  --filter "$pattern" --json "../results/$side-$round-$rows.json")
               done
             done
           done
@@ -69,7 +74,7 @@ jobs:
               side = path.name.split("-")[0]
               for bench in pyperf.BenchmarkSuite.load(str(path)).get_benchmarks():
                   means.setdefault((bench.get_name(), side), []).append(bench.mean())
-          print("### benchbox ops on Windows cp311, median of three rounds")
+          print("### benchbox ops on Windows cp311, median of three rounds, list rows one round")
           print()
           print(machine())
           print()

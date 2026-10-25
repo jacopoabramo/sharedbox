@@ -21,6 +21,8 @@ class Record(SharedBox):
 
 class Samples(SharedBox):
     floats: Annotated[list[float], Capacity(16)]
+    l1k: Annotated[list[float], Capacity(1024)]
+    l64k: Annotated[list[float], Capacity(65536)]
 
 
 @dataclass(frozen=True)
@@ -99,13 +101,49 @@ def test_native_get_int(benchmark: BenchmarkFixture, box: Record) -> None:
 @pytest.fixture
 def samples() -> Iterator[Samples]:
     name = f"bench-codspeed-{os.getpid()}-{next(NAMES)}"
-    with Samples.create(name, [0.5] * 16) as box:
+    with Samples.create(name, [0.5] * 16, [0.5] * 1024, [0.5] * 65536) as box:
         yield box
     Samples.unlink(name)
 
 
-def test_read_float_list(benchmark: BenchmarkFixture, samples: Samples) -> None:
-    benchmark(getattr, samples, "floats")
+LIST_FIELDS = [("floats", 16), ("l1k", 1024), ("l64k", 65536)]
+
+
+def walk(values: list[float]) -> None:
+    for _ in values:
+        pass
+
+
+@pytest.mark.parametrize(("field", "size"), LIST_FIELDS)
+def test_read_float_list(
+    benchmark: BenchmarkFixture, samples: Samples, field: str, size: int
+) -> None:
+    """Time reading a list field."""
+    benchmark(getattr, samples, field)
+
+
+@pytest.mark.parametrize(("field", "size"), LIST_FIELDS)
+def test_write_float_list(
+    benchmark: BenchmarkFixture, samples: Samples, field: str, size: int
+) -> None:
+    """Time writing a list field."""
+    benchmark(setattr, samples, field, [0.5] * size)
+
+
+@pytest.mark.parametrize(("field", "size"), LIST_FIELDS)
+def test_iterate_float_list(
+    benchmark: BenchmarkFixture, samples: Samples, field: str, size: int
+) -> None:
+    """Time walking the elements of a list field."""
+    benchmark(lambda: walk(getattr(samples, field)))
+
+
+@pytest.mark.parametrize(("field", "size"), LIST_FIELDS)
+def test_index_float_list(
+    benchmark: BenchmarkFixture, samples: Samples, field: str, size: int
+) -> None:
+    """Time reading the middle element of a list field."""
+    benchmark(lambda: getattr(samples, field)[size // 2])
 
 
 @pytest.fixture
