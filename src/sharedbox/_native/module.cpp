@@ -1037,8 +1037,6 @@ NB_MODULE(_native, m) {
             },
             "fields"_a, "labels"_a, "table"_a, "info"_a, "bytearrays"_a,
             "reusable"_a = std::vector<std::uint32_t>(), "converts"_a = std::vector<sharedbox::Convert>())
-        .def_prop_ro("table",
-                     [](const sharedbox::Types &t) { return nb::bytes(t.table().data(), t.table().size()); })
         .def(
             "check",
             [](const sharedbox::Types &t, std::uint32_t index, nb::handle value) {

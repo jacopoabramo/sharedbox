@@ -78,7 +78,6 @@ class Item:
     """How a stream stores its items, built once from the item annotation."""
 
     label: str
-    kind: str
     types: Types
     entry: int
     """The item's `capacity_and_kind` word, as a box field table entry has."""
@@ -116,7 +115,6 @@ def item_of(hint: object) -> Item:
     digest = hashlib.sha256(f"stream|{spec.text}".encode()).digest()
     return Item(
         label,
-        spec.kind,
         types,
         low | spec.code << 24,
         int.from_bytes(digest[:8], "little"),

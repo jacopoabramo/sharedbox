@@ -28,11 +28,6 @@ struct FieldDesc {
 void check_index(std::uint32_t index, std::size_t count);
 /// Throws std::invalid_argument unless there is one name per field.
 void check_names(const std::vector<std::string> &names, std::size_t count);
-/// True for str and bytes, whose payload follows a 4-byte length.
-bool is_prefixed(FieldKind kind);
-std::size_t field_alignment(FieldKind kind);
-/// Bytes the field occupies in the record, the length prefix included.
-std::size_t field_span(const FieldDesc &field);
 /// The stored bytes of field inside a copy of the record made by Segment::read_record.
 std::string_view payload(const FieldDesc &field, const std::byte *record);
 
