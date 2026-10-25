@@ -25,6 +25,7 @@ from typing import (
     NotRequired,
     Required,
     TypeGuard,
+    TypeVar,
     Union,
     get_args,
     get_origin,
@@ -42,6 +43,7 @@ from ._arrays import (
     dtype_name,
     key,
 )
+from ._native import NativeCollection
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -1129,7 +1131,40 @@ def is_collection(hint: Any) -> bool:
     variadic = (
         origin is tuple and len(get_args(hint)) == 2 and get_args(hint)[1] is Ellipsis
     )
-    return variadic or origin in LISTS or origin in SETS or origin in DICTS
+    return (
+        variadic
+        or origin in LISTS
+        or origin in SETS
+        or origin in DICTS
+        or list_class(hint) is not None
+    )
+
+
+def list_class(hint: Any) -> type[NativeCollection[Any]] | None:
+    """Return the `NativeCollection` subclass `hint` is, alone or parametrised, or None."""
+    origin = get_origin(hint) or hint
+    if isinstance(origin, type) and issubclass(origin, NativeCollection):
+        return origin
+    return None
+
+
+def list_element(hint: Any) -> Any:
+    """Return the element annotation of a `NativeCollection` subclass, alone or parametrised.
+
+    A class alone gives the argument of the parametrised `NativeCollection`
+    subclass it derives from, as `class Points(BoundedList[float])` gives
+    `float`. None when `hint` gives no element type, or a type variable.
+    """
+    bases = (
+        base
+        for cls in (get_origin(hint) or hint).__mro__
+        for base in vars(cls).get("__orig_bases__", ())
+        if list_class(base) is not None
+    )
+    args = get_args(hint) or get_args(next(bases, None))
+    if len(args) != 1 or isinstance(args[0], TypeVar):
+        return None
+    return args[0]
 
 
 def collection_spec(
@@ -1141,7 +1176,17 @@ def collection_spec(
             f"{where}: {hint!r} needs a Capacity in elements, as in Annotated[{hint!r}, Capacity(n)]"
         )
     below = deeper(depth, where)
-    args = get_args(hint)
+    bounded = list_class(hint)
+    if bounded is not None:
+        given = list_element(hint)
+        if given is None:
+            name = bounded.__name__
+            raise TypeError(
+                f"{where}: {name} needs its element type, as in Annotated[{name}[float], Capacity(n)]"
+            )
+        args: tuple[Any, ...] = (given,)
+    else:
+        args = get_args(hint)
     if len(args) != (2 if origin in DICTS or origin is tuple else 1):
         raise unsupported(where, hint)
     if origin in DICTS:
@@ -1161,6 +1206,8 @@ def collection_spec(
     else:
         if origin is tuple:
             kind, read = "list", tuple
+        elif bounded is not None:
+            kind, read = "list", bounded
         elif origin in LISTS:
             kind, read = "list", LISTS[origin]
         else:

@@ -51,15 +51,19 @@ def fork(target: Callable[..., object], *args: object) -> BaseProcess:
         return process
 
 
-def put_repr(value: object, results: "mp.Queue[str]") -> None:
-    results.put(repr(value))
+def put_result(
+    function: Callable[..., object],
+    args: tuple[object, ...],
+    results: "mp.Queue[object]",
+) -> None:
+    results.put(function(*args))
 
 
-def repr_in_child(value: object) -> str:
-    """Return the repr a spawned process gives `value`, which it receives pickled."""
+def call_in_child(function: Callable[..., object], *args: object) -> object:
+    """Return what `function(*args)` gives in a spawned process, which receives both pickled."""
     context = mp.get_context("spawn")
-    results: mp.Queue[str] = context.Queue()
-    child = context.Process(target=put_repr, args=(value, results))
+    results: mp.Queue[object] = context.Queue()
+    child = context.Process(target=put_result, args=(function, args, results))
     child.start()
     try:
         return results.get(timeout=60)

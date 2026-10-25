@@ -4,18 +4,36 @@ import enum
 import pickle
 import queue
 import threading
-from dataclasses import dataclass
-from typing import Annotated, Any
+from dataclasses import dataclass, make_dataclass
+from typing import Annotated, Any, TypeVar, get_origin
 
 import pytest
-from crossproc import repr_in_child, update_in_child
+from crossproc import call_in_child, update_in_child
 
 from sharedbox import BoundedList, Capacity, SharedBox, SharedStream, field
 from sharedbox._layout import build_layout
+from sharedbox._native import NativeCollection
+
+T = TypeVar("T")
 
 
 class Scan(SharedBox):
     points: Annotated[BoundedList[float], Capacity(8)]
+
+
+class MyList(BoundedList[T]):
+    pass
+
+
+class Points(BoundedList[float]):
+    __slots__ = ()
+
+
+class Unreadable(BoundedList[float]):
+    __slots__ = ()
+
+    def __iter__(self) -> collections.abc.Iterator[float]:
+        raise AssertionError("a byte copy does not iterate the value")
 
 
 @dataclass(frozen=True)
@@ -393,12 +411,12 @@ def test_a_bounded_list_of_another_class_is_refused_as_a_list_is(
 
 
 def test_a_bounded_list_that_was_never_built_is_refused(unique_name: str) -> None:
-    """Refuse a BoundedList made by __new__ alone and keep the field's value."""
+    """Refuse a BoundedList made by the native __new__ alone and keep the field's value."""
     with Scan.create(unique_name, [1.0]) as box:
         with pytest.raises(
             TypeError, match=r"Scan.points got a BoundedList that was never built"
         ):
-            box.update(points=BoundedList.__new__(BoundedList))
+            box.update(points=NativeCollection.__new__(BoundedList))
         assert box.points == [1.0]
 
 
@@ -521,17 +539,17 @@ def test_a_pickled_bounded_list_reads_back_in_a_spawned_process(
     with Trace.create(unique_name, [Point(1.0, 2.0), Point(3.0, 4.0)]) as box:
         points = box.points
     assert pickle.loads(pickle.dumps(points)) == points
-    assert repr_in_child(points) == repr(points)
+    assert call_in_child(repr, points) == repr(points)
 
 
 def test_unpickling_a_count_past_the_capacity_reads_as_corrupt() -> None:
     """Raise the codec's corrupt-value ValueError when pickled bytes hold more elements than the capacity."""
-    rebuild, (element, capacity, stored) = BoundedList[float](
+    rebuild, (cls, element, capacity, stored), _ = BoundedList[float](
         [1.0, 2.0], capacity=4
     ).__reduce__()
     forged = (5).to_bytes(4, "little") + stored[4:]
     with pytest.raises(ValueError, match="the stored value is not one Python can hold"):
-        rebuild(element, capacity, forged)
+        rebuild(cls, element, capacity, forged)
 
 
 def test_repeating_an_empty_value_returns_at_once() -> None:
@@ -540,3 +558,99 @@ def test_repeating_an_empty_value_returns_at_once() -> None:
     assert empty * 2**62 == []
     empty *= 2**62
     assert empty == []
+
+
+def test_an_element_type_that_cannot_be_hashed_still_builds() -> None:
+    """Build and pickle a value whose element annotation carries metadata that cannot be hashed."""
+    element = Annotated[float, [1]]
+    value = BoundedList[element]([1.0], capacity=4)
+    assert value == [1.0]
+    assert pickle.loads(pickle.dumps(value)) == [1.0]
+
+
+@pytest.mark.parametrize("cls", [MyList[float], Points])
+def test_a_subclass_reads_back_as_itself_wherever_a_list_goes(
+    cls: Any, unique_name: str, names: collections.abc.Callable[[str], str]
+) -> None:
+    """Read a generic or concrete subclass back as itself from a field, a record member, an optional, a list element and a stream item."""
+    origin = get_origin(cls) or cls
+    one = Annotated[cls, Capacity(4)]
+    record = make_dataclass("Record", [("v", one)], frozen=True)
+    holder: Any = type(
+        "Holder",
+        (SharedBox,),
+        {
+            "__annotations__": {
+                "field": one,
+                "member": record,
+                "maybe": one | None,
+                "rows": Annotated[list[one], Capacity(2)],
+            },
+            "__module__": __name__,
+        },
+    )
+    assert (
+        build_layout(make(one), "sbtest/sub").schema_hash
+        == build_layout(
+            make(Annotated[list[float], Capacity(4)]), "sbtest/sub"
+        ).schema_hash
+    )
+    with holder.create(unique_name, [1.0], record([2.0]), [3.0], [[4.0]]) as box:
+        values = [box.field, box.member.v, box.maybe, *box.rows]
+        with SharedStream.create(one, names("s"), capacity=2) as stream:
+            reader = stream.reader()
+            with stream.sender() as sender:
+                sender.send([5.0])
+            values.append(next(iter(reader)))
+    assert [type(v) for v in values] == [origin] * 5
+    assert [list(v) for v in values] == [[1.0], [2.0], [3.0], [4.0], [5.0]]
+
+
+@pytest.mark.parametrize("cls", [MyList[float], Points])
+def test_a_subclass_is_built_copied_and_combined_as_itself(cls: Any) -> None:
+    """Build a subclass value and get the same class from copies, slices, + and *."""
+    origin = get_origin(cls) or cls
+    value = cls([1.0, 2.0], capacity=4)
+    results = [
+        value,
+        copy.copy(value),
+        copy.deepcopy(value),
+        value.copy(),
+        value[:],
+        value + [3.0],
+        value * 2,
+    ]
+    assert [type(r) for r in results] == [origin] * 7
+    assert repr(value) == f"{origin.__name__}[float]([1.0, 2.0], capacity=4)"
+
+
+@pytest.mark.parametrize("cls", [BoundedList, MyList])
+def test_a_class_without_its_element_type_is_refused(cls: Any) -> None:
+    """Refuse to build or declare BoundedList or a generic subclass without an element type."""
+    with pytest.raises(TypeError, match=rf"{cls.__name__} needs its element type"):
+        cls([1.0], capacity=4)
+    with pytest.raises(TypeError, match=rf"T.x: {cls.__name__} needs its element type"):
+        build_layout(make(Annotated[cls, Capacity(4)]))
+
+
+def described(values: list[Any]) -> list[tuple[str, str, object]]:
+    return [
+        (type(v).__qualname__, repr(v), getattr(v, "__dict__", None)) for v in values
+    ]
+
+
+def test_a_pickled_subclass_reads_back_as_itself_in_a_spawned_process() -> None:
+    """Unpickle subclass values in a spawned process as their own class, with their attributes."""
+    generic = MyList[float]([1.0], capacity=4)
+    generic.tag = "a"  # type: ignore[attr-defined]
+    values = [generic, Points([2.0], capacity=4)]
+    assert call_in_child(described, values) == described(values)
+    assert described(values)[0][2] == {"tag": "a"}
+
+
+def test_a_subclass_value_is_written_as_one_byte_copy(unique_name: str) -> None:
+    """Write a subclass value to a BoundedList field by copying its bytes, and read the field's own class back."""
+    with Scan.create(unique_name, []) as box:
+        box.points = Unreadable([1.0, 2.0], capacity=4)
+        assert type(box.points) is BoundedList
+        assert box.points == [1.0, 2.0]
