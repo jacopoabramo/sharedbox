@@ -14,6 +14,11 @@ if TYPE_CHECKING:
 NAME = re.compile(r"[A-Za-z0-9_-]+(?::[A-Za-z0-9_-]+)*")
 MAX_NAME = 240
 
+
+def valid_name(name: str) -> bool:
+    return len(name) <= MAX_NAME and NAME.fullmatch(name) is not None
+
+
 # Weak, so that a class nothing else uses, such as one defined inside a function, can be freed.
 CLASSES: dict[int, list[weakref.ref[type[SharedBox]]]] = {}
 
@@ -130,7 +135,7 @@ def attach_reference(
         under it was created after the reference was stored.
     """
     where = f"{spec.label} refers to box {name!r}, which"
-    if len(name) > MAX_NAME or not NAME.fullmatch(name):
+    if not valid_name(name):
         raise BrokenReferenceError(f"{where} is not a valid box name")
     cls = box_class(schema_hash)
     if cls is None:

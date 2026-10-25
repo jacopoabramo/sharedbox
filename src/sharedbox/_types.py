@@ -724,32 +724,33 @@ def literal_spec(hint: Any, where: str) -> TypeSpec:
     parts: list[bytes] = []
     texts: list[str] = []
     for value in values:
-        if value is None:
-            parts.append(b"\x00")
-            texts.append("None")
-        elif isinstance(value, bool):
-            parts.append(struct.pack("<BB", 1, value))
-            texts.append(repr(value))
-        elif isinstance(value, enum.Enum):
-            parts.append(b"\x05" + name_bytes(value.name))
-            texts.append(f"member:{value.name}")
-        elif isinstance(value, int):
-            if not -(1 << 63) <= value < 1 << 63:
+        match value:
+            case None:
+                parts.append(b"\x00")
+                texts.append("None")
+            case bool():
+                parts.append(struct.pack("<BB", 1, value))
+                texts.append(repr(value))
+            case enum.Enum():
+                parts.append(b"\x05" + name_bytes(value.name))
+                texts.append(f"member:{value.name}")
+            case int():
+                if not -(1 << 63) <= value < 1 << 63:
+                    raise TypeError(
+                        f"{where}: Literal value {value} does not fit a signed 64-bit integer"
+                    )
+                parts.append(struct.pack("<Bq", 2, value))
+                texts.append(f"int:{value}")
+            case str():
+                parts.append(b"\x03" + name_bytes(value))
+                texts.append(f"str:{value!r}")
+            case bytes():
+                parts.append(struct.pack("<BI", 4, len(value)) + value)
+                texts.append(f"bytes:{value!r}")
+            case _:
                 raise TypeError(
-                    f"{where}: Literal value {value} does not fit a signed 64-bit integer"
+                    f"{where}: Literal value {value!r} is not None, a bool, an int, a str, bytes or an enum member"
                 )
-            parts.append(struct.pack("<Bq", 2, value))
-            texts.append(f"int:{value}")
-        elif isinstance(value, str):
-            parts.append(b"\x03" + name_bytes(value))
-            texts.append(f"str:{value!r}")
-        elif isinstance(value, bytes):
-            parts.append(struct.pack("<BI", 4, len(value)) + value)
-            texts.append(f"bytes:{value!r}")
-        else:
-            raise TypeError(
-                f"{where}: Literal value {value!r} is not None, a bool, an int, a str, bytes or an enum member"
-            )
     return TypeSpec(
         "literal",
         2,
