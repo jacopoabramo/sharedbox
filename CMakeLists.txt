@@ -43,6 +43,7 @@ nanobind_add_module(_native
     LTO
     NB_DOMAIN sharedbox
     src/sharedbox/_native/codec.cpp
+    src/sharedbox/_native/collection.cpp
     src/sharedbox/_native/module.cpp
     src/sharedbox/_native/scalars.cpp
     src/sharedbox/_native/segment.cpp

@@ -26,6 +26,7 @@ nav = [
             "how-to/store-text-and-bytes.md",
             "how-to/store-records.md",
             "how-to/store-collections.md",
+            "how-to/store-a-large-list.md",
             "how-to/store-arrays.md",
             "how-to/store-numpy-numbers.md",
             "how-to/set-defaults-and-check-values.md",

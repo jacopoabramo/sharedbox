@@ -88,15 +88,18 @@ class Item:
     """Whether an array is reachable from the item through records and tuples."""
 
 
-def item_of(hint: object) -> Item:
+def item_of(hint: object, label: str | None = None) -> Item:
     """Return how a stream stores items annotated `hint`.
+
+    Errors name `label`, by default the qualified name or repr of `hint`.
 
     Raises
     ------
     TypeError
         If a box field could not hold `hint`, or it names a box class.
     """
-    label = getattr(hint, "__qualname__", None) or repr(hint)
+    if label is None:
+        label = getattr(hint, "__qualname__", None) or repr(hint)
     spec = parse(hint, label)
     table = Table()
     low = table.describe(spec) if spec.described else spec.entry_low

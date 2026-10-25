@@ -1,6 +1,24 @@
 import sys
-from collections.abc import Callable, Mapping, Sequence
-from typing import Any, Final, Generic, Never, Self, TypeVar, final, overload
+from collections.abc import (
+    Callable,
+    Iterable,
+    Iterator,
+    Mapping,
+    MutableSequence,
+    Sequence,
+)
+from typing import (
+    Any,
+    ClassVar,
+    Final,
+    Generic,
+    Never,
+    Self,
+    SupportsIndex,
+    TypeVar,
+    final,
+    overload,
+)
 
 from typing_extensions import disjoint_base
 
@@ -343,6 +361,211 @@ class Types:
         """Raise what writing `value` to `field` would raise."""
     def decode(self, field: int, data: bytes) -> object:
         """Return the value stored as `data`, as `read_versioned` returns it."""
+
+@disjoint_base
+class NativeCollection(MutableSequence[_T]):
+    """A list value held as its field stores it: the count and the slots it uses.
+
+    A read of a list field makes one, and so do a slice, a copy, `+` and
+    `*`; Python code cannot construct it.
+    """
+
+    __hash__: ClassVar[None]  # type: ignore[assignment]
+    def __len__(self) -> int: ...
+    @overload
+    def __getitem__(self, index: SupportsIndex, /) -> _T:
+        """Decode one element, counted from the end when negative.
+
+        Raises
+        ------
+        IndexError
+            If the value has no such element.
+        """
+    @overload
+    def __getitem__(self, index: slice, /) -> Self:
+        """Return a new value of the same element type and capacity holding a slice.
+
+        The slots are copied without decoding an element.
+        """
+    @overload
+    def __setitem__(self, index: SupportsIndex, value: _T, /) -> None:
+        """Replace one element after checking it as a write to the field would.
+
+        Raises
+        ------
+        IndexError
+            If the value has no such element.
+        TypeError
+            If the element is not of the field's element type.
+        ValueError
+            If the element is of that type but does not fit, such as a str
+            longer than its capacity.
+        """
+    @overload
+    def __setitem__(self, index: slice, value: Iterable[_T], /) -> None:
+        """Replace the elements of a slice with those of an iterable, all of them or none.
+
+        A slice of step 1 may change the length; one of another step takes
+        as many elements as it covers, as for `list`.
+
+        Raises
+        ------
+        TypeError
+            If an element is not of the field's element type.
+        ValueError
+            If an element does not fit, the value would hold more elements
+            than its capacity, or a slice of a step other than 1 covers a
+            different number of elements.
+        """
+    def __delitem__(self, index: SupportsIndex | slice, /) -> None:
+        """Remove one element, or the elements of a slice.
+
+        Raises
+        ------
+        IndexError
+            If the value has no such element.
+        """
+    def insert(self, index: SupportsIndex, value: _T, /) -> None:
+        """Insert an element before `index`, clamped to the value as `list.insert` clamps it.
+
+        Raises
+        ------
+        OverflowError
+            If `index` does not fit a C `Py_ssize_t`.
+        TypeError
+            If the element is not of the field's element type.
+        ValueError
+            If the element does not fit, or the value already holds its
+            capacity of elements.
+        """
+    def append(self, value: _T, /) -> None:
+        """Add an element at the end.
+
+        Raises
+        ------
+        TypeError
+            If the element is not of the field's element type.
+        ValueError
+            If the element does not fit, or the value already holds its
+            capacity of elements.
+        """
+    def extend(self, values: Iterable[_T], /) -> None:
+        """Append the elements of an iterable, all of them or none.
+
+        Raises
+        ------
+        TypeError
+            If an element is not of the field's element type.
+        ValueError
+            If an element does not fit, or the value would hold more
+            elements than its capacity.
+        """
+    def __iadd__(self, values: Iterable[_T], /) -> Self:
+        """Extend with the elements of an iterable, as `extend` does.
+
+        Raises
+        ------
+        TypeError
+            If an element is not of the field's element type.
+        ValueError
+            If an element does not fit, or the value would hold more
+            elements than its capacity.
+        """
+    def pop(self, index: SupportsIndex = -1, /) -> _T:
+        """Remove the element at `index`, the last by default, and return it.
+
+        An element that fails to decode stays in the value.
+
+        Raises
+        ------
+        OverflowError
+            If `index` does not fit a C `Py_ssize_t`.
+        IndexError
+            If the value is empty or has no such element.
+        """
+    def remove(self, value: _T, /) -> None:
+        """Remove the first element equal to `value`.
+
+        Raises
+        ------
+        ValueError
+            If no element is equal to `value`.
+        """
+    def index(
+        self, value: _T, start: SupportsIndex = 0, stop: SupportsIndex = sys.maxsize, /
+    ) -> int:
+        """Return the position of the first element equal to `value` from `start` to `stop`.
+
+        Raises
+        ------
+        ValueError
+            If no element in that range is equal to `value`.
+        """
+    def count(self, value: _T, /) -> int:
+        """Return the number of elements equal to `value`."""
+    def __contains__(self, value: object, /) -> bool: ...
+    def reverse(self) -> None:
+        """Reverse the elements in place without decoding them."""
+    def clear(self) -> None:
+        """Remove every element."""
+    def __eq__(self, other: object, /) -> bool:
+        """Compare the elements in order with those of a list or another value."""
+    def __reversed__(self) -> Iterator[_T]: ...
+    def __iter__(self) -> Iterator[_T]: ...
+    @property
+    def element_annotation(self) -> object:
+        """The annotation of the elements, as the field declares it."""
+    @property
+    def capacity(self) -> int:
+        """The most elements the value can hold."""
+    def copy(self) -> Self:
+        """Return a new value of the same element type and capacity holding the same elements.
+
+        The slots are copied without decoding an element.
+        """
+    def __add__(self, other: list[_T] | NativeCollection[_T], /) -> Self:
+        """Return a copy extended with the elements of `other`.
+
+        Raises
+        ------
+        TypeError
+            If an element is not of the field's element type.
+        ValueError
+            If an element does not fit, or the result would hold more
+            elements than the capacity.
+        """
+    def __mul__(self, times: SupportsIndex, /) -> Self:
+        """Return a new value holding the elements `times` times over, none below 1.
+
+        Raises
+        ------
+        OverflowError
+            If `times` does not fit a C `Py_ssize_t`.
+        ValueError
+            If the result would hold more elements than the capacity.
+        """
+    def __rmul__(self, times: SupportsIndex, /) -> Self:
+        """Return the elements `times` times over, as `*` does."""
+    def __imul__(self, times: SupportsIndex, /) -> Self:
+        """Repeat the elements in place `times` times over, removing them below 1.
+
+        Raises
+        ------
+        OverflowError
+            If `times` does not fit a C `Py_ssize_t`.
+        ValueError
+            If the value would hold more elements than the capacity; it is
+            left as it was.
+        """
+    def _stored(self) -> bytes:
+        """Return the count and used slots, as a list field stores them."""
+
+@final
+class NativeCollectionIterator(Generic[_T]):
+    """Decodes one element of a `NativeCollection` per step, forward or from the end."""
+
+    def __iter__(self) -> Self: ...
+    def __next__(self) -> _T: ...
 
 @disjoint_base
 class Field:

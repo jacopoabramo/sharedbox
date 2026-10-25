@@ -43,16 +43,21 @@ jobs:
         shell: bash
         run: |
           mkdir results
+          step=0
+          total=14 # 3 rounds x 2 sides x (int, record), plus list once per side
           for round in 1 2 3; do
             for side in base head; do
               for rows in int record list; do
                 [ "$rows" = list ] && [ "$round" != 1 ] && continue # not gated, one round is enough
+                step=$((step + 1))
+                echo "::group::[$step/$total] round $round, $side, $rows rows"
                 case "$rows" in
                   list) pattern="*list*/*" ;;
                   *) pattern="*$rows/SharedBox" ;;
                 esac
                 (cd "$side" && uv run --no-sync benchbox ops --fast \
                   --filter "$pattern" --json "../results/$side-$round-$rows.json")
+                echo "::endgroup::"
               done
             done
           done

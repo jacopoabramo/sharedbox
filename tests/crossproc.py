@@ -49,3 +49,23 @@ def fork(target: Callable[..., object], *args: object) -> BaseProcess:
         process = mp.get_context("fork").Process(target=target, args=args, daemon=True)
         process.start()
         return process
+
+
+def put_result(
+    function: Callable[..., object],
+    args: tuple[object, ...],
+    results: "mp.Queue[object]",
+) -> None:
+    results.put(function(*args))
+
+
+def call_in_child(function: Callable[..., object], *args: object) -> object:
+    """Return what `function(*args)` gives in a spawned process, which receives both pickled."""
+    context = mp.get_context("spawn")
+    results: mp.Queue[object] = context.Queue()
+    child = context.Process(target=put_result, args=(function, args, results))
+    child.start()
+    try:
+        return results.get(timeout=60)
+    finally:
+        child.join(60)
