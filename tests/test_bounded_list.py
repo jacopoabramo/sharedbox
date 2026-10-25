@@ -32,6 +32,19 @@ class Point:
     y: float
 
 
+@dataclass
+class Gate:
+    shut: bool
+
+    def __post_init__(self) -> None:
+        if self.shut:
+            raise ValueError("the gate is shut")
+
+
+class Gates(SharedBox):
+    gates: Annotated[BoundedList[Gate], Capacity(4)]
+
+
 class Trace(SharedBox):
     points: Annotated[BoundedList[Point], Capacity(4)]
 
@@ -70,6 +83,8 @@ def test_an_index_out_of_range_raises_index_error(unique_name: str) -> None:
             points[2]
         with pytest.raises(IndexError):
             points[-3]
+        with pytest.raises(IndexError):
+            points[2**70]
 
 
 def test_setting_an_element_checks_it_as_a_write_would(unique_name: str) -> None:
@@ -226,3 +241,31 @@ def test_two_threads_never_pass_the_capacity(unique_name: str) -> None:
     assert len(values) == 1000
     assert sum(appended) == 1000
     assert values.count(0) == appended[0]
+
+
+def test_a_pop_that_fails_to_decode_changes_nothing(unique_name: str) -> None:
+    """Keep every element when the record pop would return raises as it is built."""
+    shut = Gate(False)
+    shut.shut = True
+    with Gates.create(unique_name, [Gate(False), shut]) as box:
+        gates = box.gates
+        with pytest.raises(ValueError, match="the gate is shut"):
+            gates.pop()
+        assert len(gates) == 2
+        assert gates[0] == Gate(False)
+        with pytest.raises(ValueError, match="the gate is shut"):
+            gates[1]
+
+
+def test_an_extended_slice_takes_as_many_elements_as_it_covers(
+    unique_name: str,
+) -> None:
+    """Refuse an extended slice assignment of another length with list's message."""
+    with Scan.create(unique_name, [1.0, 2.0, 3.0]) as box:
+        points = box.points
+        with pytest.raises(
+            ValueError,
+            match="attempt to assign sequence of size 1 to extended slice of size 2",
+        ):
+            points[::2] = [9.0]
+        assert list(points) == [1.0, 2.0, 3.0]

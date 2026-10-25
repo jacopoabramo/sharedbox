@@ -359,7 +359,8 @@ class Types:
 class NativeCollection(Generic[_T]):
     """A list value held as its field stores it: the count and the slots it uses.
 
-    Only a read of a list field makes one; Python code cannot construct it.
+    A read of a list field makes one, and so does a slice of one; Python
+    code cannot construct it.
     """
 
     __hash__: ClassVar[None]  # type: ignore[assignment]
@@ -422,6 +423,8 @@ class NativeCollection(Generic[_T]):
 
         Raises
         ------
+        OverflowError
+            If `index` does not fit a C `Py_ssize_t`.
         TypeError
             If the element is not of the field's element type.
         ValueError
@@ -464,8 +467,12 @@ class NativeCollection(Generic[_T]):
     def pop(self, index: SupportsIndex = -1, /) -> _T:
         """Remove the element at `index`, the last by default, and return it.
 
+        An element that fails to decode stays in the value.
+
         Raises
         ------
+        OverflowError
+            If `index` does not fit a C `Py_ssize_t`.
         IndexError
             If the value is empty or has no such element.
         """

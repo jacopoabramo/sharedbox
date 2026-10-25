@@ -143,6 +143,7 @@ nb::object NativeCollection::getitem(nb::pointer_and_handle<NativeCollection> se
         return value;
     }
     const Slice asked = unpack(index);
+    // Raises for a value the collector cleared, before its empty types_ is copied into the new value.
     c.codec();
     std::vector<std::byte> part;
     {
@@ -300,7 +301,9 @@ void NativeCollection::insert_at(Py_ssize_t index, nb::handle value) {
         too_many(refused);
 }
 
-void NativeCollection::insert(nb::handle index, nb::handle value) { insert_at(as_index(index, nullptr), value); }
+void NativeCollection::insert(nb::handle index, nb::handle value) {
+    insert_at(as_index(index, PyExc_OverflowError), value);
+}
 
 void NativeCollection::append(nb::handle value) { insert_at(PY_SSIZE_T_MAX, value); }
 
@@ -319,23 +322,35 @@ nb::object NativeCollection::pop(nb::handle index) {
     const Py_ssize_t i = as_index(index, PyExc_OverflowError);
     const Types &types = codec();
     SlotBuffer copy(stride_);
-    bool empty = false;
-    std::size_t at = no_position;
-    {
-        // Copied and removed under one hold of the mutex, so two threads never pop the same element.
-        nb::ft_lock_guard guard(mutex_);
-        empty = count_ == 0;
-        at = position(i);
-        if (at != no_position) {
-            std::memcpy(copy.data(), slot(at), stride_);
-            splice(at, at + 1, nullptr, 0);
+    for (;;) {
+        bool empty = false;
+        std::size_t at = no_position;
+        {
+            nb::ft_lock_guard guard(mutex_);
+            empty = count_ == 0;
+            at = position(i);
+            if (at != no_position)
+                std::memcpy(copy.data(), slot(at), stride_);
         }
+        if (empty)
+            raise(PyExc_IndexError, "pop from empty list");
+        if (at == no_position)
+            raise(PyExc_IndexError, "pop index out of range");
+        // Decoded before the slot is removed, so a decode that raises leaves the value as it was.
+        nb::object value = types.decode_element(list_, copy.data(), label_);
+        bool removed = false;
+        {
+            // Removed only while the slot still holds the bytes decoded; when another thread changed it
+            // meanwhile, the pop starts again, so two threads never pop the same element.
+            nb::ft_lock_guard guard(mutex_);
+            if (position(i) == at && std::memcmp(slot(at), copy.data(), stride_) == 0) {
+                splice(at, at + 1, nullptr, 0);
+                removed = true;
+            }
+        }
+        if (removed)
+            return value;
     }
-    if (empty)
-        raise(PyExc_IndexError, "pop from empty list");
-    if (at == no_position)
-        raise(PyExc_IndexError, "pop index out of range");
-    return types.decode_element(list_, copy.data(), label_);
 }
 
 Py_ssize_t NativeCollection::find(nb::handle value, Py_ssize_t start, Py_ssize_t stop) const {

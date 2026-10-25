@@ -43,12 +43,14 @@ public:
     void setitem(nb::handle index, nb::handle value);
     /// Removes element index or the elements of a slice.
     void delitem(nb::handle index);
-    /// Inserts value before index, clamped to the value as list.insert clamps it.
+    /// Inserts value before index, clamped to the value as list.insert clamps it; an index past the range of
+    /// Py_ssize_t raises OverflowError, as for list.
     void insert(nb::handle index, nb::handle value);
     void append(nb::handle value);
     /// Appends the elements of iterable, all of them or, when one does not fit, none.
     void extend(nb::handle iterable);
-    /// Removes element index and returns it, raising IndexError with list.pop's messages.
+    /// Removes element index and returns it, raising IndexError with list.pop's messages. A decode that
+    /// raises leaves the value as it was.
     nb::object pop(nb::handle index);
     /// Removes the first element equal to value, raising ValueError when there is none.
     void remove(nb::handle value);
