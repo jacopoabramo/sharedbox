@@ -14,8 +14,8 @@ to the field copies its bytes back in one step.
 How much that saves depends on the length and on what you do with the value.
 In `benchbox ops` on Windows with CPython 3.11, a write is about 6 times
 faster than a `list` field's at 16 elements and 30 to 40 times faster from
-1024. A read takes as long as a `list` field's at 16 elements and is 10 to 20
-times faster from 1024. Going through every element is slower, taking 1.2 to
+1024. A read takes as long as a `list` field's at 16 elements, is about 35
+times faster at 1024 and about 65 times faster at 65536. Going through every element is slower, taking 1.2 to
 2.2 times as long as with a `list`, because each step decodes one element. So
 use it for a large list that you read or write whole and of which you touch
 only a few elements. A list you always convert to a `list` gains nothing,
