@@ -238,7 +238,8 @@ def test_write_int_set(
     benchmark: BenchmarkFixture, keyed: Keyed, field: str, size: int
 ) -> None:
     """Time writing a set field."""
-    benchmark(setattr, keyed, field, set(range(size)))
+    value = set(range(size))
+    benchmark(setattr, keyed, field, value)
 
 
 @pytest.mark.parametrize(("field", "size"), SET_FIELDS)
@@ -266,7 +267,8 @@ def test_write_int_dict(
     benchmark: BenchmarkFixture, keyed: Keyed, field: str, size: int
 ) -> None:
     """Time writing a dict field."""
-    benchmark(setattr, keyed, field, dict.fromkeys(range(size), 0.5))
+    value = dict.fromkeys(range(size), 0.5)
+    benchmark(setattr, keyed, field, value)
 
 
 @pytest.mark.parametrize(("field", "size"), DICT_FIELDS)
