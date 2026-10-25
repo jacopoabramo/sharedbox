@@ -8,7 +8,7 @@ import msgspec
 import pytest
 from pytest_codspeed import BenchmarkFixture
 
-from sharedbox import Capacity, SharedBox
+from sharedbox import BoundedList, Capacity, SharedBox
 
 NAMES = count()
 
@@ -23,6 +23,9 @@ class Samples(SharedBox):
     floats: Annotated[list[float], Capacity(16)]
     l1k: Annotated[list[float], Capacity(1024)]
     l64k: Annotated[list[float], Capacity(65536)]
+    b16: Annotated[BoundedList[float], Capacity(16)]
+    b1k: Annotated[BoundedList[float], Capacity(1024)]
+    b64k: Annotated[BoundedList[float], Capacity(65536)]
 
 
 @dataclass(frozen=True)
@@ -101,7 +104,15 @@ def test_native_get_int(benchmark: BenchmarkFixture, box: Record) -> None:
 @pytest.fixture
 def samples() -> Iterator[Samples]:
     name = f"bench-codspeed-{os.getpid()}-{next(NAMES)}"
-    with Samples.create(name, [0.5] * 16, [0.5] * 1024, [0.5] * 65536) as box:
+    with Samples.create(
+        name,
+        [0.5] * 16,
+        [0.5] * 1024,
+        [0.5] * 65536,
+        BoundedList[float]([0.5] * 16, capacity=16),
+        BoundedList[float]([0.5] * 1024, capacity=1024),
+        BoundedList[float]([0.5] * 65536, capacity=65536),
+    ) as box:
         yield box
     Samples.unlink(name)
 
@@ -109,7 +120,10 @@ def samples() -> Iterator[Samples]:
 LIST_FIELDS = [("floats", 16), ("l1k", 1024), ("l64k", 65536)]
 
 
-def walk(values: list[float]) -> None:
+BOUNDED_FIELDS = [("b16", 16), ("b1k", 1024), ("b64k", 65536)]
+
+
+def walk(values: list[float] | BoundedList[float]) -> None:
     for _ in values:
         pass
 
@@ -143,6 +157,39 @@ def test_index_float_list(
     benchmark: BenchmarkFixture, samples: Samples, field: str, size: int
 ) -> None:
     """Time reading the middle element of a list field."""
+    benchmark(lambda: getattr(samples, field)[size // 2])
+
+
+@pytest.mark.parametrize("field", [f for f, _ in BOUNDED_FIELDS])
+def test_read_bounded_list(
+    benchmark: BenchmarkFixture, samples: Samples, field: str
+) -> None:
+    """Time reading a BoundedList field."""
+    benchmark(getattr, samples, field)
+
+
+@pytest.mark.parametrize(("field", "size"), BOUNDED_FIELDS)
+def test_write_bounded_list(
+    benchmark: BenchmarkFixture, samples: Samples, field: str, size: int
+) -> None:
+    """Time writing a BoundedList to its field."""
+    value = BoundedList[float]([0.5] * size, capacity=size)
+    benchmark(setattr, samples, field, value)
+
+
+@pytest.mark.parametrize("field", [f for f, _ in BOUNDED_FIELDS])
+def test_iterate_bounded_list(
+    benchmark: BenchmarkFixture, samples: Samples, field: str
+) -> None:
+    """Time walking the elements of a BoundedList field."""
+    benchmark(lambda: walk(getattr(samples, field)))
+
+
+@pytest.mark.parametrize(("field", "size"), BOUNDED_FIELDS)
+def test_index_bounded_list(
+    benchmark: BenchmarkFixture, samples: Samples, field: str, size: int
+) -> None:
+    """Time reading the middle element of a BoundedList field."""
     benchmark(lambda: getattr(samples, field)[size // 2])
 
 

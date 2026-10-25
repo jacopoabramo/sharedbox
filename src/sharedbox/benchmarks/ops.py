@@ -30,7 +30,7 @@ from typing import Annotated, Any
 import numpy as np
 import pyperf
 
-from sharedbox import Capacity, DType, Shape, SharedBox
+from sharedbox import BoundedList, Capacity, DType, Shape, SharedBox
 
 INT = struct.Struct("<q")
 FLOAT = struct.Struct("<d")
@@ -152,6 +152,9 @@ class Typed(SharedBox):
     floats: Annotated[list[float], Capacity(16)]
     l1k: Annotated[list[float], Capacity(1024)]
     l64k: Annotated[list[float], Capacity(65536)]
+    b16: Annotated[BoundedList[float], Capacity(16)]
+    b1k: Annotated[BoundedList[float], Capacity(1024)]
+    b64k: Annotated[BoundedList[float], Capacity(65536)]
     image: Annotated[np.ndarray, Shape(512, 512), DType("float32")]
 
 
@@ -160,6 +163,9 @@ QUAD = Quad(1, 1.5, True, 2)
 FLOATS = [0.5] * 16
 F1K = [0.5] * 1024
 F64K = [0.5] * 65536
+B16 = BoundedList[float](FLOATS, capacity=16)
+B1K = BoundedList[float](F1K, capacity=1024)
+B64K = BoundedList[float](F64K, capacity=65536)
 IMAGE = np.ones((512, 512), np.float32)
 OUT = np.empty_like(IMAGE)
 
@@ -171,7 +177,7 @@ def fill_image(box: Typed) -> None:
 
 def open_typed() -> tuple[Any, ...]:
     name = f"bench-ops-typed-{os.getpid()}"
-    box = Typed.create(name, WHEN, QUAD, FLOATS, F1K, F64K, IMAGE)
+    box = Typed.create(name, WHEN, QUAD, FLOATS, F1K, F64K, B16, B1K, B64K, IMAGE)
     atexit.register(Typed.unlink, name)
     atexit.register(box.close)
     return (box,)
@@ -369,6 +375,18 @@ BENCHMARKS: list[tuple[str, str, str, list[str]]] = [
     ("index list1k", "SharedBox", TYPED, ["typed.l1k[512]"]),
     ("iterate list64k", "SharedBox", TYPED, ["for _ in typed.l64k: pass"]),
     ("index list64k", "SharedBox", TYPED, ["typed.l64k[32768]"]),
+    ("write list16", "BoundedList", TYPED, ["typed.b16 = B16"]),
+    ("read list16", "BoundedList", TYPED, ["typed.b16"]),
+    ("write list1k", "BoundedList", TYPED, ["typed.b1k = B1K"]),
+    ("read list1k", "BoundedList", TYPED, ["typed.b1k"]),
+    ("write list64k", "BoundedList", TYPED, ["typed.b64k = B64K"]),
+    ("read list64k", "BoundedList", TYPED, ["typed.b64k"]),
+    ("iterate list16", "BoundedList", TYPED, ["for _ in typed.b16: pass"]),
+    ("index list16", "BoundedList", TYPED, ["typed.b16[8]"]),
+    ("iterate list1k", "BoundedList", TYPED, ["for _ in typed.b1k: pass"]),
+    ("index list1k", "BoundedList", TYPED, ["typed.b1k[512]"]),
+    ("iterate list64k", "BoundedList", TYPED, ["for _ in typed.b64k: pass"]),
+    ("index list64k", "BoundedList", TYPED, ["typed.b64k[32768]"]),
     ("write array 1 MiB", "SharedBox", TYPED, ["typed.image = IMAGE"]),
     ("read array 1 MiB", "SharedBox", TYPED, ["typed.image"]),
     ("read_into array 1 MiB", "SharedBox", TYPED, ["typed.read_into('image', OUT)"]),
