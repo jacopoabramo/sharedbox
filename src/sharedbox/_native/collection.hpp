@@ -8,6 +8,8 @@
 #include <memory>
 #include <span>
 #include <string>
+#include <utility>
+#include <vector>
 
 #include "types.hpp"
 
@@ -32,13 +34,36 @@ public:
                            std::span<const std::byte> stored);
 
     std::size_t size() const;
-    /// Element index, counted from the end when negative; raises IndexError outside the value.
-    nb::object get(Py_ssize_t index) const;
-    /// Replaces element index after checking value as a write to the field would; raises IndexError
-    /// outside the value, and leaves the element as it was when value does not fit.
-    void set(Py_ssize_t index, nb::handle value);
-    /// Element index, or an invalid object past the end.
-    nb::object next(std::size_t index) const;
+    /// Element index, counted from the end when negative, or for a slice a new value of self's class
+    /// holding those elements; raises IndexError outside the value.
+    static nb::object getitem(nb::pointer_and_handle<NativeCollection> self, nb::handle index);
+    /// Replaces element index, or the elements of a slice with those of an iterable, after checking each
+    /// as a write to the field would. A slice of step 1 may change the length within the capacity; one of
+    /// another step takes as many elements as it covers. Leaves the value as it was on any error.
+    void setitem(nb::handle index, nb::handle value);
+    /// Removes element index or the elements of a slice.
+    void delitem(nb::handle index);
+    /// Inserts value before index, clamped to the value as list.insert clamps it.
+    void insert(nb::handle index, nb::handle value);
+    void append(nb::handle value);
+    /// Appends the elements of iterable, all of them or, when one does not fit, none.
+    void extend(nb::handle iterable);
+    /// Removes element index and returns it, raising IndexError with list.pop's messages.
+    nb::object pop(nb::handle index);
+    /// Removes the first element equal to value, raising ValueError when there is none.
+    void remove(nb::handle value);
+    /// The first position from start to stop, clamped as list.index clamps them, holding an element equal
+    /// to value; raises ValueError when there is none.
+    Py_ssize_t index(nb::handle value, nb::handle start, nb::handle stop) const;
+    std::size_t count(nb::handle value) const;
+    bool contains(nb::handle value) const;
+    /// Reverses the slots in place without decoding an element.
+    void reverse();
+    void remove_all();
+    /// Equality with a list or another NativeCollection, element by element; NotImplemented otherwise.
+    nb::object equals(nb::handle other) const;
+    /// Element index, or an invalid object outside the value.
+    nb::object element(Py_ssize_t index) const;
     /// The count and used slots, as a list field stores them.
     nb::bytes stored() const;
 
@@ -46,14 +71,43 @@ public:
     void clear();
 
 private:
+    /// A slice's start, stop and step as it gives them, before they are fitted to a count.
+    struct Slice {
+        Py_ssize_t start = 0;
+        Py_ssize_t stop = 0;
+        Py_ssize_t step = 1;
+    };
+    /// The start, stop and step of slice; may run its __index__ methods, so the caller does not hold the
+    /// mutex.
+    static Slice unpack(nb::handle slice);
     static constexpr std::size_t no_position = static_cast<std::size_t>(-1);
     /// The slot index, counted from the end when negative, or no_position outside the value. The caller
     /// holds the mutex.
     std::size_t position(Py_ssize_t index) const;
     /// Raises IndexError for index; the caller does not hold the mutex.
     [[noreturn]] void out_of_range(Py_ssize_t index) const;
-    /// Element index, or an invalid object outside the value.
-    nb::object element(Py_ssize_t index) const;
+    /// Raises the ValueError of a mutation that would leave length elements.
+    [[noreturn]] void too_many(std::size_t length) const;
+    /// Replaces element index; the caller does not hold the mutex.
+    void set(Py_ssize_t index, nb::handle value);
+    /// Replaces the elements a slice of a step other than 1 covers with the elements of value.
+    void set_stepped(const Slice &slice, nb::handle value);
+    /// Inserts value before index, clamped to the count.
+    void insert_at(Py_ssize_t index, nb::handle value);
+    /// The first position from start to stop holding an element equal to value, or -1.
+    Py_ssize_t find(nb::handle value, Py_ssize_t start, Py_ssize_t stop) const;
+    /// The elements of iterable encoded one after another, raising the capacity error once base and the
+    /// elements passed so far exceed the capacity.
+    std::vector<std::byte> encode_all(nb::handle iterable, std::size_t base) const;
+    /// Replaces the slots from start to stop, which the caller has clamped to the count, with the n
+    /// encoded slots of encoded; returns the count it would have had instead when that passes the
+    /// capacity. The caller holds the mutex.
+    std::size_t splice(std::size_t start, std::size_t stop, const std::byte *encoded, std::size_t n);
+    /// Stores count as the count; the caller holds the mutex.
+    void set_count(std::size_t count);
+    std::byte *slot(std::size_t at) const { return data_.get() + slots_ + at * stride_; }
+    /// slice fitted to the current count, and the number of elements it covers; the caller holds the mutex.
+    std::pair<Slice, std::size_t> fit(Slice slice) const;
     const Types &codec() const;
 
     nb::object types_;
@@ -64,7 +118,10 @@ private:
     std::uint32_t stride_ = 0;
     /// The count, also kept in the first four bytes of data_ so stored() hands them back as they are.
     std::uint32_t count_ = 0;
-    /// The stored form: the count, then room for the used slots.
+    std::uint32_t capacity_ = 0;
+    /// The number of slots data_ has room for, grown by doubling up to the capacity.
+    std::uint32_t room_ = 0;
+    /// The stored form: the count, then room for room_ slots.
     std::unique_ptr<std::byte[]> data_;
     mutable nb::ft_mutex mutex_;
 };

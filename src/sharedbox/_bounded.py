@@ -16,7 +16,9 @@ class BoundedList(NativeCollection[T]):
     Declared as `Annotated[BoundedList[T], Capacity(n)]` or with
     `field(capacity=n)`, it is stored as `list[T]` is, and a read returns
     one. Indexing decodes or encodes one element, and setting an element
-    checks the value as a write to the field would.
+    checks the value as a write to the field would. A change that would
+    leave more elements than the capacity raises `ValueError` and leaves
+    the value as it was.
     """
 
     __slots__ = ()

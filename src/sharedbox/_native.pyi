@@ -1,6 +1,17 @@
 import sys
-from collections.abc import Callable, Iterator, Mapping, Sequence
-from typing import Any, Final, Generic, Never, Self, TypeVar, final, overload
+from collections.abc import Callable, Iterable, Iterator, Mapping, Sequence
+from typing import (
+    Any,
+    ClassVar,
+    Final,
+    Generic,
+    Never,
+    Self,
+    SupportsIndex,
+    TypeVar,
+    final,
+    overload,
+)
 
 from typing_extensions import disjoint_base
 
@@ -351,8 +362,10 @@ class NativeCollection(Generic[_T]):
     Only a read of a list field makes one; Python code cannot construct it.
     """
 
+    __hash__: ClassVar[None]  # type: ignore[assignment]
     def __len__(self) -> int: ...
-    def __getitem__(self, index: int, /) -> _T:
+    @overload
+    def __getitem__(self, index: SupportsIndex, /) -> _T:
         """Decode one element, counted from the end when negative.
 
         Raises
@@ -360,21 +373,137 @@ class NativeCollection(Generic[_T]):
         IndexError
             If the value has no such element.
         """
-    def __setitem__(self, index: int, value: _T, /) -> None:
+    @overload
+    def __getitem__(self, index: slice, /) -> Self:
+        """Return a new value of the same element type and capacity holding a slice.
+
+        The slots are copied without decoding an element.
+        """
+    @overload
+    def __setitem__(self, index: SupportsIndex, value: _T, /) -> None:
         """Replace one element after checking it as a write to the field would.
 
         Raises
         ------
         IndexError
             If the value has no such element.
+        TypeError
+            If the element is not of the field's element type.
+        ValueError
+            If the element is of that type but does not fit, such as a str
+            longer than its capacity.
         """
+    @overload
+    def __setitem__(self, index: slice, value: Iterable[_T], /) -> None:
+        """Replace the elements of a slice with those of an iterable, all of them or none.
+
+        A slice of step 1 may change the length; one of another step takes
+        as many elements as it covers, as for `list`.
+
+        Raises
+        ------
+        TypeError
+            If an element is not of the field's element type.
+        ValueError
+            If an element does not fit, the value would hold more elements
+            than its capacity, or a slice of a step other than 1 covers a
+            different number of elements.
+        """
+    def __delitem__(self, index: SupportsIndex | slice, /) -> None:
+        """Remove one element, or the elements of a slice.
+
+        Raises
+        ------
+        IndexError
+            If the value has no such element.
+        """
+    def insert(self, index: SupportsIndex, value: _T, /) -> None:
+        """Insert an element before `index`, clamped to the value as `list.insert` clamps it.
+
+        Raises
+        ------
+        TypeError
+            If the element is not of the field's element type.
+        ValueError
+            If the element does not fit, or the value already holds its
+            capacity of elements.
+        """
+    def append(self, value: _T, /) -> None:
+        """Add an element at the end.
+
+        Raises
+        ------
+        TypeError
+            If the element is not of the field's element type.
+        ValueError
+            If the element does not fit, or the value already holds its
+            capacity of elements.
+        """
+    def extend(self, values: Iterable[_T], /) -> None:
+        """Append the elements of an iterable, all of them or none.
+
+        Raises
+        ------
+        TypeError
+            If an element is not of the field's element type.
+        ValueError
+            If an element does not fit, or the value would hold more
+            elements than its capacity.
+        """
+    def __iadd__(self, values: Iterable[_T], /) -> Self:
+        """Extend with the elements of an iterable, as `extend` does.
+
+        Raises
+        ------
+        TypeError
+            If an element is not of the field's element type.
+        ValueError
+            If an element does not fit, or the value would hold more
+            elements than its capacity.
+        """
+    def pop(self, index: SupportsIndex = -1, /) -> _T:
+        """Remove the element at `index`, the last by default, and return it.
+
+        Raises
+        ------
+        IndexError
+            If the value is empty or has no such element.
+        """
+    def remove(self, value: _T, /) -> None:
+        """Remove the first element equal to `value`.
+
+        Raises
+        ------
+        ValueError
+            If no element is equal to `value`.
+        """
+    def index(
+        self, value: _T, start: SupportsIndex = 0, stop: SupportsIndex = sys.maxsize, /
+    ) -> int:
+        """Return the position of the first element equal to `value` from `start` to `stop`.
+
+        Raises
+        ------
+        ValueError
+            If no element in that range is equal to `value`.
+        """
+    def count(self, value: _T, /) -> int:
+        """Return the number of elements equal to `value`."""
+    def __contains__(self, value: object, /) -> bool: ...
+    def reverse(self) -> None:
+        """Reverse the elements in place without decoding them."""
+    def clear(self) -> None:
+        """Remove every element."""
+    def __eq__(self, other: object, /) -> bool:
+        """Compare the elements in order with those of a list or another value."""
+    def __reversed__(self) -> Iterator[_T]: ...
     def __iter__(self) -> Iterator[_T]: ...
     def _stored(self) -> bytes:
         """Return the count and used slots, as a list field stores them."""
 
 @final
 class NativeCollectionIterator(Generic[_T]):
-    """Decodes one element of a `NativeCollection` per step."""
+    """Decodes one element of a `NativeCollection` per step, forward or from the end."""
 
     def __iter__(self) -> Self: ...
     def __next__(self) -> _T: ...
