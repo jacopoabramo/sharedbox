@@ -60,7 +60,8 @@ If you annotate the field as `tuple[T, ...]` or `Sequence[T]`, a type
 checker will point out an `append` that would only change the copy. For a
 list of thousands of elements, where building every element on each read
 is what costs time, see [How to store a large list](store-a-large-list.md),
-and for a large set, [How to store a large set](store-a-large-set-or-dict.md).
+and for a large set or dict, [How to store a large set or
+dict](store-a-large-set-or-dict.md).
 
 ## 4. Handle a collection that is too large
 
