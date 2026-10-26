@@ -1,5 +1,6 @@
 import collections.abc
 import copy
+import datetime
 import decimal
 import enum
 import gc
@@ -198,6 +199,26 @@ class Pair(NamedTuple):
     x: int
 
 
+class Ratio(float, enum.Enum):
+    ONE = 1.0
+
+
+class Wave(complex, enum.Enum):
+    ONE = 1 + 0j
+
+
+class Day(datetime.date, enum.Enum):
+    FIRST = 2026, 1, 1
+
+
+class Origin(tuple[int], enum.Enum):
+    ZERO = (0,)
+
+
+class Plain(enum.Enum):
+    A = 1
+
+
 @dataclass(frozen=True)
 class Price:
     amount: Annotated[decimal.Decimal, Capacity(8)]
@@ -218,6 +239,18 @@ class Price:
         (Literal[1, True], "a Literal of equal values 1 and True"),
         (Price, "a Decimal"),
         (Annotated[frozenset[int], Capacity(4)] | None, "a frozenset"),
+        (Ratio | int, "a union of enum(ONE) and int:8"),
+        (Wave | int, "a union of enum(ONE) and int:8"),
+        (Day | datetime.date, "a union of enum(FIRST) and date"),
+        (Origin | tuple[int], "a union of enum(ZERO) and tuple(int:8)"),
+        (
+            Annotated[int | Annotated[str, Capacity(4)], "nested"] | bool,
+            "a union of union(int:8,str:4) and bool:1",
+        ),
+        (
+            Annotated[int | None, "nested"] | bool,
+            "a union of optional(int:8) and bool:1",
+        ),
     ],
 )
 def test_keys_that_compare_unlike_their_bytes_are_refused(
@@ -237,6 +270,11 @@ def test_keys_that_compare_unlike_their_bytes_are_refused(
             "keys",
         )
     )
+
+
+def test_a_plain_enum_and_an_int_make_a_key() -> None:
+    """Declare a BoundedSet of a union of an Enum without a mixin type and int, whose values never compare equal."""
+    build_layout(make(Annotated[BoundedSet[Plain | int], Capacity(4)], "Box", "keys"))
 
 
 def test_a_bounded_set_inside_a_union_reads_back(unique_name: str) -> None:

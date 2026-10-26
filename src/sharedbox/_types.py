@@ -1158,14 +1158,24 @@ FAMILIES: Final[dict[str, str]] = {
             "float32",
             "complex",
             "complex64",
-            "flag",
         ),
         "number",
     ),
     "str": "text",
     "bytes": "byte string",
+    "date": "date",
 }
 """Kind -> its equality family: values of two kinds of one family may compare equal, as `1 == 1.0 == True`."""
+MIXIN_FAMILIES: Final[tuple[tuple[type, str], ...]] = (
+    (int, "number"),
+    (float, "number"),
+    (complex, "number"),
+    (str, "text"),
+    (bytes, "byte string"),
+    (tuple, "tuple"),
+    (datetime.date, "date"),
+)
+"""The mixin type of an Enum or Flag -> the equality family of its members, which equal values of that type."""
 INEXACT_KINDS: Final[frozenset[str]] = frozenset(
     {
         "float",
@@ -1213,7 +1223,7 @@ def bounded_args(hint: Any) -> tuple[Any, ...] | None:
 
 
 def value_family(value: object) -> str | None:
-    """Return the equality family of a Literal value or of an Enum member's value, or None."""
+    """Return the equality family of a Literal value, or of the value of an Enum member it is, or None."""
     match value.value if isinstance(value, enum.Enum) else value:
         case int():
             return "number"
@@ -1226,19 +1236,26 @@ def value_family(value: object) -> str | None:
 
 
 def families(spec: TypeSpec) -> set[str]:
-    """Return the equality families of `spec`'s values; a tuple and a NamedTuple are of the family "tuple"."""
+    """Return the equality families of `spec`'s values; a tuple and a NamedTuple are of the family "tuple".
+
+    An Enum or Flag takes the family of its mixin type, so a plain one,
+    whose members equal no other value, has none. A Literal takes the
+    family of each value, and a union or optional those of its members.
+    """
     match spec.kind:
-        case "enum":
-            values = [m.value for m in spec.info[1]]
+        case "enum" | "flag":
+            cls = spec.info[0]
+            return {family for base, family in MIXIN_FAMILIES if issubclass(cls, base)}
         case "literal":
-            values = list(spec.info[0])
+            return {f for v in spec.info[0] if (f := value_family(v)) is not None}
         case "record" | "tuple":
             return {"tuple"} if spec.info[0] in (1, 2) else set()
         case "list":
             return {"tuple"} if spec.info[0] is tuple else set()
+        case "union" | "optional":
+            return {f for m in spec.members for f in families(m.type)}
         case kind:
             return {FAMILIES[kind]} if kind in FAMILIES else set()
-    return {f for v in values if (f := value_family(v)) is not None}
 
 
 def key_refusal(spec: TypeSpec, inside: str | None = None) -> str | None:
