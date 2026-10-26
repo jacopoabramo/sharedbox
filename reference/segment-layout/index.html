@@ -851,6 +851,8 @@
       
         
       
+        
+      
     
     
     
@@ -1028,6 +1030,35 @@
     
   
   How to store a large list
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../how-to/store-a-large-set-or-dict/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-wrench" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  How to store a large set
 
     
   </span>
@@ -4464,6 +4495,12 @@ value.</p>
 <p>The bytes written for a list, set or dict field are its length and the
 slots it uses, shorter than the field when it is not full; a reader copies
 the same part.</p>
+<p>A writer fills each slot of a set with zero bytes before it encodes the
+element there, so the bytes after a <code>str</code>'s length, under an absent
+optional and in padding are zero. A reader that finds an element by
+comparing slot bytes, as <code>BoundedSet</code> does, relies on this and does not
+clear them, so an element another writer stores with nonzero bytes there
+is not found.</p>
 <h2 id="schema-identity">Schema identity<a class="headerlink" href="#schema-identity" title="Permanent link">&para;</a></h2>
 <p>The schema is the list of fields that fixes a record's shape: names, kinds,
 capacities and their order. The schema hash shows that a creator and an
