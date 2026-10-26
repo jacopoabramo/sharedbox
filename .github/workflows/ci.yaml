@@ -118,7 +118,7 @@ jobs:
         env:
           CIBW_BUILD: ${{ matrix.python }}-${{ matrix.platform_id }}
           CIBW_CONTAINER_ENGINE: "docker; create_args: --shm-size=1g"
-          CIBW_TEST_REQUIRES: pytest hypothesis numpy
+          CIBW_TEST_REQUIRES: pytest hypothesis numpy attrs
           CIBW_TEST_COMMAND: pytest {project}/tests
         with:
           package-dir: .
@@ -212,7 +212,7 @@ jobs:
         shell: bash
         run: |
           uv venv --python 3.12 .stress
-          uv pip install --python .stress wheelhouse/*.whl pytest hypothesis numpy
+          uv pip install --python .stress wheelhouse/*.whl pytest hypothesis numpy attrs
           python=.stress/bin/python
           [ -x "$python" ] || python=.stress/Scripts/python.exe
           "$python" -m pytest -m stress -q -p no:cacheprovider
