@@ -8,7 +8,7 @@ import msgspec
 import pytest
 from pytest_codspeed import BenchmarkFixture
 
-from sharedbox import BoundedList, BoundedSet, Capacity, SharedBox
+from sharedbox import BoundedDict, BoundedList, BoundedSet, Capacity, SharedBox
 
 NAMES = count()
 
@@ -38,6 +38,9 @@ class Keyed(SharedBox):
     d16: Annotated[dict[int, float], Capacity(16)]
     d1k: Annotated[dict[int, float], Capacity(1024)]
     d64k: Annotated[dict[int, float], Capacity(65536)]
+    bd16: Annotated[BoundedDict[int, float], Capacity(16)]
+    bd1k: Annotated[BoundedDict[int, float], Capacity(1024)]
+    bd64k: Annotated[BoundedDict[int, float], Capacity(65536)]
 
 
 @dataclass(frozen=True)
@@ -219,6 +222,9 @@ def keyed() -> Iterator[Keyed]:
         dict.fromkeys(range(16), 0.5),
         dict.fromkeys(range(1024), 0.5),
         dict.fromkeys(range(65536), 0.5),
+        BoundedDict[int, float](dict.fromkeys(range(16), 0.5), capacity=16),
+        BoundedDict[int, float](dict.fromkeys(range(1024), 0.5), capacity=1024),
+        BoundedDict[int, float](dict.fromkeys(range(65536), 0.5), capacity=65536),
     ) as box:
         yield box
     Keyed.unlink(name)
@@ -227,9 +233,12 @@ def keyed() -> Iterator[Keyed]:
 SET_FIELDS = [("s16", 16), ("s1k", 1024), ("s64k", 65536)]
 BOUNDED_SET_FIELDS = [("bs16", 16), ("bs1k", 1024), ("bs64k", 65536)]
 DICT_FIELDS = [("d16", 16), ("d1k", 1024), ("d64k", 65536)]
+BOUNDED_DICT_FIELDS = [("bd16", 16), ("bd1k", 1024), ("bd64k", 65536)]
 
 
-def walk_keys(values: set[int] | BoundedSet[int] | dict[int, float]) -> None:
+def walk_keys(
+    values: set[int] | BoundedSet[int] | dict[int, float] | BoundedDict[int, float],
+) -> None:
     for _ in values:
         pass
 
@@ -324,6 +333,39 @@ def test_iterate_int_dict(
     benchmark: BenchmarkFixture, keyed: Keyed, field: str
 ) -> None:
     """Time walking the elements of a dict field."""
+    benchmark(lambda: walk_keys(getattr(keyed, field)))
+
+
+@pytest.mark.parametrize("field", [f for f, _ in BOUNDED_DICT_FIELDS])
+def test_read_bounded_dict(
+    benchmark: BenchmarkFixture, keyed: Keyed, field: str
+) -> None:
+    """Time reading a BoundedDict field."""
+    benchmark(getattr, keyed, field)
+
+
+@pytest.mark.parametrize(("field", "size"), BOUNDED_DICT_FIELDS)
+def test_write_bounded_dict(
+    benchmark: BenchmarkFixture, keyed: Keyed, field: str, size: int
+) -> None:
+    """Time writing a BoundedDict to its field."""
+    value = BoundedDict[int, float](dict.fromkeys(range(size), 0.5), capacity=size)
+    benchmark(setattr, keyed, field, value)
+
+
+@pytest.mark.parametrize(("field", "size"), BOUNDED_DICT_FIELDS)
+def test_contains_bounded_dict(
+    benchmark: BenchmarkFixture, keyed: Keyed, field: str, size: int
+) -> None:
+    """Time a membership test of the middle key in a BoundedDict field."""
+    benchmark(lambda: size // 2 in getattr(keyed, field))
+
+
+@pytest.mark.parametrize("field", [f for f, _ in BOUNDED_DICT_FIELDS])
+def test_iterate_bounded_dict(
+    benchmark: BenchmarkFixture, keyed: Keyed, field: str
+) -> None:
+    """Time walking the elements of a BoundedDict field."""
     benchmark(lambda: walk_keys(getattr(keyed, field)))
 
 
