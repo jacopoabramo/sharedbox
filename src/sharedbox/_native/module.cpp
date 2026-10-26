@@ -812,6 +812,24 @@ using CollectionIterator = StoreIterator<sharedbox::NativeCollection>;
 using SetIterator = StoreIterator<sharedbox::NativeSet>;
 using DictIterator = StoreIterator<sharedbox::NativeDict>;
 
+// A slot rather than a bound __getitem__, which CPython would also install as sq_item: C code such as numpy
+// would then take the value for a sequence, as it never takes a builtin dict, which fills only mp_subscript.
+PyObject *dict_subscript(PyObject *self, PyObject *key) {
+    try {
+        if (!nb::inst_ready(self))
+            sharedbox::raise(PyExc_TypeError, "the value was never built");
+        return nb::inst_ptr<sharedbox::NativeDict>(self)->getitem(key).release().ptr();
+    } catch (...) {
+        set_error();
+        return nullptr;
+    }
+}
+
+PyType_Slot dict_slots[] = {{Py_tp_traverse, reinterpret_cast<void *>(store_traverse<sharedbox::NativeDict>)},
+                            {Py_tp_clear, reinterpret_cast<void *>(store_clear<sharedbox::NativeDict>)},
+                            {Py_mp_subscript, reinterpret_cast<void *>(dict_subscript)},
+                            {0, nullptr}};
+
 /// A view of self of the collections.abc class name: KeysView, ValuesView or ItemsView.
 nb::object view(const char *name, nb::handle self) {
     return nb::module_::import_("collections.abc").attr(name)(self);
@@ -1257,14 +1275,17 @@ NB_MODULE(_native, m) {
     set.attr("__hash__") = nb::none();
     nb::module_::import_("collections.abc").attr("MutableSet").attr("register")(set);
 
-    nb::class_<sharedbox::NativeDict> dict(m, "NativeDict", nb::is_generic(),
-                                           nb::type_slots(store_slots<sharedbox::NativeDict>));
+    nb::class_<sharedbox::NativeDict> dict(m, "NativeDict", nb::is_generic(), nb::type_slots(dict_slots));
     dict.def("__len__", &sharedbox::NativeDict::size)
         .def("__iter__",
              [](nb::pointer_and_handle<sharedbox::NativeDict> self) {
                  return DictIterator{nb::borrow(self.h), 0, false, self.p->size()};
              })
-        .def("__getitem__", &sharedbox::NativeDict::getitem, nb::arg().none())
+        .def("__reversed__",
+             [](nb::pointer_and_handle<sharedbox::NativeDict> self) {
+                 const std::size_t size = self.p->size();
+                 return DictIterator{nb::borrow(self.h), size, true, size};
+             })
         .def("get", &sharedbox::NativeDict::get, nb::arg().none(), nb::arg().none() = nb::none())
         .def("__contains__", &sharedbox::NativeDict::contains, nb::arg().none())
         .def("__eq__", &sharedbox::NativeDict::equals, nb::arg().none())

@@ -9,6 +9,7 @@ import weakref
 from dataclasses import dataclass
 from typing import Annotated, Any
 
+import numpy as np
 import pytest
 from crossproc import call_in_child, update_in_child
 
@@ -365,7 +366,7 @@ def test_lookups_follow_dict_rules(unique_name: str) -> None:
     assert weights != {1: 0.5, 2: 1.5}
     assert weights != {1: 0.5, 2: 1.5, "x": 2.5}
     assert weights == weights.copy()
-    assert (weights == [1, 2, 3]) is False
+    assert weights.__eq__([1, 2, 3]) is NotImplemented
 
 
 @pytest.mark.parametrize("size", [3, 40])
@@ -454,3 +455,23 @@ def test_a_bounded_dict_nests_with_other_collections(unique_name: str) -> None:
         assert type(made.groups[1]) is BoundedSet
         made.groups = {2: {3}}  # type: ignore[dict-item]
         assert attached.groups == {2: {3}}
+
+
+def test_a_bounded_dict_reverses_and_converts_as_a_dict(unique_name: str) -> None:
+    """Reverse a BoundedDict over its keys, and have numpy take it as it takes a dict, not as a sequence."""
+    with Catalogue.create(unique_name, {0: 0.5, 1: 1.5, 5: 2.5}) as box:
+        weights = box.weights
+    assert list(reversed(weights)) == [5, 1, 0]
+    assert np.array(weights).shape == np.array(dict(weights)).shape == ()
+
+
+def test_a_bounded_dict_without_its_types_is_refused() -> None:
+    """Refuse a BoundedDict field declared without its key and value types, showing how to give them."""
+    with pytest.raises(
+        TypeError,
+        match=re.escape(
+            "T.x: BoundedDict needs its key and value types, as in"
+            " Annotated[BoundedDict[int, float], Capacity(n)]"
+        ),
+    ):
+        build_layout(make(Annotated[BoundedDict, Capacity(4)]))

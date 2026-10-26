@@ -831,6 +831,14 @@ class NativeDict(Mapping[_K, _V]):
         RuntimeError
             If the value's length changed since the iteration began.
         """
+    def __reversed__(self) -> Iterator[_K]:
+        """Decode one key per step, from the last inserted to the first.
+
+        Raises
+        ------
+        RuntimeError
+            If the value's length changed since the iteration began.
+        """
     def __getitem__(self, key: _K, /) -> _V:
         """Return the value of `key`.
 
@@ -871,7 +879,7 @@ class NativeDict(Mapping[_K, _V]):
 
 @final
 class NativeDictIterator(Generic[_T]):
-    """Decodes one key of a `NativeDict` per step, in insertion order."""
+    """Decodes one key of a `NativeDict` per step, in insertion order or reversed."""
 
     def __iter__(self) -> Self: ...
     def __next__(self) -> _T: ...

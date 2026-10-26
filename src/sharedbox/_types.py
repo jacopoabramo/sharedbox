@@ -1332,15 +1332,17 @@ def collection_spec(
         given = bounded_args(hint)
         if given is None:
             name = bounded.__name__
+            mapping = issubclass(bounded, NativeDict)
+            needs = "key and value types" if mapping else "element type"
             example = (
                 "float"
                 if issubclass(bounded, NativeCollection)
                 else "int, float"
-                if issubclass(bounded, NativeDict)
+                if mapping
                 else "int"
             )
             raise TypeError(
-                f"{where}: {name} needs its element type, as in Annotated[{name}[{example}], Capacity(n)]"
+                f"{where}: {name} needs its {needs}, as in Annotated[{name}[{example}], Capacity(n)]"
             )
         args: tuple[Any, ...] = given
     else:
