@@ -8,6 +8,7 @@ import decimal
 import enum
 import inspect
 import math
+import numbers
 import struct
 import sys
 import types
@@ -1141,41 +1142,23 @@ def is_collection(hint: Any) -> bool:
 
 
 BOUNDED: Final[tuple[type, ...]] = (NativeCollection, NativeSet)
-FAMILIES: Final[dict[str, str]] = {
+KIND_TYPES: Final[dict[str, type]] = {
     **dict.fromkeys(
-        (
-            "bool",
-            "int",
-            "int8",
-            "int16",
-            "int32",
-            "uint8",
-            "uint16",
-            "uint32",
-            "uint64",
-            "float",
-            "float16",
-            "float32",
-            "complex",
-            "complex64",
-        ),
-        "number",
+        ("int", "int8", "int16", "int32", "uint8", "uint16", "uint32", "uint64"), int
     ),
-    "str": "text",
-    "bytes": "byte string",
-    "date": "date",
+    **dict.fromkeys(("float", "float16", "float32"), float),
+    **dict.fromkeys(("complex", "complex64"), complex),
+    "bool": bool,
+    "decimal": decimal.Decimal,
+    "str": str,
+    "bytes": bytes,
+    "date": datetime.date,
+    "time": datetime.time,
+    "datetime": datetime.datetime,
+    "timedelta": datetime.timedelta,
+    "uuid": uuid.UUID,
 }
-"""Kind -> its equality family: values of two kinds of one family may compare equal, as `1 == 1.0 == True`."""
-MIXIN_FAMILIES: Final[tuple[tuple[type, str], ...]] = (
-    (int, "number"),
-    (float, "number"),
-    (complex, "number"),
-    (str, "text"),
-    (bytes, "byte string"),
-    (tuple, "tuple"),
-    (datetime.date, "date"),
-)
-"""The mixin type of an Enum or Flag -> the equality family of its members, which equal values of that type."""
+"""Kind -> the Python type its values are read back as."""
 INEXACT_KINDS: Final[frozenset[str]] = frozenset(
     {
         "float",
@@ -1222,49 +1205,72 @@ def bounded_args(hint: Any) -> tuple[Any, ...] | None:
     return args
 
 
-def mixin_families(cls: type) -> set[str]:
-    """Return the equality families of the members of the Enum or Flag `cls`, from its mixin type."""
-    # A datetime never equals a date, so its members are a family apart from the date mixin's.
-    if issubclass(cls, datetime.datetime):
-        return {"datetime"}
-    return {family for base, family in MIXIN_FAMILIES if issubclass(cls, base)}
+def family(cls: type) -> object:
+    """Return the equality family of values of `cls`: values of two types of one family may compare equal.
 
-
-def value_families(value: object) -> set[str]:
-    """Return the equality families of a Literal value; an Enum member's come from its class's mixin type."""
-    match value:
-        case enum.Enum():
-            return mixin_families(type(value))
-        case int():
-            return {"number"}
-        case str():
-            return {"text"}
-        case bytes():
-            return {"byte string"}
-        case _:
-            return set()
-
-
-def families(spec: TypeSpec) -> set[str]:
-    """Return the equality families of `spec`'s values; a tuple and a NamedTuple are of the family "tuple".
-
-    An Enum or Flag takes the family of its mixin type, so a plain one,
-    whose members equal no other value, has none. A Literal takes the
-    family of each value, and a union or optional those of its members.
+    Every number type is the family "number", str the family "text", bytes
+    "byte string", and tuple and NamedTuple "tuple". A datetime, a date and
+    any other type are each a family of their own.
     """
+    if issubclass(cls, numbers.Number):
+        return "number"
+    for base, name in ((str, "text"), (bytes, "byte string"), (tuple, "tuple")):
+        if issubclass(cls, base):
+            return name
+    if issubclass(cls, datetime.datetime):
+        return datetime.datetime
+    if issubclass(cls, datetime.date):
+        return datetime.date
+    return cls
+
+
+def member_families(cls: type) -> set[object]:
+    """Return the equality family of the members of the Enum or Flag `cls`, that of its mixin type.
+
+    A plain Enum or Flag, whose members equal no other value, has none.
+    """
+    mixin = getattr(cls, "_member_type_", object)
+    return set() if mixin is object else {family(mixin)}
+
+
+def families(spec: TypeSpec) -> set[object]:
+    """Return the equality families of `spec`'s values; a union or optional has those of its members."""
     match spec.kind:
         case "enum" | "flag":
-            return mixin_families(spec.info[0])
+            return member_families(spec.info[0])
         case "literal":
-            return {f for v in spec.info[0] for f in value_families(v)}
+            return {
+                f
+                for v in spec.info[0]
+                for f in (
+                    member_families(type(v))
+                    if isinstance(v, enum.Enum)
+                    else {family(type(v))}
+                )
+            }
         case "record" | "tuple":
-            return {"tuple"} if spec.info[0] in (1, 2) else set()
+            form, cls = spec.info[0], spec.info[1]
+            return {"tuple"} if form in (1, 2) else {cls} if form == 0 else set()
         case "list":
             return {"tuple"} if spec.info[0] is tuple else set()
         case "union" | "optional":
             return {f for m in spec.members for f in families(m.type)}
         case kind:
-            return {FAMILIES[kind]} if kind in FAMILIES else set()
+            return {family(KIND_TYPES[kind])} if kind in KIND_TYPES else set()
+
+
+def uncompared(spec: TypeSpec) -> str | None:
+    """Return the first member a record's equality leaves out, `field(compare=False)` or attrs `eq=False`, or None."""
+    if spec.kind != "record" or spec.info[0] != 0:
+        return None
+    cls = spec.info[1]
+    if dataclasses.is_dataclass(cls):
+        skipped = [f.name for f in dataclasses.fields(cls) if not f.compare]
+    elif hasattr(cls, "__attrs_attrs__"):
+        skipped = [a.name for a in cls.__attrs_attrs__ if not a.eq]
+    else:
+        skipped = []
+    return skipped[0] if skipped else None
 
 
 def key_refusal(spec: TypeSpec, inside: str | None = None) -> str | None:
@@ -1277,6 +1283,8 @@ def key_refusal(spec: TypeSpec, inside: str | None = None) -> str | None:
         return "a Decimal"
     if spec.kind == "set":
         return "a frozenset"
+    if (skipped := uncompared(spec)) is not None:
+        return f"a {spec.info[1].__qualname__} whose equality skips {skipped}"
     if inside is not None and spec.kind in INEXACT_KINDS:
         return f"a {spec.text} inside {inside}"
     if spec.kind == "literal":
@@ -1286,12 +1294,12 @@ def key_refusal(spec: TypeSpec, inside: str | None = None) -> str | None:
                 if earlier == value:
                     return f"a Literal of equal values {earlier!r} and {value!r}"
     if spec.kind == "union":
-        seen: dict[str, str] = {}
+        seen: dict[object, str] = {}
         for m in spec.members:
-            for family in sorted(families(m.type)):
-                if family in seen:
-                    return f"a union of {seen[family]} and {m.type.text}"
-                seen[family] = m.type.text
+            for f in sorted(families(m.type), key=str):
+                if f in seen:
+                    return f"a union of {seen[f]} and {m.type.text}"
+                seen[f] = m.type.text
         inside = inside or "a union"
     elif spec.kind == "list":
         inside = inside or "a tuple[T, ...]"

@@ -7,9 +7,10 @@ import gc
 import pickle
 import re
 import weakref
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Annotated, Any, Literal, NamedTuple
 
+import attrs
 import pytest
 from crossproc import call_in_child, update_in_child
 
@@ -227,6 +228,26 @@ class Instant(datetime.datetime, enum.Enum):
     START = 2026, 1, 1
 
 
+class Span(datetime.timedelta, enum.Enum):
+    DAY = 1
+
+
+class Amount(decimal.Decimal, enum.Enum):
+    ONE = 1
+
+
+@dataclass(frozen=True)
+class Label:
+    name: Name
+    note: Name = field(compare=False)
+
+
+@attrs.frozen
+class Mark:
+    x: int
+    y: int = attrs.field(eq=False)
+
+
 @dataclass(frozen=True)
 class Price:
     amount: Annotated[decimal.Decimal, Capacity(8)]
@@ -274,6 +295,11 @@ class Price:
             Literal[Moment.START] | Instant,
             "a union of literal(member:START) and enum(START)",
         ),
+        (Span | datetime.timedelta, "a union of enum(DAY) and timedelta"),
+        (Amount | int, "a union of enum(ONE) and int:8"),
+        (Label, "a Label whose equality skips note"),
+        (Mark, "a Mark whose equality skips y"),
+        (Label | None, "a Label whose equality skips note"),
     ],
 )
 def test_keys_that_compare_unlike_their_bytes_are_refused(

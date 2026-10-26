@@ -136,8 +136,11 @@ class BoundedSet(NativeSet[T]):
     an element type whose equal values could be stored differently: a
     `Decimal`, a `frozenset`, a union whose members can hold equal values,
     such as `int | float` or a `StrEnum` and `str`, a `Literal` of two
-    equal values such as `Literal[1, True]`, and a float, complex or time
-    type inside a union or a `tuple[T, ...]`.
+    equal values such as `Literal[1, True]`, a record whose equality skips
+    a member, as `field(compare=False)` does, and a float, complex or time
+    type inside a union or a `tuple[T, ...]`. Keys are compared by all
+    their stored bytes, so a set of a record class with its own `__eq__`
+    may hold two elements that class counts as equal.
 
     A subclass is declared and read back the same way, generic as
     `class MySet(BoundedSet[T])` used as `MySet[int]`, or with its element
