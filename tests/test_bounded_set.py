@@ -219,6 +219,10 @@ class Plain(enum.Enum):
     A = 1
 
 
+class Moment(datetime.datetime, enum.Enum):
+    START = 2026, 1, 1
+
+
 @dataclass(frozen=True)
 class Price:
     amount: Annotated[decimal.Decimal, Capacity(8)]
@@ -251,6 +255,16 @@ class Price:
             Annotated[int | None, "nested"] | bool,
             "a union of optional(int:8) and bool:1",
         ),
+        (Literal[Ratio.ONE] | int, "a union of literal(member:ONE) and int:8"),
+        (
+            Literal[Day.FIRST] | datetime.date,
+            "a union of literal(member:FIRST) and date",
+        ),
+        (
+            # Literal unpacks a tuple given alone, so the member goes inside one.
+            Literal[(Origin.ZERO,)] | tuple[int],
+            "a union of literal(member:ZERO) and tuple(int:8)",
+        ),
     ],
 )
 def test_keys_that_compare_unlike_their_bytes_are_refused(
@@ -272,9 +286,12 @@ def test_keys_that_compare_unlike_their_bytes_are_refused(
     )
 
 
-def test_a_plain_enum_and_an_int_make_a_key() -> None:
-    """Declare a BoundedSet of a union of an Enum without a mixin type and int, whose values never compare equal."""
-    build_layout(make(Annotated[BoundedSet[Plain | int], Capacity(4)], "Box", "keys"))
+@pytest.mark.parametrize(
+    "key", [Plain | int, Literal[Plain.A] | int, Moment | datetime.date]
+)
+def test_union_members_whose_values_never_compare_equal_make_a_key(key: object) -> None:
+    """Declare a BoundedSet of a union whose members' values never compare equal, as a plain Enum's and an int's."""
+    build_layout(make(Annotated[BoundedSet[key], Capacity(4)], "Box", "keys"))  # type: ignore[valid-type]
 
 
 def test_a_bounded_set_inside_a_union_reads_back(unique_name: str) -> None:

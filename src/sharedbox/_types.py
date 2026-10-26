@@ -1222,17 +1222,27 @@ def bounded_args(hint: Any) -> tuple[Any, ...] | None:
     return args
 
 
-def value_family(value: object) -> str | None:
-    """Return the equality family of a Literal value, or of the value of an Enum member it is, or None."""
-    match value.value if isinstance(value, enum.Enum) else value:
+def mixin_families(cls: type) -> set[str]:
+    """Return the equality families of the members of the Enum or Flag `cls`, from its mixin type."""
+    # A datetime never equals a date, and a datetime inside a union is refused on its own.
+    if issubclass(cls, datetime.datetime):
+        return set()
+    return {family for base, family in MIXIN_FAMILIES if issubclass(cls, base)}
+
+
+def value_families(value: object) -> set[str]:
+    """Return the equality families of a Literal value; an Enum member's come from its class's mixin type."""
+    match value:
+        case enum.Enum():
+            return mixin_families(type(value))
         case int():
-            return "number"
+            return {"number"}
         case str():
-            return "text"
+            return {"text"}
         case bytes():
-            return "byte string"
+            return {"byte string"}
         case _:
-            return None
+            return set()
 
 
 def families(spec: TypeSpec) -> set[str]:
@@ -1244,10 +1254,9 @@ def families(spec: TypeSpec) -> set[str]:
     """
     match spec.kind:
         case "enum" | "flag":
-            cls = spec.info[0]
-            return {family for base, family in MIXIN_FAMILIES if issubclass(cls, base)}
+            return mixin_families(spec.info[0])
         case "literal":
-            return {f for v in spec.info[0] if (f := value_family(v)) is not None}
+            return {f for v in spec.info[0] for f in value_families(v)}
         case "record" | "tuple":
             return {"tuple"} if spec.info[0] in (1, 2) else set()
         case "list":
