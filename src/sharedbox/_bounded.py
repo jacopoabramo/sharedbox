@@ -17,6 +17,40 @@ T = TypeVar("T")
 C = TypeVar("C", bound=NativeCollection[Any] | NativeSet[Any])
 
 
+def _copy(self: C) -> C:
+    """Return a copy, with a shallow copy of a subclass's attributes."""
+    value = cast("C", self.copy())
+    _restore(value, self.__getstate__())
+    return value
+
+
+def _deepcopy(self: C, memo: dict[int, Any]) -> C:
+    """Return a copy, with a deep copy of a subclass's attributes.
+
+    The elements are copied as bytes, since every read decodes an element
+    anew and the copy shares none with this value.
+    """
+    value = cast("C", self.copy())
+    memo[id(self)] = value
+    _restore(value, copy.deepcopy(self.__getstate__(), memo))
+    return value
+
+
+def _reduce(
+    self: NativeCollection[Any] | NativeSet[Any],
+) -> tuple[
+    Callable[[type[Any], object, int, bytes], Any],
+    tuple[type[Any], object, int, bytes],
+    object,
+]:
+    """Return how pickling rebuilds the value: its class, element type, capacity and stored form."""
+    return (
+        _rebuild,
+        (type(self), self._element_annotation, self.capacity, self._stored()),
+        self.__getstate__(),
+    )
+
+
 class BoundedList(NativeCollection[T]):
     """A list of at most a field's capacity of elements, held as the field stores them.
 
@@ -85,35 +119,9 @@ class BoundedList(NativeCollection[T]):
             f"({list(self)!r}, capacity={self.capacity})"
         )
 
-    def __copy__(self) -> Self:
-        """Return a copy, with a shallow copy of a subclass's attributes."""
-        value = self.copy()
-        _restore(value, self.__getstate__())
-        return value
-
-    def __deepcopy__(self, memo: dict[int, Any]) -> Self:
-        """Return a copy, with a deep copy of a subclass's attributes.
-
-        The elements are copied as bytes, since every read decodes an
-        element anew and the copy shares none with this value.
-        """
-        value = self.copy()
-        memo[id(self)] = value
-        _restore(value, copy.deepcopy(self.__getstate__(), memo))
-        return value
-
-    def __reduce__(
-        self,
-    ) -> tuple[
-        Callable[[type[Any], object, int, bytes], BoundedList[Any]],
-        tuple[type[Any], object, int, bytes],
-        object,
-    ]:
-        return (
-            _rebuild,
-            (type(self), self._element_annotation, self.capacity, self._stored()),
-            self.__getstate__(),
-        )
+    __copy__ = _copy
+    __deepcopy__ = _deepcopy
+    __reduce__ = _reduce
 
 
 class BoundedSet(NativeSet[T]):
@@ -183,35 +191,9 @@ class BoundedSet(NativeSet[T]):
             f"({shown}, capacity={self.capacity})"
         )
 
-    def __copy__(self) -> Self:
-        """Return a copy, with a shallow copy of a subclass's attributes."""
-        value = self.copy()
-        _restore(value, self.__getstate__())
-        return value
-
-    def __deepcopy__(self, memo: dict[int, Any]) -> Self:
-        """Return a copy, with a deep copy of a subclass's attributes.
-
-        The elements are copied as bytes, since every read decodes an
-        element anew and the copy shares none with this value.
-        """
-        value = self.copy()
-        memo[id(self)] = value
-        _restore(value, copy.deepcopy(self.__getstate__(), memo))
-        return value
-
-    def __reduce__(
-        self,
-    ) -> tuple[
-        Callable[[type[Any], object, int, bytes], BoundedSet[Any]],
-        tuple[type[Any], object, int, bytes],
-        object,
-    ]:
-        return (
-            _rebuild,
-            (type(self), self._element_annotation, self.capacity, self._stored()),
-            self.__getstate__(),
-        )
+    __copy__ = _copy
+    __deepcopy__ = _deepcopy
+    __reduce__ = _reduce
 
 
 class _Alias(types.GenericAlias):
