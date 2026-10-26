@@ -8,6 +8,7 @@ import decimal
 import enum
 import inspect
 import math
+import numbers
 import struct
 import sys
 import types
@@ -43,7 +44,7 @@ from ._arrays import (
     dtype_name,
     key,
 )
-from ._native import NativeCollection
+from ._native import NativeCollection, NativeSet
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -1136,39 +1137,185 @@ def is_collection(hint: Any) -> bool:
         or origin in LISTS
         or origin in SETS
         or origin in DICTS
-        or list_class(hint) is not None
+        or bounded_class(hint) is not None
     )
 
 
-def list_class(hint: Any) -> type[NativeCollection[Any]] | None:
-    """Return the strict `NativeCollection` subclass `hint` is, alone or parametrised, or None."""
+BOUNDED: Final[tuple[type, ...]] = (NativeCollection, NativeSet)
+KIND_TYPES: Final[dict[str, type]] = {
+    **dict.fromkeys(
+        ("int", "int8", "int16", "int32", "uint8", "uint16", "uint32", "uint64"), int
+    ),
+    **dict.fromkeys(("float", "float16", "float32"), float),
+    **dict.fromkeys(("complex", "complex64"), complex),
+    "bool": bool,
+    "decimal": decimal.Decimal,
+    "str": str,
+    "bytes": bytes,
+    "date": datetime.date,
+    "time": datetime.time,
+    "datetime": datetime.datetime,
+    "timedelta": datetime.timedelta,
+    "uuid": uuid.UUID,
+}
+"""Kind -> the Python type its values are read back as."""
+INEXACT_KINDS: Final[frozenset[str]] = frozenset(
+    {
+        "float",
+        "float16",
+        "float32",
+        "complex",
+        "complex64",
+        "datetime",
+        "time",
+        "datetime64",
+    }
+)
+"""The kinds whose stored bytes a key check rewrites or refuses."""
+
+
+def bounded_class(hint: Any) -> type | None:
+    """Return the strict subclass of `NativeCollection` or `NativeSet` that `hint` is, alone or parametrised, or None."""
     origin = get_origin(hint) or hint
     if (
         isinstance(origin, type)
-        and issubclass(origin, NativeCollection)
-        and origin is not NativeCollection
+        and issubclass(origin, BOUNDED)
+        and origin not in BOUNDED
     ):
         return origin
     return None
 
 
-def list_element(hint: Any) -> Any:
-    """Return the element annotation of a `NativeCollection` subclass, alone or parametrised.
+def bounded_args(hint: Any) -> tuple[Any, ...] | None:
+    """Return the type arguments of a `NativeCollection` or `NativeSet` subclass, alone or parametrised.
 
-    A class alone gives the argument of the parametrised `NativeCollection`
-    subclass it derives from, as `class Points(BoundedList[float])` gives
-    `float`. None when `hint` gives no element type, or a type variable.
+    A class alone gives the arguments of the parametrised subclass it
+    derives from, as `class Points(BoundedList[float])` gives `(float,)`.
+    None when `hint` gives none, or one is a type variable.
     """
     bases = (
         base
         for cls in (get_origin(hint) or hint).__mro__
         for base in vars(cls).get("__orig_bases__", ())
-        if list_class(base) is not None
+        if bounded_class(base) is not None
     )
     args = get_args(hint) or get_args(next(bases, None))
-    if len(args) != 1 or isinstance(args[0], TypeVar):
+    if not args or any(isinstance(arg, TypeVar) for arg in args):
         return None
-    return args[0]
+    return args
+
+
+def family(cls: type) -> object:
+    """Return the equality family of values of `cls`: values of two types of one family may compare equal.
+
+    Every number type is the family "number", str the family "text", bytes
+    "byte string", and tuple and NamedTuple "tuple". A datetime, a date and
+    any other type are each a family of their own.
+    """
+    if issubclass(cls, numbers.Number):
+        return "number"
+    for base, name in ((str, "text"), (bytes, "byte string"), (tuple, "tuple")):
+        if issubclass(cls, base):
+            return name
+    if issubclass(cls, datetime.datetime):
+        return datetime.datetime
+    if issubclass(cls, datetime.date):
+        return datetime.date
+    return cls
+
+
+def member_families(cls: type) -> set[object]:
+    """Return the equality family of the members of the Enum or Flag `cls`, that of its mixin type.
+
+    A plain Enum or Flag, whose members equal no other value, has none.
+    """
+    mixin = getattr(cls, "_member_type_", object)
+    return set() if mixin is object else {family(mixin)}
+
+
+def families(spec: TypeSpec) -> set[object]:
+    """Return the equality families of `spec`'s values; a union or optional has those of its members."""
+    match spec.kind:
+        case "enum" | "flag":
+            return member_families(spec.info[0])
+        case "literal":
+            return {
+                f
+                for v in spec.info[0]
+                for f in (
+                    member_families(type(v))
+                    if isinstance(v, enum.Enum)
+                    else {family(type(v))}
+                )
+            }
+        case "record" | "tuple":
+            form, cls = spec.info[0], spec.info[1]
+            return {"tuple"} if form in (1, 2) else {cls} if form == 0 else set()
+        case "list":
+            return {"tuple"} if spec.info[0] is tuple else set()
+        case "union" | "optional":
+            return {f for m in spec.members for f in families(m.type)}
+        case kind:
+            return {family(KIND_TYPES[kind])} if kind in KIND_TYPES else set()
+
+
+def uncompared(spec: TypeSpec) -> str | None:
+    """Return how a record's equality departs from its members' bytes, or None.
+
+    The first member left out, by `field(compare=False)` or attrs
+    `eq=False`, gives `skips {name}`; one attrs compares through a key
+    function, as `attrs.field(eq=str.lower)` does, gives
+    `compares {name} through a function`.
+    """
+    if spec.kind != "record" or spec.info[0] != 0:
+        return None
+    cls = spec.info[1]
+    if dataclasses.is_dataclass(cls):
+        return next(
+            (f"skips {f.name}" for f in dataclasses.fields(cls) if not f.compare), None
+        )
+    for a in getattr(cls, "__attrs_attrs__", ()):
+        if not a.eq:
+            return f"skips {a.name}"
+        if a.eq_key is not None:
+            return f"compares {a.name} through a function"
+    return None
+
+
+def key_refusal(spec: TypeSpec, inside: str | None = None) -> str | None:
+    """Return what a key of `spec` cannot hold, because equal keys could differ in bytes, or None.
+
+    `inside` names the union or `tuple[T, ...]` around `spec`, whose
+    members a key check cannot reach.
+    """
+    if spec.kind == "decimal":
+        return "a Decimal"
+    if spec.kind == "set":
+        return "a frozenset"
+    if (departs := uncompared(spec)) is not None:
+        return f"a {spec.info[1].__qualname__} whose equality {departs}"
+    if inside is not None and spec.kind in INEXACT_KINDS:
+        return f"a {spec.text} inside {inside}"
+    if spec.kind == "literal":
+        values = spec.info[0]
+        for i, value in enumerate(values):
+            for earlier in values[:i]:
+                if earlier == value:
+                    return f"a Literal of equal values {earlier!r} and {value!r}"
+    if spec.kind == "union":
+        seen: dict[object, str] = {}
+        for m in spec.members:
+            for f in sorted(families(m.type), key=str):
+                if f in seen:
+                    return f"a union of {seen[f]} and {m.type.text}"
+                seen[f] = m.type.text
+        inside = inside or "a union"
+    elif spec.kind == "list":
+        inside = inside or "a tuple[T, ...]"
+    return next(
+        (r for m in spec.members if (r := key_refusal(m.type, inside)) is not None),
+        None,
+    )
 
 
 def collection_spec(
@@ -1180,15 +1327,16 @@ def collection_spec(
             f"{where}: {hint!r} needs a Capacity in elements, as in Annotated[{hint!r}, Capacity(n)]"
         )
     below = deeper(depth, where)
-    bounded = list_class(hint)
+    bounded = bounded_class(hint)
     if bounded is not None:
-        given = list_element(hint)
+        given = bounded_args(hint)
         if given is None:
             name = bounded.__name__
+            example = "float" if issubclass(bounded, NativeCollection) else "int"
             raise TypeError(
-                f"{where}: {name} needs its element type, as in Annotated[{name}[float], Capacity(n)]"
+                f"{where}: {name} needs its element type, as in Annotated[{name}[{example}], Capacity(n)]"
             )
-        args: tuple[Any, ...] = (given,)
+        args: tuple[Any, ...] = given
     else:
         args = get_args(hint)
     if len(args) != (2 if origin in DICTS or origin is tuple else 1):
@@ -1211,7 +1359,8 @@ def collection_spec(
         if origin is tuple:
             kind, read = "list", tuple
         elif bounded is not None:
-            kind, read = "list", bounded
+            kind = "list" if issubclass(bounded, NativeCollection) else "set"
+            read = bounded
         elif origin in LISTS:
             kind, read = "list", LISTS[origin]
         else:
@@ -1221,6 +1370,12 @@ def collection_spec(
             raise TypeError(
                 f"{where}: set elements of {element.text} are not hashable when read back"
             )
+        if bounded is not None and kind == "set":
+            reason = key_refusal(element)
+            if reason is not None:
+                raise TypeError(
+                    f"{where}: {bounded.__name__} keys cannot hold {reason}"
+                )
         stride = round_up(element.size, element.alignment)
         a = max(4, element.alignment)
         members = (Member(round_up(4, a), element),)  # type: ignore[assignment]
@@ -1245,7 +1400,7 @@ def collection_spec(
         members=members,
         count=len(members),
         before=struct.pack("<I", capacity),
-        info=(read, element.text, args[0]) if kind == "list" else (read,),
+        info=(read, element.text, args[0]) if kind != "dict" else (read,),
         match=(
             (abc.Mapping,)
             if kind == "dict"

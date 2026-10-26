@@ -8,7 +8,7 @@ import msgspec
 import pytest
 from pytest_codspeed import BenchmarkFixture
 
-from sharedbox import BoundedList, Capacity, SharedBox
+from sharedbox import BoundedList, BoundedSet, Capacity, SharedBox
 
 NAMES = count()
 
@@ -32,6 +32,9 @@ class Keyed(SharedBox):
     s16: Annotated[set[int], Capacity(16)]
     s1k: Annotated[set[int], Capacity(1024)]
     s64k: Annotated[set[int], Capacity(65536)]
+    bs16: Annotated[BoundedSet[int], Capacity(16)]
+    bs1k: Annotated[BoundedSet[int], Capacity(1024)]
+    bs64k: Annotated[BoundedSet[int], Capacity(65536)]
     d16: Annotated[dict[int, float], Capacity(16)]
     d1k: Annotated[dict[int, float], Capacity(1024)]
     d64k: Annotated[dict[int, float], Capacity(65536)]
@@ -210,6 +213,9 @@ def keyed() -> Iterator[Keyed]:
         set(range(16)),
         set(range(1024)),
         set(range(65536)),
+        BoundedSet[int](range(16), capacity=16),
+        BoundedSet[int](range(1024), capacity=1024),
+        BoundedSet[int](range(65536), capacity=65536),
         dict.fromkeys(range(16), 0.5),
         dict.fromkeys(range(1024), 0.5),
         dict.fromkeys(range(65536), 0.5),
@@ -219,10 +225,11 @@ def keyed() -> Iterator[Keyed]:
 
 
 SET_FIELDS = [("s16", 16), ("s1k", 1024), ("s64k", 65536)]
+BOUNDED_SET_FIELDS = [("bs16", 16), ("bs1k", 1024), ("bs64k", 65536)]
 DICT_FIELDS = [("d16", 16), ("d1k", 1024), ("d64k", 65536)]
 
 
-def walk_keys(values: set[int] | dict[int, float]) -> None:
+def walk_keys(values: set[int] | BoundedSet[int] | dict[int, float]) -> None:
     for _ in values:
         pass
 
@@ -253,6 +260,39 @@ def test_contains_int_set(
 @pytest.mark.parametrize("field", [f for f, _ in SET_FIELDS])
 def test_iterate_int_set(benchmark: BenchmarkFixture, keyed: Keyed, field: str) -> None:
     """Time walking the elements of a set field."""
+    benchmark(lambda: walk_keys(getattr(keyed, field)))
+
+
+@pytest.mark.parametrize("field", [f for f, _ in BOUNDED_SET_FIELDS])
+def test_read_bounded_set(
+    benchmark: BenchmarkFixture, keyed: Keyed, field: str
+) -> None:
+    """Time reading a BoundedSet field."""
+    benchmark(getattr, keyed, field)
+
+
+@pytest.mark.parametrize(("field", "size"), BOUNDED_SET_FIELDS)
+def test_write_bounded_set(
+    benchmark: BenchmarkFixture, keyed: Keyed, field: str, size: int
+) -> None:
+    """Time writing a BoundedSet to its field."""
+    value = BoundedSet[int](range(size), capacity=size)
+    benchmark(setattr, keyed, field, value)
+
+
+@pytest.mark.parametrize(("field", "size"), BOUNDED_SET_FIELDS)
+def test_contains_bounded_set(
+    benchmark: BenchmarkFixture, keyed: Keyed, field: str, size: int
+) -> None:
+    """Time a membership test of the middle key in a BoundedSet field."""
+    benchmark(lambda: size // 2 in getattr(keyed, field))
+
+
+@pytest.mark.parametrize("field", [f for f, _ in BOUNDED_SET_FIELDS])
+def test_iterate_bounded_set(
+    benchmark: BenchmarkFixture, keyed: Keyed, field: str
+) -> None:
+    """Time walking the elements of a BoundedSet field."""
     benchmark(lambda: walk_keys(getattr(keyed, field)))
 
 

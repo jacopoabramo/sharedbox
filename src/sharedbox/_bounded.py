@@ -1,4 +1,4 @@
-"""BoundedList, a list value that keeps the stored form of a list field."""
+"""BoundedList and BoundedSet, list and set values that keep the stored form of their field."""
 
 from __future__ import annotations
 
@@ -9,12 +9,46 @@ from collections.abc import Callable, Iterable
 from typing import Annotated, Any, Self, TypeVar, cast
 
 from ._layout import Capacity
-from ._native import NativeCollection, Types
+from ._native import NativeCollection, NativeSet, Types
 from ._stream import item_of
-from ._types import list_element
+from ._types import bounded_args
 
 T = TypeVar("T")
-C = TypeVar("C", bound=NativeCollection[Any])
+C = TypeVar("C", bound=NativeCollection[Any] | NativeSet[Any])
+
+
+def _copy(self: C) -> C:
+    """Return a copy, with a shallow copy of a subclass's attributes."""
+    value = cast("C", self.copy())
+    _restore(value, self.__getstate__())
+    return value
+
+
+def _deepcopy(self: C, memo: dict[int, Any]) -> C:
+    """Return a copy, with a deep copy of a subclass's attributes.
+
+    The elements are copied as bytes, since every read decodes an element
+    anew and the copy shares none with this value.
+    """
+    value = cast("C", self.copy())
+    memo[id(self)] = value
+    _restore(value, copy.deepcopy(self.__getstate__(), memo))
+    return value
+
+
+def _reduce(
+    self: NativeCollection[Any] | NativeSet[Any],
+) -> tuple[
+    Callable[[type[Any], object, int, bytes], Any],
+    tuple[type[Any], object, int, bytes],
+    object,
+]:
+    """Return how pickling rebuilds the value: its class, element type, capacity and stored form."""
+    return (
+        _rebuild,
+        (type(self), self._element_annotation, self.capacity, self._stored()),
+        self.__getstate__(),
+    )
 
 
 class BoundedList(NativeCollection[T]):
@@ -64,7 +98,7 @@ class BoundedList(NativeCollection[T]):
         ValueError
             If an element does not fit, or there are more than `capacity`.
         """
-        return _build(cls, list_element(cls), values, capacity)
+        return _build(cls, _element(cls), values, capacity)
 
     def __init__(self, values: Iterable[T] = (), *, capacity: int) -> None:
         """Do nothing; `__new__` has built the value."""
@@ -77,57 +111,111 @@ class BoundedList(NativeCollection[T]):
         TypeError
             If `element` is several types, or `cls` already fixes one.
         """
-        # typing rebuilds an alias it evaluates with its arguments as a tuple.
-        if isinstance(element, tuple):
-            if len(element) != 1:
-                raise TypeError(
-                    f"{cls.__name__} takes one element type, got {len(element)}"
-                )
-            (element,) = element
-        fixed = list_element(cls)
-        if fixed is not None:
-            raise TypeError(f"{cls.__name__} already has element type {_name(fixed)}")
-        return _Alias(cls, element)
+        return _parametrise(cls, element)
 
     def __repr__(self) -> str:
         return (
-            f"{type(self).__name__}[{_name(self.element_annotation)}]"
+            f"{type(self).__name__}[{_name(self._element_annotation)}]"
             f"({list(self)!r}, capacity={self.capacity})"
         )
 
-    def __copy__(self) -> Self:
-        """Return a copy, with a shallow copy of a subclass's attributes."""
-        value = self.copy()
-        _restore(value, self.__getstate__())
-        return value
+    __copy__ = _copy
+    __deepcopy__ = _deepcopy
+    __reduce__ = _reduce
 
-    def __deepcopy__(self, memo: dict[int, Any]) -> Self:
-        """Return a copy, with a deep copy of a subclass's attributes.
 
-        The elements are copied as bytes, since every read decodes an
-        element anew and the copy shares none with this value.
+class BoundedSet(NativeSet[T]):
+    """A set of at most a field's capacity of elements, held as the field stores them.
+
+    Declared as `Annotated[BoundedSet[T], Capacity(n)]` or with
+    `field(capacity=n)`, it is stored as `set[T]` is, and a read returns
+    one. It iterates in the order its elements are stored, which may
+    differ from a builtin `set`'s.
+
+    Elements are compared by their stored bytes, all of them but the fold
+    of a naive `datetime` or `time`, so a declaration refuses an element
+    type whose equal values could be stored differently: a `Decimal`, a
+    `frozenset`, a union whose members can hold equal values, such as
+    `int | float` or a `StrEnum` and `str`, a `Literal` of two equal values
+    such as `Literal[1, True]`, a record whose equality skips a member, as
+    `field(compare=False)` does, and a float, complex or time type inside a
+    union or a `tuple[T, ...]`. For the same reason, a set of a record
+    class with its own `__eq__` may hold two elements that class counts as
+    equal.
+
+    Adding a nan, a NaT, or an aware `datetime` or `time` raises
+    `ValueError`, and `-0.0` is stored as `0.0`. A naive `datetime` keeps
+    the fold it was added with, and is the same element as that time at
+    the other fold. A value that cannot be stored as an element is in no
+    set: `in` returns False and `remove` raises `KeyError`.
+
+    The operators `|`, `&`, `-` and `^` and their in-place forms take any
+    set and return a value of this class and capacity, on either side of
+    the operator, and the comparisons take any set. `&`, `value - other`
+    and the comparisons treat an element of the other set that this one
+    cannot hold as absent; `|`, `^` and `other - value` raise the error
+    that adding it would.
+
+    A subclass is declared and read back the same way, generic as
+    `class MySet(BoundedSet[T])` used as `MySet[int]`, or with its element
+    type fixed as `class Tags(BoundedSet[int])`. A read from a box calls
+    neither `__new__` nor `__init__`. `copy.copy`, `copy.deepcopy` and
+    pickling keep a subclass's attributes, as for a `set` subclass.
+    """
+
+    __slots__ = ()
+
+    def __new__(
+        cls,
+        values: Iterable[T] = (),
+        *args: Any,
+        capacity: int,
+        **kwargs: Any,
+    ) -> Self:
+        """Build a value of `capacity` holding `values`, of the element type `cls` fixes.
+
+        Other arguments are left to `__init__`, so a subclass's `__init__`
+        may take more. It receives the same `values` object after `__new__`
+        has consumed it, so a generator arrives empty.
+
+        Raises
+        ------
+        TypeError
+            If `cls` fixes no element type, as `BoundedSet` alone does, or
+            an element is not of that type.
+        ValueError
+            If an element does not fit, or there are more than `capacity`.
         """
-        value = self.copy()
-        memo[id(self)] = value
-        _restore(value, copy.deepcopy(self.__getstate__(), memo))
-        return value
+        return _build(cls, _element(cls), values, capacity)
 
-    def __reduce__(
-        self,
-    ) -> tuple[
-        Callable[[type[Any], object, int, bytes], BoundedList[Any]],
-        tuple[type[Any], object, int, bytes],
-        object,
-    ]:
+    def __init__(self, values: Iterable[T] = (), *, capacity: int) -> None:
+        """Do nothing; `__new__` has built the value."""
+
+    def __class_getitem__(cls, element: object) -> types.GenericAlias:
+        """Return `cls` with its element type `element`.
+
+        Raises
+        ------
+        TypeError
+            If `element` is several types, or `cls` already fixes one.
+        """
+        return _parametrise(cls, element)
+
+    def __repr__(self) -> str:
+        elements = ", ".join(map(repr, self))
+        shown = f"{{{elements}}}" if elements else "set()"
         return (
-            _rebuild,
-            (type(self), self.element_annotation, self.capacity, self._stored()),
-            self.__getstate__(),
+            f"{type(self).__name__}[{_name(self._element_annotation)}]"
+            f"({shown}, capacity={self.capacity})"
         )
+
+    __copy__ = _copy
+    __deepcopy__ = _deepcopy
+    __reduce__ = _reduce
 
 
 class _Alias(types.GenericAlias):
-    """`BoundedList[T]` or a subclass's, which builds a value of element type `T` when called."""
+    """`BoundedList[T]`, `BoundedSet[T]` or a subclass's, which builds a value of element type `T` when called."""
 
     def __call__(
         self,
@@ -135,11 +223,32 @@ class _Alias(types.GenericAlias):
         *args: Any,
         capacity: int,
         **kwargs: Any,
-    ) -> BoundedList[Any]:
-        cls = cast("type[BoundedList[Any]]", self.__origin__)
-        value = _build(cls, list_element(self), values, capacity)
+    ) -> Any:
+        cls = cast("type[Any]", self.__origin__)
+        value = _build(cls, _element(self), values, capacity)
         cls.__init__(value, values, *args, capacity=capacity, **kwargs)
         return value
+
+
+def _element(hint: object) -> object:
+    """Return the one element type `hint` or its bases give, or None."""
+    args = bounded_args(hint)
+    return args[0] if args is not None and len(args) == 1 else None
+
+
+def _parametrise(cls: type, element: object) -> types.GenericAlias:
+    """Return `cls` with its element type `element`, as `__class_getitem__` does."""
+    # typing rebuilds an alias it evaluates with its arguments as a tuple.
+    if isinstance(element, tuple):
+        if len(element) != 1:
+            raise TypeError(
+                f"{cls.__name__} takes one element type, got {len(element)}"
+            )
+        (element,) = element
+    fixed = _element(cls)
+    if fixed is not None:
+        raise TypeError(f"{cls.__name__} already has element type {_name(fixed)}")
+    return _Alias(cls, element)
 
 
 def _restore(value: object, state: object) -> None:
@@ -157,15 +266,19 @@ def _name(element: object) -> str:
 
 def _build(cls: type[C], element: object, values: Iterable[Any], capacity: int) -> C:
     """Return a new `cls` of `capacity` holding `values`, or raise `TypeError` when `element` is None."""
+    listed = issubclass(cls, NativeCollection)
     if element is None:
         raise TypeError(
             f"{cls.__name__} needs its element type, as in"
-            f" {cls.__name__}[float](values, capacity=n)"
+            f" {cls.__name__}[{'float' if listed else 'int'}](values, capacity=n)"
         )
     codec, empty = _codec(cls, element, capacity)
-    value = cast("C", codec.decode(0, bytes(empty)))
-    value.extend(values)
-    return value
+    value: Any = codec.decode(0, bytes(empty))
+    if listed:
+        value.extend(values)
+    else:
+        value.update(values)
+    return cast("C", value)
 
 
 def _new_codec(cls: type, element: object, capacity: int) -> tuple[Types, int]:
@@ -189,8 +302,6 @@ def _codec(cls: type, element: object, capacity: int) -> tuple[Types, int]:
     return _cached_codec(cls, element, capacity)
 
 
-def _rebuild(
-    cls: type[Any], element: object, capacity: int, stored: bytes
-) -> BoundedList[Any]:
+def _rebuild(cls: type[Any], element: object, capacity: int, stored: bytes) -> Any:
     """Return the `cls` whose stored form is `stored`, as pickling gave it."""
-    return cast("BoundedList[Any]", _codec(cls, element, capacity)[0].decode(0, stored))
+    return _codec(cls, element, capacity)[0].decode(0, stored)

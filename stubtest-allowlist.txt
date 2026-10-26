@@ -2,6 +2,7 @@
 sharedbox._native.Field
 sharedbox._native.FieldWriter
 sharedbox._native.NativeCollectionIterator
+sharedbox._native.NativeSetIterator
 sharedbox._native.Reader
 sharedbox._native.Segment
 sharedbox._native.Sender
@@ -25,10 +26,13 @@ sharedbox._native.Stream.create
 sharedbox._native.FieldWriter.__init__
 sharedbox._native.NativeCollection.__init__
 sharedbox._native.NativeCollectionIterator.__init__
+sharedbox._native.NativeSet.__init__
+sharedbox._native.NativeSetIterator.__init__
 sharedbox._native.Reader.__init__
 sharedbox._native.Sender.__init__
 sharedbox._native.Stream.__init__
 # nb::is_generic adds __class_getitem__ as a built-in method, which the stub
 # declares through Generic instead
 sharedbox._native.NativeCollection.__class_getitem__
+sharedbox._native.NativeSet.__class_getitem__
 sharedbox._native.Slot.__class_getitem__

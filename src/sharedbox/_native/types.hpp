@@ -16,6 +16,7 @@
 #include <vector>
 
 #include "codec.hpp"
+#include "keys.hpp"
 
 namespace sharedbox {
 
@@ -44,10 +45,12 @@ struct NodeInfo {
     std::vector<bool> required;
     /// array: hand the converter uint16 elements, which it reinterprets (numpy has no bfloat16).
     bool as_uint16 = false;
-    /// list: read back as a NativeCollection holding the stored bytes, its class cls.
+    /// list, set: read back as a NativeCollection or NativeSet holding the stored bytes, its class cls.
     bool stored = false;
-    /// list: the element's schema text.
+    /// list, set: the element's schema text.
     std::string element_text;
+    /// set read back as a NativeSet: how its keys are checked and compared.
+    KeyPlan key;
 };
 
 /// Raises the ValueError for a stored value that Python cannot hold, naming where.
@@ -131,9 +134,11 @@ public:
     nb::object with_arrays(std::uint32_t index, PyObject *template_item, std::byte *data, nb::handle owner) const;
 
     const detail::type_node &node_of(const detail::type_ref &t) const { return tree_.node(t.node); }
-    /// The schema text of the elements of the list node t.
+    /// The schema text of the elements of the list or set node t.
     const std::string &element_text(const detail::type_ref &t) const { return nodes_[t.node].element_text; }
-    /// The annotation of the elements of the list node t, borrowed.
+    /// The key plan of the set node collection, empty unless it is read back as a NativeSet.
+    const KeyPlan &key_plan(const detail::type_ref &collection) const { return nodes_[collection.node].key; }
+    /// The annotation of the elements of the list or set node t, borrowed.
     PyObject *element_annotation(const detail::type_ref &t) const;
     /// The element of the list node list stored at slot; errors name label.
     nb::object decode_element(const detail::type_ref &list, const std::byte *slot, const std::string &label) const;
@@ -191,8 +196,9 @@ private:
     std::vector<std::string> labels_;
     std::string table_;
     std::vector<NodeInfo> nodes_;
-    /// NativeCollection, which encode_collection tests every value against.
+    /// NativeCollection and NativeSet, which encode_collection tests a list and a set value against.
     PyTypeObject *collection_type_ = nullptr;
+    PyTypeObject *set_type_ = nullptr;
     std::vector<std::uint64_t> bytearrays_;
     std::vector<bool> reusable_;
     std::vector<bool> via_types_;
