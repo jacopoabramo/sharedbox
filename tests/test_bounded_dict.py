@@ -2,6 +2,7 @@ import collections.abc
 import copy
 import decimal
 import gc
+import math
 import pickle
 import re
 import struct
@@ -458,11 +459,15 @@ def test_a_bounded_dict_nests_with_other_collections(unique_name: str) -> None:
 
 
 def test_a_bounded_dict_reverses_and_converts_as_a_dict(unique_name: str) -> None:
-    """Reverse a BoundedDict over its keys, and have numpy take it as it takes a dict, not as a sequence."""
+    """Reverse a BoundedDict over its keys, and have numpy take it as it takes a dict, not as a sequence, before and after a change."""
     with Catalogue.create(unique_name, {0: 0.5, 1: 1.5, 5: 2.5}) as box:
         weights = box.weights
     assert list(reversed(weights)) == [5, 1, 0]
     assert np.array(weights).shape == np.array(dict(weights)).shape == ()
+    weights[7] = 3.5
+    del weights[0]
+    assert list(reversed(weights)) == [7, 5, 1]
+    assert np.array(weights).shape == ()
 
 
 def test_a_bounded_dict_without_its_types_is_refused() -> None:
@@ -475,3 +480,232 @@ def test_a_bounded_dict_without_its_types_is_refused() -> None:
         ),
     ):
         build_layout(make(Annotated[BoundedDict, Capacity(4)]))
+
+
+@dataclass(frozen=True)
+class Gate:
+    shut: bool
+
+    def __post_init__(self) -> None:
+        if self.shut:
+            raise ValueError("the gate is shut")
+
+
+def test_a_bounded_dict_is_built_outside_a_box() -> None:
+    """Build a BoundedDict from a mapping or pairs, and refuse one past its capacity, of the wrong types or without its types."""
+    assert BoundedDict[int, float]({1: 0.5}, capacity=8) == {1: 0.5}
+    pairs = BoundedDict[int, float]([(2, 1.5), (1, 0.5), (2, 2.5)], capacity=2)
+    assert list(pairs.items()) == [(2, 2.5), (1, 0.5)]
+    assert BoundedDict[int, float](capacity=4) == {}
+    with pytest.raises(
+        ValueError,
+        match=re.escape(
+            "BoundedDict[int, float] holds at most 1 elements; the value would have 2"
+        ),
+    ):
+        BoundedDict[int, float]({1: 0.5, 2: 1.5}, capacity=1)
+    with pytest.raises(
+        TypeError, match=re.escape("BoundedDict[int, float] expects int, got str")
+    ):
+        BoundedDict[int, float]({"x": 0.5}, capacity=4)  # type: ignore[arg-type]
+    with pytest.raises(
+        TypeError, match=re.escape("BoundedDict[int, float](values, capacity=n)")
+    ):
+        BoundedDict({1: 0.5}, capacity=4)
+
+
+def test_repr_shows_the_types_and_capacity() -> None:
+    """Show the key and value types, the items in insertion order and the capacity, with a subclass's own name."""
+    assert (
+        repr(BoundedDict[int, float]({1: 0.5}, capacity=8))
+        == "BoundedDict[int, float]({1: 0.5}, capacity=8)"
+    )
+    assert (
+        repr(Holder({2: 1.0, 1: 0.5}, capacity=4))
+        == "Holder[int, float]({2: 1.0, 1: 0.5}, capacity=4)"
+    )
+
+
+def test_dict_methods_change_the_value() -> None:
+    """Set, delete, pop, pop items, set defaults, update and clear as a dict does, with dict's errors."""
+    weights = BoundedDict[int, float]({1: 0.5, 2: 1.5}, capacity=4)
+    weights[3] = 2.5
+    del weights[1]
+    with pytest.raises(KeyError) as missing:
+        del weights[1]
+    assert missing.value.args == (1,)
+    assert weights.pop(2) == 1.5
+    assert weights.pop(2, 7) == 7
+    with pytest.raises(KeyError) as missing:
+        weights.pop(2)
+    assert missing.value.args == (2,)
+    assert weights.setdefault(3, 9.0) == 2.5
+    assert weights.setdefault(4, 4.5) == 4.5
+    weights.update({5: 5.5})
+    weights.update([(6, 6.5)])
+    assert list(weights.items()) == [(3, 2.5), (4, 4.5), (5, 5.5), (6, 6.5)]
+    assert weights.popitem() == (6, 6.5)
+    weights.clear()
+    assert weights == {}
+    with pytest.raises(KeyError, match=re.escape("popitem(): dictionary is empty")):
+        weights.popitem()
+    with pytest.raises(TypeError, match="expects int, got str"):
+        weights["x"] = 1.0  # type: ignore[index]
+    with pytest.raises(KeyError):
+        del weights["x"]  # type: ignore[arg-type]
+    assert weights.pop("x", 7) == 7  # type: ignore[call-overload]
+    with pytest.raises(TypeError, match="expects float, got NoneType"):
+        weights.setdefault(1)  # type: ignore[call-arg]
+    with pytest.raises(ValueError, match="has length 3; 2 is required"):
+        weights.update([(1, 0.5, 2)])  # type: ignore[list-item]
+    with pytest.raises(TypeError, match="update expected at most 1 argument"):
+        weights.update({}, {})  # type: ignore[call-overload]
+    assert weights == {}
+    scores = BoundedDict[Name, float]({"a": 1.0}, capacity=4)
+    scores.update({"b": 2.0}, c=3.0, a=0.5)
+    assert list(scores.items()) == [("a", 0.5), ("b", 2.0), ("c", 3.0)]
+
+
+def test_merging_keeps_the_class_and_capacity() -> None:
+    """Return a Holder of the same capacity from | with a dict on either side, as dict orders the items."""
+    holder = Holder({1: 0.5, 2: 1.5}, capacity=4)
+    results: list[tuple[Any, list[tuple[int, float]]]] = [
+        (holder | {3: 2.5, 1: 9.0}, [(1, 9.0), (2, 1.5), (3, 2.5)]),
+        ({3: 2.5, 1: 9.0} | holder, [(3, 2.5), (1, 0.5), (2, 1.5)]),
+        (
+            holder | BoundedDict[int, float]({4: 4.5}, capacity=8),
+            [(1, 0.5), (2, 1.5), (4, 4.5)],
+        ),
+    ]
+    for result, expected in results:
+        assert type(result) is Holder
+        assert result.capacity == 4
+        assert list(result.items()) == expected
+    holder |= [(3, 3.5)]
+    assert list(holder.items()) == [(1, 0.5), (2, 1.5), (3, 3.5)]
+    with pytest.raises(TypeError):
+        holder | [(4, 1.0)]  # type: ignore[operator]
+    with pytest.raises(TypeError):
+        [(4, 1.0)] | holder  # type: ignore[operator]
+
+
+def test_mutations_refuse_a_value_that_was_never_built() -> None:
+    """Raise TypeError from update, | and |= with a BoundedDict that was never built, and keep the value."""
+    weights = BoundedDict[int, float]({1: 0.5}, capacity=4)
+    unbuilt = NativeDict.__new__(BoundedDict)
+    with pytest.raises(TypeError, match="never built"):
+        weights.update(unbuilt)
+    with pytest.raises(TypeError, match="never built"):
+        weights | unbuilt
+    with pytest.raises(TypeError, match="never built"):
+        weights |= unbuilt
+    assert weights == {1: 0.5}
+
+
+def test_deleting_keeps_the_order_across_the_index() -> None:
+    """Keep insertion order and find every remaining key while 9 keys are deleted one at a time from the middle."""
+    keys = [k * 7919 for k in range(9)]
+    weights = BoundedDict[int, float]({k: float(k) for k in keys}, capacity=16)
+    left = list(keys)
+    while left:
+        assert all(weights[k] == float(k) for k in left)
+        key = left.pop(len(left) // 2)
+        del weights[key]
+        assert key not in weights
+        assert list(weights) == left
+        assert all(k in weights for k in left)
+
+
+def test_a_nan_value_does_not_hide_its_key() -> None:
+    """Find a key whose value is nan, and compare unequal to a copy, as a dict holding a fresh nan does."""
+    weights = BoundedDict[int, float]({2: 1.5}, capacity=4)
+    weights[1] = math.nan
+    assert 1 in weights
+    assert math.isnan(weights[1])
+    assert weights != weights.copy()
+
+
+def test_replacing_a_value_keeps_the_position() -> None:
+    """Keep a key where it was when its value is replaced."""
+    weights = BoundedDict[int, float]({1: 0.5, 2: 1.5}, capacity=4)
+    weights[1] = 3.0
+    assert list(weights.items()) == [(1, 3.0), (2, 1.5)]
+
+
+def test_a_mutation_past_the_capacity_names_the_lengths() -> None:
+    """Raise ValueError from a set, a default, an update and |= of a new key at a full capacity, keep the value, and replace a value."""
+    weights = BoundedDict[int, float]({1: 0.5, 2: 1.5}, capacity=2)
+    with pytest.raises(
+        ValueError, match="holds at most 2 elements; the value would have 3"
+    ):
+        weights[3] = 1.0
+    with pytest.raises(ValueError, match="would have 3"):
+        weights.setdefault(3, 1.0)
+    with pytest.raises(ValueError, match="would have 3"):
+        weights.update({1: 9.0, 3: 1.0})
+    with pytest.raises(ValueError, match="would have 3"):
+        weights |= {2: 9.0, 3: 1.0}
+    assert list(weights.items()) == [(1, 0.5), (2, 1.5)]
+    weights[1] = 3.0
+    weights.update({2: 4.0})
+    assert list(weights.items()) == [(1, 3.0), (2, 4.0)]
+
+
+def test_merging_in_place_past_the_index_size() -> None:
+    """Merge in place more keys than a lookup scans, with replacements, in insertion order."""
+    weights = BoundedDict[int, float](dict.fromkeys(range(10), 0.0), capacity=32)
+    weights |= dict.fromkeys(range(5, 20), 1.0)
+    expected = [(k, 0.0 if k < 5 else 1.0) for k in range(20)]
+    assert list(weights.items()) == expected
+    assert all(weights[k] == v for k, v in expected)
+
+
+def test_a_value_merges_with_itself() -> None:
+    """Merge and update a value with itself, which takes its mutex once at a time, and leave it unchanged."""
+    items = {k: float(k) for k in range(12)}
+    weights = BoundedDict[int, float](items, capacity=16)
+    weights |= weights
+    weights.update(weights)
+    assert list(weights.items()) == list(items.items())
+    assert weights | weights == items
+
+
+def test_a_popitem_that_fails_to_decode_changes_nothing() -> None:
+    """Keep every item when the value pop or popitem would return raises as it is built."""
+    shut = Gate(False)
+    object.__setattr__(shut, "shut", True)
+    gates = BoundedDict[int, Gate]({1: Gate(False), 2: shut}, capacity=4)
+    with pytest.raises(ValueError, match="the gate is shut"):
+        gates.pop(2)
+    with pytest.raises(ValueError, match="the gate is shut"):
+        gates.popitem()
+    assert list(gates) == [1, 2]
+    del gates[2]
+    assert gates.popitem() == (1, Gate(False))
+
+
+def test_changing_the_size_while_iterating_raises() -> None:
+    """Raise RuntimeError from an iterator whose dict changed size."""
+    weights = BoundedDict[int, float]({1: 0.5, 2: 1.5}, capacity=8)
+    with pytest.raises(RuntimeError, match="dictionary changed size during iteration"):
+        for key in weights:
+            weights[key + 10] = 1.0
+
+
+@pytest.mark.parametrize("size", [3, 40])
+def test_a_first_deletion_after_a_read_removes_forged_copies(size: int) -> None:
+    """Remove every forged copy of a key on the first del or pop after a read, keeping the order of the rest, and replace the value a lookup finds."""
+    rest = [(k, float(k)) for k in range(3, size)]
+    items = [(1, 0.5), (2, 1.0), *rest, (1, 9.0)]
+    deleted = forged(items)
+    del deleted[1]
+    assert 1 not in deleted
+    assert list(deleted.items()) == [(2, 1.0), *rest]
+    popped = forged(items)
+    assert popped.pop(1) == 9.0
+    assert 1 not in popped
+    assert list(popped.items()) == [(2, 1.0), *rest]
+    replaced = forged(items)
+    replaced[1] = 5.0
+    assert replaced == {1: 5.0, 2: 1.0, **dict(rest)}
+    assert list(replaced.items()) == [(1, 5.0), (2, 1.0), *rest]

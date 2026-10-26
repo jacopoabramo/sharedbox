@@ -13,6 +13,7 @@
 #include <memory>
 #include <new>
 #include <span>
+#include <string>
 #include <string_view>
 #include <system_error>
 #include <type_traits>
@@ -825,10 +826,37 @@ PyObject *dict_subscript(PyObject *self, PyObject *key) {
     }
 }
 
+// A slot for the same reason as dict_subscript: a bound __setitem__ or __delitem__ would also be installed as
+// sq_ass_item. A null value means del.
+int dict_ass_subscript(PyObject *self, PyObject *key, PyObject *value) {
+    try {
+        if (!nb::inst_ready(self))
+            sharedbox::raise(PyExc_TypeError, "the value was never built");
+        auto *d = nb::inst_ptr<sharedbox::NativeDict>(self);
+        if (value == nullptr)
+            d->delitem(key);
+        else
+            d->setitem(key, value);
+        return 0;
+    } catch (...) {
+        set_error();
+        return -1;
+    }
+}
+
 PyType_Slot dict_slots[] = {{Py_tp_traverse, reinterpret_cast<void *>(store_traverse<sharedbox::NativeDict>)},
                             {Py_tp_clear, reinterpret_cast<void *>(store_clear<sharedbox::NativeDict>)},
                             {Py_mp_subscript, reinterpret_cast<void *>(dict_subscript)},
+                            {Py_mp_ass_subscript, reinterpret_cast<void *>(dict_ass_subscript)},
                             {0, nullptr}};
+
+/// Raises TypeError when given, the number of arguments passed to name, passes most, as dict's methods do.
+void at_most(const char *name, std::size_t most, std::size_t given) {
+    if (given > most)
+        sharedbox::raise(PyExc_TypeError, std::string(name) + " expected at most " + std::to_string(most) +
+                                              (most == 1 ? " argument, got " : " arguments, got ") +
+                                              std::to_string(given));
+}
 
 /// A view of self of the collections.abc class name: KeysView, ValuesView or ItemsView.
 nb::object view(const char *name, nb::handle self) {
@@ -1289,6 +1317,42 @@ NB_MODULE(_native, m) {
         .def("get", &sharedbox::NativeDict::get, nb::arg().none(), nb::arg().none() = nb::none())
         .def("__contains__", &sharedbox::NativeDict::contains, nb::arg().none())
         .def("__eq__", &sharedbox::NativeDict::equals, nb::arg().none())
+        .def(
+            "pop",
+            // nb::args, since a default that is not given must differ from every value, None included.
+            [](sharedbox::NativeDict &d, nb::handle key, nb::args rest) {
+                at_most("pop", 2, rest.size() + 1);
+                return d.pop(key, rest.size() != 0 ? nb::handle(PyTuple_GetItem(rest.ptr(), 0)) : nb::handle());
+            },
+            nb::arg().none(), nb::arg("args"))
+        .def("popitem", &sharedbox::NativeDict::popitem)
+        .def("setdefault", &sharedbox::NativeDict::setdefault, nb::arg().none(), nb::arg().none() = nb::none())
+        .def("update",
+             [](sharedbox::NativeDict &d, nb::args others, nb::kwargs pairs) {
+                 at_most("update", 1, others.size());
+                 d.update(others.size() != 0 ? nb::handle(PyTuple_GetItem(others.ptr(), 0)) : nb::handle(), pairs);
+             })
+        .def("clear", &sharedbox::NativeDict::remove_all)
+        .def(
+            "__or__",
+            [](nb::pointer_and_handle<sharedbox::NativeDict> self, nb::handle other) {
+                return sharedbox::NativeDict::merge(self, other, false);
+            },
+            nb::arg().none())
+        .def(
+            "__ror__",
+            [](nb::pointer_and_handle<sharedbox::NativeDict> self, nb::handle other) {
+                return sharedbox::NativeDict::merge(self, other, true);
+            },
+            nb::arg().none())
+        .def(
+            "__ior__",
+            // Any argument update takes, as dict's |= takes it.
+            [](nb::pointer_and_handle<sharedbox::NativeDict> self, nb::handle other) {
+                self.p->update(other, nb::kwargs());
+                return nb::borrow(self.h);
+            },
+            nb::arg().none())
         .def("copy", &sharedbox::NativeDict::copy)
         .def("keys", [](nb::handle self) { return view("KeysView", self); })
         .def("values", [](nb::handle self) { return view("ValuesView", self); })

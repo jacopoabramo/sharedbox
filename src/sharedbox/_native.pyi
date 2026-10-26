@@ -6,6 +6,7 @@ from collections.abc import (
     Iterator,
     KeysView,
     Mapping,
+    MutableMapping,
     MutableSequence,
     MutableSet,
     Sequence,
@@ -27,6 +28,7 @@ from typing import (
     overload,
 )
 
+from _typeshed import SupportsKeysAndGetItem
 from typing_extensions import disjoint_base
 
 from ._box import RefEntry
@@ -811,7 +813,7 @@ class NativeSetIterator(Generic[_T]):
     def __next__(self) -> _T: ...
 
 @disjoint_base
-class NativeDict(Mapping[_K, _V]):
+class NativeDict(MutableMapping[_K, _V]):
     """A dict value held as its field stores it: the count and the slots it uses, each a key and its value.
 
     A read of a dict field declared with a `NativeDict` subclass makes one,
@@ -859,6 +861,129 @@ class NativeDict(Mapping[_K, _V]):
         ------
         TypeError
             If `other` is a value that was never built.
+        """
+    def __setitem__(self, key: _K, value: _V, /) -> None:
+        """Set the value of `key`, in its place when the dict holds it, or after the last item.
+
+        Raises
+        ------
+        TypeError
+            If `key` or `value` is not of the field's type.
+        ValueError
+            If `key` or `value` does not fit, `key` is one the field
+            refuses (a nan, a NaT, an aware `datetime` or `time`), or `key`
+            is new and the dict is full.
+        """
+    def __delitem__(self, key: _K, /) -> None:
+        """Remove `key` and its value, keeping the order of the other items.
+
+        Raises
+        ------
+        KeyError
+            If the dict holds no such key.
+        """
+    @overload
+    def pop(self, key: _K, /) -> _V:
+        """Remove `key` and return its value.
+
+        A value that fails to decode stays in the dict.
+
+        Raises
+        ------
+        KeyError
+            If the dict holds no such key.
+        """
+    @overload
+    def pop(self, key: _K, default: _V, /) -> _V: ...
+    @overload
+    def pop(self, key: _K, default: _T, /) -> _V | _T:
+        """Remove `key` and return its value, or return `default` when the dict holds no such key."""
+    def popitem(self) -> tuple[_K, _V]:
+        """Remove the last item and return it.
+
+        An item that fails to decode stays in the value.
+
+        Raises
+        ------
+        KeyError
+            If the value is empty.
+        """
+    @overload
+    def setdefault(
+        self: NativeDict[_K, _T | None], key: _K, default: None = None, /
+    ) -> _T | None: ...
+    @overload
+    def setdefault(self, key: _K, default: _V, /) -> _V:
+        """Return the value of `key`, or set it to `default` and return `default` when the dict holds no such key.
+
+        `default` is checked only when it is set.
+
+        Raises
+        ------
+        TypeError
+            If `key`, or `default` when it is set, is not of the field's type.
+        ValueError
+            As `__setitem__` raises it.
+        """
+    @overload
+    def update(self, other: SupportsKeysAndGetItem[_K, _V], /) -> None: ...
+    @overload
+    def update(
+        self: NativeDict[str, _V],
+        other: SupportsKeysAndGetItem[str, _V],
+        /,
+        **kwargs: _V,
+    ) -> None: ...
+    @overload
+    def update(self, other: Iterable[tuple[_K, _V]], /) -> None: ...
+    @overload
+    def update(
+        self: NativeDict[str, _V], other: Iterable[tuple[str, _V]], /, **kwargs: _V
+    ) -> None: ...
+    @overload
+    def update(self: NativeDict[str, _V], **kwargs: _V) -> None:
+        """Set the items of `other`, then those of `kwargs`, all of them or none.
+
+        `other` is read as a mapping when it has a `keys` method, and
+        otherwise as pairs.
+
+        Raises
+        ------
+        TypeError
+            If a key or value is not of the field's type, an element of
+            `other` is not a pair, or `other` is a value that was never
+            built.
+        ValueError
+            As `__setitem__` raises it, if an element of `other` is not two
+            long, or if the new keys would pass the capacity.
+        """
+    def clear(self) -> None:
+        """Remove every item."""
+    def __or__(self, other: Mapping[_K, _V], /) -> Self:
+        """Return a new value of the same class and capacity holding these items, then those of `other`.
+
+        Raises
+        ------
+        TypeError
+            If a key or value of `other` is not of the field's type, or
+            `other` is a value that was never built.
+        ValueError
+            As `__setitem__` raises it, or if the result would hold more
+            keys than the capacity.
+        """
+    def __ror__(self, other: Mapping[_K, _V], /) -> Self:
+        """Return a new value of the same class and capacity holding the items of `other`, then these, as `|` does."""
+    def __ior__(self, other: Mapping[_K, _V] | Iterable[tuple[_K, _V]], /) -> Self:
+        """Set the items of `other`, all of them or none, as `update` does.
+
+        Raises
+        ------
+        TypeError
+            If a key or value of `other` is not of the field's type, or
+            `other` is a value that was never built.
+        ValueError
+            As `__setitem__` raises it, or if the dict would hold more keys
+            than the capacity; it is left as it was.
         """
     def keys(self) -> KeysView[_K]: ...
     def values(self) -> ValuesView[_V]: ...

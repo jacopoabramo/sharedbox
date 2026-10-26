@@ -103,6 +103,9 @@ protected:
     /// Where a dict's value starts in a slot; 0 for a set, whose slots hold only a key.
     std::uint32_t value_offset_ = 0;
 
+    /// The last slot before end holding key, or no_slot, comparing key with each slot.
+    std::uint32_t scan(const std::byte *key, std::uint32_t end) const;
+
 private:
     /// The end of the message saying why key, at the start of a slot, is refused, or nullptr when it is not;
     /// stores a -0.0 in it as 0.0.
@@ -110,8 +113,6 @@ private:
     /// The hash of key, masked through scratch, key_size_ bytes, when the plan has checks.
     std::uint64_t hash_of(const std::byte *key, std::byte *scratch) const;
     bool same(const std::byte *a, const std::byte *b) const;
-    /// The last slot before end holding key, or no_slot, comparing key with each slot.
-    std::uint32_t scan(const std::byte *key, std::uint32_t end) const;
     /// Builds the index over every slot, at a power of two of entries at least twice the count.
     void build();
     /// Replaces the index with an empty one of a power of two of entries at least twice keys.

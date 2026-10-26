@@ -222,6 +222,9 @@ class BoundedDict(NativeDict[K, V]):
     Declared as `Annotated[BoundedDict[K, V], Capacity(n)]` or with
     `field(capacity=n)`, it is stored as `dict[K, V]` is, and a read
     returns one. It keeps its items in insertion order, as a `dict` does.
+    A change that would leave more keys than the capacity raises
+    `ValueError` and leaves the value as it was. `|` takes any mapping on
+    either side and returns a value of this class and capacity.
 
     Keys follow the rules of `BoundedSet` elements: they are compared by
     their stored bytes, so a declaration refuses the same key types, and a
@@ -379,7 +382,9 @@ def _new_codec(cls: type, element: object, capacity: int) -> tuple[Types, int]:
         Annotated[_Alias(cls, element), Capacity(capacity)],
         label=f"{cls.__name__}[{_name(element)}]",
     )
-    return item.types, item.spec.members[0].offset
+    # The slots start at the alignment, which is at least 4, the size of the count;
+    # a dict's first member offset is its key's place in a slot, not the slots'.
+    return item.types, item.spec.alignment
 
 
 _cached_codec = functools.lru_cache(_new_codec)
