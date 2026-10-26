@@ -565,7 +565,6 @@ def test_forged_duplicates_and_nan_are_found_when_a_key_is_looked_up(
     rest = list(range(3, size))
     ints = forged(int, [pack_int(k) for k in [1, 2, 1, *rest]])
     assert 1 in ints
-    assert len(ints) == size
     assert 1 in ints
     assert len(ints) == size - 1
     assert list(ints) == [1, 2, *rest]
@@ -583,7 +582,7 @@ def test_forged_duplicates_and_nan_are_found_when_a_key_is_looked_up(
 def test_a_first_change_after_a_read_handles_forged_copies(
     size: int, key: type, pack: collections.abc.Callable[[Any], bytes]
 ) -> None:
-    """Remove every forged copy of a key on the first discard or remove after a read, and add no key it holds."""
+    """Remove every forged copy of a key on the first discard or remove after a read, add no key it holds, and add one when forged copies fill the capacity."""
     keys = [1, 2, *range(3, size), 1]
     discarded = forged(key, [pack(k) for k in keys])
     discarded.discard(1)
@@ -596,7 +595,11 @@ def test_a_first_change_after_a_read_handles_forged_copies(
         removed.remove(1)
     added = forged(key, [pack(k) for k in keys])
     added.add(2)
-    assert sorted(added) == sorted(keys)
+    assert len(added) == size
+    # 16 slots fill a capacity of 16, but 1 is stored twice, so a 16th key fits.
+    full = forged(key, [pack(k) for k in [1, *range(1, 16)]])
+    full.add(key(100))
+    assert key(100) in full
 
 
 @pytest.mark.parametrize("size", [3, 12])

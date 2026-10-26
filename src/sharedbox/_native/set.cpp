@@ -40,6 +40,9 @@ void NativeSet::add(nb::handle value) {
         nb::ft_lock_guard guard(mutex_);
         if (lookup(key.data()) != no_slot)
             return;
+        // Duplicates another program stored may fill the capacity; dropping them may make room.
+        if (count_ == capacity_)
+            ensure_checked(0);
         if (count_ < capacity_)
             return append_slot(key.data());
     }
