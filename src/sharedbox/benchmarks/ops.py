@@ -30,7 +30,7 @@ from typing import Annotated, Any
 import numpy as np
 import pyperf
 
-from sharedbox import BoundedList, Capacity, DType, Shape, SharedBox
+from sharedbox import BoundedList, BoundedSet, Capacity, DType, Shape, SharedBox
 
 INT = struct.Struct("<q")
 FLOAT = struct.Struct("<d")
@@ -158,6 +158,9 @@ class Typed(SharedBox):
     s16: Annotated[set[int], Capacity(16)]
     s1k: Annotated[set[int], Capacity(1024)]
     s64k: Annotated[set[int], Capacity(65536)]
+    bs16: Annotated[BoundedSet[int], Capacity(16)]
+    bs1k: Annotated[BoundedSet[int], Capacity(1024)]
+    bs64k: Annotated[BoundedSet[int], Capacity(65536)]
     d16: Annotated[dict[int, float], Capacity(16)]
     d1k: Annotated[dict[int, float], Capacity(1024)]
     d64k: Annotated[dict[int, float], Capacity(65536)]
@@ -175,6 +178,9 @@ B64K = BoundedList[float](F64K, capacity=65536)
 S16 = set(range(16))
 S1K = set(range(1024))
 S64K = set(range(65536))
+BS16 = BoundedSet[int](S16, capacity=16)
+BS1K = BoundedSet[int](S1K, capacity=1024)
+BS64K = BoundedSet[int](S64K, capacity=65536)
 D16 = dict.fromkeys(range(16), 0.5)
 D1K = dict.fromkeys(range(1024), 0.5)
 D64K = dict.fromkeys(range(65536), 0.5)
@@ -202,6 +208,9 @@ def open_typed() -> tuple[Any, ...]:
         S16,
         S1K,
         S64K,
+        BS16,
+        BS1K,
+        BS64K,
         D16,
         D1K,
         D64K,
@@ -428,6 +437,18 @@ BENCHMARKS: list[tuple[str, str, str, list[str]]] = [
     ("read set64k", "SharedBox", TYPED, ["typed.s64k"]),
     ("in set64k", "SharedBox", TYPED, ["32768 in typed.s64k"]),
     ("iterate set64k", "SharedBox", TYPED, ["for _ in typed.s64k: pass"]),
+    ("write set16", "BoundedSet", TYPED, ["typed.bs16 = BS16"]),
+    ("read set16", "BoundedSet", TYPED, ["typed.bs16"]),
+    ("in set16", "BoundedSet", TYPED, ["8 in typed.bs16"]),
+    ("iterate set16", "BoundedSet", TYPED, ["for _ in typed.bs16: pass"]),
+    ("write set1k", "BoundedSet", TYPED, ["typed.bs1k = BS1K"]),
+    ("read set1k", "BoundedSet", TYPED, ["typed.bs1k"]),
+    ("in set1k", "BoundedSet", TYPED, ["512 in typed.bs1k"]),
+    ("iterate set1k", "BoundedSet", TYPED, ["for _ in typed.bs1k: pass"]),
+    ("write set64k", "BoundedSet", TYPED, ["typed.bs64k = BS64K"]),
+    ("read set64k", "BoundedSet", TYPED, ["typed.bs64k"]),
+    ("in set64k", "BoundedSet", TYPED, ["32768 in typed.bs64k"]),
+    ("iterate set64k", "BoundedSet", TYPED, ["for _ in typed.bs64k: pass"]),
     ("write dict16", "SharedBox", TYPED, ["typed.d16 = D16"]),
     ("read dict16", "SharedBox", TYPED, ["typed.d16"]),
     ("in dict16", "SharedBox", TYPED, ["8 in typed.d16"]),
