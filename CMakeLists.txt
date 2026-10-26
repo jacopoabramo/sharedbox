@@ -41,6 +41,7 @@ nanobind_add_module(_native
     STABLE_ABI
     FREE_THREADED
     LTO
+    NOMINSIZE
     NB_DOMAIN sharedbox
     src/sharedbox/_native/codec.cpp
     src/sharedbox/_native/collection.cpp
