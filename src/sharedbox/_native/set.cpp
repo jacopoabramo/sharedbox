@@ -191,9 +191,12 @@ void NativeSet::update(nb::args iterables) {
     // ponytail: every element is encoded before duplicates are dropped, so a long iterable of few distinct
     // keys costs its length in memory; deduplicate while encoding if that shows up.
     std::vector<std::byte> encoded;
+    std::vector<std::byte> part;
     for (nb::handle iterable : iterables) {
         refuse_unbuilt(iterable);
-        encode_keys(iterable, encoded, false);
+        part.clear();
+        keys_of(iterable, part, false);
+        encoded.insert(encoded.end(), part.begin(), part.end());
     }
     std::size_t refused = 0;
     {
