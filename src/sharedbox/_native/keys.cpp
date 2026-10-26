@@ -227,28 +227,29 @@ std::uint32_t KeyedStore::scan(const std::byte *key, std::uint32_t end) const {
 }
 
 std::uint32_t KeyedStore::lookup(const std::byte *key) {
-    if (checked_ || scanned_) {
+    if (checked_ || scans_ == scans_before_index) {
         ensure_checked(0);
         return find(key);
     }
     codec();
-    // Every slot is checked, as ensure_checked would, so a refused key raises whichever slot holds it.
-    if (!plan_->checks.empty())
+    // The first scan checks every slot, as ensure_checked would, so a refused key raises whichever slot holds
+    // it; the count goes up only after, so a refused value raises again on its next lookup.
+    if (scans_ == 0 && !plan_->checks.empty())
         for (std::uint32_t at = 0; at < count_; ++at)
             if (canonical(slot(at)) != nullptr)
                 corrupt(label_);
-    scanned_ = true;
+    ++scans_;
     return scan(key, count_);
 }
 
 bool KeyedStore::remove_key(const std::byte *key) {
-    const bool first = !checked_ && !scanned_;
+    const bool scanning = !checked_ && scans_ < scans_before_index;
     std::uint32_t at = lookup(key);
     if (at == no_slot)
         return false;
     remove_moving_last(at);
     // scan found the last copy, and the slot moved into at was after it, so earlier slots hold any other.
-    if (first)
+    if (scanning)
         while ((at = scan(key, at)) != no_slot)
             remove_moving_last(at);
     return true;

@@ -21,6 +21,9 @@ inline constexpr std::uint32_t no_guard = static_cast<std::uint32_t>(-1);
 
 /// The most keys a lookup scans; above it, the lookup probes the index.
 inline constexpr std::uint32_t scan_limit = 8;
+/// How many lookups a value scans before checking its keys and building the index: a scan costs well under
+/// a hundredth of building the index, so a value read for a few tests or changes never builds one.
+inline constexpr std::uint32_t scans_before_index = 64;
 /// No slot; a capacity is at most 2**20, so no slot index reaches it.
 inline constexpr std::uint32_t no_slot = 0xffffffff;
 
@@ -71,12 +74,11 @@ protected:
     bool encode_key(nb::handle value, std::byte *out, bool quiet) const;
     /// The slot holding key, or no_slot.
     std::uint32_t find(const std::byte *key);
-    /// The slot of a set holding key, or no_slot. The first lookup on keys not yet checked compares key with
-    /// every slot through scan and checks each as ensure_checked does, but drops no duplicate and builds no
-    /// index, since a value read for one test or change gains nothing from them; a later one runs
-    /// ensure_checked and find.
+    /// The slot of a set holding key, or no_slot. Until scans_before_index lookups on keys not yet checked,
+    /// a lookup compares key with every slot through scan, dropping no duplicate and building no index; the
+    /// first of them checks each slot as ensure_checked does. Later ones run ensure_checked and find.
     std::uint32_t lookup(const std::byte *key);
-    /// Removes key from a set and returns whether it held it. On the first lookup, whose keys may hold a
+    /// Removes key from a set and returns whether it held it. While lookups scan keys that may hold a
     /// duplicate, it removes every slot holding key.
     bool remove_key(const std::byte *key);
     /// Appends a slot holding encoded and indexes it; the caller has checked the capacity.
@@ -93,8 +95,8 @@ protected:
     KeyIndex index_;
     /// Whether the stored keys have passed ensure_checked; a value that starts empty has.
     bool checked_ = false;
-    /// Whether a lookup has scanned the keys while they were not yet checked.
-    bool scanned_ = false;
+    /// How many lookups have scanned the keys while they were not yet checked.
+    std::uint32_t scans_ = 0;
     const KeyPlan *plan_ = nullptr;
     std::uint32_t key_size_ = 0;
 

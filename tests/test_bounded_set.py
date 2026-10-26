@@ -561,11 +561,11 @@ def pack_float(x: float) -> bytes:
 def test_forged_duplicates_and_nan_are_found_when_a_key_is_looked_up(
     size: int,
 ) -> None:
-    """Refuse a forged nan and rewrite a forged -0.0 on the first lookup, and drop a forged duplicate on the second, by scan and by index."""
+    """Refuse a forged nan and rewrite a forged -0.0 on the first lookup, and drop a forged duplicate when a change checks the keys, by scan and by index."""
     rest = list(range(3, size))
     ints = forged(int, [pack_int(k) for k in [1, 2, 1, *rest]])
     assert 1 in ints
-    assert 1 in ints
+    ints.update(())
     assert len(ints) == size - 1
     assert list(ints) == [1, 2, *rest]
     others = [float(k) for k in rest]
@@ -600,6 +600,18 @@ def test_a_first_change_after_a_read_handles_forged_copies(
     full = forged(key, [pack(k) for k in [1, *range(1, 16)]])
     full.add(key(100))
     assert key(100) in full
+
+
+def test_lookups_find_every_key_before_and_after_the_index_is_built() -> None:
+    """Find every stored key and no other through many lookups and changes on one read, scanning first and then through the index."""
+    value = forged(int, [pack_int(k) for k in range(40)])
+    for k in range(100):
+        assert (k in value) == (k < 40)
+        value.discard(1000 + k)
+    value.discard(5)
+    value.add(5)
+    value.remove(7)
+    assert sorted(value) == [k for k in range(40) if k != 7]
 
 
 @pytest.mark.parametrize("size", [3, 12])
