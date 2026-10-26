@@ -268,6 +268,8 @@ void KeyedStore::remove_moving_last(std::uint32_t at) {
 void KeyedStore::forget() { index_ = KeyIndex{}; }
 
 void KeyedStore::ensure_checked(std::uint32_t value_offset) {
+    // Raises for a value the collector cleared, whose plan_ points into the Types it no longer holds.
+    codec();
     if (checked_)
         return;
     // Every key is checked before any slot moves, so a refused one leaves the count as it was.
