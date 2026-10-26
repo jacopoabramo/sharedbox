@@ -195,6 +195,29 @@ std::uint32_t KeyedStore::find(const std::byte *key) {
 }
 
 std::uint32_t KeyedStore::scan(const std::byte *key, std::uint32_t end) const {
+    if (plan_->mask.empty() && key_size_ == 8 && stride_ == 8) {
+        std::uint64_t wanted;
+        std::memcpy(&wanted, key, sizeof wanted);
+        const std::byte *first = slot(0);
+        constexpr std::uint32_t block = 32;
+        while (end > 0) {
+            const std::uint32_t start = end > block ? end - block : 0;
+            // No branch and no early exit, so the compiler compares a block with SIMD instructions; only a
+            // block holding key is searched one slot at a time.
+            bool any = false;
+            for (std::uint32_t i = start; i < end; ++i) {
+                std::uint64_t stored;
+                std::memcpy(&stored, first + 8 * std::size_t{i}, sizeof stored);
+                any |= stored == wanted;
+            }
+            if (any)
+                for (std::uint32_t i = end; i-- > start;)
+                    if (std::memcmp(first + 8 * std::size_t{i}, key, 8) == 0)
+                        return i;
+            end = start;
+        }
+        return no_slot;
+    }
     for (std::uint32_t at = end; at-- > 0;)
         if (same(slot(at), key))
             return at;
