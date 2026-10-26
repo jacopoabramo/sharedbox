@@ -153,8 +153,8 @@ class BoundedSet(NativeSet[T]):
     set and return a value of this class and capacity, on either side of
     the operator, and the comparisons take any set. `&`, `value - other`
     and the comparisons treat an element of the other set that this one
-    cannot hold as absent; `|`, `^` and `other - value` raise `TypeError`
-    for it.
+    cannot hold as absent; `|`, `^` and `other - value` raise the error
+    that adding it would.
 
     A subclass is declared and read back the same way, generic as
     `class MySet(BoundedSet[T])` used as `MySet[int]`, or with its element
