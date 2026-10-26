@@ -16,10 +16,18 @@ element. In a set of more than 8 elements, the next one hashes every
 element once into a table the value keeps in its own memory, not in the
 box, and from then on each test or change looks up only the one key.
 
-Use it for a large set that you read or write whole and test for a few
-keys at a time. Going through every element decodes each one, and so does
-converting the value to a builtin `set`, so a set you always iterate or
-convert gains little.
+How much that saves depends on the size and on what you do with the value.
+In `benchbox ops` on Windows with CPython 3.11, reading a set and testing
+one key with `in` takes about 1.1 times as long as with a `set` field at 16
+elements, and is about 30 times faster at 1024 and about 100 times faster
+at 65536. Reading a set, changing one key and writing it back is about 2
+times faster at 16 elements, 20 times faster at 1024 and 40 times faster at
+65536. Going through every element decodes each one, so it takes about 1.5
+times as long as with a `set` at 16 elements, about as long at 1024, and is
+about 1.5 times faster at 65536. So use it for a large set that you read or
+write whole and test or change a few keys at a time. A set you always
+convert to a builtin `set` gains little, because the conversion decodes
+every element anyway.
 
 ## 1. Declare the field as a BoundedSet
 
