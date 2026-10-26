@@ -102,6 +102,8 @@ protected:
     /// encoded slots of encoded; returns the count it would have had instead when that passes the
     /// capacity. The caller holds the mutex.
     std::size_t splice(std::size_t start, std::size_t stop, const std::byte *encoded, std::size_t n);
+    /// The count and used slots; the caller holds the mutex.
+    std::span<const std::byte> used() const { return {data_.get(), slots_ + std::size_t{count_} * stride_}; }
     /// Stores count as the count; the caller holds the mutex.
     void set_count(std::size_t count);
     std::byte *slot(std::size_t at) const { return data_.get() + slots_ + at * stride_; }

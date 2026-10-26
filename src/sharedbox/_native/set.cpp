@@ -11,7 +11,8 @@ nb::object NativeSet::copy(nb::pointer_and_handle<NativeSet> self) {
     std::vector<std::byte> stored;
     {
         nb::ft_lock_guard guard(s.mutex_);
-        stored.assign(s.data_.get(), s.data_.get() + s.slots_ + std::size_t{s.count_} * s.stride_);
+        const std::span<const std::byte> used = s.used();
+        stored.assign(used.begin(), used.end());
     }
     return like(self, stored);
 }

@@ -134,7 +134,8 @@ std::size_t SlotStore::splice(std::size_t start, std::size_t stop, const std::by
 
 nb::bytes SlotStore::stored() const {
     nb::ft_lock_guard guard(mutex_);
-    return nb::bytes(data_.get(), slots_ + std::size_t{count_} * stride_);
+    const std::span<const std::byte> bytes = used();
+    return nb::bytes(bytes.data(), bytes.size());
 }
 
 bool SlotStore::has_elements(const std::string &text, PyObject *annotation) const {
@@ -152,9 +153,9 @@ std::size_t SlotStore::copy_to(std::byte *out, std::uint32_t capacity, const std
     if (count_ > capacity)
         raise(PyExc_ValueError, name + " holds at most " + std::to_string(capacity) + " elements; the value has " +
                                     std::to_string(count_));
-    const std::size_t size = slots_ + std::size_t{count_} * stride_;
-    std::memcpy(out, data_.get(), size);
-    return size;
+    const std::span<const std::byte> bytes = used();
+    std::memcpy(out, bytes.data(), bytes.size());
+    return bytes.size();
 }
 
 int SlotStore::traverse(visitproc visit, void *arg) const {
