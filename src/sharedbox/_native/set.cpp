@@ -73,6 +73,7 @@ nb::object NativeSet::pop() {
         std::uint32_t at = no_slot;
         {
             nb::ft_lock_guard guard(mutex_);
+            ensure_checked(0);
             if (count_ != 0) {
                 at = count_ - 1;
                 std::memcpy(copy.data(), slot(at), stride_);

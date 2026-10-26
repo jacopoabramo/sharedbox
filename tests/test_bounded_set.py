@@ -577,6 +577,21 @@ def test_forged_duplicates_and_nan_are_found_when_a_key_is_looked_up(
     assert math.copysign(1, next(iter(zero))) == 1
 
 
+@pytest.mark.parametrize("size", [3, 12])
+def test_a_pop_checks_forged_keys_first(size: int) -> None:
+    """Drop a forged duplicate before a pop takes the last slot, and refuse a forged nan, by scan and by index."""
+    rest = list(range(3, size))
+    ints = forged(int, [pack_int(k) for k in [1, 2, *rest, 1]])
+    assert ints.pop() == (rest[-1] if rest else 2)
+    assert len(ints) == size - 2
+    assert 1 in ints
+    others = [float(k) for k in rest]
+    nan = forged(float, [pack_float(x) for x in [1.0, *others, math.nan]])
+    with pytest.raises(ValueError, match="the stored value"):
+        nan.pop()
+    assert len(nan) == size - 1
+
+
 def test_a_stream_item_reused_for_a_shorter_string_finds_it(
     names: collections.abc.Callable[[str], str],
 ) -> None:
