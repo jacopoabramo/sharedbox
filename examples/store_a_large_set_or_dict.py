@@ -1,9 +1,9 @@
-"""The script of the guide "How to store a large set"."""
+"""The script of the guide "How to store a large set or dict"."""
 
 # --8<-- [start:declare]
 from typing import Annotated
 
-from sharedbox import BoundedSet, Capacity, SharedBox
+from sharedbox import BoundedDict, BoundedSet, Capacity, SharedBox
 
 
 class Catalogue(SharedBox, name="example-catalogue"):
@@ -74,6 +74,33 @@ labels = Labels(Tags([3, 7, 5], capacity=1024))
 print(labels.tags.newest())  # 7
 # --8<-- [end:subclass]
 
+
+# --8<-- [start:dict-declare]
+class Scores(SharedBox, name="example-scores"):
+    by_id: Annotated[BoundedDict[int, float], Capacity(4096)]
+
+
+scores = Scores(BoundedDict[int, float](dict.fromkeys(range(3000), 1.0), capacity=4096))
+by_id = scores.by_id
+print(by_id[2999], by_id.get(5000), 5000 in by_id)  # 1.0 None False
+# --8<-- [end:dict-declare]
+
+# --8<-- [start:dict-change]
+by_id[0] = 0.5
+del by_id[1]
+by_id[5000] = 2.0
+scores.by_id = by_id
+keys = list(scores.by_id)
+print(keys[:3], keys[-1], scores.by_id[0])  # [0, 2, 3] 5000 0.5
+# --8<-- [end:dict-change]
+
+# --8<-- [start:dict-nan]
+by_id[7] = float("nan")
+print(by_id == by_id.copy())  # False
+# --8<-- [end:dict-nan]
+
+scores.close()
+Scores.unlink()
 labels.close()
 Labels.unlink()
 catalogue.close()

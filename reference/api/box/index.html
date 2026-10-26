@@ -1058,7 +1058,7 @@
   <span class="md-ellipsis">
     
   
-  How to store a large set
+  How to store a large set or dict
 
     
   </span>
@@ -2828,6 +2828,67 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#sharedbox.BoundedDict" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-class"></code>&nbsp;BoundedDict
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="BoundedDict">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#sharedbox.BoundedDict.capacity" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-attribute"></code>&nbsp;capacity
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sharedbox.BoundedDict.popitem" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;popitem
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sharedbox.BoundedDict.clear" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;clear
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sharedbox.BoundedDict.copy" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;copy
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#sharedbox.Capacity" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -4225,6 +4286,67 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#sharedbox.BoundedDict" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-class"></code>&nbsp;BoundedDict
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="BoundedDict">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#sharedbox.BoundedDict.capacity" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-attribute"></code>&nbsp;capacity
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sharedbox.BoundedDict.popitem" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;popitem
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sharedbox.BoundedDict.clear" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;clear
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sharedbox.BoundedDict.copy" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;copy
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#sharedbox.Capacity" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -4419,6 +4541,10 @@
 <tr>
 <td><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;BoundedSet&lt;/span&gt;" href="./#sharedbox.BoundedSet"><code>BoundedSet</code></a></td>
 <td>a set value that keeps the stored form of a set field, so reading and writing it copies bytes and a lookup compares the stored bytes of one key</td>
+</tr>
+<tr>
+<td><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;BoundedDict&lt;/span&gt;" href="./#sharedbox.BoundedDict"><code>BoundedDict</code></a></td>
+<td>a dict value that keeps the stored form of a dict field, so reading and writing it copies bytes and a lookup compares the stored bytes of one key</td>
 </tr>
 <tr>
 <td><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;Capacity&lt;/span&gt;
@@ -7194,6 +7320,184 @@ the capacity.</p>
 
         <p>Return a new value of the same element type and capacity holding the same elements.</p>
 <p>The slots are copied without decoding an element.</p>
+
+
+    </div>
+
+</div>
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="sharedbox.BoundedDict" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-class"></code>            <span class="doc doc-object-name doc-class-name">BoundedDict</span>
+
+
+<a href="#sharedbox.BoundedDict" class="headerlink" title="Permanent link">&para;</a></h2>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">BoundedDict</span><span class="p">(</span><span class="n">values</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="n">K</span><span class="p">,</span> <span class="n">V</span><span class="p">]</span> <span class="o">|</span> <span class="n">Iterable</span><span class="p">[</span><span class="nb">tuple</span><span class="p">[</span><span class="n">K</span><span class="p">,</span> <span class="n">V</span><span class="p">]]</span> <span class="o">=</span> <span class="p">(),</span> <span class="o">*</span><span class="p">,</span> <span class="n">capacity</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span>
+</span></code></pre></div>
+
+    <div class="doc doc-contents first">
+            <p class="doc doc-class-bases">
+              Bases: <code><span title="sharedbox._native.NativeDict">NativeDict</span>[<span title="sharedbox._bounded.K">K</span>, <span title="sharedbox._bounded.V">V</span>]</code></p>
+
+
+
+        <p>A dict of at most a field's capacity of items, held as the field stores them.</p>
+<p>Declared as <code>Annotated[BoundedDict[K, V], Capacity(n)]</code> or with
+<code>field(capacity=n)</code>, it is stored as <code>dict[K, V]</code> is, and a read
+returns one. It keeps its items in insertion order, as a <code>dict</code> does.
+A change that would leave more keys than the capacity raises
+<code>ValueError</code> and leaves the value as it was. <code>|</code> takes any mapping on
+either side and returns a value of this class and capacity.</p>
+<p>Keys follow the rules of <code>BoundedSet</code> elements: they are compared by
+their stored bytes, so a declaration refuses the same key types, and a
+nan, a NaT, or an aware <code>datetime</code> or <code>time</code> key raises <code>ValueError</code>.
+A key that cannot be stored is in no dict: <code>in</code> returns False and
+<code>d[key]</code> raises <code>KeyError</code>. Values may be of any type a <code>dict</code> field
+takes, and <code>==</code> compares them as <code>dict</code> does.</p>
+<p>A subclass is declared and read back the same way, generic as
+<code>class MyDict(BoundedDict[K, V])</code> used as <code>MyDict[int, float]</code>, or
+with its types fixed as <code>class Weights(BoundedDict[int, float])</code>. A
+read from a box calls neither <code>__new__</code> nor <code>__init__</code>. <code>copy.copy</code>,
+<code>copy.deepcopy</code> and pickling keep a subclass's attributes, as for a
+<code>dict</code> subclass.</p>
+
+        <p>Do nothing; <code>__new__</code> has built the value.</p>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h3 id="sharedbox.BoundedDict.capacity" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-attribute"></code>            <span class="doc doc-object-name doc-attribute-name">capacity</span>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#sharedbox.BoundedDict.capacity" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">capacity</span><span class="p">:</span> <span class="nb">int</span>
+</span></code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>The most items the value can hold.</p>
+
+    </div>
+
+</div>
+
+
+
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="sharedbox.BoundedDict.popitem" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <span class="doc doc-object-name doc-function-name">popitem</span>
+
+
+<a href="#sharedbox.BoundedDict.popitem" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">popitem</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="nb">tuple</span><span class="p">[</span><span class="n">_K</span><span class="p">,</span> <span class="n">_V</span><span class="p">]</span>
+</span></code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Remove the last item and return it.</p>
+<p>An item that fails to decode stays in the value.</p>
+
+
+<p><span class="doc-section-title">Raises:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-external" href="https://docs.python.org/3/builtins/exceptions.html#KeyError">KeyError</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If the value is empty.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="sharedbox.BoundedDict.clear" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <span class="doc doc-object-name doc-function-name">clear</span>
+
+
+<a href="#sharedbox.BoundedDict.clear" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">clear</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="kc">None</span>
+</span></code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Remove every item.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="sharedbox.BoundedDict.copy" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <span class="doc doc-object-name doc-function-name">copy</span>
+
+
+<a href="#sharedbox.BoundedDict.copy" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">copy</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">Self</span>
+</span></code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Return a new value of the same types and capacity holding the same items.</p>
+<p>The slots are copied without decoding a key or value.</p>
 
 
     </div>

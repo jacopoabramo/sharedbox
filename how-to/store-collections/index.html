@@ -1164,7 +1164,7 @@
   <span class="md-ellipsis">
     
   
-  How to store a large set
+  How to store a large set or dict
 
     
   </span>
@@ -3344,7 +3344,8 @@ box. Build the new collection and assign it back:</p>
 checker will point out an <code>append</code> that would only change the copy. For a
 list of thousands of elements, where building every element on each read
 is what costs time, see <a href="../store-a-large-list/">How to store a large list</a>,
-and for a large set, <a href="../store-a-large-set-or-dict/">How to store a large set</a>.</p>
+and for a large set or dict, <a href="../store-a-large-set-or-dict/">How to store a large set or
+dict</a>.</p>
 <h2 id="4-handle-a-collection-that-is-too-large">4. Handle a collection that is too large<a class="headerlink" href="#4-handle-a-collection-that-is-too-large" title="Permanent link">&para;</a></h2>
 <p>Assigning more elements than the capacity raises <code>ValueError</code>, and the field
 keeps its old value:</p>
