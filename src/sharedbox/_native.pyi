@@ -591,7 +591,7 @@ class NativeSet(MutableSet[_T]):
         """
     def __contains__(self, value: object, /) -> bool: ...
     def add(self, value: _T, /) -> None:
-        """Add `value` unless the value holds it.
+        """Add `value` unless the set holds it.
 
         Raises
         ------
@@ -602,7 +602,7 @@ class NativeSet(MutableSet[_T]):
             NaT, an aware `datetime` or `time`), or the value is full.
         """
     def discard(self, value: _T, /) -> None:
-        """Remove `value` if the value holds it."""
+        """Remove `value` if the set holds it."""
     def remove(self, value: _T, /) -> None:
         """Remove `value`.
 
