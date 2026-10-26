@@ -30,8 +30,7 @@ bool NativeSet::contains(nb::handle value) {
     if (!encode_key(value, key.data(), true))
         return false;
     nb::ft_lock_guard guard(mutex_);
-    ensure_checked(0);
-    return find(key.data()) != no_slot;
+    return holds(key.data());
 }
 
 void NativeSet::add(nb::handle value) {

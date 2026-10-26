@@ -71,6 +71,11 @@ protected:
     bool encode_key(nb::handle value, std::byte *out, bool quiet) const;
     /// The slot holding key, or no_slot.
     std::uint32_t find(const std::byte *key);
+    /// Whether a set holds key, for a lookup that changes nothing. The first such lookup on keys not yet
+    /// checked compares key with every slot and checks each as ensure_checked does, but drops no duplicate
+    /// and builds no index, since a value read for one test gains nothing from them; a later one runs
+    /// ensure_checked and find.
+    bool holds(const std::byte *key);
     /// Appends a slot holding encoded and indexes it; the caller has checked the capacity.
     void append_slot(const std::byte *encoded);
     /// Moves the last slot into slot at, which it removes.
@@ -85,6 +90,8 @@ protected:
     KeyIndex index_;
     /// Whether the stored keys have passed ensure_checked; a value that starts empty has.
     bool checked_ = false;
+    /// Whether a lookup has scanned the keys while they were not yet checked.
+    bool scanned_ = false;
     const KeyPlan *plan_ = nullptr;
     std::uint32_t key_size_ = 0;
 

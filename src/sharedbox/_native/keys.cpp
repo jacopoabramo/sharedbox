@@ -194,6 +194,23 @@ std::uint32_t KeyedStore::find(const std::byte *key) {
     }
 }
 
+bool KeyedStore::holds(const std::byte *key) {
+    if (checked_ || scanned_) {
+        ensure_checked(0);
+        return find(key) != no_slot;
+    }
+    codec();
+    bool found = false;
+    // Every slot is checked, as ensure_checked would, so a refused key raises whichever slot holds it.
+    for (std::uint32_t at = 0; at < count_; ++at) {
+        if (canonical(slot(at)) != nullptr)
+            corrupt(label_);
+        found = found || same(slot(at), key);
+    }
+    scanned_ = true;
+    return found;
+}
+
 void KeyedStore::allocate(std::uint32_t keys) {
     const std::uint32_t size = std::bit_ceil(std::max<std::uint32_t>(2 * keys, 2));
     index_.table.reset(new std::uint64_t[size]);

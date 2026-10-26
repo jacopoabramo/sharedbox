@@ -561,9 +561,10 @@ def pack_float(x: float) -> bytes:
 def test_forged_duplicates_and_nan_are_found_when_a_key_is_looked_up(
     size: int,
 ) -> None:
-    """Drop a forged duplicate, refuse a forged nan and rewrite a forged -0.0 on the first lookup, by scan and by index."""
+    """Refuse a forged nan and rewrite a forged -0.0 on the first lookup, and drop a forged duplicate on the second, by scan and by index."""
     rest = list(range(3, size))
     ints = forged(int, [pack_int(k) for k in [1, 2, 1, *rest]])
+    assert 1 in ints
     assert len(ints) == size
     assert 1 in ints
     assert len(ints) == size - 1
