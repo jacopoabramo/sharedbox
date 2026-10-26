@@ -3383,10 +3383,18 @@ it looks for and compares it with the stored bytes. The first 64 calls to
 element. In a set of more than 8 elements, the next one hashes every
 element once into a table the value keeps in its own memory, not in the
 box, and from then on each test or change looks up only the one key.</p>
-<p>Use it for a large set that you read or write whole and test for a few
-keys at a time. Going through every element decodes each one, and so does
-converting the value to a builtin <code>set</code>, so a set you always iterate or
-convert gains little.</p>
+<p>How much that saves depends on the size and on what you do with the value.
+In <code>benchbox ops</code> on Windows with CPython 3.11, reading a set and testing
+one key with <code>in</code> takes about 1.1 times as long as with a <code>set</code> field at 16
+elements, and is about 30 times faster at 1024 and about 100 times faster
+at 65536. Reading a set, changing one key and writing it back is about 2
+times faster at 16 elements, 20 times faster at 1024 and 40 times faster at
+65536. Going through every element decodes each one, so it takes about 1.5
+times as long as with a <code>set</code> at 16 elements, about as long at 1024, and is
+about 1.5 times faster at 65536. So use it for a large set that you read or
+write whole and test or change a few keys at a time. A set you always
+convert to a builtin <code>set</code> gains little, because the conversion decodes
+every element anyway.</p>
 <h2 id="1-declare-the-field-as-a-boundedset">1. Declare the field as a BoundedSet<a class="headerlink" href="#1-declare-the-field-as-a-boundedset" title="Permanent link">&para;</a></h2>
 <p>A <code>BoundedSet[T]</code> is declared as a <code>set[T]</code> field is, with the field's
 <a href="../../explanation/glossary/#capacity">capacity</a> in elements given through
