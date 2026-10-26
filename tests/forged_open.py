@@ -88,6 +88,9 @@ def forged_open(edits: list[tuple[tuple[int, int], int, int]]) -> None:
         except LockTimeoutError:
             # A forged seq or writer_pid looks like a writer that never finishes.
             pass
+        except TypeError as error:
+            # A forged kind above 5 needs a class's Types, which a bare Segment has not.
+            assert "kind above 5" in str(error), error
         finally:
             other.close()
     finally:
@@ -99,9 +102,15 @@ def forged_open(edits: list[tuple[tuple[int, int], int, int]]) -> None:
 def main(examples: int) -> None:
     # A field count lowered to one the mapping still fits passes every geometry check.
     pinned = example([((64, 64), 20, 1)])
+    # Field 2's kind byte set to 10.
+    kind = example([((128, 40), 383, 10)])
     given(EDITS)(
         pinned(
-            settings(max_examples=examples, deadline=None, database=None)(forged_open)
+            kind(
+                settings(max_examples=examples, deadline=None, database=None)(
+                    forged_open
+                )
+            )
         )
     )()
 

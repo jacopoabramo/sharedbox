@@ -21,6 +21,9 @@ inline constexpr std::uint32_t no_guard = static_cast<std::uint32_t>(-1);
 
 /// The most keys a lookup scans; above it, the lookup probes the index.
 inline constexpr std::uint32_t scan_limit = 8;
+/// How many lookups a value scans before checking its keys and building the index: a scan costs well under
+/// a hundredth of building the index, so a value read for a few tests or changes never builds one.
+inline constexpr std::uint32_t scans_before_index = 64;
 /// No slot; a capacity is at most 2**20, so no slot index reaches it.
 inline constexpr std::uint32_t no_slot = 0xffffffff;
 
@@ -35,7 +38,7 @@ struct KeyCheck {
 /// How the bytes of a key are checked and compared.
 struct KeyPlan {
     /// The bytes that count when keys are compared: 0xff except each datetime and time fold bit. Empty when
-    /// there are no checks, so keys compare whole.
+    /// no bit is masked, so keys compare whole.
     std::vector<std::byte> mask;
     /// Empty for a key of int, str or enum, whose stored bytes are compared as they are.
     std::vector<KeyCheck> checks;
@@ -71,6 +74,13 @@ protected:
     bool encode_key(nb::handle value, std::byte *out, bool quiet) const;
     /// The slot holding key, or no_slot.
     std::uint32_t find(const std::byte *key);
+    /// The slot of a set holding key, or no_slot. Until scans_before_index lookups on keys not yet checked,
+    /// a lookup compares key with every slot through scan, dropping no duplicate and building no index; the
+    /// first of them checks each slot as ensure_checked does. Later ones run ensure_checked and find.
+    std::uint32_t lookup(const std::byte *key);
+    /// Removes key from a set and returns whether it held it. While lookups scan keys that may hold a
+    /// duplicate, it removes every slot holding key.
+    bool remove_key(const std::byte *key);
     /// Appends a slot holding encoded and indexes it; the caller has checked the capacity.
     void append_slot(const std::byte *encoded);
     /// Moves the last slot into slot at, which it removes.
@@ -85,6 +95,8 @@ protected:
     KeyIndex index_;
     /// Whether the stored keys have passed ensure_checked; a value that starts empty has.
     bool checked_ = false;
+    /// How many lookups have scanned the keys while they were not yet checked.
+    std::uint32_t scans_ = 0;
     const KeyPlan *plan_ = nullptr;
     std::uint32_t key_size_ = 0;
 
@@ -95,6 +107,8 @@ private:
     /// The hash of key, masked through scratch, key_size_ bytes, when the plan has checks.
     std::uint64_t hash_of(const std::byte *key, std::byte *scratch) const;
     bool same(const std::byte *a, const std::byte *b) const;
+    /// The last slot before end holding key, or no_slot, comparing key with each slot.
+    std::uint32_t scan(const std::byte *key, std::uint32_t end) const;
     /// Builds the index over every slot, at a power of two of entries at least twice the count.
     void build();
     /// Replaces the index with an empty one of a power of two of entries at least twice keys.

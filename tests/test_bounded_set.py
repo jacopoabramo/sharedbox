@@ -426,10 +426,10 @@ class Blue(enum.Enum):
     A = 1
 
 
-def keys_field(key: object) -> Any:
+def keys_field(key: object, capacity: int = 16) -> Any:
     """Return the layout of a class `Catalogue` with one field `keys`, a BoundedSet of `key`."""
     return build_layout(
-        make(Annotated[BoundedSet[key], Capacity(16)], "Catalogue", "keys")  # type: ignore[valid-type]
+        make(Annotated[BoundedSet[key], Capacity(capacity)], "Catalogue", "keys")  # type: ignore[valid-type]
     )
 
 
@@ -440,7 +440,7 @@ def empty_value(key: object) -> Any:
 
 def forged(key: object, slots: list[bytes]) -> Any:
     """Return a BoundedSet of `key` read from stored slots `slots`, as another program could write them."""
-    types = keys_field(key).types
+    types = keys_field(key, max(16, len(slots))).types
     head = bytearray(types.decode(0, bytes(64))._stored())
     head[:4] = len(slots).to_bytes(4, "little")
     return types.decode(0, bytes(head) + b"".join(slots))
@@ -561,11 +561,11 @@ def pack_float(x: float) -> bytes:
 def test_forged_duplicates_and_nan_are_found_when_a_key_is_looked_up(
     size: int,
 ) -> None:
-    """Drop a forged duplicate, refuse a forged nan and rewrite a forged -0.0 on the first lookup, by scan and by index."""
+    """Refuse a forged nan and rewrite a forged -0.0 on the first lookup, and drop a forged duplicate when a change checks the keys, by scan and by index."""
     rest = list(range(3, size))
     ints = forged(int, [pack_int(k) for k in [1, 2, 1, *rest]])
-    assert len(ints) == size
     assert 1 in ints
+    ints.update(())
     assert len(ints) == size - 1
     assert list(ints) == [1, 2, *rest]
     others = [float(k) for k in rest]
@@ -575,6 +575,43 @@ def test_forged_duplicates_and_nan_are_found_when_a_key_is_looked_up(
     zero = forged(float, [pack_float(x) for x in [-0.0, 1.0, *others]])
     assert 0.0 in zero
     assert math.copysign(1, next(iter(zero))) == 1
+
+
+@pytest.mark.parametrize("size", [3, 40])
+@pytest.mark.parametrize(("key", "pack"), [(int, pack_int), (float, pack_float)])
+def test_a_first_change_after_a_read_handles_forged_copies(
+    size: int, key: type, pack: collections.abc.Callable[[Any], bytes]
+) -> None:
+    """Remove every forged copy of a key on the first discard or remove after a read, add no key it holds, and add one when forged copies fill the capacity."""
+    keys = [1, 2, *range(3, size), 1]
+    discarded = forged(key, [pack(k) for k in keys])
+    discarded.discard(1)
+    assert 1 not in discarded
+    assert len(discarded) == size - 2
+    removed = forged(key, [pack(k) for k in keys])
+    removed.remove(1)
+    assert 1 not in removed
+    with pytest.raises(KeyError):
+        removed.remove(1)
+    added = forged(key, [pack(k) for k in keys])
+    added.add(2)
+    assert len(added) == size
+    # 16 slots fill a capacity of 16, but 1 is stored twice, so a 16th key fits.
+    full = forged(key, [pack(k) for k in [1, *range(1, 16)]])
+    full.add(key(100))
+    assert key(100) in full
+
+
+def test_lookups_find_every_key_before_and_after_the_index_is_built() -> None:
+    """Find every stored key and no other through many lookups and changes on one read, scanning first and then through the index."""
+    value = forged(int, [pack_int(k) for k in range(40)])
+    for k in range(100):
+        assert (k in value) == (k < 40)
+        value.discard(1000 + k)
+    value.discard(5)
+    value.add(5)
+    value.remove(7)
+    assert sorted(value) == [k for k in range(40) if k != 7]
 
 
 @pytest.mark.parametrize("size", [3, 12])

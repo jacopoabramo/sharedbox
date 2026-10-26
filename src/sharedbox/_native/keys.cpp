@@ -79,7 +79,7 @@ KeyPlan plan_of(const detail::type_table &tree, const detail::type_ref &key) {
     plan.size = key.size;
     plan.mask.assign(key.size, std::byte{0xff});
     add_checks(tree, key, 0, no_guard, plan);
-    if (plan.checks.empty())
+    if (std::ranges::all_of(plan.mask, [](std::byte b) { return b == std::byte{0xff}; }))
         plan.mask.clear();
     return plan;
 }
@@ -192,6 +192,67 @@ std::uint32_t KeyedStore::find(const std::byte *key) {
         if (tag_of(entry) == tag && same(slot(at), key))
             return at;
     }
+}
+
+std::uint32_t KeyedStore::scan(const std::byte *key, std::uint32_t end) const {
+    if (plan_->mask.empty() && key_size_ == 8 && stride_ == 8) {
+        std::uint64_t wanted;
+        std::memcpy(&wanted, key, sizeof wanted);
+        const std::byte *first = slot(0);
+        constexpr std::uint32_t block = 32;
+        while (end > 0) {
+            const std::uint32_t start = end > block ? end - block : 0;
+            // Bit 63 of (x - 1) & ~x is set only when x is 0. It takes a subtraction and bit operations, which
+            // SSE2 has for 64-bit lanes where it has no 64-bit compare, so GCC and MSVC turn the loop into SIMD
+            // instructions; only a block holding key is searched one slot at a time.
+            std::uint64_t any = 0;
+            for (std::uint32_t i = start; i < end; ++i) {
+                std::uint64_t stored;
+                std::memcpy(&stored, first + 8 * std::size_t{i}, sizeof stored);
+                const std::uint64_t x = stored ^ wanted;
+                any |= (x - 1) & ~x;
+            }
+            if (any >> 63)
+                for (std::uint32_t i = end; i-- > start;)
+                    if (std::memcmp(first + 8 * std::size_t{i}, key, 8) == 0)
+                        return i;
+            end = start;
+        }
+        return no_slot;
+    }
+    for (std::uint32_t at = end; at-- > 0;)
+        if (same(slot(at), key))
+            return at;
+    return no_slot;
+}
+
+std::uint32_t KeyedStore::lookup(const std::byte *key) {
+    if (checked_ || scans_ == scans_before_index) {
+        ensure_checked(0);
+        return find(key);
+    }
+    codec();
+    // The first scan checks every slot, as ensure_checked would, so a refused key raises whichever slot holds
+    // it; the count goes up only after, so a refused value raises again on its next lookup.
+    if (scans_ == 0 && !plan_->checks.empty())
+        for (std::uint32_t at = 0; at < count_; ++at)
+            if (canonical(slot(at)) != nullptr)
+                corrupt(label_);
+    ++scans_;
+    return scan(key, count_);
+}
+
+bool KeyedStore::remove_key(const std::byte *key) {
+    const bool scanning = !checked_ && scans_ < scans_before_index;
+    std::uint32_t at = lookup(key);
+    if (at == no_slot)
+        return false;
+    remove_moving_last(at);
+    // scan found the last copy, and the slot moved into at was after it, so earlier slots hold any other.
+    if (scanning)
+        while ((at = scan(key, at)) != no_slot)
+            remove_moving_last(at);
+    return true;
 }
 
 void KeyedStore::allocate(std::uint32_t keys) {
