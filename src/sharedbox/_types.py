@@ -1141,26 +1141,31 @@ def is_collection(hint: Any) -> bool:
 
 
 BOUNDED: Final[tuple[type, ...]] = (NativeCollection, NativeSet)
-NUMBER_KINDS: Final[frozenset[str]] = frozenset(
-    {
-        "bool",
-        "int",
-        "int8",
-        "int16",
-        "int32",
-        "uint8",
-        "uint16",
-        "uint32",
-        "uint64",
-        "float",
-        "float16",
-        "float32",
-        "complex",
-        "complex64",
-        "flag",
-    }
-)
-"""The kinds whose values may equal a value of another number kind, as `1 == 1.0 == True`."""
+FAMILIES: Final[dict[str, str]] = {
+    **dict.fromkeys(
+        (
+            "bool",
+            "int",
+            "int8",
+            "int16",
+            "int32",
+            "uint8",
+            "uint16",
+            "uint32",
+            "uint64",
+            "float",
+            "float16",
+            "float32",
+            "complex",
+            "complex64",
+            "flag",
+        ),
+        "number",
+    ),
+    "str": "text",
+    "bytes": "byte string",
+}
+"""Kind -> its equality family: values of two kinds of one family may compare equal, as `1 == 1.0 == True`."""
 INEXACT_KINDS: Final[frozenset[str]] = frozenset(
     {
         "float",
@@ -1207,15 +1212,33 @@ def bounded_args(hint: Any) -> tuple[Any, ...] | None:
     return args
 
 
-def is_number(spec: TypeSpec) -> bool:
-    """Whether values of `spec` may equal those of another number kind."""
+def value_family(value: object) -> str | None:
+    """Return the equality family of a Literal value or of an Enum member's value, or None."""
+    match value.value if isinstance(value, enum.Enum) else value:
+        case int():
+            return "number"
+        case str():
+            return "text"
+        case bytes():
+            return "byte string"
+        case _:
+            return None
+
+
+def families(spec: TypeSpec) -> set[str]:
+    """Return the equality families of `spec`'s values; a tuple and a NamedTuple are of the family "tuple"."""
     match spec.kind:
         case "enum":
-            return any(isinstance(m.value, int) for m in spec.info[1])
+            values = [m.value for m in spec.info[1]]
         case "literal":
-            return any(isinstance(v, int) for v in spec.info[0])
+            values = list(spec.info[0])
+        case "record" | "tuple":
+            return {"tuple"} if spec.info[0] in (1, 2) else set()
+        case "list":
+            return {"tuple"} if spec.info[0] is tuple else set()
         case kind:
-            return kind in NUMBER_KINDS
+            return {FAMILIES[kind]} if kind in FAMILIES else set()
+    return {f for v in values if (f := value_family(v)) is not None}
 
 
 def key_refusal(spec: TypeSpec, inside: str | None = None) -> str | None:
@@ -1230,10 +1253,19 @@ def key_refusal(spec: TypeSpec, inside: str | None = None) -> str | None:
         return "a frozenset"
     if inside is not None and spec.kind in INEXACT_KINDS:
         return f"a {spec.text} inside {inside}"
+    if spec.kind == "literal":
+        values = spec.info[0]
+        for i, value in enumerate(values):
+            for earlier in values[:i]:
+                if earlier == value:
+                    return f"a Literal of equal values {earlier!r} and {value!r}"
     if spec.kind == "union":
-        numbers = [m.type.text for m in spec.members if is_number(m.type)]
-        if len(numbers) > 1:
-            return f"a union of {numbers[0]} and {numbers[1]}"
+        seen: dict[str, str] = {}
+        for m in spec.members:
+            for family in sorted(families(m.type)):
+                if family in seen:
+                    return f"a union of {seen[family]} and {m.type.text}"
+                seen[family] = m.type.text
         inside = inside or "a union"
     elif spec.kind == "list":
         inside = inside or "a tuple[T, ...]"

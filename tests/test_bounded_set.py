@@ -1,11 +1,13 @@
 import collections.abc
 import copy
 import decimal
+import enum
 import gc
 import pickle
+import re
 import weakref
 from dataclasses import dataclass
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal, NamedTuple
 
 import pytest
 from crossproc import call_in_child, update_in_child
@@ -175,20 +177,47 @@ def test_a_bounded_set_that_was_never_built_is_refused(unique_name: str) -> None
         assert set(box.seen) == {"a"}
 
 
+class Letter(enum.StrEnum):
+    A = "a"
+
+
+class Raw(bytes, enum.Enum):
+    A = b"a"
+
+
+class Pair(NamedTuple):
+    x: int
+
+
+@dataclass(frozen=True)
+class Price:
+    amount: Annotated[decimal.Decimal, Capacity(8)]
+
+
 @pytest.mark.parametrize(
-    "key",
+    ("key", "reason"),
     [
-        Annotated[decimal.Decimal, Capacity(8)],
-        int | float,
-        bool | int,
-        Annotated[frozenset[int], Capacity(4)],
-        float | Annotated[str, Capacity(4)],
-        Annotated[tuple[float, ...], Capacity(4)],
+        (Annotated[decimal.Decimal, Capacity(8)], "a Decimal"),
+        (int | float, "a union of int:8 and float:8"),
+        (bool | int, "a union of bool:1 and int:8"),
+        (Annotated[frozenset[int], Capacity(4)], "a frozenset"),
+        (float | Annotated[str, Capacity(4)], "a float:8 inside a union"),
+        (Annotated[tuple[float, ...], Capacity(4)], "a float:8 inside a tuple[T, ...]"),
+        (Letter | Annotated[str, Capacity(4)], "a union of enum(A) and str:4"),
+        (Raw | Annotated[bytes, Capacity(4)], "a union of enum(A) and bytes:4"),
+        (Pair | tuple[int], "a union of record(x:int:8) and tuple(int:8)"),
+        (Literal[1, True], "a Literal of equal values 1 and True"),
+        (Price, "a Decimal"),
+        (Annotated[frozenset[int], Capacity(4)] | None, "a frozenset"),
     ],
 )
-def test_keys_that_compare_unlike_their_bytes_are_refused(key: object) -> None:
-    """Refuse a BoundedSet key type whose equal values may differ in bytes, which a builtin set still takes."""
-    with pytest.raises(TypeError, match="Box.keys: BoundedSet keys cannot hold"):
+def test_keys_that_compare_unlike_their_bytes_are_refused(
+    key: object, reason: str
+) -> None:
+    """Refuse a BoundedSet key type whose equal values may differ in bytes, naming why, which a builtin set still takes."""
+    with pytest.raises(
+        TypeError, match=re.escape(f"Box.keys: BoundedSet keys cannot hold {reason}")
+    ):
         build_layout(
             make(Annotated[BoundedSet[key], Capacity(4)], "Box", "keys")  # type: ignore[valid-type]
         )
