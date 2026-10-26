@@ -1224,9 +1224,9 @@ def bounded_args(hint: Any) -> tuple[Any, ...] | None:
 
 def mixin_families(cls: type) -> set[str]:
     """Return the equality families of the members of the Enum or Flag `cls`, from its mixin type."""
-    # A datetime never equals a date, and a datetime inside a union is refused on its own.
+    # A datetime never equals a date, so its members are a family apart from the date mixin's.
     if issubclass(cls, datetime.datetime):
-        return set()
+        return {"datetime"}
     return {family for base, family in MIXIN_FAMILIES if issubclass(cls, base)}
 
 

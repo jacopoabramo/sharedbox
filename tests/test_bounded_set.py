@@ -223,6 +223,10 @@ class Moment(datetime.datetime, enum.Enum):
     START = 2026, 1, 1
 
 
+class Instant(datetime.datetime, enum.Enum):
+    START = 2026, 1, 1
+
+
 @dataclass(frozen=True)
 class Price:
     amount: Annotated[decimal.Decimal, Capacity(8)]
@@ -264,6 +268,11 @@ class Price:
             # Literal unpacks a tuple given alone, so the member goes inside one.
             Literal[(Origin.ZERO,)] | tuple[int],
             "a union of literal(member:ZERO) and tuple(int:8)",
+        ),
+        (Moment | Instant, "a union of enum(START) and enum(START)"),
+        (
+            Literal[Moment.START] | Instant,
+            "a union of literal(member:START) and enum(START)",
         ),
     ],
 )
