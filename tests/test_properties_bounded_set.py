@@ -1,5 +1,6 @@
 import datetime
 import enum
+import operator
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -122,6 +123,63 @@ class SetMachine(RuleBasedStateMachine):
             st.lists(st.lists(self.values, max_size=self.capacity + 2), max_size=3)
         )
         self.change(lambda s: s.update(*parts))
+
+    def operand(self, data: st.DataObject) -> tuple[Any, set[Any]]:
+        """Draw keys that may pass the capacity, as a builtin set or a BoundedSet, and the set of them."""
+        keys = set(data.draw(st.lists(self.values, max_size=self.capacity + 2)))
+        if data.draw(st.booleans()):
+            element: Any = self.element
+            return BoundedSet[element](keys, capacity=self.capacity + 2), keys
+        return keys, keys
+
+    @rule(
+        op=st.sampled_from([operator.or_, operator.and_, operator.sub, operator.xor]),
+        reflected=st.booleans(),
+        data=st.data(),
+    )
+    def combine(
+        self, op: Callable[[Any, Any], Any], reflected: bool, data: st.DataObject
+    ) -> None:
+        """Combine with a drawn operand on either side, as the mirror combines with its keys."""
+        other, keys = self.operand(data)
+        left, right = (other, self.bounded) if reflected else (self.bounded, other)
+        expected = op(keys, self.mirror) if reflected else op(self.mirror, keys)
+        # The left operand builds the result unless it is a builtin set.
+        maker = right if type(left) is set else left
+        if len(expected) > maker.capacity:
+            with pytest.raises(ValueError, match="holds at most"):
+                op(left, right)
+            return
+        result = op(left, right)
+        assert type(result) is type(maker)
+        assert result.capacity == maker.capacity
+        assert result == expected
+
+    @rule(
+        op=st.sampled_from([operator.ior, operator.iand, operator.isub, operator.ixor]),
+        data=st.data(),
+    )
+    def combine_in_place(
+        self, op: Callable[[Any, Any], Any], data: st.DataObject
+    ) -> None:
+        """Combine in place with a drawn operand, or expect ValueError past the capacity."""
+        other, keys = self.operand(data)
+        expected = op(set(self.mirror), keys)
+        if len(expected) > self.capacity:
+            with pytest.raises(ValueError, match="holds at most"):
+                op(self.bounded, other)
+            return
+        assert op(self.bounded, other) is self.bounded
+        self.mirror = expected
+
+    @rule(data=st.data())
+    def compare(self, data: st.DataObject) -> None:
+        """Order the value against a drawn operand both ways round, and test them for common keys."""
+        other, keys = self.operand(data)
+        for op in (operator.le, operator.lt, operator.ge, operator.gt):
+            assert op(self.bounded, other) == op(self.mirror, keys)
+            assert op(other, self.bounded) == op(keys, self.mirror)
+        assert self.bounded.isdisjoint(other) == self.mirror.isdisjoint(keys)
 
     @rule(data=st.data())
     def contains(self, data: st.DataObject) -> None:

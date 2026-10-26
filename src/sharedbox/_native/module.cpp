@@ -807,6 +807,20 @@ PyType_Slot store_iterator_slots[] = {{Py_tp_iternext, reinterpret_cast<void *>(
 using CollectionIterator = StoreIterator<sharedbox::NativeCollection>;
 using SetIterator = StoreIterator<sharedbox::NativeSet>;
 
+template <sharedbox::set_op op, bool reflected>
+nb::object set_combine(nb::pointer_and_handle<sharedbox::NativeSet> self, nb::handle other) {
+    return sharedbox::NativeSet::combine(self, other, op, reflected);
+}
+
+template <sharedbox::set_op op>
+nb::object set_combine_in_place(nb::pointer_and_handle<sharedbox::NativeSet> self, nb::handle other) {
+    return sharedbox::NativeSet::combine_in_place(self, other, op);
+}
+
+template <int op> nb::object set_compare(sharedbox::NativeSet &self, nb::handle other) {
+    return self.compare(other, op);
+}
+
 PyType_Slot types_slots[] = {{Py_tp_traverse, reinterpret_cast<void *>(types_traverse)},
                              {Py_tp_clear, reinterpret_cast<void *>(types_clear)},
                              {0, nullptr}};
@@ -1206,6 +1220,23 @@ NB_MODULE(_native, m) {
         .def("update", &sharedbox::NativeSet::update)
         .def("__eq__", &sharedbox::NativeSet::equals, nb::arg().none())
         .def("copy", &sharedbox::NativeSet::copy)
+        .def("__or__", &set_combine<sharedbox::set_op::join, false>, nb::arg().none())
+        .def("__and__", &set_combine<sharedbox::set_op::common, false>, nb::arg().none())
+        .def("__sub__", &set_combine<sharedbox::set_op::difference, false>, nb::arg().none())
+        .def("__xor__", &set_combine<sharedbox::set_op::symmetric, false>, nb::arg().none())
+        .def("__ror__", &set_combine<sharedbox::set_op::join, true>, nb::arg().none())
+        .def("__rand__", &set_combine<sharedbox::set_op::common, true>, nb::arg().none())
+        .def("__rsub__", &set_combine<sharedbox::set_op::difference, true>, nb::arg().none())
+        .def("__rxor__", &set_combine<sharedbox::set_op::symmetric, true>, nb::arg().none())
+        .def("__ior__", &set_combine_in_place<sharedbox::set_op::join>, nb::arg().none())
+        .def("__iand__", &set_combine_in_place<sharedbox::set_op::common>, nb::arg().none())
+        .def("__isub__", &set_combine_in_place<sharedbox::set_op::difference>, nb::arg().none())
+        .def("__ixor__", &set_combine_in_place<sharedbox::set_op::symmetric>, nb::arg().none())
+        .def("__le__", &set_compare<Py_LE>, nb::arg().none())
+        .def("__lt__", &set_compare<Py_LT>, nb::arg().none())
+        .def("__ge__", &set_compare<Py_GE>, nb::arg().none())
+        .def("__gt__", &set_compare<Py_GT>, nb::arg().none())
+        .def("isdisjoint", &sharedbox::NativeSet::isdisjoint)
         .def_prop_ro("_element_annotation", &sharedbox::NativeSet::element_annotation)
         .def_prop_ro("capacity", &sharedbox::NativeSet::capacity)
         .def("_stored", &sharedbox::NativeSet::stored);

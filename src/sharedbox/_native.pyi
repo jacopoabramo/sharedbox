@@ -8,6 +8,9 @@ from collections.abc import (
     MutableSet,
     Sequence,
 )
+from collections.abc import (
+    Set as AbstractSet,
+)
 from typing import (
     Any,
     ClassVar,
@@ -599,7 +602,7 @@ class NativeSet(MutableSet[_T]):
             If `value` is not of the field's element type.
         ValueError
             If `value` does not fit, is a key the field refuses (a nan, a
-            NaT, an aware `datetime` or `time`), or the value is full.
+            NaT, an aware `datetime` or `time`), or the set is full.
         """
     def discard(self, value: _T, /) -> None:
         """Remove `value` if the set holds it."""
@@ -609,7 +612,7 @@ class NativeSet(MutableSet[_T]):
         Raises
         ------
         KeyError
-            If the value does not hold `value`.
+            If the set does not hold `value`.
         """
     def pop(self) -> _T:
         """Remove the element in the last slot and return it.
@@ -637,6 +640,144 @@ class NativeSet(MutableSet[_T]):
         """
     def __eq__(self, other: object, /) -> bool:
         """Compare with a set: equal when both hold the same keys, in any order.
+
+        Raises
+        ------
+        TypeError
+            If `other` is a value that was never built.
+        """
+    def __or__(self, other: AbstractSet[_T], /) -> Self:  # type: ignore[override]
+        """Return a new value of the same class and capacity holding the elements of both sets.
+
+        Raises
+        ------
+        TypeError
+            If an element of `other` is not of the field's element type,
+            or `other` is a value that was never built.
+        ValueError
+            As `add` raises it, or if the result would hold more elements
+            than the capacity.
+        """
+    def __ror__(self, other: AbstractSet[_T], /) -> Self:
+        """Return the elements of both sets, as `|` does."""
+    def __and__(self, other: AbstractSet[object], /) -> Self:
+        """Return a new value of the same class and capacity holding the elements both sets hold.
+
+        Raises
+        ------
+        TypeError
+            If `other` is a value that was never built.
+        """
+    def __rand__(self, other: AbstractSet[object], /) -> Self:
+        """Return the elements both sets hold, as `&` does."""
+    def __sub__(self, other: AbstractSet[object], /) -> Self:
+        """Return a new value of the same class and capacity holding the elements of this set that `other` does not hold.
+
+        Raises
+        ------
+        TypeError
+            If `other` is a value that was never built.
+        """
+    def __rsub__(self, other: AbstractSet[_T], /) -> Self:
+        """Return a new value of the same class and capacity holding the elements of `other` this set does not hold.
+
+        Raises
+        ------
+        TypeError
+            If an element of `other` is not of the field's element type,
+            or `other` is a value that was never built.
+        ValueError
+            As `add` raises it, or if the result would hold more elements
+            than the capacity.
+        """
+    def __xor__(self, other: AbstractSet[_T], /) -> Self:  # type: ignore[override]
+        """Return a new value of the same class and capacity holding the elements only one set holds.
+
+        Raises
+        ------
+        TypeError
+            If an element of `other` is not of the field's element type,
+            or `other` is a value that was never built.
+        ValueError
+            As `add` raises it, or if the result would hold more elements
+            than the capacity.
+        """
+    def __rxor__(self, other: AbstractSet[_T], /) -> Self:
+        """Return the elements only one set holds, as `^` does."""
+    def __ior__(self, other: AbstractSet[_T], /) -> Self:  # type: ignore[override]
+        """Add the elements of `other`, all of them or none, as `update` does.
+
+        Raises
+        ------
+        TypeError
+            If an element of `other` is not of the field's element type,
+            or `other` is a value that was never built.
+        ValueError
+            As `add` raises it, or if the set would hold more elements than
+            the capacity; it is left as it was.
+        """
+    def __iand__(self, other: AbstractSet[object], /) -> Self:
+        """Keep only the elements `other` holds.
+
+        Raises
+        ------
+        TypeError
+            If `other` is a value that was never built.
+        """
+    def __isub__(self, other: AbstractSet[object], /) -> Self:
+        """Remove the elements `other` holds.
+
+        Raises
+        ------
+        TypeError
+            If `other` is a value that was never built.
+        """
+    def __ixor__(self, other: AbstractSet[_T], /) -> Self:  # type: ignore[override]
+        """Remove the elements `other` holds and add those it alone holds, all or nothing.
+
+        Raises
+        ------
+        TypeError
+            If an element of `other` is not of the field's element type,
+            or `other` is a value that was never built.
+        ValueError
+            As `add` raises it, or if the set would hold more elements than
+            the capacity; it is left as it was.
+        """
+    def __le__(self, other: AbstractSet[object], /) -> bool:
+        """Return whether `other` holds every element of this set.
+
+        Raises
+        ------
+        TypeError
+            If `other` is a value that was never built.
+        """
+    def __lt__(self, other: AbstractSet[object], /) -> bool:
+        """Return whether `other` holds every element of this set and at least one more.
+
+        Raises
+        ------
+        TypeError
+            If `other` is a value that was never built.
+        """
+    def __ge__(self, other: AbstractSet[object], /) -> bool:
+        """Return whether this set holds every element of `other`.
+
+        Raises
+        ------
+        TypeError
+            If `other` is a value that was never built.
+        """
+    def __gt__(self, other: AbstractSet[object], /) -> bool:
+        """Return whether this set holds every element of `other` and at least one more.
+
+        Raises
+        ------
+        TypeError
+            If `other` is a value that was never built.
+        """
+    def isdisjoint(self, other: Iterable[object], /) -> bool:
+        """Return whether this set holds none of the elements of `other`.
 
         Raises
         ------

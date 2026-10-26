@@ -5,6 +5,7 @@ import decimal
 import enum
 import gc
 import math
+import operator
 import pickle
 import re
 import struct
@@ -648,6 +649,14 @@ def test_a_value_that_is_no_key_is_not_in_the_set() -> None:
     assert (BoundedSet[int]([1], capacity=2) == {1, "x"}) is False
     assert (BoundedSet[int]([1, 2], capacity=2) == {1, "x"}) is False
     assert value == {1}
+    pair = BoundedSet[int]([1, 2], capacity=2)
+    assert pair & {1, "x"} == {1}
+    assert pair - {1, "x"} == {2}
+    assert pair <= {1, 2, "x"}
+    assert pair < {1, 2, "x"}
+    assert not pair >= {1, 2, "x"}
+    assert not pair > {1, "x"}
+    assert pair.isdisjoint({"x"})
 
 
 def test_two_threads_never_pass_the_capacity() -> None:
@@ -708,3 +717,86 @@ def test_set_methods_change_the_value() -> None:
     ):
         value.update([1], [4, 5])
     assert list(value) == [1, 2, 3]
+
+
+def test_operators_keep_the_class_and_capacity() -> None:
+    """Return a Tags of the same capacity from each operator, with a builtin set on either side."""
+    tags = Tags(["a", "b"], capacity=4)
+    results: list[tuple[Any, set[str]]] = [
+        (tags | {"c"}, {"a", "b", "c"}),
+        ({"c"} | tags, {"a", "b", "c"}),
+        (tags & {"a", "c"}, {"a"}),
+        ({"a", "c"} & tags, {"a"}),
+        (tags - {"a"}, {"b"}),
+        ({"a", "c"} - tags, {"c"}),
+        (tags ^ {"a", "c"}, {"b", "c"}),
+        ({"a", "c"} ^ tags, {"b", "c"}),
+    ]
+    for result, expected in results:
+        assert type(result) is Tags
+        assert result.capacity == 4
+        assert result == expected
+    assert tags == {"a", "b"}
+
+
+def test_an_operator_past_the_capacity_raises() -> None:
+    """Raise ValueError from |, |= and ^= past the capacity, and leave the value as it was."""
+    value = BoundedSet[int]([1, 2], capacity=2)
+    with pytest.raises(ValueError, match="would have 3"):
+        value | {3}
+    with pytest.raises(ValueError, match="would have 3"):
+        value |= {3}
+    with pytest.raises(ValueError, match="would have 3"):
+        value ^= {1, 3, 4}
+    assert list(value) == [1, 2]
+
+
+def test_operators_refuse_what_set_refuses() -> None:
+    """Raise TypeError for an operand that is not a set, and for a BoundedSet that was never built."""
+    value = BoundedSet[int]([1], capacity=2)
+    with pytest.raises(TypeError):
+        value | [1]  # type: ignore[operator]
+    with pytest.raises(TypeError):
+        value |= [1]  # type: ignore[arg-type]
+    with pytest.raises(TypeError):
+        value <= [1]  # type: ignore[operator]  # noqa: B015
+    with pytest.raises(TypeError, match="expects int, got str"):
+        value | {"x"}  # type: ignore[arg-type]
+    with pytest.raises(TypeError, match="expects int, got str"):
+        {"x"} - value
+    unbuilt = NativeSet.__new__(BoundedSet)
+    for op in (
+        operator.or_,
+        operator.and_,
+        operator.sub,
+        operator.xor,
+        operator.ior,
+        operator.iand,
+        operator.isub,
+        operator.ixor,
+        operator.le,
+        operator.lt,
+        operator.ge,
+        operator.gt,
+        BoundedSet.isdisjoint,
+    ):
+        with pytest.raises(TypeError, match="never built"):
+            op(value, unbuilt)
+    assert value == {1}
+
+
+def test_comparisons_follow_set_rules() -> None:
+    """Order a BoundedSet against builtin sets and BoundedSets, either way round, as set orders sets."""
+    sets: list[set[int]] = [set(), {1}, {1, 2}, {2, 3}, {1, 2, 3}]
+    for a in sets:
+        for b in sets:
+            bounded_a = BoundedSet[int](a, capacity=4)
+            bounded_b = BoundedSet[int](b, capacity=8)
+            for left, right in ((bounded_a, b), (a, bounded_b), (bounded_a, bounded_b)):
+                assert (left <= right) == (a <= b)
+                assert (left < right) == (a < b)
+                assert (left >= right) == (a >= b)
+                assert (left > right) == (a > b)
+            assert bounded_a.isdisjoint(b) == a.isdisjoint(b)
+            assert bounded_a.isdisjoint(bounded_b) == a.isdisjoint(b)
+            assert bounded_a.isdisjoint(iter(b)) == a.isdisjoint(b)
