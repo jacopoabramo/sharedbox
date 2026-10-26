@@ -35,7 +35,7 @@ struct KeyCheck {
 /// How the bytes of a key are checked and compared.
 struct KeyPlan {
     /// The bytes that count when keys are compared: 0xff except each datetime and time fold bit. Empty when
-    /// there are no checks, so keys compare whole.
+    /// no bit is masked, so keys compare whole.
     std::vector<std::byte> mask;
     /// Empty for a key of int, str or enum, whose stored bytes are compared as they are.
     std::vector<KeyCheck> checks;

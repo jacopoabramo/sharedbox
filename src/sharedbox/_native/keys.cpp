@@ -79,7 +79,7 @@ KeyPlan plan_of(const detail::type_table &tree, const detail::type_ref &key) {
     plan.size = key.size;
     plan.mask.assign(key.size, std::byte{0xff});
     add_checks(tree, key, 0, no_guard, plan);
-    if (plan.checks.empty())
+    if (std::ranges::all_of(plan.mask, [](std::byte b) { return b == std::byte{0xff}; }))
         plan.mask.clear();
     return plan;
 }
@@ -202,15 +202,17 @@ std::uint32_t KeyedStore::scan(const std::byte *key, std::uint32_t end) const {
         constexpr std::uint32_t block = 32;
         while (end > 0) {
             const std::uint32_t start = end > block ? end - block : 0;
-            // No branch and no early exit, so the compiler compares a block with SIMD instructions; only a
-            // block holding key is searched one slot at a time.
-            bool any = false;
+            // Bit 63 of (x - 1) & ~x is set only when x is 0. It takes a subtraction and bit operations, which
+            // SSE2 has for 64-bit lanes where it has no 64-bit compare, so GCC and MSVC turn the loop into SIMD
+            // instructions; only a block holding key is searched one slot at a time.
+            std::uint64_t any = 0;
             for (std::uint32_t i = start; i < end; ++i) {
                 std::uint64_t stored;
                 std::memcpy(&stored, first + 8 * std::size_t{i}, sizeof stored);
-                any |= stored == wanted;
+                const std::uint64_t x = stored ^ wanted;
+                any |= (x - 1) & ~x;
             }
-            if (any)
+            if (any >> 63)
                 for (std::uint32_t i = end; i-- > start;)
                     if (std::memcmp(first + 8 * std::size_t{i}, key, 8) == 0)
                         return i;
