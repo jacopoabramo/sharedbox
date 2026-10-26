@@ -248,6 +248,11 @@ class Mark:
     y: int = attrs.field(eq=False)
 
 
+@attrs.frozen
+class Fold:
+    name: Name = attrs.field(eq=str.lower)
+
+
 @dataclass(frozen=True)
 class Price:
     amount: Annotated[decimal.Decimal, Capacity(8)]
@@ -299,6 +304,7 @@ class Price:
         (Amount | int, "a union of enum(ONE) and int:8"),
         (Label, "a Label whose equality skips note"),
         (Mark, "a Mark whose equality skips y"),
+        (Fold, "a Fold whose equality compares name through a function"),
         (Label | None, "a Label whose equality skips note"),
     ],
 )

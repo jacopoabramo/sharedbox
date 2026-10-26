@@ -1260,17 +1260,26 @@ def families(spec: TypeSpec) -> set[object]:
 
 
 def uncompared(spec: TypeSpec) -> str | None:
-    """Return the first member a record's equality leaves out, `field(compare=False)` or attrs `eq=False`, or None."""
+    """Return how a record's equality departs from its members' bytes, or None.
+
+    The first member left out, by `field(compare=False)` or attrs
+    `eq=False`, gives `skips {name}`; one attrs compares through a key
+    function, as `attrs.field(eq=str.lower)` does, gives
+    `compares {name} through a function`.
+    """
     if spec.kind != "record" or spec.info[0] != 0:
         return None
     cls = spec.info[1]
     if dataclasses.is_dataclass(cls):
-        skipped = [f.name for f in dataclasses.fields(cls) if not f.compare]
-    elif hasattr(cls, "__attrs_attrs__"):
-        skipped = [a.name for a in cls.__attrs_attrs__ if not a.eq]
-    else:
-        skipped = []
-    return skipped[0] if skipped else None
+        return next(
+            (f"skips {f.name}" for f in dataclasses.fields(cls) if not f.compare), None
+        )
+    for a in getattr(cls, "__attrs_attrs__", ()):
+        if not a.eq:
+            return f"skips {a.name}"
+        if a.eq_key is not None:
+            return f"compares {a.name} through a function"
+    return None
 
 
 def key_refusal(spec: TypeSpec, inside: str | None = None) -> str | None:
@@ -1283,8 +1292,8 @@ def key_refusal(spec: TypeSpec, inside: str | None = None) -> str | None:
         return "a Decimal"
     if spec.kind == "set":
         return "a frozenset"
-    if (skipped := uncompared(spec)) is not None:
-        return f"a {spec.info[1].__qualname__} whose equality skips {skipped}"
+    if (departs := uncompared(spec)) is not None:
+        return f"a {spec.info[1].__qualname__} whose equality {departs}"
     if inside is not None and spec.kind in INEXACT_KINDS:
         return f"a {spec.text} inside {inside}"
     if spec.kind == "literal":
