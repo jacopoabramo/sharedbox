@@ -815,3 +815,18 @@ def test_comparisons_follow_set_rules() -> None:
             assert bounded_a.isdisjoint(b) == a.isdisjoint(b)
             assert bounded_a.isdisjoint(bounded_b) == a.isdisjoint(b)
             assert bounded_a.isdisjoint(iter(b)) == a.isdisjoint(b)
+
+
+def test_a_value_is_its_own_operand() -> None:
+    """Combine, compare and update a value with itself, which takes its mutex once at a time."""
+    keys = set(range(12))
+    value = BoundedSet[int](keys, capacity=16)
+    value |= value
+    value &= value
+    value.update(value)
+    assert value == keys
+    assert value - value == set()
+    assert value <= value  # noqa: PLR0124
+    assert not value < value  # noqa: PLR0124
+    value ^= value
+    assert value == set()
