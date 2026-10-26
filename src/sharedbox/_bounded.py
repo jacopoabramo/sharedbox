@@ -148,6 +148,11 @@ class BoundedSet(NativeSet[T]):
     the other fold. A value that cannot be stored as an element is in no
     set: `in` returns False and `remove` raises `KeyError`.
 
+    The operators `|`, `&`, `-` and `^`, their in-place forms and the
+    comparisons take any set and return a value of this class and
+    capacity, on either side of the operator. `&`, `-` and the comparisons
+    treat an element of the other set that this one cannot hold as absent.
+
     A subclass is declared and read back the same way, generic as
     `class MySet(BoundedSet[T])` used as `MySet[int]`, or with its element
     type fixed as `class Tags(BoundedSet[int])`. A read from a box calls
