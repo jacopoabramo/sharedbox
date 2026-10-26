@@ -2,19 +2,22 @@
 icon: lucide/wrench
 ---
 
-# How to store a large set
+# How to store a large set or dict
 
-A `set` field builds one Python object per element on every read and
-encodes every element again on every write, so a set of tens of thousands
-of keys costs milliseconds each way. Declare the field as
+A `set` or `dict` field builds one Python object per element on every read
+and encodes every element again on every write, so a set or dict of tens
+of thousands of keys costs milliseconds each way. Declare a set field as
 [`BoundedSet`][sharedbox.BoundedSet] instead, and a read copies the stored
 bytes without building any element, while assigning a `BoundedSet` to the
 field copies its bytes back in one step. An `in` test encodes only the key
-it looks for and compares it with the stored bytes. The first 64 calls to
-`in`, `add`, `discard` or `remove` after a read compare the key with every
-element. In a set of more than 8 elements, the next one hashes every
-element once into a table the value keeps in its own memory, not in the
-box, and from then on each test or change looks up only the one key.
+it looks for and compares it with the stored bytes.
+
+After a read, the first 64 calls to `in`, `add`, `discard` or `remove`
+compare the key with every element. In a set of more than 8 elements, the
+65th call hashes every element once into a table that the value keeps in
+its own memory, not in the box. From then on each test or change looks up
+only the one key. A dict field gets the same from a `BoundedDict`, as
+[step 9](#9-store-a-large-dict-as-a-boundeddict) shows.
 
 How much that saves depends on the size and on what you do with the value.
 In `benchbox ops` on Windows with CPython 3.11, reading a set and testing
@@ -68,7 +71,9 @@ step:
 
 Adding a key checks it as a write to the field would, so a `str` where the
 field holds integers raises `TypeError` at that line. Testing for such a
-value with `in` returns `False`, since the set cannot hold it.
+value with `in` returns `False`, since the set cannot hold it. That holds
+for `1.0` and `True` in a set of integers too, although Python counts both
+equal to `1`, because a key of another type is never encoded.
 
 ## 4. Combine it with other sets
 
@@ -88,7 +93,8 @@ the result would hold it.
 
 At run time `{1} | value` returns a `BoundedSet`, because the builtin
 `set` declines to combine with it and Python then calls the `BoundedSet`
-operator. A type checker reads only the builtin `set`'s annotation, so it
+operator. A type checker does not follow that run-time step: it finds
+that `set.__or__` accepts any set and is declared to return a `set`, so it
 types the result as `set`.
 
 ## 5. Handle a change past the capacity
@@ -153,6 +159,64 @@ methods that belong with the data can live on it:
 A read builds the value without calling the subclass's `__init__`, so an
 attribute that `__init__` sets is missing on a value read from a box. Keep
 what every value needs in its elements.
+
+## 9. Store a large dict as a BoundedDict
+
+A [`BoundedDict[K, V]`][sharedbox.BoundedDict] does for a `dict[K, V]`
+field what a `BoundedSet` does for a set: a read copies the stored bytes,
+assigning it back copies them in one step, and a lookup encodes only the
+key it looks for. Declare and create it as the set above, with the
+capacity counting key and value pairs:
+
+```{.python}
+--8<-- "docs/examples/store_a_large_set_or_dict.py:dict-declare"
+```
+
+`d[key]`, `d.get(key)` and `key in d` behave as they do on a `dict`,
+except that a key of another type is never found, as step 3 says for a
+set. Its keys follow the rules of step 6: the declaration refuses the same
+key types, and a nan, a NaT, or a `datetime` or `time` with a time zone
+raises `ValueError` when it is added as a key. The values can be of any
+type a `dict` field holds, and a process that declares the field as
+`dict[int, float]` attaches to the same box and reads the same items.
+
+A `BoundedDict` is a `MutableMapping` but not a `dict`, so pass `dict(d)`
+where code asks for the builtin type, as step 7 does for a set.
+
+## 10. Change items in insertion order
+
+A `BoundedDict` keeps its items in insertion order, as a `dict` does.
+Assigning to a key it holds replaces the value where it is, a new key goes
+last, and `del` leaves the other items in the order they had:
+
+```{.python}
+--8<-- "docs/examples/store_a_large_set_or_dict.py:dict-change"
+```
+
+Replacing a value is quick, but a delete takes time in proportion to the
+size of the dict. It moves every later item down one place, and when the
+dict has more than 8 items and has built its table of keys, the next
+lookup builds the table again.
+
+A change that would leave more keys than the capacity raises
+`ValueError`, as for the set, while replacing a value in a full dict
+always works.
+
+## 11. Compare values as Python compares them
+
+`==` compares a `BoundedDict` with any mapping by its keys, then compares
+the values with `==`, so two values that Python counts as equal match
+whatever their stored bytes. A float nan is equal to nothing, itself
+included, and a read decodes a new float object each time, so a dict
+holding a nan value is not equal even to its own copy:
+
+```{.python}
+--8<-- "docs/examples/store_a_large_set_or_dict.py:dict-nan"
+```
+
+A builtin `dict` holding the same nan object in both would compare equal,
+because Python checks whether two values are the same object before it
+calls `==`.
 
 ??? example "The whole script"
 

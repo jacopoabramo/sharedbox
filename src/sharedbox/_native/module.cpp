@@ -13,6 +13,7 @@
 #include <memory>
 #include <new>
 #include <span>
+#include <string>
 #include <string_view>
 #include <system_error>
 #include <type_traits>
@@ -26,6 +27,7 @@
 
 #include "codec.hpp"
 #include "collection.hpp"
+#include "dict.hpp"
 #include "scalars.hpp"
 #include "segment.hpp"
 #include "set.hpp"
@@ -743,13 +745,13 @@ PyType_Slot store_slots[] = {{Py_tp_traverse, reinterpret_cast<void *>(store_tra
                              {Py_tp_clear, reinterpret_cast<void *>(store_clear<Store>)},
                              {0, nullptr}};
 
-/// The iterator of a NativeCollection or NativeSet: one element decoded per step, forward up to the length
-/// the value has then, or backward from the end, as list's reversed iterator.
+/// The iterator of a NativeCollection, NativeSet or NativeDict: one element, or a dict's key, decoded per
+/// step, forward up to the length the value has then, or backward from the end, as list's reversed iterator.
 template <typename Store> struct StoreIterator {
     nb::object store;
     std::size_t index = 0;
     bool backward = false;
-    /// A NativeSet's length when the iteration began.
+    /// A NativeSet's or NativeDict's length when the iteration began.
     std::size_t length = 0;
 };
 
@@ -783,6 +785,9 @@ template <typename Store> PyObject *store_iterator_next(PyObject *self) {
         if constexpr (std::is_same_v<Store, sharedbox::NativeSet>) {
             if (c->size() != it.length)
                 sharedbox::raise(PyExc_RuntimeError, "Set changed size during iteration");
+        } else if constexpr (std::is_same_v<Store, sharedbox::NativeDict>) {
+            if (c->size() != it.length)
+                sharedbox::raise(PyExc_RuntimeError, "dictionary changed size during iteration");
         }
         nb::object value = c->element(static_cast<Py_ssize_t>(it.backward ? it.index - 1 : it.index));
         if (!value.is_valid()) {
@@ -806,6 +811,57 @@ PyType_Slot store_iterator_slots[] = {{Py_tp_iternext, reinterpret_cast<void *>(
 
 using CollectionIterator = StoreIterator<sharedbox::NativeCollection>;
 using SetIterator = StoreIterator<sharedbox::NativeSet>;
+using DictIterator = StoreIterator<sharedbox::NativeDict>;
+
+// A slot rather than a bound __getitem__, which CPython would also install as sq_item: C code such as numpy
+// would then take the value for a sequence, as it never takes a builtin dict, which fills only mp_subscript.
+PyObject *dict_subscript(PyObject *self, PyObject *key) {
+    try {
+        if (!nb::inst_ready(self))
+            sharedbox::raise(PyExc_TypeError, "the value was never built");
+        return nb::inst_ptr<sharedbox::NativeDict>(self)->getitem(key).release().ptr();
+    } catch (...) {
+        set_error();
+        return nullptr;
+    }
+}
+
+// A slot for the same reason as dict_subscript: a bound __setitem__ or __delitem__ would also be installed as
+// sq_ass_item. A null value means del.
+int dict_ass_subscript(PyObject *self, PyObject *key, PyObject *value) {
+    try {
+        if (!nb::inst_ready(self))
+            sharedbox::raise(PyExc_TypeError, "the value was never built");
+        auto *d = nb::inst_ptr<sharedbox::NativeDict>(self);
+        if (value == nullptr)
+            d->delitem(key);
+        else
+            d->setitem(key, value);
+        return 0;
+    } catch (...) {
+        set_error();
+        return -1;
+    }
+}
+
+PyType_Slot dict_slots[] = {{Py_tp_traverse, reinterpret_cast<void *>(store_traverse<sharedbox::NativeDict>)},
+                            {Py_tp_clear, reinterpret_cast<void *>(store_clear<sharedbox::NativeDict>)},
+                            {Py_mp_subscript, reinterpret_cast<void *>(dict_subscript)},
+                            {Py_mp_ass_subscript, reinterpret_cast<void *>(dict_ass_subscript)},
+                            {0, nullptr}};
+
+/// Raises TypeError when given, the number of arguments passed to name, passes most, as dict's methods do.
+void at_most(const char *name, std::size_t most, std::size_t given) {
+    if (given > most)
+        sharedbox::raise(PyExc_TypeError, std::string(name) + " expected at most " + std::to_string(most) +
+                                              (most == 1 ? " argument, got " : " arguments, got ") +
+                                              std::to_string(given));
+}
+
+/// A view of self of the collections.abc class name: KeysView, ValuesView or ItemsView.
+nb::object view(const char *name, nb::handle self) {
+    return nb::module_::import_("collections.abc").attr(name)(self);
+}
 
 template <sharedbox::set_op op, bool reflected>
 nb::object set_combine(nb::pointer_and_handle<sharedbox::NativeSet> self, nb::handle other) {
@@ -1156,6 +1212,9 @@ NB_MODULE(_native, m) {
     nb::class_<SetIterator>(m, "NativeSetIterator", nb::is_final(),
                             nb::type_slots(store_iterator_slots<sharedbox::NativeSet>))
         .def("__iter__", [](nb::handle self) { return nb::borrow(self); });
+    nb::class_<DictIterator>(m, "NativeDictIterator", nb::is_final(),
+                             nb::type_slots(store_iterator_slots<sharedbox::NativeDict>))
+        .def("__iter__", [](nb::handle self) { return nb::borrow(self); });
 
     nb::class_<sharedbox::NativeCollection> collection(m, "NativeCollection", nb::is_generic(),
                                                        nb::type_slots(store_slots<sharedbox::NativeCollection>));
@@ -1243,6 +1302,67 @@ NB_MODULE(_native, m) {
     // A set's elements can change, so a value has no hash, as a set has none.
     set.attr("__hash__") = nb::none();
     nb::module_::import_("collections.abc").attr("MutableSet").attr("register")(set);
+
+    nb::class_<sharedbox::NativeDict> dict(m, "NativeDict", nb::is_generic(), nb::type_slots(dict_slots));
+    dict.def("__len__", &sharedbox::NativeDict::size)
+        .def("__iter__",
+             [](nb::pointer_and_handle<sharedbox::NativeDict> self) {
+                 return DictIterator{nb::borrow(self.h), 0, false, self.p->size()};
+             })
+        .def("__reversed__",
+             [](nb::pointer_and_handle<sharedbox::NativeDict> self) {
+                 const std::size_t size = self.p->size();
+                 return DictIterator{nb::borrow(self.h), size, true, size};
+             })
+        .def("get", &sharedbox::NativeDict::get, nb::arg().none(), nb::arg().none() = nb::none())
+        .def("__contains__", &sharedbox::NativeDict::contains, nb::arg().none())
+        .def("__eq__", &sharedbox::NativeDict::equals, nb::arg().none())
+        .def(
+            "pop",
+            // nb::args, since a default that is not given must differ from every value, None included.
+            [](sharedbox::NativeDict &d, nb::handle key, nb::args rest) {
+                at_most("pop", 2, rest.size() + 1);
+                return d.pop(key, rest.size() != 0 ? nb::handle(PyTuple_GetItem(rest.ptr(), 0)) : nb::handle());
+            },
+            nb::arg().none(), nb::arg("args"))
+        .def("popitem", &sharedbox::NativeDict::popitem)
+        .def("setdefault", &sharedbox::NativeDict::setdefault, nb::arg().none(), nb::arg().none() = nb::none())
+        .def("update",
+             [](sharedbox::NativeDict &d, nb::args others, nb::kwargs pairs) {
+                 at_most("update", 1, others.size());
+                 d.update(others.size() != 0 ? nb::handle(PyTuple_GetItem(others.ptr(), 0)) : nb::handle(), pairs);
+             })
+        .def("clear", &sharedbox::NativeDict::remove_all)
+        .def(
+            "__or__",
+            [](nb::pointer_and_handle<sharedbox::NativeDict> self, nb::handle other) {
+                return sharedbox::NativeDict::merge(self, other, false);
+            },
+            nb::arg().none())
+        .def(
+            "__ror__",
+            [](nb::pointer_and_handle<sharedbox::NativeDict> self, nb::handle other) {
+                return sharedbox::NativeDict::merge(self, other, true);
+            },
+            nb::arg().none())
+        .def(
+            "__ior__",
+            // Any argument update takes, as dict's |= takes it.
+            [](nb::pointer_and_handle<sharedbox::NativeDict> self, nb::handle other) {
+                self.p->update(other, nb::kwargs());
+                return nb::borrow(self.h);
+            },
+            nb::arg().none())
+        .def("copy", &sharedbox::NativeDict::copy)
+        .def("keys", [](nb::handle self) { return view("KeysView", self); })
+        .def("values", [](nb::handle self) { return view("ValuesView", self); })
+        .def("items", [](nb::handle self) { return view("ItemsView", self); })
+        .def_prop_ro("_element_annotation", &sharedbox::NativeDict::element_annotation)
+        .def_prop_ro("capacity", &sharedbox::NativeDict::capacity)
+        .def("_stored", &sharedbox::NativeDict::stored);
+    // A dict's items can change, so a value has no hash, as a dict has none.
+    dict.attr("__hash__") = nb::none();
+    nb::module_::import_("collections.abc").attr("MutableMapping").attr("register")(dict);
 
     method_type = nb::object(nb::module_::import_("types").attr("MethodType")).release().ptr();
     getattr_function = nb::object(nb::module_::import_("builtins").attr("getattr")).release().ptr();

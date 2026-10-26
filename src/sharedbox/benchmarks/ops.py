@@ -30,7 +30,15 @@ from typing import Annotated, Any
 import numpy as np
 import pyperf
 
-from sharedbox import BoundedList, BoundedSet, Capacity, DType, Shape, SharedBox
+from sharedbox import (
+    BoundedDict,
+    BoundedList,
+    BoundedSet,
+    Capacity,
+    DType,
+    Shape,
+    SharedBox,
+)
 
 INT = struct.Struct("<q")
 FLOAT = struct.Struct("<d")
@@ -164,6 +172,9 @@ class Typed(SharedBox):
     d16: Annotated[dict[int, float], Capacity(16)]
     d1k: Annotated[dict[int, float], Capacity(1024)]
     d64k: Annotated[dict[int, float], Capacity(65536)]
+    bd16: Annotated[BoundedDict[int, float], Capacity(16)]
+    bd1k: Annotated[BoundedDict[int, float], Capacity(1024)]
+    bd64k: Annotated[BoundedDict[int, float], Capacity(65536)]
     image: Annotated[np.ndarray, Shape(512, 512), DType("float32")]
 
 
@@ -184,6 +195,9 @@ BS64K = BoundedSet[int](S64K, capacity=65536)
 D16 = dict.fromkeys(range(16), 0.5)
 D1K = dict.fromkeys(range(1024), 0.5)
 D64K = dict.fromkeys(range(65536), 0.5)
+BD16 = BoundedDict[int, float](D16, capacity=16)
+BD1K = BoundedDict[int, float](D1K, capacity=1024)
+BD64K = BoundedDict[int, float](D64K, capacity=65536)
 IMAGE = np.ones((512, 512), np.float32)
 OUT = np.empty_like(IMAGE)
 
@@ -214,6 +228,9 @@ def open_typed() -> tuple[Any, ...]:
         D16,
         D1K,
         D64K,
+        BD16,
+        BD1K,
+        BD64K,
         IMAGE,
     )
     atexit.register(Typed.unlink, name)
@@ -433,7 +450,13 @@ BENCHMARKS: list[tuple[str, str, str, list[str]]] = [
         "change set16",
         "SharedBox",
         TYPED,
-        ["s = typed.s16", "s.discard(0)", "s.add(0)", "typed.s16 = s"],
+        [
+            "s = typed.s16",
+            "k = next(iter(s))",
+            "s.discard(k)",
+            "s.add(k)",
+            "typed.s16 = s",
+        ],
     ),
     ("write set1k", "SharedBox", TYPED, ["typed.s1k = S1K"]),
     ("read set1k", "SharedBox", TYPED, ["typed.s1k"]),
@@ -443,7 +466,13 @@ BENCHMARKS: list[tuple[str, str, str, list[str]]] = [
         "change set1k",
         "SharedBox",
         TYPED,
-        ["s = typed.s1k", "s.discard(0)", "s.add(0)", "typed.s1k = s"],
+        [
+            "s = typed.s1k",
+            "k = next(iter(s))",
+            "s.discard(k)",
+            "s.add(k)",
+            "typed.s1k = s",
+        ],
     ),
     ("write set64k", "SharedBox", TYPED, ["typed.s64k = S64K"]),
     ("read set64k", "SharedBox", TYPED, ["typed.s64k"]),
@@ -453,7 +482,13 @@ BENCHMARKS: list[tuple[str, str, str, list[str]]] = [
         "change set64k",
         "SharedBox",
         TYPED,
-        ["s = typed.s64k", "s.discard(0)", "s.add(0)", "typed.s64k = s"],
+        [
+            "s = typed.s64k",
+            "k = next(iter(s))",
+            "s.discard(k)",
+            "s.add(k)",
+            "typed.s64k = s",
+        ],
     ),
     ("write set16", "BoundedSet", TYPED, ["typed.bs16 = BS16"]),
     ("read set16", "BoundedSet", TYPED, ["typed.bs16"]),
@@ -463,7 +498,13 @@ BENCHMARKS: list[tuple[str, str, str, list[str]]] = [
         "change set16",
         "BoundedSet",
         TYPED,
-        ["s = typed.bs16", "s.discard(0)", "s.add(0)", "typed.bs16 = s"],
+        [
+            "s = typed.bs16",
+            "k = next(iter(s))",
+            "s.discard(k)",
+            "s.add(k)",
+            "typed.bs16 = s",
+        ],
     ),
     ("write set1k", "BoundedSet", TYPED, ["typed.bs1k = BS1K"]),
     ("read set1k", "BoundedSet", TYPED, ["typed.bs1k"]),
@@ -473,7 +514,13 @@ BENCHMARKS: list[tuple[str, str, str, list[str]]] = [
         "change set1k",
         "BoundedSet",
         TYPED,
-        ["s = typed.bs1k", "s.discard(0)", "s.add(0)", "typed.bs1k = s"],
+        [
+            "s = typed.bs1k",
+            "k = next(iter(s))",
+            "s.discard(k)",
+            "s.add(k)",
+            "typed.bs1k = s",
+        ],
     ),
     ("write set64k", "BoundedSet", TYPED, ["typed.bs64k = BS64K"]),
     ("read set64k", "BoundedSet", TYPED, ["typed.bs64k"]),
@@ -483,20 +530,110 @@ BENCHMARKS: list[tuple[str, str, str, list[str]]] = [
         "change set64k",
         "BoundedSet",
         TYPED,
-        ["s = typed.bs64k", "s.discard(0)", "s.add(0)", "typed.bs64k = s"],
+        [
+            "s = typed.bs64k",
+            "k = next(iter(s))",
+            "s.discard(k)",
+            "s.add(k)",
+            "typed.bs64k = s",
+        ],
     ),
     ("write dict16", "SharedBox", TYPED, ["typed.d16 = D16"]),
     ("read dict16", "SharedBox", TYPED, ["typed.d16"]),
     ("in dict16", "SharedBox", TYPED, ["8 in typed.d16"]),
     ("iterate dict16", "SharedBox", TYPED, ["for _ in typed.d16: pass"]),
+    (
+        "change dict16",
+        "SharedBox",
+        TYPED,
+        [
+            "d = typed.d16",
+            "k = next(iter(d))",
+            "del d[k]",
+            "d[k] = 0.5",
+            "typed.d16 = d",
+        ],
+    ),
     ("write dict1k", "SharedBox", TYPED, ["typed.d1k = D1K"]),
     ("read dict1k", "SharedBox", TYPED, ["typed.d1k"]),
     ("in dict1k", "SharedBox", TYPED, ["512 in typed.d1k"]),
     ("iterate dict1k", "SharedBox", TYPED, ["for _ in typed.d1k: pass"]),
+    (
+        "change dict1k",
+        "SharedBox",
+        TYPED,
+        [
+            "d = typed.d1k",
+            "k = next(iter(d))",
+            "del d[k]",
+            "d[k] = 0.5",
+            "typed.d1k = d",
+        ],
+    ),
     ("write dict64k", "SharedBox", TYPED, ["typed.d64k = D64K"]),
     ("read dict64k", "SharedBox", TYPED, ["typed.d64k"]),
     ("in dict64k", "SharedBox", TYPED, ["32768 in typed.d64k"]),
     ("iterate dict64k", "SharedBox", TYPED, ["for _ in typed.d64k: pass"]),
+    (
+        "change dict64k",
+        "SharedBox",
+        TYPED,
+        [
+            "d = typed.d64k",
+            "k = next(iter(d))",
+            "del d[k]",
+            "d[k] = 0.5",
+            "typed.d64k = d",
+        ],
+    ),
+    ("write dict16", "BoundedDict", TYPED, ["typed.bd16 = BD16"]),
+    ("read dict16", "BoundedDict", TYPED, ["typed.bd16"]),
+    ("in dict16", "BoundedDict", TYPED, ["8 in typed.bd16"]),
+    ("iterate dict16", "BoundedDict", TYPED, ["for _ in typed.bd16: pass"]),
+    (
+        "change dict16",
+        "BoundedDict",
+        TYPED,
+        [
+            "d = typed.bd16",
+            "k = next(iter(d))",
+            "del d[k]",
+            "d[k] = 0.5",
+            "typed.bd16 = d",
+        ],
+    ),
+    ("write dict1k", "BoundedDict", TYPED, ["typed.bd1k = BD1K"]),
+    ("read dict1k", "BoundedDict", TYPED, ["typed.bd1k"]),
+    ("in dict1k", "BoundedDict", TYPED, ["512 in typed.bd1k"]),
+    ("iterate dict1k", "BoundedDict", TYPED, ["for _ in typed.bd1k: pass"]),
+    (
+        "change dict1k",
+        "BoundedDict",
+        TYPED,
+        [
+            "d = typed.bd1k",
+            "k = next(iter(d))",
+            "del d[k]",
+            "d[k] = 0.5",
+            "typed.bd1k = d",
+        ],
+    ),
+    ("write dict64k", "BoundedDict", TYPED, ["typed.bd64k = BD64K"]),
+    ("read dict64k", "BoundedDict", TYPED, ["typed.bd64k"]),
+    ("in dict64k", "BoundedDict", TYPED, ["32768 in typed.bd64k"]),
+    ("iterate dict64k", "BoundedDict", TYPED, ["for _ in typed.bd64k: pass"]),
+    (
+        "change dict64k",
+        "BoundedDict",
+        TYPED,
+        [
+            "d = typed.bd64k",
+            "k = next(iter(d))",
+            "del d[k]",
+            "d[k] = 0.5",
+            "typed.bd64k = d",
+        ],
+    ),
     ("write array 1 MiB", "SharedBox", TYPED, ["typed.image = IMAGE"]),
     ("read array 1 MiB", "SharedBox", TYPED, ["typed.image"]),
     ("read_into array 1 MiB", "SharedBox", TYPED, ["typed.read_into('image', OUT)"]),

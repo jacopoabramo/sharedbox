@@ -337,12 +337,12 @@ The bytes written for a list, set or dict field are its length and the
 slots it uses, shorter than the field when it is not full; a reader copies
 the same part.
 
-A writer fills each slot of a set with zero bytes before it encodes the
-element there, so the bytes after a `str`'s length, under an absent
-optional and in padding are zero. A reader that finds an element by
-comparing slot bytes, as `BoundedSet` does, relies on this and does not
-clear them, so an element another writer stores with nonzero bytes there
-is not found.
+A writer fills each slot of a set or dict with zero bytes before it
+encodes the element or item there, so the bytes after a `str`'s length,
+under an absent optional and in padding are zero. A reader that finds an
+element or key by comparing slot bytes, as `BoundedSet` and `BoundedDict`
+do, relies on this and does not clear them, so an element or key another
+writer stores with nonzero bytes there is not found.
 
 ## Schema identity
 

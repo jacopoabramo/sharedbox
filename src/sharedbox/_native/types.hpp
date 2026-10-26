@@ -45,11 +45,12 @@ struct NodeInfo {
     std::vector<bool> required;
     /// array: hand the converter uint16 elements, which it reinterprets (numpy has no bfloat16).
     bool as_uint16 = false;
-    /// list, set: read back as a NativeCollection or NativeSet holding the stored bytes, its class cls.
+    /// list, set, dict: read back as a NativeCollection, NativeSet or NativeDict holding the stored bytes, its
+    /// class cls.
     bool stored = false;
-    /// list, set: the element's schema text.
+    /// list, set: the element's schema text; dict: the key's and the value's, joined by a comma.
     std::string element_text;
-    /// set read back as a NativeSet: how its keys are checked and compared.
+    /// set or dict read back as a NativeSet or NativeDict: how its keys are checked and compared.
     KeyPlan key;
 };
 
@@ -134,18 +135,34 @@ public:
     nb::object with_arrays(std::uint32_t index, PyObject *template_item, std::byte *data, nb::handle owner) const;
 
     const detail::type_node &node_of(const detail::type_ref &t) const { return tree_.node(t.node); }
-    /// The schema text of the elements of the list or set node t.
+    /// The schema text of the elements of the list, set or dict node t.
     const std::string &element_text(const detail::type_ref &t) const { return nodes_[t.node].element_text; }
-    /// The key plan of the set node collection, empty unless it is read back as a NativeSet.
+    /// The key plan of the set or dict node collection, empty unless it is read back as a NativeSet or
+    /// NativeDict.
     const KeyPlan &key_plan(const detail::type_ref &collection) const { return nodes_[collection.node].key; }
-    /// The annotation of the elements of the list or set node t, borrowed.
+    /// Where member member of a slot of the dict node collection starts in the slot.
+    std::uint32_t member_offset(const detail::type_ref &collection, std::uint32_t member) const {
+        return tree_.member(tree_.node(collection.node).members + member).offset;
+    }
+    /// The annotation of the elements of the list or set node t, or the key's and the value's of the dict
+    /// node t, borrowed.
     PyObject *element_annotation(const detail::type_ref &t) const;
-    /// The element of the list node list stored at slot; errors name label.
-    nb::object decode_element(const detail::type_ref &list, const std::byte *slot, const std::string &label) const;
-    /// Writes value at slot as an element of the list node list, the way a write of the list would; errors
-    /// name label.
-    void encode_element(const detail::type_ref &list, PyObject *value, std::byte *slot,
-                        const std::string &label) const;
+    /// Member member, 0 for a list's or set's element or a dict's key and 1 for a dict's value, of the slot
+    /// of the collection node collection that starts at slot; errors name label.
+    nb::object decode_member(const detail::type_ref &collection, std::uint32_t member, const std::byte *slot,
+                             const std::string &label) const;
+    /// Writes value as member member of the slot at slot, numbered as for decode_member, the way a write of
+    /// the collection would; errors name label.
+    void encode_member(const detail::type_ref &collection, std::uint32_t member, PyObject *value, std::byte *slot,
+                       const std::string &label) const;
+    nb::object decode_element(const detail::type_ref &collection, const std::byte *slot,
+                              const std::string &label) const {
+        return decode_member(collection, 0, slot, label);
+    }
+    void encode_element(const detail::type_ref &collection, PyObject *value, std::byte *slot,
+                        const std::string &label) const {
+        encode_member(collection, 0, value, slot, label);
+    }
 
     int traverse(visitproc visit, void *arg) const;
     void clear();
@@ -196,9 +213,11 @@ private:
     std::vector<std::string> labels_;
     std::string table_;
     std::vector<NodeInfo> nodes_;
-    /// NativeCollection and NativeSet, which encode_collection tests a list and a set value against.
+    /// NativeCollection, NativeSet and NativeDict, which encode_collection tests a list, set and dict value
+    /// against.
     PyTypeObject *collection_type_ = nullptr;
     PyTypeObject *set_type_ = nullptr;
+    PyTypeObject *dict_type_ = nullptr;
     std::vector<std::uint64_t> bytearrays_;
     std::vector<bool> reusable_;
     std::vector<bool> via_types_;

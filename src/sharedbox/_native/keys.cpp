@@ -87,7 +87,8 @@ KeyPlan plan_of(const detail::type_table &tree, const detail::type_ref &key) {
 KeyedStore::KeyedStore(nb::object types, const detail::type_ref &node, std::string label,
                        std::span<const std::byte> stored, std::unique_ptr<std::byte[]> *owned)
     : SlotStore(std::move(types), node, std::move(label), stored, owned), checked_(count_ == 0),
-      plan_(&codec().key_plan(node_)), key_size_(plan_->size) {}
+      plan_(&codec().key_plan(node_)), key_size_(plan_->size),
+      value_offset_(node_.kind == kind_dict ? codec().member_offset(node_, 1) : 0) {}
 
 const char *KeyedStore::canonical(std::byte *key) const {
     for (const KeyCheck &c : plan_->checks) {
@@ -228,7 +229,7 @@ std::uint32_t KeyedStore::scan(const std::byte *key, std::uint32_t end) const {
 
 std::uint32_t KeyedStore::lookup(const std::byte *key) {
     if (checked_ || scans_ == scans_before_index) {
-        ensure_checked(0);
+        ensure_checked();
         return find(key);
     }
     codec();
@@ -332,7 +333,7 @@ void KeyedStore::remove_moving_last(std::uint32_t at) {
 
 void KeyedStore::forget() { index_ = KeyIndex{}; }
 
-void KeyedStore::ensure_checked(std::uint32_t value_offset) {
+void KeyedStore::ensure_checked() {
     // Raises for a value the collector cleared, whose plan_ points into the Types it no longer holds.
     codec();
     if (checked_)
@@ -351,8 +352,8 @@ void KeyedStore::ensure_checked(std::uint32_t value_offset) {
     for (std::uint32_t at = 0; at < stored; ++at) {
         std::byte *key = slot(at);
         if (const std::uint32_t first = find(key); first != no_slot) {
-            if (value_offset != 0)
-                std::memcpy(slot(first) + value_offset, key + value_offset, stride_ - value_offset);
+            if (value_offset_ != 0)
+                std::memcpy(slot(first) + value_offset_, key + value_offset_, stride_ - value_offset_);
             continue;
         }
         const std::uint32_t kept = count_;

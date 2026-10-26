@@ -74,9 +74,10 @@ protected:
     bool encode_key(nb::handle value, std::byte *out, bool quiet) const;
     /// The slot holding key, or no_slot.
     std::uint32_t find(const std::byte *key);
-    /// The slot of a set holding key, or no_slot. Until scans_before_index lookups on keys not yet checked,
+    /// The slot holding key, or no_slot. Until scans_before_index lookups on keys not yet checked,
     /// a lookup compares key with every slot through scan, dropping no duplicate and building no index; the
-    /// first of them checks each slot as ensure_checked does. Later ones run ensure_checked and find.
+    /// first of them checks each slot as ensure_checked does. Later ones run ensure_checked and find. A scan
+    /// returns the last slot holding key, so a dict reads the value ensure_checked would keep.
     std::uint32_t lookup(const std::byte *key);
     /// Removes key from a set and returns whether it held it. While lookups scan keys that may hold a
     /// duplicate, it removes every slot holding key.
@@ -88,9 +89,9 @@ protected:
     /// Drops the index, which the next lookup above scan_limit keys builds again.
     void forget();
     /// Checks the stored keys once, before the first lookup: raises the corrupt-value ValueError for one a
-    /// key cannot hold, stores a -0.0 as 0.0, and drops a later duplicate, or for a dict, whose values start
-    /// at value_offset in a slot, keeps its value in the first. value_offset 0 means a set.
-    void ensure_checked(std::uint32_t value_offset);
+    /// key cannot hold, stores a -0.0 as 0.0, and drops a later duplicate, or for a dict keeps its value in
+    /// the first.
+    void ensure_checked();
 
     KeyIndex index_;
     /// Whether the stored keys have passed ensure_checked; a value that starts empty has.
@@ -99,6 +100,11 @@ protected:
     std::uint32_t scans_ = 0;
     const KeyPlan *plan_ = nullptr;
     std::uint32_t key_size_ = 0;
+    /// Where a dict's value starts in a slot; 0 for a set, whose slots hold only a key.
+    std::uint32_t value_offset_ = 0;
+
+    /// The last slot before end holding key, or no_slot, comparing key with each slot.
+    std::uint32_t scan(const std::byte *key, std::uint32_t end) const;
 
 private:
     /// The end of the message saying why key, at the start of a slot, is refused, or nullptr when it is not;
@@ -107,8 +113,6 @@ private:
     /// The hash of key, masked through scratch, key_size_ bytes, when the plan has checks.
     std::uint64_t hash_of(const std::byte *key, std::byte *scratch) const;
     bool same(const std::byte *a, const std::byte *b) const;
-    /// The last slot before end holding key, or no_slot, comparing key with each slot.
-    std::uint32_t scan(const std::byte *key, std::uint32_t end) const;
     /// Builds the index over every slot, at a power of two of entries at least twice the count.
     void build();
     /// Replaces the index with an empty one of a power of two of entries at least twice keys.
