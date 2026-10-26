@@ -106,25 +106,31 @@ void NativeSet::refuse_unbuilt(nb::handle value) const {
                   " that was never built");
 }
 
+bool NativeSet::encode_keys(nb::handle iterable, std::vector<std::byte> &out, bool quiet) const {
+    const nb::object items = nb::steal(PyObject_GetIter(iterable.ptr()));
+    if (!items.is_valid())
+        throw nb::python_error();
+    for (;;) {
+        const nb::object item = nb::steal(PyIter_Next(items.ptr()));
+        if (!item.is_valid())
+            break;
+        const std::size_t at = out.size();
+        out.resize(at + stride_);
+        if (!encode_key(item, out.data() + at, quiet))
+            return false;
+    }
+    if (PyErr_Occurred())
+        throw nb::python_error();
+    return true;
+}
+
 void NativeSet::update(nb::args iterables) {
     // ponytail: every element is encoded before duplicates are dropped, so a long iterable of few distinct
     // keys costs its length in memory; deduplicate while encoding if that shows up.
     std::vector<std::byte> encoded;
     for (nb::handle iterable : iterables) {
         refuse_unbuilt(iterable);
-        const nb::object items = nb::steal(PyObject_GetIter(iterable.ptr()));
-        if (!items.is_valid())
-            throw nb::python_error();
-        for (;;) {
-            const nb::object item = nb::steal(PyIter_Next(items.ptr()));
-            if (!item.is_valid())
-                break;
-            const std::size_t at = encoded.size();
-            encoded.resize(at + stride_);
-            encode_key(item, encoded.data() + at, false);
-        }
-        if (PyErr_Occurred())
-            throw nb::python_error();
+        encode_keys(iterable, encoded, false);
     }
     std::size_t refused = 0;
     {
@@ -173,20 +179,8 @@ nb::object NativeSet::equals(nb::handle other) {
             throw nb::python_error();
         if (static_cast<std::size_t>(length) != size())
             return nb::bool_(false);
-        const nb::object items = nb::steal(PyObject_GetIter(other.ptr()));
-        if (!items.is_valid())
-            throw nb::python_error();
-        for (;;) {
-            const nb::object item = nb::steal(PyIter_Next(items.ptr()));
-            if (!item.is_valid())
-                break;
-            const std::size_t at = keys.size();
-            keys.resize(at + stride_);
-            if (!encode_key(item, keys.data() + at, true))
-                return nb::bool_(false);
-        }
-        if (PyErr_Occurred())
-            throw nb::python_error();
+        if (!encode_keys(other, keys, true))
+            return nb::bool_(false);
     }
     nb::ft_lock_guard guard(mutex_);
     ensure_checked(0);

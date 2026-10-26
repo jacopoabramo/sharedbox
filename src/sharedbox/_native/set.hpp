@@ -8,6 +8,7 @@
 #include <span>
 #include <string>
 #include <utility>
+#include <vector>
 
 #include "keys.hpp"
 
@@ -46,6 +47,9 @@ public:
 private:
     /// Raises TypeError when value is a NativeSet that was never built.
     void refuse_unbuilt(nb::handle value) const;
+    /// Appends the elements of iterable to out, each encoded as encode_key encodes it; with quiet, returns
+    /// false at the first that is not a key. Runs without the mutex.
+    bool encode_keys(nb::handle iterable, std::vector<std::byte> &out, bool quiet) const;
 };
 
 } // namespace sharedbox
