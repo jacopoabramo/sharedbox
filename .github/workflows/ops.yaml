@@ -8,6 +8,7 @@ on:
       - src/sharedbox/_native/**
       - src/sharedbox/benchmarks/ops.py
       - .github/workflows/ops.yaml
+      - CMakeLists.txt
   workflow_dispatch:
 
 permissions:
