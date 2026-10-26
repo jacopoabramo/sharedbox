@@ -54,6 +54,7 @@ public:
     /// Sets the items of other, when valid, then of pairs, all of them or, when the new keys do not fit, none.
     /// other is a mapping when it has a keys method, and otherwise an iterable of pairs.
     void update(nb::handle other, nb::kwargs pairs);
+    /// Removes every item.
     void remove_all();
     /// A new value of self's class holding the items of self updated by those of other, or of other updated
     /// by those of self when reflected, for other a collections.abc.Mapping; NotImplemented for anything else.

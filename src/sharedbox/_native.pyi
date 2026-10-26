@@ -883,21 +883,20 @@ class NativeDict(MutableMapping[_K, _V]):
             If the dict holds no such key.
         """
     @overload
-    def pop(self, key: _K, /) -> _V:
-        """Remove `key` and return its value.
+    def pop(self, key: _K, /) -> _V: ...
+    @overload
+    def pop(self, key: _K, default: _V, /) -> _V: ...
+    @overload
+    def pop(self, key: _K, default: _T, /) -> _V | _T:
+        """Remove `key` and return its value, or return `default`, when given, if the dict holds no such key.
 
         A value that fails to decode stays in the dict.
 
         Raises
         ------
         KeyError
-            If the dict holds no such key.
+            If the dict holds no such key and no `default` was given.
         """
-    @overload
-    def pop(self, key: _K, default: _V, /) -> _V: ...
-    @overload
-    def pop(self, key: _K, default: _T, /) -> _V | _T:
-        """Remove `key` and return its value, or return `default` when the dict holds no such key."""
     def popitem(self) -> tuple[_K, _V]:
         """Remove the last item and return it.
 
@@ -926,6 +925,8 @@ class NativeDict(MutableMapping[_K, _V]):
             As `__setitem__` raises it.
         """
     @overload
+    def update(self: NativeDict[str, _V], **kwargs: _V) -> None: ...
+    @overload
     def update(self, other: SupportsKeysAndGetItem[_K, _V], /) -> None: ...
     @overload
     def update(
@@ -939,10 +940,8 @@ class NativeDict(MutableMapping[_K, _V]):
     @overload
     def update(
         self: NativeDict[str, _V], other: Iterable[tuple[str, _V]], /, **kwargs: _V
-    ) -> None: ...
-    @overload
-    def update(self: NativeDict[str, _V], **kwargs: _V) -> None:
-        """Set the items of `other`, then those of `kwargs`, all of them or none.
+    ) -> None:
+        """Set the items of `other`, when given, then those of `kwargs`, all of them or none.
 
         `other` is read as a mapping when it has a `keys` method, and
         otherwise as pairs.
@@ -951,7 +950,7 @@ class NativeDict(MutableMapping[_K, _V]):
         ------
         TypeError
             If a key or value is not of the field's type, an element of
-            `other` is not a pair, or `other` is a value that was never
+            `other` is not a sequence, or `other` is a value that was never
             built.
         ValueError
             As `__setitem__` raises it, if an element of `other` is not two

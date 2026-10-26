@@ -556,6 +556,11 @@ def test_dict_methods_change_the_value() -> None:
     assert weights.pop("x", 7) == 7  # type: ignore[call-overload]
     with pytest.raises(TypeError, match="expects float, got NoneType"):
         weights.setdefault(1)  # type: ignore[call-arg]
+    with pytest.raises(
+        TypeError,
+        match="cannot convert dictionary update sequence element #1 to a sequence",
+    ):
+        weights.update([(1, 0.5), 5])  # type: ignore[list-item]
     with pytest.raises(ValueError, match="has length 3; 2 is required"):
         weights.update([(1, 0.5, 2)])  # type: ignore[list-item]
     with pytest.raises(TypeError, match="update expected at most 1 argument"):
@@ -709,3 +714,15 @@ def test_a_first_deletion_after_a_read_removes_forged_copies(size: int) -> None:
     replaced[1] = 5.0
     assert replaced == {1: 5.0, 2: 1.0, **dict(rest)}
     assert list(replaced.items()) == [(1, 5.0), (2, 1.0), *rest]
+
+
+def test_a_new_key_fits_where_forged_duplicates_fill_the_capacity() -> None:
+    """Set a new key and a default where 16 forged slots, one a duplicate, fill a capacity of 16."""
+    items = [(1, 0.5), *[(k, float(k)) for k in range(1, 16)]]
+    assigned = forged(items)
+    assigned[99] = 1.0
+    assert assigned[99] == 1.0
+    assert len(assigned) == 16
+    defaulted = forged(items)
+    assert defaulted.setdefault(99, 1.0) == 1.0
+    assert defaulted[99] == 1.0

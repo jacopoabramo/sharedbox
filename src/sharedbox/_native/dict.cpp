@@ -290,8 +290,13 @@ void NativeDict::items_of(nb::handle other, std::vector<std::byte> &out) const {
     std::size_t n = 0;
     for (nb::handle element : other) {
         const nb::object pair = nb::steal(PySequence_Tuple(element.ptr()));
-        if (!pair.is_valid())
-            throw nb::python_error();
+        if (!pair.is_valid()) {
+            if (!PyErr_ExceptionMatches(PyExc_TypeError))
+                throw nb::python_error();
+            PyErr_Clear();
+            raise(PyExc_TypeError,
+                  "cannot convert dictionary update sequence element #" + std::to_string(n) + " to a sequence");
+        }
         if (const Py_ssize_t length = PyTuple_Size(pair.ptr()); length != 2)
             raise(PyExc_ValueError, "dictionary update sequence element #" + std::to_string(n) + " has length " +
                                         std::to_string(length) + "; 2 is required");
