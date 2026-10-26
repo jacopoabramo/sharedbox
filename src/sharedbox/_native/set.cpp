@@ -12,12 +12,17 @@ namespace sharedbox {
 nb::object NativeSet::copy(nb::pointer_and_handle<NativeSet> self) {
     const NativeSet &s = *self.p;
     std::vector<std::byte> stored;
+    bool checked = false;
     {
         nb::ft_lock_guard guard(s.mutex_);
         const std::span<const std::byte> used = s.used();
         stored.assign(used.begin(), used.end());
+        checked = s.checked_;
     }
-    return like(self, stored);
+    nb::object out = like(self, stored);
+    // Copied from checked keys, so the copy's keys need no check either; no other thread has it yet.
+    nb::inst_ptr<NativeSet>(out)->checked_ = checked;
+    return out;
 }
 
 bool NativeSet::contains(nb::handle value) {
