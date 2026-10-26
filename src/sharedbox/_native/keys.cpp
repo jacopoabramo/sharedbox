@@ -194,12 +194,16 @@ std::uint32_t KeyedStore::find(const std::byte *key) {
     }
 }
 
-void KeyedStore::build() {
-    const std::uint32_t size = std::bit_ceil(std::max<std::uint32_t>(2 * count_, 2));
+void KeyedStore::allocate(std::uint32_t keys) {
+    const std::uint32_t size = std::bit_ceil(std::max<std::uint32_t>(2 * keys, 2));
     index_.table.reset(new std::uint64_t[size]);
     std::fill_n(index_.table.get(), size, empty_entry);
     index_.mask = size - 1;
     index_.built = true;
+}
+
+void KeyedStore::build() {
+    allocate(count_);
     SlotBuffer scratch(key_size_);
     for (std::uint32_t at = 0; at < count_; ++at)
         place(at, hash_of(slot(at), scratch.data()));
@@ -279,6 +283,9 @@ void KeyedStore::ensure_checked(std::uint32_t value_offset) {
     const std::uint32_t stored = count_;
     forget();
     set_count(0);
+    // Sized once for every stored key, so the index is not rebuilt each time the kept keys double.
+    if (stored > scan_limit)
+        allocate(stored);
     SlotBuffer scratch(key_size_);
     for (std::uint32_t at = 0; at < stored; ++at) {
         std::byte *key = slot(at);

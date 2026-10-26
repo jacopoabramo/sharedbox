@@ -97,6 +97,8 @@ private:
     bool same(const std::byte *a, const std::byte *b) const;
     /// Builds the index over every slot, at a power of two of entries at least twice the count.
     void build();
+    /// Replaces the index with an empty one of a power of two of entries at least twice keys.
+    void allocate(std::uint32_t keys);
     /// Adds slot at, whose key hashes to hash, to a built index, rebuilding it twice as large past half full.
     void insert(std::uint32_t at, std::uint64_t hash);
     /// Writes the entry of slot at in the first empty position of its probe.
