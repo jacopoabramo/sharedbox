@@ -426,10 +426,10 @@ class Blue(enum.Enum):
     A = 1
 
 
-def keys_field(key: object) -> Any:
+def keys_field(key: object, capacity: int = 16) -> Any:
     """Return the layout of a class `Catalogue` with one field `keys`, a BoundedSet of `key`."""
     return build_layout(
-        make(Annotated[BoundedSet[key], Capacity(16)], "Catalogue", "keys")  # type: ignore[valid-type]
+        make(Annotated[BoundedSet[key], Capacity(capacity)], "Catalogue", "keys")  # type: ignore[valid-type]
     )
 
 
@@ -440,7 +440,7 @@ def empty_value(key: object) -> Any:
 
 def forged(key: object, slots: list[bytes]) -> Any:
     """Return a BoundedSet of `key` read from stored slots `slots`, as another program could write them."""
-    types = keys_field(key).types
+    types = keys_field(key, max(16, len(slots))).types
     head = bytearray(types.decode(0, bytes(64))._stored())
     head[:4] = len(slots).to_bytes(4, "little")
     return types.decode(0, bytes(head) + b"".join(slots))
@@ -576,6 +576,27 @@ def test_forged_duplicates_and_nan_are_found_when_a_key_is_looked_up(
     zero = forged(float, [pack_float(x) for x in [-0.0, 1.0, *others]])
     assert 0.0 in zero
     assert math.copysign(1, next(iter(zero))) == 1
+
+
+@pytest.mark.parametrize("size", [3, 40])
+@pytest.mark.parametrize(("key", "pack"), [(int, pack_int), (float, pack_float)])
+def test_a_first_change_after_a_read_handles_forged_copies(
+    size: int, key: type, pack: collections.abc.Callable[[Any], bytes]
+) -> None:
+    """Remove every forged copy of a key on the first discard or remove after a read, and add no key it holds."""
+    keys = [1, 2, *range(3, size), 1]
+    discarded = forged(key, [pack(k) for k in keys])
+    discarded.discard(1)
+    assert 1 not in discarded
+    assert len(discarded) == size - 2
+    removed = forged(key, [pack(k) for k in keys])
+    removed.remove(1)
+    assert 1 not in removed
+    with pytest.raises(KeyError):
+        removed.remove(1)
+    added = forged(key, [pack(k) for k in keys])
+    added.add(2)
+    assert sorted(added) == sorted(keys)
 
 
 @pytest.mark.parametrize("size", [3, 12])

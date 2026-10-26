@@ -10,11 +10,11 @@ of keys costs milliseconds each way. Declare the field as
 [`BoundedSet`][sharedbox.BoundedSet] instead, and a read copies the stored
 bytes without building any element, while assigning a `BoundedSet` to the
 field copies its bytes back in one step. An `in` test encodes only the key
-it looks for and compares it with the stored bytes. The first test after a
-read compares the key with every element. In a set of more than 8
-elements, the second test or the first change hashes every element once
-into a table the value keeps in its own memory, not in the box, and each
-later test looks up only the one key.
+it looks for and compares it with the stored bytes. The first test or
+change after a read compares the key with every element. In a set of more
+than 8 elements, the second one hashes every element once into a table the
+value keeps in its own memory, not in the box, and each later test or
+change looks up only the one key.
 
 Use it for a large set that you read or write whole and test for a few
 keys at a time. Going through every element decodes each one, and so does

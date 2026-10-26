@@ -194,21 +194,39 @@ std::uint32_t KeyedStore::find(const std::byte *key) {
     }
 }
 
-bool KeyedStore::holds(const std::byte *key) {
+std::uint32_t KeyedStore::scan(const std::byte *key, std::uint32_t end) const {
+    for (std::uint32_t at = end; at-- > 0;)
+        if (same(slot(at), key))
+            return at;
+    return no_slot;
+}
+
+std::uint32_t KeyedStore::lookup(const std::byte *key) {
     if (checked_ || scanned_) {
         ensure_checked(0);
-        return find(key) != no_slot;
+        return find(key);
     }
     codec();
-    bool found = false;
     // Every slot is checked, as ensure_checked would, so a refused key raises whichever slot holds it.
-    for (std::uint32_t at = 0; at < count_; ++at) {
-        if (canonical(slot(at)) != nullptr)
-            corrupt(label_);
-        found = found || same(slot(at), key);
-    }
+    if (!plan_->checks.empty())
+        for (std::uint32_t at = 0; at < count_; ++at)
+            if (canonical(slot(at)) != nullptr)
+                corrupt(label_);
     scanned_ = true;
-    return found;
+    return scan(key, count_);
+}
+
+bool KeyedStore::remove_key(const std::byte *key) {
+    const bool first = !checked_ && !scanned_;
+    std::uint32_t at = lookup(key);
+    if (at == no_slot)
+        return false;
+    remove_moving_last(at);
+    // scan found the last copy, and the slot moved into at was after it, so earlier slots hold any other.
+    if (first)
+        while ((at = scan(key, at)) != no_slot)
+            remove_moving_last(at);
+    return true;
 }
 
 void KeyedStore::allocate(std::uint32_t keys) {

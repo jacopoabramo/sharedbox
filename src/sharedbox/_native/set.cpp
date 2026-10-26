@@ -30,7 +30,7 @@ bool NativeSet::contains(nb::handle value) {
     if (!encode_key(value, key.data(), true))
         return false;
     nb::ft_lock_guard guard(mutex_);
-    return holds(key.data());
+    return lookup(key.data()) != no_slot;
 }
 
 void NativeSet::add(nb::handle value) {
@@ -38,8 +38,7 @@ void NativeSet::add(nb::handle value) {
     encode_key(value, key.data(), false);
     {
         nb::ft_lock_guard guard(mutex_);
-        ensure_checked(0);
-        if (find(key.data()) != no_slot)
+        if (lookup(key.data()) != no_slot)
             return;
         if (count_ < capacity_)
             return append_slot(key.data());
@@ -52,18 +51,15 @@ void NativeSet::discard(nb::handle value) {
     if (!encode_key(value, key.data(), true))
         return;
     nb::ft_lock_guard guard(mutex_);
-    ensure_checked(0);
-    if (const std::uint32_t at = find(key.data()); at != no_slot)
-        remove_moving_last(at);
+    remove_key(key.data());
 }
 
 void NativeSet::remove(nb::handle value) {
     SlotBuffer key(stride_);
     if (encode_key(value, key.data(), true)) {
         nb::ft_lock_guard guard(mutex_);
-        ensure_checked(0);
-        if (const std::uint32_t at = find(key.data()); at != no_slot)
-            return remove_moving_last(at);
+        if (remove_key(key.data()))
+            return;
     }
     // In a tuple, so a tuple value is the exception's one argument, as for set.remove.
     PyErr_SetObject(PyExc_KeyError, nb::make_tuple(value).ptr());

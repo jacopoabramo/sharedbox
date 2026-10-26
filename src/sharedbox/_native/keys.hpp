@@ -71,11 +71,14 @@ protected:
     bool encode_key(nb::handle value, std::byte *out, bool quiet) const;
     /// The slot holding key, or no_slot.
     std::uint32_t find(const std::byte *key);
-    /// Whether a set holds key, for a lookup that changes nothing. The first such lookup on keys not yet
-    /// checked compares key with every slot and checks each as ensure_checked does, but drops no duplicate
-    /// and builds no index, since a value read for one test gains nothing from them; a later one runs
+    /// The slot of a set holding key, or no_slot. The first lookup on keys not yet checked compares key with
+    /// every slot through scan and checks each as ensure_checked does, but drops no duplicate and builds no
+    /// index, since a value read for one test or change gains nothing from them; a later one runs
     /// ensure_checked and find.
-    bool holds(const std::byte *key);
+    std::uint32_t lookup(const std::byte *key);
+    /// Removes key from a set and returns whether it held it. On the first lookup, whose keys may hold a
+    /// duplicate, it removes every slot holding key.
+    bool remove_key(const std::byte *key);
     /// Appends a slot holding encoded and indexes it; the caller has checked the capacity.
     void append_slot(const std::byte *encoded);
     /// Moves the last slot into slot at, which it removes.
@@ -102,6 +105,8 @@ private:
     /// The hash of key, masked through scratch, key_size_ bytes, when the plan has checks.
     std::uint64_t hash_of(const std::byte *key, std::byte *scratch) const;
     bool same(const std::byte *a, const std::byte *b) const;
+    /// The last slot before end holding key, or no_slot, comparing key with each slot.
+    std::uint32_t scan(const std::byte *key, std::uint32_t end) const;
     /// Builds the index over every slot, at a power of two of entries at least twice the count.
     void build();
     /// Replaces the index with an empty one of a power of two of entries at least twice keys.
