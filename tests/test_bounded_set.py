@@ -519,6 +519,12 @@ def test_member_and_optional_keys_compare_as_python_does() -> None:
     assert len(optional) == 2
     with pytest.raises(ValueError, match="takes no nan keys"):
         optional.add(float("nan"))
+    # An absent value stores a zero flags byte, which the naive check must not read.
+    moment = empty_value(datetime.datetime | None)
+    moment.add(None)
+    assert None in moment
+    moment.add(REPEATED)
+    assert moment == {None, REPEATED}
 
 
 def test_a_negative_zero_key_is_stored_as_zero() -> None:
