@@ -454,6 +454,15 @@ def test_a_bounded_list_that_was_never_built_is_refused(unique_name: str) -> Non
         assert box.points == [1.0]
 
 
+def test_iterating_a_bounded_list_that_was_never_built_raises() -> None:
+    """Raise TypeError when a BoundedList made by the native __new__ alone is iterated."""
+    with (
+        pytest.raises(TypeError),
+        pytest.warns(RuntimeWarning, match="uninitialized instance"),
+    ):
+        iter(NativeCollection.__new__(BoundedList))
+
+
 def test_a_bounded_list_is_built_outside_a_box() -> None:
     """Build a BoundedList from values and refuse one past its capacity or of the wrong element type."""
     assert BoundedList[float]([1.0, 2.0], capacity=4) == [1.0, 2.0]

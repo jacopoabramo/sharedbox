@@ -177,6 +177,15 @@ def test_a_bounded_set_that_was_never_built_is_refused(unique_name: str) -> None
         assert set(box.seen) == {"a"}
 
 
+def test_iterating_a_bounded_set_that_was_never_built_raises() -> None:
+    """Raise TypeError when a BoundedSet made by the native __new__ alone is iterated."""
+    with (
+        pytest.raises(TypeError),
+        pytest.warns(RuntimeWarning, match="uninitialized instance"),
+    ):
+        iter(NativeSet.__new__(BoundedSet))
+
+
 class Letter(enum.StrEnum):
     A = "a"
 

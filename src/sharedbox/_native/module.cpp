@@ -1160,7 +1160,10 @@ NB_MODULE(_native, m) {
         .def("reverse", &sharedbox::NativeCollection::reverse)
         .def("clear", &sharedbox::NativeCollection::remove_all)
         .def("__eq__", &sharedbox::NativeCollection::equals, nb::arg().none())
-        .def("__iter__", [](nb::handle self) { return CollectionIterator{nb::borrow(self)}; })
+        .def("__iter__",
+             [](nb::pointer_and_handle<sharedbox::NativeCollection> self) {
+                 return CollectionIterator{nb::borrow(self.h)};
+             })
         .def("__reversed__",
              [](nb::pointer_and_handle<sharedbox::NativeCollection> self) {
                  return CollectionIterator{nb::borrow(self.h), self.p->size(), true};
@@ -1184,7 +1187,8 @@ NB_MODULE(_native, m) {
     nb::class_<sharedbox::NativeSet> set(m, "NativeSet", nb::is_generic(),
                                          nb::type_slots(store_slots<sharedbox::NativeSet>));
     set.def("__len__", &sharedbox::NativeSet::size)
-        .def("__iter__", [](nb::handle self) { return SetIterator{nb::borrow(self)}; })
+        .def("__iter__",
+             [](nb::pointer_and_handle<sharedbox::NativeSet> self) { return SetIterator{nb::borrow(self.h)}; })
         .def("copy", &sharedbox::NativeSet::copy)
         .def_prop_ro("_element_annotation", &sharedbox::NativeSet::element_annotation)
         .def_prop_ro("capacity", &sharedbox::NativeSet::capacity)
