@@ -11,9 +11,9 @@ of keys costs milliseconds each way. Declare the field as
 bytes without building any element, while assigning a `BoundedSet` to the
 field copies its bytes back in one step. An `in` test encodes only the key
 it looks for and compares it with the stored bytes. Up to 8 elements it
-compares every element, and above that the value builds a hash table of
-its elements in its own memory, not in the box, so a test stays quick in a
-large set.
+compares every element. Above that, the first test after a read hashes
+every element into a table the value keeps in its own memory, not in the
+box, and every later test looks up only the one key.
 
 Use it for a large set that you read or write whole and test for a few
 keys at a time. Going through every element decodes each one, and so does
@@ -43,14 +43,15 @@ value with `BoundedSet[int](values, capacity=n)`:
 --8<-- "docs/examples/store_a_large_set_or_dict.py:create"
 ```
 
-A builtin `set` or any other iterable is accepted at run time as well, and
-is encoded element by element as a `set` field's value is.
+A builtin `set`, a `frozenset` or any other set is accepted at run time as
+well, and is encoded element by element as a `set` field's value is.
 
 ## 3. Change elements and write the value back
 
 The value you read is your own copy, as with every field. `in`, `add`,
-`discard` and `remove` encode one key and change the stored bytes, and
-assigning the value back to the field copies those bytes in one step:
+`discard` and `remove` encode one key, the last three change the stored
+bytes, and assigning the value back to the field copies those bytes in one
+step:
 
 ```{.python}
 --8<-- "docs/examples/store_a_large_set_or_dict.py:change"
@@ -62,13 +63,19 @@ value with `in` returns `False`, since the set cannot hold it.
 
 ## 4. Combine it with other sets
 
-The operators `|`, `&`, `-` and `^`, their in-place forms and the
-comparisons take any set, builtin or bounded, and return a `BoundedSet` of
-the same class and capacity, whichever side it is on:
+The operators `|`, `&`, `-` and `^` and their in-place forms take any set,
+builtin or bounded, and return a `BoundedSet` of the same class and
+capacity, whichever side it is on. The comparisons `<=`, `<`, `>=` and `>`
+take any set as well:
 
 ```{.python}
 --8<-- "docs/examples/store_a_large_set_or_dict.py:combine"
 ```
+
+An element of the other set that the field cannot hold, such as a `str`
+in a set of integers, is absent for `&`, for `value - other` and for the
+comparisons. `|`, `^` and `other - value` raise `TypeError` for it, since
+the result would hold it.
 
 At run time `{1} | value` returns a `BoundedSet`, because the builtin
 `set` declines to combine with it and Python then calls the `BoundedSet`
