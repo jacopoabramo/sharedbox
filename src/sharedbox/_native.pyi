@@ -1,12 +1,15 @@
 import sys
 from collections.abc import (
     Callable,
+    ItemsView,
     Iterable,
     Iterator,
+    KeysView,
     Mapping,
     MutableSequence,
     MutableSet,
     Sequence,
+    ValuesView,
 )
 from collections.abc import (
     Set as AbstractSet,
@@ -35,6 +38,8 @@ else:
     from typing_extensions import CapsuleType
 
 _T = TypeVar("_T")
+_K = TypeVar("_K")
+_V = TypeVar("_V")
 
 LAYOUT_VERSION: Final[tuple[int, int]]
 """`(major, minor)` of the segment layout this module reads and writes."""
@@ -801,6 +806,72 @@ class NativeSet(MutableSet[_T]):
 @final
 class NativeSetIterator(Generic[_T]):
     """Decodes one element of a `NativeSet` per step, in slot order."""
+
+    def __iter__(self) -> Self: ...
+    def __next__(self) -> _T: ...
+
+@disjoint_base
+class NativeDict(Mapping[_K, _V]):
+    """A dict value held as its field stores it: the count and the slots it uses, each a key and its value.
+
+    A read of a dict field declared with a `NativeDict` subclass makes one,
+    and so does a copy; Python code cannot construct it.
+
+    Keys are found by their stored bytes. A key that cannot be encoded,
+    such as one of another type, is never held.
+    """
+
+    __hash__: ClassVar[None]  # type: ignore[assignment]
+    def __len__(self) -> int: ...
+    def __iter__(self) -> Iterator[_K]:
+        """Decode one key per step, in insertion order.
+
+        Raises
+        ------
+        RuntimeError
+            If the value's length changed since the iteration began.
+        """
+    def __getitem__(self, key: _K, /) -> _V:
+        """Return the value of `key`.
+
+        Raises
+        ------
+        KeyError
+            If the dict holds no such key.
+        """
+    @overload
+    def get(self, key: _K, default: None = None, /) -> _V | None: ...
+    @overload
+    def get(self, key: _K, default: _V | _T, /) -> _V | _T: ...
+    def __contains__(self, key: object, /) -> bool: ...
+    def __eq__(self, other: object, /) -> bool:
+        """Compare with a mapping: equal when both hold the same keys with equal values, in any order.
+
+        Raises
+        ------
+        TypeError
+            If `other` is a value that was never built.
+        """
+    def keys(self) -> KeysView[_K]: ...
+    def values(self) -> ValuesView[_V]: ...
+    def items(self) -> ItemsView[_K, _V]: ...
+    @property
+    def _element_annotation(self) -> object:
+        """The annotations of the key and the value, as a pair, as the field declares them."""
+    @property
+    def capacity(self) -> int:
+        """The most items the value can hold."""
+    def copy(self) -> Self:
+        """Return a new value of the same types and capacity holding the same items.
+
+        The slots are copied without decoding a key or value.
+        """
+    def _stored(self) -> bytes:
+        """Return the count and used slots, as a dict field stores them."""
+
+@final
+class NativeDictIterator(Generic[_T]):
+    """Decodes one key of a `NativeDict` per step, in insertion order."""
 
     def __iter__(self) -> Self: ...
     def __next__(self) -> _T: ...

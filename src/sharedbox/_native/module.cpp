@@ -26,6 +26,7 @@
 
 #include "codec.hpp"
 #include "collection.hpp"
+#include "dict.hpp"
 #include "scalars.hpp"
 #include "segment.hpp"
 #include "set.hpp"
@@ -743,13 +744,13 @@ PyType_Slot store_slots[] = {{Py_tp_traverse, reinterpret_cast<void *>(store_tra
                              {Py_tp_clear, reinterpret_cast<void *>(store_clear<Store>)},
                              {0, nullptr}};
 
-/// The iterator of a NativeCollection or NativeSet: one element decoded per step, forward up to the length
-/// the value has then, or backward from the end, as list's reversed iterator.
+/// The iterator of a NativeCollection, NativeSet or NativeDict: one element, or a dict's key, decoded per
+/// step, forward up to the length the value has then, or backward from the end, as list's reversed iterator.
 template <typename Store> struct StoreIterator {
     nb::object store;
     std::size_t index = 0;
     bool backward = false;
-    /// A NativeSet's length when the iteration began.
+    /// A NativeSet's or NativeDict's length when the iteration began.
     std::size_t length = 0;
 };
 
@@ -783,6 +784,9 @@ template <typename Store> PyObject *store_iterator_next(PyObject *self) {
         if constexpr (std::is_same_v<Store, sharedbox::NativeSet>) {
             if (c->size() != it.length)
                 sharedbox::raise(PyExc_RuntimeError, "Set changed size during iteration");
+        } else if constexpr (std::is_same_v<Store, sharedbox::NativeDict>) {
+            if (c->size() != it.length)
+                sharedbox::raise(PyExc_RuntimeError, "dictionary changed size during iteration");
         }
         nb::object value = c->element(static_cast<Py_ssize_t>(it.backward ? it.index - 1 : it.index));
         if (!value.is_valid()) {
@@ -806,6 +810,12 @@ PyType_Slot store_iterator_slots[] = {{Py_tp_iternext, reinterpret_cast<void *>(
 
 using CollectionIterator = StoreIterator<sharedbox::NativeCollection>;
 using SetIterator = StoreIterator<sharedbox::NativeSet>;
+using DictIterator = StoreIterator<sharedbox::NativeDict>;
+
+/// A view of self of the collections.abc class name: KeysView, ValuesView or ItemsView.
+nb::object view(const char *name, nb::handle self) {
+    return nb::module_::import_("collections.abc").attr(name)(self);
+}
 
 template <sharedbox::set_op op, bool reflected>
 nb::object set_combine(nb::pointer_and_handle<sharedbox::NativeSet> self, nb::handle other) {
@@ -1156,6 +1166,9 @@ NB_MODULE(_native, m) {
     nb::class_<SetIterator>(m, "NativeSetIterator", nb::is_final(),
                             nb::type_slots(store_iterator_slots<sharedbox::NativeSet>))
         .def("__iter__", [](nb::handle self) { return nb::borrow(self); });
+    nb::class_<DictIterator>(m, "NativeDictIterator", nb::is_final(),
+                             nb::type_slots(store_iterator_slots<sharedbox::NativeDict>))
+        .def("__iter__", [](nb::handle self) { return nb::borrow(self); });
 
     nb::class_<sharedbox::NativeCollection> collection(m, "NativeCollection", nb::is_generic(),
                                                        nb::type_slots(store_slots<sharedbox::NativeCollection>));
@@ -1243,6 +1256,28 @@ NB_MODULE(_native, m) {
     // A set's elements can change, so a value has no hash, as a set has none.
     set.attr("__hash__") = nb::none();
     nb::module_::import_("collections.abc").attr("MutableSet").attr("register")(set);
+
+    nb::class_<sharedbox::NativeDict> dict(m, "NativeDict", nb::is_generic(),
+                                           nb::type_slots(store_slots<sharedbox::NativeDict>));
+    dict.def("__len__", &sharedbox::NativeDict::size)
+        .def("__iter__",
+             [](nb::pointer_and_handle<sharedbox::NativeDict> self) {
+                 return DictIterator{nb::borrow(self.h), 0, false, self.p->size()};
+             })
+        .def("__getitem__", &sharedbox::NativeDict::getitem, nb::arg().none())
+        .def("get", &sharedbox::NativeDict::get, nb::arg().none(), nb::arg().none() = nb::none())
+        .def("__contains__", &sharedbox::NativeDict::contains, nb::arg().none())
+        .def("__eq__", &sharedbox::NativeDict::equals, nb::arg().none())
+        .def("copy", &sharedbox::NativeDict::copy)
+        .def("keys", [](nb::handle self) { return view("KeysView", self); })
+        .def("values", [](nb::handle self) { return view("ValuesView", self); })
+        .def("items", [](nb::handle self) { return view("ItemsView", self); })
+        .def_prop_ro("_element_annotation", &sharedbox::NativeDict::element_annotation)
+        .def_prop_ro("capacity", &sharedbox::NativeDict::capacity)
+        .def("_stored", &sharedbox::NativeDict::stored);
+    // A dict's items can change, so a value has no hash, as a dict has none.
+    dict.attr("__hash__") = nb::none();
+    nb::module_::import_("collections.abc").attr("MutableMapping").attr("register")(dict);
 
     method_type = nb::object(nb::module_::import_("types").attr("MethodType")).release().ptr();
     getattr_function = nb::object(nb::module_::import_("builtins").attr("getattr")).release().ptr();

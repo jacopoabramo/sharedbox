@@ -1,20 +1,22 @@
-"""BoundedList and BoundedSet, list and set values that keep the stored form of their field."""
+"""BoundedList, BoundedSet and BoundedDict, list, set and dict values that keep the stored form of their field."""
 
 from __future__ import annotations
 
 import copy
 import functools
 import types
-from collections.abc import Callable, Iterable
+from collections.abc import Callable, Iterable, Mapping
 from typing import Annotated, Any, Self, TypeVar, cast
 
 from ._layout import Capacity
-from ._native import NativeCollection, NativeSet, Types
+from ._native import NativeCollection, NativeDict, NativeSet, Types
 from ._stream import item_of
 from ._types import bounded_args
 
 T = TypeVar("T")
-C = TypeVar("C", bound=NativeCollection[Any] | NativeSet[Any])
+K = TypeVar("K")
+V = TypeVar("V")
+C = TypeVar("C", bound=NativeCollection[Any] | NativeSet[Any] | NativeDict[Any, Any])
 
 
 def _copy(self: C) -> C:
@@ -37,7 +39,7 @@ def _deepcopy(self: C, memo: dict[int, Any]) -> C:
 
 
 def _reduce(
-    self: NativeCollection[Any] | NativeSet[Any],
+    self: NativeCollection[Any] | NativeSet[Any] | NativeDict[Any, Any],
 ) -> tuple[
     Callable[[type[Any], object, int, bytes], Any],
     tuple[type[Any], object, int, bytes],
@@ -214,8 +216,85 @@ class BoundedSet(NativeSet[T]):
     __reduce__ = _reduce
 
 
+class BoundedDict(NativeDict[K, V]):
+    """A dict of at most a field's capacity of items, held as the field stores them.
+
+    Declared as `Annotated[BoundedDict[K, V], Capacity(n)]` or with
+    `field(capacity=n)`, it is stored as `dict[K, V]` is, and a read
+    returns one. It keeps its items in insertion order, as a `dict` does.
+
+    Keys follow the rules of `BoundedSet` elements: they are compared by
+    their stored bytes, so a declaration refuses the same key types, and a
+    nan, a NaT, or an aware `datetime` or `time` key raises `ValueError`.
+    A key that cannot be stored is in no dict: `in` returns False and
+    `d[key]` raises `KeyError`. Values may be of any type a `dict` field
+    takes, and `==` compares them as `dict` does.
+
+    A subclass is declared and read back the same way, generic as
+    `class MyDict(BoundedDict[K, V])` used as `MyDict[int, float]`, or
+    with its types fixed as `class Weights(BoundedDict[int, float])`. A
+    read from a box calls neither `__new__` nor `__init__`. `copy.copy`,
+    `copy.deepcopy` and pickling keep a subclass's attributes, as for a
+    `dict` subclass.
+    """
+
+    __slots__ = ()
+
+    def __new__(
+        cls,
+        values: Mapping[K, V] | Iterable[tuple[K, V]] = (),
+        *args: Any,
+        capacity: int,
+        **kwargs: Any,
+    ) -> Self:
+        """Build a value of `capacity` holding `values`, a mapping or pairs, of the key and value types `cls` fixes.
+
+        Other arguments are left to `__init__`, so a subclass's `__init__`
+        may take more. It receives the same `values` object after `__new__`
+        has consumed it, so a generator arrives empty.
+
+        Raises
+        ------
+        TypeError
+            If `cls` fixes no key and value types, as `BoundedDict` alone
+            does, or a key or value is not of its type.
+        ValueError
+            If a key or value does not fit, or there are more than
+            `capacity` keys.
+        """
+        return _build(cls, _element(cls), values, capacity)
+
+    def __init__(
+        self,
+        values: Mapping[K, V] | Iterable[tuple[K, V]] = (),
+        *,
+        capacity: int,
+    ) -> None:
+        """Do nothing; `__new__` has built the value."""
+
+    def __class_getitem__(cls, params: object) -> types.GenericAlias:
+        """Return `cls` with its key and value types `params`.
+
+        Raises
+        ------
+        TypeError
+            If `params` is not two types, or `cls` already fixes them.
+        """
+        return _parametrise(cls, params)
+
+    def __repr__(self) -> str:
+        return (
+            f"{type(self).__name__}[{_name(self._element_annotation)}]"
+            f"({dict(self.items())!r}, capacity={self.capacity})"
+        )
+
+    __copy__ = _copy
+    __deepcopy__ = _deepcopy
+    __reduce__ = _reduce
+
+
 class _Alias(types.GenericAlias):
-    """`BoundedList[T]`, `BoundedSet[T]` or a subclass's, which builds a value of element type `T` when called."""
+    """`BoundedList[T]`, `BoundedSet[T]`, `BoundedDict[K, V]` or a subclass's, which builds a value of those types when called."""
 
     def __call__(
         self,
@@ -231,15 +310,22 @@ class _Alias(types.GenericAlias):
 
 
 def _element(hint: object) -> object:
-    """Return the one element type `hint` or its bases give, or None."""
+    """Return the element type `hint` or its bases give, the tuple of a dict's key and value types, or None."""
     args = bounded_args(hint)
-    return args[0] if args is not None and len(args) == 1 else None
+    if args is None:
+        return None
+    return args[0] if len(args) == 1 else args
 
 
 def _parametrise(cls: type, element: object) -> types.GenericAlias:
-    """Return `cls` with its element type `element`, as `__class_getitem__` does."""
+    """Return `cls` with its element type, or a dict's key and value types, `element`, as `__class_getitem__` does."""
+    mapping = issubclass(cls, NativeDict)
+    if mapping:
+        given = len(element) if isinstance(element, tuple) else 1
+        if given != 2:
+            raise TypeError(f"{cls.__name__} takes a key and a value type, got {given}")
     # typing rebuilds an alias it evaluates with its arguments as a tuple.
-    if isinstance(element, tuple):
+    elif isinstance(element, tuple):
         if len(element) != 1:
             raise TypeError(
                 f"{cls.__name__} takes one element type, got {len(element)}"
@@ -247,7 +333,8 @@ def _parametrise(cls: type, element: object) -> types.GenericAlias:
         (element,) = element
     fixed = _element(cls)
     if fixed is not None:
-        raise TypeError(f"{cls.__name__} already has element type {_name(fixed)}")
+        held = "key and value types" if mapping else "element type"
+        raise TypeError(f"{cls.__name__} already has {held} {_name(fixed)}")
     return _Alias(cls, element)
 
 
@@ -261,6 +348,8 @@ def _restore(value: object, state: object) -> None:
 
 
 def _name(element: object) -> str:
+    if isinstance(element, tuple):
+        return ", ".join(map(_name, element))
     return element.__qualname__ if isinstance(element, type) else repr(element)
 
 
@@ -268,9 +357,12 @@ def _build(cls: type[C], element: object, values: Iterable[Any], capacity: int) 
     """Return a new `cls` of `capacity` holding `values`, or raise `TypeError` when `element` is None."""
     listed = issubclass(cls, NativeCollection)
     if element is None:
+        mapping = issubclass(cls, NativeDict)
+        needs = "key and value types" if mapping else "element type"
+        example = "float" if listed else "int, float" if mapping else "int"
         raise TypeError(
-            f"{cls.__name__} needs its element type, as in"
-            f" {cls.__name__}[{'float' if listed else 'int'}](values, capacity=n)"
+            f"{cls.__name__} needs its {needs}, as in"
+            f" {cls.__name__}[{example}](values, capacity=n)"
         )
     codec, empty = _codec(cls, element, capacity)
     value: Any = codec.decode(0, bytes(empty))

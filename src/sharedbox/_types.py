@@ -44,7 +44,7 @@ from ._arrays import (
     dtype_name,
     key,
 )
-from ._native import NativeCollection, NativeSet
+from ._native import NativeCollection, NativeDict, NativeSet
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -1141,7 +1141,7 @@ def is_collection(hint: Any) -> bool:
     )
 
 
-BOUNDED: Final[tuple[type, ...]] = (NativeCollection, NativeSet)
+BOUNDED: Final[tuple[type, ...]] = (NativeCollection, NativeSet, NativeDict)
 KIND_TYPES: Final[dict[str, type]] = {
     **dict.fromkeys(
         ("int", "int8", "int16", "int32", "uint8", "uint16", "uint32", "uint64"), int
@@ -1175,7 +1175,7 @@ INEXACT_KINDS: Final[frozenset[str]] = frozenset(
 
 
 def bounded_class(hint: Any) -> type | None:
-    """Return the strict subclass of `NativeCollection` or `NativeSet` that `hint` is, alone or parametrised, or None."""
+    """Return the strict subclass of `NativeCollection`, `NativeSet` or `NativeDict` that `hint` is, alone or parametrised, or None."""
     origin = get_origin(hint) or hint
     if (
         isinstance(origin, type)
@@ -1187,7 +1187,7 @@ def bounded_class(hint: Any) -> type | None:
 
 
 def bounded_args(hint: Any) -> tuple[Any, ...] | None:
-    """Return the type arguments of a `NativeCollection` or `NativeSet` subclass, alone or parametrised.
+    """Return the type arguments of a `NativeCollection`, `NativeSet` or `NativeDict` subclass, alone or parametrised.
 
     A class alone gives the arguments of the parametrised subclass it
     derives from, as `class Points(BoundedList[float])` gives `(float,)`.
@@ -1332,23 +1332,40 @@ def collection_spec(
         given = bounded_args(hint)
         if given is None:
             name = bounded.__name__
-            example = "float" if issubclass(bounded, NativeCollection) else "int"
+            example = (
+                "float"
+                if issubclass(bounded, NativeCollection)
+                else "int, float"
+                if issubclass(bounded, NativeDict)
+                else "int"
+            )
             raise TypeError(
                 f"{where}: {name} needs its element type, as in Annotated[{name}[{example}], Capacity(n)]"
             )
         args: tuple[Any, ...] = given
     else:
         args = get_args(hint)
-    if len(args) != (2 if origin in DICTS or origin is tuple else 1):
+    mapping = origin in DICTS or (
+        bounded is not None and issubclass(bounded, NativeDict)
+    )
+    if len(args) != (2 if mapping or origin is tuple else 1):
         raise unsupported(where, hint)
-    if origin in DICTS:
-        kind, read = "dict", DICTS[origin]
+    if mapping:
+        kind, read = "dict", bounded or DICTS[origin]
         key = parse(args[0], f"{where}[key]", depth=below, path=path)
         value = parse(args[1], f"{where}[value]", depth=below, path=path)
         if not key.hashable:
             raise TypeError(
                 f"{where}: dict keys of {key.text} are not hashable when read back"
             )
+        if bounded is not None:
+            reason = key_refusal(key)
+            if reason is not None:
+                raise TypeError(
+                    f"{where}: {bounded.__name__} keys cannot hold {reason}"
+                )
+        element_text = f"{key.text},{value.text}"
+        annotation: object = (args[0], args[1])
         pair = max(key.alignment, value.alignment)
         at_value = round_up(key.size, value.alignment)
         stride = round_up(at_value + value.size, pair)
@@ -1380,6 +1397,7 @@ def collection_spec(
         a = max(4, element.alignment)
         members = (Member(round_up(4, a), element),)  # type: ignore[assignment]
         text = f"{kind}[{capacity}]({element.text})"
+        element_text, annotation = element.text, args[0]
     for m in members:
         if m.type.kind == "array":
             raise TypeError(
@@ -1400,7 +1418,7 @@ def collection_spec(
         members=members,
         count=len(members),
         before=struct.pack("<I", capacity),
-        info=(read, element.text, args[0]) if kind != "dict" else (read,),
+        info=(read, element_text, annotation),
         match=(
             (abc.Mapping,)
             if kind == "dict"
