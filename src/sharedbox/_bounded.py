@@ -270,7 +270,7 @@ def _build(cls: type[C], element: object, values: Iterable[Any], capacity: int) 
     if element is None:
         raise TypeError(
             f"{cls.__name__} needs its element type, as in"
-            f" {cls.__name__}[{'float' if listed else 'str'}](values, capacity=n)"
+            f" {cls.__name__}[{'float' if listed else 'int'}](values, capacity=n)"
         )
     codec, empty = _codec(cls, element, capacity)
     value: Any = codec.decode(0, bytes(empty))

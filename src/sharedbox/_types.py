@@ -1257,7 +1257,7 @@ def collection_spec(
         given = bounded_args(hint)
         if given is None:
             name = bounded.__name__
-            example = "float" if issubclass(bounded, NativeCollection) else "str"
+            example = "float" if issubclass(bounded, NativeCollection) else "int"
             raise TypeError(
                 f"{where}: {name} needs its element type, as in Annotated[{name}[{example}], Capacity(n)]"
             )
