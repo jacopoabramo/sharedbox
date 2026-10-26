@@ -71,7 +71,9 @@ step:
 
 Adding a key checks it as a write to the field would, so a `str` where the
 field holds integers raises `TypeError` at that line. Testing for such a
-value with `in` returns `False`, since the set cannot hold it.
+value with `in` returns `False`, since the set cannot hold it. That holds
+for `1.0` and `True` in a set of integers too, although Python counts both
+equal to `1`, because a key of another type is never encoded.
 
 ## 4. Combine it with other sets
 
@@ -170,14 +172,16 @@ capacity counting key and value pairs:
 --8<-- "docs/examples/store_a_large_set_or_dict.py:dict-declare"
 ```
 
-`d[key]`, `d.get(key)` and `key in d` behave as they do on a `dict`. Its
-keys follow the rules of step 6: the declaration refuses the same key
-types, and a nan, a NaT, or a `datetime` or `time` with a time zone raises
-`ValueError` when it is added as a key. The values can be of any type a
-`dict` field holds, and a process that declares the field as
-`dict[int, float]` attaches to the same box and reads the same items. A `BoundedDict` is a
-`MutableMapping` but not a `dict`, so pass `dict(d)` where code asks for
-the builtin type, as step 7 does for a set.
+`d[key]`, `d.get(key)` and `key in d` behave as they do on a `dict`,
+except that a key of another type is never found, as step 3 says for a
+set. Its keys follow the rules of step 6: the declaration refuses the same
+key types, and a nan, a NaT, or a `datetime` or `time` with a time zone
+raises `ValueError` when it is added as a key. The values can be of any
+type a `dict` field holds, and a process that declares the field as
+`dict[int, float]` attaches to the same box and reads the same items.
+
+A `BoundedDict` is a `MutableMapping` but not a `dict`, so pass `dict(d)`
+where code asks for the builtin type, as step 7 does for a set.
 
 ## 10. Change items in insertion order
 
@@ -190,8 +194,9 @@ last, and `del` leaves the other items in the order they had:
 ```
 
 Replacing a value is quick, but a delete takes time in proportion to the
-size of the dict. It moves every later item down one place, and in a dict
-of more than 8 items the next lookup hashes every key again.
+size of the dict. It moves every later item down one place, and when the
+dict has more than 8 items and has built its table of keys, the next
+lookup builds the table again.
 
 A change that would leave more keys than the capacity raises
 `ValueError`, as for the set, while replacing a value in a full dict
