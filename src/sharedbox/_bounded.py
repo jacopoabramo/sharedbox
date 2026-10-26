@@ -132,15 +132,21 @@ class BoundedSet(NativeSet[T]):
     one. It iterates in the order its elements are stored, which may
     differ from a builtin `set`'s.
 
-    Elements are compared by their stored bytes, so a declaration refuses
-    an element type whose equal values could be stored differently: a
-    `Decimal`, a `frozenset`, a union whose members can hold equal values,
-    such as `int | float` or a `StrEnum` and `str`, a `Literal` of two
-    equal values such as `Literal[1, True]`, a record whose equality skips
-    a member, as `field(compare=False)` does, and a float, complex or time
-    type inside a union or a `tuple[T, ...]`. Keys are compared by all
-    their stored bytes, so a set of a record class with its own `__eq__`
-    may hold two elements that class counts as equal.
+    Elements are compared by all their stored bytes, so a declaration
+    refuses an element type whose equal values could be stored
+    differently: a `Decimal`, a `frozenset`, a union whose members can
+    hold equal values, such as `int | float` or a `StrEnum` and `str`, a
+    `Literal` of two equal values such as `Literal[1, True]`, a record
+    whose equality skips a member, as `field(compare=False)` does, and a
+    float, complex or time type inside a union or a `tuple[T, ...]`. For
+    the same reason, a set of a record class with its own `__eq__` may
+    hold two elements that class counts as equal.
+
+    Adding a nan, a NaT, or an aware `datetime` or `time` raises
+    `ValueError`, and `-0.0` is stored as `0.0`. A naive `datetime` keeps
+    the fold it was added with, and is the same element as that time at
+    the other fold. A value that cannot be stored as an element is in no
+    set: `in` returns False and `remove` raises `KeyError`.
 
     A subclass is declared and read back the same way, generic as
     `class MySet(BoundedSet[T])` used as `MySet[int]`, or with its element

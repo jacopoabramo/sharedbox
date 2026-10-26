@@ -5,8 +5,8 @@ from collections.abc import (
     Iterator,
     Mapping,
     MutableSequence,
+    MutableSet,
     Sequence,
-    Sized,
 )
 from typing import (
     Any,
@@ -569,17 +569,80 @@ class NativeCollectionIterator(Generic[_T]):
     def __next__(self) -> _T: ...
 
 @disjoint_base
-class NativeSet(Iterable[_T], Sized):
+class NativeSet(MutableSet[_T]):
     """A set value held as its field stores it: the count and the slots it uses.
 
     A read of a set field declared with a `NativeSet` subclass makes one,
     and so does a copy; Python code cannot construct it.
+
+    Keys are found by their stored bytes. A value that cannot be encoded
+    as a key, such as one of another type, is never held.
     """
 
     __hash__: ClassVar[None]  # type: ignore[assignment]
     def __len__(self) -> int: ...
     def __iter__(self) -> Iterator[_T]:
-        """Decode one element per step, in the order the slots hold them."""
+        """Decode one element per step, in the order the slots hold them.
+
+        Raises
+        ------
+        RuntimeError
+            If the value's length changed since the iteration began.
+        """
+    def __contains__(self, value: object, /) -> bool: ...
+    def add(self, value: _T, /) -> None:
+        """Add `value` unless the value holds it.
+
+        Raises
+        ------
+        TypeError
+            If `value` is not of the field's element type.
+        ValueError
+            If `value` does not fit, is a key the field refuses (a nan, a
+            NaT, an aware `datetime` or `time`), or the value is full.
+        """
+    def discard(self, value: _T, /) -> None:
+        """Remove `value` if the value holds it."""
+    def remove(self, value: _T, /) -> None:
+        """Remove `value`.
+
+        Raises
+        ------
+        KeyError
+            If the value does not hold `value`.
+        """
+    def pop(self) -> _T:
+        """Remove the element in the last slot and return it.
+
+        An element that fails to decode stays in the value.
+
+        Raises
+        ------
+        KeyError
+            If the value is empty.
+        """
+    def clear(self) -> None:
+        """Remove every element."""
+    def update(self, *iterables: Iterable[_T]) -> None:
+        """Add the elements of every iterable, all of them or none.
+
+        Raises
+        ------
+        TypeError
+            If an element is not of the field's element type, or an
+            iterable is a value that was never built.
+        ValueError
+            As `add` raises it, or if the distinct new elements would pass
+            the capacity.
+        """
+    def __eq__(self, other: object, /) -> bool:
+        """Compare with a set: equal when both hold the same keys, in any order.
+
+        Raises
+        ------
+        TypeError
+            If `other` is a value that was never built.
+        """
     @property
     def _element_annotation(self) -> object:
         """The annotation of the elements, as the field declares it."""

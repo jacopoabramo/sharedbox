@@ -4,13 +4,17 @@ import datetime
 import decimal
 import enum
 import gc
+import math
 import pickle
 import re
+import struct
+import threading
 import weakref
 from dataclasses import dataclass, field
 from typing import Annotated, Any, Literal, NamedTuple
 
 import attrs
+import numpy as np
 import pytest
 from crossproc import call_in_child, update_in_child
 
@@ -383,3 +387,318 @@ def test_a_cycle_through_a_value_or_its_iterator_is_collected(
     del holder, iterated
     gc.collect()
     assert [ref() for ref in refs] == [None, None]
+
+
+@dataclass(frozen=True)
+class Gate:
+    shut: bool
+
+    def __post_init__(self) -> None:
+        if self.shut:
+            raise ValueError("the gate is shut")
+
+
+class Gates(SharedBox):
+    gates: Annotated[BoundedSet[Gate], Capacity(4)]
+
+
+class Times(SharedBox):
+    when: Annotated[BoundedSet[datetime.datetime], Capacity(4)]
+
+
+@dataclass(frozen=True)
+class Reading:
+    n: int
+    x: float
+    at: datetime.datetime
+
+
+# A wall time that a clock set back passes twice, so it exists at fold 0 and 1.
+REPEATED = datetime.datetime(2026, 10, 25, 2, 30)  # noqa: DTZ001
+
+
+class Red(enum.Enum):
+    A = 1
+
+
+class Blue(enum.Enum):
+    A = 1
+
+
+def keys_field(key: object) -> Any:
+    """Return the layout of a class `Catalogue` with one field `keys`, a BoundedSet of `key`."""
+    return build_layout(
+        make(Annotated[BoundedSet[key], Capacity(16)], "Catalogue", "keys")  # type: ignore[valid-type]
+    )
+
+
+def empty_value(key: object) -> Any:
+    """Return an empty BoundedSet of `key` read from the field `Catalogue.keys`."""
+    return keys_field(key).types.decode(0, bytes(64))
+
+
+def forged(key: object, slots: list[bytes]) -> Any:
+    """Return a BoundedSet of `key` read from stored slots `slots`, as another program could write them."""
+    types = keys_field(key).types
+    head = bytearray(types.decode(0, bytes(64))._stored())
+    head[:4] = len(slots).to_bytes(4, "little")
+    return types.decode(0, bytes(head) + b"".join(slots))
+
+
+def test_a_bounded_set_is_built_outside_a_box() -> None:
+    """Build a BoundedSet from values and refuse one past its capacity or of the wrong element type."""
+    assert BoundedSet[int]([1, 2, 1], capacity=2) == {1, 2}
+    assert BoundedSet[int](capacity=4) == set()
+    with pytest.raises(
+        ValueError,
+        match=r"BoundedSet\[int\] holds at most 2 elements; the value would have 3",
+    ):
+        BoundedSet[int]([1, 2, 3], capacity=2)
+    with pytest.raises(TypeError, match=r"BoundedSet\[int\] expects int, got str"):
+        BoundedSet[int](["x"], capacity=4)  # type: ignore[list-item]
+    with pytest.raises(TypeError, match=r"BoundedSet\[int\]\(values, capacity=n\)"):
+        BoundedSet([1], capacity=4)
+
+
+def test_repr_shows_the_element_type_and_capacity() -> None:
+    """Show the element type, the elements in slot order and the capacity, with a subclass's own name."""
+    assert (
+        repr(BoundedSet[int]([2, 1], capacity=4))
+        == "BoundedSet[int]({2, 1}, capacity=4)"
+    )
+    assert repr(Holder([2, 1], capacity=4)) == "Holder[int]({2, 1}, capacity=4)"
+
+
+@pytest.mark.parametrize(
+    ("key", "good", "bad", "message"),
+    [
+        (float, 1.0, float("nan"), "takes no nan keys"),
+        (
+            np.datetime64,
+            np.datetime64(1, "ns"),
+            np.datetime64("NaT", "ns"),
+            "takes no NaT keys",
+        ),
+        (
+            datetime.datetime,
+            REPEATED,
+            datetime.datetime(2026, 1, 1, tzinfo=datetime.UTC),
+            "takes only naive datetime keys",
+        ),
+        (
+            datetime.time,
+            datetime.time(1),
+            datetime.time(1, tzinfo=datetime.UTC),
+            "takes only naive time keys",
+        ),
+    ],
+)
+def test_nan_nat_and_aware_keys_are_refused(
+    key: object, good: object, bad: object, message: str
+) -> None:
+    """Refuse a nan, a NaT, an aware datetime and an aware time key, naming the field, and keep the value."""
+    value = empty_value(key)
+    value.add(good)
+    with pytest.raises(ValueError, match=re.escape(f"Catalogue.keys {message}")):
+        value.add(bad)
+    assert list(value) == [good]
+
+
+def test_member_and_optional_keys_compare_as_python_does() -> None:
+    """Take -0.0 as 0.0 inside a record and an optional, find an absent optional, and ignore a datetime member's fold."""
+    record = empty_value(Reading)
+    record.add(Reading(1, -0.0, REPEATED.replace(fold=1)))
+    assert Reading(1, 0.0, REPEATED) in record
+    record.add(Reading(1, 0.0, REPEATED))
+    assert len(record) == 1
+    optional = empty_value(float | None)
+    optional.update([-0.0, None])
+    assert 0.0 in optional
+    assert None in optional
+    optional.add(0.0)
+    assert len(optional) == 2
+    with pytest.raises(ValueError, match="takes no nan keys"):
+        optional.add(float("nan"))
+
+
+def test_a_negative_zero_key_is_stored_as_zero() -> None:
+    """Store -0.0 as 0.0, so a later 0.0 is the same key."""
+    value = BoundedSet[float]([], capacity=4)
+    value.add(-0.0)
+    value.add(0.0)
+    (key,) = value
+    assert math.copysign(1, key) == 1
+
+
+def test_a_naive_key_keeps_its_fold(unique_name: str) -> None:
+    """Keep the first of two naive datetimes that differ only in fold, at its fold, through a write and a read."""
+    with Times.create(unique_name, set()) as box:
+        when = box.when
+        when.add(REPEATED.replace(fold=1))
+        when.add(REPEATED)
+        assert len(when) == 1
+        box.when = when
+        (key,) = box.when
+    assert key.fold == 1
+
+
+def pack_int(n: int) -> bytes:
+    return n.to_bytes(8, "little", signed=True)
+
+
+def pack_float(x: float) -> bytes:
+    return struct.pack("<d", x)
+
+
+@pytest.mark.parametrize("size", [3, 12])
+def test_forged_duplicates_and_nan_are_found_when_a_key_is_looked_up(
+    size: int,
+) -> None:
+    """Drop a forged duplicate, refuse a forged nan and rewrite a forged -0.0 on the first lookup, by scan and by index."""
+    rest = list(range(3, size))
+    ints = forged(int, [pack_int(k) for k in [1, 2, 1, *rest]])
+    assert len(ints) == size
+    assert 1 in ints
+    assert len(ints) == size - 1
+    assert list(ints) == [1, 2, *rest]
+    others = [float(k) for k in rest]
+    nan = forged(float, [pack_float(x) for x in [math.nan, 1.0, *others]])
+    with pytest.raises(ValueError, match="the stored value"):
+        0.5 in nan  # noqa: B015
+    zero = forged(float, [pack_float(x) for x in [-0.0, 1.0, *others]])
+    assert 0.0 in zero
+    assert math.copysign(1, next(iter(zero))) == 1
+
+
+def test_a_stream_item_reused_for_a_shorter_string_finds_it(
+    names: collections.abc.Callable[[str], str],
+) -> None:
+    """Find a short string in a stream item whose slot held a longer one."""
+    with SharedStream.create(
+        Annotated[BoundedSet[Annotated[str, Capacity(8)]], Capacity(4)],
+        names("s"),
+        capacity=2,
+    ) as stream:
+        reader = stream.reader(mode="latest")
+        with stream.sender() as sender:
+            # Three sends to two slots, so the last is encoded over the first.
+            for text in ("abcdefgh", "abcdefgh", "ab"):
+                sender.send({text})
+        item = reader.receive(timeout=5)
+    assert "ab" in item
+
+
+def test_equality_follows_set_rules() -> None:
+    """Compare equal to builtin sets and BoundedSets of the same keys in any slot order, and refuse what set refuses."""
+    value = BoundedSet[int]([1, 2, 3], capacity=4)
+    assert value == {1, 2, 3}
+    assert value == frozenset({3, 2, 1})
+    assert value == BoundedSet[int]([3, 1, 2], capacity=8)
+    assert value != BoundedSet[int]([3, 1, 4], capacity=4)
+    assert value != [1, 2, 3]
+    assert BoundedSet[Red]([Red.A], capacity=2) != BoundedSet[Blue](
+        [Blue.A], capacity=2
+    )
+    with pytest.raises(TypeError):
+        hash(value)
+    with pytest.raises(TypeError, match="never built"):
+        value == NativeSet.__new__(BoundedSet)  # noqa: B015
+    with pytest.raises(TypeError, match="never built"):
+        value.update(NativeSet.__new__(BoundedSet))
+
+
+def test_changing_the_size_while_iterating_raises() -> None:
+    """Raise RuntimeError from an iterator whose set changed size."""
+    value = BoundedSet[int]([1, 2], capacity=8)
+    with pytest.raises(RuntimeError, match="Set changed size during iteration"):
+        for key in value:
+            value.add(key + 10)
+
+
+@pytest.mark.parametrize("size", [8, 9, 10, 40])
+def test_the_index_takes_over_at_nine_keys(size: int) -> None:
+    """Find every key added and no other, before and after each removal, around the size the index starts at."""
+    keys = [k * 7919 for k in range(size)]
+    value = BoundedSet[int]([], capacity=64)
+    for k in keys:
+        value.add(k)
+    assert all(k in value for k in keys)
+    assert -1 not in value
+    for i, k in enumerate(keys):
+        value.remove(k)
+        assert k not in value
+        assert all(other in value for other in keys[i + 1 :])
+        assert len(value) == size - i - 1
+
+
+def test_a_value_that_is_no_key_is_not_in_the_set() -> None:
+    """Treat a value that cannot be encoded as a key as absent from every BoundedSet."""
+    value = BoundedSet[int]([1], capacity=2)
+    assert "x" not in value  # type: ignore[comparison-overlap]
+    value.discard("x")  # type: ignore[arg-type]
+    with pytest.raises(KeyError) as raised:
+        value.remove("x")  # type: ignore[arg-type]
+    assert raised.value.args == ("x",)
+    assert (BoundedSet[int]([1], capacity=2) == {1, "x"}) is False
+    assert (BoundedSet[int]([1, 2], capacity=2) == {1, "x"}) is False
+    assert value == {1}
+
+
+def test_two_threads_never_pass_the_capacity() -> None:
+    """Keep the capacity of keys, and every key whose add returned, when two threads add at once."""
+    value = BoundedSet[int]([], capacity=1000)
+    added: list[list[int]] = [[], []]
+
+    def fill(start: int) -> None:
+        for k in range(start, 10**6, 2):
+            try:
+                value.add(k)
+            except ValueError:
+                return
+            added[start].append(k)
+
+    threads = [threading.Thread(target=fill, args=(i,)) for i in (0, 1)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert len(value) == 1000
+    assert all(k in value for k in added[0] + added[1])
+
+
+def test_a_pop_that_fails_to_decode_changes_nothing(unique_name: str) -> None:
+    """Keep every key when the record pop would return raises as it is built."""
+    shut = Gate(False)
+    object.__setattr__(shut, "shut", True)
+    with Gates.create(
+        unique_name, BoundedSet[Gate]([Gate(False), shut], capacity=4)
+    ) as box:
+        gates = box.gates
+        with pytest.raises(ValueError, match="the gate is shut"):
+            gates.pop()
+        assert len(gates) == 2
+        gates.discard(Gate(False))
+        assert len(gates) == 1
+
+
+def test_set_methods_change_the_value() -> None:
+    """Add, discard, remove, pop, clear and update keys as a set does, with set's errors."""
+    value = BoundedSet[int]([1, 2], capacity=3)
+    value.add(3)
+    value.add(3)
+    value.discard(9)
+    value.remove(1)
+    # The last slot fills the one removed, and pop takes the last slot.
+    assert list(value) == [3, 2]
+    assert value.pop() == 2
+    value.clear()
+    with pytest.raises(KeyError, match="pop from an empty set"):
+        value.pop()
+    with pytest.raises(KeyError):
+        value.remove(1)
+    value.update([1, 2], {3})
+    with pytest.raises(
+        ValueError, match="holds at most 3 elements; the value would have 4"
+    ):
+        value.update([1], [4, 5])
+    assert list(value) == [1, 2, 3]

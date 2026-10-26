@@ -749,6 +749,8 @@ template <typename Store> struct StoreIterator {
     nb::object store;
     std::size_t index = 0;
     bool backward = false;
+    /// A NativeSet's length when the iteration began.
+    std::size_t length = 0;
 };
 
 template <typename Store> int store_iterator_traverse(PyObject *self, visitproc visit, void *arg) {
@@ -778,6 +780,10 @@ template <typename Store> PyObject *store_iterator_next(PyObject *self) {
             return nullptr;
         }
         const auto *c = nb::inst_ptr<Store>(it.store);
+        if constexpr (std::is_same_v<Store, sharedbox::NativeSet>) {
+            if (c->size() != it.length)
+                sharedbox::raise(PyExc_RuntimeError, "Set changed size during iteration");
+        }
         nb::object value = c->element(static_cast<Py_ssize_t>(it.backward ? it.index - 1 : it.index));
         if (!value.is_valid()) {
             // An exhausted iterator drops the value so it stays exhausted, as list's does.
@@ -1188,7 +1194,17 @@ NB_MODULE(_native, m) {
                                          nb::type_slots(store_slots<sharedbox::NativeSet>));
     set.def("__len__", &sharedbox::NativeSet::size)
         .def("__iter__",
-             [](nb::pointer_and_handle<sharedbox::NativeSet> self) { return SetIterator{nb::borrow(self.h)}; })
+             [](nb::pointer_and_handle<sharedbox::NativeSet> self) {
+                 return SetIterator{nb::borrow(self.h), 0, false, self.p->size()};
+             })
+        .def("__contains__", &sharedbox::NativeSet::contains, nb::arg().none())
+        .def("add", &sharedbox::NativeSet::add, nb::arg().none())
+        .def("discard", &sharedbox::NativeSet::discard, nb::arg().none())
+        .def("remove", &sharedbox::NativeSet::remove, nb::arg().none())
+        .def("pop", &sharedbox::NativeSet::pop)
+        .def("clear", &sharedbox::NativeSet::remove_all)
+        .def("update", &sharedbox::NativeSet::update)
+        .def("__eq__", &sharedbox::NativeSet::equals, nb::arg().none())
         .def("copy", &sharedbox::NativeSet::copy)
         .def_prop_ro("_element_annotation", &sharedbox::NativeSet::element_annotation)
         .def_prop_ro("capacity", &sharedbox::NativeSet::capacity)

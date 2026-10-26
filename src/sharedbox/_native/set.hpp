@@ -26,6 +26,26 @@ public:
         : KeyedStore(std::move(types), node, std::move(label), {stored.get(), length}, &stored) {}
     /// A new value of self's class holding the same elements, copied without decoding one.
     static nb::object copy(nb::pointer_and_handle<NativeSet> self);
+    /// Whether the value holds value; false for a value that cannot be encoded as a key.
+    bool contains(nb::handle value);
+    /// Adds value unless it is held; raises as a write would, and ValueError past the capacity.
+    void add(nb::handle value);
+    /// Removes value when it is held.
+    void discard(nb::handle value);
+    /// Removes value, raising KeyError(value) when it is not held.
+    void remove(nb::handle value);
+    /// Removes the last slot's element and returns it, raising KeyError when the value is empty. A decode
+    /// that raises leaves the value as it was.
+    nb::object pop();
+    void remove_all();
+    /// Adds the elements of every iterable, all of them or, when the distinct new ones do not fit, none.
+    void update(nb::args iterables);
+    /// Equality with a collections.abc.Set, key by key; NotImplemented for anything else.
+    nb::object equals(nb::handle other);
+
+private:
+    /// Raises TypeError when value is a NativeSet that was never built.
+    void refuse_unbuilt(nb::handle value) const;
 };
 
 } // namespace sharedbox
