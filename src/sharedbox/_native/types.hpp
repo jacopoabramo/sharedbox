@@ -138,6 +138,10 @@ public:
     const std::string &element_text(const detail::type_ref &t) const { return nodes_[t.node].element_text; }
     /// The key plan of the set node collection, empty unless it is read back as a NativeSet.
     const KeyPlan &key_plan(const detail::type_ref &collection) const { return nodes_[collection.node].key; }
+    /// Where member member of a slot of the dict node collection starts in the slot.
+    std::uint32_t member_offset(const detail::type_ref &collection, std::uint32_t member) const {
+        return tree_.member(tree_.node(collection.node).members + member).offset;
+    }
     /// The annotation of the elements of the list or set node t, borrowed.
     PyObject *element_annotation(const detail::type_ref &t) const;
     /// The element of the list node list stored at slot; errors name label.

@@ -42,7 +42,7 @@ void NativeSet::add(nb::handle value) {
             return;
         // Duplicates another program stored may fill the capacity; dropping them may make room.
         if (count_ == capacity_)
-            ensure_checked(0);
+            ensure_checked();
         if (count_ < capacity_)
             return append_slot(key.data());
     }
@@ -76,7 +76,7 @@ nb::object NativeSet::pop() {
         std::uint32_t at = no_slot;
         {
             nb::ft_lock_guard guard(mutex_);
-            ensure_checked(0);
+            ensure_checked();
             if (count_ != 0) {
                 at = count_ - 1;
                 std::memcpy(copy.data(), slot(at), stride_);
@@ -142,7 +142,7 @@ bool NativeSet::keys_of(nb::handle other, std::vector<std::byte> &out, bool quie
         NativeSet &theirs = *nb::inst_ptr<NativeSet>(other);
         if (theirs.has_elements(codec().element_text(node_), codec().element_annotation(node_))) {
             nb::ft_lock_guard guard(theirs.mutex_);
-            theirs.ensure_checked(0);
+            theirs.ensure_checked();
             out.assign(theirs.slot(0), theirs.slot(theirs.count_));
             return true;
         }
@@ -152,7 +152,7 @@ bool NativeSet::keys_of(nb::handle other, std::vector<std::byte> &out, bool quie
 
 std::size_t NativeSet::match(const std::vector<std::byte> &keys, std::vector<bool> &found,
                              std::vector<std::byte> *extra) {
-    ensure_checked(0);
+    ensure_checked();
     found.assign(count_, false);
     std::size_t missing = 0;
     for (std::size_t at = 0; at < keys.size(); at += stride_) {
@@ -199,7 +199,7 @@ void NativeSet::update(nb::args iterables) {
     std::size_t refused = 0;
     {
         nb::ft_lock_guard guard(mutex_);
-        ensure_checked(0);
+        ensure_checked();
         refused = append_new(encoded);
     }
     if (refused != 0)
@@ -213,7 +213,7 @@ nb::object NativeSet::equals(nb::handle other) {
     if (!nb::isinstance<NativeSet>(other)) {
         {
             nb::ft_lock_guard guard(mutex_);
-            ensure_checked(0);
+            ensure_checked();
         }
         const Py_ssize_t length = PyObject_Size(other.ptr());
         if (length < 0)
