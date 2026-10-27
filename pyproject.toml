@@ -108,6 +108,9 @@ dependency_groups = ["lint"]
 commands = [["prek", "run", "--all-files", "--show-diff-on-failure"]]
 
 [tool.tox.env.mypy]
+# The oldest Python the project supports, so mypy checks against it and the
+# stubtest allowlist matches the runtime whatever Python runs tox.
+base_python = ["3.11"]
 dependency_groups = ["dev", "benchmarks"]
 # The allowlist covers what stubtest cannot see in nanobind's compiled types
 # (its own metaclass, its own static-method wrapper); see stubtest-allowlist.txt.
