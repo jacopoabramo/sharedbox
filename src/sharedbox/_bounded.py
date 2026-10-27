@@ -74,6 +74,12 @@ class BoundedList(NativeCollection[T]):
     `copy.deepcopy` and pickling keep a subclass's attributes, as for a
     `list` subclass, while slices, `+` and `*` return the class without
     them.
+
+    A list of `int`, `float`, `bool`, `complex` or NumPy numbers other than
+    `datetime64` supports the buffer protocol: `np.asarray(value)` and
+    `memoryview(value)` share its elements without decoding them, read only
+    for `bool`. While such a view exists, a change of length raises
+    `BufferError`.
     """
 
     __slots__ = ()

@@ -85,7 +85,50 @@ which decodes every element once:
 --8<-- "docs/examples/store_a_large_list.py:convert"
 ```
 
-## 6. Add methods with a subclass
+## 6. Hand the numbers to NumPy
+
+A `BoundedList` of fixed-size numbers shares its memory through the buffer
+protocol, so `np.asarray` and `memoryview` read its elements without
+decoding any of them. Elements of type `int`, `float`, `bool` or `complex`
+qualify, and so do the NumPy integer, float and complex types other than
+`datetime64`; a list of any other element type raises `BufferError`.
+
+```{.python}
+--8<-- "docs/examples/store_a_large_list.py:numpy"
+```
+
+The array and the list hold the same bytes, so a write through the array
+changes the list, and assigning the list to the field stores the change. A
+list of `bool` gives a read-only array, because a write through it could
+store a byte that is neither 0 nor 1.
+
+While an array or a `memoryview` over the list exists, a change of length
+such as `append` or `del` raises `BufferError`, because growing the list
+can move its elements and leave the array over freed memory. Replacing an
+element still works. Delete the array, or call `release()` on the
+`memoryview`, before you change the length again.
+
+On the free-threaded build of Python, a write through the array does not
+take the list's lock, so a thread writing through the array races with a
+thread calling a `BoundedList` method on the same bytes, as it would with a
+`bytearray`. Keep such writes in one thread.
+
+## 7. Keep the last n elements
+
+A list that should hold only the most recent elements, as a `deque` with
+`maxlen` does, drops the oldest ones before it takes a new batch. Deleting
+them first keeps the list within its capacity, and the kept elements move
+down once for the whole batch:
+
+```{.python}
+--8<-- "docs/examples/store_a_large_list.py:last-n"
+```
+
+`max(0, ...)` covers a list that still has room, from which nothing is
+deleted. Adding one element at a time this way moves every kept element for
+each one, so collect several and add them together.
+
+## 8. Add methods with a subclass
 
 A subclass of `BoundedList[float]` can be declared wherever a
 `BoundedList[float]` can, and a read returns an instance of the subclass, so

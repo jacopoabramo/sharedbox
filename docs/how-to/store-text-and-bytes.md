@@ -41,6 +41,9 @@ the field keeps its old value, so a reader never sees half of it:
 --8<-- "docs/examples/store_text_and_bytes.py:too-long"
 ```
 
+A `bytearray` field reads back as a `bytearray` that can grow past the
+capacity, and the capacity is checked when you assign it back to the field.
+
 ## 4. Count bytes, not characters
 
 The capacity counts bytes of the UTF-8 encoding, not characters, and a
