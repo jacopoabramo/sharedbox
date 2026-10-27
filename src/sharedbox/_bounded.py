@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-import copy
 import functools
 import types
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Iterable, Mapping
 from typing import Annotated, Any, Self, TypeVar, cast
 
 from ._layout import Capacity
@@ -17,40 +16,6 @@ T = TypeVar("T")
 K = TypeVar("K")
 V = TypeVar("V")
 C = TypeVar("C", bound=NativeCollection[Any] | NativeSet[Any] | NativeDict[Any, Any])
-
-
-def _copy(self: C) -> C:
-    """Return a copy, with a shallow copy of a subclass's attributes."""
-    value = cast("C", self.copy())
-    _restore(value, self.__getstate__())
-    return value
-
-
-def _deepcopy(self: C, memo: dict[int, Any]) -> C:
-    """Return a copy, with a deep copy of a subclass's attributes.
-
-    The elements are copied as bytes, since every read decodes an element
-    anew and the copy shares none with this value.
-    """
-    value = cast("C", self.copy())
-    memo[id(self)] = value
-    _restore(value, copy.deepcopy(self.__getstate__(), memo))
-    return value
-
-
-def _reduce(
-    self: NativeCollection[Any] | NativeSet[Any] | NativeDict[Any, Any],
-) -> tuple[
-    Callable[[type[Any], object, int, bytes], Any],
-    tuple[type[Any], object, int, bytes],
-    object,
-]:
-    """Return how pickling rebuilds the value: its class, element type, capacity and stored form."""
-    return (
-        _rebuild,
-        (type(self), self._element_annotation, self.capacity, self._stored()),
-        self.__getstate__(),
-    )
 
 
 class BoundedList(NativeCollection[T]):
@@ -126,10 +91,6 @@ class BoundedList(NativeCollection[T]):
             f"{type(self).__name__}[{_name(self._element_annotation)}]"
             f"({list(self)!r}, capacity={self.capacity})"
         )
-
-    __copy__ = _copy
-    __deepcopy__ = _deepcopy
-    __reduce__ = _reduce
 
 
 class BoundedSet(NativeSet[T]):
@@ -217,10 +178,6 @@ class BoundedSet(NativeSet[T]):
             f"({shown}, capacity={self.capacity})"
         )
 
-    __copy__ = _copy
-    __deepcopy__ = _deepcopy
-    __reduce__ = _reduce
-
 
 class BoundedDict(NativeDict[K, V]):
     """A dict of at most a field's capacity of items, held as the field stores them.
@@ -297,10 +254,6 @@ class BoundedDict(NativeDict[K, V]):
             f"({dict(self.items())!r}, capacity={self.capacity})"
         )
 
-    __copy__ = _copy
-    __deepcopy__ = _deepcopy
-    __reduce__ = _reduce
-
 
 class _Alias(types.GenericAlias):
     """`BoundedList[T]`, `BoundedSet[T]`, `BoundedDict[K, V]` or a subclass's, which builds a value of those types when called."""
@@ -345,15 +298,6 @@ def _parametrise(cls: type, element: object) -> types.GenericAlias:
         held = "key and value types" if mapping else "element type"
         raise TypeError(f"{cls.__name__} already has {held} {_name(fixed)}")
     return _Alias(cls, element)
-
-
-def _restore(value: object, state: object) -> None:
-    """Set the attributes `object.__getstate__` gave on `value`, as unpickling sets them."""
-    attrs, slots = state if isinstance(state, tuple) else (state, None)
-    if attrs:
-        value.__dict__.update(attrs)
-    for name, member in (slots or {}).items():
-        setattr(value, name, member)
 
 
 def _name(element: object) -> str:

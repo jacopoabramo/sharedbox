@@ -353,7 +353,7 @@ def test_a_bounded_set_inside_a_union_reads_back(unique_name: str) -> None:
 def test_a_pickled_bounded_set_reads_back_in_a_spawned_process(
     unique_name: str,
 ) -> None:
-    """Read back a pickled BoundedSet in a spawned process, and keep a subclass and its slots through pickle and deepcopy."""
+    """Read back a pickled BoundedSet in a spawned process, and keep a subclass and its slots through pickle and copies."""
     with (
         Catalogue.create(unique_name + "-a", {"a", "b", "c"}) as box,
         Labels.create(unique_name + "-b", {"x"}) as labels,
@@ -362,7 +362,11 @@ def test_a_pickled_bounded_set_reads_back_in_a_spawned_process(
         tags = labels.tags
     assert call_in_child(repr, value) == repr(value)
     tags.tag = "kept"
-    for again in (pickle.loads(pickle.dumps(tags)), copy.deepcopy(tags)):
+    for again in (
+        pickle.loads(pickle.dumps(tags)),
+        copy.copy(tags),
+        copy.deepcopy(tags),
+    ):
         assert type(again) is Tags
         assert again.tag == "kept"
         assert set(again) == {"x"}

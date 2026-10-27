@@ -383,6 +383,22 @@ class NativeCollection(MutableSequence[_T]):
 
     __hash__: ClassVar[None]  # type: ignore[assignment]
     def __len__(self) -> int: ...
+    def __copy__(self) -> Self:
+        """Return a copy, with a shallow copy of a subclass's attributes."""
+    def __deepcopy__(self, memo: dict[int, Any], /) -> Self:
+        """Return a copy, with a deep copy of a subclass's attributes.
+
+        The elements are copied as bytes, since every read decodes an element
+        anew and the copy shares none with this value.
+        """
+    def __reduce__(
+        self,
+    ) -> tuple[
+        Callable[[type[Any], object, int, bytes], Any],
+        tuple[type[Any], object, int, bytes],
+        object,
+    ]:
+        """Return how pickling rebuilds the value: its class, element type, capacity and stored form."""
     def __buffer__(self, flags: int, /) -> memoryview:
         """Return a view of the elements that shares the value's memory.
 
@@ -605,6 +621,22 @@ class NativeSet(MutableSet[_T]):
 
     __hash__: ClassVar[None]  # type: ignore[assignment]
     def __len__(self) -> int: ...
+    def __copy__(self) -> Self:
+        """Return a copy, with a shallow copy of a subclass's attributes."""
+    def __deepcopy__(self, memo: dict[int, Any], /) -> Self:
+        """Return a copy, with a deep copy of a subclass's attributes.
+
+        The elements are copied as bytes, since every read decodes an element
+        anew and the copy shares none with this value.
+        """
+    def __reduce__(
+        self,
+    ) -> tuple[
+        Callable[[type[Any], object, int, bytes], Any],
+        tuple[type[Any], object, int, bytes],
+        object,
+    ]:
+        """Return how pickling rebuilds the value: its class, element type, capacity and stored form."""
     def __iter__(self) -> Iterator[_T]:
         """Decode one element per step, in the order the slots hold them.
 
@@ -839,6 +871,22 @@ class NativeDict(MutableMapping[_K, _V]):
 
     __hash__: ClassVar[None]  # type: ignore[assignment]
     def __len__(self) -> int: ...
+    def __copy__(self) -> Self:
+        """Return a copy, with a shallow copy of a subclass's attributes."""
+    def __deepcopy__(self, memo: dict[int, Any], /) -> Self:
+        """Return a copy, with a deep copy of a subclass's attributes.
+
+        The elements are copied as bytes, since every read decodes an element
+        anew and the copy shares none with this value.
+        """
+    def __reduce__(
+        self,
+    ) -> tuple[
+        Callable[[type[Any], object, int, bytes], Any],
+        tuple[type[Any], object, int, bytes],
+        object,
+    ]:
+        """Return how pickling rebuilds the value: its class, element type, capacity and stored form."""
     def __iter__(self) -> Iterator[_K]:
         """Decode one key per step, in insertion order.
 
