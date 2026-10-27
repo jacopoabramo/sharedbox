@@ -23,9 +23,9 @@ How much that saves depends on the size and on what you do with the value.
 In `benchbox ops` on Windows with CPython 3.11, reading a set and testing
 one key with `in` takes about 1.1 times as long as with a `set` field at 16
 elements, and is about 30 times faster at 1024 and about 100 times faster
-at 65536. Reading a set, changing one key and writing it back is about 2
-times faster at 16 elements, 20 times faster at 1024 and 40 times faster at
-65536. Going through every element decodes each one, so it takes about 1.5
+at 65536. Reading a set, changing one key and writing it back is about 1.4
+times faster at 16 elements, 18 times faster at 1024 and 40 times faster
+at 65536. Going through every element decodes each one, so it takes about 1.5
 times as long as with a `set` at 16 elements, about as long at 1024, and is
 about 1.5 times faster at 65536. So use it for a large set that you read or
 write whole and test or change a few keys at a time. A set you always
@@ -179,6 +179,16 @@ key types, and a nan, a NaT, or a `datetime` or `time` with a time zone
 raises `ValueError` when it is added as a key. The values can be of any
 type a `dict` field holds, and a process that declares the field as
 `dict[int, float]` attaches to the same box and reads the same items.
+
+A dict gains less than a set from this at the largest size. In
+`benchbox ops` on Windows with CPython 3.11, against a `dict[int, float]`
+field, reading a
+`BoundedDict[int, float]` and testing one key with `in` is about 2 times
+faster at 16 items, 18 times faster at 1024 and 14 times faster at 65536.
+Reading it, deleting one key, adding it back and writing it back is about
+2.3 times faster at 16 items, 10 times faster at 1024 and 16 times faster
+at 65536. Going through every key is about 1.2 times faster at 16 items,
+2 times faster at 1024 and 2.5 times faster at 65536.
 
 A `BoundedDict` is a `MutableMapping` but not a `dict`, so pass `dict(d)`
 where code asks for the builtin type, as step 7 does for a set.
