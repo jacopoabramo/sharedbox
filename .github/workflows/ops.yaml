@@ -42,6 +42,9 @@ jobs:
 
       - name: Run benchbox ops, alternating base and head
         shell: bash
+        env:
+          # The 64k set and dict rows nearly double the job, so a pull request skips them.
+          SIZES: ${{ github.event_name == 'pull_request' && '[!6]*' || '*' }}
         run: |
           mkdir results
           step=0
@@ -54,8 +57,8 @@ jobs:
                 echo "::group::[$step/$total] round $round, $side, $rows rows"
                 case "$rows" in
                   list) pattern="*list*/*" ;;
-                  set) pattern="*set*/*" ;;
-                  dict) pattern="*dict*/*" ;;
+                  set) pattern="*set$SIZES/*" ;;
+                  dict) pattern="*dict$SIZES/*" ;;
                   *) pattern="*$rows/SharedBox" ;;
                 esac
                 (cd "$side" && uv run --no-sync benchbox ops --fast \
@@ -83,6 +86,8 @@ jobs:
               for bench in pyperf.BenchmarkSuite.load(str(path)).get_benchmarks():
                   means.setdefault((bench.get_name(), side), []).append(bench.mean())
           print("### benchbox ops on Windows cp311, median of three rounds, list, set and dict rows one round")
+          print()
+          print("A pull request skips the 64k set and dict rows; start the workflow by hand for them.")
           print()
           print(machine())
           print()
