@@ -6480,6 +6480,11 @@ box calls neither <code>__new__</code> nor <code>__init__</code>. <code>copy.cop
 <code>copy.deepcopy</code> and pickling keep a subclass's attributes, as for a
 <code>list</code> subclass, while slices, <code>+</code> and <code>*</code> return the class without
 them.</p>
+<p>A list of <code>int</code>, <code>float</code>, <code>bool</code>, <code>complex</code> or NumPy integer, float,
+complex or <code>bool_</code> elements supports the buffer protocol:
+<code>np.asarray(value)</code> and <code>memoryview(value)</code> share its elements without
+decoding them, read only for <code>bool</code> and <code>bool_</code>. While such a view exists, a change of length raises
+<code>BufferError</code>.</p>
 
         <p>Do nothing; <code>__new__</code> has built the value.</p>
 

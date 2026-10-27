@@ -3348,6 +3348,8 @@ the field keeps its old value, so a reader never sees half of it:</p>
 </span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">error</span><span class="p">)</span>  <span class="c1"># Envelope.owner holds at most 16 bytes; the value encodes to 24</span>
 </span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="nb">print</span><span class="p">(</span><span class="n">envelope</span><span class="o">.</span><span class="n">owner</span><span class="p">)</span>  <span class="c1"># Ada</span>
 </span></code></pre></div>
+<p>A <code>bytearray</code> field reads back as a <code>bytearray</code> that can grow past the
+capacity, and the capacity is checked when you assign it back to the field.</p>
 <h2 id="4-count-bytes-not-characters">4. Count bytes, not characters<a class="headerlink" href="#4-count-bytes-not-characters" title="Permanent link">&para;</a></h2>
 <p>The capacity counts bytes of the UTF-8 encoding, not characters, and a
 character takes between 1 and 4 bytes. Text with accents or other scripts
