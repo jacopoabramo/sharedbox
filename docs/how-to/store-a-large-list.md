@@ -108,10 +108,12 @@ can move its elements and leave the array over freed memory. Replacing an
 element still works. Delete the array, or call `release()` on the
 `memoryview`, before you change the length again.
 
-On the free-threaded build of Python, a write through the array does not
-take the list's lock, so a thread writing through the array races with a
-thread calling a `BoundedList` method on the same bytes, as it would with a
-`bytearray`. Keep such writes in one thread.
+A write through the array does not take the list's lock, so a thread
+writing through the array can race with a thread calling a `BoundedList`
+method on the same bytes and leave torn values, as it would with a
+`bytearray`. That holds on the free-threaded build of Python, and on the
+default build while NumPy has released the GIL for a large operation, so
+keep such writes in one thread.
 
 ## 7. Keep the last n elements
 
