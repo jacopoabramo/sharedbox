@@ -40,3 +40,8 @@ sharedbox._native.NativeCollection.__class_getitem__
 sharedbox._native.NativeDict.__class_getitem__
 sharedbox._native.NativeSet.__class_getitem__
 sharedbox._native.Slot.__class_getitem__
+# CPython 3.11 binds no __buffer__ or __release_buffer__ for a type with buffer
+# slots; the stub declares them, as typeshed does, so type checkers accept the
+# value where a buffer is expected
+sharedbox._native.NativeCollection.__buffer__
+sharedbox._native.NativeCollection.__release_buffer__

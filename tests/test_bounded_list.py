@@ -9,6 +9,7 @@ import weakref
 from dataclasses import dataclass, make_dataclass
 from typing import Annotated, Any, TypeVar, get_origin
 
+import numpy as np
 import pytest
 from crossproc import call_in_child, update_in_child
 
@@ -799,3 +800,115 @@ def test_an_index_beyond_ssize_t_overflows() -> None:
         value.insert(2**70, 2.0)
     with pytest.raises(OverflowError):
         value.pop(2**70)
+
+
+@pytest.mark.parametrize(
+    ("element", "fmt", "values"),
+    [
+        (float, "d", [1.5, 2.5]),
+        (int, "q", [1, -2]),
+        (np.uint16, "H", [3, 4]),
+        (np.float32, "f", [0.5, 1.0]),
+        (complex, "Zd", [1j, 2]),
+    ],
+)
+def test_a_list_of_numbers_exports_its_slots(
+    element: Any, fmt: str, values: list[Any]
+) -> None:
+    """Export a list of fixed-size numbers as a writable view of its elements."""
+    value = BoundedList[element](values, capacity=4)
+    view = memoryview(value)
+    assert view.format == fmt
+    assert view.shape == (2,)
+    assert view.readonly is False
+    assert np.asarray(value).tolist() == values
+
+
+def test_a_numpy_write_changes_the_list_and_the_field(unique_name: str) -> None:
+    """Change the list through a NumPy array over it, then store the change."""
+    with Scan.create(unique_name, [1.0, 2.0]) as box:
+        points = box.points
+        array = np.asarray(points)
+        array[0] = 9.5
+        assert points[0] == 9.5
+        box.points = points
+        assert box.points == [9.5, 2.0]
+
+
+@pytest.mark.parametrize(
+    "change",
+    [
+        lambda v: v.append(3.0),
+        lambda v: v.extend([3.0]),
+        lambda v: v.insert(0, 3.0),
+        lambda v: v.__iadd__([3.0]),
+        lambda v: v.__imul__(2),
+        lambda v: v.__setitem__(slice(0, 1), [3.0, 4.0]),
+        lambda v: v.__delitem__(slice(None, None, 2)),
+        lambda v: v.pop(),
+        lambda v: v.clear(),
+    ],
+)
+def test_a_resize_while_exported_raises(change: Any) -> None:
+    """Refuse a change of length while a view is exported, then allow it once released."""
+    value = BoundedList[float]([1.0, 2.0], capacity=8)
+    view = memoryview(value)
+    with pytest.raises(BufferError, match="Existing exports of data"):
+        change(value)
+    assert value == [1.0, 2.0]
+    view.release()
+    change(value)
+
+
+def test_setting_an_element_while_exported_works() -> None:
+    """Replace an element in place while a view is exported, and show it in the view."""
+    value = BoundedList[float]([1.0, 2.0], capacity=4)
+    view = memoryview(value)
+    value[1] = 7.0
+    assert view.tolist() == [1.0, 7.0]
+
+
+def test_a_bool_list_exports_read_only() -> None:
+    """Export a list of bool read only, so no byte other than 0 or 1 reaches a slot."""
+    value = BoundedList[bool]([True, False], capacity=4)
+    assert memoryview(value).readonly is True
+    with pytest.raises(ValueError, match="read-only"):
+        np.asarray(value)[0] = False
+    assert value[0] is True
+
+
+@pytest.mark.parametrize(
+    "element",
+    [Annotated[str, Capacity(4)], Annotated[bytes, Capacity(4)], Red, Left],
+)
+def test_other_elements_refuse_to_export(element: Any) -> None:
+    """Raise BufferError for elements that are not fixed-size numbers."""
+    with pytest.raises(BufferError, match="fixed-size numbers"):
+        memoryview(BoundedList[element](capacity=4))
+
+
+def test_an_empty_list_exports_an_empty_view() -> None:
+    """Export a list with no elements as a view of shape (0,)."""
+    assert memoryview(BoundedList[float](capacity=4)).shape == (0,)
+
+
+def test_view_keeps_the_list_alive() -> None:
+    """Keep the elements readable through a view after the list's last other reference goes."""
+    value = BoundedList[float]([1.0, 2.0], capacity=4)
+    view = memoryview(value)
+    del value
+    gc.collect()
+    assert view.tolist() == [1.0, 2.0]
+
+
+def test_a_slice_is_a_copy() -> None:
+    """Leave the list unchanged by a write through a view of its slice."""
+    value = BoundedList[float]([1.0, 2.0], capacity=4)
+    np.asarray(value[1:])[0] = 0.0
+    assert value == [1.0, 2.0]
+
+
+def test_exporting_a_bounded_list_that_was_never_built_raises() -> None:
+    """Raise TypeError when a BoundedList made by the native __new__ alone is exported."""
+    with pytest.raises(TypeError, match="never built"):
+        memoryview(NativeCollection.__new__(BoundedList))
