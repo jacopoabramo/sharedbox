@@ -3455,9 +3455,9 @@ only the one key. A dict field gets the same from a <code>BoundedDict</code>, as
 In <code>benchbox ops</code> on Windows with CPython 3.11, reading a set and testing
 one key with <code>in</code> takes about 1.1 times as long as with a <code>set</code> field at 16
 elements, and is about 30 times faster at 1024 and about 100 times faster
-at 65536. Reading a set, changing one key and writing it back is about 2
-times faster at 16 elements, 20 times faster at 1024 and 40 times faster at
-65536. Going through every element decodes each one, so it takes about 1.5
+at 65536. Reading a set, changing one key and writing it back is about 1.4
+times faster at 16 elements, 18 times faster at 1024 and 40 times faster
+at 65536. Going through every element decodes each one, so it takes about 1.5
 times as long as with a <code>set</code> at 16 elements, about as long at 1024, and is
 about 1.5 times faster at 65536. So use it for a large set that you read or
 write whole and test or change a few keys at a time. A set you always
@@ -3615,6 +3615,15 @@ key types, and a nan, a NaT, or a <code>datetime</code> or <code>time</code> wit
 raises <code>ValueError</code> when it is added as a key. The values can be of any
 type a <code>dict</code> field holds, and a process that declares the field as
 <code>dict[int, float]</code> attaches to the same box and reads the same items.</p>
+<p>A dict gains less than a set from this at the largest size. In
+<code>benchbox ops</code> on Windows with CPython 3.11, against a <code>dict[int, float]</code>
+field, reading a
+<code>BoundedDict[int, float]</code> and testing one key with <code>in</code> is about 2 times
+faster at 16 items, 18 times faster at 1024 and 14 times faster at 65536.
+Reading it, deleting one key, adding it back and writing it back is about
+2.3 times faster at 16 items, 10 times faster at 1024 and 16 times faster
+at 65536. Going through every key is about 1.2 times faster at 16 items,
+2 times faster at 1024 and 2.5 times faster at 65536.</p>
 <p>A <code>BoundedDict</code> is a <code>MutableMapping</code> but not a <code>dict</code>, so pass <code>dict(d)</code>
 where code asks for the builtin type, as step 7 does for a set.</p>
 <h2 id="10-change-items-in-insertion-order">10. Change items in insertion order<a class="headerlink" href="#10-change-items-in-insertion-order" title="Permanent link">&para;</a></h2>
