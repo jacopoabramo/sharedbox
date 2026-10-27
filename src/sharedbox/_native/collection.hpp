@@ -120,6 +120,8 @@ protected:
     std::uint32_t capacity_ = 0;
     /// The number of slots data_ has room for, grown by doubling up to the capacity.
     std::uint32_t room_ = 0;
+    /// The buffers exported over the slots and not released yet; while there are any, the count stays.
+    std::uint32_t exports_ = 0;
     /// The stored form: the count, then room for room_ slots.
     std::unique_ptr<std::byte[]> data_;
     mutable nb::ft_mutex mutex_;
@@ -175,6 +177,10 @@ public:
     /// Reverses the slots in place without decoding an element.
     void reverse();
     void remove_all();
+    /// Fills view with the slots of a list of fixed-size numbers, as the buffer protocol asks; raises
+    /// BufferError for other elements, and for a writable view of bool elements.
+    void export_buffer(PyObject *self, Py_buffer *view, int flags);
+    void release_buffer();
     /// Equality with a list or another NativeCollection, element by element; NotImplemented otherwise.
     nb::object equals(nb::handle other) const;
 
@@ -182,6 +188,9 @@ protected:
     using SlotStore::too_many;
 
 private:
+    /// The length and item size an exported view gives, which stay while a view is exported.
+    Py_ssize_t view_shape_ = 0;
+    Py_ssize_t view_stride_ = 0;
     /// A slice's start, stop and step as it gives them, before they are fitted to a count.
     struct Slice {
         Py_ssize_t start = 0;

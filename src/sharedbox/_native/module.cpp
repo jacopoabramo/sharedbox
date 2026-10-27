@@ -6,6 +6,7 @@
 #include <nanobind/stl/unique_ptr.h>
 #include <nanobind/stl/vector.h>
 
+#include <concepts>
 #include <cstddef>
 #include <cstring>
 #include <exception>
@@ -769,6 +770,48 @@ template <typename Store> int store_iterator_clear(PyObject *self) {
     return 0;
 }
 
+/// Sets the attributes object.__getstate__ gave on value, as unpickling sets them.
+void restore(nb::handle value, nb::handle state) {
+    nb::object attrs = nb::borrow(state);
+    nb::object slots = nb::none();
+    if (nb::isinstance<nb::tuple>(state)) {
+        attrs = state[0];
+        slots = state[1];
+    }
+    if (nb::bool_(attrs))
+        value.attr("__dict__").attr("update")(attrs);
+    if (!slots.is_none())
+        for (auto [name, member] : nb::borrow<nb::dict>(slots))
+            nb::setattr(value, name, member);
+}
+
+/// Adds __copy__, __deepcopy__ and __reduce__ to the class of Store. Each copies the stored form without
+/// decoding an element and keeps a subclass's attributes, as copies and pickling of a list subclass keep them.
+template <std::derived_from<sharedbox::SlotStore> Store> void def_copies(nb::class_<Store> &cls) {
+    cls.def("__copy__",
+            [](nb::pointer_and_handle<Store> self) {
+                nb::object value = Store::copy(self);
+                restore(value, self.h.attr("__getstate__")());
+                return value;
+            })
+        .def("__deepcopy__",
+             [](nb::pointer_and_handle<Store> self, nb::dict memo) {
+                 nb::object value = Store::copy(self);
+                 // Registered before the attributes are copied, so one that refers back to self gets value.
+                 memo[nb::steal(PyLong_FromVoidPtr(self.h.ptr()))] = value;
+                 restore(value,
+                         nb::module_::import_("copy").attr("deepcopy")(self.h.attr("__getstate__")(), memo));
+                 return value;
+             })
+        .def("__reduce__", [](nb::pointer_and_handle<Store> self) {
+            nb::handle cls = reinterpret_cast<PyObject *>(Py_TYPE(self.h.ptr()));
+            return nb::make_tuple(
+                nb::module_::import_("sharedbox._bounded").attr("_rebuild"),
+                nb::make_tuple(cls, self.p->element_annotation(), self.p->capacity(), self.p->stored()),
+                self.h.attr("__getstate__")());
+        });
+}
+
 // A slot rather than a bound __next__, so the end returns nullptr with no error set instead of throwing
 // StopIteration through C++, whose unwinding costs microseconds per loop.
 template <typename Store> PyObject *store_iterator_next(PyObject *self) {
@@ -843,6 +886,30 @@ int dict_ass_subscript(PyObject *self, PyObject *key, PyObject *value) {
         return -1;
     }
 }
+
+int collection_getbuffer(PyObject *self, Py_buffer *view, int flags) {
+    try {
+        if (!nb::inst_ready(self))
+            sharedbox::raise(PyExc_TypeError, "the value was never built");
+        nb::inst_ptr<sharedbox::NativeCollection>(self)->export_buffer(self, view, flags);
+        return 0;
+    } catch (...) {
+        view->obj = nullptr;
+        set_error();
+        return -1;
+    }
+}
+
+void collection_releasebuffer(PyObject *self, Py_buffer *) {
+    nb::inst_ptr<sharedbox::NativeCollection>(self)->release_buffer();
+}
+
+PyType_Slot collection_slots[] = {
+    {Py_tp_traverse, reinterpret_cast<void *>(store_traverse<sharedbox::NativeCollection>)},
+    {Py_tp_clear, reinterpret_cast<void *>(store_clear<sharedbox::NativeCollection>)},
+    {Py_bf_getbuffer, reinterpret_cast<void *>(collection_getbuffer)},
+    {Py_bf_releasebuffer, reinterpret_cast<void *>(collection_releasebuffer)},
+    {0, nullptr}};
 
 PyType_Slot dict_slots[] = {{Py_tp_traverse, reinterpret_cast<void *>(store_traverse<sharedbox::NativeDict>)},
                             {Py_tp_clear, reinterpret_cast<void *>(store_clear<sharedbox::NativeDict>)},
@@ -1217,7 +1284,7 @@ NB_MODULE(_native, m) {
         .def("__iter__", [](nb::handle self) { return nb::borrow(self); });
 
     nb::class_<sharedbox::NativeCollection> collection(m, "NativeCollection", nb::is_generic(),
-                                                       nb::type_slots(store_slots<sharedbox::NativeCollection>));
+                                                       nb::type_slots(collection_slots));
     collection.def("__len__", &sharedbox::NativeCollection::size)
         .def("__getitem__", &sharedbox::NativeCollection::getitem)
         .def("__setitem__", &sharedbox::NativeCollection::setitem, nb::arg(), nb::arg().none())
@@ -1363,6 +1430,9 @@ NB_MODULE(_native, m) {
     // A dict's items can change, so a value has no hash, as a dict has none.
     dict.attr("__hash__") = nb::none();
     nb::module_::import_("collections.abc").attr("MutableMapping").attr("register")(dict);
+    def_copies(collection);
+    def_copies(set);
+    def_copies(dict);
 
     method_type = nb::object(nb::module_::import_("types").attr("MethodType")).release().ptr();
     getattr_function = nb::object(nb::module_::import_("builtins").attr("getattr")).release().ptr();

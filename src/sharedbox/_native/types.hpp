@@ -144,6 +144,10 @@ public:
     std::uint32_t member_offset(const detail::type_ref &collection, std::uint32_t member) const {
         return tree_.member(tree_.node(collection.node).members + member).offset;
     }
+    /// The type of member member of a slot of the collection node collection, numbered as for decode_member.
+    const detail::type_ref &member_type(const detail::type_ref &collection, std::uint32_t member) const {
+        return tree_.member(tree_.node(collection.node).members + member).type;
+    }
     /// The annotation of the elements of the list or set node t, or the key's and the value's of the dict
     /// node t, borrowed.
     PyObject *element_annotation(const detail::type_ref &t) const;

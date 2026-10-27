@@ -3,6 +3,8 @@
 # --8<-- [start:declare]
 from typing import Annotated
 
+import numpy as np
+
 from sharedbox import BoundedList, Capacity, SharedBox
 
 
@@ -38,6 +40,25 @@ print(len(samples))  # 50001
 plain = list(recording.samples)
 print(type(plain).__name__, len(plain))  # list 50001
 # --8<-- [end:convert]
+
+# --8<-- [start:numpy]
+samples = recording.samples
+array = np.asarray(samples)
+print(array.dtype, array.shape)  # float64 (50001,)
+array[:3] = [4.0, 5.0, 6.0]
+del array  # releases the view, so the length can change again
+recording.samples = samples
+print(list(recording.samples[:3]))  # [4.0, 5.0, 6.0]
+# --8<-- [end:numpy]
+
+# --8<-- [start:last-n]
+batch = [7.0] * 20000
+samples = recording.samples
+del samples[: max(0, len(samples) + len(batch) - samples.capacity)]
+samples.extend(batch)
+recording.samples = samples
+print(len(recording.samples), recording.samples[-1])  # 65536 7.0
+# --8<-- [end:last-n]
 
 
 # --8<-- [start:subclass]
