@@ -1,5 +1,6 @@
 import collections.abc
 import copy
+import ctypes
 import enum
 import gc
 import pickle
@@ -875,6 +876,35 @@ def test_a_bool_list_exports_read_only() -> None:
     with pytest.raises(ValueError, match="read-only"):
         np.asarray(value)[0] = False
     assert value[0] is True
+
+
+class PyBuffer(ctypes.Structure):
+    _fields_ = (
+        ("buf", ctypes.c_void_p),
+        ("obj", ctypes.py_object),
+        ("len", ctypes.c_ssize_t),
+        ("itemsize", ctypes.c_ssize_t),
+        ("readonly", ctypes.c_int),
+        ("ndim", ctypes.c_int),
+        ("format", ctypes.c_char_p),
+        ("shape", ctypes.c_void_p),
+        ("strides", ctypes.c_void_p),
+        ("suboffsets", ctypes.c_void_p),
+        ("internal", ctypes.c_void_p),
+    )
+
+
+PyBUF_WRITABLE = 0x0001
+
+
+def test_a_writable_view_of_a_bool_list_is_refused() -> None:
+    """Refuse a C caller that asks for a writable view of a list of bool."""
+    get_buffer = ctypes.pythonapi.PyObject_GetBuffer
+    get_buffer.argtypes = (ctypes.py_object, ctypes.POINTER(PyBuffer), ctypes.c_int)
+    value = BoundedList[bool]([True], capacity=2)
+    with pytest.raises(BufferError, match="read only"):
+        get_buffer(value, ctypes.byref(PyBuffer()), PyBUF_WRITABLE)
+    value.append(False)
 
 
 @pytest.mark.parametrize(
