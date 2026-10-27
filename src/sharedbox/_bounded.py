@@ -40,10 +40,10 @@ class BoundedList(NativeCollection[T]):
     `list` subclass, while slices, `+` and `*` return the class without
     them.
 
-    A list of `int`, `float`, `bool`, `complex` or NumPy numbers other than
-    `datetime64` supports the buffer protocol: `np.asarray(value)` and
-    `memoryview(value)` share its elements without decoding them, read only
-    for `bool`. While such a view exists, a change of length raises
+    A list of `int`, `float`, `bool`, `complex` or NumPy integer, float,
+    complex or `bool_` elements supports the buffer protocol:
+    `np.asarray(value)` and `memoryview(value)` share its elements without
+    decoding them, read only for `bool` and `bool_`. While such a view exists, a change of length raises
     `BufferError`.
     """
 

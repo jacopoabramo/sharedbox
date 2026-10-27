@@ -90,8 +90,9 @@ which decodes every element once:
 A `BoundedList` of fixed-size numbers shares its memory through the buffer
 protocol, so `np.asarray` and `memoryview` read its elements without
 decoding any of them. Elements of type `int`, `float`, `bool` or `complex`
-qualify, and so do the NumPy integer, float and complex types other than
-`datetime64`; a list of any other element type raises `BufferError`.
+qualify, and so do NumPy's integer, float, complex and `bool_` types; a
+list of any other element type, `datetime64` included, raises
+`BufferError`.
 
 ```{.python}
 --8<-- "docs/examples/store_a_large_list.py:numpy"
@@ -99,7 +100,7 @@ qualify, and so do the NumPy integer, float and complex types other than
 
 The array and the list hold the same bytes, so a write through the array
 changes the list, and assigning the list to the field stores the change. A
-list of `bool` gives a read-only array, because a write through it could
+list of `bool` or `np.bool_` gives a read-only array, because a write through it could
 store a byte that is neither 0 nor 1.
 
 While an array or a `memoryview` over the list exists, a change of length
