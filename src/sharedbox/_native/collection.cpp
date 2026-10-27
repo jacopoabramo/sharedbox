@@ -604,8 +604,12 @@ void NativeCollection::export_buffer(PyObject *self, Py_buffer *view, int flags)
     if (readonly && (flags & PyBUF_WRITABLE) != 0)
         throw nb::buffer_error("a list of bool can only be exported read only");
     nb::ft_lock_guard guard(mutex_);
-    view_shape_ = count_;
-    view_stride_ = stride_;
+    // Written by the first view only: the count cannot change while a view is open, and a later export
+    // writing them would race with a thread reading an earlier view's shape without the mutex.
+    if (exports_ == 0) {
+        view_shape_ = count_;
+        view_stride_ = stride_;
+    }
     view->obj = Py_NewRef(self);
     view->buf = slot(0);
     view->len = view_shape_ * view_stride_;
