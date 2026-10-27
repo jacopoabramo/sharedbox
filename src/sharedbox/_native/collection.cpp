@@ -117,6 +117,8 @@ std::size_t SlotStore::splice(std::size_t start, std::size_t stop, const std::by
     const std::size_t count = count_ - (stop - start) + n;
     if (count > capacity_)
         return count;
+    if (exports_ != 0 && count != count_)
+        throw nb::buffer_error("Existing exports of data: object cannot be re-sized");
     if (count > room_) {
         const auto room = static_cast<std::uint32_t>(
             std::min<std::size_t>(capacity_, std::max<std::size_t>(count, std::size_t{room_} * 2)));
@@ -426,6 +428,8 @@ void NativeCollection::delitem(nb::handle index) {
         splice(first, first + length, nullptr, 0);
         return;
     }
+    if (exports_ != 0)
+        throw nb::buffer_error("Existing exports of data: object cannot be re-sized");
     std::size_t kept = first;
     for (std::size_t read = first; read < count_; ++read) {
         if ((read - first) % step == 0 && (read - first) / step < length)
@@ -548,6 +552,77 @@ void NativeCollection::reverse() {
     nb::ft_lock_guard guard(mutex_);
     for (std::size_t i = 0, j = count_; i + 1 < j; ++i, --j)
         std::swap_ranges(slot(i), slot(i) + stride_, slot(j - 1));
+}
+
+namespace {
+
+/// The struct format of the stored element kind, or null for one the buffer protocol cannot describe.
+const char *buffer_format(std::uint8_t kind) {
+    switch (kind) {
+    case 0:
+        return "?";
+    case 1:
+        return "q";
+    case 2:
+        return "d";
+    case 6:
+        return "Zd";
+    case 13:
+        return "b";
+    case 14:
+        return "h";
+    case 15:
+        return "i";
+    case 16:
+        return "B";
+    case 17:
+        return "H";
+    case 18:
+        return "I";
+    case 19:
+        return "Q";
+    case 20:
+        return "e";
+    case 21:
+        return "f";
+    case 22:
+        return "Zf";
+    default:
+        return nullptr;
+    }
+}
+
+} // namespace
+
+void NativeCollection::export_buffer(PyObject *self, Py_buffer *view, int flags) {
+    const std::uint8_t kind = codec().member_type(node_, 0).kind;
+    const char *format = buffer_format(kind);
+    if (format == nullptr)
+        throw nb::buffer_error("only a list of fixed-size numbers can be exported as a buffer");
+    // A bool slot holding a byte other than 0 or 1 would be stored, so bool elements are read only.
+    const bool readonly = kind == 0;
+    if (readonly && (flags & PyBUF_WRITABLE) != 0)
+        throw nb::buffer_error("a list of bool can only be exported read only");
+    nb::ft_lock_guard guard(mutex_);
+    view_shape_ = count_;
+    view_stride_ = stride_;
+    view->obj = Py_NewRef(self);
+    view->buf = slot(0);
+    view->len = view_shape_ * view_stride_;
+    view->itemsize = view_stride_;
+    view->readonly = readonly ? 1 : 0;
+    view->ndim = 1;
+    view->format = (flags & PyBUF_FORMAT) != 0 ? const_cast<char *>(format) : nullptr;
+    view->shape = (flags & PyBUF_ND) != 0 ? &view_shape_ : nullptr;
+    view->strides = (flags & PyBUF_STRIDES) == PyBUF_STRIDES ? &view_stride_ : nullptr;
+    view->suboffsets = nullptr;
+    view->internal = nullptr;
+    ++exports_;
+}
+
+void NativeCollection::release_buffer() {
+    nb::ft_lock_guard guard(mutex_);
+    --exports_;
 }
 
 void NativeCollection::remove_all() {

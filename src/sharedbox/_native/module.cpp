@@ -844,6 +844,30 @@ int dict_ass_subscript(PyObject *self, PyObject *key, PyObject *value) {
     }
 }
 
+int collection_getbuffer(PyObject *self, Py_buffer *view, int flags) {
+    try {
+        if (!nb::inst_ready(self))
+            sharedbox::raise(PyExc_TypeError, "the value was never built");
+        nb::inst_ptr<sharedbox::NativeCollection>(self)->export_buffer(self, view, flags);
+        return 0;
+    } catch (...) {
+        view->obj = nullptr;
+        set_error();
+        return -1;
+    }
+}
+
+void collection_releasebuffer(PyObject *self, Py_buffer *) {
+    nb::inst_ptr<sharedbox::NativeCollection>(self)->release_buffer();
+}
+
+PyType_Slot collection_slots[] = {
+    {Py_tp_traverse, reinterpret_cast<void *>(store_traverse<sharedbox::NativeCollection>)},
+    {Py_tp_clear, reinterpret_cast<void *>(store_clear<sharedbox::NativeCollection>)},
+    {Py_bf_getbuffer, reinterpret_cast<void *>(collection_getbuffer)},
+    {Py_bf_releasebuffer, reinterpret_cast<void *>(collection_releasebuffer)},
+    {0, nullptr}};
+
 PyType_Slot dict_slots[] = {{Py_tp_traverse, reinterpret_cast<void *>(store_traverse<sharedbox::NativeDict>)},
                             {Py_tp_clear, reinterpret_cast<void *>(store_clear<sharedbox::NativeDict>)},
                             {Py_mp_subscript, reinterpret_cast<void *>(dict_subscript)},
@@ -1217,7 +1241,7 @@ NB_MODULE(_native, m) {
         .def("__iter__", [](nb::handle self) { return nb::borrow(self); });
 
     nb::class_<sharedbox::NativeCollection> collection(m, "NativeCollection", nb::is_generic(),
-                                                       nb::type_slots(store_slots<sharedbox::NativeCollection>));
+                                                       nb::type_slots(collection_slots));
     collection.def("__len__", &sharedbox::NativeCollection::size)
         .def("__getitem__", &sharedbox::NativeCollection::getitem)
         .def("__setitem__", &sharedbox::NativeCollection::setitem, nb::arg(), nb::arg().none())
