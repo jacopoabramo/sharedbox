@@ -18,7 +18,7 @@ from sharedbox import (
     field,
     register_array_type,
 )
-from sharedbox._arrays import CONVERTERS, key
+from sharedbox._arrays import CONVERTERS, DLPACK, key
 from sharedbox._layout import build_layout
 
 
@@ -143,6 +143,25 @@ def test_a_numpy_scalar_type_is_named_by_its_dtype(unique_name: str) -> None:
         box.counts = np.array([1, -2], np.intc)
         assert np.array_equal(box.counts, [1, -2]) and box.counts.dtype == np.int32
     Series.unlink(unique_name)
+
+
+def test_every_spelling_of_a_dtype_is_one_member() -> None:
+    """Return the same DType member, equal to its name, for a name, a numpy scalar type, a numpy dtype and the member."""
+    assert DType("uint8") is DType(np.uint8) is DType(np.dtype("uint8")) is DType.uint8
+    assert DType(DType.int32) is DType(np.intc) is DType.int32
+    assert DType.uint8 == DType.uint8.name == "uint8"
+
+
+def test_dtype_members_match_the_dlpack_table() -> None:
+    """Check that DType has one member for each element type DLPack describes."""
+    assert [member.name for member in DType] == list(DLPACK)
+
+
+@pytest.mark.parametrize("dtype", ["uint7", np.object_, 3])
+def test_an_unsupported_dtype_is_refused(dtype: object) -> None:
+    """Refuse an element type DLPack cannot describe with a ValueError naming it."""
+    with pytest.raises(ValueError, match="unsupported array element type"):
+        DType(dtype)
 
 
 class Plain:

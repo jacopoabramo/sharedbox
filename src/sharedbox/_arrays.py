@@ -5,8 +5,9 @@ import importlib
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
+from enum import StrEnum
 from importlib.util import find_spec
-from typing import Any, Final, Protocol, runtime_checkable
+from typing import Any, Final, Protocol, Self, runtime_checkable
 
 DLPACK: Final[dict[str, tuple[int, int]]] = {
     "bool": (6, 8),
@@ -121,13 +122,14 @@ def dtype_name(dtype: object) -> str:
     return str(dtype).removeprefix("torch.")
 
 
-@dataclass(frozen=True, init=False)
-class DType:
+class DType(StrEnum):
     """Element type of an array field.
 
-    It takes a name as numpy spells it (`"float32"`, `"bfloat16"`,
+    Calling it takes a name as numpy spells it (`"float32"`, `"bfloat16"`,
     `"complex64"`, `"bool"`), a `numpy.dtype` or scalar type, or a
-    `torch.dtype`. A numpy annotation that names its dtype, as in
+    `torch.dtype`, and returns the member of that name, so
+    `DType(numpy.uint8)` is `DType("uint8")` is `DType.uint8`, which equals
+    the string `"uint8"`. A numpy annotation that names its dtype, as in
     `numpy.ndarray[tuple[int], numpy.dtype[numpy.uint8]]`, needs no `DType`.
 
     Raises
@@ -136,15 +138,37 @@ class DType:
         For an element type DLPack cannot describe.
     """
 
-    name: str
+    bool = "bool"
+    int8 = "int8"
+    int16 = "int16"
+    int32 = "int32"
+    int64 = "int64"
+    uint8 = "uint8"
+    uint16 = "uint16"
+    uint32 = "uint32"
+    uint64 = "uint64"
+    float16 = "float16"
+    float32 = "float32"
+    float64 = "float64"
+    bfloat16 = "bfloat16"
+    complex64 = "complex64"
+    complex128 = "complex128"
 
-    def __init__(self, dtype: object) -> None:
-        name = dtype_name(dtype)
-        if name not in DLPACK:
+    # Enum makes the members with this and looks values up through _missing_; the annotation
+    # lets a type checker accept the numpy and torch types a lookup takes.
+    def __new__(cls, value: object) -> Self:
+        member = str.__new__(cls, value)
+        member._value_ = str(value)
+        return member
+
+    @classmethod
+    def _missing_(cls, value: object) -> "DType":
+        name = dtype_name(value)
+        if name not in cls.__members__:
             raise ValueError(
-                f"unsupported array element type {dtype!r}; use one of {', '.join(DLPACK)}"
+                f"unsupported array element type {value!r}; use one of {', '.join(DLPACK)}"
             )
-        object.__setattr__(self, "name", name)
+        return cls[name]
 
 
 CONVERTERS: dict[str, Callable[[SupportsDLPack], Any]] = {}
