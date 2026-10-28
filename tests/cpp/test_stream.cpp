@@ -52,10 +52,11 @@ stream make(const std::string &name, std::uint64_t capacity, std::uint32_t reade
     return std::move(*made);
 }
 
-result<std::uint64_t> send(stream_sender &s, std::uint64_t value, double timeout = 5.0) {
+result<std::uint64_t> send(stream_sender &s, std::uint64_t value, double timeout = 5.0,
+                           on_full policy = on_full::wait) {
     item it;
     it.fill(value);
-    return s.send(std::as_bytes(std::span{it}), seconds(timeout));
+    return s.send(std::as_bytes(std::span{it}), seconds(timeout), policy);
 }
 
 bool whole(const item &it, std::uint64_t position) {
@@ -75,6 +76,28 @@ result<received> receive(stream_reader &r, double timeout = 5.0) {
 }
 
 using clock = std::chrono::steady_clock;
+
+stream_header &header_of(const stream &st) { return *static_cast<stream_header *>(st.base()); }
+
+// The entry of the stream's only lossless reader.
+reader_entry &lossless_entry(const stream &st) {
+    auto *entries = reinterpret_cast<reader_entry *>(static_cast<std::byte *>(st.base()) + header_of(st).readers);
+    for (std::uint32_t i = 0;; ++i)
+        if (entries[i].mode == static_cast<std::uint32_t>(read_mode::lossless))
+            return entries[i];
+}
+
+std::uint64_t release_floor(const stream &st) {
+    return detail::atomic(header_of(st).release_floor).load(std::memory_order_acquire);
+}
+
+// The reader receives position 0, then the sender fills the ring with 1 to capacity, so the next send waits.
+void fall_behind(const stream &st, stream_sender &sender, stream_reader &reader) {
+    REQUIRE(send(sender, 0, 0.0));
+    REQUIRE(receive(reader, 0.0));
+    for (std::uint64_t i = 1; i <= st.capacity(); ++i)
+        REQUIRE(send(sender, i, 0.0));
+}
 
 } // namespace
 
@@ -961,5 +984,196 @@ TEST_CASE("readers never receive a slot the sender abandoned") {
     CHECK(failed == 0);
     CHECK(wrong == 0);
     CHECK(torn == 0);
+    static_cast<void>(unlink(name));
+}
+
+TEST_CASE("a release lets a held sender send and the reader resumes at the newest item") {
+    const std::string name = unique("stream-release");
+    stream st = make(name, 4);
+    auto reader = st.reader(read_mode::lossless, start_at::newest);
+    auto sender = st.sender();
+    REQUIRE((reader && sender));
+    fall_behind(st, *sender, *reader);
+    const auto sent = send(*sender, 5, 0.0, on_full::release);
+    REQUIRE(sent);
+    CHECK(*sent == 5);
+    CHECK(release_floor(st) == 2);
+    CHECK(reader->missed() == 0);
+    const auto released = receive(*reader);
+    REQUIRE_FALSE(released);
+    CHECK(released.error().code == status::released);
+    CHECK(reader->missed() == 4);
+    const auto next = receive(*reader);
+    CHECK((next && next->position == 5 && next->missed == 0));
+    CHECK(send(*sender, 6, 0.0));
+    static_cast<void>(unlink(name));
+}
+
+TEST_CASE("a send under the wait policy still times out") {
+    const std::string name = unique("stream-release-wait");
+    stream st = make(name, 4);
+    auto reader = st.reader(read_mode::lossless, start_at::newest);
+    auto sender = st.sender();
+    REQUIRE((reader && sender));
+    fall_behind(st, *sender, *reader);
+    const auto sent = send(*sender, 5, 0.0);
+    REQUIRE_FALSE(sent);
+    CHECK(sent.error().code == status::timeout);
+    CHECK(release_floor(st) == 0);
+    const auto next = receive(*reader);
+    CHECK((next && next->position == 1));
+    static_cast<void>(unlink(name));
+}
+
+TEST_CASE("a reader whose mark is not its own start is never released") {
+    const std::string name = unique("stream-release-mark");
+    stream st = make(name, 4);
+    auto reader = st.reader(read_mode::lossless, start_at::newest);
+    auto sender = st.sender();
+    REQUIRE((reader && sender));
+    reader_entry &e = lossless_entry(st);
+    CHECK(e.release_mark == e.owner_start);
+    fall_behind(st, *sender, *reader);
+    for (const std::uint64_t mark : {std::uint64_t{0}, e.owner_start + 1}) {
+        CAPTURE(mark);
+        detail::atomic(e.release_mark).store(mark, std::memory_order_release);
+        const auto sent = send(*sender, 5, 0.0, on_full::release);
+        REQUIRE_FALSE(sent);
+        CHECK(sent.error().code == status::timeout);
+        CHECK(release_floor(st) == 0);
+    }
+    static_cast<void>(unlink(name));
+}
+
+TEST_CASE("an interrupt during a release wait releases nothing") {
+    const std::string name = unique("stream-release-interrupt");
+    stream st = make(name, 4);
+    auto reader = st.reader(read_mode::lossless, start_at::newest);
+    auto sender = st.sender();
+    REQUIRE((reader && sender));
+    fall_behind(st, *sender, *reader);
+    bool interrupted = false;
+    std::thread interrupter([&] {
+        std::this_thread::sleep_for(100ms);
+        interrupted = sender->interrupt().has_value();
+    });
+    const auto sent = send(*sender, 5, 2.0, on_full::release);
+    interrupter.join();
+    CHECK(interrupted);
+    REQUIRE_FALSE(sent);
+    CHECK(sent.error().code == status::interrupted);
+    CHECK(release_floor(st) == 0);
+    static_cast<void>(unlink(name));
+}
+
+TEST_CASE("an item overwritten during its copy reports the release in the same call") {
+    const std::string name = unique("stream-release-copy");
+    stream st = make(name, 4);
+    auto reader = st.reader(read_mode::lossless, start_at::newest);
+    auto sender = st.sender();
+    REQUIRE((reader && sender));
+    fall_behind(st, *sender, *reader);
+    bool overwritten = false;
+    const auto got = reader->receive_with(
+        [&](std::span<const std::byte>) noexcept {
+            // Position 5 reuses the slot of position 1, the one being copied.
+            if (!overwritten)
+                overwritten = send(*sender, 5, 0.0, on_full::release).has_value();
+        },
+        seconds(1.0));
+    CHECK(overwritten);
+    REQUIRE_FALSE(got);
+    CHECK(got.error().code == status::released);
+    CHECK(reader->missed() == 4);
+    CHECK(reader->position() == 5);
+    static_cast<void>(unlink(name));
+}
+
+TEST_CASE("a reader released before its first item is told") {
+    const std::string name = unique("stream-release-first");
+    stream st = make(name, 4);
+    auto reader = st.reader(read_mode::lossless, start_at::newest);
+    auto sender = st.sender();
+    REQUIRE((reader && sender));
+    for (std::uint64_t i = 0; i < 5; ++i)
+        REQUIRE(send(*sender, i, 0.0, on_full::release));
+    CHECK(release_floor(st) == 1);
+    const auto released = receive(*reader);
+    REQUIRE_FALSE(released);
+    CHECK(released.error().code == status::released);
+    CHECK(reader->missed() == 4);
+    const auto next = receive(*reader);
+    CHECK((next && next->position == 4));
+    static_cast<void>(unlink(name));
+}
+
+TEST_CASE("a failed copy above the floor is still corrupt") {
+    const std::string name = unique("stream-release-corrupt");
+    stream st = make(name, 4);
+    auto reader = st.reader(read_mode::lossless, start_at::newest);
+    auto sender = st.sender();
+    REQUIRE((reader && sender));
+    fall_behind(st, *sender, *reader);
+    REQUIRE(send(*sender, 5, 0.0, on_full::release));
+    CHECK(receive(*reader).error().code == status::released);
+    REQUIRE(receive(*reader));
+    REQUIRE(send(*sender, 6, 0.0));
+    const stream_header &h = header_of(st);
+    std::byte *slot = static_cast<std::byte *>(st.base()) + h.slots + 6 % h.capacity * h.slot_size;
+    detail::atomic(*reinterpret_cast<std::uint64_t *>(slot)).store(2 * (6 + h.capacity) + 2);
+    const auto got = receive(*reader);
+    REQUIRE_FALSE(got);
+    CHECK(got.error().code == status::corrupt);
+    static_cast<void>(unlink(name));
+}
+
+TEST_CASE("a reader opened at the oldest item after a release starts at the floor") {
+    const std::string name = unique("stream-release-oldest");
+    stream st = make(name, 4);
+    auto reader = st.reader(read_mode::lossless, start_at::newest);
+    auto sender = st.sender();
+    REQUIRE((reader && sender));
+    fall_behind(st, *sender, *reader);
+    REQUIRE(sender->begin(seconds(0), on_full::release));
+    CHECK(release_floor(st) == 2);
+    CHECK(st.write_position() == 5);
+    // write_pos - capacity is 1, whose slot the reservation is writing.
+    auto late = st.reader(read_mode::lossless, start_at::oldest);
+    REQUIRE(late);
+    CHECK(late->position() == 2);
+    const auto first = receive(*late);
+    CHECK((first && first->position == 2));
+    sender->abandon();
+    static_cast<void>(unlink(name));
+}
+
+TEST_CASE("on the smallest ring a resumed reader is not released again") {
+    const std::string name = unique("stream-release-small");
+    stream st = make(name, min_stream_capacity);
+    auto reader = st.reader(read_mode::lossless, start_at::newest);
+    auto sender = st.sender();
+    REQUIRE((reader && sender));
+    fall_behind(st, *sender, *reader);
+    // The reservation keeps write_pos at 3, so the floor and write_pos - 1 are both 2.
+    const auto slot = sender->begin(seconds(0), on_full::release);
+    REQUIRE(slot);
+    item third;
+    third.fill(3);
+    std::memcpy(slot->data(), third.data(), slot->size());
+    CHECK(release_floor(st) == 2);
+    CHECK(receive(*reader).error().code == status::released);
+    auto fresh = st.reader(read_mode::lossless, start_at::newest);
+    REQUIRE(fresh);
+    for (stream_reader *r : {&*reader, &*fresh}) {
+        const auto got = receive(*r);
+        CHECK((got && got->position == 2));
+        CHECK(receive(*r, 0.0).error().code == status::timeout);
+    }
+    REQUIRE(sender->publish());
+    for (stream_reader *r : {&*reader, &*fresh}) {
+        const auto got = receive(*r);
+        CHECK((got && got->position == 3));
+    }
+    CHECK(send(*sender, 4, 0.0));
     static_cast<void>(unlink(name));
 }

@@ -154,6 +154,7 @@ enum class status : int {
     busy = -13,
     ended = -14,
     interrupted = -15,
+    released = -16,
 };
 
 using seconds = std::chrono::duration<double>;
