@@ -1155,7 +1155,13 @@ class EndOfStream(Exception):
     """The stream's sender closed or died and every item it sent was received."""
 
 class ReaderReleased(Exception):
-    """The sender released a lossless reader that held it back; the reader goes on at the newest item."""
+    """The sender released a lossless reader that held it back; the reader goes on at the newest item.
+
+    Attributes
+    ----------
+    missed
+        The items this reader lost to the release.
+    """
 
     missed: int
 
