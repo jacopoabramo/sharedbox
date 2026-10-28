@@ -14,6 +14,8 @@ icon: lucide/code
 | [`LockTimeoutError`][sharedbox.LockTimeoutError] | `TimeoutError` | a read or write waits for a write in progress for longer than `lock_timeout` |
 | [`BrokenReferenceError`][sharedbox.BrokenReferenceError] | `LookupError` | reading a [reference field](../../explanation/glossary.md#reference-field), or `snapshot(follow=True)`, when the box it refers to was removed or created again since it was assigned |
 | [`UnknownBoxClassError`][sharedbox.UnknownBoxClassError] | `TypeError` | reading a reference field, or `snapshot(follow=True)`, when no class this process has defined has the stored box's [schema hash](../../explanation/glossary.md#schema-hash) |
+| [`MetadataFullError`][sharedbox.MetadataFullError] | `RuntimeError` | adding [metadata](../../explanation/glossary.md#metadata) to a box or stream created without room for it, or by a version of `sharedbox` without metadata; adding a version to a stream while an item still in its ring was sent under the version the add would let go |
+| [`MetadataGoneError`][sharedbox.MetadataGoneError] | `LookupError` | reading a [metadata version](../../explanation/glossary.md#metadata-version) that the box or stream no longer holds, or never held; reading a reader's metadata when the version its last item was sent under is gone |
 | [`WouldBlock`][sharedbox.WouldBlock] | `Exception` | a `_nowait` call on a [stream](../../explanation/glossary.md#stream) finds nothing to receive or no room to send |
 | [`EndOfStream`][sharedbox.EndOfStream] | `Exception` | receiving from a stream whose sender closed or died after every item was received; asking for the sender of a stream that has ended |
 | [`ReaderReleased`][sharedbox.ReaderReleased] | `Exception` | receiving on a lossless reader that a sender opened with `on_full="release"` stopped waiting for; the reader goes on at the newest item, see [released reader](../../explanation/glossary.md#released-reader) |
@@ -34,6 +36,14 @@ icon: lucide/code
       show_root_heading: true
 
 ::: sharedbox.LockTimeoutError
+    options:
+      show_root_heading: true
+
+::: sharedbox.MetadataFullError
+    options:
+      show_root_heading: true
+
+::: sharedbox.MetadataGoneError
     options:
       show_root_heading: true
 
