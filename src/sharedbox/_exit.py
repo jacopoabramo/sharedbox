@@ -5,6 +5,7 @@ from __future__ import annotations
 import atexit
 import contextlib
 import dataclasses
+import logging
 from collections.abc import Callable
 from typing import Any, Final, NoReturn, TypeVar, cast
 
@@ -32,6 +33,7 @@ from ._stream import (
 )
 
 T = TypeVar("T")
+logger = logging.getLogger("sharedbox")
 RELEASED: Final = (
     "is unavailable: sharedbox released its native objects at interpreter exit"
 )
@@ -137,10 +139,19 @@ def release_class(cls: type[SharedBox]) -> None:
 
 
 def release_each(release: Callable[[T], object], targets: list[T]) -> None:
-    """Call `release` on each of `targets`; one that raises does not keep the others from being released."""
+    """Call `release` on each of `targets`; one that raises is logged and does not keep the others from being released."""
     for target in targets:
-        with contextlib.suppress(Exception):
+        try:
             release(target)
+        except Exception:
+            # Not the repr: a box's repr reads it, which may fail again once its release has.
+            shown = target if isinstance(target, type) else type(target)
+            logger.warning(
+                "%s of %s at exit failed",
+                release.__name__,
+                shown.__qualname__,
+                exc_info=True,
+            )
 
 
 def release_native() -> None:
@@ -158,8 +169,10 @@ def release_native() -> None:
     nothing. Calling it again does nothing more.
     """
     for stop in (stop_watchers, stop_stream_workers):
-        with contextlib.suppress(Exception):
+        try:
             stop()
+        except Exception:
+            logger.warning("%s at exit failed", stop.__name__, exc_info=True)
     # Classes first, so a late thread that reads a field meets BoxClosedError rather than a replaced segment.
     release_each(
         release_class,
