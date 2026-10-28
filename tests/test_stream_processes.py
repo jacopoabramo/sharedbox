@@ -290,7 +290,7 @@ def test_a_slow_reader_in_another_process_is_released(unique_name: str) -> None:
     """Release a lossless reader of another process and report the lost count and the newest item."""
     with SharedStream.create(int, unique_name, capacity=4) as stream:
         ready, go = CONTEXT.Event(), CONTEXT.Event()
-        results: Queue[tuple[str, int, int]] = CONTEXT.Queue()
+        results: Queue[tuple[str, int, int] | str] = CONTEXT.Queue()
         child = CONTEXT.Process(
             target=read_when_released, args=(unique_name, ready, go, results)
         )
@@ -303,4 +303,6 @@ def test_a_slow_reader_in_another_process_is_released(unique_name: str) -> None:
         go.set()
         report = results.get(timeout=60)
         finish(child)
+        if isinstance(report, str):
+            pytest.fail(report)
         assert report == ("ReaderReleased", 4, 4)

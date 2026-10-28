@@ -42,6 +42,8 @@ class Model:
 class StreamMachine(RuleBasedStateMachine):
     """One stream with one sender and several readers, against a list of what was sent."""
 
+    on_full: Literal["wait", "release"] = "wait"
+
     def __init__(self) -> None:
         super().__init__()
         self.name = ""
@@ -59,8 +61,6 @@ class StreamMachine(RuleBasedStateMachine):
             int, self.name, capacity=CAPACITY, max_readers=MAX_READERS
         )
         self.sender = self.stream.sender(on_full=self.on_full)
-
-    on_full: Literal["wait", "release"] = "wait"
 
     def blocked(self) -> bool:
         """Whether some lossless reader is a full ring behind."""
@@ -171,10 +171,6 @@ class ReleaseMachine(StreamMachine):
     """The same stream with a sender that releases lossless readers instead of failing."""
 
     on_full: Literal["wait", "release"] = "release"
-
-    def blocked(self) -> bool:
-        """A release sender is never blocked by a marked lossless reader."""
-        return False
 
     @rule(value=st.integers(-(2**63), 2**63 - 1))
     def send(self, value: int) -> None:
