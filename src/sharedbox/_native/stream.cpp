@@ -318,7 +318,7 @@ public:
                 throw MetadataFull("stream '" + name_ +
                                    "' has no metadata area; create it with metadata or a metadata_capacity");
             throw MetadataFull("stream '" + name_ +
-                               "': an item still in the ring was sent under the metadata version this add "
+                               "': an item still in the ring needs the metadata version this add "
                                "would reclaim; send more items first, or create the stream with a larger "
                                "metadata_versions or metadata_capacity");
         }

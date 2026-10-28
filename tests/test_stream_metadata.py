@@ -159,6 +159,24 @@ def test_items_sent_before_the_first_version_have_none(unique_name: str) -> None
     SharedStream.unlink(unique_name)
 
 
+def test_the_first_version_is_kept_for_items_sent_before_it(unique_name: str) -> None:
+    """Refuse to reclaim version 1 while an item sent before it is in the ring, and report no metadata for that item."""
+    with SharedStream.create(
+        int, unique_name, capacity=8, metadata_capacity=1024, metadata_versions=2
+    ) as stream:
+        sender = stream.sender()
+        reader = stream.reader(start="oldest")
+        sender.send(0)
+        sender.send(1)
+        assert sender.add_metadata({"v": 1}) == 1
+        assert sender.add_metadata({"v": 2}) == 2
+        with pytest.raises(MetadataFullError):
+            sender.add_metadata({"v": 3})
+        assert reader.receive(timeout=5) == 0
+        assert (reader.metadata_version, reader.metadata) == (0, None)
+    SharedStream.unlink(unique_name)
+
+
 def test_a_stream_without_metadata(unique_name: str) -> None:
     """Read no metadata from a stream created without it, and refuse to add any."""
     with SharedStream.create(int, unique_name, capacity=4) as stream:

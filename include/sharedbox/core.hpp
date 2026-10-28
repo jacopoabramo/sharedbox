@@ -2451,8 +2451,10 @@ result<std::uint64_t> add_metadata(std::byte *area, const metadata_line &line, s
         const std::uint64_t next_position = atomic(next.position).load(std::memory_order_relaxed);
         // A version that starts where the next one does covers no item, so nothing needs it; but only while
         // every older version is gone too, or a walk back from the head could pass a cleared version to an
-        // older one that is kept.
-        if ((older_kept || e.position != next_position) && !may_reclaim(next_position))
+        // older one that is kept. The items sent before version 1 count as an older version: a reader tells
+        // them from items whose version is gone only while version 1 is kept.
+        if ((older_kept || e.position != next_position || (u == 1 && e.position != 0)) &&
+            !may_reclaim(next_position))
             return unexpected(status::metadata_full);
     }
     for (std::uint64_t u = oldest; u < newest; ++u) {

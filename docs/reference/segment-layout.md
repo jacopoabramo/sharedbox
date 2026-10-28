@@ -1185,9 +1185,13 @@ sender, since the add reads `write_pos`. To add version
    `u + 1` took effect at a position no later than `write_pos - capacity`,
    or when `u + 1` took effect at the same position as `u`, so that no item
    was sent under `u`, and every version older than `u` is gone or goes in
-   this add. Without that last condition a version could go while an older
-   one stays, and the walk back from the head below would stop at the gap.
-   Otherwise the add gives `status::metadata_full` and writes nothing.
+   this add. When version 1 took effect after position 0, the items sent
+   before it count as a version older than 1, so version 1 goes only by the
+   first condition. Without the last condition a version could go while an
+   older one stays, and the walk back from the head below would stop at the
+   gap; version 1 could go while an item sent before it stays, and a reader
+   would take that item's version for reclaimed. Otherwise the add gives
+   `status::metadata_full` and writes nothing.
 5. Stores `seq` 0 in the entry of each older version whose ring bytes it
    overwrites while its entry is kept, so the entry reads as reclaimed.
 6. Stores the entry's `seq` as `2v + 1`, issues a release fence, copies the
@@ -1210,14 +1214,17 @@ one `metadata_head` names.
 The version of the stream item at position `p` is the newest version whose
 `position` is at most `p`. A reader finds it by walking back from
 `metadata_head`, at most `entries` steps and usually one. Step 4 means that
-an item still in the ring always finds its version. The walk gives
+an item still in the ring always finds its version, and that the stream
+holds version 1 while an item sent before it is in the ring. The walk gives
 `status::not_found` when a version it passes was reclaimed, or when `p`
-comes before every version the area holds. A lossy or latest reader that
-copied an item just before the sender overwrote it can find that item's
-version reclaimed. The Python reader reports version 0 for an item sent
-before the first version: while the stream still holds version 1, no
-version has been reclaimed, so `status::not_found` then means the item
-came before every version.
+comes before every version the area holds. Once an item has left the ring
+its version can be reclaimed, so a reader that looks it up later can find
+it gone. For a lossy or latest reader that can happen right after the
+receive, when the sender overwrote the item just after the reader copied
+it. The Python reader reports version 0 for an item sent before the first
+version: while the stream still holds version 1, no version has been
+reclaimed, so `status::not_found` then means the item came before every
+version.
 
 ### Close and unlink
 

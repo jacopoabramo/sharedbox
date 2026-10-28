@@ -863,6 +863,29 @@ TEST_CASE("a version that covers no item is reclaimed without waiting") {
     static_cast<void>(unlink(name));
 }
 
+TEST_CASE("version 1 is kept while an item sent before it is in the ring") {
+    const std::string name = unique("meta-stream-before-first");
+    stream made = make_stream(name, 8, metadata_spec{{}, 1024, 2});
+    auto sender = made.sender();
+    auto reader = made.reader(read_mode::lossless, start_at::oldest);
+    REQUIRE(sender);
+    REQUIRE(reader);
+    send_items(*sender, 2);
+    REQUIRE(sender->add_metadata(cbor({0x01})).value_or(0) == 1);
+    REQUIRE(sender->add_metadata(cbor({0x02})).value_or(0) == 2);
+    CHECK(code(sender->add_metadata(cbor({0x03}))) == status::metadata_full);
+    CHECK(made.metadata_length(1).value_or(0) == 1);
+    CHECK(code(reader->metadata_version_at(0)) == status::not_found);
+    CHECK(reader->metadata_version_at(2).value_or(0) == 2);
+    std::uint64_t value = 0;
+    for (int i = 0; i < 2; ++i)
+        REQUIRE(reader->receive(std::as_writable_bytes(std::span{&value, 1}), seconds(1.0)));
+    send_items(*sender, 8);
+    CHECK(sender->add_metadata(cbor({0x03})).value_or(0) == 3);
+    CHECK(code(made.metadata_length(1)) == status::not_found);
+    static_cast<void>(unlink(name));
+}
+
 TEST_CASE("a stream refuses to overwrite the bytes of a version an item needs") {
     const std::string name = unique("meta-stream-bytes");
     stream made = make_stream(name, 8, metadata_spec{byte_string(26, 1), 96, 64});

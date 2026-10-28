@@ -979,7 +979,8 @@ class SharedSendStream(End, Generic[T, M]):
         for one, but waits while another thread sends on this sender. The
         oldest versions are reclaimed once the stream holds
         `metadata_versions` of them, or needs their room in its metadata
-        area, but never while an item still in the ring was sent under one.
+        area, but never while an item still in the ring was sent under one;
+        version 1 is also kept while an item sent before it is in the ring.
 
         Raises
         ------
@@ -990,9 +991,10 @@ class SharedSendStream(End, Generic[T, M]):
             levels, or the document is longer than the metadata area takes,
             about a third of the stream's `metadata_capacity`.
         MetadataFullError
-            If the stream has no metadata area, or an item still in the ring
-            was sent under the oldest version, which this add would reclaim.
-            An add after enough further sends succeeds.
+            If the stream has no metadata area, or this add would reclaim a
+            version that an item still in the ring was sent under, or version
+            1 while an item sent before it is in the ring. An add after enough
+            further sends succeeds.
         StreamClosedError
             If this sender is closed.
         """
@@ -1364,9 +1366,10 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T, M]):
         Raises
         ------
         MetadataGoneError
-            If the stream no longer holds that version: a lossy or latest
-            reader may receive an item just before the sender overwrites it,
-            and the sender may then add versions that reclaim its version.
+            If the stream no longer holds that version. A version can be
+            reclaimed once the item this reader received last has left the
+            ring, which for a lossy or latest reader can happen right after
+            the receive.
         StreamClosedError
             If this reader is closed.
         """
