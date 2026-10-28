@@ -33,6 +33,8 @@ sharedbox/
 |   |-- _follow.py             BoxEvents.follow and unfollow: forwarding the events of boxes that references reach
 |   |-- _stream.py             SharedStream, SharedSendStream, SharedReceiveStream, ReceiveEvents, the statistics classes, the worker threads
 |   |-- _refs.py               reference fields: BoxRef, the class registry, BrokenReferenceError, UnknownBoxClassError
+|   |-- _exit.py               the exit handler: stops the watcher and stream threads, closes boxes, streams and ends,
+|   |                          replaces the native objects of watchers and box classes
 |   |-- _native.pyi            hand-written stub for the extension
 |   |-- py.typed
 |   |-- benchmarks/            the benchbox command (extra: benchmarks)

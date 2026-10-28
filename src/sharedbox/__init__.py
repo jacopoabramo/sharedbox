@@ -1,5 +1,6 @@
 from pathlib import Path
 
+from . import _exit as _exit
 from ._arrays import DType, MaxShape, Shape, SupportsDLPack, register_array_type
 from ._bounded import BoundedDict, BoundedList, BoundedSet
 from ._box import SharedBox, SupportsSharedBox, fields
