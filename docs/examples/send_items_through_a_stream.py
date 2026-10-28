@@ -12,6 +12,7 @@ from sharedbox import (
     Capacity,
     DType,
     EndOfStream,
+    MaxShape,
     Shape,
     SharedReceiveStream,
     SharedSendStream,
@@ -23,7 +24,7 @@ from sharedbox import (
 class Letter:
     index: int
     recipient: Annotated[str, Capacity(32)]
-    scan: Annotated[np.ndarray, Shape(32, 32), DType("uint8")]
+    scan: Annotated[np.ndarray, Shape((32, 32)), DType("uint8")]
 
 
 # --8<-- [end:types]
@@ -93,6 +94,31 @@ def send_filled(sender: SharedSendStream[Letter], count: int) -> None:
 # --8<-- [end:writing]
 
 
+# --8<-- [start:shapes]
+@dataclass(frozen=True)
+class Sack:
+    index: int
+    weights: Annotated[np.ndarray, MaxShape((64,)), DType("float32")]
+
+
+def send_sacks(sender: SharedSendStream[Sack]) -> None:
+    sender.send(Sack(0, np.array([1.5, 0.25, 4.0], np.float32)))
+    template = Sack(1, np.empty(64, np.float32))
+    with sender.writing(template) as slot:
+        weights = slot.item.weights
+        weights[:5] = 2.5
+        slot.send(replace(slot.item, weights=weights[:5]))
+
+
+def read_sacks(reader: SharedReceiveStream[Sack]) -> None:
+    weights = np.empty(64, np.float32)
+    for sack in reader.iter_into({"weights": weights}):
+        print(sack.index, sack.weights.shape)
+
+
+# --8<-- [end:shapes]
+
+
 # --8<-- [start:main]
 if __name__ == "__main__":
     context = mp.get_context("spawn")
@@ -127,3 +153,9 @@ if __name__ == "__main__":
         for letter in reader:
             print(letter.index, int(letter.scan[0, 0]))
     SharedStream.unlink("example-sorting:filled")
+    with SharedStream.create(Sack, "example-sorting:sacks", capacity=4) as sacks:
+        sack_reader = sacks.reader()
+        with sacks.sender() as sack_sender:
+            send_sacks(sack_sender)
+        read_sacks(sack_reader)
+    SharedStream.unlink("example-sorting:sacks")

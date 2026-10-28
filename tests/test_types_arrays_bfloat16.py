@@ -8,7 +8,7 @@ from sharedbox import DType, Shape, SharedBox
 
 
 class Weights(SharedBox):
-    w: Annotated[np.ndarray, Shape(3), DType("bfloat16")] = np.zeros(
+    w: Annotated[np.ndarray, Shape((3,)), DType("bfloat16")] = np.zeros(
         3, ml_dtypes.bfloat16
     )
 

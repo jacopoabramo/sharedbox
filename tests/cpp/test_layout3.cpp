@@ -162,7 +162,8 @@ TEST_CASE("kinds 6 to 12 are fixed kinds with their sizes") {
     CHECK(detail::kind_alignment(kind_uuid) == 1);
     CHECK(detail::kind_known(kind_array));
     CHECK_FALSE(detail::kind_known(24));
-    CHECK_FALSE(detail::kind_known(75));
+    CHECK(detail::kind_known(kind_max_array));
+    CHECK_FALSE(detail::kind_known(76));
     const std::string name = unique("l3-kinds");
     const field_spec typed[3] = {{0, 16, kind_datetime}, {16, 12, kind_timedelta}, {28, 10, kind_decimal}};
     CHECK(handle::create(name, typed, 48, 1, 4, {}).has_value());

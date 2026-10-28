@@ -18,13 +18,13 @@ from sharedbox._arrays import CONVERTERS, key
 
 
 class Camera(SharedBox, lock_timeout=0.2):
-    image: Annotated[np.ndarray, Shape(512, 512), DType("float32")] = np.zeros(
+    image: Annotated[np.ndarray, Shape((512, 512)), DType("float32")] = np.zeros(
         (512, 512), np.float32
     )
-    small: Annotated[np.ndarray, Shape(4, 3), DType("int16")] = np.zeros(
+    small: Annotated[np.ndarray, Shape((4, 3)), DType("int16")] = np.zeros(
         (4, 3), np.int16
     )
-    raw: Annotated[SupportsDLPack, Shape(2), DType("uint8")] = np.zeros(2, np.uint8)
+    raw: Annotated[SupportsDLPack, Shape((2,)), DType("uint8")] = np.zeros(2, np.uint8)
     count: int = 0
 
 
@@ -150,7 +150,7 @@ def test_a_converter_that_raises_releases_the_lock(unique_name: str) -> None:
             (SharedBox,),
             {
                 "__annotations__": {
-                    "data": Annotated[Refusing, Shape(3), DType("int32")]
+                    "data": Annotated[Refusing, Shape((3,)), DType("int32")]
                 },
                 "__module__": __name__,
                 "__lock_timeout__": 0.2,

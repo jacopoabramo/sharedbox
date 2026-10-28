@@ -26,6 +26,19 @@ table_builder bytes_array(std::uint64_t n) {
     return t;
 }
 
+// A uint16 array of at most 4 x 3 elements, its shape stored with each value.
+table_builder max_array_item() {
+    table_builder t;
+    t.head(kind_max_array, 0, 64 + 4 * 3 * 2);
+    t.put(dl_dtype{1, 16, 1});
+    t.put(std::uint8_t{2});
+    t.put(std::uint8_t{0});
+    t.put(std::uint16_t{0});
+    t.put(std::uint64_t{4});
+    t.put(std::uint64_t{3});
+    return t;
+}
+
 stream_header &header_of(const stream &s) { return *static_cast<stream_header *>(s.base()); }
 
 status open_status(const std::string &name) {
@@ -35,7 +48,7 @@ status open_status(const std::string &name) {
 
 } // namespace
 
-TEST_CASE("a new stream is core 1.0, stream layout 1.1, and opens with the same shape") {
+TEST_CASE("a new stream is core 1.0, stream layout 1.2, and opens with the same shape") {
     const std::string name = unique("stream-new");
     auto made = stream::create(name, {}, entry_of(kind_int, 8), 4, 2, 0x5EED);
     REQUIRE(made);
@@ -43,7 +56,7 @@ TEST_CASE("a new stream is core 1.0, stream layout 1.1, and opens with the same 
     CHECK(h.common.magic == stream_magic);
     CHECK(h.common.core_major == core_major);
     CHECK(h.common.kind_major == stream_layout_major);
-    CHECK(h.common.kind_minor == 1);
+    CHECK(h.common.kind_minor == 2);
     CHECK(h.common.waiter_slots == 3);
     CHECK(h.readers == stream_header_size);
     CHECK(h.slots % 64 == 0);
@@ -164,4 +177,18 @@ TEST_CASE("a stream mapping smaller than a page is refused before its header is 
     const auto opened = detail::open_header<detail::stream_layout>(small.get(), 64);
     REQUIRE_FALSE(opened);
     CHECK(opened.error().code == status::corrupt);
+}
+
+TEST_CASE("a stream of a max_array item is created at layout 1.2") {
+    const std::string name = unique("stream-max-array");
+    const table_builder t = max_array_item();
+    auto made = stream::create(name, t.span(), entry_of(kind_max_array, 0), 4, 2, 0x5EED);
+    REQUIRE(made);
+    const stream_header &h = header_of(*made);
+    CHECK(h.common.kind_minor == 2);
+    CHECK(h.slot_size == detail::round_up(detail::item_start(64) + 64 + 24, 64));
+    auto opened = stream::open(name, seconds(1.0));
+    REQUIRE(opened);
+    CHECK(opened->item_type().kind() == kind_max_array);
+    static_cast<void>(unlink(name));
 }

@@ -1,4 +1,4 @@
-// stream.hpp: layout 1.1 of a stream segment, a ring that one sender writes and readers copy out of.
+// stream.hpp: layout 1.2 of a stream segment, a ring that one sender writes and readers copy out of.
 #ifndef SHAREDBOX_STREAM_HPP
 #define SHAREDBOX_STREAM_HPP
 
@@ -8,7 +8,7 @@ namespace sharedbox {
 inline namespace v3 {
 
 inline constexpr std::uint16_t stream_layout_major = 1;
-inline constexpr std::uint16_t stream_layout_minor = 1;
+inline constexpr std::uint16_t stream_layout_minor = 2;
 inline constexpr std::uint32_t stream_header_size = 256;
 inline constexpr std::uint64_t min_stream_capacity = 2;
 // Each reader and the sender hold one waiter slot.
@@ -210,7 +210,7 @@ inline std::unique_ptr<stream_state> make_stream_state(std::string_view name,
 inline status bind_stream(stream_state &s, os_mapping &&map, const stream_header &h) noexcept {
     const auto *bytes = static_cast<const std::byte *>(map.base());
     const std::uint32_t entry = h.item_entry;
-    if (const status rc = s.types.parse({bytes + h.types, h.types_size}, {&entry, 1}); rc != status::ok)
+    if (const status rc = s.types.parse({bytes + h.types, h.types_size}, {&entry, 1}, true); rc != status::ok)
         return rc;
     const type_ref &item = s.types.field(0);
     if (!kind_known(item.kind) || round_up(item_start(item.alignment) + item.size, 64) != h.slot_size)
@@ -553,7 +553,7 @@ inline result<stream> stream::create(std::string_view name, std::span<const std:
         return unexpected(status::range);
     detail::type_table parsed;
     // A table the caller built wrong is its mistake, status::range; running out of memory is not.
-    if (const status rc = parsed.parse(types, {&item_entry, 1}); rc != status::ok)
+    if (const status rc = parsed.parse(types, {&item_entry, 1}, true); rc != status::ok)
         return unexpected(rc == status::os ? status::os : status::range);
     const detail::type_ref &item = parsed.field(0);
     if (!detail::kind_known(item.kind))

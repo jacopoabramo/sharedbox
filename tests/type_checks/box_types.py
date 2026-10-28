@@ -109,7 +109,7 @@ def references(cart: Cart, fast: FastWheel, copy: WheelCopy) -> None:
 
 
 class Camera(SharedBox):
-    image: Annotated[npt.NDArray[np.float32], Shape(4), DType("float32")]
+    image: Annotated[npt.NDArray[np.float32], Shape((4,)), DType("float32")]
 
 
 def read_into(camera: Camera, out: npt.NDArray[np.float32]) -> None:

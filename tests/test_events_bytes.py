@@ -9,7 +9,7 @@ from sharedbox import Capacity, DType, Shape, SharedBox
 
 
 class Watched(SharedBox):
-    grid: Annotated[np.ndarray, Shape(2), DType("float64")] = np.zeros(2)
+    grid: Annotated[np.ndarray, Shape((2,)), DType("float64")] = np.zeros(2)
     price: Annotated[decimal.Decimal, Capacity(8)] = decimal.Decimal(0)
     either: int | bool = 0
     x: float = 0.0

@@ -5,8 +5,9 @@ import importlib
 import sys
 from collections.abc import Callable
 from dataclasses import dataclass
+from enum import StrEnum
 from importlib.util import find_spec
-from typing import Any, Final, Protocol, runtime_checkable
+from typing import Any, Final, Protocol, Self, runtime_checkable
 
 DLPACK: Final[dict[str, tuple[int, int]]] = {
     "bool": (6, 8),
@@ -47,12 +48,24 @@ class SupportsDLPack(Protocol):
     def __dlpack_device__(self) -> tuple[int, int]: ...
 
 
-@dataclass(frozen=True, init=False)
+def check_dims(dims: object) -> None:
+    """Raise `ValueError` unless `dims` is a tuple of 1 to 8 `int`s of at least 1."""
+    if (
+        not isinstance(dims, tuple)
+        or not 1 <= len(dims) <= 8
+        or any(not isinstance(d, int) or isinstance(d, bool) or d < 1 for d in dims)
+    ):
+        raise ValueError(
+            f"an array has a tuple of 1 to 8 dimensions of at least 1, got {dims!r}"
+        )
+
+
+@dataclass(frozen=True)
 class Shape:
     """Dimensions of an array field, fixed when the class is defined.
 
     It goes in the annotation, as in
-    `Annotated[numpy.ndarray, Shape(480, 640), DType("uint8")]`. A field of a
+    `Annotated[numpy.ndarray, Shape((480, 640)), DType("uint8")]`. A field of a
     box also takes its sizes from `field(shape=...)` or from a plain default
     array, and they must agree with a `Shape`. An array inside a record or a
     stream item takes its sizes from a `Shape` only. When the annotation
@@ -63,19 +76,37 @@ class Shape:
     Raises
     ------
     ValueError
-        Unless there are 1 to 8 dimensions, each an `int` of at least 1.
+        Unless `dims` is a tuple of 1 to 8 dimensions, each an `int` of at least 1.
     """
 
     dims: tuple[int, ...]
 
-    def __init__(self, *dims: int) -> None:
-        if not 1 <= len(dims) <= 8 or any(
-            not isinstance(d, int) or isinstance(d, bool) or d < 1 for d in dims
-        ):
-            raise ValueError(
-                f"an array has 1 to 8 dimensions of at least 1, got {dims}"
-            )
-        object.__setattr__(self, "dims", dims)
+    def __post_init__(self) -> None:
+        check_dims(self.dims)
+
+
+@dataclass(frozen=True)
+class MaxShape:
+    """Largest dimensions of an array in a stream item, whose own shape each item stores.
+
+    It goes in the annotation, as in
+    `Annotated[numpy.ndarray, MaxShape((2048, 2048)), DType("uint16")]`, and
+    an array takes a `MaxShape` or a [`Shape`][sharedbox.Shape], not both.
+    An item may hold the array as the item itself or as a member of a record
+    or tuple, at any depth, and each value sent has as many dimensions as
+    the `MaxShape`, each from 0 to its maximum. A box field and a member of
+    an optional, union or collection cannot hold one.
+
+    Raises
+    ------
+    ValueError
+        Unless `dims` is a tuple of 1 to 8 dimensions, each an `int` of at least 1.
+    """
+
+    dims: tuple[int, ...]
+
+    def __post_init__(self) -> None:
+        check_dims(self.dims)
 
 
 def dtype_name(dtype: object) -> str:
@@ -91,13 +122,14 @@ def dtype_name(dtype: object) -> str:
     return str(dtype).removeprefix("torch.")
 
 
-@dataclass(frozen=True, init=False)
-class DType:
+class DType(StrEnum):
     """Element type of an array field.
 
-    It takes a name as numpy spells it (`"float32"`, `"bfloat16"`,
+    Calling it takes a name as numpy spells it (`"float32"`, `"bfloat16"`,
     `"complex64"`, `"bool"`), a `numpy.dtype` or scalar type, or a
-    `torch.dtype`. A numpy annotation that names its dtype, as in
+    `torch.dtype`, and returns the member of that name, so
+    `DType(numpy.uint8)` is `DType("uint8")` is `DType.uint8`, which equals
+    the string `"uint8"`. A numpy annotation that names its dtype, as in
     `numpy.ndarray[tuple[int], numpy.dtype[numpy.uint8]]`, needs no `DType`.
 
     Raises
@@ -106,15 +138,37 @@ class DType:
         For an element type DLPack cannot describe.
     """
 
-    name: str
+    bool = "bool"
+    int8 = "int8"
+    int16 = "int16"
+    int32 = "int32"
+    int64 = "int64"
+    uint8 = "uint8"
+    uint16 = "uint16"
+    uint32 = "uint32"
+    uint64 = "uint64"
+    float16 = "float16"
+    float32 = "float32"
+    float64 = "float64"
+    bfloat16 = "bfloat16"
+    complex64 = "complex64"
+    complex128 = "complex128"
 
-    def __init__(self, dtype: object) -> None:
-        name = dtype_name(dtype)
-        if name not in DLPACK:
+    # Enum makes the members with this and looks values up through _missing_; the annotation
+    # lets a type checker accept the numpy and torch types a lookup takes.
+    def __new__(cls, value: object) -> Self:
+        member = str.__new__(cls, value)
+        member._value_ = str(value)
+        return member
+
+    @classmethod
+    def _missing_(cls, value: object) -> "DType":
+        name = dtype_name(value)
+        if name not in cls.__members__:
             raise ValueError(
-                f"unsupported array element type {dtype!r}; use one of {', '.join(DLPACK)}"
+                f"unsupported array element type {value!r}; use one of {', '.join(DLPACK)}"
             )
-        object.__setattr__(self, "name", name)
+        return cls[name]
 
 
 CONVERTERS: dict[str, Callable[[SupportsDLPack], Any]] = {}

@@ -149,7 +149,7 @@ class Color(enum.Enum):
 
 
 @pytest.mark.parametrize(
-    "leaf", [Color, Literal[1], Annotated[SupportsDLPack, Shape(1), DType("uint8")]]
+    "leaf", [Color, Literal[1], Annotated[SupportsDLPack, Shape((1,)), DType("uint8")]]
 )
 def test_an_enum_literal_or_array_17_deep_is_refused(leaf: object) -> None:
     """Check that an enum, literal or array inside 16 nested records raises a TypeError naming the field."""
@@ -395,8 +395,8 @@ def test_a_metadata_shape_and_an_annotated_shape_that_disagree_are_refused() -> 
 
     @dataclass
     class Scanned:
-        scan: Annotated[SupportsDLPack, Shape(2), DType("uint8")] = dataclasses.field(
-            metadata={"shape": (3,)}
+        scan: Annotated[SupportsDLPack, Shape((2,)), DType("uint8")] = (
+            dataclasses.field(metadata={"shape": (3,)})
         )
 
     with pytest.raises(

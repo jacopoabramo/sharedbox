@@ -24,7 +24,7 @@ from sharedbox import (
 )
 from sharedbox._stream import CountedSignal
 
-Frame = Annotated[np.ndarray, Shape(2), DType("int32")]
+Frame = Annotated[np.ndarray, Shape((2,)), DType("int32")]
 
 
 def wait_until(

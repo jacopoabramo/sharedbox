@@ -159,6 +159,37 @@ returned item holds your arrays. A member that is a list, set or dict takes
 `None`, because an array cannot be an element of a collection, and an item
 that is itself a collection has no arrays to read into.
 
+## Send arrays whose shape changes
+
+An array declared with a `Shape` has the same shape in every item. When the
+size changes from one item to the next, such as the weights of the parcels
+in a sack, declare the array with a [`MaxShape`][sharedbox.MaxShape]
+instead. Each item then stores its own shape, which may run from 0 up to the
+maximum along each dimension. Every slot keeps room for the maximum, so
+choose the smallest maximum your data allows:
+
+```{.python}
+--8<-- "docs/examples/send_items_through_a_stream.py:shapes"
+```
+
+`send` takes an array of any shape that fits the maximum. With `writing`,
+the template's array gives the shape of the array over the slot, and its
+values are still never read, so `np.empty` will do. When you know the count
+only after filling the slot, send the first `n` rows of the slot's array, as
+`weights[:5]` does above. That array already starts at its place in the
+slot, so `slot.send` writes only its shape and copies nothing.
+
+`receive` returns an array of the shape stored with the item.
+`receive_into` takes an array of the maximum shape and puts into the item a
+view of that array in the stored shape, over its first elements in C order.
+For an array of more than one dimension, those elements are the first rows
+only when every dimension but the first is at its maximum, so read the
+values through the item rather than by slicing your own array.
+
+A `MaxShape` array belongs to a stream item, as the item itself or inside
+its records and tuples. A box field, and a member of an optional, a union or
+a collection, cannot hold one.
+
 ## Run a callback for each item
 
 [`reader.events`][sharedbox.SharedReceiveStream.events] is a

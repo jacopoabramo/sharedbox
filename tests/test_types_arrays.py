@@ -18,24 +18,24 @@ from sharedbox import (
     field,
     register_array_type,
 )
-from sharedbox._arrays import CONVERTERS, key
+from sharedbox._arrays import CONVERTERS, DLPACK, key
 from sharedbox._layout import build_layout
 
 
 class Frame(SharedBox):
-    image: Annotated[np.ndarray, Shape(4, 3), DType("float32")] = np.zeros(
+    image: Annotated[np.ndarray, Shape((4, 3)), DType("float32")] = np.zeros(
         (4, 3), np.float32
     )
-    mask: Annotated[npt.NDArray[np.bool_], Shape(5)] = np.zeros(5, bool)
-    raw: Annotated[SupportsDLPack, Shape(2), DType("uint8")] = np.zeros(2, np.uint8)
-    big: Annotated[np.ndarray, Shape(1024, 1024), DType("float64")] = np.zeros(
+    mask: Annotated[npt.NDArray[np.bool_], Shape((5,))] = np.zeros(5, bool)
+    raw: Annotated[SupportsDLPack, Shape((2,)), DType("uint8")] = np.zeros(2, np.uint8)
+    big: Annotated[np.ndarray, Shape((1024, 1024)), DType("float64")] = np.zeros(
         (1024, 1024)
     )
 
 
 class Series(SharedBox):
-    samples: Annotated[np.ndarray, Shape(3), DType("float64")] = np.zeros(3)
-    counts: Annotated[npt.NDArray[np.intc], Shape(2), DType(np.intc)] = np.zeros(
+    samples: Annotated[np.ndarray, Shape((3,)), DType("float64")] = np.zeros(3)
+    counts: Annotated[npt.NDArray[np.intc], Shape((2,)), DType(np.intc)] = np.zeros(
         2, np.intc
     )
 
@@ -43,7 +43,7 @@ class Series(SharedBox):
 @dataclass
 class Tile:
     origin: tuple[int, int]
-    pixels: Annotated[np.ndarray, Shape(2, 2), DType("int16")]
+    pixels: Annotated[np.ndarray, Shape((2, 2)), DType("int16")]
 
 
 class Board(SharedBox):
@@ -145,6 +145,25 @@ def test_a_numpy_scalar_type_is_named_by_its_dtype(unique_name: str) -> None:
     Series.unlink(unique_name)
 
 
+def test_every_spelling_of_a_dtype_is_one_member() -> None:
+    """Return the same DType member, equal to its name, for a name, a numpy scalar type, a numpy dtype and the member."""
+    assert DType("uint8") is DType(np.uint8) is DType(np.dtype("uint8")) is DType.uint8
+    assert DType(DType.int32) is DType(np.intc) is DType.int32
+    assert DType.uint8 == DType.uint8.name == "uint8"
+
+
+def test_dtype_members_match_the_dlpack_table() -> None:
+    """Check that DType has one member for each element type DLPack describes."""
+    assert [member.name for member in DType] == list(DLPACK)
+
+
+@pytest.mark.parametrize("dtype", ["uint7", np.object_, 3])
+def test_an_unsupported_dtype_is_refused(dtype: object) -> None:
+    """Refuse an element type DLPack cannot describe with a ValueError naming it."""
+    with pytest.raises(ValueError, match="unsupported array element type"):
+        DType(dtype)
+
+
 class Plain:
     """An array type nothing has registered."""
 
@@ -164,21 +183,21 @@ def make(annotation: object) -> type:
     ("annotation", "message"),
     [
         (Annotated[np.ndarray, DType("float32")], "its sizes"),
-        (Annotated[np.ndarray, Shape(2)], "DType"),
-        (Annotated[npt.NDArray[np.float64], Shape(2), DType("float32")], "disagree"),
-        (Annotated[Plain, Shape(2), DType("float32")], "register_array_type"),
+        (Annotated[np.ndarray, Shape((2,))], "DType"),
+        (Annotated[npt.NDArray[np.float64], Shape((2,)), DType("float32")], "disagree"),
+        (Annotated[Plain, Shape((2,)), DType("float32")], "register_array_type"),
         (
             Annotated[
-                list[Annotated[np.ndarray, Shape(2), DType("uint8")]], Capacity(2)
+                list[Annotated[np.ndarray, Shape((2,)), DType("uint8")]], Capacity(2)
             ],
             "collection element",
         ),
         (
-            Annotated[np.ndarray, Shape(2), DType("float32")] | int,
+            Annotated[np.ndarray, Shape((2,)), DType("float32")] | int,
             "not a union member",
         ),
         (
-            Annotated[npt.NDArray[np.object_], Shape(2), DType("float32")],
+            Annotated[npt.NDArray[np.object_], Shape((2,)), DType("float32")],
             "element type",
         ),
     ],
@@ -193,7 +212,7 @@ def test_array_annotations_that_cannot_be_kept_are_refused(
 
 class Envelope(SharedBox):
     scan: npt.NDArray[np.uint8] | None = field(default=None, shape=(32, 32))
-    thumb: Annotated[np.ndarray, Shape(2, 2), DType("float32")] | None = None
+    thumb: Annotated[np.ndarray, Shape((2, 2)), DType("float32")] | None = None
 
 
 def test_an_optional_array_field_holds_none_or_an_array(unique_name: str) -> None:
@@ -225,7 +244,9 @@ def test_a_registered_type_reads_back_through_its_converter(unique_name: str) ->
             "Holder",
             (SharedBox,),
             {
-                "__annotations__": {"x": Annotated[Wrapped, Shape(3), DType("int32")]},
+                "__annotations__": {
+                    "x": Annotated[Wrapped, Shape((3,)), DType("int32")]
+                },
                 "__module__": __name__,
             },
         )
@@ -237,11 +258,11 @@ def test_a_registered_type_reads_back_through_its_converter(unique_name: str) ->
         del CONVERTERS[key(Wrapped)]
 
 
-@pytest.mark.parametrize("dims", [(), (0,), tuple(range(1, 10))])
-def test_shapes_outside_the_limits_are_refused(dims: tuple[int, ...]) -> None:
-    """Check that Shape takes 1 to 8 dimensions of at least 1."""
+@pytest.mark.parametrize("dims", [(), (0,), tuple(range(1, 10)), 4, [2, 3]])
+def test_shapes_outside_the_limits_are_refused(dims: Any) -> None:
+    """Check that Shape takes a tuple of 1 to 8 dimensions of at least 1."""
     with pytest.raises(ValueError):
-        Shape(*dims)
+        Shape(dims)
 
 
 def zeros(shape: int | tuple[int, ...], dtype: type) -> Any:
@@ -262,8 +283,8 @@ class ByOption(SharedBox, identity="sized"):
 
 
 class ByShape(SharedBox, identity="sized"):
-    image: Annotated[npt.NDArray[np.float32], Shape(4, 3)] = zeros((4, 3), np.float32)
-    mask: Annotated[np.ndarray, Shape(5), DType("bool")] = zeros(5, bool)
+    image: Annotated[npt.NDArray[np.float32], Shape((4, 3))] = zeros((4, 3), np.float32)
+    mask: Annotated[np.ndarray, Shape((5,)), DType("bool")] = zeros(5, bool)
 
 
 WAYS: list[Any] = [ByDefault, ByOption, ByShape]
@@ -272,7 +293,7 @@ WAYS: list[Any] = [ByDefault, ByOption, ByShape]
 @dataclass(frozen=True)
 class Shot:
     index: int
-    pixels: Annotated[npt.NDArray[np.float64], Shape(4)]
+    pixels: Annotated[npt.NDArray[np.float64], Shape((4,))]
 
 
 @dataclass(frozen=True)
@@ -319,10 +340,10 @@ def test_agreeing_sizes_are_accepted() -> None:
     """Check that a Shape, field(shape=) and a default array of one shape build the plain Shape and DType layout."""
 
     class All(SharedBox, identity="sized"):
-        image: Annotated[npt.NDArray[np.float32], Shape(4, 3)] = field(
+        image: Annotated[npt.NDArray[np.float32], Shape((4, 3))] = field(
             shape=(4, 3), default=zeros((4, 3), np.float32)
         )
-        mask: Annotated[np.ndarray, Shape(5), DType("bool")] = zeros(5, bool)
+        mask: Annotated[np.ndarray, Shape((5,)), DType("bool")] = zeros(5, bool)
 
     assert All.__layout__.schema_hash == ByShape.__layout__.schema_hash
 
@@ -334,14 +355,14 @@ def test_sizes_from_two_places_that_differ_are_refused() -> None:
     ):
 
         class Pair(SharedBox):
-            x: Annotated[npt.NDArray[np.uint8], Shape(2, 3)] = field(shape=(3, 2))
+            x: Annotated[npt.NDArray[np.uint8], Shape((2, 3))] = field(shape=(3, 2))
 
     with pytest.raises(
         TypeError, match=r"Pair.x: Shape\(2, 3\) and the default array's shape \(3, 2\)"
     ):
 
         class Pair(SharedBox):  # type: ignore[no-redef]
-            x: Annotated[npt.NDArray[np.uint8], Shape(2, 3)] = zeros((3, 2), np.uint8)
+            x: Annotated[npt.NDArray[np.uint8], Shape((2, 3))] = zeros((3, 2), np.uint8)
 
     with pytest.raises(
         TypeError,
@@ -389,7 +410,7 @@ def test_an_array_default_with_an_odd_shape_attribute_is_refused() -> None:
     with pytest.raises(TypeError):
 
         class WithShape(SharedBox):
-            x: Annotated[npt.NDArray[np.uint8], Shape(1)] = Shaped()  # type: ignore[assignment]
+            x: Annotated[npt.NDArray[np.uint8], Shape((1,))] = Shaped()  # type: ignore[assignment]
 
     with pytest.raises(TypeError, match="its sizes"):
 
@@ -412,7 +433,7 @@ def test_the_dimension_count_of_the_annotation_is_checked() -> None:
         build_layout(
             make(
                 Annotated[
-                    np.ndarray[tuple[int, int], np.dtype[np.uint8]], Shape(4, 6, 3)
+                    np.ndarray[tuple[int, int], np.dtype[np.uint8]], Shape((4, 6, 3))
                 ]
             )
         )
@@ -421,7 +442,7 @@ def test_the_dimension_count_of_the_annotation_is_checked() -> None:
         np.ndarray[tuple[int, *tuple[int, ...]], np.dtype[np.uint8]],
         np.ndarray[tuple[int, Unpack[tuple[int, ...]]], np.dtype[np.uint8]],  # noqa: UP044
     ):
-        build_layout(make(Annotated[open_ended, Shape(4, 6, 3)]))
+        build_layout(make(Annotated[open_ended, Shape((4, 6, 3))]))
 
     with pytest.raises(
         TypeError, match=r"2 dimensions and field\(shape=\(2,\)\) has 1"
@@ -443,9 +464,9 @@ def test_literal_dimensions_count_like_int() -> None:
     literal = np.ndarray[tuple[Literal[4], Literal[6]], np.dtype[np.uint8]]
     with pytest.raises(TypeError, match="its sizes"):
         build_layout(make(literal))
-    build_layout(make(Annotated[literal, Shape(4, 6)]))
+    build_layout(make(Annotated[literal, Shape((4, 6))]))
     with pytest.raises(TypeError, match="2 dimensions"):
-        build_layout(make(Annotated[literal, Shape(4, 6, 3)]))
+        build_layout(make(Annotated[literal, Shape((4, 6, 3))]))
 
 
 def test_a_default_factory_does_not_give_sizes() -> None:
@@ -488,7 +509,7 @@ def test_a_subclass_default_changes_the_shape_unless_its_sizes_are_repeated() ->
     assert Bare.__layout__.by_name["x"].capacity == 3
 
     class Pinned(SharedBox):
-        x: Annotated[npt.NDArray[np.uint8], Shape(3)] = zeros(3, np.uint8)
+        x: Annotated[npt.NDArray[np.uint8], Shape((3,))] = zeros(3, np.uint8)
 
     class Repinned(Pinned):
         x: npt.NDArray[np.uint8] = zeros(5, np.uint8)
@@ -497,7 +518,7 @@ def test_a_subclass_default_changes_the_shape_unless_its_sizes_are_repeated() ->
     with pytest.raises(TypeError, match="disagree"):
 
         class ShapeChanged(Pinned):
-            x: Annotated[npt.NDArray[np.uint8], Shape(3)] = zeros(5, np.uint8)
+            x: Annotated[npt.NDArray[np.uint8], Shape((3,))] = zeros(5, np.uint8)
 
     with pytest.raises(TypeError, match="disagree"):
 
@@ -529,7 +550,7 @@ def test_a_plain_attribute_over_an_inherited_array_field_keeps_the_old_message()
     """Check that overriding an inherited array field with an unannotated attribute says so, not that the shapes disagree."""
 
     class Pinned(SharedBox):
-        x: Annotated[npt.NDArray[np.uint8], Shape(3)] = zeros(3, np.uint8)
+        x: Annotated[npt.NDArray[np.uint8], Shape((3,))] = zeros(3, np.uint8)
 
     with pytest.raises(TypeError, match="overrides the field inherited from"):
 

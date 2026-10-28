@@ -367,6 +367,7 @@ class Types:
         converts: Sequence[
             tuple[int, int, Callable[[Any], Any] | None, Callable[[Any], Any] | None]
         ] = (),
+        stream: bool = False,
     ) -> None: ...
     def check(self, field: int, value: object) -> None:
         """Raise what writing `value` to `field` would raise."""
@@ -1183,7 +1184,8 @@ class Slot(Generic[_T]):
         Each array the item reaches through records and tuples is a writable
         array of its member's declared type, dtype and shape, which views
         the slot in shared memory and starts with the bytes of an older
-        item. The arrays keep the stream's mapping alive, so using them
+        item. An array with a `MaxShape` has the shape of the template's
+        array, or the maximum shape without one. The arrays keep the stream's mapping alive, so using them
         after the block or after the stream is closed cannot crash, but
         writing to them after [`send`][sharedbox.SendSlot.send] changes
         an item readers may have received and tells no one.
@@ -1193,7 +1195,10 @@ class Slot(Generic[_T]):
 
         An array of `item` that already is its place in the slot, such as
         one of [`item`][sharedbox.SendSlot.item]'s arrays, is not copied;
-        any other array is copied into the slot.
+        any other array is copied into the slot. For an array with a
+        `MaxShape`, that holds for any C-contiguous array that starts at
+        its place in the slot, such as the first rows `counts[:n]` of the
+        slot's array, and only its shape is written.
 
         Raises
         ------

@@ -70,11 +70,13 @@ public:
     /// fields as Segment.create takes them; info maps a description's offset to its tuple; bytearrays
     /// lists (description offset, member) of each bytes member read back as bytearray, offset -1 for a
     /// field; reusable lists the fields whose values cannot be changed once read; converts lists the
-    /// callables a member's values pass through when read and before they are written, either may be None.
+    /// callables a member's values pass through when read and before they are written, either may be None;
+    /// stream says the table is a stream item's, which alone may hold a max_array.
     Types(const std::vector<std::tuple<std::uint32_t, std::uint32_t, std::uint32_t>> &fields,
           std::vector<std::string> labels, std::string table, const nb::dict &info,
           const std::vector<std::pair<std::int64_t, std::uint32_t>> &bytearrays,
-          const std::vector<std::uint32_t> &reusable = {}, const std::vector<Convert> &converts = {});
+          const std::vector<std::uint32_t> &reusable = {}, const std::vector<Convert> &converts = {},
+          bool stream = false);
 
     const std::string &table() const { return table_; }
     std::size_t field_count() const { return labels_.size(); }
@@ -109,18 +111,36 @@ public:
     /// shape; an ml_dtypes bfloat16 array is taken as its uint16 view.
     nb::ndarray<nb::c_contig, nb::device::cpu> array_out(std::uint32_t index, PyObject *out) const;
     /// Where an array the caller passed to receive into goes: its writable view, where its bytes start in the
-    /// field's value and how many there are, and the key decode_given finds it under.
+    /// field's value and how many there are, and the key decode_given finds it under. For a max_array, max is
+    /// its node, offset the start of its shape line and size its whole span; view may then be empty, for a
+    /// max_array whose stored elements go to the scratch copy.
     struct ArrayTarget {
         nb::ndarray<nb::c_contig, nb::device::cpu> view;
         std::uint64_t offset = 0;
         std::uint64_t size = 0;
         std::uint64_t key = 0;
+        const detail::type_ref *max = nullptr;
     };
 
     /// out as the destination of the array that path reaches in field index, through records and tuples; the
     /// empty path is the field itself. Raises as array_out does, and TypeError for a path that steps into
     /// anything else or does not end at an array.
     ArrayTarget array_target(std::uint32_t index, std::span<const std::uint32_t> path, PyObject *out) const;
+    /// given, plus a target with an empty view for each max_array of field index that given lacks, sorted by
+    /// offset.
+    std::vector<ArrayTarget> item_targets(std::uint32_t index, std::vector<ArrayTarget> given) const;
+    /// Whether the table describes a max_array anywhere.
+    bool has_max_arrays() const { return max_arrays_; }
+    /// How many element bytes the max_array t stores after the shape line at line, or UINT64_MAX for a shape
+    /// above its maximum.
+    std::uint64_t stored_bytes(const detail::type_ref &t, const std::byte *line) const noexcept {
+        return detail::max_array_bytes(tree_, t, line);
+    }
+    /// What a receive into out returns for the array t whose stored value starts at data: out itself, or for
+    /// a max_array a view of out's first elements in the stored shape. Raises ValueError naming name for a
+    /// stored shape above the maximum.
+    nb::object out_view(const detail::type_ref &t, PyObject *out, const std::byte *data,
+                        const std::string &name) const;
     /// As decode for field index, with the member under each key of given taken as that object.
     nb::object decode_given(std::uint32_t index, std::span<const std::byte> bytes,
                             const std::unordered_map<std::uint64_t, PyObject *> &given) const;
@@ -208,8 +228,14 @@ private:
     /// An array value whose bytes start at data; owned, when it holds data, is taken instead of copied.
     nb::object decode_array(const detail::type_ref &t, const std::byte *data,
                             std::unique_ptr<std::byte[]> *owned) const;
-    /// The array over raw that owner keeps alive, with the node's shape and dtype, through the converter.
-    nb::object wrap_array(const detail::type_ref &t, std::byte *raw, nb::handle owner) const;
+    /// A max_array value whose shape line starts at data; owned, when it holds data, is taken instead of
+    /// copied. Raises ValueError naming name for a stored shape above the maximum.
+    nb::object decode_max_array(const detail::type_ref &t, const std::byte *data,
+                                std::unique_ptr<std::byte[]> *owned, const std::string &name) const;
+    /// The array over raw that owner keeps alive, with the node's dtype and shape, or the node's shape when
+    /// shape is empty, through the converter.
+    nb::object wrap_array(const detail::type_ref &t, std::byte *raw, nb::handle owner,
+                          std::span<const std::size_t> shape = {}) const;
     void prepare(std::uint32_t node, std::uint8_t kind, nb::object info);
     bool read_as_bytearray(std::uint32_t container, std::uint32_t member) const;
 
@@ -217,6 +243,7 @@ private:
     std::vector<std::string> labels_;
     std::string table_;
     std::vector<NodeInfo> nodes_;
+    bool max_arrays_ = false;
     /// NativeCollection, NativeSet and NativeDict, which encode_collection tests a list, set and dict value
     /// against.
     PyTypeObject *collection_type_ = nullptr;

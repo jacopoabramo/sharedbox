@@ -60,7 +60,7 @@ another shape then raises a `TypeError`.
 
 When the annotation gives the number of dimensions, as in
 `numpy.ndarray[tuple[int, int], numpy.dtype[numpy.uint8]]`, the sizes must
-have as many, wherever they come from. A `Shape(4, 6, 3)` or a
+have as many, wherever they come from. A `Shape((4, 6, 3))` or a
 3-dimensional default under `tuple[int, int]` raises a `TypeError` when
 the class is defined.
 

@@ -1,3 +1,4 @@
+import ctypes
 import gc
 import pickle
 import re
@@ -6,7 +7,7 @@ import sys
 import threading
 import time
 import weakref
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Annotated, Any, NotRequired, TypedDict
 
 import numpy as np
@@ -17,6 +18,7 @@ from sharedbox import (
     Capacity,
     DType,
     EndOfStream,
+    MaxShape,
     ReceiveStreamStatistics,
     SchemaMismatchError,
     Shape,
@@ -31,7 +33,7 @@ from sharedbox import (
 @dataclass(frozen=True)
 class Frame:
     index: int
-    image: Annotated[np.ndarray, Shape(4, 4), DType("uint16")]
+    image: Annotated[np.ndarray, Shape((4, 4)), DType("uint16")]
 
 
 def frame(i: int) -> Frame:
@@ -42,6 +44,19 @@ def frame(i: int) -> Frame:
 class Mixed:
     note: int | None
     values: Annotated[list[int], Capacity(4)]
+
+
+@dataclass(frozen=True)
+class Block:
+    run: int
+    counts: Annotated[npt.NDArray[np.uint32], MaxShape((4, 3))]
+
+
+Counts = Annotated[npt.NDArray[np.uint32], MaxShape((4, 3))]
+
+
+def counts(*shape: int) -> npt.NDArray[np.uint32]:
+    return np.arange(int(np.prod(shape)), dtype=np.uint32).reshape(shape)
 
 
 class Entry(TypedDict):
@@ -63,7 +78,7 @@ def test_items_go_from_the_sender_to_a_reader(unique_name: str) -> None:
 @dataclass
 class Notice:
     index: int
-    scan: Annotated[npt.NDArray[np.uint8], Shape(4)] | None = None
+    scan: Annotated[npt.NDArray[np.uint8], Shape((4,))] | None = None
 
 
 def test_an_optional_array_member_crosses_a_stream(unique_name: str) -> None:
@@ -129,9 +144,7 @@ def test_receive_into_takes_a_tuple_for_a_tuple_item(unique_name: str) -> None:
     hint = tuple[
         Annotated[
             np.ndarray,
-            Shape(
-                3,
-            ),
+            Shape((3,)),
             DType("float32"),
         ],
         int,
@@ -170,9 +183,7 @@ def test_receive_into_refuses_an_out_of_the_wrong_shape_and_keeps_the_item(
 class Inner:
     image: Annotated[
         np.ndarray,
-        Shape(
-            2,
-        ),
+        Shape((2,)),
         DType("uint8"),
     ]
 
@@ -183,9 +194,7 @@ class Outer:
     pair: tuple[
         Annotated[
             np.ndarray,
-            Shape(
-                2,
-            ),
+            Shape((2,)),
             DType("uint8"),
         ],
         int,
@@ -235,7 +244,7 @@ def test_receive_into_refuses_an_array_for_a_collection_member(
     @dataclass(frozen=True)
     class Tagged:
         tags: Annotated[list[int], Capacity(4)]
-        image: Annotated[np.ndarray, Shape(2), DType("uint8")]
+        image: Annotated[np.ndarray, Shape((2,)), DType("uint8")]
 
     with SharedStream.create(Tagged, unique_name, capacity=2) as stream:
         reader = stream.reader()
@@ -563,6 +572,7 @@ def test_a_stream_of_a_module_level_class_leaves_no_leak_report(
 
 WORKER_CYCLE_PROBE = """
 import asyncio
+import ctypes
 import gc
 import sys
 import threading
@@ -674,3 +684,257 @@ def test_an_item_that_fails_to_encode_is_not_sent(unique_name: str) -> None:
         sender.send(frame(1))
         assert reader.receive(timeout=5).index == 1
         assert reader.position == 0
+
+
+def test_a_max_shape_array_crosses_a_stream_in_its_own_shape(unique_name: str) -> None:
+    """Receive each MaxShape array, of a record member or as the item, in the shape it was sent in."""
+    shapes = [(4, 3), (1, 3), (2, 1), (0, 3)]
+    with SharedStream.create(Block, unique_name, capacity=8) as stream:
+        reader = stream.reader()
+        with stream.sender() as sender:
+            for i, shape in enumerate(shapes):
+                sender.send(Block(i, counts(*shape)))
+        for i, shape in enumerate(shapes):
+            item = reader.receive(timeout=5)
+            assert item.run == i
+            assert item.counts.dtype == np.uint32
+            assert item.counts.shape == shape
+            assert np.array_equal(item.counts, counts(*shape))
+    with SharedStream.create(Counts, f"{unique_name}-bare", capacity=2) as stream:
+        bare = stream.reader()
+        with stream.sender() as sender:
+            sender.send(counts(3, 2))
+        got = bare.receive(timeout=5)
+        assert got.shape == (3, 2)
+        assert np.array_equal(got, counts(3, 2))
+
+
+def test_send_gathers_a_strided_max_shape_array(unique_name: str) -> None:
+    """Receive a strided array sent as a MaxShape array with the same values."""
+    strided = np.arange(24, dtype=np.uint32).reshape(4, 6)[:, ::2]
+    with SharedStream.create(Block, unique_name, capacity=2) as stream:
+        reader = stream.reader()
+        with stream.sender() as sender:
+            sender.send(Block(0, strided))
+        assert np.array_equal(reader.receive(timeout=5).counts, strided)
+
+
+@pytest.mark.parametrize("shape", [(5, 3), (4, 4), (4,), (4, 3, 1)])
+def test_send_refuses_a_shape_beyond_the_maximum(
+    unique_name: str, shape: tuple[int, ...]
+) -> None:
+    """Refuse a MaxShape array of a larger dimension or another dimension count, and send nothing."""
+    with SharedStream.create(Block, unique_name, capacity=2) as stream:
+        reader = stream.reader()
+        with stream.sender() as sender:
+            with pytest.raises(ValueError, match="MaxShape"):
+                sender.send(Block(0, np.zeros(shape, np.uint32)))
+            sender.send(Block(1, counts(2, 3)))
+        assert reader.receive(timeout=5).run == 1
+
+
+@dataclass(frozen=True)
+class MetadataMaxShape:
+    counts: npt.NDArray[np.uint32] = field(metadata={"max_shape": (4, 3)})
+
+
+def define_box_field() -> None:
+    class Held(SharedBox):
+        counts: Counts
+
+
+@pytest.mark.parametrize(
+    "make",
+    [
+        pytest.param(define_box_field, id="box field"),
+        pytest.param(
+            lambda name: SharedStream.create(Counts | None, name, capacity=2),
+            id="optional",
+        ),
+        pytest.param(
+            lambda name: SharedStream.create(
+                Annotated[list[Block], Capacity(2)], name, capacity=2
+            ),
+            id="list element",
+        ),
+        pytest.param(
+            lambda name: SharedStream.create(Counts | int, name, capacity=2), id="union"
+        ),
+        pytest.param(
+            lambda name: SharedStream.create(
+                Annotated[npt.NDArray[np.uint32], Shape((4, 3)), MaxShape((4, 3))],
+                name,
+                capacity=2,
+            ),
+            id="with Shape",
+        ),
+        pytest.param(
+            lambda name: SharedStream.create(MetadataMaxShape, name, capacity=2),
+            id="metadata",
+        ),
+    ],
+)
+def test_max_shape_is_refused_outside_stream_items(unique_name: str, make: Any) -> None:
+    """Refuse MaxShape on a box field, under an optional, union or list, with Shape, and as metadata."""
+    with pytest.raises(TypeError, match="MaxShape|max_shape|union member"):
+        if make is define_box_field:
+            make()
+        else:
+            make(unique_name)
+
+
+@pytest.mark.parametrize("dims", [(), (0,), (2,) * 9, (True,), 4, [2, 3]])
+def test_max_shape_refuses_bad_dimensions(dims: tuple[Any, ...]) -> None:
+    """Refuse a MaxShape without 1 to 8 integer dimensions of at least 1."""
+    with pytest.raises(ValueError):
+        MaxShape(dims)
+
+
+@dataclass(frozen=True)
+class Twin:
+    first: Annotated[npt.NDArray[np.uint32], MaxShape((4, 3))]
+    run: int
+    second: Annotated[npt.NDArray[np.uint32], MaxShape((4, 3))]
+
+
+def test_writing_views_the_slot_in_the_template_shape(unique_name: str) -> None:
+    """Give the slot's array the template array's shape and send what was written into it."""
+    with SharedStream.create(Block, unique_name, capacity=2) as stream:
+        reader = stream.reader()
+        template = np.empty((2, 3), np.uint32)
+        with stream.sender().writing(Block(1, template)) as slot:
+            assert slot.item.counts.shape == (2, 3)
+            assert not np.shares_memory(slot.item.counts, template)
+            slot.item.counts[:] = [[1, 2, 3], [4, 5, 6]]
+            slot.send(slot.item)
+        got = reader.receive(timeout=5)
+        np.testing.assert_array_equal(got.counts, [[1, 2, 3], [4, 5, 6]])
+
+
+def test_slot_send_publishes_a_prefix_of_the_slot_view(unique_name: str) -> None:
+    """Send the first rows of the slot's array as an item of that shape."""
+    with SharedStream.create(Block, unique_name, capacity=2) as stream:
+        reader = stream.reader()
+        with stream.sender().writing(Block(1, np.empty((4, 3), np.uint32))) as slot:
+            slot.item.counts[:] = counts(4, 3)
+            slot.send(replace(slot.item, counts=slot.item.counts[:2]))
+        got = reader.receive(timeout=5)
+        assert got.counts.shape == (2, 3)
+        np.testing.assert_array_equal(got.counts, counts(4, 3)[:2])
+
+
+def test_slot_send_copies_a_view_not_at_the_start_of_the_slot(unique_name: str) -> None:
+    """Send rows from the middle and a column slice of the slot's array with the values they held."""
+    with SharedStream.create(Block, unique_name, capacity=4) as stream:
+        reader = stream.reader()
+        sender = stream.sender()
+        for index in (np.s_[1:3], np.s_[:, :2]):
+            with sender.writing(Block(1, np.empty((4, 3), np.uint32))) as slot:
+                slot.item.counts[:] = counts(4, 3)
+                chosen = slot.item.counts[index]
+                expected = chosen.copy()
+                slot.send(replace(slot.item, counts=chosen))
+            got = reader.receive(timeout=5)
+            assert got.counts.shape == expected.shape
+            np.testing.assert_array_equal(got.counts, expected)
+
+
+def test_writing_without_a_template_views_the_maximum(unique_name: str) -> None:
+    """Give a bare MaxShape item's slot array the maximum shape when writing takes no template."""
+    with (
+        SharedStream.create(Counts, unique_name, capacity=2) as stream,
+        stream.sender().writing() as slot,
+    ):
+        assert slot.item.shape == (4, 3)
+
+
+def test_writing_refuses_a_template_beyond_the_maximum(unique_name: str) -> None:
+    """Raise ValueError for a template array beyond MaxShape and still send afterwards."""
+    with SharedStream.create(Block, unique_name, capacity=2) as stream:
+        reader = stream.reader()
+        sender = stream.sender()
+        with (
+            pytest.raises(ValueError, match="MaxShape"),
+            sender.writing(Block(1, np.empty((5, 3), np.uint32)), timeout=5),
+        ):
+            pass
+        sender.send(Block(2, counts(1, 3)), timeout=5)
+        assert reader.receive(timeout=5).run == 2
+
+
+def test_receive_into_returns_a_view_of_the_stored_shape(unique_name: str) -> None:
+    """Return a view over out in the stored shape, its elements packed at the start of out."""
+    with SharedStream.create(Block, unique_name, capacity=4) as stream:
+        reader = stream.reader()
+        sender = stream.sender()
+        sender.send(Block(1, counts(2, 3)))
+        sender.send(Block(2, counts(0, 3)))
+        out = np.zeros((4, 3), np.uint32)
+        item = reader.receive_into({"counts": out}, timeout=5)
+        assert item.counts.shape == (2, 3)
+        assert np.shares_memory(item.counts, out)
+        np.testing.assert_array_equal(out.ravel()[:6], np.arange(6))
+        assert reader.receive_into({"counts": out}, timeout=5).counts.shape == (0, 3)
+
+
+def test_receive_into_reads_two_max_shape_members(unique_name: str) -> None:
+    """Read both MaxShape members of an item in their own shapes when out is given for one."""
+    with SharedStream.create(Twin, unique_name, capacity=2) as stream:
+        reader = stream.reader()
+        stream.sender().send(Twin(counts(3, 3), 7, counts(1, 2)))
+        out = np.zeros((4, 3), np.uint32)
+        item = reader.receive_into({"first": out}, timeout=5)
+        np.testing.assert_array_equal(item.first, counts(3, 3))
+        np.testing.assert_array_equal(item.second, counts(1, 2))
+        assert item.run == 7
+
+
+def test_receive_into_refuses_an_out_not_of_the_maximum_shape(unique_name: str) -> None:
+    """Raise ValueError for an out of another shape than MaxShape and leave the item for the next receive."""
+    with SharedStream.create(Block, unique_name, capacity=2) as stream:
+        reader = stream.reader()
+        stream.sender().send(Block(1, counts(2, 3)))
+        with pytest.raises(ValueError, match="shape"):
+            reader.receive_into({"counts": np.zeros((2, 3), np.uint32)}, timeout=5)
+        assert reader.receive(timeout=5).run == 1
+
+
+class Tally(TypedDict):
+    run: int
+    counts: Counts
+
+
+def test_writing_takes_a_typed_dict_template_without_its_max_shape_key(
+    unique_name: str,
+) -> None:
+    """Give a TypedDict template's missing MaxShape key the maximum shape over the slot."""
+    with SharedStream.create(Tally, unique_name, capacity=2) as stream:
+        reader = stream.reader()
+        template: Any = {"run": 1}
+        with stream.sender().writing(template) as slot:
+            assert slot.item["counts"].shape == (4, 3)
+            slot.item["counts"][:] = counts(4, 3)
+            slot.send(slot.item)
+        np.testing.assert_array_equal(reader.receive(timeout=5)["counts"], counts(4, 3))
+
+
+def test_a_stored_shape_beyond_the_maximum_is_refused(unique_name: str) -> None:
+    """Raise ValueError for a slot whose shape line exceeds MaxShape, write nothing to out, and read the next item."""
+    with SharedStream.create(Block, unique_name, capacity=4) as stream:
+        plain = stream.reader()
+        into = stream.reader()
+        sender = stream.sender()
+        with sender.writing(Block(1, np.empty((2, 3), np.uint32))) as slot:
+            view = slot.item.counts
+            slot.send(slot.item)
+        line = (ctypes.c_uint64 * 8).from_address(view.ctypes.data - 64)
+        line[0] = 5
+        sender.send(Block(2, counts(1, 3)))
+        out = np.zeros((4, 3), np.uint32)
+        with pytest.raises(ValueError, match="stored value"):
+            plain.receive(timeout=5)
+        with pytest.raises(ValueError, match="stored value"):
+            into.receive_into({"counts": out}, timeout=5)
+        assert not out.any()
+        assert plain.receive(timeout=5).run == 2
+        assert into.receive_into({"counts": out}, timeout=5).run == 2
