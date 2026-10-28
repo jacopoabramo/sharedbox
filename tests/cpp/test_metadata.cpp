@@ -895,3 +895,28 @@ TEST_CASE("a stream mapping larger than its area needs opens") {
     CHECK(geometry(metadata_spec{cbor({0x01}), 1024, 4}, 4096) == status::ok);
     CHECK(geometry(metadata_spec{}, 4096) == status::ok);
 }
+
+TEST_CASE("versions with no items are reclaimed in age order only") {
+    const std::string name = unique("meta-stream-age-order");
+    const auto short_bytes = [](std::size_t total) {
+        std::vector<std::byte> out(total, std::byte{0x07});
+        out[0] = static_cast<std::byte>(0x40 + total - 1);
+        return out;
+    };
+    stream made = make_stream(name, 8, metadata_spec{byte_string(32, 1), 96, 64});
+    auto sender = made.sender();
+    auto reader = made.reader(read_mode::lossy, start_at::newest);
+    REQUIRE(sender);
+    REQUIRE(reader);
+    REQUIRE(sender->add_metadata(byte_string(32, 2)).value_or(0) == 2);
+    REQUIRE(sender->add_metadata(short_bytes(16)).value_or(0) == 3);
+    REQUIRE(sender->add_metadata(short_bytes(8)).value_or(0) == 4);
+    send_items(*sender, 3);
+    REQUIRE(sender->add_metadata(short_bytes(16)).value_or(0) == 5);
+    REQUIRE(sender->add_metadata(byte_string(32, 3)).value_or(0) == 6);
+    REQUIRE(sender->add_metadata(byte_string(32, 4)).value_or(0) == 7);
+    CHECK(code(sender->add_metadata(byte_string(32, 5))) == status::metadata_full);
+    for (const std::uint64_t position : {0, 1, 2})
+        CHECK(reader->metadata_version_at(position).value_or(0) == 4);
+    static_cast<void>(unlink(name));
+}

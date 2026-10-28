@@ -2436,16 +2436,23 @@ result<std::uint64_t> add_metadata(std::byte *area, const metadata_line &line, s
     const auto overwritten = [&](std::uint64_t u, const metadata_entry &e) noexcept {
         return u == reused || (at < std::uint64_t{e.offset} + e.length && e.offset < at + size);
     };
+    bool older_kept = false;
     for (std::uint64_t u = oldest; u < newest; ++u) {
         metadata_entry e{};
-        if (!load_metadata_entry(metadata_entry_of(area, line, u), u, e) || !overwritten(u, e))
+        if (!load_metadata_entry(metadata_entry_of(area, line, u), u, e))
             continue;
+        if (!overwritten(u, e)) {
+            older_kept = true;
+            continue;
+        }
         // u + 1 is at most newest, so its entry is not reused yet and still holds its position, even after an
         // earlier add overwrote its bytes and cleared its seq.
         metadata_entry &next = metadata_entry_of(area, line, u + 1);
         const std::uint64_t next_position = atomic(next.position).load(std::memory_order_relaxed);
-        // A version that starts where the next one does covers no item, so nothing needs it.
-        if (e.position != next_position && !may_reclaim(next_position))
+        // A version that starts where the next one does covers no item, so nothing needs it; but only while
+        // every older version is gone too, or a walk back from the head could pass a cleared version to an
+        // older one that is kept.
+        if ((older_kept || e.position != next_position) && !may_reclaim(next_position))
             return unexpected(status::metadata_full);
     }
     for (std::uint64_t u = oldest; u < newest; ++u) {
