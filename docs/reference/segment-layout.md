@@ -486,7 +486,7 @@ struct stream_header {              // sharedbox::stream_header, 256 bytes
     uint32_t readers_epoch;         // 164  changed when a reader joins, leaves or is freed
     uint32_t space_waiting;         // 168  sender threads asleep on space_word
     uint8_t  reserved3a[4];         // 172  zero
-    uint64_t release_floor;         // 176  marked lossless readers below it do not hold the sender back
+    uint64_t release_floor;         // 176  marked lossless readers below it do not block
     uint8_t  reserved3b[8];         // 184  zero
     // line 3: the readers' words
     uint32_t space_word;            // 192  the sender sleeps on it (Linux)
@@ -582,9 +582,9 @@ layout version of its kind, for the rest. Each has a major and a minor.
   layout 1.0 refuses with `status::corrupt`. Stream layout 1.2 adds kind
   75, `max_array`, which a reader of stream layout 1.1 or 1.0 refuses with
   `status::corrupt` as a stream item or inside one. Stream layout 1.3 adds
-  `release_floor`, `release_mark` and `release_pid` from reserved bytes; a stream that an
-  older version created keeps them at 0, so none of its readers is
-  released until a sender of 1.3 raises the floor.
+  `release_floor`, `release_mark` and `release_pid` from reserved bytes; a
+  stream that an older version created keeps them at 0, so none of its
+  readers is released until a sender of 1.3 raises the floor.
 - A change to how existing bytes are read or written raises a major: the
   core's (the common line, the object names, liveness) raises `core_major`,
   and a kind's own (the sequence lock, field encoding, the slot layout)
@@ -951,9 +951,9 @@ A reader joins in this order:
 3. Store the starting `position` with release: for `start_at::newest`
    `write_pos - 1`, or 0 before the first send, and for `start_at::oldest`
    `write_pos - capacity`, or 0. Before it, the reader stores its start time
-   in `release_mark` and its pid in `release_pid`. A lossless reader starts no lower than
-   `release_floor`, loaded with acquire, since a reader below the floor
-   would be released at its first receive.
+   in `release_mark` and its pid in `release_pid`. A lossless reader starts
+   no lower than `release_floor`, loaded with acquire, since a reader below
+   the floor would be released at its first receive.
 4. If the reader is lossless, add 1 to `lossless_readers`. Then store its
    `mode` with release, add 1 to `readers_epoch`, and issue a sequentially
    consistent fence. The count comes first so that a process killed in

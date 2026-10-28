@@ -205,7 +205,7 @@ def reserve_then_die(name: str, ready: Event) -> None:
 def read_when_released(
     name: str, ready: Event, go: Event, results: "Queue[tuple[str, int, int] | str]"
 ) -> None:
-    """Open a lossless reader, wait for `go`, then report the error of one receive and the next item, or a traceback."""
+    """Open a lossless reader, wait for `go`, then report one receive's error and the next item."""
     stream = SharedStream.attach(int, name)
     reader = stream.reader(mode="lossless")
     ready.set()
