@@ -9,9 +9,12 @@ from typing import get_args
 import numpy as np
 import pytest
 from streamproc import (
+    BLOCK_SHAPES,
+    Block,
     Frame,
     ReaderKind,
     SenderKind,
+    block,
     finish,
     frame,
     hold_sender_then_die,
@@ -20,6 +23,7 @@ from streamproc import (
     read_ints_as,
     read_then_die,
     reserve_then_die,
+    send_blocks,
     send_frames,
     send_ints_as,
     write_frames,
@@ -266,3 +270,16 @@ def test_readers_end_after_a_sender_died_inside_its_block(unique_name: str) -> N
         with pytest.raises(EndOfStream):
             reader.receive(timeout=10)
         assert time.monotonic() - start < 5
+
+
+def test_max_shape_items_change_shape_across_processes(unique_name: str) -> None:
+    """Receive the MaxShape blocks another process sent, each in its own shape and in order."""
+    with SharedStream.create(Block, unique_name, capacity=4) as stream:
+        reader = stream.reader(start="oldest")
+        child = CONTEXT.Process(target=send_blocks, args=(unique_name,))
+        child.start()
+        got = list(reader)
+        finish(child)
+    assert [item.run for item in got] == list(range(len(BLOCK_SHAPES)))
+    for item in got:
+        np.testing.assert_array_equal(item.counts, block(item.run).counts)

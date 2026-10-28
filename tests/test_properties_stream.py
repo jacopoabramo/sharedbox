@@ -1,8 +1,13 @@
 import uuid
 from dataclasses import dataclass
+from typing import Annotated
 
+import numpy as np
+import numpy.typing as npt
 import pytest
+from hypothesis import given
 from hypothesis import strategies as st
+from hypothesis.extra.numpy import arrays
 from hypothesis.stateful import (
     RuleBasedStateMachine,
     initialize,
@@ -11,7 +16,13 @@ from hypothesis.stateful import (
     rule,
 )
 
-from sharedbox import SharedReceiveStream, SharedSendStream, SharedStream, WouldBlock
+from sharedbox import (
+    MaxShape,
+    SharedReceiveStream,
+    SharedSendStream,
+    SharedStream,
+    WouldBlock,
+)
 
 CAPACITY = 4
 MAX_READERS = 4
@@ -119,3 +130,29 @@ class StreamMachine(RuleBasedStateMachine):
 
 
 TestStreamMachine = StreamMachine.TestCase
+
+
+Cube = Annotated[npt.NDArray[np.uint16], MaxShape((5, 4, 3))]
+CUBES = st.tuples(*(st.integers(0, m) for m in (5, 4, 3))).flatmap(
+    lambda shape: arrays(np.uint16, shape)
+)
+
+
+@given(st.lists(CUBES, min_size=1, max_size=6))
+def test_max_shape_arrays_come_back_equal(cubes: list[npt.NDArray[np.uint16]]) -> None:
+    """Receive each MaxShape array sent equal, through receive and through receive_into one reused out."""
+    name = f"sbtest-{uuid.uuid4().hex[:16]}"
+    out = np.zeros((5, 4, 3), np.uint16)
+    try:
+        with SharedStream.create(Cube, name, capacity=2) as stream:
+            plain = stream.reader()
+            into = stream.reader()
+            sender = stream.sender()
+            for cube in cubes:
+                sender.send(cube)
+                np.testing.assert_array_equal(plain.receive(timeout=5), cube)
+                got = into.receive_into(out, timeout=5)
+                assert got.shape == cube.shape
+                np.testing.assert_array_equal(got, cube)
+    finally:
+        SharedStream.unlink(name)

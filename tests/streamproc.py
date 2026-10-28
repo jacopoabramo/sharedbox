@@ -10,7 +10,7 @@ from typing import Annotated, Literal
 
 import numpy as np
 
-from sharedbox import DType, Shape, SharedStream
+from sharedbox import DType, MaxShape, Shape, SharedStream
 
 Mode = Literal["lossless", "lossy", "latest"]
 SenderKind = Literal["send", "asend"]
@@ -43,6 +43,29 @@ class Frame:
 
 def frame(i: int) -> Frame:
     return Frame(i, np.full((64, 64), i % 65536, np.uint16))
+
+
+@dataclass(frozen=True)
+class Block:
+    run: int
+    counts: Annotated[np.ndarray, MaxShape((4, 3)), DType("uint32")]
+
+
+BLOCK_SHAPES = [(4, 3), (1, 3), (3, 2)]
+
+
+def block(i: int) -> Block:
+    shape = BLOCK_SHAPES[i]
+    return Block(i, np.arange(int(np.prod(shape)), dtype=np.uint32).reshape(shape))
+
+
+def send_blocks(name: str) -> None:
+    """Send a block of each shape in BLOCK_SHAPES on the stream `name`, then close the sender."""
+    stream = SharedStream.attach(Block, name)
+    with stream.sender() as sender:
+        for i in range(len(BLOCK_SHAPES)):
+            sender.send(block(i), timeout=60)
+    stream.close()
 
 
 def finish(*children: BaseProcess) -> None:

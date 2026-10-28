@@ -15,7 +15,7 @@ sharedbox/
 |-- include/sharedbox/
 |   |-- core.hpp               what every segment kind uses: result and error, liveness, names, mappings, the open step, waiter slots, the type codec
 |   |-- box.hpp                box layout 3.1 and its protocols: create, publish, open, lock, read, write, capsule handle
-|   |-- stream.hpp             stream layout 1.1: create, open, the sender, readers, the gate, dead ends
+|   |-- stream.hpp             stream layout 1.2: create, open, the sender, readers, the gate, dead ends
 |   |-- sharedbox.hpp          includes every kind; the header consumers include
 |   |-- sharedbox_c.h          minimal C interface: sbx_open, sbx_import, sbx_read, sbx_write, sbx_schema_hash, sbx_release, sbx_field_desc, typed sbx_read_* and sbx_write_*
 |   `-- sharedbox_c.cpp        its implementation, compiled by the consumer (CMake target sharedbox::c)
@@ -28,7 +28,7 @@ sharedbox/
 |   |-- _box.py                SharedBox: class keywords, fields, fields(), create/attach, __post_init__, update, snapshot, unlink, __sharedbox_box__
 |   |-- _layout.py             Capacity, field() and Field, field offsets and kind codes, schema hash
 |   |-- _types.py              annotation parsing into TypeSpec, the description table
-|   |-- _arrays.py             Shape, DType, SupportsDLPack, register_array_type
+|   |-- _arrays.py             Shape, MaxShape, DType, SupportsDLPack, register_array_type
 |   |-- _events.py             BoxEvents, FieldWatch, the watcher thread
 |   |-- _follow.py             BoxEvents.follow and unfollow: forwarding the events of boxes that references reach
 |   |-- _stream.py             SharedStream, SharedSendStream, SharedReceiveStream, ReceiveEvents, the statistics classes, the worker threads
@@ -155,8 +155,8 @@ version 1.0, box layout 3.1, from offset 0:
   `asleep_on`: the offset of the count the slot's current wait added 1 to,
   which freeing a dead owner's slot takes back), then the description
   table of `types_size` bytes. Kinds are 0 to 5, 6 to 12 (fixed-size
-  scalars), 13 to 23 (fixed-width numbers and `datetime64`) and 64 to 74
-  (described types).
+  scalars), 13 to 23 (fixed-width numbers and `datetime64`) and 64 to 75
+  (described types; 75, an array up to a maximum shape, only in a stream).
 - The record, at a multiple of 64. The mapping size is rounded up to 4 KiB.
   `record + record_size <= 2**32 - 4096`.
 
