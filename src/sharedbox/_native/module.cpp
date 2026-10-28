@@ -1185,6 +1185,7 @@ NB_MODULE(_native, m) {
         .def("version", &Segment::version, "field"_a)
         .def("versions", &Segment::versions)
         .def("metadata_head", &Segment::metadata_head)
+        .def("metadata_length", &Segment::metadata_length, "version"_a)
         .def(
             "read_metadata",
             [](const Segment &s, std::uint64_t version) {

@@ -294,6 +294,15 @@ class Segment:
     def metadata_head(self) -> int:
         """Return the newest metadata version, 0 for none."""
 
+    def metadata_length(self, version: int) -> int:
+        """Return the length of a metadata version's encoded document, without reading it.
+
+        Raises
+        ------
+        MetadataGoneError
+            If the segment no longer holds that version, or never did.
+        """
+
     def read_metadata(self, version: int) -> bytes:
         """Return the encoded document of a metadata version.
 

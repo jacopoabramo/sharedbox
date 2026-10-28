@@ -3,7 +3,7 @@ import decimal
 import sys
 import typing
 import uuid
-from typing import Annotated, Any, Final, NewType
+from typing import Annotated, Final, NewType
 
 import pytest
 from crossproc import snapshot_in_child, update_in_child
@@ -28,7 +28,7 @@ class Event(SharedBox):
     limit: Final[int] = 10
 
 
-VALUES: dict[str, Any] = {
+VALUES = {
     "when": datetime.datetime(2026, 10, 2, 9, 30, tzinfo=PLUS_ONE),
     "day": datetime.date(2026, 10, 2),
     "at": datetime.time(9, 30, fold=1),

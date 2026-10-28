@@ -88,7 +88,7 @@ RESERVED = frozenset(
     }
 )
 # The events group has these as its own names, so no field can take them.
-EVENTS_RESERVED = frozenset({"follow", "unfollow", "nested"})
+EVENTS_RESERVED = frozenset({"follow", "unfollow", "nested", "metadata"})
 MAX_WAITERS = 4096
 METADATA_CAPACITY = 65536
 MIN_METADATA_CAPACITY = 24
@@ -187,22 +187,30 @@ def has_default(param: Field) -> bool:
 
 
 def signature(params: list[Field]) -> inspect.Signature:
-    """Return the constructor signature a dataclass with these fields and `InitVar` ones would have."""
+    """Return the constructor signature a dataclass with these fields and `InitVar` ones would have, then the keyword `metadata`."""
     return inspect.Signature(
         [
+            *(
+                inspect.Parameter(
+                    p.name,
+                    inspect.Parameter.KEYWORD_ONLY
+                    if p.kw_only
+                    else inspect.Parameter.POSITIONAL_OR_KEYWORD,
+                    default=p.default
+                    if p.default is not MISSING
+                    else FACTORY
+                    if p.default_factory is not MISSING
+                    else inspect.Parameter.empty,
+                    annotation=p.type,
+                )
+                for p in sorted((p for p in params if p.init), key=lambda p: p.kw_only)
+            ),
             inspect.Parameter(
-                p.name,
-                inspect.Parameter.KEYWORD_ONLY
-                if p.kw_only
-                else inspect.Parameter.POSITIONAL_OR_KEYWORD,
-                default=p.default
-                if p.default is not MISSING
-                else FACTORY
-                if p.default_factory is not MISSING
-                else inspect.Parameter.empty,
-                annotation=p.type,
-            )
-            for p in sorted((p for p in params if p.init), key=lambda p: p.kw_only)
+                "metadata",
+                inspect.Parameter.KEYWORD_ONLY,
+                default=None,
+                annotation=object,
+            ),
         ],
         return_annotation=None,
     )
@@ -464,20 +472,23 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
       counted across every process. A watcher that finds every slot taken
       logs a warning to the `sharedbox` logger and checks for changes once
       a second until a slot is free.
-    - `metadata_capacity`: bytes of the box's metadata area, 0 or 24 to
-      2**32 - 1. A metadata document takes at most about a third of it.
-      By default a box created with `metadata` gets 65536, and any other
-      box no area, so [`add_metadata`][sharedbox.SharedBox.add_metadata]
-      on it raises `MetadataFullError`.
+    - `metadata_capacity`: bytes of the box's metadata area, 0 for none
+      or at least 24. The area takes 64 bytes, plus 32 per version, plus
+      the capacity rounded up to a multiple of 8, and must not pass
+      2**32 - 1 bytes in all. A metadata document takes at most about a
+      third of the capacity. By default a box created with `metadata`
+      gets 65536, and any other box no area, so
+      [`add_metadata`][sharedbox.SharedBox.add_metadata] on it raises
+      `MetadataFullError`.
     - `metadata_versions`: how many metadata versions the box keeps at
       most, 2 to 65535, 64 by default.
 
     Calling the class, or [`create`][sharedbox.SharedBox.create], with the
     keyword `metadata` stores that value as the box's first metadata
     version; see [`metadata`][sharedbox.SharedBox.metadata]. A type
-    checker reads the type of the metadata from the class's base, as in
-    `class Motor(SharedBox[Info])`, and accepts the keyword only in
-    `create`.
+    checker takes the type of the metadata a box reads and adds from the
+    class's base, as in `class Motor(SharedBox[Info])`. It accepts the
+    keyword `metadata` only in `create`, and does not check its value.
 
     A field annotated with a `SharedBox` subclass `X`, or with `X | None`
     (or `Optional[X]`), refers to another box, which keeps its own
@@ -557,7 +568,8 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
         `metadata_versions` out of range, or a default that does not fit
         its field (any of the cases below). When the class is called, for
         `metadata` that [`add_metadata`][sharedbox.SharedBox.add_metadata]
-        would refuse with `ValueError`. When the class is called
+        would refuse with `ValueError`, or for any `metadata` when the
+        class sets `metadata_capacity=0`. When the class is called
         or a field is assigned, for a `str`, `bytes` or `Decimal` value longer
         than its capacity, a collection with more elements than its
         capacity, a tuple of the wrong length, an array of the wrong shape,
@@ -629,7 +641,9 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
             class_identity(cls) if identity is None else identity
         )
         layout = build_layout(cls, cls.__sharedbox_identity__)
-        clashes = sorted(RESERVED.intersection(layout.by_name))
+        found = declared(cls)
+        # InitVars too: one named like a method would replace it on the class.
+        clashes = sorted(RESERVED.intersection(attr for attr, _ in found))
         if clashes:
             raise TypeError(
                 f"{cls.__qualname__}: field name(s) {', '.join(clashes)} clash with SharedBox methods"
@@ -638,7 +652,7 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
         if taken:
             raise TypeError(
                 f"{cls.__qualname__}: field name(s) {', '.join(taken)} clash with "
-                "the events group's follow, unfollow and nested"
+                "the events group's follow, unfollow, nested and metadata"
             )
         # Set before the fields are checked, so a default box of a field that names
         # cls is compared with the layout of cls rather than that of a base.
@@ -649,7 +663,6 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
                 raise TypeError(
                     f"{cls.__qualname__}: {attr!r} is a field but has no type annotation"
                 )
-        found = declared(cls)
         known = {attr for attr, _ in found}
         stray = sorted(
             attr
@@ -798,7 +811,7 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
     def __init__(
         self,
         *args: Any,
-        metadata: M | None = None,
+        metadata: object = None,
         **kwargs: Any,
     ) -> None:
         self._open(type(self)._layout_name(), args, kwargs, metadata)
@@ -809,7 +822,7 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
         name: str,
         /,
         *args: Any,
-        metadata: M | None = None,
+        metadata: object = None,
         **kwargs: Any,
     ) -> Self:
         """Create a box under `name` instead of the class's name.
@@ -1019,24 +1032,35 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
         BoxClosedError
             If the box is closed.
         """
-        while True:
-            version = self._segment.metadata_head()
-            if version == 0:
-                return None
-            # Two adds after the head was read can reclaim it; the new head is read then.
-            with contextlib.suppress(MetadataGoneError):
+        version = self._segment.metadata_head()
+        while version != 0:
+            try:
                 return self.metadata_version_of(version)
+            except MetadataGoneError:
+                # Two adds after the head was read can reclaim it; a head that
+                # has not moved is gone for another reason.
+                head = self._segment.metadata_head()
+                if head == version:
+                    raise
+                version = head
+        return None
 
     @property
     def metadata_version(self) -> int:
-        """The number of the box's newest metadata version, 0 if it has none."""
+        """The number of the box's newest metadata version, 0 if it has none.
+
+        Raises
+        ------
+        BoxClosedError
+            If the box is closed.
+        """
         return self._segment.metadata_head()
 
     def metadata_version_of(self, version: int) -> M:
         """Return the value of metadata version `version`.
 
-        A version this box object read before may come from its cache of
-        the 32 versions it used last, also after the box reclaimed it.
+        Each box object decodes a version once and keeps the 32 it used
+        last.
 
         Raises
         ------
@@ -1045,6 +1069,8 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
         BoxClosedError
             If the box is closed.
         """
+        # Raises for a reclaimed version, which the cache may still hold.
+        self._segment.metadata_length(version)
         return cast(
             M,
             self._documents.get(

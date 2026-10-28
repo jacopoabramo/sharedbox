@@ -216,6 +216,14 @@ struct Segment::Impl {
         throw_status(e, name);
     }
 
+    // A metadata read that found no such version, reclaimed or never added, raises MetadataGone.
+    [[noreturn]] void fail_metadata(const error &e, std::uint64_t version) const {
+        if (e.code == status::not_found)
+            throw MetadataGone("box '" + name + "' no longer holds metadata version " + std::to_string(version) +
+                               ", or never did");
+        fail(e);
+    }
+
     template <class T> T check(result<T> &&got) const {
         if (!got)
             fail(got.error());
@@ -576,21 +584,23 @@ std::uint64_t Segment::metadata_head() const {
     return impl_->box.metadata_head();
 }
 
-std::string Segment::read_metadata(std::uint64_t version) const {
+std::uint32_t Segment::metadata_length(std::uint64_t version) const {
     auto guard = impl_->enter();
-    const auto gone = [&](const error &e) {
-        if (e.code == status::not_found)
-            throw MetadataGone("box '" + impl_->name + "' no longer holds metadata version " +
-                               std::to_string(version) + ", or never did");
-        impl_->fail(e);
-    };
     const result<std::uint32_t> length = impl_->box.metadata_length(version);
     if (!length)
-        gone(length.error());
+        impl_->fail_metadata(length.error(), version);
+    return *length;
+}
+
+std::string Segment::read_metadata(std::uint64_t version) const {
+    auto guard = impl_->enter();
+    const result<std::uint32_t> length = impl_->box.metadata_length(version);
+    if (!length)
+        impl_->fail_metadata(length.error(), version);
     std::string out(*length, char{});
     const result<std::uint32_t> read = impl_->box.read_metadata(version, std::as_writable_bytes(std::span(out)));
     if (!read)
-        gone(read.error());
+        impl_->fail_metadata(read.error(), version);
     return out;
 }
 

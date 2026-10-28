@@ -167,6 +167,9 @@ public:
     std::uint64_t create_id() const;
     /// The newest metadata version, 0 for none.
     std::uint64_t metadata_head() const;
+    /// The length of a metadata version's document, without copying it; throws MetadataGone when the box
+    /// no longer holds that version.
+    std::uint32_t metadata_length(std::uint64_t version) const;
     /// The document of a metadata version; throws MetadataGone when the box no longer holds it.
     std::string read_metadata(std::uint64_t version) const;
     /// Adds doc as the next metadata version and returns it; throws MetadataFull for a box without a

@@ -4,6 +4,7 @@ import subprocess
 import sys
 import sysconfig
 from collections.abc import Mapping
+from dataclasses import InitVar
 from types import MappingProxyType
 from typing import Any
 
@@ -248,6 +249,10 @@ class Kept(SharedBox, metadata_versions=2):
     position: int = 0
 
 
+class Roomy(SharedBox, metadata_capacity=1024):
+    position: int = 0
+
+
 def test_box_metadata_end_to_end(unique_name: str) -> None:
     """Read metadata in another process and see the version it adds signalled here."""
     added: queue.Queue[int] = queue.Queue()
@@ -271,6 +276,26 @@ def test_box_metadata_version_is_reclaimed(unique_name: str) -> None:
             box.metadata_version_of(1)
         assert box.metadata == {"step": 4}
     Kept.unlink(unique_name)
+
+
+def test_a_cached_version_is_gone_once_reclaimed(unique_name: str) -> None:
+    """Raise MetadataGoneError for a reclaimed version this box object read before."""
+    with Kept.create(unique_name, metadata={"step": 1}) as box:
+        assert box.metadata_version_of(1) == {"step": 1}
+        for step in (2, 3):
+            box.add_metadata({"step": step})
+        with pytest.raises(MetadataGoneError):
+            box.metadata_version_of(1)
+    Kept.unlink(unique_name)
+
+
+def test_a_class_metadata_capacity_gives_an_area(unique_name: str) -> None:
+    """Add a first metadata version to a box created without metadata whose class sets metadata_capacity."""
+    with Roomy.create(unique_name) as box:
+        assert (box.metadata, box.metadata_version) == (None, 0)
+        assert box.add_metadata({"units": "mm"}) == 1
+        assert box.metadata == {"units": "mm"}
+    Roomy.unlink(unique_name)
 
 
 def test_box_without_metadata(unique_name: str) -> None:
@@ -340,8 +365,16 @@ def test_a_document_longer_than_the_area_is_refused(unique_name: str) -> None:
     Stage.unlink(unique_name)
 
 
+@pytest.mark.parametrize("hint", [int, InitVar[int]], ids=["field", "InitVar"])
 @pytest.mark.parametrize("name", ["metadata", "add_metadata"])
-def test_a_field_named_metadata_is_refused(name: str) -> None:
-    """Refuse a field named like a metadata member of SharedBox when the class is defined."""
+def test_a_field_named_metadata_is_refused(name: str, hint: object) -> None:
+    """Refuse a field or InitVar named like a metadata member of SharedBox when the class is defined."""
     with pytest.raises(TypeError, match=rf"field name\(s\) {name} clash"):
-        type("Clash", (SharedBox,), {"__annotations__": {name: int}})
+        type(
+            "Clash",
+            (SharedBox,),
+            {
+                "__annotations__": {"x": int, name: hint},
+                "__post_init__": lambda self, *initvars: None,
+            },
+        )

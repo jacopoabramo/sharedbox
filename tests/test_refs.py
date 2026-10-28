@@ -34,6 +34,15 @@ if sys.platform.startswith("linux"):
     import resource
 
 
+def box_signature(plain: type) -> str:
+    """Return the signature of the dataclass `plain` followed by the keyword `metadata`, as a box with its fields has."""
+    signature = inspect.signature(plain)
+    metadata = inspect.Parameter(
+        "metadata", inspect.Parameter.KEYWORD_ONLY, default=None, annotation=object
+    )
+    return str(signature.replace(parameters=[*signature.parameters.values(), metadata]))
+
+
 class Motor(SharedBox, identity="sbtest/motor"):
     position: int = 0
 
@@ -122,7 +131,7 @@ def test_reference_fields_take_defaults_as_in_a_dataclass(
     names: Callable[[str], str],
 ) -> None:
     """Check that reference fields take defaults, init=False and KW_ONLY as a dataclass does."""
-    assert str(inspect.signature(Rig)) == str(inspect.signature(PlainRig))
+    assert str(inspect.signature(Rig)) == box_signature(PlainRig)
     with Motor.create(names("m")) as motor:
         with pytest.raises(TypeError, match="missing value"):
             Rig.create(names("r"), motor, tail=motor)
