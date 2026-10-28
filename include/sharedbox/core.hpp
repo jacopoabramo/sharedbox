@@ -1,5 +1,5 @@
 // core.hpp: what every kind of sharedbox segment uses: the result and error types, process
-// liveness, object names, OS mappings and the type codec.
+// liveness, object names, OS mappings, the type codec and the metadata area.
 //
 // C++20, header-only, 64-bit little-endian targets, no exceptions. Names in sharedbox::detail are
 // internal and may change in any release. This header leaves SHAREDBOX_HOT and the Windows macros
@@ -155,6 +155,7 @@ enum class status : int {
     ended = -14,
     interrupted = -15,
     released = -16,
+    metadata_full = -17,
 };
 
 using seconds = std::chrono::duration<double>;
@@ -251,6 +252,7 @@ static_assert(SBX_E_OS == int(status::os) && SBX_E_KIND == int(status::kind_mism
 static_assert(SBX_E_FOREIGN == int(status::foreign));
 static_assert(SBX_E_BUSY == int(status::busy) && SBX_E_ENDED == int(status::ended) &&
               SBX_E_INTERRUPTED == int(status::interrupted));
+static_assert(SBX_E_METADATA_FULL == int(status::metadata_full));
 
 // Why a call failed: the status, the OS error (errno or GetLastError()) read where the OS call failed,
 // and what the call found when that is the reason: the magic for kind_mismatch and foreign, for layout
@@ -2050,6 +2052,393 @@ inline result<void> interrupt_slot(const waiter_table &t, std::uint16_t slot, st
 #endif
     return {};
 }
+} // namespace detail
+
+// What create gives a segment's metadata: the document of version 1, none when initial is empty; the size
+// in bytes of the ring that holds the documents, 0 for no metadata area; and how many versions the area
+// keeps at once.
+struct metadata_spec {
+    std::span<const std::byte> initial;
+    std::uint64_t capacity;
+    std::uint32_t versions;
+};
+
+namespace detail {
+
+inline constexpr std::uint32_t min_metadata_entries = 2;
+inline constexpr std::uint32_t max_metadata_entries = 65535;
+inline constexpr std::uint32_t max_metadata_depth = 32;
+
+// Checks that a document is one CBOR item of the metadata subset with nothing after it.
+class cbor_checker {
+public:
+    explicit cbor_checker(std::span<const std::byte> doc) noexcept
+        : at_(doc.data()), end_(doc.data() + doc.size()) {}
+
+    bool document() noexcept { return item(0, true) && at_ == end_; }
+
+private:
+    std::size_t left() const noexcept { return static_cast<std::size_t>(end_ - at_); }
+
+    // Reads an initial byte and its argument. A reserved additional information and an indefinite length,
+    // which a break also has, are refused here.
+    bool head(std::uint8_t &major, std::uint8_t &info, std::uint64_t &argument) noexcept {
+        if (at_ == end_)
+            return false;
+        const auto initial = static_cast<std::uint8_t>(*at_++);
+        major = initial >> 5;
+        info = initial & 0x1f;
+        if (info < 24) {
+            argument = info;
+            return true;
+        }
+        if (info > 27)
+            return false;
+        const std::size_t n = std::size_t{1} << (info - 24);
+        if (left() < n)
+            return false;
+        argument = 0;
+        for (std::size_t i = 0; i < n; ++i)
+            argument = argument << 8 | static_cast<std::uint8_t>(at_[i]);
+        at_ += n;
+        return true;
+    }
+
+    bool skip(std::uint64_t length, std::string_view &bytes) noexcept {
+        if (length > left())
+            return false;
+        bytes = std::string_view(reinterpret_cast<const char *>(at_), static_cast<std::size_t>(length));
+        at_ += length;
+        return true;
+    }
+
+    bool text_key(bool check, std::string_view &key) noexcept {
+        std::uint8_t major = 0;
+        std::uint8_t info = 0;
+        std::uint64_t length = 0;
+        return head(major, info, length) && major == 3 && skip(length, key) && (!check || utf8_ok(key));
+    }
+
+    // Any strict order would do to find repeated keys; this one is the order of canonical encoders, so their
+    // maps need no second pass.
+    static bool key_before(std::string_view a, std::string_view b) noexcept {
+        return a.size() < b.size() || (a.size() == b.size() && a < b);
+    }
+
+    // An item inside depth arrays and maps. Without check, an item already checked is only stepped over.
+    bool item(std::uint32_t depth, bool check) noexcept {
+        std::uint8_t major = 0;
+        std::uint8_t info = 0;
+        std::uint64_t argument = 0;
+        if (!head(major, info, argument))
+            return false;
+        std::string_view bytes;
+        switch (major) {
+        case 0:
+        case 1:
+            return true;
+        case 2:
+            return skip(argument, bytes);
+        case 3:
+            return skip(argument, bytes) && (!check || utf8_ok(bytes));
+        case 4:
+            if (depth >= max_metadata_depth || argument > left())
+                return false;
+            for (std::uint64_t i = 0; i < argument; ++i)
+                if (!item(depth + 1, check))
+                    return false;
+            return true;
+        case 5:
+            return depth < max_metadata_depth && map(argument, depth + 1, check);
+        case 7:
+            // false, true, null, and half, single and double floats.
+            return (info >= 20 && info <= 22) || (info >= 25 && info <= 27);
+        default:
+            return false;
+        }
+    }
+
+    bool map(std::uint64_t pairs, std::uint32_t depth, bool check) noexcept {
+        if (pairs > left() / 2)
+            return false;
+        const std::byte *first = at_;
+        bool sorted = true;
+        std::string_view previous;
+        for (std::uint64_t i = 0; i < pairs; ++i) {
+            std::string_view key;
+            if (!text_key(check, key))
+                return false;
+            if (i > 0 && !key_before(previous, key))
+                sorted = false;
+            previous = key;
+            if (!item(depth, check))
+                return false;
+        }
+        return !check || sorted || keys_unique(first, pairs, depth);
+    }
+
+    // Whether the keys of the checked map of pairs pairs at first are all different. Refuses the map when
+    // the memory to sort them cannot be had.
+    bool keys_unique(const std::byte *first, std::uint64_t pairs, std::uint32_t depth) noexcept {
+        const auto n = static_cast<std::size_t>(pairs);
+        std::unique_ptr<std::string_view[]> keys(new (std::nothrow) std::string_view[n]);
+        if (!keys)
+            return false;
+        const std::byte *after = at_;
+        at_ = first;
+        for (std::size_t i = 0; i < n; ++i) {
+            static_cast<void>(text_key(false, keys[i]));
+            static_cast<void>(item(depth, false));
+        }
+        at_ = after;
+        std::sort(keys.get(), keys.get() + n, key_before);
+        return std::adjacent_find(keys.get(), keys.get() + n) == keys.get() + n;
+    }
+
+    const std::byte *at_;
+    const std::byte *end_;
+};
+
+} // namespace detail
+
+// Whether doc is one value of the CBOR subset metadata documents use, with nothing after it: integers from
+// -2**64 to 2**64 - 1, byte strings, UTF-8 text, arrays, maps whose keys are text strings each used once,
+// false, true, null and floats. Every length is definite; tags, undefined, the other simple values and
+// nesting deeper than 32 arrays and maps are refused.
+[[nodiscard]] inline bool metadata_ok(std::span<const std::byte> doc) noexcept {
+    return detail::cbor_checker(doc).document();
+}
+
+namespace detail {
+
+// The first line of a metadata area, written once by the creator.
+struct metadata_line {
+    std::uint32_t entries;
+    std::uint32_t reserved0;
+    std::uint64_t ring_size;
+    std::uint64_t reserved1[6];
+};
+
+// The entry of one version. seq is odd while the entry is written, 2 * version + 2 once it holds version
+// whole, and 0 once an add has overwritten the version's bytes in the ring; offset and length place the
+// version's document in the ring.
+struct metadata_entry {
+    std::uint64_t seq;
+    std::uint64_t version;
+    std::uint64_t position;
+    std::uint32_t offset;
+    std::uint32_t length;
+};
+
+static_assert(std::is_standard_layout_v<metadata_line> && std::is_trivially_copyable_v<metadata_line>);
+static_assert(sizeof(metadata_line) == 64 && alignof(metadata_line) == 8);
+static_assert(offsetof(metadata_line, entries) == 0 && offsetof(metadata_line, reserved0) == 4 &&
+              offsetof(metadata_line, ring_size) == 8 && offsetof(metadata_line, reserved1) == 16);
+static_assert(std::is_standard_layout_v<metadata_entry> && std::is_trivially_copyable_v<metadata_entry>);
+static_assert(sizeof(metadata_entry) == 32 && alignof(metadata_entry) == 8);
+static_assert(offsetof(metadata_entry, seq) == 0 && offsetof(metadata_entry, version) == 8 &&
+              offsetof(metadata_entry, position) == 16 && offsetof(metadata_entry, offset) == 24 &&
+              offsetof(metadata_entry, length) == 28);
+static_assert(offsetof(metadata_entry, seq) % align64 == 0 && offsetof(metadata_entry, version) % align64 == 0 &&
+              offsetof(metadata_entry, position) % align64 == 0);
+static_assert(offsetof(metadata_entry, offset) % align32 == 0 && offsetof(metadata_entry, length) % align32 == 0);
+
+// The bytes of an area of entries entries and a ring of ring_size bytes; UINT64_MAX when that overflows.
+inline std::uint64_t metadata_area_size(std::uint32_t entries, std::uint64_t ring_size) noexcept {
+    const std::uint64_t fixed = sizeof(metadata_line) + std::uint64_t{entries} * sizeof(metadata_entry);
+    return ring_size > UINT64_MAX - fixed ? UINT64_MAX : fixed + ring_size;
+}
+
+// The longest document a ring of ring_size bytes takes: a third of it, rounded down to a multiple of 8.
+// Since every document starts at a multiple of 8, a document that wraps to 0 could otherwise reach the
+// start of the newest one.
+inline std::uint64_t max_metadata_document(std::uint64_t ring_size) noexcept { return ring_size / 3 / 8 * 8; }
+
+// Whether a line's geometry can be used at all. An area that fits a u32 size keeps every ring offset a u32.
+inline bool metadata_line_ok(const metadata_line &line) noexcept {
+    return line.entries >= min_metadata_entries && line.entries <= max_metadata_entries && line.ring_size != 0 &&
+           line.ring_size % 8 == 0 && metadata_area_size(line.entries, line.ring_size) <= UINT32_MAX;
+}
+
+// Whether a copy of an area's first line describes an area that fits in metadata_size bytes.
+inline bool metadata_geometry_ok(const metadata_line &line, std::uint32_t metadata_size) noexcept {
+    return metadata_line_ok(line) && metadata_area_size(line.entries, line.ring_size) <= metadata_size;
+}
+
+// Writes the first line and empty entries of an area of metadata_area_size(entries, ring_size) bytes;
+// status::range for a geometry metadata_geometry_ok would refuse.
+inline status init_metadata(std::byte *area, std::uint32_t entries, std::uint64_t ring_size) noexcept {
+    metadata_line line{};
+    line.entries = entries;
+    line.ring_size = ring_size;
+    if (!metadata_line_ok(line))
+        return status::range;
+    std::memcpy(area, &line, sizeof line);
+    std::memset(area + sizeof line, 0, std::size_t{entries} * sizeof(metadata_entry));
+    return status::ok;
+}
+
+inline metadata_line copy_metadata_line(const std::byte *area) noexcept {
+    metadata_line line{};
+    std::memcpy(&line, area, sizeof line);
+    return line;
+}
+
+// The entry version lives in. Not const, because std::atomic_ref, which every access to an entry goes
+// through, takes no const object; readers only load.
+inline metadata_entry &metadata_entry_of(const std::byte *area, const metadata_line &line,
+                                         std::uint64_t version) noexcept {
+    auto *table = reinterpret_cast<metadata_entry *>(const_cast<std::byte *>(area) + sizeof(metadata_line));
+    return table[version % line.entries];
+}
+
+// Loads entry e's seq with acquire, then its fields into out; false when e does not hold version.
+inline bool load_metadata_entry(metadata_entry &e, std::uint64_t version, metadata_entry &out) noexcept {
+    out.seq = atomic(e.seq).load(std::memory_order_acquire);
+    if (out.seq != 2 * version + 2)
+        return false;
+    out.version = atomic(e.version).load(std::memory_order_relaxed);
+    out.position = atomic(e.position).load(std::memory_order_relaxed);
+    out.offset = atomic(e.offset).load(std::memory_order_relaxed);
+    out.length = atomic(e.length).load(std::memory_order_relaxed);
+    return out.version == version;
+}
+
+// Whether e still holds what its seq named when load_metadata_entry read it, after a copy of its fields and
+// of the bytes they place, which the fence keeps before the second load.
+inline bool metadata_entry_kept(metadata_entry &e, std::uint64_t seq) noexcept {
+    std::atomic_thread_fence(std::memory_order_acquire);
+    return atomic(e.seq).load(std::memory_order_relaxed) == seq;
+}
+
+// The length of version's document: status::not_found when the area does not hold version, and
+// status::corrupt when its entry places the document outside the ring.
+inline result<std::uint32_t> metadata_length(const std::byte *area, std::uint64_t version) noexcept {
+    if (version == 0)
+        return unexpected(status::not_found);
+    const metadata_line line = copy_metadata_line(area);
+    if (!metadata_line_ok(line))
+        return unexpected(status::corrupt);
+    metadata_entry &e = metadata_entry_of(area, line, version);
+    metadata_entry copy{};
+    if (!load_metadata_entry(e, version, copy))
+        return unexpected(status::not_found);
+    const bool inside = std::uint64_t{copy.offset} + copy.length <= line.ring_size;
+    if (!metadata_entry_kept(e, copy.seq))
+        return unexpected(status::not_found);
+    if (!inside)
+        return unexpected(status::corrupt);
+    return copy.length;
+}
+
+// Copies version's document into out and returns its length. As metadata_length, and status::range for an
+// out shorter than the document; status::not_found also when the version is overwritten during the copy.
+inline result<std::uint32_t> read_metadata(const std::byte *area, std::uint64_t version,
+                                           std::span<std::byte> out) noexcept {
+    if (version == 0)
+        return unexpected(status::not_found);
+    const metadata_line line = copy_metadata_line(area);
+    if (!metadata_line_ok(line))
+        return unexpected(status::corrupt);
+    metadata_entry &e = metadata_entry_of(area, line, version);
+    metadata_entry copy{};
+    if (!load_metadata_entry(e, version, copy))
+        return unexpected(status::not_found);
+    // offset and length may come from an add that reuses the entry, so a refusal stands only once seq shows
+    // the entry unchanged.
+    if (std::uint64_t{copy.offset} + copy.length > line.ring_size)
+        return unexpected(metadata_entry_kept(e, copy.seq) ? status::corrupt : status::not_found);
+    if (copy.length > out.size())
+        return unexpected(metadata_entry_kept(e, copy.seq) ? status::range : status::not_found);
+    const std::byte *ring = area + sizeof(metadata_line) + std::uint64_t{line.entries} * sizeof(metadata_entry);
+    if (copy.length != 0)
+        std::memcpy(out.data(), ring + copy.offset, copy.length);
+    if (!metadata_entry_kept(e, copy.seq))
+        return unexpected(status::not_found);
+    return copy.length;
+}
+
+// The newest version at or before head whose position is at most position, found by walking back at most
+// one step per entry. status::not_found when position comes before every version still held, or when a
+// version the walk passes has been overwritten.
+inline result<std::uint64_t> metadata_version_at(const std::byte *area, std::uint64_t head,
+                                                 std::uint64_t position) noexcept {
+    const metadata_line line = copy_metadata_line(area);
+    if (!metadata_line_ok(line))
+        return unexpected(status::corrupt);
+    std::uint64_t steps = 0;
+    for (std::uint64_t v = head; v != 0 && steps < line.entries; --v, ++steps) {
+        metadata_entry &e = metadata_entry_of(area, line, v);
+        metadata_entry copy{};
+        if (!load_metadata_entry(e, v, copy) || !metadata_entry_kept(e, copy.seq))
+            return unexpected(status::not_found);
+        if (copy.position <= position)
+            return v;
+    }
+    return unexpected(status::not_found);
+}
+
+// Adds doc as version head + 1, taking effect at position, stores it in head and returns it. Only one
+// process at a time adds to an area. The add writes over the entry of an older version, and over the
+// bytes of older versions its document covers; may_reclaim, called with a copy of each such version's
+// entry, says whether that version may go, and the add gives status::metadata_full when one may not. A
+// document outside the subset or longer than max_metadata_document gives status::range. Both refusals
+// write nothing.
+template <class F>
+    requires std::is_invocable_r_v<bool, F &, const metadata_entry &>
+result<std::uint64_t> add_metadata(std::byte *area, std::atomic_ref<std::uint64_t> head,
+                                   std::span<const std::byte> doc, std::uint64_t position, F &&may_reclaim) {
+    const metadata_line line = copy_metadata_line(area);
+    if (!metadata_line_ok(line))
+        return unexpected(status::corrupt);
+    if (doc.size() > max_metadata_document(line.ring_size) || !metadata_ok(doc))
+        return unexpected(status::range);
+    const std::uint64_t newest = head.load(std::memory_order_acquire);
+    const std::uint64_t v = newest + 1;
+    const std::uint64_t size = doc.size();
+    std::uint64_t at = 0;
+    if (newest != 0) {
+        metadata_entry last{};
+        if (!load_metadata_entry(metadata_entry_of(area, line, newest), newest, last) ||
+            std::uint64_t{last.offset} + last.length > line.ring_size)
+            return unexpected(status::corrupt);
+        const std::uint64_t end = round_up(std::uint64_t{last.offset} + last.length, 8);
+        if (end + size <= line.ring_size)
+            at = end;
+    }
+    // The version whose entry v takes, 0 for none; the entries of all versions before it are taken already.
+    const std::uint64_t reused = v > line.entries ? v - line.entries : 0;
+    const std::uint64_t oldest = reused == 0 ? 1 : reused;
+    const auto overwritten = [&](std::uint64_t u, const metadata_entry &e) noexcept {
+        return u == reused || (at < std::uint64_t{e.offset} + e.length && e.offset < at + size);
+    };
+    for (std::uint64_t u = oldest; u < newest; ++u) {
+        metadata_entry e{};
+        if (load_metadata_entry(metadata_entry_of(area, line, u), u, e) && overwritten(u, e) && !may_reclaim(e))
+            return unexpected(status::metadata_full);
+    }
+    for (std::uint64_t u = oldest; u < newest; ++u) {
+        metadata_entry &shared = metadata_entry_of(area, line, u);
+        metadata_entry e{};
+        if (u != reused && load_metadata_entry(shared, u, e) && overwritten(u, e))
+            atomic(shared.seq).store(0, std::memory_order_relaxed);
+    }
+    metadata_entry &slot = metadata_entry_of(area, line, v);
+    atomic(slot.seq).store(2 * v + 1, std::memory_order_relaxed);
+    // Keeps the stores that follow from moving before the seq stores above, so a reader whose copy sees
+    // any of them sees its entry's seq changed too.
+    std::atomic_thread_fence(std::memory_order_release);
+    std::byte *ring = area + sizeof(metadata_line) + std::uint64_t{line.entries} * sizeof(metadata_entry);
+    std::memcpy(ring + at, doc.data(), size);
+    atomic(slot.version).store(v, std::memory_order_relaxed);
+    atomic(slot.position).store(position, std::memory_order_relaxed);
+    atomic(slot.offset).store(static_cast<std::uint32_t>(at), std::memory_order_relaxed);
+    atomic(slot.length).store(static_cast<std::uint32_t>(size), std::memory_order_relaxed);
+    atomic(slot.seq).store(2 * v + 2, std::memory_order_release);
+    head.store(v, std::memory_order_release);
+    return v;
+}
+
 } // namespace detail
 
 // Removes the name, as shm_unlink does: open handles keep working. Does nothing on Windows, where the
