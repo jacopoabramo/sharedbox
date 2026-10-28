@@ -1,6 +1,6 @@
 import uuid
 from dataclasses import dataclass
-from typing import Annotated
+from typing import Annotated, Literal
 
 import numpy as np
 import numpy.typing as npt
@@ -18,6 +18,7 @@ from hypothesis.stateful import (
 
 from sharedbox import (
     MaxShape,
+    ReaderReleased,
     SharedReceiveStream,
     SharedSendStream,
     SharedStream,
@@ -41,6 +42,8 @@ class Model:
 class StreamMachine(RuleBasedStateMachine):
     """One stream with one sender and several readers, against a list of what was sent."""
 
+    on_full: Literal["wait", "release"] = "wait"
+
     def __init__(self) -> None:
         super().__init__()
         self.name = ""
@@ -48,6 +51,7 @@ class StreamMachine(RuleBasedStateMachine):
         self.sender: SharedSendStream[int]
         self.sent: list[int] = []
         self.readers: list[Model] = []
+        self.floor = 0
 
     @initialize()
     def create(self) -> None:
@@ -56,7 +60,7 @@ class StreamMachine(RuleBasedStateMachine):
         self.stream = SharedStream.create(
             int, self.name, capacity=CAPACITY, max_readers=MAX_READERS
         )
-        self.sender = self.stream.sender()
+        self.sender = self.stream.sender(on_full=self.on_full)
 
     def blocked(self) -> bool:
         """Whether some lossless reader is a full ring behind."""
@@ -78,9 +82,11 @@ class StreamMachine(RuleBasedStateMachine):
     @precondition(lambda self: len(self.readers) < MAX_READERS)
     @rule(mode=st.sampled_from(["lossless", "lossy", "latest"]), oldest=st.booleans())
     def open_reader(self, mode: str, oldest: bool) -> None:
-        """Open a reader at the newest or the oldest buffered item."""
+        """Open a reader at the newest or the oldest buffered item; a lossless one starts no lower than the release floor."""
         n = len(self.sent)
         position = max(n - CAPACITY, 0) if oldest else max(n - 1, 0)
+        if mode == "lossless":
+            position = max(position, self.floor)
         reader = self.stream.reader(mode=mode, start="oldest" if oldest else "newest")  # type: ignore[arg-type]
         self.readers.append(Model(reader, mode, position))
 
@@ -88,7 +94,10 @@ class StreamMachine(RuleBasedStateMachine):
     @rule(data=st.data())
     def receive(self, data: st.DataObject) -> None:
         """Receive without waiting and expect the item the mode's rules give, or WouldBlock."""
-        model = data.draw(st.sampled_from(self.readers))
+        self.expect_receive(data.draw(st.sampled_from(self.readers)))
+
+    def expect_receive(self, model: Model) -> None:
+        """Receive from `model`'s reader and check the result against the model."""
         n = len(self.sent)
         if model.position == n:
             with pytest.raises(WouldBlock):
@@ -156,3 +165,39 @@ def test_max_shape_arrays_come_back_equal(cubes: list[npt.NDArray[np.uint16]]) -
                 np.testing.assert_array_equal(got, cube)
     finally:
         SharedStream.unlink(name)
+
+
+class ReleaseMachine(StreamMachine):
+    """The same stream with a sender that releases lossless readers instead of failing."""
+
+    on_full: Literal["wait", "release"] = "release"
+
+    @rule(value=st.integers(-(2**63), 2**63 - 1))
+    def send(self, value: int) -> None:
+        """Send without waiting; a full ring behind raises the floor of the lossless readers."""
+        n = len(self.sent)
+        if any(
+            m.mode == "lossless"
+            and m.position >= self.floor
+            and n >= m.position + CAPACITY
+            for m in self.readers
+        ):
+            self.floor = max(self.floor, n - CAPACITY + 1)
+        self.sender.send_nowait(value)
+        self.sent.append(value)
+
+    def expect_receive(self, model: Model) -> None:
+        """Receive from `model`'s reader; a lossless one below the floor is released first."""
+        n = len(self.sent)
+        if model.mode == "lossless" and model.position < self.floor:
+            resume = max(n - 1, self.floor)
+            with pytest.raises(ReaderReleased) as released:
+                model.reader.receive_nowait()
+            assert released.value.missed == resume - model.position
+            model.missed += resume - model.position
+            model.position = resume
+            return
+        super().expect_receive(model)
+
+
+TestReleaseMachine = ReleaseMachine.TestCase

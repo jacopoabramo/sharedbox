@@ -1154,6 +1154,17 @@ class WouldBlock(Exception):
 class EndOfStream(Exception):
     """The stream's sender closed or died and every item it sent was received."""
 
+class ReaderReleased(Exception):
+    """The sender released a lossless reader that held it back; the reader goes on at the newest item.
+
+    Attributes
+    ----------
+    missed
+        The items this reader lost to the release.
+    """
+
+    missed: int
+
 class StreamBusyError(RuntimeError):
     """Another live end holds the stream's sender."""
 
@@ -1164,8 +1175,8 @@ class _Interrupted(Exception): ...
 
 @disjoint_base
 class Sender:
-    def send(self, value: object, timeout: float) -> int: ...
-    def reserve(self, timeout: float) -> None: ...
+    def send(self, value: object, timeout: float, release: bool = False) -> int: ...
+    def reserve(self, timeout: float, release: bool = False) -> None: ...
     def commit(self, value: object) -> int: ...
     def abandon(self) -> None: ...
     def interrupt(self) -> None: ...

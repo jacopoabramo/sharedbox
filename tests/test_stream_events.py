@@ -486,3 +486,34 @@ def test_an_item_handed_back_does_not_move_the_position(unique_name: str) -> Non
         assert positions == [0]
         assert received == 11
         assert reader.position == 1
+
+
+def test_delivery_reports_a_release_and_goes_on(unique_name: str) -> None:
+    """Emit released once with the lost count, then deliver the items sent after it."""
+    with SharedStream.create(int, unique_name, capacity=4) as stream:
+        reader = stream.reader()
+        sender = stream.sender(on_full="release")
+        entered, gate = threading.Event(), threading.Event()
+        got: list[int] = []
+        released: list[int] = []
+
+        def on_received(item: int, position: int) -> None:
+            got.append(item)
+            if item == 0:
+                entered.set()
+                gate.wait(10)
+
+        reader.events.released.connect(released.append)
+        reader.events.received.connect(on_received)
+        sender.send(0, timeout=5)
+        assert entered.wait(5)
+        for i in range(1, 5):
+            sender.send(i, timeout=5)
+        sender.send(5, timeout=0.1)
+        gate.set()
+        wait_until(lambda: got == [0, 5])
+        sender.send(6, timeout=5)
+        wait_until(lambda: got == [0, 5, 6])
+        reader.events.disconnect()
+        assert got == [0, 5, 6]
+        assert released == [4]

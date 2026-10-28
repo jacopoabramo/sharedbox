@@ -15,7 +15,7 @@ sharedbox/
 |-- include/sharedbox/
 |   |-- core.hpp               what every segment kind uses: result and error, liveness, names, mappings, the open step, waiter slots, the type codec
 |   |-- box.hpp                box layout 3.1 and its protocols: create, publish, open, lock, read, write, capsule handle
-|   |-- stream.hpp             stream layout 1.2: create, open, the sender, readers, the gate, dead ends
+|   |-- stream.hpp             stream layout 1.3: create, open, the sender, readers, the gate, dead ends
 |   |-- sharedbox.hpp          includes every kind; the header consumers include
 |   |-- sharedbox_c.h          minimal C interface: sbx_open, sbx_import, sbx_read, sbx_write, sbx_schema_hash, sbx_release, sbx_field_desc, typed sbx_read_* and sbx_write_*
 |   `-- sharedbox_c.cpp        its implementation, compiled by the consumer (CMake target sharedbox::c)

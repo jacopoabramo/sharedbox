@@ -10,7 +10,7 @@ from typing import Annotated, Literal
 
 import numpy as np
 
-from sharedbox import DType, MaxShape, Shape, SharedStream
+from sharedbox import DType, MaxShape, ReaderReleased, Shape, SharedStream
 
 Mode = Literal["lossless", "lossy", "latest"]
 SenderKind = Literal["send", "asend"]
@@ -200,3 +200,26 @@ def reserve_then_die(name: str, ready: Event) -> None:
         slot.item.image.fill(7)
         ready.set()
         os._exit(0)
+
+
+def read_when_released(
+    name: str, ready: Event, go: Event, results: "Queue[tuple[str, int, int] | str]"
+) -> None:
+    """Open a lossless reader, wait for `go`, then report one receive's error and the next item."""
+    stream = SharedStream.attach(int, name)
+    reader = stream.reader(mode="lossless")
+    ready.set()
+    try:
+        assert go.wait(60)
+        try:
+            reader.receive(timeout=10)
+        except ReaderReleased as error:
+            results.put(
+                (type(error).__name__, error.missed, reader.receive(timeout=10))
+            )
+        else:
+            results.put(("no exception", 0, 0))
+    except Exception:
+        results.put(traceback.format_exc())
+    finally:
+        stream.close()

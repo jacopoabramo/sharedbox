@@ -15,10 +15,10 @@ to understand the ideas first, read
 `include/sharedbox/stream.hpp` implement this contract, and the Python
 extension runs on the first two.
 
-It describes core version 1.0, box layout 3.1 and stream layout 1.2. It
+It describes core version 1.0, box layout 3.1 and stream layout 1.3. It
 also opens box layout 3.0 and stream layout 1.0, which `sharedbox` 0.6.0
-writes, stream layout 1.1, which 0.7.0 writes, and nothing older: box layouts 1.0 and 2.0, which 0.5 and earlier
-wrote, are refused.
+writes, stream layout 1.1, which 0.7.0 writes, and nothing older: box
+layouts 1.0 and 2.0, which 0.5 and earlier wrote, are refused.
 
 ## Goal
 
@@ -444,7 +444,7 @@ attacher agree on it and on the class's meaning.
 A stream is a ring of `capacity` slots, at least 2, that one sender writes
 and up to `max_readers` readers (1 to 4095) copy out of. Its common line
 holds the magic `SBX_STRM` (`0x4D5254535F584253`), `kind_major` 1 and
-`kind_minor` 2 (stream layout 1.2), and a `waiter_slots` of
+`kind_minor` 3 (stream layout 1.3), and a `waiter_slots` of
 `max_readers + 1`, one slot for each reader and one for the sender. Every
 size and offset is 64-bit, so a ring may pass 4 GiB; the slots end at or
 below 2^46 bytes. The mapping holds, from offset 0:
@@ -485,7 +485,9 @@ struct stream_header {              // sharedbox::stream_header, 256 bytes
     uint32_t data_word;             // 160  readers sleep on it (Linux)
     uint32_t readers_epoch;         // 164  changed when a reader joins, leaves or is freed
     uint32_t space_waiting;         // 168  sender threads asleep on space_word
-    uint8_t  reserved3[20];         // 172  zero
+    uint8_t  reserved3a[4];         // 172  zero
+    uint64_t release_floor;         // 176  marked lossless readers below it do not block
+    uint8_t  reserved3b[8];         // 184  zero
     // line 3: the readers' words
     uint32_t space_word;            // 192  the sender sleeps on it (Linux)
     uint32_t lossless_readers;      // 196  open lossless readers
@@ -500,12 +502,25 @@ struct reader_entry {               // sharedbox::reader_entry, 64 bytes
     uint64_t owner_pidns;           // 16  pid namespace; 0 on Windows
     uint32_t owner_pid;             // 24  0 = free
     uint32_t mode;                  // 28  0 until the entry has a position, 1 lossless, 2 lossy, 3 latest
-    uint8_t  reserved[32];          // 32  zero
+    uint64_t release_mark;          // 32  owner_start of a reader that can be released
+    uint32_t release_pid;           // 40  owner_pid of a reader that can be released
+    uint8_t  reserved[20];          // 44  zero
 };
 ```
 
 - `waiters` and the waiter slots are the core's; see Waiter slots. A waiter
   slot's index is not tied to a reader entry's index.
+- `release_floor` is a position, 0 until a sender first releases a reader.
+  Only the sender stores it, and it only grows. A lossless reader whose
+  entry is marked and whose `position` is below it does not hold the sender
+  back; see Send and receive.
+- An entry is marked while its `release_mark` equals its `owner_start` and
+  its `release_pid` equals its `owner_pid`. A reader of stream layout 1.3
+  stores its own start time and pid there when it joins; a reader of an
+  older layout never writes the two fields, so an entry it takes over keeps
+  another process's start and pid and is not marked, even when the two
+  processes started at the same time. The sender
+  never releases a reader whose entry is not marked.
 - Slot `i` starts at `slots + i * slot_size`. It holds an 8-byte `seq` at
   its start and the item at `max(8, item alignment)`, so an item aligned to
   64 bytes (an array, or a record holding one) starts 64 bytes in.
@@ -566,7 +581,10 @@ layout version of its kind, for the rest. Each has a major and a minor.
   as the member of an optional, which a reader of box layout 3.0 or stream
   layout 1.0 refuses with `status::corrupt`. Stream layout 1.2 adds kind
   75, `max_array`, which a reader of stream layout 1.1 or 1.0 refuses with
-  `status::corrupt` as a stream item or inside one.
+  `status::corrupt` as a stream item or inside one. Stream layout 1.3 adds
+  `release_floor`, `release_mark` and `release_pid` from reserved bytes; a
+  stream that an older version created keeps them at 0, so none of its
+  readers is released until a sender of 1.3 raises the floor.
 - A change to how existing bytes are read or written raises a major: the
   core's (the common line, the object names, liveness) raises `core_major`,
   and a kind's own (the sequence lock, field encoding, the slot layout)
@@ -861,7 +879,17 @@ Send:
    rescans up to 1000 times (`spin_before_sleep`), then sleeps on
    `space_word` in steps of at most 0.1 s (`liveness_delay`), counting
    itself in `space_waiting` while it sleeps. `status::timeout` follows when
-   the timeout passes.
+   the timeout passes. The scan leaves out every marked entry whose
+   `position` is below `release_floor`.
+   A send under `on_full::release` whose wait times out, a timeout of 0
+   included, releases the readers that hold it back instead. It takes the
+   candidate floor `p - capacity + 1`, since exactly the readers with
+   `position + capacity <= p` hold position `p` back, and scans the table
+   again with that floor. If the send can then go on, the sender stores
+   `release_floor`, issues a release fence and goes on to step 2. If an
+   entry that is not marked still holds it back, it stores nothing and gives
+   `status::timeout`. The stored floor never goes down. A wait that ends in
+   `status::interrupted` releases nothing.
 2. Store `seq = 2p + 1`, then a release fence, copy the item, store
    `seq = 2p + 2` with release, and store `write_pos = p + 1` with release.
 3. A sequentially consistent fence, then, if `data_waiting` is not 0, add 1
@@ -894,9 +922,17 @@ Receive, for a reader whose next position is `r`:
 3. Load `seq`, which must be `2r + 2`, copy the item, issue an acquire
    fence and load `seq` again. If it changed, the sender wrote a later
    position over the slot. A lossy or latest reader counts the item as
-   missed and moves on. A lossless reader moves on without counting until it
-   has received its first item; after that the gate rules this out, and a
-   lossless reader that still sees it gets `status::corrupt`.
+   missed and moves on. A lossless reader first issues an acquire fence and
+   loads `release_floor` with acquire. The sender stored the floor before
+   the release fence that comes before the odd `seq` the copy failed on, so
+   the reader sees it. If `r` is below the floor the reader was released: it
+   moves to `max(write_pos - 1, release_floor)`, counts the positions it
+   passes as missed, stores the new `position` with release, adds 1 to
+   `readers_epoch`, issues a sequentially consistent fence, wakes a waiting
+   sender as in step 4 and gives `status::released`. It then reads as if it had just joined at the newest
+   item. A lossless reader that is not below the floor moves on without
+   counting until it has received its first item; after that the gate rules
+   this out, and it gets `status::corrupt`.
 4. Store `position = r + 1` in its entry with release. A lossless reader
    then issues a sequentially consistent fence and, if `space_waiting` is
    not 0, adds 1 to `space_word` and wakes it.
@@ -914,7 +950,10 @@ A reader joins in this order:
    gives the waiter slot back and `status::no_slot`.
 3. Store the starting `position` with release: for `start_at::newest`
    `write_pos - 1`, or 0 before the first send, and for `start_at::oldest`
-   `write_pos - capacity`, or 0.
+   `write_pos - capacity`, or 0. Before it, the reader stores its start time
+   in `release_mark` and its pid in `release_pid`. A lossless reader starts
+   no lower than `release_floor`, loaded with acquire, since a reader below
+   the floor would be released at its first receive.
 4. If the reader is lossless, add 1 to `lossless_readers`. Then store its
    `mode` with release, add 1 to `readers_epoch`, and issue a sequentially
    consistent fence. The count comes first so that a process killed in
@@ -1076,7 +1115,7 @@ inline constexpr std::uint64_t stream_magic = 0x4D5254535F584253;    // "SBX_STR
 enum class status : int { ok = 0, exists = -1, not_found = -2, layout = -3, schema = -4,
                           corrupt = -5, lock_timeout = -6, timeout = -7, no_slot = -8,
                           range = -9, os = -10, kind_mismatch = -11, foreign = -12,
-                          busy = -13, ended = -14, interrupted = -15 };
+                          busy = -13, ended = -14, interrupted = -15, released = -16 };
 
 struct field_spec { std::uint32_t offset; std::uint32_t capacity; std::uint8_t kind; };
 struct value { std::uint16_t field; std::span<const std::byte> bytes; };
@@ -1217,7 +1256,7 @@ The header also declares these names:
 ### `stream.hpp`
 
 ```cpp
-inline constexpr std::uint16_t stream_layout_major = 1, stream_layout_minor = 0;
+inline constexpr std::uint16_t stream_layout_major = 1, stream_layout_minor = 3;
 inline constexpr std::uint32_t stream_header_size = 256;
 inline constexpr std::uint64_t min_stream_capacity = 2;
 inline constexpr std::uint32_t max_stream_readers = max_waiter_slots - 1;   // 4095
@@ -1228,6 +1267,7 @@ inline constexpr unsigned spin_before_sleep = 1000; // checks a waiting end make
 
 enum class read_mode : std::uint32_t { lossless = 1, lossy = 2, latest = 3 };
 enum class start_at { newest, oldest };
+enum class on_full { wait, release };
 
 struct received { std::uint64_t position; std::uint64_t missed; };
 struct reader_info { std::uint64_t position; read_mode mode; std::uint32_t pid; };
@@ -1235,10 +1275,11 @@ struct reader_info { std::uint64_t position; read_mode mode; std::uint32_t pid; 
 class stream_sender {                       // move-only; the destructor closes it
 public:
     std::uint64_t item_size() const noexcept;
-    result<std::uint64_t> send(std::span<const std::byte> item, seconds timeout);
+    result<std::uint64_t> send(std::span<const std::byte> item, seconds timeout,
+                               on_full policy = on_full::wait);
     template <class F> requires std::is_nothrow_invocable_v<F &, std::span<std::byte>>
-    result<std::uint64_t> send_with(F &&fill, seconds timeout);
-    result<std::span<std::byte>> begin(seconds timeout);
+    result<std::uint64_t> send_with(F &&fill, seconds timeout, on_full policy = on_full::wait);
+    result<std::span<std::byte>> begin(seconds timeout, on_full policy = on_full::wait);
     result<std::uint64_t> publish() noexcept;
     void abandon() noexcept;
     result<void> interrupt();
@@ -1307,7 +1348,10 @@ Stream layout). Every function returning a `result` is `[[nodiscard]]`.
   `status::timeout` while a lossless reader is a full ring behind (at once
   for a timeout of 0), `status::interrupted` after `interrupt()`, and
   `status::range` for a sender that is closed, used from a child of `fork`
-  or given an item of the wrong size.
+  or given an item of the wrong size. Under `on_full::release`, a timeout
+  releases the marked lossless readers that hold the send back and sends
+  instead; it still gives `status::timeout` while a reader whose entry is
+  not marked holds the send back (see Send and receive).
 - `begin` reserves the next slot as `send` does and returns its
   `item_size()` bytes to fill in place, which stay valid until `publish` or
   `abandon`. It gives the status codes `send` gives, except the one for an
@@ -1324,6 +1368,12 @@ Stream layout). Every function returning a `result` is `[[nodiscard]]`.
   time (at once for 0), `status::ended` once the sender has closed or died
   and every published item was received, `status::interrupted` after
   `interrupt()`, and `status::range` for an `out` shorter than `item_size()`.
+  A lossless reader that a sender released gets `status::released`, already
+  moved to the newest item, so its next receive works.
+- `missed()` counts the items this reader skipped. For a lossless reader it
+  counts the items lost to releases, and the count of one release is
+  `missed()` after the call that gave `status::released` minus `missed()`
+  before it.
 - `interrupt` ends the wait in progress with `status::interrupted`. Sent
   while nothing waits, it ends the next wait. It must not overlap `close`.
 - `close` on the sender ends the stream for good. `close` on a reader frees
