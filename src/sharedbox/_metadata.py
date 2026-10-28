@@ -14,7 +14,7 @@ if sys.version_info >= (3, 13):
 else:
     from typing_extensions import TypeVar
 
-M = TypeVar("M", covariant=True, default=Mapping[str, Any])  # noqa: PLC0105
+M = TypeVar("M", covariant=True, bound=Mapping[str, Any], default=Mapping[str, Any])  # noqa: PLC0105
 
 MAX_DEPTH: Final = 32
 INT_MIN: Final = -(2**64)

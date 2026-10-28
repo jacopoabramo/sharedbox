@@ -738,7 +738,7 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
                 )
             cls.__max_waiters__ = max_waiters
         cls.__events_class__ = events_class(cls, layout)
-        install_native_methods(cls)  # type: ignore[arg-type]
+        install_native_methods(cls)
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         self._open(type(self)._layout_name(), args, kwargs)
@@ -817,7 +817,7 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
         self._finalizer = weakref.finalize(
             self, release, self._watcher, self._segment, False
         )
-        LIVE.add(self)  # type: ignore[arg-type]
+        LIVE.add(self)
 
     def _open(self, name: str, args: tuple[Any, ...], values: dict[str, Any]) -> None:
         cls = type(self)
@@ -1064,7 +1064,7 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
         seen = {(self.name, self._segment.create_id)}
         # A stack instead of recursion, so a chain of boxes can be longer than the recursion limit.
         stack: list[tuple[SharedBox, dict[str, Any], Iterator[FieldSpec]]] = [
-            (self, values, iter(type(self).__layout__.refs))  # type: ignore[list-item]
+            (self, values, iter(type(self).__layout__.refs))
         ]
         while stack:
             box, box_values, specs = stack[-1]
@@ -1147,7 +1147,7 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
         """
         cls = type(self)
         return self._watcher.events(
-            partial(box_events, cls, self._segment, self._watcher),  # type: ignore[arg-type]
+            partial(box_events, cls, self._segment, self._watcher),
             cls.__layout__.fields,
         )
 
@@ -1288,7 +1288,7 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
 
     def _close(self, wait: bool) -> None:
         # A list instead of recursion, so a chain of boxes can be longer than the recursion limit.
-        boxes: list[SharedBox] = [self]  # type: ignore[list-item]
+        boxes: list[SharedBox] = [self]
         error: BaseException | None = None
         while boxes:
             box = boxes.pop()

@@ -64,3 +64,7 @@ def check_covariance(motor: Motor, stream: SharedStream[Item, Info]) -> None:
     takes_class(Motor)
     takes_stream(stream)
     assert_type(takes_class_var(Motor), type[Motor])
+
+
+def check_bound(box: SharedBox[int], stream: SharedStream[Item, int]) -> None:  # type: ignore[type-var]
+    pass
