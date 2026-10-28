@@ -431,7 +431,8 @@ def test_another_major_version_is_refused(unique_name: str) -> None:
     segment = create(unique_name)
     patch_header(unique_name, 12, "<H", 4)
     with pytest.raises(
-        SchemaMismatchError, match=r"uses core version 1\.0 and box layout 4\.1"
+        SchemaMismatchError,
+        match=rf"uses core version 1\.0 and box layout 4\.{LAYOUT_VERSION[1]}",
     ):
         attach(unique_name)
     segment.close()
