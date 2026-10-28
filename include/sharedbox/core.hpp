@@ -134,6 +134,8 @@ inline constexpr std::uint8_t kind_list = 71;
 inline constexpr std::uint8_t kind_set = 72;
 inline constexpr std::uint8_t kind_dict = 73;
 inline constexpr std::uint8_t kind_array = 74;
+// An array of a stream item that stores its own shape, up to the maximum its description gives.
+inline constexpr std::uint8_t kind_max_array = 75;
 
 enum class status : int {
     ok = 0,
@@ -829,7 +831,7 @@ inline bool prefixed(std::uint32_t kind) noexcept {
 }
 
 inline bool kind_known(std::uint32_t kind) noexcept {
-    return kind <= kind_datetime64 || (kind >= kind_enum && kind <= kind_array);
+    return kind <= kind_datetime64 || (kind >= kind_enum && kind <= kind_max_array);
 }
 
 // Alignment of a fixed kind within the record; 1 for a kind this header does not know, whose alignment
@@ -976,10 +978,14 @@ class type_parser;
 // fixed once parse returns. Movable, not copyable; copy() parses the same bytes into another table.
 class type_table {
 public:
-    // Copies table and checks it with the field entries, capacity_and_kind as stored. On failure the
-    // table is left empty.
-    status parse(std::span<const std::byte> table, std::span<const std::uint32_t> entries) noexcept;
-    status copy(type_table &out) const noexcept { return out.parse(bytes(), {entries_.get(), field_count_}); }
+    // Copies table and checks it with the field entries, capacity_and_kind as stored. max_arrays lets a
+    // max_array be an entry's type, or a member reached from one through records and tuples alone, as a
+    // stream item's table may hold it. On failure the table is left empty.
+    status parse(std::span<const std::byte> table, std::span<const std::uint32_t> entries,
+                 bool max_arrays = false) noexcept;
+    status copy(type_table &out) const noexcept {
+        return out.parse(bytes(), {entries_.get(), field_count_}, max_arrays_);
+    }
 
     std::span<const std::byte> bytes() const noexcept { return {bytes_.get(), size_}; }
     std::uint32_t node_count() const noexcept { return node_count_; }
@@ -997,6 +1003,7 @@ private:
     std::uint32_t size_ = 0;
     std::unique_ptr<std::uint32_t[]> entries_;
     std::uint16_t field_count_ = 0;
+    bool max_arrays_ = false;
     std::uint32_t node_count_ = 0;
     std::unique_ptr<type_ref[]> fields_;
     std::unique_ptr<type_node[]> nodes_;
@@ -1011,8 +1018,8 @@ private:
 // members, which needs their types.
 class type_parser {
 public:
-    type_parser(std::span<const std::byte> table, std::uint64_t *seen, type_table *out) noexcept
-        : table_(table), seen_(seen), out_(out) {}
+    type_parser(std::span<const std::byte> table, std::uint64_t *seen, type_table *out, bool max_arrays) noexcept
+        : table_(table), seen_(seen), out_(out), max_arrays_(max_arrays) {}
 
     type_counts counts;
 
@@ -1021,7 +1028,7 @@ public:
         const std::uint32_t low = entry & capacity_mask;
         if (!described(kind))
             return fixed(kind, low, true, out);
-        return describe(kind, low, no_parent, 1, true, true, out);
+        return describe(kind, low, no_parent, 1, true, true, max_arrays_, out);
     }
 
 private:
@@ -1140,7 +1147,7 @@ private:
         return true;
     }
 
-    status member(const std::byte *entry, std::uint32_t parent, std::uint32_t depth, bool array_ok,
+    status member(const std::byte *entry, std::uint32_t parent, std::uint32_t depth, bool array_ok, bool max_ok,
                   type_member &out) noexcept {
         std::uint32_t value = 0;
         std::memcpy(&out.offset, entry, sizeof out.offset);
@@ -1149,20 +1156,21 @@ private:
         const std::uint32_t low = value & capacity_mask;
         if (!described(kind))
             return fixed(kind, low, false, out.type);
-        return describe(kind, low, parent, depth + 1, false, array_ok, out.type);
+        return describe(kind, low, parent, depth + 1, false, array_ok, max_ok, out.type);
     }
 
     status describe(std::uint8_t kind, std::uint32_t at, std::uint32_t parent, std::uint32_t depth, bool top,
-                    bool array_ok, type_ref &out) noexcept;
+                    bool array_ok, bool max_ok, type_ref &out) noexcept;
     status place(std::uint8_t kind, const type_head &head, type_node &node, type_ref &out) noexcept;
 
     std::span<const std::byte> table_;
     std::uint64_t *seen_;
     type_table *out_;
+    bool max_arrays_;
 };
 
 inline status type_parser::describe(std::uint8_t kind, std::uint32_t at, std::uint32_t parent, std::uint32_t depth,
-                                    bool top, bool array_ok, type_ref &out) noexcept {
+                                    bool top, bool array_ok, bool max_ok, type_ref &out) noexcept {
     const std::size_t size = table_.size();
     // A child after its parent: with every description read once, the walk can never return to one.
     if (depth > max_type_depth || at % 8 != 0 || size < 8 || at > size - 8 ||
@@ -1179,7 +1187,7 @@ inline status type_parser::describe(std::uint8_t kind, std::uint32_t at, std::ui
         out = {kind, head.size, 1, no_node};
         return status::ok;
     }
-    if (head.flags != 0 || (kind == kind_array && !array_ok))
+    if (head.flags != 0 || (kind == kind_array && !array_ok) || (kind == kind_max_array && !max_ok))
         return status::corrupt;
     cursor c{start + 8, table_.data() + size};
     const std::uint32_t index = counts.nodes++;
@@ -1190,6 +1198,8 @@ inline status type_parser::describe(std::uint8_t kind, std::uint32_t at, std::ui
     const std::byte *entries = nullptr;
     std::uint32_t entry_count = 0;
     bool members_take_arrays = false;
+    // Only a record's or tuple's members may be max_arrays, and only when the record itself may be one.
+    const bool members_take_max_arrays = max_ok && (kind == kind_record || kind == kind_tuple);
     bool ok = true;
     switch (kind) {
     case kind_enum:
@@ -1241,7 +1251,8 @@ inline status type_parser::describe(std::uint8_t kind, std::uint32_t at, std::ui
         entry_count = head.count;
         c.skip(std::size_t{head.count} * 8);
         break;
-    case kind_array: {
+    case kind_array:
+    case kind_max_array: {
         node.dtype = c.take<dl_dtype>();
         node.ndim = c.take<std::uint8_t>();
         const auto reserved0 = c.take<std::uint8_t>();
@@ -1261,7 +1272,8 @@ inline status type_parser::describe(std::uint8_t kind, std::uint32_t at, std::ui
             if (ok && out_ != nullptr)
                 out_->numbers_[node.numbers + i] = dim;
         }
-        ok = ok && total == head.size;
+        // A max_array's data starts with the 64-byte line of its stored shape.
+        ok = ok && total + (kind == kind_max_array ? 64 : 0) == head.size;
         out.alignment = 64;
         break;
     }
@@ -1278,7 +1290,8 @@ inline status type_parser::describe(std::uint8_t kind, std::uint32_t at, std::ui
     counts.members += entry_count;
     for (std::uint32_t i = 0; i < entry_count; ++i) {
         type_member m;
-        if (const status rc = member(entries + std::size_t{i} * 8, at, depth, members_take_arrays, m);
+        if (const status rc =
+                member(entries + std::size_t{i} * 8, at, depth, members_take_arrays, members_take_max_arrays, m);
             rc != status::ok)
             return rc;
         if (out_ != nullptr)
@@ -1307,6 +1320,7 @@ inline status type_parser::place(std::uint8_t kind, const type_head &head, type_
         out.alignment = 8;
         return status::ok;
     case kind_array:
+    case kind_max_array:
         return status::ok;
     case kind_optional: {
         const std::uint32_t a = m[0].type.alignment;
@@ -1379,8 +1393,8 @@ inline status type_parser::place(std::uint8_t kind, const type_head &head, type_
     }
 }
 
-inline status type_table::parse(std::span<const std::byte> table,
-                                std::span<const std::uint32_t> entries) noexcept {
+inline status type_table::parse(std::span<const std::byte> table, std::span<const std::uint32_t> entries,
+                                bool max_arrays) noexcept {
     *this = type_table{};
     if (table.size() % 8 != 0 || table.size() > max_types_size || entries.size() > max_fields)
         return status::corrupt;
@@ -1400,8 +1414,9 @@ inline status type_table::parse(std::span<const std::byte> table,
     std::copy(entries.begin(), entries.end(), entries_.get());
     size_ = size;
     field_count_ = count;
+    max_arrays_ = max_arrays;
     const std::span<const std::byte> copy(bytes_.get(), size);
-    type_parser counter(copy, seen.get(), nullptr);
+    type_parser counter(copy, seen.get(), nullptr, max_arrays);
     for (std::uint16_t i = 0; i < count; ++i) {
         type_ref ignored;
         if (const status rc = counter.field(entries[i], ignored); rc != status::ok) {
@@ -1422,13 +1437,30 @@ inline status type_table::parse(std::span<const std::byte> table,
     }
     node_count_ = n.nodes;
     std::fill_n(seen.get(), words, std::uint64_t{0});
-    type_parser filler(copy, seen.get(), this);
+    type_parser filler(copy, seen.get(), this, max_arrays);
     for (std::uint16_t i = 0; i < count; ++i)
         if (const status rc = filler.field(entries[i], fields_[i]); rc != status::ok) {
             *this = type_table{};
             return rc;
         }
     return status::ok;
+}
+
+// The bytes of the elements a max_array value holds, from the stored shape in its first 64 bytes at line;
+// UINT64_MAX when a dimension is above its maximum, which a torn copy or a forged slot can show. t is a
+// max_array of table.
+inline std::uint64_t max_array_bytes(const type_table &table, const type_ref &t, const std::byte *line) noexcept {
+    const type_node &node = table.node(t.node);
+    std::uint64_t total = node.dtype.bits / 8;
+    for (std::uint32_t i = 0; i < node.ndim; ++i) {
+        std::uint64_t dim = 0;
+        std::memcpy(&dim, line + std::size_t{i} * 8, sizeof dim);
+        if (dim > table.number(node.numbers + i))
+            return UINT64_MAX;
+        // Each dimension is at most its maximum, whose product checked below 2**32, so this cannot overflow.
+        total *= dim;
+    }
+    return total;
 }
 
 // One or more segments of [A-Za-z0-9_-] joined by ':', at most name_max characters. '.' is kept for a
@@ -2096,7 +2128,7 @@ public:
     }
     dl_dtype dtype() const noexcept { return described() ? node().dtype : dl_dtype{}; }
     std::span<const std::uint64_t> shape() const noexcept {
-        if (!described() || ref_.kind != kind_array)
+        if (!described() || (ref_.kind != kind_array && ref_.kind != kind_max_array))
             return {};
         return {&table_->numbers_view(node().numbers), node().ndim};
     }
