@@ -441,8 +441,11 @@ public:
             if (!fresh)
                 throw std::invalid_argument("stream '" + name_ + "': two arrays given for one member");
         }
+        std::sort(targets.begin(), targets.end(),
+                  [](const Types::ArrayTarget &a, const Types::ArrayTarget &b) { return a.offset < b.offset; });
         // Every max_array is a target too, so only the elements its shape line counts are copied.
-        targets = types.item_targets(0, std::move(targets));
+        if (types.has_max_arrays())
+            targets = types.item_targets(0, std::move(targets));
         const std::size_t size = core_->s.item_size();
         // An item of up to 4 KiB is copied to the stack; a larger one to the heap, which a bare array item
         // then keeps as its data instead of copying again.

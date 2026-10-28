@@ -299,6 +299,7 @@ Types::Types(const std::vector<std::tuple<std::uint32_t, std::uint32_t, std::uin
             item = info[at];
         std::uint8_t kind = 0;
         std::memcpy(&kind, bytes + node.at, 1);
+        max_arrays_ = max_arrays_ || kind == kind_max_array;
         prepare(n, kind, std::move(item));
     }
     const auto node_at = [&](std::int64_t offset, const char *list) {
@@ -1308,7 +1309,8 @@ nb::object Types::decode_max_array(const detail::type_ref &t, const std::byte *d
         shape[i] = static_cast<std::size_t>(load<std::uint64_t>(data + std::size_t{i} * 8));
     std::unique_ptr<std::byte[]> buffer;
     std::byte *raw = nullptr;
-    if (owned != nullptr && owned->get() == data) {
+    // A buffer mostly beyond the stored elements is not kept: its unused room would live as long as the array.
+    if (owned != nullptr && owned->get() == data && bytes >= t.size / 2) {
         buffer = std::move(*owned);
         raw = buffer.get() + 64;
     } else {
@@ -1416,7 +1418,7 @@ nb::object Types::rebuild(const detail::type_ref &t, PyObject *value, std::byte 
             if (v == nullptr && PyErr_Occurred())
                 throw nb::python_error();
             // An array member's value is replaced, never read, so only a record or tuple member must be there.
-            if (v == nullptr && m.type.kind != kind_array)
+            if (v == nullptr && m.type.kind != kind_array && m.type.kind != kind_max_array)
                 raise(PyExc_TypeError,
                       where.name + " needs key '" + std::string(nb::borrow<nb::str>(n.attrs[i]).c_str()) + "'");
             out[nb::handle(n.attrs[i])] = rebuild(m.type, v, data + m.offset, owner, where);

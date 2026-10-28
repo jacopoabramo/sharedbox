@@ -129,6 +129,8 @@ public:
     /// given, plus a target with an empty view for each max_array of field index that given lacks, sorted by
     /// offset.
     std::vector<ArrayTarget> item_targets(std::uint32_t index, std::vector<ArrayTarget> given) const;
+    /// Whether the table describes a max_array anywhere.
+    bool has_max_arrays() const { return max_arrays_; }
     /// How many element bytes the max_array t stores after the shape line at line, or UINT64_MAX for a shape
     /// above its maximum.
     std::uint64_t stored_bytes(const detail::type_ref &t, const std::byte *line) const noexcept {
@@ -241,6 +243,7 @@ private:
     std::vector<std::string> labels_;
     std::string table_;
     std::vector<NodeInfo> nodes_;
+    bool max_arrays_ = false;
     /// NativeCollection, NativeSet and NativeDict, which encode_collection tests a list, set and dict value
     /// against.
     PyTypeObject *collection_type_ = nullptr;

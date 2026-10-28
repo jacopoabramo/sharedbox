@@ -1,3 +1,4 @@
+import ctypes
 import gc
 import pickle
 import re
@@ -571,6 +572,7 @@ def test_a_stream_of_a_module_level_class_leaves_no_leak_report(
 
 WORKER_CYCLE_PROBE = """
 import asyncio
+import ctypes
 import gc
 import sys
 import threading
@@ -895,3 +897,44 @@ def test_receive_into_refuses_an_out_not_of_the_maximum_shape(unique_name: str) 
         with pytest.raises(ValueError, match="shape"):
             reader.receive_into({"counts": np.zeros((2, 3), np.uint32)}, timeout=5)
         assert reader.receive(timeout=5).run == 1
+
+
+class Tally(TypedDict):
+    run: int
+    counts: Counts
+
+
+def test_writing_takes_a_typed_dict_template_without_its_max_shape_key(
+    unique_name: str,
+) -> None:
+    """Give a TypedDict template's missing MaxShape key the maximum shape over the slot."""
+    with SharedStream.create(Tally, unique_name, capacity=2) as stream:
+        reader = stream.reader()
+        template: Any = {"run": 1}
+        with stream.sender().writing(template) as slot:
+            assert slot.item["counts"].shape == (4, 3)
+            slot.item["counts"][:] = counts(4, 3)
+            slot.send(slot.item)
+        np.testing.assert_array_equal(reader.receive(timeout=5)["counts"], counts(4, 3))
+
+
+def test_a_stored_shape_beyond_the_maximum_is_refused(unique_name: str) -> None:
+    """Raise ValueError for a slot whose shape line exceeds MaxShape, write nothing to out, and read the next item."""
+    with SharedStream.create(Block, unique_name, capacity=4) as stream:
+        plain = stream.reader()
+        into = stream.reader()
+        sender = stream.sender()
+        with sender.writing(Block(1, np.empty((2, 3), np.uint32))) as slot:
+            view = slot.item.counts
+            slot.send(slot.item)
+        line = (ctypes.c_uint64 * 8).from_address(view.ctypes.data - 64)
+        line[0] = 5
+        sender.send(Block(2, counts(1, 3)))
+        out = np.zeros((4, 3), np.uint32)
+        with pytest.raises(ValueError, match="stored value"):
+            plain.receive(timeout=5)
+        with pytest.raises(ValueError, match="stored value"):
+            into.receive_into({"counts": out}, timeout=5)
+        assert not out.any()
+        assert plain.receive(timeout=5).run == 2
+        assert into.receive_into({"counts": out}, timeout=5).run == 2
