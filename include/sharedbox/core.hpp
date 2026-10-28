@@ -2399,11 +2399,11 @@ result<std::uint64_t> add_metadata(std::byte *area, const metadata_line &line, s
     const std::uint64_t size = doc.size();
     std::uint64_t at = 0;
     if (newest != 0) {
-        metadata_entry last{};
-        if (!load_metadata_entry(metadata_entry_of(area, line, newest), newest, last) ||
-            std::uint64_t{last.offset} + last.length > line.ring_size)
+        metadata_entry newest_entry{};
+        if (!load_metadata_entry(metadata_entry_of(area, line, newest), newest, newest_entry) ||
+            std::uint64_t{newest_entry.offset} + newest_entry.length > line.ring_size)
             return unexpected(status::corrupt);
-        const std::uint64_t end = round_up(std::uint64_t{last.offset} + last.length, 8);
+        const std::uint64_t end = round_up(std::uint64_t{newest_entry.offset} + newest_entry.length, 8);
         if (end + size <= line.ring_size)
             at = end;
     }

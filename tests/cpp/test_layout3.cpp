@@ -27,7 +27,7 @@ status open_status(const std::string &name) {
 
 } // namespace
 
-TEST_CASE("a new box is core 1.0, box layout 3.1") {
+TEST_CASE("a new box is core 1.0, box layout 3.2") {
     const std::string name = unique("layout3");
     auto owner = handle::create(name, fields, 32, 0x5EED, 4, {});
     REQUIRE(owner);
@@ -35,7 +35,7 @@ TEST_CASE("a new box is core 1.0, box layout 3.1") {
     CHECK(h.common.magic == box_magic);
     CHECK(h.common.core_major == core_major);
     CHECK(h.common.kind_major == 3);
-    CHECK(h.common.kind_minor == 1);
+    CHECK(h.common.kind_minor == 2);
     CHECK(h.tail == header_size);
     CHECK(owner->major_version() == 3);
     auto other = handle::open(name, seconds(1.0));
@@ -186,4 +186,44 @@ TEST_CASE("a mapping smaller than a page is refused before its header is read") 
     const auto opened = detail::open_header<detail::box_layout>(small.get(), 64);
     REQUIRE_FALSE(opened);
     CHECK(opened.error().code == status::corrupt);
+}
+
+TEST_CASE("a box without metadata keeps the 3.1 bytes") {
+    const std::string name = unique("l3-no-meta");
+    auto owner = handle::create(name, fields, 32, 0x5EED, 4, {}, {}, metadata_spec{});
+    REQUIRE(owner);
+    const header &h = header_of(*owner);
+    CHECK(h.common.kind_minor == 2);
+    CHECK(h.metadata_size == 0);
+    CHECK(h.metadata == 0);
+    CHECK(h.metadata_head == 0);
+    const auto *bytes = static_cast<const std::byte *>(owner->base());
+    for (std::size_t i = offsetof(header, metadata_size); i < sizeof(header); ++i)
+        CHECK(bytes[i] == std::byte{0});
+    CHECK(owner->size() == detail::round_up(std::uint64_t{h.record} + h.record_size, page_size));
+    CHECK(owner->metadata_head() == 0);
+    const std::byte doc[1] = {std::byte{0x01}};
+    const std::uint64_t generation = owner->generation();
+    const auto added = owner->add_metadata(doc, seconds(1.0));
+    REQUIRE_FALSE(added);
+    CHECK(added.error().code == status::metadata_full);
+    CHECK(owner->generation() == generation);
+    CHECK(owner->writer_pid() == 0);
+    CHECK(owner->metadata_length(1).error().code == status::not_found);
+    auto other = handle::open(name, seconds(1.0));
+    REQUIRE(other);
+    CHECK(other->metadata_head() == 0);
+    static_cast<void>(unlink(name));
+}
+
+TEST_CASE("a 3.1 box, whose last 20 header bytes are zero, opens with no metadata") {
+    const std::string name = unique("l3-old");
+    auto owner = handle::create(name, fields, 32, 0x5EED, 4, {});
+    REQUIRE(owner);
+    header_of(*owner).common.kind_minor = 1;
+    auto other = handle::open(name, seconds(1.0));
+    REQUIRE(other);
+    CHECK(other->minor_version() == 1);
+    CHECK(other->metadata_head() == 0);
+    static_cast<void>(unlink(name));
 }

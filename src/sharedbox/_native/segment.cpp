@@ -367,8 +367,8 @@ std::unique_ptr<Segment> Segment::create(const std::string &name, const std::vec
     impl->names = names;
     impl->lock_timeout = lock_timeout;
     const auto size = static_cast<std::uint32_t>(record_size);
-    result<handle> made =
-        detail::create_impl(name, table, size, schema_hash, waiter_slots, initial, bytes_of(types_table), publish);
+    result<handle> made = detail::create_impl(name, table, size, schema_hash, waiter_slots, initial,
+                                              bytes_of(types_table), {}, publish);
     if (!made && made.error().code == status::exists)
         throw SegmentExists(exists_message(name, names));
     impl->box = impl->check(std::move(made));

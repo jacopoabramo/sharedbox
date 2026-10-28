@@ -35,7 +35,7 @@ TEST_CASE("create open and unlink") {
     const std::string name = unique("basic");
     auto owner = create(name);
     REQUIRE(owner.has_value());
-    CHECK((owner->size() == 4096 && owner->minor_version() == 1));
+    CHECK((owner->size() == 4096 && owner->minor_version() == 2));
     CHECK(header_of(*owner).record == 2240);
     CHECK(create(name).error().code == status::exists);
     auto other = handle::open(name, seconds(1.0));
@@ -112,11 +112,11 @@ TEST_CASE("checks on open") {
     CHECK(open_status(name) == status::ok);
     h.common.kind_minor = 7;
     auto newer = handle::open(name, seconds(1.0));
-    CHECK((newer && newer->minor_version() == 1));
+    CHECK((newer && newer->minor_version() == 2));
     CHECK(forged(h.common.kind_major, std::uint16_t{4}) == status::layout);
     const auto seen = sharedbox::inspect(name);
     CHECK((seen && seen->kind_minor == 7));
-    h.common.kind_minor = 1;
+    h.common.kind_minor = 2;
     static_cast<void>(sharedbox::unlink(name));
 }
 

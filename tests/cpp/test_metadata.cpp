@@ -3,10 +3,16 @@
 #include <doctest/doctest.h>
 #include <sharedbox/sharedbox.hpp>
 
+#include "unique.hpp"
+
 #include <atomic>
 #include <cstddef>
 #include <cstdint>
+#include <cstring>
 #include <initializer_list>
+#include <optional>
+#include <span>
+#include <string>
 #include <thread>
 #include <vector>
 
@@ -422,4 +428,210 @@ TEST_CASE("a reclaim is decided by the position of the version after the one rec
     CHECK(a.add_with(cbor({0x03}), write_pos, stream_rule).value_or(0) == 3);
     CHECK(code(a.read(1)) == status::not_found);
     CHECK(a.version_at(a.head().load(), 11).value_or(0) == 2);
+}
+
+namespace {
+
+constexpr field_spec box_fields[2] = {{0, 8, kind_int}, {8, 16, kind_bytes}};
+
+std::byte *area_of(const handle &h) {
+    return static_cast<std::byte *>(h.base()) + static_cast<header *>(h.base())->metadata;
+}
+
+std::vector<std::byte> read_version(const handle &h, std::uint64_t version) {
+    std::vector<std::byte> out(256);
+    const auto got = h.read_metadata(version, out);
+    REQUIRE(got);
+    out.resize(*got);
+    return out;
+}
+
+status open_status(const std::string &name) {
+    const auto opened = handle::open(name, seconds(0.2));
+    return opened ? status::ok : opened.error().code;
+}
+
+} // namespace
+
+TEST_CASE("a box created with metadata has version 1 at open") {
+    const std::string name = unique("meta-open");
+    const auto doc = cbor({0xa1, 0x61, 0x61, 0x01});
+    auto owner = handle::create(name, box_fields, 32, 1, 4, {}, {}, metadata_spec{doc, 4096, 8});
+    REQUIRE(owner);
+    auto other = handle::open(name, seconds(1.0));
+    REQUIRE(other);
+    CHECK(other->metadata_head() == 1);
+    CHECK(read_version(*other, 1) == doc);
+    CHECK(other->metadata_length(1).value_or(0) == doc.size());
+    CHECK(code(other->metadata_length(2)) == status::not_found);
+    CHECK(owner->generation() == 0);
+    static_cast<void>(unlink(name));
+}
+
+TEST_CASE("a metadata area with no initial document starts at head 0") {
+    const std::string name = unique("meta-empty");
+    auto owner = handle::create(name, box_fields, 32, 1, 4, {}, {}, metadata_spec{{}, 1024, 4});
+    REQUIRE(owner);
+    CHECK(owner->metadata_head() == 0);
+    CHECK(code(owner->metadata_length(1)) == status::not_found);
+    CHECK(owner->add_metadata(cbor({0x01}), seconds(1.0)).value_or(0) == 1);
+    static_cast<void>(unlink(name));
+}
+
+TEST_CASE("create refuses a metadata spec that cannot be laid out") {
+    const std::string name = unique("meta-spec");
+    const auto doc = cbor({0x01});
+    const auto made = [&](const metadata_spec &spec) {
+        auto h = handle::create(name, box_fields, 32, 1, 4, {}, {}, spec);
+        const status rc = h ? status::ok : h.error().code;
+        static_cast<void>(unlink(name));
+        return rc;
+    };
+    CHECK(made({doc, 0, 8}) == status::range);
+    CHECK(made({{}, 4096, 1}) == status::range);
+    CHECK(made({{}, 4096, 65536}) == status::range);
+    CHECK(made({{}, 16, 8}) == status::range);
+    CHECK(made({{}, std::uint64_t{1} << 33, 8}) == status::range);
+    CHECK(made({cbor({0xc0, 0x01}), 4096, 8}) == status::range);
+    CHECK(made({byte_string(300, 1), 600, 8}) == status::range);
+    CHECK(made({doc, 24, 2}) == status::ok);
+    CHECK(made({{}, 0, 0}) == status::ok);
+    CHECK(open_status(name) == status::not_found);
+}
+
+TEST_CASE("adding box metadata is one write") {
+    const std::string name = unique("meta-add");
+    auto owner = handle::create(name, box_fields, 32, 1, 4, {}, {}, metadata_spec{cbor({0x01}), 4096, 8});
+    REQUIRE(owner);
+    const std::uint8_t number[8] = {7};
+    const value v{0, std::as_bytes(std::span(number))};
+    REQUIRE(owner->write({&v, 1}, seconds(1.0)));
+    std::byte before[8], after[8];
+    const auto first = owner->read(0, before);
+    REQUIRE(first);
+    const std::uint64_t generation = owner->generation();
+    const auto slot = owner->register_waiter();
+    REQUIRE(slot);
+    std::optional<result<wake>> woke;
+    std::thread waiter([&] { woke = owner->wait(*slot, generation, seconds(5.0)); });
+    while (owner->sleepers() == 0)
+        std::this_thread::yield();
+    const auto added = owner->add_metadata(cbor({0x02}), seconds(1.0));
+    waiter.join();
+    REQUIRE(added);
+    CHECK(*added == 2);
+    CHECK(owner->generation() == generation + 1);
+    CHECK((woke && *woke && **woke == wake::changed));
+    const auto second = owner->read(0, after);
+    REQUIRE(second);
+    CHECK(second->version == first->version);
+    CHECK(std::memcmp(before, after, 8) == 0);
+    CHECK(owner->version(0) == first->version);
+    CHECK(owner->version(1) == 0);
+    CHECK(owner->writer_pid() == 0);
+    const metadata_line line = detail::copy_metadata_line(area_of(*owner));
+    CHECK(detail::metadata_version_at(area_of(*owner), line, 2, owner->generation()).value_or(0) == 2);
+    CHECK(detail::metadata_version_at(area_of(*owner), line, 2, owner->generation() - 1).value_or(0) == 1);
+    CHECK(read_version(*owner, 2) == cbor({0x02}));
+    owner->release_waiter(*slot);
+    static_cast<void>(unlink(name));
+}
+
+TEST_CASE("a refused add leaves the generation alone") {
+    const std::string name = unique("meta-refused");
+    auto owner = handle::create(name, box_fields, 32, 1, 4, {}, {}, metadata_spec{cbor({0x01}), 1024, 4});
+    REQUIRE(owner);
+    const std::uint64_t generation = owner->generation();
+    CHECK(code(owner->add_metadata(cbor({0xc0, 0x01}), seconds(1.0))) == status::range);
+    CHECK(owner->generation() == generation);
+    CHECK(owner->writer_pid() == 0);
+    CHECK(owner->add_metadata(cbor({0x02}), seconds(1.0)).value_or(0) == 2);
+    CHECK(owner->generation() == generation + 1);
+    static_cast<void>(unlink(name));
+}
+
+TEST_CASE("a reader of the latest box version never misses it during an add") {
+    const std::string name = unique("meta-race");
+    constexpr std::uint64_t total = 2000;
+    auto owner = handle::create(name, box_fields, 32, 1, 4, {}, {}, metadata_spec{{}, 256, 16});
+    REQUIRE(owner);
+    auto reader = handle::open(name, seconds(1.0));
+    REQUIRE(reader);
+    std::atomic<std::uint64_t> seen{0};
+    std::atomic<std::uint64_t> misses{0};
+    std::atomic<std::uint64_t> wrong{0};
+    std::thread read([&] {
+        std::byte buf[16];
+        for (std::uint64_t head = 0; head < total;) {
+            head = reader->metadata_head();
+            if (head == 0)
+                continue;
+            const auto got = reader->read_metadata(head, buf);
+            if (!got) {
+                misses.fetch_add(1);
+                continue;
+            }
+            const std::uint64_t number =
+                std::to_integer<std::uint64_t>(buf[1]) << 8 | std::to_integer<std::uint64_t>(buf[2]);
+            if (*got != 3 || buf[0] != std::byte{0x19} || number != head)
+                wrong.fetch_add(1);
+            seen.store(head);
+        }
+    });
+    for (std::uint64_t v = 1; v <= total; ++v) {
+        // The reader stays within a few versions of the writer, so only an add that hides the newest
+        // version can make it miss.
+        while (v > seen.load() + 4 && seen.load() < total)
+            std::this_thread::yield();
+        const auto doc = cbor({0x19, static_cast<int>(v >> 8), static_cast<int>(v & 0xff)});
+        REQUIRE(owner->add_metadata(doc, seconds(5.0)).value_or(0) == v);
+    }
+    read.join();
+    CHECK(misses.load() == 0);
+    CHECK(wrong.load() == 0);
+    CHECK(owner->generation() == total);
+    static_cast<void>(unlink(name));
+}
+
+TEST_CASE("a forged box metadata offset is refused") {
+    const std::string name = unique("meta-forged");
+    auto owner = handle::create(name, box_fields, 32, 1, 4, {}, {}, metadata_spec{cbor({0x01}), 1024, 4});
+    REQUIRE(owner);
+    header &h = *static_cast<header *>(owner->base());
+    const auto forged = [&](auto &field, auto value) {
+        const auto saved = field;
+        field = value;
+        const status rc = open_status(name);
+        field = saved;
+        return rc;
+    };
+    const std::uint64_t area = h.metadata;
+    const std::uint32_t used = h.metadata_size;
+    CHECK(open_status(name) == status::ok);
+    CHECK(area % 64 == 0);
+    CHECK(area >= h.record + h.record_size);
+    CHECK(forged(h.metadata, h.common.size) == status::corrupt);
+    CHECK(forged(h.metadata, area + 4096) == status::corrupt);
+    CHECK(forged(h.metadata, std::uint64_t{h.record}) == status::corrupt);
+    CHECK(forged(h.metadata, area - 64) == status::corrupt);
+    CHECK(forged(h.metadata, area + 8) == status::corrupt);
+    CHECK(forged(h.metadata_size, used + 4096) == status::corrupt);
+    CHECK(forged(h.metadata_size, std::uint32_t{32}) == status::corrupt);
+    CHECK(forged(h.metadata_size, used - 8) == status::corrupt);
+    CHECK(forged(h.metadata, std::uint64_t{0}) == status::corrupt);
+    h.metadata = 0;
+    h.metadata_size = 0;
+    CHECK(open_status(name) == status::ok);
+    h.metadata = area;
+    h.metadata_size = used;
+    auto *line = reinterpret_cast<metadata_line *>(area_of(*owner));
+    const std::uint32_t entries = line->entries;
+    line->entries = 1;
+    CHECK(open_status(name) == status::corrupt);
+    line->entries = entries;
+    line->ring_size += 8;
+    CHECK(open_status(name) == status::corrupt);
+    line->ring_size -= 8;
+    CHECK(open_status(name) == status::ok);
+    static_cast<void>(unlink(name));
 }

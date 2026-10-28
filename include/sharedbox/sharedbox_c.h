@@ -132,6 +132,20 @@ SBX_API int sbx_write_flag(sbx_handle *h, uint16_t field, uint64_t bits, double 
 /* Whether an optional field holds a value: *present is 1 if so, 0 for None. */
 SBX_API int sbx_read_present(const sbx_handle *h, uint16_t field, int *present);
 
+/* The newest version of the box's metadata; 0 when it has none or h was not made by sbx_open or
+ * sbx_import. */
+SBX_API uint64_t sbx_metadata_head(const sbx_handle *h);
+
+/* Copies the document of the given version into out. If it is longer than cap, nothing is copied, *len
+ * gets its length and the call returns SBX_E_RANGE. SBX_E_NOT_FOUND when the box does not hold that
+ * version. len may be NULL. */
+SBX_API int sbx_read_metadata(const sbx_handle *h, uint64_t version, void *out, size_t cap, size_t *len);
+
+/* Adds the document as the next version, as one write under the write lock, and stores the version in
+ * *version if that is not NULL. The document must be one CBOR item of the subset the metadata allows:
+ * SBX_E_RANGE otherwise or when it is too long, SBX_E_METADATA_FULL for a box with no metadata. */
+SBX_API int sbx_add_metadata(sbx_handle *h, const void *doc, size_t len, double lock_timeout, uint64_t *version);
+
 /* Releases any handle, including one from another build; h itself may then be reused or freed. */
 SBX_API void sbx_release(sbx_handle *h);
 

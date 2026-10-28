@@ -25,7 +25,8 @@ extern "C" const char *smoke_create(void) {
                                              {24, 16, sharedbox::kind_complex}, {40, 0, sharedbox::kind_enum},
                                              {48, 2, sharedbox::kind_float16},  {52, 4, sharedbox::kind_float32}};
     box_name = unique("c-smoke");
-    auto made = sharedbox::handle::create(box_name, fields, 56, 0x5EED, 4, {}, types.span());
+    auto made = sharedbox::handle::create(box_name, fields, 56, 0x5EED, 4, {}, types.span(),
+                                          sharedbox::metadata_spec{{}, 1024, 4});
     if (!made)
         return nullptr;
     box.emplace(std::move(*made));

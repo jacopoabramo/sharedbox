@@ -347,6 +347,41 @@ int sbx_read_present(const sbx_handle *h, uint16_t field, int *present) {
     });
 }
 
+uint64_t sbx_metadata_head(const sbx_handle *h) {
+    const sharedbox::handle *owner = owned(h);
+    return owner == nullptr ? 0 : owner->metadata_head();
+}
+
+int sbx_read_metadata(const sbx_handle *h, uint64_t version, void *out, size_t cap, size_t *len) {
+    const sharedbox::handle *owner = owned(h);
+    if (owner == nullptr || (out == nullptr && cap > 0))
+        return SBX_E_RANGE;
+    const auto read = owner->read_metadata(version, {static_cast<std::byte *>(out), cap});
+    if (read) {
+        if (len != nullptr)
+            *len = *read;
+        return SBX_OK;
+    }
+    if (read.error().code == sharedbox::status::range && len != nullptr) {
+        if (const auto needed = owner->metadata_length(version))
+            *len = *needed;
+    }
+    return static_cast<int>(read.error().code);
+}
+
+int sbx_add_metadata(sbx_handle *h, const void *doc, size_t len, double lock_timeout, uint64_t *version) {
+    sharedbox::handle *owner = owned(h);
+    if (owner == nullptr || (doc == nullptr && len > 0))
+        return SBX_E_RANGE;
+    const auto added =
+        owner->add_metadata({static_cast<const std::byte *>(doc), len}, sharedbox::seconds(lock_timeout));
+    if (!added)
+        return static_cast<int>(added.error().code);
+    if (version != nullptr)
+        *version = *added;
+    return SBX_OK;
+}
+
 void sbx_release(sbx_handle *h) {
     if (h != nullptr && h->release != nullptr)
         h->release(h);

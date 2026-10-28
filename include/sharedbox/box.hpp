@@ -1,4 +1,4 @@
-// box.hpp: layout 3.1 of a box segment and the protocols that use it.
+// box.hpp: layout 3.2 of a box segment and the protocols that use it.
 #ifndef SHAREDBOX_BOX_HPP
 #define SHAREDBOX_BOX_HPP
 
@@ -8,7 +8,7 @@ namespace sharedbox {
 inline namespace v3 {
 
 inline constexpr std::uint16_t layout_major = 3;
-inline constexpr std::uint16_t layout_minor = 1;
+inline constexpr std::uint16_t layout_minor = 2;
 inline constexpr std::uint32_t handle_version = 1;
 inline constexpr std::uint32_t header_size = 128;
 inline constexpr std::uint32_t record_alignment = 64;
@@ -59,7 +59,12 @@ struct header {
     std::uint32_t tail;
     // Bytes of the description table after the waiter slots.
     std::uint32_t types_size;
-    std::uint8_t reserved2[20];
+    // Bytes of the metadata area, 0 for none.
+    std::uint32_t metadata_size;
+    // Where the area starts, a multiple of 64 after the record; 0 for none.
+    std::uint64_t metadata;
+    // The newest version of the metadata, 0 for none; an add changes it.
+    std::uint64_t metadata_head;
 };
 
 struct stored_field {
@@ -78,7 +83,8 @@ static_assert(offsetof(header, seq) == 64 && offsetof(header, writer_pid) == 72 
 static_assert(offsetof(header, field_count) == 88 && offsetof(header, reserved1) == 90 &&
               offsetof(header, record_size) == 92 && offsetof(header, record) == 96 &&
               offsetof(header, tail) == 100 && offsetof(header, types_size) == 104 &&
-              offsetof(header, reserved2) == 108);
+              offsetof(header, metadata_size) == 108 && offsetof(header, metadata) == 112 &&
+              offsetof(header, metadata_head) == 120);
 static_assert(sizeof(stored_field) == 8 && alignof(stored_field) == 4);
 static_assert(offsetof(stored_field, offset) == 0);
 static_assert(offsetof(stored_field, capacity_and_kind) == 4);
@@ -143,15 +149,15 @@ struct box_layout {
     static constexpr std::uint16_t oldest_major = layout_major;
     static constexpr std::uint16_t newest_major = layout_major;
     using header_type = header;
-    // The header at base without seq, writer_pid, wake_word, waiters and sleepers, which other processes
-    // change while they are open: line 0 and the bytes of line 1 written once. Only the copy is checked
-    // and used.
+    // The header at base without seq, writer_pid, wake_word, waiters, sleepers and metadata_head, which
+    // other processes change while they are open: line 0 and the bytes of line 1 written once. Only the
+    // copy is checked and used.
     static header copy_header(const void *base) noexcept {
         header h{};
         std::memcpy(&h, base, offsetof(header, seq));
         constexpr std::size_t once = offsetof(header, field_count);
         std::memcpy(reinterpret_cast<std::byte *>(&h) + once, static_cast<const std::byte *>(base) + once,
-                    sizeof h - once);
+                    offsetof(header, metadata_head) - once);
         return h;
     }
     // Line 1 of the copied header, after its line 0 passed the core checks.
@@ -167,7 +173,14 @@ struct box_layout {
         if (h.types_size % 8 != 0 || h.types_size > max_types_size ||
             h.record < round_up(slots_end + h.types_size, record_alignment) || record_end > max_mapping_size)
             return status::corrupt;
-        return record_end > mapped ? status::corrupt : status::ok;
+        if (record_end > mapped)
+            return status::corrupt;
+        if (h.metadata == 0)
+            return h.metadata_size == 0 ? status::ok : status::corrupt;
+        const bool placed = h.metadata % record_alignment == 0 && h.metadata >= record_end &&
+                            h.metadata_size >= sizeof(metadata_line) && h.metadata <= mapped &&
+                            h.metadata_size <= mapped - h.metadata;
+        return placed ? status::ok : status::corrupt;
     }
 };
 static_assert(segment_layout<box_layout>);
@@ -183,7 +196,8 @@ namespace detail {
 [[nodiscard]] inline result<handle> create_impl(std::string_view name, std::span<const field_spec> fields,
                                                 std::uint32_t record_size, std::uint64_t schema_hash,
                                                 std::uint16_t waiter_slots, std::span<const value> initial,
-                                                std::span<const std::byte> types, bool publish);
+                                                std::span<const std::byte> types, const metadata_spec &metadata,
+                                                bool publish);
 
 } // namespace detail
 
@@ -202,16 +216,19 @@ public:
 
     // Creates the box: the name, the mapping, the header and field table, every waiter slot free, and
     // the initial values; no other process can open it before all of that is written. types is the
-    // description table of the fields of a described kind; empty when there are none.
+    // description table of the fields of a described kind; empty when there are none. metadata asks for a
+    // metadata area, placed after the record, whose version 1 is metadata.initial when that is not empty,
+    // taking effect at generation 0; status::range when its geometry or initial document is refused.
     [[nodiscard]] static result<handle> create(std::string_view name, std::span<const field_spec> fields,
                                                std::uint32_t record_size, std::uint64_t schema_hash,
                                                std::uint16_t waiter_slots, std::span<const value> initial,
-                                               std::span<const std::byte> types = {});
+                                               std::span<const std::byte> types = {},
+                                               const metadata_spec &metadata = {});
     // As create, but open waits until publish() is called, so the creator can change the values first.
     [[nodiscard]] static result<handle>
     create_unpublished(std::string_view name, std::span<const field_spec> fields, std::uint32_t record_size,
                        std::uint64_t schema_hash, std::uint16_t waiter_slots, std::span<const value> initial,
-                       std::span<const std::byte> types = {});
+                       std::span<const std::byte> types = {}, const metadata_spec &metadata = {});
     // Lets open find a box made by create_unpublished. status::range if the box is already published,
     // as every box a handle made by open or from_capsule reaches is. A handle from duplicate() of an
     // unpublished creator shares its mapping and could publish it, so a creator must not hand one out
@@ -306,6 +323,21 @@ public:
     // slot was released and claimed again reaches the next owner as one spurious wake::interrupted.
     [[nodiscard]] result<void> interrupt(std::uint16_t slot);
 
+    // The newest version of the metadata with acquire; 0 when there is none or the box has no metadata area.
+    std::uint64_t metadata_head() const noexcept;
+    // The length of version's document: status::not_found when the area does not hold it, and
+    // status::corrupt when its entry is forged. Metadata is read without the write lock.
+    [[nodiscard]] result<std::uint32_t> metadata_length(std::uint64_t version) const;
+    // Copies version's document into out and returns its length; status::range for an out shorter than the
+    // document, and otherwise as metadata_length.
+    [[nodiscard]] result<std::uint32_t> read_metadata(std::uint64_t version, std::span<std::byte> out) const;
+    // Adds doc as the next version under the write lock, as write takes it: one write, so the generation
+    // moves on by 1 and waiters wake, but no field and no write count changes. Returns the version, which
+    // takes effect at the generation the write leaves. status::metadata_full for a box without a metadata
+    // area, taken before the lock; status::range for a document that is not in the CBOR subset
+    // metadata_ok accepts or is longer than a third of the ring. A refused add leaves the generation alone.
+    [[nodiscard]] result<std::uint64_t> add_metadata(std::span<const std::byte> doc, seconds lock_timeout);
+
     // Takes over a handle made by another build, such as the one in a "sharedbox_box" capsule: checks
     // the segment at capsule->base as open does and, on success, clears capsule->release; destroying
     // the new handle calls the producer's release.
@@ -327,7 +359,8 @@ private:
     friend result<handle> detail::create_impl(std::string_view name, std::span<const field_spec> fields,
                                               std::uint32_t record_size, std::uint64_t schema_hash,
                                               std::uint16_t waiter_slots, std::span<const value> initial,
-                                              std::span<const std::byte> types, bool publish);
+                                              std::span<const std::byte> types, const metadata_spec &metadata,
+                                              bool publish);
 };
 
 namespace detail {
@@ -347,6 +380,9 @@ struct state {
     header *hdr = nullptr;
     std::uint64_t *counts = nullptr;
     std::byte *record = nullptr;
+    // The metadata area, nullptr for none, and the copy of its first line that open checked.
+    std::byte *metadata = nullptr;
+    metadata_line metadata_first{};
     std::uint64_t size = 0;
     std::unique_ptr<field_spec[]> fields;
     type_table types;
@@ -408,6 +444,20 @@ inline void bind(state &s, void *base, std::uint64_t size, std::uint16_t segment
     s.size = size;
     s.layout_major = segment_major;
     s.layout_minor = segment_minor < sharedbox::layout_minor ? segment_minor : sharedbox::layout_minor;
+}
+
+// Finds the metadata area of the mapping at base, if h, the copy of its header that passed open_check,
+// places one; copies the area's first line and checks it against the size h gives.
+inline status bind_metadata(state &s, void *base, const header &h) noexcept {
+    if (h.metadata == 0)
+        return status::ok;
+    auto *area = static_cast<std::byte *>(base) + h.metadata;
+    const metadata_line line = copy_metadata_line(area);
+    if (!metadata_geometry_ok(line, h.metadata_size))
+        return status::corrupt;
+    s.metadata = area;
+    s.metadata_first = line;
+    return status::ok;
 }
 
 // Copies and checks the field table and the description table of a mapping; h is the copy of its
@@ -485,7 +535,8 @@ SHAREDBOX_HOT std::span<const std::byte> payload(const field_spec &f, const std:
 // create and create_unpublished.
 inline result<handle> create_impl(std::string_view name, std::span<const field_spec> fields,
                                   std::uint32_t record_size, std::uint64_t schema_hash, std::uint16_t waiter_slots,
-                                  std::span<const value> initial, std::span<const std::byte> types, bool publish) {
+                                  std::span<const value> initial, std::span<const std::byte> types,
+                                  const metadata_spec &metadata, bool publish) {
     if (!name_ok(name) || fields.empty() || fields.size() > max_fields || waiter_slots == 0 ||
         waiter_slots > max_waiter_slots)
         return unexpected(status::range);
@@ -514,7 +565,25 @@ inline result<handle> create_impl(std::string_view name, std::span<const field_s
         static_cast<std::uint32_t>(round_up(tail_end(count, waiter_slots) + types.size(), record_alignment));
     if (std::uint64_t{record} + record_size > max_mapping_size)
         return unexpected(status::range);
-    const std::uint64_t size = round_up(std::uint64_t{record} + record_size, page_size);
+    std::uint64_t ring = 0, area_size = 0, area_at = 0;
+    if (metadata.capacity == 0) {
+        if (!metadata.initial.empty())
+            return unexpected(status::range);
+    } else {
+        if (metadata.capacity > max_mapping_size || metadata.versions < min_metadata_entries ||
+            metadata.versions > max_metadata_entries)
+            return unexpected(status::range);
+        ring = round_up(metadata.capacity, 8);
+        area_size = metadata_area_size(metadata.versions, ring);
+        if (ring < 24 || area_size > UINT32_MAX || metadata.initial.size() > max_metadata_document(ring) ||
+            (!metadata.initial.empty() && !metadata_ok(metadata.initial)))
+            return unexpected(status::range);
+        area_at = round_up(std::uint64_t{record} + record_size, record_alignment);
+        if (area_at + area_size > max_mapping_size)
+            return unexpected(status::range);
+    }
+    const std::uint64_t size =
+        round_up(area_size == 0 ? std::uint64_t{record} + record_size : area_at + area_size, page_size);
     const result<std::uint64_t> id = random_id();
     if (!id)
         return unexpected(id.error());
@@ -540,6 +609,8 @@ inline result<handle> create_impl(std::string_view name, std::span<const field_s
     h.record = record;
     h.tail = header_size;
     h.types_size = static_cast<std::uint32_t>(types.size());
+    h.metadata_size = static_cast<std::uint32_t>(area_size);
+    h.metadata = area_at;
     for (std::uint16_t i = 0; i < count; ++i) {
         const stored_field stored{fields[i].offset, entries[i]};
         std::memcpy(static_cast<std::byte *>(base) + header_size + std::size_t{i} * sizeof stored, &stored,
@@ -554,6 +625,21 @@ inline result<handle> create_impl(std::string_view name, std::span<const field_s
     bind(*s, base, size, layout_major, layout_minor);
     for (const value &v : initial)
         store(*s, v);
+    if (area_size != 0) {
+        auto *area = static_cast<std::byte *>(base) + area_at;
+        if (const status rc = init_metadata(area, metadata.versions, ring); rc != status::ok)
+            return unexpected(rc);
+        s->metadata = area;
+        s->metadata_first = copy_metadata_line(area);
+        // The generation is still 0 here, and nothing is shared before magic is stored.
+        if (!metadata.initial.empty()) {
+            const result<std::uint64_t> added = add_metadata(
+                area, s->metadata_first, atomic(h.metadata_head), metadata.initial,
+                atomic(h.seq).load(std::memory_order_relaxed) >> 1, [](std::uint64_t) { return true; });
+            if (!added)
+                return unexpected(added.error());
+        }
+    }
     handle made(s.release());
     if (publish)
         static_cast<void>(made.publish());
@@ -567,15 +653,17 @@ inline handle::~handle() { delete s_; }
 inline result<handle> handle::create(std::string_view name, std::span<const field_spec> fields,
                                      std::uint32_t record_size, std::uint64_t schema_hash,
                                      std::uint16_t waiter_slots, std::span<const value> initial,
-                                     std::span<const std::byte> types) {
-    return detail::create_impl(name, fields, record_size, schema_hash, waiter_slots, initial, types, true);
+                                     std::span<const std::byte> types, const metadata_spec &metadata) {
+    return detail::create_impl(name, fields, record_size, schema_hash, waiter_slots, initial, types, metadata,
+                               true);
 }
 
 inline result<handle> handle::create_unpublished(std::string_view name, std::span<const field_spec> fields,
                                                  std::uint32_t record_size, std::uint64_t schema_hash,
                                                  std::uint16_t waiter_slots, std::span<const value> initial,
-                                                 std::span<const std::byte> types) {
-    return detail::create_impl(name, fields, record_size, schema_hash, waiter_slots, initial, types, false);
+                                                 std::span<const std::byte> types, const metadata_spec &metadata) {
+    return detail::create_impl(name, fields, record_size, schema_hash, waiter_slots, initial, types, metadata,
+                               false);
 }
 
 inline result<void> handle::publish() noexcept {
@@ -605,6 +693,8 @@ inline result<handle> handle::open(std::string_view name, seconds timeout) {
         return unexpected(status::os);
     s->record_size = h.record_size;
     if (const status rc = detail::copy_fields(*s, map->base(), h); rc != status::ok)
+        return unexpected(rc);
+    if (const status rc = detail::bind_metadata(*s, map->base(), h); rc != status::ok)
         return unexpected(rc);
     s->record_offset = h.record;
     s->schema_hash = h.common.schema_hash;
@@ -959,6 +1049,48 @@ SHAREDBOX_HOT result<void> handle::write(std::span<const value> values, seconds 
     return {};
 }
 
+inline std::uint64_t handle::metadata_head() const noexcept {
+    return s_->metadata == nullptr ? 0 : detail::atomic(s_->hdr->metadata_head).load(std::memory_order_acquire);
+}
+
+inline result<std::uint32_t> handle::metadata_length(std::uint64_t version) const {
+    if (s_->metadata == nullptr)
+        return unexpected(status::not_found);
+    return detail::metadata_length(s_->metadata, s_->metadata_first, version);
+}
+
+inline result<std::uint32_t> handle::read_metadata(std::uint64_t version, std::span<std::byte> out) const {
+    if (s_->metadata == nullptr)
+        return unexpected(status::not_found);
+    return detail::read_metadata(s_->metadata, s_->metadata_first, version, out);
+}
+
+inline result<std::uint64_t> handle::add_metadata(std::span<const std::byte> doc, seconds lock_timeout) {
+    detail::state &s = *s_;
+    if (s.metadata == nullptr)
+        return unexpected(status::metadata_full);
+    const result<std::uint64_t> locked = lock(lock_timeout);
+    if (!locked)
+        return unexpected(locked.error());
+    // The write lock takes seq from an even value to the next odd one and unlock to the one after, so the
+    // generation once unlocked is one more than now.
+    const result<std::uint64_t> added =
+        detail::add_metadata(s.metadata, s.metadata_first, detail::atomic(s.hdr->metadata_head), doc,
+                             (*locked >> 1) + 1, [](std::uint64_t) { return true; });
+    if (!added) {
+        // Nothing was written, so the lock is given back without counting a write. A force_unlock that
+        // has already released it leaves seq as another writer's, and the swap then changes nothing.
+        std::uint64_t held = *locked + 1;
+        detail::atomic(s.hdr->writer_pid).store(0, std::memory_order_relaxed);
+        detail::atomic(s.hdr->seq)
+            .compare_exchange_strong(held, *locked, std::memory_order_release, std::memory_order_relaxed);
+        return unexpected(added.error());
+    }
+    unlock(*locked);
+    detail::wake_waiters(s);
+    return added;
+}
+
 inline std::uint64_t handle::generation() const noexcept {
     return detail::atomic(s_->hdr->seq).load(std::memory_order_acquire) >> 1;
 }
@@ -1075,6 +1207,8 @@ inline result<handle> handle::from_capsule(sbx_handle *capsule) {
     s->record_size = h.record_size;
     if (const status rc = detail::copy_fields(*s, hdr, h); rc != status::ok)
         return unexpected(rc);
+    if (const status rc = detail::bind_metadata(*s, hdr, h); rc != status::ok)
+        return unexpected(rc);
     s->record_offset = h.record;
     s->schema_hash = h.common.schema_hash;
     s->create_id = h.common.create_id;
@@ -1119,11 +1253,15 @@ inline result<handle> handle::duplicate() const {
         return unexpected(rc);
     s->record_size = src.record_size;
     s->record_offset = src.record_offset;
+    s->metadata_first = src.metadata_first;
     s->schema_hash = src.schema_hash;
     s->create_id = src.create_id;
     s->lock_timeout = src.lock_timeout;
     s->map = std::move(map);
     detail::bind(*s, s->map.base(), src.size, src.layout_major, src.layout_minor);
+    if (src.metadata != nullptr)
+        s->metadata = static_cast<std::byte *>(s->map.base()) +
+                      (src.metadata - reinterpret_cast<const std::byte *>(src.hdr));
     return handle(s.release());
 }
 
