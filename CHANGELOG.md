@@ -9,6 +9,90 @@ Dates are marked as `DD-MM-YYYY`
 
 <!-- towncrier release notes start -->
 
+## [0.7.0](https://github.com/jacopoabramo/sharedbox/releases/tag/v0.7.0) - 28-10-2026
+
+### Added
+
+- `np.int8`, `np.int16`, `np.int32`, `np.uint8`, `np.uint16`, `np.uint32`,
+  `np.uint64`, `np.float16`, `np.float32`, `np.complex64` and `np.datetime64`
+  as field types, record members, collection elements and stream items,
+  stored at their own width as kinds 13 to 23 of box layout 3.1 and stream
+  layout 1.1. A field reads back as its numpy type, and a value that does not
+  fit the width raises `OverflowError`. A `np.datetime64` field stores
+  nanoseconds since 1970. ([#66](https://github.com/jacopoabramo/sharedbox/pull/66))
+- `sbx_read_float16`, `sbx_write_float16`, `sbx_read_float32` and
+  `sbx_write_float32` in `sharedbox_c.h`. ([#66](https://github.com/jacopoabramo/sharedbox/pull/66))
+- An array annotated `X | None` as a field, record member or stream item,
+  holding `None` or an array of its sizes, as in
+  `scan: npt.NDArray[np.uint8] | None = field(default=None, shape=(32, 32))`.
+  `receive_into` does not fill one. ([#67](https://github.com/jacopoabramo/sharedbox/pull/67))
+- `field(capacity=...)`: the capacity of a box field of text, bytes,
+  `bytearray`, `Decimal` or a collection, as in
+  `samples: list[float] = field(capacity=16)`. ([#68](https://github.com/jacopoabramo/sharedbox/pull/68))
+- An array member of a dataclass or attrs record takes its sizes from
+  `metadata={"shape": (32, 32)}` on its field. ([#68](https://github.com/jacopoabramo/sharedbox/pull/68))
+- `BoundedList[T]`: a list value that keeps the stored bytes of a list field,
+  as in `samples: Annotated[BoundedList[float], Capacity(65536)]`. It takes
+  every element type `list[T]` takes and is stored as `list[T]` is. A read
+  copies the bytes without decoding an element, a write of a `BoundedList` of
+  the field's element type copies them back, indexing decodes or encodes one
+  element, and a change past the capacity raises `ValueError`. Subclasses,
+  generic or with a fixed element type, can be declared in its place. ([#73](https://github.com/jacopoabramo/sharedbox/pull/73))
+- `BoundedSet[T]`: a set value that keeps the stored bytes of a set field,
+  as in `seen: Annotated[BoundedSet[int], Capacity(65536)]`. It is stored as
+  `set[T]` is. A read copies the bytes without decoding an element, a write
+  of a `BoundedSet` of the field's element type copies them back, and `in`,
+  `add` and `remove` encode one key and compare stored bytes, through an
+  index after 64 lookups in a set of more than 8 elements. The set operators take any set and return a
+  `BoundedSet` of the same class and capacity, the comparisons take any set,
+  and a change past the capacity raises `ValueError`. A declaration raises
+  `TypeError` for an element type whose equal values could be stored
+  differently, such as `Decimal` or `int | float`. Subclasses, generic or
+  with a fixed element type, can be declared in its place. ([#77](https://github.com/jacopoabramo/sharedbox/pull/77))
+- `BoundedDict[K, V]`: a dict value that keeps the stored bytes of a dict
+  field, as in `weights: Annotated[BoundedDict[int, float], Capacity(4096)]`.
+  It is stored as `dict[K, V]` is. A read copies the bytes without decoding
+  an item, a write of a `BoundedDict` of the field's key and value types
+  copies them back, and `d[key]`, `get` and `in` encode one key and compare
+  stored bytes, through an index after 64 lookups in a dict of more than 8
+  keys. It keeps insertion order, `|` takes any mapping and returns a
+  `BoundedDict` of the same class and capacity, and a change past the
+  capacity raises `ValueError`. Keys follow the rules of `BoundedSet`
+  elements, and values can be of any type a `dict` field holds. Subclasses,
+  generic or with fixed key and value types, can be declared in its place. ([#82](https://github.com/jacopoabramo/sharedbox/pull/82))
+- `BoundedList` of `int`, `float`, `bool`, `complex` or NumPy integer, float,
+  complex or `bool_` elements supports the buffer protocol: `np.asarray(value)`
+  and `memoryview(value)` share its elements without decoding them, read only
+  for `bool` and `bool_`, and a change of length raises `BufferError` while
+  such a view exists. ([#85](https://github.com/jacopoabramo/sharedbox/pull/85))
+
+### Changed
+
+- Reading a `list`, `tuple`, `set`, `frozenset` or `dict` field allocates and
+  copies less, and reading a record whose class takes every member by position
+  no longer builds a dict of keyword arguments. ([#65](https://github.com/jacopoabramo/sharedbox/pull/65))
+- A union stores a number through its first member of the same kind of
+  number, so `np.int64(5)` written to `float | int` reads back as `5`. ([#66](https://github.com/jacopoabramo/sharedbox/pull/66))
+- `int`, `float`, `complex` and `bool` fields take numpy's integer, floating,
+  complex and bool scalars, and read back the Python type. `np.int64`,
+  `np.float64`, `np.complex128` and `np.bool_` fields read back as those types
+  and hash as `int`, `float`, `complex` and `bool`. ([#66](https://github.com/jacopoabramo/sharedbox/pull/66))
+- The extension is compiled for speed instead of size. Writing a `list`, `set`
+  or `dict` field, and reading, indexing or looking up a `BoundedList` or
+  `BoundedSet`, take less time. The wheels are about 75 KB larger on Linux and
+  17 KB larger on Windows. ([#79](https://github.com/jacopoabramo/sharedbox/pull/79))
+
+### Fixed
+
+- A `list`, `set` or `dict` whose slots end short of its alignment, such as
+  `Annotated[list[Color], Capacity(3)]` for an `Enum` `Color`, is accepted;
+  its size is rounded up to the alignment. `sharedbox` 0.6 refuses a segment
+  that holds one. ([#66](https://github.com/jacopoabramo/sharedbox/pull/66))
+- A `TypeError` about the sizes of an array member of a dataclass or attrs
+  record names its metadata shape, as in `metadata shape (3)`, instead of
+  `field(shape=...)`. ([#70](https://github.com/jacopoabramo/sharedbox/pull/70))
+
+
 ## [0.6.0](https://github.com/jacopoabramo/sharedbox/releases/tag/v0.6.0) - 24-10-2026
 
 ### Added
