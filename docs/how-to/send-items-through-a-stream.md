@@ -334,9 +334,14 @@ reader that only polls with `receive_nowait` never waits, so it keeps raising
 `WouldBlock` and never sees the stream end; give it a `timeout` instead.
 
 `sharedbox` registers an `atexit` hook in each process that stops its box
-watcher threads and its stream worker threads. `atexit` runs handlers
-last-registered first, so a handler you register before importing `sharedbox`
-runs after `sharedbox`'s and finds the ends closed. Spawned child processes
+watcher threads and its stream worker threads, then closes every box and
+stream the process still has open. A box or stream used after the hook,
+from a `__del__` during shutdown for instance, raises
+[`BoxClosedError`][sharedbox.BoxClosedError] or
+[`StreamClosedError`][sharedbox.StreamClosedError], and creating or
+attaching a box raises `BoxClosedError`. `atexit` runs handlers last-registered first, so a handler you
+register before importing `sharedbox` runs after `sharedbox`'s and finds the
+ends closed. Spawned child processes
 exit through `sys.exit` and run the hook. Children made by `fork` or
 `forkserver` exit with `os._exit` and do not, so their daemon threads end with
 the process, and the other processes free a reader ended that way after a
