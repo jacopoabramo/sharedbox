@@ -44,6 +44,9 @@ items through a [stream](../explanation/glossary.md#stream).
   one callback for changes in every box a box refers to
 - [How to send items through a stream](send-items-through-a-stream.md): one
   sender, readers that receive every item or only the newest, and asyncio
+- [How to attach metadata to a box or stream](attach-metadata.md): units or
+  calibration that every process reads, and the version each item was sent
+  under
 
 ### C and C++
 

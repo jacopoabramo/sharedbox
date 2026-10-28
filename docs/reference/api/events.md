@@ -17,6 +17,7 @@ icon: lucide/code
         - follow
         - unfollow
         - nested
+        - metadata
 
 ::: sharedbox.FieldFuture
     options:

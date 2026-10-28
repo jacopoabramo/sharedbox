@@ -166,6 +166,19 @@ void check_names(const std::vector<std::string> &names, std::size_t count) {
                                     std::to_string(count) + " fields");
 }
 
+void check_metadata_spec(const std::string &what, const metadata_spec &spec) {
+    if (detail::plan_metadata(spec))
+        return;
+    const std::uint64_t longest = detail::max_metadata_document(detail::round_up(spec.capacity, 8));
+    if (spec.capacity != 0 && spec.capacity <= UINT32_MAX && spec.initial.size() > longest)
+        throw std::invalid_argument(what + ": the metadata document is " + std::to_string(spec.initial.size()) +
+                                    " bytes; a metadata_capacity of " + std::to_string(spec.capacity) +
+                                    " takes at most " + std::to_string(longest));
+    throw std::invalid_argument(what + ": metadata_capacity " + std::to_string(spec.capacity) +
+                                " with metadata_versions " + std::to_string(spec.versions) +
+                                " does not make a metadata area");
+}
+
 std::string_view payload(const FieldDesc &field, const std::byte *record) {
     const std::span<const std::byte> bytes = detail::payload(to_spec(field), record);
     return {reinterpret_cast<const char *>(bytes.data()), bytes.size()};
@@ -214,6 +227,14 @@ struct Segment::Impl {
             throw NoWaiterSlot("all " + std::to_string(box.waiter_slots()) + " waiter slots of box '" + name +
                                "' are in use");
         throw_status(e, name);
+    }
+
+    // A metadata read that found no such version, reclaimed or never added, raises MetadataGone.
+    [[noreturn]] void fail_metadata(const error &e, std::uint64_t version) const {
+        if (e.code == status::not_found)
+            throw MetadataGone("box '" + name + "' no longer holds metadata version " + std::to_string(version) +
+                               ", or never did");
+        fail(e);
     }
 
     template <class T> T check(result<T> &&got) const {
@@ -336,8 +357,11 @@ std::unique_ptr<Segment> Segment::create(const std::string &name, const std::vec
                                          std::uint64_t schema_hash, double lock_timeout,
                                          std::uint16_t waiter_slots,
                                          const std::vector<std::pair<std::uint32_t, std::string>> &values,
-                                         const std::string &types_table, bool publish) {
+                                         const std::string &types_table, bool publish, std::string_view metadata,
+                                         std::uint64_t metadata_capacity, std::uint32_t metadata_versions) {
     check_lock_timeout(lock_timeout);
+    const metadata_spec spec{bytes_of(metadata), metadata_capacity, metadata_versions};
+    check_metadata_spec("box '" + name + "'", spec);
     if (fields.empty() || fields.size() > max_fields)
         throw std::invalid_argument("a box needs between 1 and 256 fields");
     check_names(names, fields.size());
@@ -367,8 +391,8 @@ std::unique_ptr<Segment> Segment::create(const std::string &name, const std::vec
     impl->names = names;
     impl->lock_timeout = lock_timeout;
     const auto size = static_cast<std::uint32_t>(record_size);
-    result<handle> made =
-        detail::create_impl(name, table, size, schema_hash, waiter_slots, initial, bytes_of(types_table), publish);
+    result<handle> made = detail::create_impl(name, table, size, schema_hash, waiter_slots, initial,
+                                              bytes_of(types_table), spec, publish);
     if (!made && made.error().code == status::exists)
         throw SegmentExists(exists_message(name, names));
     impl->box = impl->check(std::move(made));
@@ -556,6 +580,47 @@ std::uint32_t Segment::waiters() const {
 std::uint64_t Segment::create_id() const {
     auto guard = impl_->enter();
     return impl_->box.create_id();
+}
+
+std::uint64_t Segment::metadata_head() const {
+    auto guard = impl_->enter();
+    return impl_->box.metadata_head();
+}
+
+std::uint32_t Segment::metadata_length(std::uint64_t version) const {
+    auto guard = impl_->enter();
+    const result<std::uint32_t> length = impl_->box.metadata_length(version);
+    if (!length)
+        impl_->fail_metadata(length.error(), version);
+    return *length;
+}
+
+std::string Segment::read_metadata(std::uint64_t version) const {
+    auto guard = impl_->enter();
+    const result<std::uint32_t> length = impl_->box.metadata_length(version);
+    if (!length)
+        impl_->fail_metadata(length.error(), version);
+    std::string out(*length, char{});
+    const result<std::uint32_t> read = impl_->box.read_metadata(version, std::as_writable_bytes(std::span(out)));
+    if (!read)
+        impl_->fail_metadata(read.error(), version);
+    return out;
+}
+
+std::uint64_t Segment::add_metadata(std::string_view doc) {
+    auto guard = impl_->enter();
+    const result<std::uint64_t> added = impl_->box.add_metadata(bytes_of(doc), seconds(impl_->lock_timeout));
+    if (added)
+        return *added;
+    if (added.error().code == status::metadata_full)
+        throw MetadataFull(
+            "box '" + impl_->name +
+            "' has no metadata area; give its class a metadata_capacity, or create it with metadata");
+    if (added.error().code == status::range)
+        throw std::invalid_argument(
+            "box '" + impl_->name + "': the metadata document is " + std::to_string(doc.size()) +
+            " bytes, more than its metadata area takes, about a third of metadata_capacity");
+    impl_->fail(added.error());
 }
 
 sbx_handle *Segment::export_handle() const {

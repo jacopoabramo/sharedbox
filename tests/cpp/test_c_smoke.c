@@ -2,6 +2,7 @@
 #include <sharedbox/sharedbox_c.h>
 
 #include <stdio.h>
+#include <string.h>
 
 /* Defined in test_c_smoke_box.cpp, since creating and unlinking are in the C++ API only. The name
  * returned stays valid until smoke_remove. */
@@ -71,6 +72,22 @@ int main(void) {
         /* Kind 1 is int, which has no description. */
         ok = ok && sbx_field_desc(&h, 0, &kind, &desc, &desc_len) == SBX_OK;
         ok = ok && kind == 1 && desc == NULL && desc_len == 0;
+    }
+    {
+        const uint8_t first[] = {0xa1, 0x61, 0x61, 0x01};
+        const uint8_t tagged[] = {0xc0, 0x01};
+        uint8_t doc[8];
+        uint64_t added = 0;
+        ok = ok && sbx_metadata_head(&h) == 0;
+        ok = ok && sbx_add_metadata(&h, first, sizeof first, 1.0, &added) == SBX_OK && added == 1;
+        ok = ok && sbx_metadata_head(&h) == 1;
+        ok = ok && sbx_read_metadata(&h, 1, doc, sizeof doc, &len) == SBX_OK && len == sizeof first;
+        ok = ok && memcmp(doc, first, sizeof first) == 0;
+        ok = ok && sbx_read_metadata(&h, 1, doc, 2, &len) == SBX_E_RANGE && len == sizeof first;
+        ok = ok && sbx_read_metadata(&h, 2, doc, sizeof doc, &len) == SBX_E_NOT_FOUND;
+        ok = ok && sbx_add_metadata(&h, tagged, sizeof tagged, 1.0, NULL) == SBX_E_RANGE;
+        ok = ok && sbx_metadata_head(&h) == 1;
+        ok = ok && sbx_add_metadata(&h, first, sizeof first, 1.0, &added) == SBX_OK && added == 2;
     }
     sbx_release(&h);
     ok = ok && h.release == NULL && sbx_read(&h, 0, &got, sizeof got, NULL, NULL) == SBX_E_RANGE;

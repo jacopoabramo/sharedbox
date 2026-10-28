@@ -237,6 +237,7 @@ class Watcher:
         "_fields",
         "_group",
         "_lock",
+        "_metadata_head",
         "_pending",
         "_seen",
         "_segment",
@@ -262,6 +263,7 @@ class Watcher:
         self.follower: Follower | None = None
         self._fields: tuple[FieldSpec, ...] = ()
         self._seen: dict[int, tuple[int, bytes, Any]] = {}
+        self._metadata_head = 0
         self._slot: int | None = None
         self._slots_full = False
         WATCHERS.add(self)
@@ -294,6 +296,7 @@ class Watcher:
         with self._lock:
             if self._group is None:
                 self._group = factory()
+                self._metadata_head = self._segment.metadata_head()
                 self._listen_locked(self._to_group, fields)
             self._start_locked()
             return self._group
@@ -338,9 +341,17 @@ class Watcher:
 
     def _emit_changes(self) -> None:
         with self._lock:
-            sink, fields = self._sink, self._fields
+            sink, fields, group = self._sink, self._fields, self._group
         if sink is None:
             return
+        if group is not None:
+            head = self._segment.metadata_head()
+            if head != self._metadata_head:
+                self._metadata_head = head
+                try:
+                    group.metadata.emit(head)
+                except Exception:
+                    logger.exception("a callback for the metadata raised")
         versions = self._segment.versions()
         for spec in fields:
             seen_version, seen_raw, old = self._seen[spec.index]
@@ -499,7 +510,7 @@ class Watcher:
 
 
 class BoxEvents(SignalGroup):
-    """The psygnal signal group of a box: one `(new, old)` signal per field.
+    """The psygnal signal group of a box: one `(new, old)` signal per field, and `metadata`.
 
     It is the type of [`SharedBox.events`][sharedbox.SharedBox.events] and
     of the groups [`follow`][sharedbox.BoxEvents.follow] returns. The
@@ -508,6 +519,14 @@ class BoxEvents(SignalGroup):
     """
 
     _sharedbox_follower: Follower
+    metadata: SignalInstance
+    """Emitted with the new version number when any process adds metadata to the box.
+
+    Several adds between two checks of the watcher thread emit once, with
+    the newest version. `box.events.connect(cb)` receives it too. A group
+    that [`follow`][sharedbox.BoxEvents.follow] returns has it but does
+    not emit it.
+    """
     nested: SignalInstance
     """Emitted as `(path, new, old)` for each change inside the boxes that `follow()` without a field follows.
 
@@ -614,9 +633,11 @@ class BoxEvents(SignalGroup):
 def events_class(owner: type, layout: Layout) -> type[BoxEvents]:
     """Create a [`BoxEvents`][sharedbox.BoxEvents] subclass with one `(new, old)` signal per field of `owner`.
 
-    A class with reference fields also gets the signal `nested`.
+    It also gets the signal `metadata`, and a class with reference fields
+    the signal `nested`.
     """
     signals = {spec.name: Signal(object, object) for spec in layout.fields}
+    signals["metadata"] = Signal(int)
     if layout.refs:
         signals["nested"] = Signal(tuple, object, object)
     return type(f"{owner.__name__}Events", (BoxEvents,), signals)

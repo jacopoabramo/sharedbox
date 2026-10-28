@@ -1,5 +1,6 @@
 *[ABI]: Application binary interface. The rules compiled code follows to call other compiled code, so that two builds can work together.
 *[API]: Application programming interface. The functions and classes a library offers to code that uses it.
+*[CBOR]: Concise Binary Object Representation. A compact binary format for JSON-like values, defined in RFC 8949.
 *[CI]: Continuous integration. The builds and tests GitHub runs on pushes and pull requests to the main branch.
 *[CPU]: Central processing unit. The processor that runs a program.
 *[DLPack]: An open in-memory tensor format that array libraries use to share an array's memory without copying it.

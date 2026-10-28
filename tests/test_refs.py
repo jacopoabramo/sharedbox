@@ -19,6 +19,7 @@ from typing import Any, Optional, Union
 
 import pytest
 from refs_future import Link
+from signatures import box_signature
 
 from sharedbox import (
     BoxClosedError,
@@ -122,7 +123,7 @@ def test_reference_fields_take_defaults_as_in_a_dataclass(
     names: Callable[[str], str],
 ) -> None:
     """Check that reference fields take defaults, init=False and KW_ONLY as a dataclass does."""
-    assert str(inspect.signature(Rig)) == str(inspect.signature(PlainRig))
+    assert str(inspect.signature(Rig)) == box_signature(PlainRig)
     with Motor.create(names("m")) as motor:
         with pytest.raises(TypeError, match="missing value"):
             Rig.create(names("r"), motor, tail=motor)

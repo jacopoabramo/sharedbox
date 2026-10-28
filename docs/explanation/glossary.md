@@ -88,6 +88,26 @@ Lossy is a [reader](#reader) mode in which the reader skips the items the
 [`missed`][sharedbox.SharedReceiveStream.missed]. See
 [`reader`][sharedbox.SharedStream.reader].
 
+### Metadata
+
+Metadata is a value a [box](#box) or [stream](#stream) keeps in its
+[segment](#segment) to say what its fields or items mean, such as their
+units or the calibration they were taken with. Every process reads it from
+the segment, and adding a new value adds a
+[metadata version](#metadata-version). The `metadata` of
+[`field`][sharedbox.field] is a different thing, kept in each process's
+class. See
+[How to attach metadata to a box or stream](../how-to/attach-metadata.md).
+
+### Metadata version
+
+A metadata version is one value of a box's or stream's
+[metadata](#metadata), numbered from 1. Adding metadata adds a version and
+leaves the earlier ones as they were, until the box or stream lets the
+oldest go to make room for new ones. A stream item belongs to the newest
+version its [sender](#sender) added before sending it. See
+[`add_metadata`][sharedbox.SharedBox.add_metadata].
+
 ### Reader
 
 A reader is an object that receives the items of a [stream](#stream) in one

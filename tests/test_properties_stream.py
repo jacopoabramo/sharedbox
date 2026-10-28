@@ -1,7 +1,8 @@
 import uuid
 from dataclasses import dataclass
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
+import cbor2
 import numpy as np
 import numpy.typing as npt
 import pytest
@@ -18,6 +19,7 @@ from hypothesis.stateful import (
 
 from sharedbox import (
     MaxShape,
+    MetadataFullError,
     ReaderReleased,
     SharedReceiveStream,
     SharedSendStream,
@@ -27,6 +29,8 @@ from sharedbox import (
 
 CAPACITY = 4
 MAX_READERS = 4
+METADATA_VERSIONS = 4
+METADATA_CAPACITY = 128
 
 
 @dataclass
@@ -201,3 +205,147 @@ class ReleaseMachine(StreamMachine):
 
 
 TestReleaseMachine = ReleaseMachine.TestCase
+
+
+@dataclass(frozen=True)
+class Version:
+    """A metadata version as the area stores it: the position it applies from, its place in the ring and its document."""
+
+    position: int
+    offset: int
+    size: int
+    document: dict[str, Any]
+
+
+class MetadataMachine(RuleBasedStateMachine):
+    """One stream with metadata, its sender and a lossless reader, against a model of the metadata area."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.name = ""
+        self.stream: SharedStream[int]
+        self.sender: SharedSendStream[int]
+        self.reader: SharedReceiveStream[int]
+        self.sent = 0
+        self.received = 0
+        self.versions: list[Version] = []
+        self.held: set[int] = set()
+
+    @initialize(first=st.booleans())
+    def create(self, first: bool) -> None:
+        """Create the stream, with version 1 or with no version, take its sender and open a reader."""
+        self.name = f"sbtest-{uuid.uuid4().hex[:16]}"
+        metadata = self.document(1, 0) if first else None
+        self.stream = SharedStream.create(
+            int,
+            self.name,
+            capacity=CAPACITY,
+            metadata=metadata,
+            metadata_capacity=METADATA_CAPACITY,
+            metadata_versions=METADATA_VERSIONS,
+        )
+        self.sender = self.stream.sender()
+        self.reader = self.stream.reader(start="oldest")
+        if metadata is not None:
+            self.store(metadata)
+
+    @staticmethod
+    def document(version: int, pad: int) -> dict[str, Any]:
+        """The document of `version`, `pad` characters longer than the shortest."""
+        return {"version": version, "pad": "x" * pad}
+
+    def store(self, document: dict[str, Any]) -> None:
+        """Record `document` as the next version, at the place the area writes it, and drop the versions it overwrites."""
+        size = len(cbor2.dumps(document, canonical=True))
+        at = self.place(size)
+        self.held -= set(self.overwritten(at, size))
+        self.versions.append(Version(self.sent, at, size, document))
+        self.held.add(len(self.versions))
+
+    def place(self, size: int) -> int:
+        """The ring offset of the next document: after the newest, or 0 when it does not fit there."""
+        if not self.versions:
+            return 0
+        newest = self.versions[-1]
+        end = -(-(newest.offset + newest.size) // 8) * 8
+        return end if end + size <= METADATA_CAPACITY else 0
+
+    def overwritten(self, at: int, size: int) -> list[int]:
+        """The kept versions older than the newest whose entry or bytes the next document takes, oldest first."""
+        reused = len(self.versions) + 1 - METADATA_VERSIONS
+        return [
+            u
+            for u in sorted(self.held)
+            if u < len(self.versions)
+            and (
+                u == reused
+                or (
+                    at < self.versions[u - 1].offset + self.versions[u - 1].size
+                    and self.versions[u - 1].offset < at + size
+                )
+            )
+        ]
+
+    def full(self, document: dict[str, Any]) -> bool:
+        """Whether adding `document` would overwrite a version that a reader may still need.
+
+        A version is needed while an item in the ring was sent under it, or,
+        for version 1, before it. A version with no items is needed as long
+        as an older version is kept, until the items of that span leave the
+        ring.
+        """
+        size = len(cbor2.dumps(document, canonical=True))
+        gone = self.overwritten(self.place(size), size)
+        for u in gone:
+            start, end = self.versions[u - 1].position, self.versions[u].position
+            older_kept = any(w < u and w not in gone for w in self.held)
+            covers = start != end or (u == 1 and start != 0) or older_kept
+            if covers and end + CAPACITY > self.sent:
+                return True
+        return False
+
+    @precondition(lambda self: self.sent < self.received + CAPACITY)
+    @rule()
+    def send(self) -> None:
+        """Send the next position as the item."""
+        self.sender.send_nowait(self.sent)
+        self.sent += 1
+
+    @rule(pad=st.integers(0, 20))
+    def add_metadata(self, pad: int) -> None:
+        """Add the next version, which applies from the next item; MetadataFullError exactly when it would overwrite a version a reader may still need."""
+        version = len(self.versions) + 1
+        document = self.document(version, pad)
+        if self.full(document):
+            with pytest.raises(MetadataFullError):
+                self.sender.add_metadata(document)
+            return
+        assert self.sender.add_metadata(document) == version
+        self.store(document)
+
+    @precondition(lambda self: self.received < self.sent)
+    @rule()
+    def receive(self) -> None:
+        """Receive the next item and see the newest version added at or before its position, 0 and no metadata before version 1."""
+        assert self.reader.receive_nowait() == self.received
+        version = max(
+            (
+                v
+                for v, added in enumerate(self.versions, start=1)
+                if added.position <= self.received
+            ),
+            default=0,
+        )
+        assert self.reader.metadata_version == version
+        assert self.reader.metadata == (
+            self.versions[version - 1].document if version else None
+        )
+        self.received += 1
+
+    def teardown(self) -> None:
+        if self.name:
+            self.stream.close()
+            SharedStream.unlink(self.name)
+
+
+TestMetadataMachine = MetadataMachine.TestCase

@@ -13,11 +13,11 @@ the layout and the native module converts values.
 ```text
 sharedbox/
 |-- include/sharedbox/
-|   |-- core.hpp               what every segment kind uses: result and error, liveness, names, mappings, the open step, waiter slots, the type codec
-|   |-- box.hpp                box layout 3.1 and its protocols: create, publish, open, lock, read, write, capsule handle
-|   |-- stream.hpp             stream layout 1.3: create, open, the sender, readers, the gate, dead ends
+|   |-- core.hpp               what every segment kind uses: result and error, liveness, names, mappings, the open step, waiter slots, the type codec, the metadata area and its CBOR check
+|   |-- box.hpp                box layout 3.2 and its protocols: create, publish, open, lock, read, write, metadata, capsule handle
+|   |-- stream.hpp             stream layout 1.4: create, open, the sender, readers, the gate, dead ends, metadata
 |   |-- sharedbox.hpp          includes every kind; the header consumers include
-|   |-- sharedbox_c.h          minimal C interface: sbx_open, sbx_import, sbx_read, sbx_write, sbx_schema_hash, sbx_release, sbx_field_desc, typed sbx_read_* and sbx_write_*
+|   |-- sharedbox_c.h          minimal C interface: sbx_open, sbx_import, sbx_read, sbx_write, sbx_schema_hash, sbx_release, sbx_field_desc, typed sbx_read_* and sbx_write_*, sbx_metadata_head, sbx_read_metadata, sbx_add_metadata
 |   `-- sharedbox_c.cpp        its implementation, compiled by the consumer (CMake target sharedbox::c)
 |-- cmake/
 |   |-- sharedbox-config.cmake       find_package(sharedbox) from an installed wheel; the build writes
@@ -32,6 +32,7 @@ sharedbox/
 |   |-- _events.py             BoxEvents, FieldWatch, the watcher thread
 |   |-- _follow.py             BoxEvents.follow and unfollow: forwarding the events of boxes that references reach
 |   |-- _stream.py             SharedStream, SharedSendStream, SharedReceiveStream, ReceiveEvents, the statistics classes, the worker threads
+|   |-- _metadata.py           metadata documents: the type variable M, CBOR encoding, read-only decoding, the cache of decoded versions
 |   |-- _refs.py               reference fields: BoxRef, the class registry, BrokenReferenceError, UnknownBoxClassError
 |   |-- _exit.py               the exit handler: stops the watcher and stream threads, closes boxes, streams and ends,
 |   |                          replaces the native objects of watchers and box classes
@@ -69,7 +70,9 @@ sharedbox/
 |   |-- test_follow.py         BoxEvents.follow, unfollow and nested
 |   |-- test_native_waiters.py waiter slots, dead owners, interrupt
 |   |-- test_box_sync_async.py a sync and an async watch on one box in two threads
+|   |-- test_metadata.py       metadata of a box: documents, versions, events, typed access, reserved names
 |   |-- test_stream.py         SharedStream, sender and reader, blocking and non-blocking calls
+|   |-- test_stream_metadata.py  metadata of a stream: the version of each item, in one process and across processes
 |   |-- test_stream_async.py   asyncio calls on a stream, cancellation
 |   |-- test_stream_events.py  ReceiveEvents delivery
 |   |-- test_stream_processes.py  streams across processes, dead senders and readers
@@ -93,7 +96,7 @@ sharedbox/
 |   |-- examples/              one script per how-to guide, included by the guide
 |   |-- javascripts/charts.js  draws each div of class sbx-chart from a plotly figure JSON file
 |   |-- assets/benchmarks/     the figure JSON files of the performance page, from benchbox plot
-|   `-- reference/segment-layout.md  core 1.0, box layout 3.1, names and protocols
+|   `-- reference/segment-layout.md  core 1.0, box layout 3.2, stream layout 1.4, names and protocols
 |-- includes/abbreviations.md  acronym tooltips appended to every page
 |-- zensical.toml              site configuration and navigation
 |-- .github/workflows/ci.yaml  lint, docs check, C++ tests, cibuildwheel wheels, tests, stress,
@@ -137,18 +140,19 @@ class's identity (the `identity` class keyword, by default
 always asks for a new name and raises `SegmentExistsError` if it is taken.
 
 Every segment starts with the same 64-byte line, whatever its kind. Core
-version 1.0, box layout 3.1, from offset 0:
+version 1.0, box layout 3.2, from offset 0:
 
 - Common line 0, written once at creation: `magic` (`SBX_BOX_` for a box,
   `SBX_STRM` for a stream), `core_major` 1, `core_minor` 0, `kind_major` 3,
-  `kind_minor` 1, `schema_hash`, `create_id`, `creator_start`,
+  `kind_minor` 2, `schema_hash`, `create_id`, `creator_start`,
   `creator_pidns`, `creator_pid`, `waiter_slots`, `size`.
 - Box line 1, at offset 64: `seq` (sequence lock; the generation is
   `seq >> 1`, there is no generation field), `writer_pid`, `wake_word`,
   `waiters` and `sleepers`, which writes and waits change; then written
   once at creation `field_count`, `record_size`, `record`, `tail` (always
-  128) and `types_size`, followed by reserved zero bytes. The header is
-  128 bytes.
+  128), `types_size`, `metadata_size` and `metadata` (the offset of the
+  metadata area, 0 for none); last `metadata_head`, the newest metadata
+  version, 0 for none, which each add changes. The header is 128 bytes.
 - The tail: `field_count` field table entries of 8 bytes (`u32 offset`,
   `u32 capacity_and_kind`: top 8 bits the kind code, the low 24 the
   capacity or size, or for kinds 64 and up the offset of the field's
@@ -159,8 +163,13 @@ version 1.0, box layout 3.1, from offset 0:
   table of `types_size` bytes. Kinds are 0 to 5, 6 to 12 (fixed-size
   scalars), 13 to 23 (fixed-width numbers and `datetime64`) and 64 to 75
   (described types; 75, an array up to a maximum shape, only in a stream).
-- The record, at a multiple of 64. The mapping size is rounded up to 4 KiB.
-  `record + record_size <= 2**32 - 4096`.
+- The record, at a multiple of 64. `record + record_size <= 2**32 - 4096`.
+- The metadata area, when `metadata` is not 0, at the first multiple of 64
+  after the record, `metadata + metadata_size <= 2**32 - 4096`: a 64-byte
+  line (`entries`, `ring_size`), `entries` version entries of 32 bytes
+  (`seq`, `version`, `position`, `offset`, `length`), then a ring of
+  `ring_size` bytes holding one CBOR document per version. The mapping size
+  is rounded up to 4 KiB.
 
 `magic` is stored last on create, with release ordering, after the initial
 values are in the record; attach waits for it. Attach copies line 0 and the
@@ -176,8 +185,11 @@ layout 1.0 or 2.0, which 0.5 and earlier wrote.
 A stream's segment starts with a 256-byte header: the common line, a line
 of geometry written once, the sender's line and the readers' line. Then
 come a 64-byte entry per reader, the waiter slots, `capacity` slots each
-holding a `seq` and one item, and the description table. Every offset is
-64-bit. The full specification is in `docs/reference/segment-layout.md`.
+holding a `seq` and one item, the description table, and the metadata
+area laid out as a box's. Stream layout 1.4 keeps `metadata_size` and
+`metadata` in the geometry line and `metadata_head` in the sender's line.
+Every offset is 64-bit. The full specification is in
+`docs/reference/segment-layout.md`.
 
 ### Record encoding
 

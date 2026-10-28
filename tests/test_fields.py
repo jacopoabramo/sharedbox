@@ -12,6 +12,7 @@ from typing import Annotated, Any, ClassVar, cast
 
 import pytest
 from os_names import os_name
+from signatures import box_signature
 
 from sharedbox import (
     Capacity,
@@ -144,7 +145,7 @@ def test_constructor_signature_matches_a_dataclass(
     """Check that for each accepted field set a box constructor has the same signature as the equivalent dataclass."""
     box = box_twin(annotations, options, kw_only)
     plain = dataclass_twin(annotations, options, kw_only)
-    assert str(inspect.signature(box)) == str(inspect.signature(plain))
+    assert str(inspect.signature(box)) == box_signature(plain)
 
 
 @pytest.mark.parametrize(("annotations", "options", "kw_only"), REFUSED)
@@ -160,7 +161,7 @@ def test_field_order_is_refused_where_a_dataclass_refuses_it(
 
 def test_field_options_behave_as_in_a_dataclass(unique_name: str) -> None:
     """Check that field options give a box the same signature, values, repr and field metadata as a dataclass."""
-    assert str(inspect.signature(Stage)) == str(inspect.signature(PlainStage))
+    assert str(inspect.signature(Stage)) == box_signature(PlainStage)
     plain = PlainStage(1.0, "t", z=2.0, limit=3)
     with Stage.create(unique_name, 1.0, "t", z=2.0, limit=3) as box:
         assert box.snapshot() == dataclasses.asdict(plain)
@@ -354,7 +355,7 @@ def test_an_annotated_override_drops_the_bases_field_options() -> None:
         plain.repr,
         plain.metadata,
     )
-    assert str(inspect.signature(Redeclared)) == str(inspect.signature(PlainRedeclared))
+    assert str(inspect.signature(Redeclared)) == box_signature(PlainRedeclared)
 
 
 class KwBase(SharedBox, kw_only=True):
@@ -424,7 +425,7 @@ def test_kw_only_is_inherited_as_in_a_dataclass(name: str) -> None:
     """Check that keyword-only settings are inherited into the constructor signature as they are for a dataclass."""
     # Classes held by parametrize outlive the extension at exit, which nanobind reports as leaks.
     box, plain = globals()[name], globals()[f"Plain{name}"]
-    assert str(inspect.signature(box)) == str(inspect.signature(plain))
+    assert str(inspect.signature(box)) == box_signature(plain)
 
 
 @pytest.mark.parametrize("name", ["label", "extra"], ids=["inherited", "new name"])
@@ -465,7 +466,7 @@ def test_initvars_reach_post_init_in_order_and_are_not_stored(
     """Check that InitVar values reach __post_init__ in order and are not stored as fields."""
     with Offsets.create(unique_name, 5, 1, 2) as box:
         assert box.snapshot() == {"position": 5, "total": 102}
-        assert list(box.events) == ["position", "total"]
+        assert list(box.events) == ["metadata", "position", "total"]
         assert not hasattr(box, "second")
         with Stored.attach(unique_name) as stored:
             assert stored.total == 102
@@ -482,8 +483,8 @@ def test_initvar_signature_and_order_match_a_dataclass() -> None:
     """Check that InitVar fields give the same signature and ordering errors as in a dataclass."""
     annotations = {"a": int, "offset": InitVar[int], "_": KW_ONLY, "b": int}
     options = {"offset": {"default": 0}, "b": {"default": 1}}
-    assert str(inspect.signature(box_twin(annotations, options, False))) == str(
-        inspect.signature(dataclass_twin(annotations, options, False))
+    assert str(inspect.signature(box_twin(annotations, options, False))) == (
+        box_signature(dataclass_twin(annotations, options, False))
     )
     refused = {"a": int, "offset": InitVar[int]}
     with pytest.raises(TypeError):
@@ -788,7 +789,7 @@ def test_a_bare_redeclaration_keeps_only_a_plain_inherited_default(
             {"__annotations__": {"x": child_hint}, "__post_init__": post_init},
         )
     )
-    assert str(inspect.signature(box)) == str(inspect.signature(plain))
+    assert str(inspect.signature(box)) == box_signature(plain)
     assert described(fields(cast(type[SharedBox], box))) == described(
         dataclasses.fields(plain)
     )

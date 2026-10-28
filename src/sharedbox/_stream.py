@@ -39,7 +39,8 @@ from typing import (
 
 from psygnal import Signal, SignalGroup, SignalInstance
 
-from ._box import check_name
+from ._box import METADATA_CAPACITY, check_name
+from ._metadata import DocumentCache, M, encode, newest
 from ._native import (
     EndOfStream,
     Reader,
@@ -69,10 +70,10 @@ WORKER_THREADS: set[threading.Thread] = set()
 READER_IDS = itertools.count(1)
 YIELD_EVERY: Final = 64
 YIELD_AFTER: Final = 0.001
-LIVE_ENDS: weakref.WeakSet[SharedSendStream[Any] | SharedReceiveStream[Any]] = (
-    weakref.WeakSet()
-)
-LIVE_STREAMS: weakref.WeakSet[SharedStream[Any]] = weakref.WeakSet()
+LIVE_ENDS: weakref.WeakSet[
+    SharedSendStream[Any, Any] | SharedReceiveStream[Any, Any]
+] = weakref.WeakSet()
+LIVE_STREAMS: weakref.WeakSet[SharedStream[Any, Any]] = weakref.WeakSet()
 
 
 @dataclass(frozen=True)
@@ -242,7 +243,7 @@ class SharedStreamStatistics:
     readers: tuple[ReceiveStreamStatistics, ...]
 
 
-class SharedStream(Generic[T]):
+class SharedStream(Generic[T, M]):
     """A ring of items in shared memory, sent by one process and received by up to `max_readers` readers.
 
     Create it with [`create`][sharedbox.SharedStream.create] in one process,
@@ -255,6 +256,7 @@ class SharedStream(Generic[T]):
 
     __slots__ = (
         "__weakref__",
+        "_documents",
         "_ends",
         "_hint",
         "_item",
@@ -263,12 +265,13 @@ class SharedStream(Generic[T]):
         "_sender",
     )
 
+    _documents: DocumentCache
     _hint: object
     _item: Item
     _name: str
     _native: Stream
-    _ends: weakref.WeakSet[SharedSendStream[T] | SharedReceiveStream[T]]
-    _sender: SharedSendStream[T] | None
+    _ends: weakref.WeakSet[SharedSendStream[T, M] | SharedReceiveStream[T, M]]
+    _sender: SharedSendStream[T, M] | None
 
     @overload
     @classmethod
@@ -279,7 +282,11 @@ class SharedStream(Generic[T]):
         *,
         capacity: int,
         max_readers: int = 8,
-    ) -> SharedStream[T]: ...
+        metadata: object = None,
+        metadata_capacity: int | None = None,
+        metadata_versions: int = 64,
+        metadata_type: type[M] | None = None,
+    ) -> SharedStream[T, M]: ...
     @overload
     @classmethod
     def create(
@@ -289,7 +296,11 @@ class SharedStream(Generic[T]):
         *,
         capacity: int,
         max_readers: int = 8,
-    ) -> SharedStream[Any]: ...
+        metadata: object = None,
+        metadata_capacity: int | None = None,
+        metadata_versions: int = 64,
+        metadata_type: type[M] | None = None,
+    ) -> SharedStream[Any, M]: ...
     @classmethod
     def create(
         cls,
@@ -298,7 +309,11 @@ class SharedStream(Generic[T]):
         *,
         capacity: int,
         max_readers: int = 8,
-    ) -> SharedStream[Any]:
+        metadata: object = None,
+        metadata_capacity: int | None = None,
+        metadata_versions: int = 64,
+        metadata_type: object = None,
+    ) -> SharedStream[Any, Any]:
         """Create the stream `name` holding `capacity` items of `item_type`.
 
         Parameters
@@ -312,18 +327,40 @@ class SharedStream(Generic[T]):
             this many items behind before `send` waits for it.
         max_readers
             Readers that may be open at once, 1 to 4095.
+        metadata
+            The stream's first metadata version, in force from the first
+            item; see [`metadata`][sharedbox.SharedStream.metadata]. It
+            takes the values
+            [`add_metadata`][sharedbox.SharedSendStream.add_metadata] takes.
+        metadata_capacity
+            Bytes of the stream's metadata area, 0 for none or at least 24.
+            The area takes 64 bytes, plus 32 per version, plus the capacity
+            rounded up to a multiple of 8, and must not pass 2**32 - 1
+            bytes in all. A metadata document takes at most about a third
+            of the capacity. By default a stream created with `metadata`
+            gets 65536, and any other stream no area, so `add_metadata` on
+            its sender raises `MetadataFullError`.
+        metadata_versions
+            How many metadata versions the stream keeps at most, 2 to 65535.
+        metadata_type
+            The type of the stream's metadata documents, for type checkers.
 
         Raises
         ------
         SegmentExistsError
             If the name is taken.
         TypeError
-            If a box field could not hold `item_type`.
+            If a box field could not hold `item_type`, or `metadata` holds
+            a value `add_metadata` refuses.
         ValueError
-            If the name breaks the naming rules, or `capacity` or
-            `max_readers` is out of range.
+            If the name breaks the naming rules, `capacity` or
+            `max_readers` is out of range, or `metadata`,
+            `metadata_capacity` and `metadata_versions` make no metadata
+            area that holds `metadata`.
         """
         item = item_of(item_type)
+        if metadata_capacity is None:
+            metadata_capacity = 0 if metadata is None else METADATA_CAPACITY
         native = Stream.create(
             secrets.token_hex(8) if name is None else check_name(name),
             item.types,
@@ -331,18 +368,40 @@ class SharedStream(Generic[T]):
             item.schema_hash,
             capacity,
             max_readers,
+            metadata=None if metadata is None else encode(metadata),
+            metadata_capacity=metadata_capacity,
+            metadata_versions=metadata_versions,
         )
         return cls._wrap(item_type, item, native)
 
     @overload
     @classmethod
-    def attach(cls, item_type: type[T], name: str) -> SharedStream[T]: ...
+    def attach(
+        cls,
+        item_type: type[T],
+        name: str,
+        *,
+        metadata_type: type[M] | None = None,
+    ) -> SharedStream[T, M]: ...
     @overload
     @classmethod
-    def attach(cls, item_type: object, name: str) -> SharedStream[Any]: ...
+    def attach(
+        cls,
+        item_type: object,
+        name: str,
+        *,
+        metadata_type: type[M] | None = None,
+    ) -> SharedStream[Any, M]: ...
     @classmethod
-    def attach(cls, item_type: object, name: str) -> SharedStream[Any]:
+    def attach(
+        cls, item_type: object, name: str, *, metadata_type: object = None
+    ) -> SharedStream[Any, Any]:
         """Open the stream `name`, whose items must have the type `item_type`.
+
+        Parameters
+        ----------
+        metadata_type
+            The type of the stream's metadata documents, for type checkers.
 
         Raises
         ------
@@ -365,11 +424,12 @@ class SharedStream(Generic[T]):
         Segment.unlink(check_name(name))
 
     @classmethod
-    def _wrap(cls, hint: object, item: Item, native: Stream) -> SharedStream[Any]:
-        stream: SharedStream[Any] = object.__new__(cls)
+    def _wrap(cls, hint: object, item: Item, native: Stream) -> SharedStream[Any, Any]:
+        stream: SharedStream[Any, Any] = object.__new__(cls)
         stream._hint = hint
         stream._item = item
         stream._native = native
+        stream._documents = DocumentCache()
         stream._name = native.name
         stream._ends = weakref.WeakSet()
         stream._sender = None
@@ -392,7 +452,65 @@ class SharedStream(Generic[T]):
     def closed(self) -> bool:
         return self._native.closed
 
-    def sender(self, on_full: OnFull = "wait") -> SharedSendStream[T]:
+    @property
+    def metadata(self) -> M | None:
+        """The value of the stream's newest metadata version, or None if it has none.
+
+        Metadata is a document stored beside the items, such as the units or
+        settings they were taken with. The sender adds a version with
+        [`add_metadata`][sharedbox.SharedSendStream.add_metadata], in force
+        from the next item it sends, and a reader's
+        [`metadata`][sharedbox.SharedReceiveStream.metadata] gives the
+        version of the item it received last. The stream keeps the earlier
+        versions until it reclaims them for newer ones, and
+        [`metadata_version_of`][sharedbox.SharedStream.metadata_version_of]
+        reads them until then. A mapping reads back as a read-only mapping
+        and a list as a tuple, nested the same way. Each stream object
+        decodes a version once and keeps the 32 it used last.
+
+        Raises
+        ------
+        StreamClosedError
+            If the stream is closed.
+        """
+        return newest(self._native.metadata_head, self.metadata_version_of)
+
+    @property
+    def metadata_version(self) -> int:
+        """The number of the stream's newest metadata version, 0 if it has none.
+
+        Raises
+        ------
+        StreamClosedError
+            If the stream is closed.
+        """
+        return self._native.metadata_head()
+
+    def metadata_version_of(self, version: int) -> M:
+        """Return the value of metadata version `version`.
+
+        Each stream object decodes a version once and keeps the 32 it used
+        last.
+
+        Raises
+        ------
+        MetadataGoneError
+            If the stream no longer holds that version, or never did.
+        StreamClosedError
+            If the stream is closed.
+        """
+        # Raises for a reclaimed version, which the cache may still hold.
+        self._native.metadata_length(version)
+        return cast(
+            M,
+            self._documents.get(
+                self._native.create_id,
+                version,
+                functools.partial(self._native.read_metadata, version),
+            ),
+        )
+
+    def sender(self, on_full: OnFull = "wait") -> SharedSendStream[T, M]:
         """Return the stream's sender for this process.
 
         Parameters
@@ -427,7 +545,7 @@ class SharedStream(Generic[T]):
         """
         if on_full not in ("wait", "release"):
             raise ValueError(f"on_full is 'wait' or 'release'; got {on_full!r}")
-        end: SharedSendStream[T] = SharedSendStream(
+        end: SharedSendStream[T, M] = SharedSendStream(
             self, self._native.sender(), on_full == "release"
         )
         self._ends.add(end)
@@ -436,7 +554,7 @@ class SharedStream(Generic[T]):
 
     def reader(
         self, mode: Mode = "lossless", start: Start = "newest"
-    ) -> SharedReceiveStream[T]:
+    ) -> SharedReceiveStream[T, M]:
         """Open a reader.
 
         Parameters
@@ -460,7 +578,7 @@ class SharedStream(Generic[T]):
             raise ValueError(f"mode is 'lossless', 'lossy' or 'latest'; got {mode!r}")
         if start not in ("newest", "oldest"):
             raise ValueError(f"start is 'newest' or 'oldest'; got {start!r}")
-        end: SharedReceiveStream[T] = SharedReceiveStream(
+        end: SharedReceiveStream[T, M] = SharedReceiveStream(
             self, self._native.reader(MODES[mode], start == "newest")
         )
         self._ends.add(end)
@@ -498,7 +616,7 @@ class SharedStream(Generic[T]):
             end.close()
         self._native.close()
 
-    def __enter__(self) -> SharedStream[T]:
+    def __enter__(self) -> SharedStream[T, M]:
         return self
 
     def __exit__(self, *exc_info: object) -> None:
@@ -506,7 +624,7 @@ class SharedStream(Generic[T]):
 
     def __reduce__(
         self,
-    ) -> tuple[Callable[..., SharedStream[Any]], tuple[object, str, int]]:
+    ) -> tuple[Callable[..., SharedStream[Any, Any]], tuple[object, str, int]]:
         return (attach_stream, (self._hint, self.name, self._native.create_id))
 
     def __repr__(self) -> str:
@@ -514,7 +632,9 @@ class SharedStream(Generic[T]):
         return f"<SharedStream[{self._item.label}] {self.name!r}{state}>"
 
 
-def attach_stream(item_type: object, name: str, create_id: int) -> SharedStream[Any]:
+def attach_stream(
+    item_type: object, name: str, create_id: int
+) -> SharedStream[Any, Any]:
     """Attach to the stream a pickle refers to, if it is still the stream that was pickled.
 
     Raises
@@ -624,7 +744,7 @@ class End:
         "_worker",
     )
 
-    def __init__(self, stream: SharedStream[Any], native: Sender | Reader) -> None:
+    def __init__(self, stream: SharedStream[Any, Any], native: Sender | Reader) -> None:
         self._stream = stream
         self._native = native
         self._lock = threading.Lock()
@@ -734,7 +854,7 @@ def holder() -> object:
     return threading.get_ident() if task is None else task
 
 
-class SharedSendStream(End, Generic[T]):
+class SharedSendStream(End, Generic[T, M]):
     """The sender of a stream: one per stream, in the process that holds it.
 
     [`SharedStream.sender`][sharedbox.SharedStream.sender] returns it. The
@@ -749,14 +869,14 @@ class SharedSendStream(End, Generic[T]):
     _holders: set[object]
 
     def __init__(
-        self, stream: SharedStream[Any], native: Sender, release: bool = False
+        self, stream: SharedStream[Any, Any], native: Sender, release: bool = False
     ) -> None:
         super().__init__(stream, native)
         self._holders = set()
         self._release = release
 
     @property
-    def stream(self) -> SharedStream[T]:
+    def stream(self) -> SharedStream[T, M]:
         """The stream this sender sends to."""
         return self._stream
 
@@ -846,6 +966,39 @@ class SharedSendStream(End, Generic[T]):
         """
         self._refuse_nested()
         self._send_nowait(item, self._release)
+
+    def add_metadata(self, value: M) -> int:  # type: ignore[misc]
+        """Store `value` as the stream's next metadata version and return that version.
+
+        The version is in force from the next item this sender sends: a
+        reader that receives that item or a later one sees it in
+        [`metadata`][sharedbox.SharedReceiveStream.metadata]. The value is
+        `None`, a `bool`, an `int` from -2**64 to 2**64 - 1, a `float`, a
+        `str`, `bytes`, a mapping with `str` keys, or a `list` or `tuple`,
+        nested up to 32 levels. The add wakes no reader and does not wait
+        for one, but waits while another thread sends on this sender. The
+        oldest versions are reclaimed once the stream holds
+        `metadata_versions` of them, or needs their room in its metadata
+        area, but never while an item still in the ring was sent under one;
+        version 1 is also kept while an item sent before it is in the ring.
+
+        Raises
+        ------
+        TypeError
+            If the value holds another type, or a mapping key is not a `str`.
+        ValueError
+            If an `int` is out of range, the nesting is deeper than 32
+            levels, or the document is longer than the metadata area takes,
+            about a third of the stream's `metadata_capacity`.
+        MetadataFullError
+            If the stream has no metadata area, or this add would reclaim a
+            version that an item still in the ring was sent under, or version
+            1 while an item sent before it is in the ring. An add after enough
+            further sends succeeds.
+        StreamClosedError
+            If this sender is closed.
+        """
+        return self._native.add_metadata(encode(value))
 
     def _send_nowait(self, item: T, release: bool) -> None:
         try:
@@ -1065,10 +1218,10 @@ class SharedSendStream(End, Generic[T]):
         if self._stream._sender is self:
             self._stream._sender = None
 
-    def __enter__(self) -> SharedSendStream[T]:
+    def __enter__(self) -> SharedSendStream[T, M]:
         return self
 
-    async def __aenter__(self) -> SharedSendStream[T]:
+    async def __aenter__(self) -> SharedSendStream[T, M]:
         return self
 
     def __exit__(self, *exc_info: object) -> None:
@@ -1124,7 +1277,7 @@ class ReceiveEvents(SignalGroup):
     released = Signal(int)
     """Emitted as `(missed,)` when the sender released this lossless reader; delivery goes on at the newest item."""
 
-    def __init__(self, reader: SharedReceiveStream[Any] | None = None) -> None:
+    def __init__(self, reader: SharedReceiveStream[Any, Any] | None = None) -> None:
         """Create the signal group of a stream reader.
 
         Parameters
@@ -1142,7 +1295,7 @@ class ReceiveEvents(SignalGroup):
             reader._reconcile()
 
 
-class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T]):
+class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T, M]):
     """A reader of a stream, in the process that opened it.
 
     [`SharedStream.reader`][sharedbox.SharedStream.reader] returns it.
@@ -1160,14 +1313,16 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T]):
     __slots__ = (
         "_carry",
         "_delivering",
+        "_documents",
         "_events",
         "_generation",
         "_position",
     )
     _native: Reader
 
-    def __init__(self, stream: SharedStream[Any], native: Reader) -> None:
+    def __init__(self, stream: SharedStream[Any, Any], native: Reader) -> None:
         super().__init__(stream, native)
+        self._documents = DocumentCache()
         self._position: int | None = None
         self._carry: collections.deque[tuple[Any, int | None] | ReaderReleased] = (
             collections.deque()
@@ -1177,7 +1332,7 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T]):
         self._generation = 0
 
     @property
-    def stream(self) -> SharedStream[T]:
+    def stream(self) -> SharedStream[T, M]:
         """The stream this reader receives from."""
         return self._stream
 
@@ -1199,6 +1354,58 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T]):
     def missed(self) -> int:
         """Items a lossy or latest reader skipped, or a lossless reader lost to releases."""
         return self._native.missed
+
+    @property
+    def metadata_version(self) -> int:
+        """The metadata version the item this reader received last was sent under.
+
+        It is the newest version the sender added before it sent that item,
+        and 0 before the first item, or for an item sent before the stream
+        had any version.
+
+        Raises
+        ------
+        MetadataGoneError
+            If the stream no longer holds that version. A version can be
+            reclaimed once the item this reader received last has left the
+            ring, which for a lossy or latest reader can happen right after
+            the receive.
+        StreamClosedError
+            If this reader is closed.
+        """
+        if self.closed:
+            raise StreamClosedError(
+                f"stream {self._stream.name!r}: the reader was closed"
+            )
+        position = self._position
+        return 0 if position is None else self._native.metadata_version_at(position)
+
+    @property
+    def metadata(self) -> M | None:
+        """The value of [`metadata_version`][sharedbox.SharedReceiveStream.metadata_version], None while it is 0.
+
+        A mapping reads back as a read-only mapping and a list as a tuple,
+        nested the same way. Each reader decodes a version once and keeps
+        the 32 it used last.
+
+        Raises
+        ------
+        MetadataGoneError
+            If the stream no longer holds that version.
+        StreamClosedError
+            If this reader is closed.
+        """
+        version = self.metadata_version
+        if version == 0:
+            return None
+        return cast(
+            M,
+            self._documents.get(
+                self._stream._native.create_id,
+                version,
+                functools.partial(self._stream._native.read_metadata, version),
+            ),
+        )
 
     def receive(self, timeout: float | None = None) -> T:
         """Return the next item, with new arrays.
@@ -1320,7 +1527,7 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T]):
         self._check_consumer()
         return IterInto(self, self._targets(out))
 
-    def __iter__(self) -> SharedReceiveStream[T]:
+    def __iter__(self) -> SharedReceiveStream[T, M]:
         return self
 
     def __next__(self) -> T:
@@ -1594,7 +1801,7 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T]):
     def _receive_future(self, targets: list[tuple[tuple[int, ...], Any]]) -> CallFuture:
         return self._submit(lambda future: self._receive(targets, None, future))
 
-    def __aiter__(self) -> SharedReceiveStream[T]:
+    def __aiter__(self) -> SharedReceiveStream[T, M]:
         return self
 
     async def __anext__(self) -> T:
@@ -1610,7 +1817,7 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T]):
         except EndOfStream:
             raise StopAsyncIteration from None
 
-    async def __aenter__(self) -> SharedReceiveStream[T]:
+    async def __aenter__(self) -> SharedReceiveStream[T, M]:
         return self
 
     def _receive(
@@ -1645,7 +1852,7 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T]):
                 continue
         raise TimeoutError(f"stream {self._stream.name!r}: no item within {timeout} s")
 
-    def __enter__(self) -> SharedReceiveStream[T]:
+    def __enter__(self) -> SharedReceiveStream[T, M]:
         return self
 
     def __exit__(self, *exc_info: object) -> None:
@@ -1672,7 +1879,9 @@ class IterInto(Iterator[T], AsyncIterator[T], Generic[T]):
     __slots__ = ("_reader", "_targets")
 
     def __init__(
-        self, reader: SharedReceiveStream[T], targets: list[tuple[tuple[int, ...], Any]]
+        self,
+        reader: SharedReceiveStream[T, Any],
+        targets: list[tuple[tuple[int, ...], Any]],
     ) -> None:
         self._reader = reader
         self._targets = targets
@@ -1735,6 +1944,9 @@ def reset_streams_after_fork() -> None:
     WORKER_THREADS.clear()
     for end in list(LIVE_ENDS):
         end._after_fork()
+    for stream in list(LIVE_STREAMS):
+        # Another thread of the parent may have held its lock at the fork.
+        stream._documents = DocumentCache()
 
 
 if sys.platform != "win32":

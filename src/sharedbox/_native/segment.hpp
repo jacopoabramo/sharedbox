@@ -28,6 +28,8 @@ struct FieldDesc {
 void check_index(std::uint32_t index, std::size_t count);
 /// Throws std::invalid_argument unless there is one name per field.
 void check_names(const std::vector<std::string> &names, std::size_t count);
+/// Throws std::invalid_argument, starting with what (such as "box 'name'"), for a spec create would refuse.
+void check_metadata_spec(const std::string &what, const metadata_spec &spec);
 /// The stored bytes of field inside a copy of the record made by Segment::read_record.
 std::string_view payload(const FieldDesc &field, const std::byte *record);
 
@@ -50,6 +52,12 @@ struct LockTimeout : std::runtime_error {
     using std::runtime_error::runtime_error;
 };
 struct NoWaiterSlot : std::runtime_error {
+    using std::runtime_error::runtime_error;
+};
+struct MetadataFull : std::runtime_error {
+    using std::runtime_error::runtime_error;
+};
+struct MetadataGone : std::runtime_error {
     using std::runtime_error::runtime_error;
 };
 
@@ -103,13 +111,15 @@ private:
 class Segment {
 public:
     /// values are written before any other process can attach; names label fields in error messages.
-    /// Without publish, no other process can attach until publish() is called.
-    static std::unique_ptr<Segment> create(const std::string &name, const std::vector<FieldDesc> &fields,
-                                           const std::vector<std::string> &names, std::uint64_t record_size,
-                                           std::uint64_t schema_hash, double lock_timeout,
-                                           std::uint16_t waiter_slots,
-                                           const std::vector<std::pair<std::uint32_t, std::string>> &values,
-                                           const std::string &types_table = {}, bool publish = true);
+    /// Without publish, no other process can attach until publish() is called. A metadata_capacity above 0
+    /// gives the box a metadata area of metadata_versions entries, whose version 1 is metadata unless that
+    /// is empty.
+    static std::unique_ptr<Segment>
+    create(const std::string &name, const std::vector<FieldDesc> &fields, const std::vector<std::string> &names,
+           std::uint64_t record_size, std::uint64_t schema_hash, double lock_timeout, std::uint16_t waiter_slots,
+           const std::vector<std::pair<std::uint32_t, std::string>> &values, const std::string &types_table = {},
+           bool publish = true, std::string_view metadata = {}, std::uint64_t metadata_capacity = 0,
+           std::uint32_t metadata_versions = 64);
     /// With types_table, the segment's description table must equal it.
     static std::unique_ptr<Segment> attach(const std::string &name, const std::vector<std::string> &names,
                                            std::uint64_t schema_hash, double lock_timeout,
@@ -157,6 +167,16 @@ public:
     std::uint32_t waiters() const;
     /// Random at creation; a box made again under the same name has another.
     std::uint64_t create_id() const;
+    /// The newest metadata version, 0 for none.
+    std::uint64_t metadata_head() const;
+    /// The length of a metadata version's document, without copying it; throws MetadataGone when the box
+    /// no longer holds that version.
+    std::uint32_t metadata_length(std::uint64_t version) const;
+    /// The document of a metadata version; throws MetadataGone when the box no longer holds it.
+    std::string read_metadata(std::uint64_t version) const;
+    /// Adds doc as the next metadata version and returns it; throws MetadataFull for a box without a
+    /// metadata area and std::invalid_argument for a document the area does not take.
+    std::uint64_t add_metadata(std::string_view doc);
     /// A heap handle with its own mapping of the segment, for a capsule. Call its release, then
     /// delete it.
     sbx_handle *export_handle() const;

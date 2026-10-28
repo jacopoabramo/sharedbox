@@ -15,10 +15,11 @@ to understand the ideas first, read
 `include/sharedbox/stream.hpp` implement this contract, and the Python
 extension runs on the first two.
 
-It describes core version 1.0, box layout 3.1 and stream layout 1.3. It
+It describes core version 1.0, box layout 3.2 and stream layout 1.4. It
 also opens box layout 3.0 and stream layout 1.0, which `sharedbox` 0.6.0
-writes, stream layout 1.1, which 0.7.0 writes, and nothing older: box
-layouts 1.0 and 2.0, which 0.5 and earlier wrote, are refused.
+writes, box layout 3.1 and stream layout 1.1, which 0.7.0 writes, and
+nothing older: box layouts 1.0 and 2.0, which 0.5 and earlier wrote, are
+refused.
 
 ## Goal
 
@@ -94,6 +95,8 @@ offset 128   field table       field_count x 8 bytes
              description table types_size bytes, 8-aligned
              (zero padding up to a multiple of 64)
 record       record            record_size bytes, 64-byte aligned
+             (zero padding up to a multiple of 64)
+metadata     metadata area     metadata_size bytes; only when metadata is not 0
              (zero padding up to a multiple of 4096)
 ```
 
@@ -133,21 +136,25 @@ struct header {                     // sharedbox::header, 128 bytes
     uint32_t record;                // 96  offset of the record
     uint32_t tail;                  // 100 offset of the field table, always 128
     uint32_t types_size;            // 104 bytes of the description table
-    uint8_t  reserved2[20];         // 108 zero; minor versions may use it
+    uint32_t metadata_size;         // 108 bytes of the metadata area, 0 for none
+    uint64_t metadata;              // 112 offset of the metadata area, 0 for none
+    uint64_t metadata_head;         // 120 the newest metadata version, 0 for none
 };
 ```
 
 The common line is written once at creation. Line 1 starts with the words
 that writes and waits change (`seq`, `writer_pid`, `wake_word`, `waiters`,
-`sleepers`), so a write touches one header line, and ends with geometry
-written once at creation, bytes 88 to 127. Attach copies the common line and
-those bytes, never the five changing words, and uses only the copy.
+`sleepers`), so a write touches one header line, then holds geometry
+written once at creation, bytes 88 to 119, and ends with `metadata_head`,
+which each added metadata version changes. Attach copies the common line
+and bytes 88 to 119, never the changing words, and uses only the copy.
 
-The box line has spare bytes so that minor versions can add fields: a
-header with no room left would move the fields after it with every
-addition. There is one header per box, and readers and writers touch only
-line 1. The waiter slots, not the header, are the large part of the tail, and
-`max_waiters` sizes them. Worked example, a box with an `int`, a `float`
+Box layout 3.2 uses the last spare bytes of line 1 for the metadata
+fields, so only the two bytes of `reserved1` are left. A reader accepts a
+mapping larger than its geometry needs (see Attach), which lets a later
+minor version add after the metadata area. There is one header per box,
+and readers and writers touch only line 1. The waiter slots, not the
+header, are the large part of the tail, and `max_waiters` sizes them. Worked example, a box with an `int`, a `float`
 and a `bool` and the default 64 waiter slots: header 128, field table 24,
 write counts 24, waiter slots 2048, padding 16, record 24 (the Python side
 rounds a record up to a multiple of 8): 2264 bytes used, one 4 KiB page. A
@@ -155,8 +162,8 @@ box with three fields and 64 slots stays in one page up to about 1.8 KB of
 record (4096 - 2240 = 1856).
 
 - Versions: bytes 8 to 11 are `01 00 00 00` (core 1.0: `core_major` 1,
-  `core_minor` 0) and bytes 12 to 15 are `03 00 01 00` (box layout 3.1:
-  `kind_major` 3, `kind_minor` 1). The two versions count the segment
+  `core_minor` 0) and bytes 12 to 15 are `03 00 02 00` (box layout 3.2:
+  `kind_major` 3, `kind_minor` 2). The two versions count the segment
   format and are not tied to the package version.
 - Magic: `SBX_BOX_` for a box and `SBX_STRM` for a stream, each read as a
   little-endian `u64`. The magic names the kind, so attach checks it first.
@@ -172,6 +179,10 @@ record (4096 - 2240 = 1856).
   long as the field order, names, kinds and capacities match, which the
   schema hash checks.
 - Write counts: one `u64` per field, incremented under the write lock.
+- Metadata: a box created without a metadata area has `metadata` and
+  `metadata_size` 0. Otherwise `metadata` is the first multiple of 64 at or
+  after the end of the record, `metadata + metadata_size` is at most
+  2^32 - 4096, and the area is laid out as Metadata describes.
 - Waiter slot, 32 bytes:
 
   ```cpp
@@ -444,7 +455,7 @@ attacher agree on it and on the class's meaning.
 A stream is a ring of `capacity` slots, at least 2, that one sender writes
 and up to `max_readers` readers (1 to 4095) copy out of. Its common line
 holds the magic `SBX_STRM` (`0x4D5254535F584253`), `kind_major` 1 and
-`kind_minor` 3 (stream layout 1.3), and a `waiter_slots` of
+`kind_minor` 4 (stream layout 1.4), and a `waiter_slots` of
 `max_readers + 1`, one slot for each reader and one for the sender. Every
 size and offset is 64-bit, so a ring may pass 4 GiB; the slots end at or
 below 2^46 bytes. The mapping holds, from offset 0:
@@ -459,6 +470,8 @@ offset 256   reader table      max_readers x 64 bytes
              (zero padding up to a multiple of 64)
 slots        slots             capacity x slot_size bytes
 types        description table types_size bytes
+             (zero padding up to a multiple of 64)
+metadata     metadata area     metadata_size bytes; only when metadata is not 0
              (zero padding up to a multiple of 4096)
 ```
 
@@ -474,8 +487,8 @@ struct stream_header {              // sharedbox::stream_header, 256 bytes
     uint32_t types_size;            // 104  bytes of the description table
     uint32_t item_entry;            // 108  the item's capacity_and_kind
     uint32_t max_readers;           // 112  1 to 4095
-    uint32_t reserved1;             // 116  zero
-    uint64_t reserved2;             // 120  zero
+    uint32_t metadata_size;         // 116  bytes of the metadata area, 0 for none
+    uint64_t metadata;              // 120  offset of the metadata area, 0 for none
     // line 2: the sender's words
     uint64_t write_pos;             // 128  items sent; the next send's position
     uint64_t sender_start;          // 136  start time of the sender's process
@@ -487,7 +500,7 @@ struct stream_header {              // sharedbox::stream_header, 256 bytes
     uint32_t space_waiting;         // 168  sender threads asleep on space_word
     uint8_t  reserved3a[4];         // 172  zero
     uint64_t release_floor;         // 176  marked lossless readers below it do not block
-    uint8_t  reserved3b[8];         // 184  zero
+    uint64_t metadata_head;         // 184  the newest metadata version, 0 for none
     // line 3: the readers' words
     uint32_t space_word;            // 192  the sender sleeps on it (Linux)
     uint32_t lossless_readers;      // 196  open lossless readers
@@ -536,13 +549,106 @@ struct reader_entry {               // sharedbox::reader_entry, 64 bytes
   and 3 change while the stream is open. It checks the common line as for
   every kind, with `kind_major` 1. It then requires every offset to be the one the
   shape gives: the reader table at 256, the waiter slots right after it, the
-  slots at the next multiple of 64, the description table right after the
-  slots, and a mapping size of the description table's end rounded up to
-  4 KiB. `capacity` must be at least 2, `max_readers` 1 to 4095,
-  `waiter_slots` `max_readers + 1`, `slot_size` a multiple of 64, and
+  slots at the next multiple of 64, and the description table right after
+  the slots. Without a metadata area, `metadata` and `metadata_size` are 0
+  and the mapping is at least the description table's end rounded up to
+  4 KiB. With one, `metadata` is a multiple of 64 at or after the
+  description table's end, `metadata_size` is at least 64, and the mapping
+  is at least the area's end rounded up to 4 KiB; the area is then checked
+  as Metadata describes. A larger mapping is accepted, so a later minor
+  version can add after the area. `capacity` must be at least 2,
+  `max_readers` 1 to 4095, `waiter_slots` `max_readers + 1`, `slot_size` a multiple of 64, and
   `types_size` a multiple of 8 and at most 16 MiB. A failed check is
   `status::corrupt`. Last, open parses the item type and requires that
   `slot_size` is what the item needs.
+
+## Metadata
+
+A box or a stream may have a metadata area, which holds numbered versions
+of one document each. Three header fields describe it:
+
+| field | box | stream | written |
+| --- | --- | --- | --- |
+| `metadata_size` (`u32`), the area's size in bytes | offset 108 | offset 116 | once, at creation |
+| `metadata` (`u64`), the area's offset, 0 for none | offset 112 | offset 120 | once, at creation |
+| `metadata_head` (`u64`), the newest version, 0 for none | offset 120 | offset 184 | by each add |
+
+The area starts at the first multiple of 64 after the last part of the
+segment, which is the record for a box and the description table for a
+stream, and the mapping grows to cover it. A segment created without a
+metadata area has `metadata` 0, `metadata_size` 0 and `metadata_head` 0,
+so its bytes are those of box layout 3.1 or stream layout 1.3 apart from
+`kind_minor`. The area holds, from `metadata`:
+
+```text
+offset 0     first line        64 bytes, written once at creation
+offset 64    version entries   entries x 32 bytes
+             ring              ring_size bytes, holding the documents
+```
+
+```cpp
+struct metadata_line {              // sharedbox::detail::metadata_line, 64 bytes
+    uint32_t entries;               //  0  version entries, 2 to 65535
+    uint32_t reserved0;             //  4  zero
+    uint64_t ring_size;             //  8  bytes of the ring, a multiple of 8, at least 24
+    uint64_t reserved1[6];          // 16  zero
+};
+
+struct metadata_entry {             // sharedbox::detail::metadata_entry, 32 bytes
+    uint64_t seq;                   //  0  odd while written, 2v + 2 once it holds version v, 0 once reclaimed
+    uint64_t version;               //  8  the version it holds
+    uint64_t position;              // 16  where the version takes effect
+    uint32_t offset;                // 24  start of the document in the ring
+    uint32_t length;                // 28  bytes of the document
+};
+```
+
+- `64 + entries * 32 + ring_size` is at most `metadata_size` and at most
+  2^32 - 1, so every ring offset fits a `u32`.
+- Versions count from 1, and version `v` lives in entry `v % entries`.
+- A document starts at a multiple of 8 and is stored whole: right after the
+  end of the newest version's document, rounded up to a multiple of 8, or
+  at 0 when it would pass the end of the ring there. A document is at most
+  a third of `ring_size`, rounded down to a multiple of 8, so a new
+  document never overwrites the newest one, and with at least two entries
+  the newest version's entry is never reused either.
+- A version's `position` is where it takes effect. On a stream it is
+  `write_pos` when the version was added, so the version applies from the
+  next item sent; version 1 given at creation has position 0. On a box it
+  is the generation (`seq >> 1`) that the write adding it leaves; version 1
+  given at creation has generation 0.
+- The Python side sizes the ring as `metadata_capacity` rounded up to a
+  multiple of 8 (65536 when `metadata` is given and `metadata_capacity` is
+  not), with `metadata_versions` entries, 64 by default.
+- Open copies the area's first line, checks the copy and uses only the
+  copy: `entries` 2 to 65535, `ring_size` at least 24 and a multiple of 8,
+  and the sizes above. A failed check is `status::corrupt`. An entry's
+  `offset` and `length` change with each add, so a read checks them (see
+  Add and read metadata).
+
+### Documents
+
+A document is one value encoded as CBOR (RFC 8949), restricted to a subset
+that maps one to one onto the values the Python side accepts:
+
+| Python | CBOR |
+| --- | --- |
+| `None` | simple value null (major type 7, 22) |
+| `bool` | false and true (7, 20 and 21) |
+| `int` from -2^64 to 2^64 - 1 | major types 0 and 1 |
+| `float` | half, single or double float (7, 25 to 27), NaN and infinities included |
+| `str` | text string (major type 3), valid UTF-8 |
+| `bytes` | byte string (major type 2) |
+| `list` or `tuple` | array (major type 4) |
+| mapping with `str` keys | map (major type 5) whose keys are text strings, each key once |
+
+Every length is definite, and nothing follows the value. Tags (major type
+6), undefined, the other simple values, and nesting deeper than 32 arrays
+and maps are outside the subset. `sharedbox::metadata_ok` checks that a
+document is well formed and inside the subset, not that it is canonical,
+so a C or C++ producer brings its own encoder. The Python side encodes
+canonically, so equal values give equal bytes, and decodes a map as a
+`types.MappingProxyType` and an array as a tuple.
 
 ## Versioning rules
 
@@ -585,6 +691,16 @@ layout version of its kind, for the rest. Each has a major and a minor.
   `release_floor`, `release_mark` and `release_pid` from reserved bytes; a
   stream that an older version created keeps them at 0, so none of its
   readers is released until a sender of 1.3 raises the floor.
+- Box layout 3.2 and stream layout 1.4 add `metadata_size`, `metadata` and
+  `metadata_head` from reserved bytes, and the metadata area after the
+  record or the description table. A reader of an older minor ignores
+  them. A box reader of 3.1 or older opens a box with a metadata area,
+  since it accepts a mapping larger than its geometry needs. A stream
+  reader of 1.3 or older requires the mapping to be exactly the size the
+  stream's geometry gives, so it refuses a stream with a metadata area with
+  `status::corrupt`, and opens a stream created without one. A segment that
+  an older version created has `metadata` 0: a reader of 3.2 or 1.4 finds
+  no metadata in it, and an add gives `status::metadata_full`.
 - A change to how existing bytes are read or written raises a major: the
   core's (the common line, the object names, liveness) raises `core_major`,
   and a kind's own (the sequence lock, field encoding, the slot layout)
@@ -614,7 +730,10 @@ Every shared word is a plain integer in the mapping, accessed through
    `BCryptGenRandom` on Windows) and is drawn again if 0. The creator
    fields are this process's pid, start time and pid namespace. Every
    waiter slot is free because the pages are zero.
-3. Write the initial field values into the record.
+3. Write the initial field values into the record. If the box has a
+   metadata area, write its first line and zero entries and, with an
+   initial document, add it as version 1 at generation 0 without taking
+   the lock (see Add and read metadata).
 4. Store `magic` (`SBX_BOX_`) with release ordering. Until then no attach
    succeeds.
    `handle::create` does this at once. `handle::create_unpublished`
@@ -635,8 +754,9 @@ Every shared word is a plain integer in the mapping, accessed through
 2. Wait for `magic` with acquire ordering, with backoff (spin, yield, then
    sleeps doubling up to 1 ms), up to the timeout. A mapping that never
    gets `magic` is `status::not_found`.
-3. Copy the common line and bytes 88 to 127 of the box line, leaving out
-   the five words that writes and waits change, and check only the copy.
+3. Copy the common line and bytes 88 to 119 of the box line, leaving out
+   the words that writes, waits and metadata adds change, and check only
+   the copy.
    Checks run in this order, and the first to fail decides the status:
     1. The magic is one this library knows, else `status::foreign`: the
        segment was made by another version of `sharedbox` or is not a
@@ -651,7 +771,10 @@ Every shared word is a plain integer in the mapping, accessed through
        through it: the mapping is at most 2^32 - 4096 bytes, `field_count` is in range,
        `tail == 128`, the record is 64-byte aligned, after the waiter
        slots and inside the mapping, with `record + record_size` at most
-       2^32 - 4096, then each field table entry (capacity 1 byte to
+       2^32 - 4096, then the metadata area: `metadata` and
+       `metadata_size` both 0, or `metadata` a multiple of 64 at or after
+       the record's end, with `metadata_size` at least 64 and the area
+       inside the mapping, then each field table entry (capacity 1 byte to
        1 MiB, and the sizes of Kind codes for the fixed kinds, alignment
        for the known kinds, the field inside the record, no two fields
        overlapping), then the description table (Descriptions). A field
@@ -660,7 +783,9 @@ Every shared word is a plain integer in the mapping, accessed through
    For `foreign` and `kind_mismatch`, the error's `found` holds the magic
    that was read. For `layout` it holds both versions:
    `core_major << 48 | core_minor << 32 | kind_major << 16 | kind_minor`.
-4. Copy the field table and use only the copy afterwards.
+4. Copy the field table and use only the copy afterwards. If `metadata`
+   is not 0, copy the metadata area's first line, check it (see Metadata)
+   and use only that copy too.
 5. Free the waiter slots of dead processes (see Waiter slots).
 
 `handle::open` does not compare schema hashes: the caller compares
@@ -1035,6 +1160,73 @@ Known limits:
 - A waiting end spins for up to 1000 checks before it sleeps, which uses a
   CPU for that time whenever the timeout is above 0.
 
+### Add and read metadata
+
+On a box any process adds metadata versions, under the box's write lock.
+On a stream only the sender adds them, never during a send on the same
+sender, since the add reads `write_pos`. To add version
+`v = metadata_head + 1` to an area (see Metadata), the writer:
+
+1. Checks the document: inside the subset of Documents, and no longer than
+   a third of the ring rounded down to a multiple of 8. A failure gives
+   `status::range`, and a segment without a metadata area gives
+   `status::metadata_full`; both write nothing.
+2. On a box, takes the write lock as a write does (see Sequence lock). The
+   version's position is the generation that the unlock leaves, one more
+   than the generation before the lock. On a stream the position is
+   `write_pos`.
+3. Finds where the document goes: right after the newest version's
+   document, its end rounded up to a multiple of 8, or at 0 when the
+   document would pass the end of the ring there.
+4. Checks that the older versions it overwrites can go: the version whose
+   entry `v` takes, `v - entries`, and every version whose ring bytes the
+   document covers. A box lets them go freely. A stream lets version `u` go
+   only when no item still in the ring was sent under it: when version
+   `u + 1` took effect at a position no later than `write_pos - capacity`,
+   or when `u + 1` took effect at the same position as `u`, so that no item
+   was sent under `u`, and every version older than `u` is gone or goes in
+   this add. When version 1 took effect after position 0, the items sent
+   before it count as a version older than 1, so version 1 goes only by the
+   first condition. Without the condition on older versions a version could
+   go while an older one stays, and the walk back from the head below would
+   stop at the gap. Without the rule for version 1, it could go while an
+   item sent before it is still in the ring, and a reader could not tell
+   that item from one whose version was reclaimed. Otherwise the add gives
+   `status::metadata_full` and writes nothing.
+5. Stores `seq` 0 in the entry of each older version whose ring bytes it
+   overwrites while its entry is kept, so the entry reads as reclaimed.
+6. Stores the entry's `seq` as `2v + 1`, issues a release fence, copies the
+   document into the ring, stores `version`, `position`, `offset` and
+   `length`, stores `seq = 2v + 2` with release, and then
+   `metadata_head = v` with release.
+7. On a box, unlocks and wakes as after a write (see Wait and wake): the
+   generation moves on by 1, and no field and no write count changes. On a
+   stream the add wakes nobody; readers see a version when they look it up.
+
+To read version `v`, a reader loads `seq` of entry `v % entries` with
+acquire and checks that it is `2v + 2` and that `version` is `v`; a
+version of 0, or any mismatch, gives `status::not_found`. It checks that
+`offset + length` lies inside the ring, which gives `status::corrupt` while
+`seq` is unchanged. It then copies the document, issues an acquire fence
+and loads `seq` again. A change means the version was reclaimed during the
+copy, and the read gives `status::not_found`. The latest version is the
+one `metadata_head` names.
+
+The version of the stream item at position `p` is the newest version whose
+`position` is at most `p`. A reader finds it by walking back from
+`metadata_head`, at most `entries` steps and usually one. Step 4 means that
+an item still in the ring always finds its version, and that the stream
+holds version 1 while an item sent before it is in the ring. The walk gives
+`status::not_found` when a version it passes was reclaimed, or when `p`
+comes before every version the area holds. Once an item has left the ring
+its version can be reclaimed, so a reader that looks it up later can find
+it gone. For a lossy or latest reader that can happen right after the
+receive, when the sender overwrote the item just after the reader copied
+it. The Python reader reports version 0 for an item sent before the first
+version: while the stream still holds version 1, no version has been
+reclaimed, so `status::not_found` then means the item came before every
+version.
+
 ### Close and unlink
 
 - Destroying a handle releases any waiter slot it holds, then unmaps its
@@ -1097,7 +1289,7 @@ namespace sharedbox {
 inline namespace v3 {
 
 inline constexpr std::uint16_t core_major = 1, core_minor = 0;
-inline constexpr std::uint16_t layout_major = 3, layout_minor = 0;   // the box layout
+inline constexpr std::uint16_t layout_major = 3, layout_minor = 2;   // the box layout
 inline constexpr std::uint64_t box_magic = 0x5F584F425F584253;       // "SBX_BOX_"
 inline constexpr std::uint64_t stream_magic = 0x4D5254535F584253;    // "SBX_STRM"
 // Also: the layout constants handle_version, header_size, name_max, max_fields,
@@ -1115,24 +1307,29 @@ inline constexpr std::uint64_t stream_magic = 0x4D5254535F584253;    // "SBX_STR
 enum class status : int { ok = 0, exists = -1, not_found = -2, layout = -3, schema = -4,
                           corrupt = -5, lock_timeout = -6, timeout = -7, no_slot = -8,
                           range = -9, os = -10, kind_mismatch = -11, foreign = -12,
-                          busy = -13, ended = -14, interrupted = -15, released = -16 };
+                          busy = -13, ended = -14, interrupted = -15, released = -16,
+                          metadata_full = -17 };
 
 struct field_spec { std::uint32_t offset; std::uint32_t capacity; std::uint8_t kind; };
 struct value { std::uint16_t field; std::span<const std::byte> bytes; };
 using seconds = std::chrono::duration<double>;
 struct read_value { std::size_t len; std::uint64_t version; };
 enum class wake { changed, interrupted };      // a timeout is status::timeout
+struct metadata_spec { std::span<const std::byte> initial; std::uint64_t capacity; std::uint32_t versions; };
+bool metadata_ok(std::span<const std::byte> doc) noexcept;
 
 class handle {                                  // move-only; the destructor releases it
 public:
     static result<handle> create(std::string_view name, std::span<const field_spec> fields,
                                  std::uint32_t record_size, std::uint64_t schema_hash,
                                  std::uint16_t waiter_slots, std::span<const value> initial,
-                                 std::span<const std::byte> types = {});
+                                 std::span<const std::byte> types = {},
+                                 const metadata_spec &metadata = {});
     static result<handle> create_unpublished(std::string_view name, std::span<const field_spec> fields,
                                              std::uint32_t record_size, std::uint64_t schema_hash,
                                              std::uint16_t waiter_slots, std::span<const value> initial,
-                                             std::span<const std::byte> types = {});
+                                             std::span<const std::byte> types = {},
+                                             const metadata_spec &metadata = {});
     result<void> publish() noexcept;
     static result<handle> open(std::string_view name, seconds timeout);
     static result<handle> from_capsule(sbx_handle *capsule);
@@ -1174,6 +1371,11 @@ public:
     std::uint32_t sleepers() const noexcept;
     result<wake> wait(std::uint16_t slot, std::uint64_t last_generation, seconds timeout);
     result<void> interrupt(std::uint16_t slot);
+
+    std::uint64_t metadata_head() const noexcept;
+    result<std::uint32_t> metadata_length(std::uint64_t version) const;
+    result<std::uint32_t> read_metadata(std::uint64_t version, std::span<std::byte> out) const;
+    result<std::uint64_t> add_metadata(std::span<const std::byte> doc, seconds lock_timeout);
 };
 
 result<void> unlink(std::string_view name) noexcept;
@@ -1206,6 +1408,15 @@ The header also declares these names:
   copy a large value, running the wait hooks once around the copy.
 - A `types` parameter on `handle::create` and `handle::create_unpublished`:
   the description table, empty by default.
+- A `metadata` parameter on `handle::create` and
+  `handle::create_unpublished`, a `metadata_spec`: `initial` is the
+  document of version 1, none when empty; `capacity` is the ring's size in
+  bytes, rounded up to a multiple of 8, and 0 for no metadata area;
+  `versions` is the number of entries, 2 to 65535. `status::range` for a
+  capacity above what an area of `u32` size holds, a ring below 24 bytes,
+  a version count out of range, an initial document outside the subset or
+  longer than a third of the ring, or an initial document with a capacity
+  of 0. `metadata_ok` is the subset check of Documents.
 - The inline namespace is `v3`.
 
 - `status`: `ok`, and one code per error the Python side raises, so the
@@ -1221,7 +1432,9 @@ The header also declares these names:
   failed, and the error's `os` holds its `errno` or `GetLastError()`.
   `busy`: the sender is held by a running process. `ended`: the stream's
   sender closed or died and every published item was received.
-  `interrupted`: a stream wait ended by `interrupt()`.
+  `interrupted`: a stream wait ended by `interrupt()`. `metadata_full`: an
+  add to a segment without a metadata area, or to a stream whose ring
+  still holds an item sent under a version the add would overwrite.
 - `create` and `write` take raw bytes in the record encoding, without the
   length prefix of `str`, `bytes` and `Decimal`; converting language values
   stays in each binding.
@@ -1246,6 +1459,21 @@ The header also declares these names:
   `layout_minor` of the `box.hpp` the caller was compiled with.
 - Shared memory that never becomes a box within the timeout is
   `status::not_found`.
+- `metadata_head()` is the newest metadata version, 0 when there is none or
+  the box has no metadata area. `metadata_length` and `read_metadata` give
+  `status::not_found` for a version the box no longer holds or has not
+  added yet, and for a box without a metadata area, and `status::corrupt`
+  for an entry that places its document outside the ring. `read_metadata`
+  copies the document into `out` and returns its length, and gives
+  `status::range` for an `out` shorter than the document. Metadata is read
+  without the write lock.
+- `add_metadata` adds `doc` as the next version and returns it, as one
+  write under the write lock (see Add and read metadata): the generation
+  moves on by 1 and waiters wake, but no field and no write count changes.
+  `status::metadata_full` for a box without a metadata area,
+  `status::range` for a document outside the subset or longer than a third
+  of the ring, and `status::lock_timeout` as for `write`. A refused add
+  leaves the generation as it was.
 - Thread safety: every member function may be called from several threads
   on one handle. Destroying or moving a handle must not overlap another
   call on it.
@@ -1256,7 +1484,7 @@ The header also declares these names:
 ### `stream.hpp`
 
 ```cpp
-inline constexpr std::uint16_t stream_layout_major = 1, stream_layout_minor = 3;
+inline constexpr std::uint16_t stream_layout_major = 1, stream_layout_minor = 4;
 inline constexpr std::uint32_t stream_header_size = 256;
 inline constexpr std::uint64_t min_stream_capacity = 2;
 inline constexpr std::uint32_t max_stream_readers = max_waiter_slots - 1;   // 4095
@@ -1281,6 +1509,7 @@ public:
     result<std::uint64_t> send_with(F &&fill, seconds timeout, on_full policy = on_full::wait);
     result<std::span<std::byte>> begin(seconds timeout, on_full policy = on_full::wait);
     result<std::uint64_t> publish() noexcept;
+    result<std::uint64_t> add_metadata(std::span<const std::byte> doc);
     void abandon() noexcept;
     result<void> interrupt();
     void close() noexcept;
@@ -1296,6 +1525,7 @@ public:
     template <class F> requires std::is_nothrow_invocable_v<F &, std::span<const std::byte>>
     result<received> receive_with(F &&copy, seconds timeout);
     result<void> interrupt();
+    result<std::uint64_t> metadata_version_at(std::uint64_t position) const;
     void close() noexcept;
 };
 
@@ -1303,7 +1533,8 @@ class stream {                              // move-only; the destructor release
 public:
     static result<stream> create(std::string_view name, std::span<const std::byte> types,
                                  std::uint32_t item_entry, std::uint64_t capacity,
-                                 std::uint32_t max_readers, std::uint64_t schema_hash);
+                                 std::uint32_t max_readers, std::uint64_t schema_hash,
+                                 const metadata_spec &metadata = {});
     static result<stream> open(std::string_view name, seconds timeout);
 
     std::string_view name() const noexcept;
@@ -1321,6 +1552,9 @@ public:
     std::uint64_t write_position() const noexcept;
     bool ended() const noexcept;
     std::uint32_t sender_pid() const noexcept;
+    std::uint64_t metadata_head() const noexcept;
+    result<std::uint32_t> metadata_length(std::uint64_t version) const;
+    result<std::uint32_t> read_metadata(std::uint64_t version, std::span<std::byte> out) const;
     std::size_t readers(std::span<reader_info> out) const noexcept;
 };
 ```
@@ -1380,7 +1614,25 @@ Stream layout). Every function returning a `result` is `[[nodiscard]]`.
   its entry.
 - `write_position()` is the number of items sent. `readers(out)` fills `out`
   with the open readers, as many as fit, and returns how many are open.
-- Calls on one sender or one reader must not overlap, except `interrupt`;
+- `stream::create` takes a `metadata_spec` as `handle::create` does and
+  places the area after the description table; version 1 takes effect at
+  position 0. `metadata_head`, `metadata_length` and `read_metadata` work as
+  on a `handle`.
+- `stream_sender::add_metadata` adds `doc` as the next version, in force
+  from the item the next send publishes, and returns it. It wakes nobody.
+  `status::metadata_full` for a stream without a metadata area, and while
+  an item still in the ring, or yet to be sent, needs a version the add
+  would overwrite; an add after enough further sends succeeds.
+  `status::range` for a document outside the subset or longer than a third
+  of the ring, for a closed sender, and in a child of `fork`. It must not
+  overlap a send on the same sender.
+- `stream_reader::metadata_version_at(position)` is the version in force at
+  an item's position, such as the one `receive` returned: the newest
+  version added at or before it. `status::not_found` when that version was
+  reclaimed, when the position comes before every version the stream
+  holds, and for a stream without a metadata area.
+- Calls on one sender or one reader must not overlap, except `interrupt`
+  and `stream_reader::metadata_version_at`, which must not overlap `close`;
   a reservation is not a call, so other calls may come between `begin` and
   `publish`.
   Senders and readers must not outlive the `stream` that made them.
@@ -1440,17 +1692,23 @@ int      sbx_read(const sbx_handle *h, uint16_t field, void *buf, size_t cap,
 int      sbx_write(sbx_handle *h, const sbx_value *values, size_t n, double lock_timeout);
 uint64_t sbx_schema_hash(const sbx_handle *h);
 void     sbx_release(sbx_handle *h);
+uint64_t sbx_metadata_head(const sbx_handle *h);
+int      sbx_read_metadata(const sbx_handle *h, uint64_t version, void *out, size_t cap,
+                           size_t *len);
+int      sbx_add_metadata(sbx_handle *h, const void *doc, size_t len, double lock_timeout,
+                          uint64_t *version);
 ```
 
-- It holds `sbx_handle`, `sbx_value`, the status codes, the six functions
+- It holds `sbx_handle`, `sbx_value`, the status codes, the nine functions
   above and the typed functions below. Creating, waiting, `interrupt`,
   `force_unlock` and `unlink` are in the C++ API only.
 - The status codes are `SBX_E_EXISTS` (-1) to `SBX_E_OS` (-10), then
   `SBX_E_KIND` (-11) and `SBX_E_FOREIGN` (-12), the values of
   `status::kind_mismatch` and `status::foreign`, and `SBX_E_BUSY` (-13),
   `SBX_E_ENDED` (-14) and `SBX_E_INTERRUPTED` (-15), the values of
-  `status::busy`, `status::ended` and `status::interrupted`. Streams have no
-  C functions. `sbx_open` and `sbx_import` return `SBX_E_KIND` for a segment of another kind and
+  `status::busy`, `status::ended` and `status::interrupted`, and
+  `SBX_E_METADATA_FULL` (-17), the value of `status::metadata_full`.
+  Streams have no C functions. `sbx_open` and `sbx_import` return `SBX_E_KIND` for a segment of another kind and
   `SBX_E_FOREIGN` for a magic they do not know (see Attach). A C caller
   gets the code only, without the `error`'s OS error and `found`.
 - `sbx_field_desc` returns a field's kind code and its description's
@@ -1481,6 +1739,20 @@ void     sbx_release(sbx_handle *h);
   returns `SBX_E_RANGE` for a field of a kind the header does not know. When the stored
   value is longer than `cap`, `sbx_read` copies nothing, sets `*len` and
   returns `SBX_E_RANGE`. `sbx_release` releases any handle.
+- `sbx_metadata_head` returns the box's newest metadata version, 0 when it
+  has none or `h` was not made by `sbx_open` or `sbx_import`.
+  `sbx_read_metadata` copies the document of `version` into `out`; when the
+  document is longer than `cap` it copies nothing, sets `*len` to its
+  length and returns `SBX_E_RANGE`. It returns `SBX_E_NOT_FOUND` when the
+  box does not hold that version, and `len` may be `NULL`.
+  `sbx_add_metadata` adds the document as the next version, as one write
+  under the write lock, and stores the new version in `*version` unless
+  that is `NULL`. The document is one CBOR value of the subset of
+  Documents: `SBX_E_RANGE` for one outside it or longer than a third of
+  the ring, `SBX_E_METADATA_FULL` for a box without a metadata area, and
+  `SBX_E_LOCK_TIMEOUT` when the lock is not free within `lock_timeout`
+  seconds. Both return `SBX_E_RANGE` for a handle not made by `sbx_open`
+  or `sbx_import`.
 - The implementation, `include/sharedbox/sharedbox_c.cpp`, needs a C++20
   compiler: a C program compiles that one file with its C++ compiler next
   to its own sources, and the CMake target `sharedbox::c` adds it for
@@ -1523,7 +1795,7 @@ no Python-level export method.
   `sharedbox/sharedbox_c.cpp` in the installed package.
 - `sharedbox.SupportsSharedBox` is a `typing.Protocol` with
   `__sharedbox_box__`, for annotations in consuming libraries.
-- `sharedbox._native.LAYOUT_VERSION` is `(3, 0)`, the box layout.
+- `sharedbox._native.LAYOUT_VERSION` is `(3, 2)`, the box layout.
 
 ## Rust crate (deferred)
 
