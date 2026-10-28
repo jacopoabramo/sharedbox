@@ -13,7 +13,7 @@ from crossproc import call_in_child, read_and_add_metadata
 
 import sharedbox
 from sharedbox import BoxClosedError, MetadataFullError, MetadataGoneError, SharedBox
-from sharedbox._metadata import DocumentCache, decode, encode
+from sharedbox._metadata import DocumentCache, decode, encode, newest
 
 DOCUMENT = {
     "none": None,
@@ -209,6 +209,21 @@ def test_document_cache_is_bounded() -> None:
 
     cache.get(1, 0, read)
     assert calls
+
+
+def test_newest_follows_a_moving_head() -> None:
+    """Read the version the head moved to when the one first read was reclaimed, and raise while the head stays."""
+    heads = iter([1, 3])
+
+    def version_of(version: int) -> str:
+        if version == 1:
+            raise MetadataGoneError("version 1 was reclaimed")
+        return f"v{version}"
+
+    assert newest(lambda: next(heads), version_of) == "v3"
+    with pytest.raises(MetadataGoneError):
+        newest(lambda: 1, version_of)
+    assert newest(lambda: 0, version_of) is None
 
 
 def test_errors_are_exported() -> None:

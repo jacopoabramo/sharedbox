@@ -6,7 +6,7 @@ from dataclasses import dataclass, replace
 from multiprocessing.process import BaseProcess
 from multiprocessing.queues import Queue
 from multiprocessing.synchronize import Barrier, Event
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 import numpy as np
 
@@ -223,3 +223,27 @@ def read_when_released(
         results.put(traceback.format_exc())
     finally:
         stream.close()
+
+
+def read_metadata_versions(
+    name: str,
+    count: int,
+    results: "Queue[list[tuple[int, int, dict[str, Any] | None]]]",
+) -> None:
+    """Receive `count` items from the oldest; report each one's position, metadata version and metadata."""
+    stream = SharedStream.attach(int, name)
+    reader = stream.reader(start="oldest")
+    seen: list[tuple[int, int, dict[str, Any] | None]] = []
+    for _ in range(count):
+        reader.receive(timeout=60)
+        metadata = reader.metadata
+        assert reader.position is not None
+        seen.append(
+            (
+                reader.position,
+                reader.metadata_version,
+                None if metadata is None else dict(metadata),
+            )
+        )
+    results.put(seen)
+    stream.close()

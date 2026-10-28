@@ -105,6 +105,31 @@ for action in (lambda: box.metadata, lambda: box.add_metadata({"units": "um"})):
         print(type(exc).__name__)
 """
 
+STREAM_METADATA_AFTER_RELEASE = """
+import sys
+
+from sharedbox import SharedStream, StreamClosedError
+from sharedbox._exit import release_native
+
+stream = SharedStream.create(int, sys.argv[1], capacity=4, metadata={"units": "mm"})
+SharedStream.unlink(sys.argv[1])
+sender = stream.sender()
+reader = stream.reader()
+sender.send(1)
+reader.receive(timeout=5)
+print(dict(stream.metadata), dict(reader.metadata))
+release_native()
+for action in (
+    lambda: stream.metadata,
+    lambda: reader.metadata,
+    lambda: sender.add_metadata({"units": "um"}),
+):
+    try:
+        action()
+    except StreamClosedError as exc:
+        print(type(exc).__name__)
+"""
+
 STREAM_PAST_EXIT = """
 import ctypes
 import sys
@@ -220,4 +245,13 @@ def test_box_metadata_used_after_release_raises(unique_name: str) -> None:
     assert (done.returncode, done.stdout.splitlines()) == (
         0,
         ["{'units': 'mm'}", "BoxClosedError", "BoxClosedError"],
+    ), done.stderr
+
+
+def test_stream_metadata_used_after_release_raises(unique_name: str) -> None:
+    """Raise StreamClosedError for stream and reader metadata and for adding metadata after the exit handler, even once it was read."""
+    done = run_child(STREAM_METADATA_AFTER_RELEASE, unique_name)
+    assert (done.returncode, done.stdout.splitlines()) == (
+        0,
+        ["{'units': 'mm'} {'units': 'mm'}", *["StreamClosedError"] * 3],
     ), done.stderr

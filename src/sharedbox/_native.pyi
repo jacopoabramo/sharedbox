@@ -1244,6 +1244,22 @@ class Sender:
     def reserve(self, timeout: float, release: bool = False) -> None: ...
     def commit(self, value: object) -> int: ...
     def abandon(self) -> None: ...
+    def add_metadata(self, doc: bytes) -> int:
+        """Store an encoded document as the next metadata version and return that version.
+
+        The version applies from the next item sent. Waits while another
+        thread sends on this sender.
+
+        Raises
+        ------
+        MetadataFullError
+            If the stream has no metadata area, or an item still in the ring
+            was sent under the version the add would reclaim.
+        ValueError
+            If the document is longer than the area takes.
+        StreamClosedError
+            If the sender is closed.
+        """
     def interrupt(self) -> None: ...
     def close(self) -> None: ...
     def _after_fork(self) -> None: ...
@@ -1305,6 +1321,18 @@ class Reader:
     def mode(self) -> int: ...
     @property
     def missed(self) -> int: ...
+    def metadata_version_at(self, position: int) -> int:
+        """Return the metadata version in force at an item's position, 0 for an item sent before every version.
+
+        Does not wait for a receive in another thread.
+
+        Raises
+        ------
+        MetadataGoneError
+            If the stream no longer holds that item's version.
+        StreamClosedError
+            If the reader is closed.
+        """
     def interrupt(self) -> None: ...
     def close(self) -> None: ...
     def _after_fork(self) -> None: ...
@@ -1321,7 +1349,26 @@ class Stream:
         schema_hash: int,
         capacity: int,
         max_readers: int,
-    ) -> Stream: ...
+        metadata: bytes | None = None,
+        metadata_capacity: int = 0,
+        metadata_versions: int = 64,
+    ) -> Stream:
+        """Create the stream, with `metadata` as metadata version 1 when given.
+
+        Parameters
+        ----------
+        metadata_capacity
+            Bytes of the metadata ring; 0 gives the stream no metadata area.
+        metadata_versions
+            How many metadata versions the area keeps at most.
+
+        Raises
+        ------
+        ValueError
+            If the metadata document is longer than about a third of
+            `metadata_capacity`, or `metadata_capacity` and
+            `metadata_versions` make no metadata area.
+        """
     @staticmethod
     def attach(name: str, types: Types, entry: int, schema_hash: int) -> Stream: ...
     @property
@@ -1334,6 +1381,24 @@ class Stream:
     def create_id(self) -> int: ...
     @property
     def closed(self) -> bool: ...
+    def metadata_head(self) -> int:
+        """Return the newest metadata version, 0 for none."""
+    def metadata_length(self, version: int) -> int:
+        """Return the length of a metadata version's encoded document, without reading it.
+
+        Raises
+        ------
+        MetadataGoneError
+            If the stream no longer holds that version, or never did.
+        """
+    def read_metadata(self, version: int) -> bytes:
+        """Return the encoded document of a metadata version.
+
+        Raises
+        ------
+        MetadataGoneError
+            If the stream no longer holds that version, or never did.
+        """
     def statistics(self) -> tuple[int, bool, int, list[tuple[int, int, int]]]: ...
     def sender(self) -> Sender: ...
     def reader(self, mode: int, newest: bool) -> Reader: ...

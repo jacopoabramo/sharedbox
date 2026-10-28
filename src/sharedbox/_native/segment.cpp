@@ -166,6 +166,19 @@ void check_names(const std::vector<std::string> &names, std::size_t count) {
                                     std::to_string(count) + " fields");
 }
 
+void check_metadata_spec(const std::string &what, const metadata_spec &spec) {
+    if (detail::plan_metadata(spec))
+        return;
+    const std::uint64_t longest = detail::max_metadata_document(detail::round_up(spec.capacity, 8));
+    if (spec.capacity != 0 && spec.capacity <= UINT32_MAX && spec.initial.size() > longest)
+        throw std::invalid_argument(what + ": the metadata document is " + std::to_string(spec.initial.size()) +
+                                    " bytes; a metadata_capacity of " + std::to_string(spec.capacity) +
+                                    " takes at most " + std::to_string(longest));
+    throw std::invalid_argument(what + ": metadata_capacity " + std::to_string(spec.capacity) +
+                                " with metadata_versions " + std::to_string(spec.versions) +
+                                " does not make a metadata area");
+}
+
 std::string_view payload(const FieldDesc &field, const std::byte *record) {
     const std::span<const std::byte> bytes = detail::payload(to_spec(field), record);
     return {reinterpret_cast<const char *>(bytes.data()), bytes.size()};
@@ -348,17 +361,7 @@ std::unique_ptr<Segment> Segment::create(const std::string &name, const std::vec
                                          std::uint64_t metadata_capacity, std::uint32_t metadata_versions) {
     check_lock_timeout(lock_timeout);
     const metadata_spec spec{bytes_of(metadata), metadata_capacity, metadata_versions};
-    if (!detail::plan_metadata(spec)) {
-        const std::uint64_t longest = detail::max_metadata_document(detail::round_up(metadata_capacity, 8));
-        if (metadata_capacity != 0 && metadata_capacity <= UINT32_MAX && metadata.size() > longest)
-            throw std::invalid_argument("box '" + name + "': the metadata document is " +
-                                        std::to_string(metadata.size()) + " bytes; a metadata_capacity of " +
-                                        std::to_string(metadata_capacity) + " takes at most " +
-                                        std::to_string(longest));
-        throw std::invalid_argument("box '" + name + "': metadata_capacity " + std::to_string(metadata_capacity) +
-                                    " with metadata_versions " + std::to_string(metadata_versions) +
-                                    " does not make a metadata area");
-    }
+    check_metadata_spec("box '" + name + "'", spec);
     if (fields.empty() || fields.size() > max_fields)
         throw std::invalid_argument("a box needs between 1 and 256 fields");
     check_names(names, fields.size());

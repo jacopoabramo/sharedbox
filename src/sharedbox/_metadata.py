@@ -9,12 +9,15 @@ from typing import Any, Final
 
 import cbor2
 
+from ._native import MetadataGoneError
+
 if sys.version_info >= (3, 13):
     from typing import TypeVar
 else:
     from typing_extensions import TypeVar
 
 M = TypeVar("M", covariant=True, bound=Mapping[str, Any], default=Mapping[str, Any])  # noqa: PLC0105
+V = TypeVar("V")
 
 MAX_DEPTH: Final = 32
 INT_MIN: Final = -(2**64)
@@ -83,6 +86,25 @@ def _freeze(value: object) -> object:
 def decode(data: bytes) -> Any:
     """Return the document stored in `data`, maps as read-only mappings and arrays as tuples."""
     return _freeze(cbor2.loads(data))
+
+
+def newest(head: Callable[[], int], version_of: Callable[[int], V]) -> V | None:
+    """Return `version_of` the version `head` gives, or None while `head` gives 0.
+
+    Two adds after `head` was read can reclaim its version, so a
+    `MetadataGoneError` is retried with the new head while the head moves,
+    and raised once it stays.
+    """
+    version = head()
+    while version != 0:
+        try:
+            return version_of(version)
+        except MetadataGoneError:
+            latest = head()
+            if latest == version:
+                raise
+            version = latest
+    return None
 
 
 class DocumentCache:

@@ -39,11 +39,10 @@ from ._layout import (
     own_annotations,
     own_kw_only,
 )
-from ._metadata import DocumentCache, M, encode
+from ._metadata import DocumentCache, M, encode, newest
 from ._native import (
     BoxClosedError,
     BoxMethod,
-    MetadataGoneError,
     SchemaMismatchError,
     Segment,
     SegmentNotFoundError,
@@ -1032,18 +1031,7 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
         BoxClosedError
             If the box is closed.
         """
-        version = self._segment.metadata_head()
-        while version != 0:
-            try:
-                return self.metadata_version_of(version)
-            except MetadataGoneError:
-                # Two adds after the head was read can reclaim it; a head that
-                # has not moved is gone for another reason.
-                head = self._segment.metadata_head()
-                if head == version:
-                    raise
-                version = head
-        return None
+        return newest(self._segment.metadata_head, self.metadata_version_of)
 
     @property
     def metadata_version(self) -> int:

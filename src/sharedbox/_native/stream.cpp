@@ -1,5 +1,6 @@
 #include "stream.hpp"
 
+#include <nanobind/stl/optional.h>
 #include <nanobind/stl/pair.h>
 #include <nanobind/stl/string.h>
 #include <nanobind/stl/tuple.h>
@@ -124,6 +125,16 @@ const PyType_Slot gc_slots[] = {{Py_tp_traverse, reinterpret_cast<void *>(traver
     }
 }
 
+/// Ends a metadata read: a version the stream does not hold, reclaimed or never added, raises MetadataGone.
+[[noreturn]] void fail_metadata(const error &e, const std::string &name, std::uint64_t version) {
+    if (e.code == status::not_found)
+        throw MetadataGone("stream '" + name + "' no longer holds metadata version " + std::to_string(version) +
+                           ", or never did");
+    throw_stream(e, name);
+}
+
+std::span<const std::byte> bytes_of(const nb::bytes &b) { return std::as_bytes(std::span(b.c_str(), b.size())); }
+
 seconds wait_of(double timeout) {
     if (!(timeout >= 0.0) || timeout > 1.0)
         throw std::invalid_argument("a stream wait lasts 0 to 1 s at a time; got " + std::to_string(timeout));
@@ -153,8 +164,8 @@ std::shared_ptr<StreamCore> make_core(stream s) {
 /// The calls an end makes are serialised by calls. A thread that holds the GIL only try-locks it and
 /// releases the GIL before it waits for it, since a wait at the gate holds calls without the GIL; so a
 /// wait never holds the GIL and a second thread waits its turn. interrupts guards interrupt against
-/// close, which the header requires never overlap. Lock order: the GIL, then interrupts, never the other
-/// way; calls is only waited for with the GIL released.
+/// close, which the header requires never overlap, and a reader's metadata lookup against close. Lock
+/// order: the GIL, then interrupts, never the other way; calls is only waited for with the GIL released.
 class End {
 public:
     End(std::shared_ptr<StreamCore> core, nb::handle types)
@@ -291,6 +302,32 @@ public:
         std::unique_lock lock = lock_calls();
         end_.abandon();
         release_slot();
+    }
+
+    std::uint64_t add_metadata(const nb::bytes &doc) {
+        check_open();
+        // The add reads write_pos as the sender's only writer, so it must not overlap a send.
+        std::unique_lock lock = lock_calls();
+        if (closed_.load())
+            throw StreamClosed("stream '" + name_ + "': this end is closed");
+        const result<std::uint64_t> added = end_.add_metadata(bytes_of(doc));
+        if (added)
+            return *added;
+        if (added.error().code == status::metadata_full) {
+            if (static_cast<const stream_header *>(core_->s.base())->metadata == 0)
+                throw MetadataFull("stream '" + name_ +
+                                   "' has no metadata area; create it with metadata or a metadata_capacity");
+            throw MetadataFull("stream '" + name_ +
+                               "': an item still in the ring was sent under the metadata version this add "
+                               "would reclaim; send more items first, or create the stream with a larger "
+                               "metadata_versions or metadata_capacity");
+        }
+        if (added.error().code == status::range)
+            throw std::invalid_argument("stream '" + name_ + "': the metadata document is " +
+                                        std::to_string(doc.size()) +
+                                        " bytes, more than its metadata area takes, about a third of "
+                                        "metadata_capacity");
+        fail(added.error());
     }
 
     void interrupt() {
@@ -521,6 +558,25 @@ public:
         return nb::make_tuple(value, (*got)->position);
     }
 
+    std::uint64_t metadata_version_at(std::uint64_t position) {
+        // Close sets closed_ under interrupts before it closes the end, and a receive changes nothing the lookup
+        // reads, so the lookup need not wait for a receive in another thread.
+        std::lock_guard lock(*interrupts_);
+        check_open();
+        const result<std::uint64_t> found = end_.metadata_version_at(position);
+        if (found)
+            return *found;
+        if (found.error().code != status::not_found)
+            fail(found.error());
+        // Version 1 starts the ring and takes the first entry, so any add that reclaims a version reclaims it
+        // first: while it is held no version is gone, and the item came before every version.
+        const stream &s = core_->s;
+        if (s.metadata_head() == 0 || s.metadata_length(1))
+            return 0;
+        throw MetadataGone("stream '" + name_ + "' no longer holds the metadata version of the item at position " +
+                           std::to_string(position));
+    }
+
     std::uint32_t mode() const { return static_cast<std::uint32_t>(end_.mode()); }
     std::uint64_t missed() const { return missed_total_.load(std::memory_order_relaxed); }
 
@@ -557,11 +613,16 @@ private:
 class Stream {
 public:
     static Stream create(const std::string &name, nb::handle types, std::uint32_t entry, std::uint64_t schema_hash,
-                         std::uint64_t capacity, std::uint32_t max_readers) {
+                         std::uint64_t capacity, std::uint32_t max_readers,
+                         const std::optional<nb::bytes> &metadata, std::uint64_t metadata_capacity,
+                         std::uint32_t metadata_versions) {
         const std::string &table = nb::cast<const Types &>(types).table();
+        const metadata_spec spec{metadata ? bytes_of(*metadata) : std::span<const std::byte>(), metadata_capacity,
+                                 metadata_versions};
+        check_metadata_spec("stream '" + name + "'", spec);
         result<stream> made =
             stream::create(name, {reinterpret_cast<const std::byte *>(table.data()), table.size()}, entry,
-                           capacity, max_readers, schema_hash);
+                           capacity, max_readers, schema_hash, spec);
         if (!made)
             throw_stream(made.error(), name);
         return Stream(make_core(std::move(*made)), types);
@@ -592,6 +653,22 @@ public:
     std::uint32_t max_readers() const { return core().s.max_readers(); }
     std::uint64_t create_id() const { return core().s.create_id(); }
     bool closed() const { return core_ == nullptr; }
+    std::uint64_t metadata_head() const { return core().s.metadata_head(); }
+
+    std::uint32_t metadata_length(std::uint64_t version) const {
+        const result<std::uint32_t> length = core().s.metadata_length(version);
+        if (!length)
+            fail_metadata(length.error(), core().name, version);
+        return *length;
+    }
+
+    nb::bytes read_metadata(std::uint64_t version) const {
+        std::string out(metadata_length(version), char{});
+        const result<std::uint32_t> read = core().s.read_metadata(version, std::as_writable_bytes(std::span(out)));
+        if (!read)
+            fail_metadata(read.error(), core().name, version);
+        return nb::bytes(out.data(), out.size());
+    }
 
     nb::tuple statistics() const {
         const stream &s = core().s;
@@ -682,6 +759,7 @@ void bind_stream(nb::module_ &m) {
         .def("reserve", &Sender::reserve, "timeout"_a, "release"_a = false)
         .def("commit", &Sender::commit, "value"_a.none())
         .def("abandon", &Sender::abandon)
+        .def("add_metadata", &Sender::add_metadata, "doc"_a)
         .def("interrupt", &Sender::interrupt)
         .def("close", &Sender::close)
         .def("_after_fork", &Sender::after_fork)
@@ -696,19 +774,24 @@ void bind_stream(nb::module_ &m) {
              "arrays"_a = std::vector<std::pair<std::vector<std::uint32_t>, nb::object>>{})
         .def_prop_ro("mode", &Reader::mode)
         .def_prop_ro("missed", &Reader::missed)
+        .def("metadata_version_at", &Reader::metadata_version_at, "position"_a)
         .def("interrupt", &Reader::interrupt)
         .def("close", &Reader::close)
         .def("_after_fork", &Reader::after_fork)
         .def_prop_ro("closed", &Reader::closed);
     nb::class_<Stream>(m, "Stream", nb::type_slots(gc_slots<Stream>))
         .def_static("create", &Stream::create, "name"_a, "types"_a, "entry"_a, "schema_hash"_a, "capacity"_a,
-                    "max_readers"_a)
+                    "max_readers"_a, "metadata"_a = nb::none(), "metadata_capacity"_a = 0,
+                    "metadata_versions"_a = 64)
         .def_static("attach", &Stream::attach, "name"_a, "types"_a, "entry"_a, "schema_hash"_a)
         .def_prop_ro("name", &Stream::name, nb::lock_self())
         .def_prop_ro("capacity", &Stream::capacity, nb::lock_self())
         .def_prop_ro("max_readers", &Stream::max_readers, nb::lock_self())
         .def_prop_ro("create_id", &Stream::create_id, nb::lock_self())
         .def_prop_ro("closed", &Stream::closed, nb::lock_self())
+        .def("metadata_head", &Stream::metadata_head, nb::lock_self())
+        .def("metadata_length", &Stream::metadata_length, "version"_a, nb::lock_self())
+        .def("read_metadata", &Stream::read_metadata, "version"_a, nb::lock_self())
         .def("statistics", &Stream::statistics, nb::lock_self())
         .def("sender", &Stream::sender, nb::lock_self())
         .def("reader", &Stream::reader, "mode"_a, "newest"_a, nb::lock_self())

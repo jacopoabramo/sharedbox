@@ -18,6 +18,7 @@ from hypothesis.stateful import (
 
 from sharedbox import (
     MaxShape,
+    MetadataFullError,
     ReaderReleased,
     SharedReceiveStream,
     SharedSendStream,
@@ -27,6 +28,7 @@ from sharedbox import (
 
 CAPACITY = 4
 MAX_READERS = 4
+METADATA_VERSIONS = 3
 
 
 @dataclass
@@ -201,3 +203,80 @@ class ReleaseMachine(StreamMachine):
 
 
 TestReleaseMachine = ReleaseMachine.TestCase
+
+
+class MetadataMachine(RuleBasedStateMachine):
+    """One stream with metadata, its sender and a lossless reader, against the position each version was added at."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.name = ""
+        self.stream: SharedStream[int]
+        self.sender: SharedSendStream[int]
+        self.reader: SharedReceiveStream[int]
+        self.sent = 0
+        self.received = 0
+        self.versions: list[int] = []
+
+    @initialize()
+    def create(self) -> None:
+        """Create the stream with version 1, take its sender and open a reader."""
+        self.name = f"sbtest-{uuid.uuid4().hex[:16]}"
+        self.stream = SharedStream.create(
+            int,
+            self.name,
+            capacity=CAPACITY,
+            metadata={"version": 1},
+            metadata_versions=METADATA_VERSIONS,
+        )
+        self.sender = self.stream.sender()
+        self.reader = self.stream.reader(start="oldest")
+        self.versions = [0]
+
+    def full(self) -> bool:
+        """Whether the next add would reclaim a version that an item still in the ring was sent under."""
+        if len(self.versions) < METADATA_VERSIONS:
+            return False
+        start, end = (
+            self.versions[-METADATA_VERSIONS],
+            self.versions[-METADATA_VERSIONS + 1],
+        )
+        return start != end and end + CAPACITY > self.sent
+
+    @precondition(lambda self: self.sent < self.received + CAPACITY)
+    @rule()
+    def send(self) -> None:
+        """Send the next position as the item."""
+        self.sender.send_nowait(self.sent)
+        self.sent += 1
+
+    @rule()
+    def add_metadata(self) -> None:
+        """Add the next version, which applies from the next item; MetadataFullError exactly when an item in the ring needs the version it would reclaim."""
+        version = len(self.versions) + 1
+        if self.full():
+            with pytest.raises(MetadataFullError):
+                self.sender.add_metadata({"version": version})
+            return
+        assert self.sender.add_metadata({"version": version}) == version
+        self.versions.append(self.sent)
+
+    @precondition(lambda self: self.received < self.sent)
+    @rule()
+    def receive(self) -> None:
+        """Receive the next item and see the newest version added at or before its position."""
+        assert self.reader.receive_nowait() == self.received
+        version = max(
+            v for v, at in enumerate(self.versions, start=1) if at <= self.received
+        )
+        assert self.reader.metadata_version == version
+        assert self.reader.metadata == {"version": version}
+        self.received += 1
+
+    def teardown(self) -> None:
+        if self.name:
+            self.stream.close()
+            SharedStream.unlink(self.name)
+
+
+TestMetadataMachine = MetadataMachine.TestCase

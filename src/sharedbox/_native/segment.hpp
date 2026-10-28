@@ -28,6 +28,8 @@ struct FieldDesc {
 void check_index(std::uint32_t index, std::size_t count);
 /// Throws std::invalid_argument unless there is one name per field.
 void check_names(const std::vector<std::string> &names, std::size_t count);
+/// Throws std::invalid_argument, starting with what (such as "box 'name'"), for a spec create would refuse.
+void check_metadata_spec(const std::string &what, const metadata_spec &spec);
 /// The stored bytes of field inside a copy of the record made by Segment::read_record.
 std::string_view payload(const FieldDesc &field, const std::byte *record);
 

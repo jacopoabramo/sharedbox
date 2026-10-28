@@ -88,7 +88,7 @@ warn_unreachable = true
 files = ["src", "tests", "docs/tutorials", "docs/examples"]
 
 [[tool.mypy.overrides]]
-module = ["pyperf", "plotly", "plotly.*", "torch"]
+module = ["event_model", "pyperf", "plotly", "plotly.*", "torch"]
 ignore_missing_imports = true
 
 [tool.tox]

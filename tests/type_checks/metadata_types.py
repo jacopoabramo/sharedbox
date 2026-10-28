@@ -79,3 +79,18 @@ def check_covariance(motor: Motor, stream: SharedStream[Item, Info]) -> None:
 
 def check_bound(box: SharedBox[int], stream: SharedStream[Item, int]) -> None:  # type: ignore[type-var]
     pass
+
+
+def check_stream_metadata(
+    stream: SharedStream[Item], typed: SharedStream[Item, Info]
+) -> None:
+    assert_type(stream.metadata, Mapping[str, Any] | None)
+    assert_type(stream.metadata_version_of(1), Mapping[str, Any])
+    assert_type(stream.reader().metadata, Mapping[str, Any] | None)
+    assert_type(typed.metadata, Info | None)
+    assert_type(typed.metadata_version_of(1), Info)
+    assert_type(typed.reader().metadata, Info | None)
+    assert_type(
+        SharedStream.create(Item, capacity=2, metadata=Info(unit="mm")),
+        SharedStream[Item, Info],
+    )
