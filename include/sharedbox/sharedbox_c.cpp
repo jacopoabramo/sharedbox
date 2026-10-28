@@ -363,8 +363,10 @@ int sbx_read_metadata(const sbx_handle *h, uint64_t version, void *out, size_t c
         return SBX_OK;
     }
     if (read.error().code == sharedbox::status::range && len != nullptr) {
-        if (const auto needed = owner->metadata_length(version))
-            *len = *needed;
+        const auto needed = owner->metadata_length(version);
+        if (!needed)
+            return static_cast<int>(needed.error().code);
+        *len = *needed;
     }
     return static_cast<int>(read.error().code);
 }

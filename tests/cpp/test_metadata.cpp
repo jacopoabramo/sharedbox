@@ -558,11 +558,12 @@ TEST_CASE("a reader of the latest box version never misses it during an add") {
     auto reader = handle::open(name, seconds(1.0));
     REQUIRE(reader);
     std::atomic<std::uint64_t> seen{0};
+    std::atomic<bool> stop{false};
     std::atomic<std::uint64_t> misses{0};
     std::atomic<std::uint64_t> wrong{0};
     std::thread read([&] {
         std::byte buf[16];
-        for (std::uint64_t head = 0; head < total;) {
+        for (std::uint64_t head = 0; head < total && !stop.load();) {
             head = reader->metadata_head();
             if (head == 0)
                 continue;
@@ -584,8 +585,12 @@ TEST_CASE("a reader of the latest box version never misses it during an add") {
         while (v > seen.load() + 4 && seen.load() < total)
             std::this_thread::yield();
         const auto doc = cbor({0x19, static_cast<int>(v >> 8), static_cast<int>(v & 0xff)});
-        REQUIRE(owner->add_metadata(doc, seconds(5.0)).value_or(0) == v);
+        const bool added = owner->add_metadata(doc, seconds(5.0)).value_or(0) == v;
+        CHECK(added);
+        if (!added)
+            break;
     }
+    stop.store(true);
     read.join();
     CHECK(misses.load() == 0);
     CHECK(wrong.load() == 0);
@@ -613,7 +618,7 @@ TEST_CASE("a forged box metadata offset is refused") {
     CHECK(forged(h.metadata, h.common.size) == status::corrupt);
     CHECK(forged(h.metadata, area + 4096) == status::corrupt);
     CHECK(forged(h.metadata, std::uint64_t{h.record}) == status::corrupt);
-    CHECK(forged(h.metadata, area - 64) == status::corrupt);
+    CHECK(forged(h.metadata, area + 64) == status::corrupt);
     CHECK(forged(h.metadata, area + 8) == status::corrupt);
     CHECK(forged(h.metadata_size, used + 4096) == status::corrupt);
     CHECK(forged(h.metadata_size, std::uint32_t{32}) == status::corrupt);
@@ -633,5 +638,28 @@ TEST_CASE("a forged box metadata offset is refused") {
     CHECK(open_status(name) == status::corrupt);
     line->ring_size -= 8;
     CHECK(open_status(name) == status::ok);
+    static_cast<void>(unlink(name));
+}
+
+TEST_CASE("metadata is read and added through a duplicate and a taken-over capsule") {
+    const std::string name = unique("meta-dup");
+    const auto doc = cbor({0xa1, 0x61, 0x61, 0x01});
+    auto owner = handle::create(name, box_fields, 32, 1, 4, {}, {}, metadata_spec{doc, 1024, 4});
+    REQUIRE(owner);
+    auto copy = owner->duplicate();
+    REQUIRE(copy);
+    CHECK(copy->metadata_head() == 1);
+    CHECK(read_version(*copy, 1) == doc);
+    CHECK(copy->add_metadata(cbor({0x02}), seconds(1.0)).value_or(0) == 2);
+    sbx_handle *capsule = std::move(*copy).to_capsule();
+    REQUIRE(capsule != nullptr);
+    auto taken = handle::from_capsule(capsule);
+    REQUIRE(taken);
+    CHECK(taken->metadata_head() == 2);
+    CHECK(read_version(*taken, 2) == cbor({0x02}));
+    CHECK(taken->add_metadata(cbor({0x03}), seconds(1.0)).value_or(0) == 3);
+    CHECK(owner->metadata_head() == 3);
+    CHECK(read_version(*owner, 3) == cbor({0x03}));
+    delete capsule;
     static_cast<void>(unlink(name));
 }

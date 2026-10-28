@@ -8,6 +8,7 @@
 #include <cstring>
 #include <memory>
 #include <string>
+#include <vector>
 
 using namespace sharedbox;
 
@@ -201,6 +202,30 @@ TEST_CASE("a box without metadata keeps the 3.1 bytes") {
     for (std::size_t i = offsetof(header, metadata_size); i < sizeof(header); ++i)
         CHECK(bytes[i] == std::byte{0});
     CHECK(owner->size() == detail::round_up(std::uint64_t{h.record} + h.record_size, page_size));
+    header reference{};
+    reference.common = {box_magic,
+                        core_major,
+                        core_minor,
+                        layout_major,
+                        h.common.kind_minor,
+                        0x5EED,
+                        h.common.create_id,
+                        h.common.creator_start,
+                        h.common.creator_pidns,
+                        h.common.creator_pid,
+                        4,
+                        0,
+                        owner->size()};
+    reference.field_count = 2;
+    reference.record_size = 32;
+    reference.record = 320;
+    reference.tail = header_size;
+    CHECK(std::memcmp(&reference, owner->base(), sizeof reference) == 0);
+    std::vector<std::byte> tail(reference.record - header_size);
+    const stored_field table[2] = {{0, 8u | std::uint32_t{kind_int} << 24},
+                                   {8, 16u | std::uint32_t{kind_bytes} << 24}};
+    std::memcpy(tail.data(), table, sizeof table);
+    CHECK(std::memcmp(tail.data(), bytes + header_size, tail.size()) == 0);
     CHECK(owner->metadata_head() == 0);
     const std::byte doc[1] = {std::byte{0x01}};
     const std::uint64_t generation = owner->generation();

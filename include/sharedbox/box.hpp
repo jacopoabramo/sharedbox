@@ -1069,6 +1069,8 @@ inline result<std::uint64_t> handle::add_metadata(std::span<const std::byte> doc
     detail::state &s = *s_;
     if (s.metadata == nullptr)
         return unexpected(status::metadata_full);
+    if (doc.size() > detail::max_metadata_document(s.metadata_first.ring_size) || !metadata_ok(doc))
+        return unexpected(status::range);
     const result<std::uint64_t> locked = lock(lock_timeout);
     if (!locked)
         return unexpected(locked.error());
@@ -1078,10 +1080,12 @@ inline result<std::uint64_t> handle::add_metadata(std::span<const std::byte> doc
         detail::add_metadata(s.metadata, s.metadata_first, detail::atomic(s.hdr->metadata_head), doc,
                              (*locked >> 1) + 1, [](std::uint64_t) { return true; });
     if (!added) {
-        // Nothing was written, so the lock is given back without counting a write. A force_unlock that
-        // has already released it leaves seq as another writer's, and the swap then changes nothing.
+        // Only a forged area gets here. Nothing was written, so the lock is given back without counting a
+        // write; a force_unlock that has already released it leaves seq as another writer's, and the swap
+        // then changes nothing.
         std::uint64_t held = *locked + 1;
-        detail::atomic(s.hdr->writer_pid).store(0, std::memory_order_relaxed);
+        if (detail::atomic(s.hdr->seq).load(std::memory_order_relaxed) == held)
+            detail::atomic(s.hdr->writer_pid).store(0, std::memory_order_relaxed);
         detail::atomic(s.hdr->seq)
             .compare_exchange_strong(held, *locked, std::memory_order_release, std::memory_order_relaxed);
         return unexpected(added.error());
