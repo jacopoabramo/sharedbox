@@ -97,9 +97,9 @@ process. Each reader has its own position in the stream and a mode:
 
 ### Released reader
 
-A released reader is a [lossless](#lossless) [reader](#reader) that a
-[sender](#sender) opened with `on_full="release"` stopped waiting for, once a
-send had waited its whole timeout. Its next receive raises
+A released reader is a [lossless](#lossless) [reader](#reader) that the
+[sender](#sender) stopped waiting for: the sender was opened with
+`on_full="release"`, and a send waited its whole timeout. Its next receive raises
 [`ReaderReleased`][sharedbox.ReaderReleased] with the number of items it
 lost, and it goes on at the newest item. See
 [`sender`][sharedbox.SharedStream.sender].

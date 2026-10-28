@@ -503,7 +503,8 @@ struct reader_entry {               // sharedbox::reader_entry, 64 bytes
     uint32_t owner_pid;             // 24  0 = free
     uint32_t mode;                  // 28  0 until the entry has a position, 1 lossless, 2 lossy, 3 latest
     uint64_t release_mark;          // 32  owner_start of a reader that can be released
-    uint8_t  reserved[24];          // 40  zero
+    uint32_t release_pid;           // 40  owner_pid of a reader that can be released
+    uint8_t  reserved[20];          // 44  zero
 };
 ```
 
@@ -513,10 +514,12 @@ struct reader_entry {               // sharedbox::reader_entry, 64 bytes
   Only the sender stores it, and it only grows. A lossless reader whose
   entry is marked and whose `position` is below it does not hold the sender
   back; see Send and receive.
-- An entry is marked while its `release_mark` equals its `owner_start`. A
-  reader of stream layout 1.3 stores its own start time there when it
-  joins; a reader of an older layout never writes the field, so an entry it
-  takes over keeps another process's start and is not marked. The sender
+- An entry is marked while its `release_mark` equals its `owner_start` and
+  its `release_pid` equals its `owner_pid`. A reader of stream layout 1.3
+  stores its own start time and pid there when it joins; a reader of an
+  older layout never writes the two fields, so an entry it takes over keeps
+  another process's start and pid and is not marked, even when the two
+  processes started at the same time. The sender
   never releases a reader whose entry is not marked.
 - Slot `i` starts at `slots + i * slot_size`. It holds an 8-byte `seq` at
   its start and the item at `max(8, item alignment)`, so an item aligned to
@@ -579,7 +582,7 @@ layout version of its kind, for the rest. Each has a major and a minor.
   layout 1.0 refuses with `status::corrupt`. Stream layout 1.2 adds kind
   75, `max_array`, which a reader of stream layout 1.1 or 1.0 refuses with
   `status::corrupt` as a stream item or inside one. Stream layout 1.3 adds
-  `release_floor` and `release_mark` from reserved bytes; a stream that an
+  `release_floor`, `release_mark` and `release_pid` from reserved bytes; a stream that an
   older version created keeps them at 0, so none of its readers is
   released until a sender of 1.3 raises the floor.
 - A change to how existing bytes are read or written raises a major: the
@@ -885,8 +888,8 @@ Send:
    again with that floor. If the send can then go on, the sender stores
    `release_floor`, issues a release fence and goes on to step 2. If an
    entry that is not marked still holds it back, it stores nothing and gives
-   `status::timeout`. A wait that ends in `status::interrupted` releases
-   nothing.
+   `status::timeout`. The stored floor never goes down. A wait that ends in
+   `status::interrupted` releases nothing.
 2. Store `seq = 2p + 1`, then a release fence, copy the item, store
    `seq = 2p + 2` with release, and store `write_pos = p + 1` with release.
 3. A sequentially consistent fence, then, if `data_waiting` is not 0, add 1
@@ -925,8 +928,8 @@ Receive, for a reader whose next position is `r`:
    the reader sees it. If `r` is below the floor the reader was released: it
    moves to `max(write_pos - 1, release_floor)`, counts the positions it
    passes as missed, stores the new `position` with release, adds 1 to
-   `readers_epoch`, issues a sequentially consistent fence and gives
-   `status::released`. It then reads as if it had just joined at the newest
+   `readers_epoch`, issues a sequentially consistent fence, wakes a waiting
+   sender as in step 4 and gives `status::released`. It then reads as if it had just joined at the newest
    item. A lossless reader that is not below the floor moves on without
    counting until it has received its first item; after that the gate rules
    this out, and it gets `status::corrupt`.
@@ -948,7 +951,7 @@ A reader joins in this order:
 3. Store the starting `position` with release: for `start_at::newest`
    `write_pos - 1`, or 0 before the first send, and for `start_at::oldest`
    `write_pos - capacity`, or 0. Before it, the reader stores its start time
-   in `release_mark`. A lossless reader starts no lower than
+   in `release_mark` and its pid in `release_pid`. A lossless reader starts no lower than
    `release_floor`, loaded with acquire, since a reader below the floor
    would be released at its first receive.
 4. If the reader is lossless, add 1 to `lossless_readers`. Then store its
