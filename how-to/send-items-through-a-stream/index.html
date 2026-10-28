@@ -3885,13 +3885,18 @@ dead sender, and the sender stops waiting for a dead lossless reader. A
 reader that only polls with <code>receive_nowait</code> never waits, so it keeps raising
 <code>WouldBlock</code> and never sees the stream end; give it a <code>timeout</code> instead.</p>
 <p><code>sharedbox</code> registers an <code>atexit</code> hook in each process that stops its box
-watcher threads and its stream worker threads. <code>atexit</code> runs handlers
-last-registered first, so a handler you register before importing <code>sharedbox</code>
-runs after <code>sharedbox</code>'s and finds the ends closed. Spawned child processes
-exit through <code>sys.exit</code> and run the hook. Children made by <code>fork</code> or
-<code>forkserver</code> exit with <code>os._exit</code> and do not, so their daemon threads end with
-the process, and the other processes free a reader ended that way after a
-short delay.</p>
+watcher threads and its stream worker threads, then closes every box and
+stream the process still has open. A box or stream used after the hook,
+from a <code>__del__</code> during shutdown for instance, raises
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;BoxClosedError&lt;/span&gt;" href="../../reference/api/errors/#sharedbox.BoxClosedError"><code>BoxClosedError</code></a> or
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;StreamClosedError&lt;/span&gt;" href="../../reference/api/errors/#sharedbox.StreamClosedError"><code>StreamClosedError</code></a>, and creating or
+attaching a box raises <code>BoxClosedError</code>. <code>atexit</code> runs handlers
+last-registered first, so a handler you register before importing
+<code>sharedbox</code> runs after <code>sharedbox</code>'s and finds the ends closed. Spawned
+child processes exit through <code>sys.exit</code> and run the hook. Children made by
+<code>fork</code> or <code>forkserver</code> exit with <code>os._exit</code> and do not, so their daemon
+threads end with the process, and the other processes free a reader ended
+that way after a short delay.</p>
 <p>A child made by <code>fork</code> inherits the parent's ends, but they are closed in the
 child: using one raises <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;StreamClosedError&lt;/span&gt;" href="../../reference/api/errors/#sharedbox.StreamClosedError"><code>StreamClosedError</code></a>.
 Open new ends in the child from the inherited stream instead. Do not connect callbacks to an inherited
