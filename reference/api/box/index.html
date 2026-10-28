@@ -884,6 +884,8 @@
       
         
       
+        
+      
     
     
     
@@ -1322,6 +1324,35 @@
     
   
   How to send items through a stream
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../how-to/attach-metadata/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-wrench" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  How to attach metadata to a box or stream
 
     
   </span>
@@ -2319,6 +2350,28 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#sharedbox.SharedBox.metadata" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-attribute"></code>&nbsp;metadata
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sharedbox.SharedBox.metadata_version" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-attribute"></code>&nbsp;metadata_version
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#sharedbox.SharedBox.events" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -2356,6 +2409,28 @@
     <span class="md-ellipsis">
       <span class="md-typeset">
         <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;attach
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sharedbox.SharedBox.metadata_version_of" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;metadata_version_of
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sharedbox.SharedBox.add_metadata" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;add_metadata
       </span>
     </span>
   </a>
@@ -3777,6 +3852,28 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#sharedbox.SharedBox.metadata" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-attribute"></code>&nbsp;metadata
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sharedbox.SharedBox.metadata_version" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-attribute"></code>&nbsp;metadata_version
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#sharedbox.SharedBox.events" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -3814,6 +3911,28 @@
     <span class="md-ellipsis">
       <span class="md-typeset">
         <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;attach
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sharedbox.SharedBox.metadata_version_of" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;metadata_version_of
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sharedbox.SharedBox.add_metadata" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;add_metadata
       </span>
     </span>
   </a>
@@ -4599,10 +4718,12 @@
 
 
 <a href="#sharedbox.SharedBox" class="headerlink" title="Permanent link">&para;</a></h2>
-<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">SharedBox</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">SharedBox</span><span class="p">(</span><span class="o">*</span><span class="n">args</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">metadata</span><span class="p">:</span> <span class="nb">object</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span>
 </span></code></pre></div>
 
     <div class="doc doc-contents first">
+            <p class="doc doc-class-bases">
+              Bases: <code><a class="autorefs autorefs-external" title="&lt;code&gt;typing.Generic&lt;/code&gt;" href="https://docs.python.org/3/library/typing.html#typing.Generic">Generic</a>[<span title="sharedbox._metadata.M">M</span>]</code></p>
 
 
 
@@ -4778,7 +4899,33 @@ exception propagates.</p>
   counted across every process. A watcher that finds every slot taken
   logs a warning to the <code>sharedbox</code> logger and checks for changes once
   a second until a slot is free.</li>
+<li><code>metadata_capacity</code>: bytes of the box's metadata area, 0 for none
+  or at least 24. The area takes 64 bytes, plus 32 per version, plus
+  the capacity rounded up to a multiple of 8, and must not pass
+  2**32 - 1 bytes in all. A metadata document takes at most about a
+  third of the capacity. By default a box created with <code>metadata</code>
+  gets 65536, and any other box no area, so
+  <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;add_metadata&lt;/span&gt;" href="./#sharedbox.SharedBox.add_metadata"><code>add_metadata</code></a> on it raises
+  <code>MetadataFullError</code>.</li>
+<li><code>metadata_versions</code>: how many metadata versions the box keeps at
+  most, 2 to 65535, 64 by default.</li>
 </ul>
+<p>Calling the class, or <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;create&lt;/span&gt;
+
+
+  &lt;span class=&quot;doc doc-labels&quot;&gt;
+      &lt;small class=&quot;doc doc-label doc-label-classmethod&quot;&gt;&lt;code&gt;classmethod&lt;/code&gt;&lt;/small&gt;
+  &lt;/span&gt;" href="./#sharedbox.SharedBox.create"><code>create</code></a>, with the
+keyword <code>metadata</code> stores that value as the box's first metadata
+version; see <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-attribute&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-attribute-name&quot;&gt;metadata&lt;/span&gt;
+
+
+  &lt;span class=&quot;doc doc-labels&quot;&gt;
+      &lt;small class=&quot;doc doc-label doc-label-property&quot;&gt;&lt;code&gt;property&lt;/code&gt;&lt;/small&gt;
+  &lt;/span&gt;" href="./#sharedbox.SharedBox.metadata"><code>metadata</code></a>. A type
+checker takes the type of the metadata a box reads and adds from the
+class's base, as in <code>class Motor(SharedBox[Info])</code>. It accepts the
+keyword <code>metadata</code> only in <code>create</code>, and does not check its value.</p>
 <p>A field annotated with a <code>SharedBox</code> subclass <code>X</code>, or with <code>X | None</code>
 (or <code>Optional[X]</code>), refers to another box, which keeps its own
 segment, lock and lifetime. The field stores the box's name, schema
@@ -4847,16 +4994,20 @@ keeps working after the fork.</p>
             <td>
               <div class="doc-md-description">
                 <p>When the class is defined, for an annotation of another type, no
-fields or more than 256, a field named like a <code>SharedBox</code> member
-(<code>name</code>, <code>closed</code>, <code>close</code>, <code>unlink</code>, <code>update</code>, <code>snapshot</code>,
-<code>watch</code>, <code>events</code>, <code>force_unlock</code>, <code>create</code>, <code>attach</code>) or like
-<code>follow</code>, <code>unfollow</code> or <code>nested</code>, a default of the wrong type, a
+fields or more than 256, a field or <code>InitVar</code> named like a
+<code>SharedBox</code> member (<code>name</code>, <code>closed</code>, <code>close</code>, <code>unlink</code>, <code>update</code>,
+<code>snapshot</code>, <code>read_into</code>, <code>writing</code>, <code>watch</code>, <code>events</code>,
+<code>force_unlock</code>, <code>create</code>, <code>attach</code>, <code>metadata</code>, <code>metadata_version</code>,
+<code>metadata_version_of</code>, <code>add_metadata</code>), a field named <code>follow</code>,
+<code>unfollow</code> or <code>nested</code>, a default of the wrong type, a
 positional field without a default after one with a default, an
 <code>InitVar</code> in a class without <code>__post_init__</code>, a reference to a
 class that is not defined yet, <code>__slots__</code> that name <code>_segment</code> or <code>_values</code>, or
 an <code>identity</code> that is not a non-empty string. When the class is
-called, for a missing, unknown or repeated value, or a value of
-the wrong type.</p>
+called, for a missing, unknown or repeated value, a value of the
+wrong type, or <code>metadata</code> that
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;add_metadata&lt;/span&gt;" href="./#sharedbox.SharedBox.add_metadata"><code>add_metadata</code></a> would refuse
+with <code>TypeError</code>.</p>
               </div>
             </td>
           </tr>
@@ -4868,8 +5019,14 @@ the wrong type.</p>
               <div class="doc-md-description">
                 <p>When the class is defined, for a <code>name</code> that is not segments of
 <code>[A-Za-z0-9_-]</code> joined by <code>:</code>, at most 240 characters, a
-<code>lock_timeout</code> or <code>max_waiters</code> out of range, or a default that does
-not fit its field (any of the cases below). When the class is called
+<code>lock_timeout</code>, <code>max_waiters</code>, <code>metadata_capacity</code> or
+<code>metadata_versions</code> out of range, or a default that does not fit
+its field (any of the cases below). When the class is called, for
+<code>metadata</code> that <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;add_metadata&lt;/span&gt;" href="./#sharedbox.SharedBox.add_metadata"><code>add_metadata</code></a>
+would refuse with <code>ValueError</code>, for any <code>metadata</code> when the class
+sets <code>metadata_capacity=0</code>, or for a metadata area that does not
+fit after the record in a box of at most 2**32 - 4096 bytes. When
+the class is called
 or a field is assigned, for a <code>str</code>, <code>bytes</code> or <code>Decimal</code> value longer
 than its capacity, a collection with more elements than its
 capacity, a tuple of the wrong length, an array of the wrong shape,
@@ -5011,6 +5168,108 @@ can still attach it.</p>
 
 
 
+<h3 id="sharedbox.SharedBox.metadata" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-attribute"></code>            <span class="doc doc-object-name doc-attribute-name">metadata</span>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#sharedbox.SharedBox.metadata" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">metadata</span><span class="p">:</span> <span class="n">M</span> <span class="o">|</span> <span class="kc">None</span>
+</span></code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>The value of the box's newest metadata version, or None if it has none.</p>
+<p>Metadata is a document stored beside the fields, such as the units
+or calibration the values were taken with. Adding a version with
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;add_metadata&lt;/span&gt;" href="./#sharedbox.SharedBox.add_metadata"><code>add_metadata</code></a> keeps the
+earlier ones until the box reclaims them for newer ones, and
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;metadata_version_of&lt;/span&gt;" href="./#sharedbox.SharedBox.metadata_version_of"><code>metadata_version_of</code></a>
+reads them until then. A mapping reads back as a read-only mapping
+and a list as a tuple, nested the same way. Each box object decodes
+a version once and keeps the 32 it used last.</p>
+
+
+<p><span class="doc-section-title">Raises:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;BoxClosedError&lt;/span&gt; (&lt;code&gt;sharedbox._native.BoxClosedError&lt;/code&gt;)" href="../errors/#sharedbox.BoxClosedError">BoxClosedError</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If the box is closed.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h3 id="sharedbox.SharedBox.metadata_version" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-attribute"></code>            <span class="doc doc-object-name doc-attribute-name">metadata_version</span>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#sharedbox.SharedBox.metadata_version" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">metadata_version</span><span class="p">:</span> <span class="nb">int</span>
+</span></code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>The number of the box's newest metadata version, 0 if it has none.</p>
+
+
+<p><span class="doc-section-title">Raises:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;BoxClosedError&lt;/span&gt; (&lt;code&gt;sharedbox._native.BoxClosedError&lt;/code&gt;)" href="../errors/#sharedbox.BoxClosedError">BoxClosedError</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If the box is closed.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
 <h3 id="sharedbox.SharedBox.events" class="doc doc-heading">
 <code class="doc-symbol doc-symbol-heading doc-symbol-attribute"></code>            <span class="doc doc-object-name doc-attribute-name">events</span>
 
@@ -5028,7 +5287,14 @@ can still attach it.</p>
         <p>One psygnal signal per field, emitted as <code>(new, old)</code> when any thread or process changes it.</p>
 <p>A <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;BoxEvents&lt;/span&gt;" href="../events/#sharedbox.BoxEvents"><code>BoxEvents</code></a> group:
 <code>box.events.&lt;field&gt;.connect(cb)</code> listens to one field and
-<code>box.events.connect(cb)</code> to all of them.</p>
+<code>box.events.connect(cb)</code> to all of them. The group's signal
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-attribute&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-attribute-name&quot;&gt;metadata&lt;/span&gt;
+
+
+  &lt;span class=&quot;doc doc-labels&quot;&gt;
+      &lt;small class=&quot;doc doc-label doc-label-instance-attribute&quot;&gt;&lt;code&gt;instance-attribute&lt;/code&gt;&lt;/small&gt;
+  &lt;/span&gt;" href="../events/#sharedbox.BoxEvents.metadata"><code>metadata</code></a> is emitted with the new
+version number when any process adds metadata to the box.</p>
 <p>Unlike the callbacks of a local evented dataclass, these run on the
 box's watcher thread; connect with <code>thread="main"</code> and call
 <code>psygnal.emit_queued()</code> to run them on the main thread instead.
@@ -5160,14 +5426,14 @@ most 240 characters.</p>
   </span>
 
 <a href="#sharedbox.SharedBox.create" class="headerlink" title="Permanent link">&para;</a></h3>
-<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">create</span><span class="p">(</span><span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="o">/</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Self</span>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">create</span><span class="p">(</span><span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="o">/</span><span class="p">,</span> <span class="o">*</span><span class="n">args</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">metadata</span><span class="p">:</span> <span class="nb">object</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Self</span>
 </span></code></pre></div>
 
     <div class="doc doc-contents ">
 
         <p>Create a box under <code>name</code> instead of the class's name.</p>
-<p>Takes the field values and runs <code>__post_init__</code> as calling the
-class does.</p>
+<p>Takes the field values and the keyword <code>metadata</code>, and runs
+<code>__post_init__</code>, as calling the class does.</p>
 
 
 <p><span class="doc-section-title">Raises:</span></p>
@@ -5280,6 +5546,161 @@ or is not a segment this version of sharedbox knows.</p>
               <div class="doc-md-description">
                 <p>If <code>name</code> is not segments of <code>[A-Za-z0-9_-]</code> joined by <code>:</code>, at
 most 240 characters.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="sharedbox.SharedBox.metadata_version_of" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <span class="doc doc-object-name doc-function-name">metadata_version_of</span>
+
+
+<a href="#sharedbox.SharedBox.metadata_version_of" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">metadata_version_of</span><span class="p">(</span><span class="n">version</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">M</span>
+</span></code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Return the value of metadata version <code>version</code>.</p>
+<p>Each box object decodes a version once and keeps the 32 it used
+last.</p>
+
+
+<p><span class="doc-section-title">Raises:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;MetadataGoneError&lt;/span&gt; (&lt;code&gt;sharedbox._native.MetadataGoneError&lt;/code&gt;)" href="../errors/#sharedbox.MetadataGoneError">MetadataGoneError</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If the box no longer holds that version, or never did.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;BoxClosedError&lt;/span&gt; (&lt;code&gt;sharedbox._native.BoxClosedError&lt;/code&gt;)" href="../errors/#sharedbox.BoxClosedError">BoxClosedError</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If the box is closed.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="sharedbox.SharedBox.add_metadata" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <span class="doc doc-object-name doc-function-name">add_metadata</span>
+
+
+<a href="#sharedbox.SharedBox.add_metadata" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">add_metadata</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="n">M</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span>
+</span></code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Store <code>value</code> as the box's next metadata version and return that version.</p>
+<p>Any process may add metadata to a box. The value is <code>None</code>, a
+<code>bool</code>, an <code>int</code> from -2**64 to 2**64 - 1, a <code>float</code>, a <code>str</code>,
+<code>bytes</code>, a mapping with <code>str</code> keys, or a <code>list</code> or <code>tuple</code>, nested
+up to 32 levels. The add takes the write lock as a write does and
+changes no field. The <code>metadata</code> signal of
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-attribute&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-attribute-name&quot;&gt;events&lt;/span&gt;
+
+
+  &lt;span class=&quot;doc doc-labels&quot;&gt;
+      &lt;small class=&quot;doc doc-label doc-label-property&quot;&gt;&lt;code&gt;property&lt;/code&gt;&lt;/small&gt;
+  &lt;/span&gt;" href="./#sharedbox.SharedBox.events"><code>events</code></a> is emitted with the new
+version in every process that listens to it. The oldest versions
+are reclaimed once the box holds <code>metadata_versions</code> of them, or
+needs their room in its metadata area.</p>
+
+
+<p><span class="doc-section-title">Raises:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-external" href="https://docs.python.org/3/builtins/exceptions.html#TypeError">TypeError</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If the value holds another type, or a mapping key is not a <code>str</code>.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-external" href="https://docs.python.org/3/builtins/exceptions.html#ValueError">ValueError</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If an <code>int</code> is out of range, the nesting is deeper than 32
+levels, or the document is longer than the metadata area takes,
+about a third of the class's <code>metadata_capacity</code>.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;MetadataFullError&lt;/span&gt; (&lt;code&gt;sharedbox._native.MetadataFullError&lt;/code&gt;)" href="../errors/#sharedbox.MetadataFullError">MetadataFullError</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If the box has no metadata area: its class sets no
+<code>metadata_capacity</code> and it was created without <code>metadata</code>.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;LockTimeoutError&lt;/span&gt; (&lt;code&gt;sharedbox._native.LockTimeoutError&lt;/code&gt;)" href="../errors/#sharedbox.LockTimeoutError">LockTimeoutError</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If another writer holds the lock longer than the lock timeout.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;BoxClosedError&lt;/span&gt; (&lt;code&gt;sharedbox._native.BoxClosedError&lt;/code&gt;)" href="../errors/#sharedbox.BoxClosedError">BoxClosedError</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If the box is closed.</p>
               </div>
             </td>
           </tr>

@@ -899,6 +899,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#rename-a-field-called-metadata" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Rename a field called <code>metadata</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -925,6 +936,8 @@
   
     
     
+      
+        
       
         
       
@@ -1395,6 +1408,35 @@
     
   
   How to send items through a stream
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../attach-metadata/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-wrench" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  How to attach metadata to a box or stream
 
     
   </span>
@@ -3110,6 +3152,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#rename-a-field-called-metadata" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Rename a field called <code>metadata</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -3225,14 +3278,15 @@
 
 
 <h1 id="how-to-migrate-from-07">How to migrate from 0.7<a class="headerlink" href="#how-to-migrate-from-07" title="Permanent link">&para;</a></h1>
-<p>Code written for <code>sharedbox</code> 0.7 needs one change before it runs on the next
-release: a <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;Shape&lt;/span&gt;
+<p>Code written for <code>sharedbox</code> 0.7 needs two changes before it runs on the
+next release: a <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;Shape&lt;/span&gt;
 
 
   &lt;span class=&quot;doc doc-labels&quot;&gt;
       &lt;small class=&quot;doc doc-label doc-label-dataclass&quot;&gt;&lt;code&gt;dataclass&lt;/code&gt;&lt;/small&gt;
-  &lt;/span&gt;" href="../../reference/api/arrays/#sharedbox.Shape"><code>Shape</code></a> now takes its dimensions as one tuple.
-This guide shows the old and the new form.</p>
+  &lt;/span&gt;" href="../../reference/api/arrays/#sharedbox.Shape"><code>Shape</code></a> now takes its dimensions as one
+tuple, and a box field can no longer take the name of a metadata member,
+such as <code>metadata</code>. This guide shows the old and the new form of each.</p>
 <h2 id="pass-the-dimensions-of-a-shape-as-a-tuple">Pass the dimensions of a <code>Shape</code> as a tuple<a class="headerlink" href="#pass-the-dimensions-of-a-shape-as-a-tuple" title="Permanent link">&para;</a></h2>
 <p><code>Shape</code> used to take each dimension as its own argument. It now takes a
 single tuple, so a one-dimensional shape needs the trailing comma that makes
@@ -3250,6 +3304,26 @@ a tuple of one element:</p>
 <code>ValueError</code> because <code>1024</code> is not a tuple. Code that builds the dimensions
 at run time passes the tuple it already has, <code>Shape(dims)</code>, in place of
 <code>Shape(*dims)</code>.</p>
+<h2 id="rename-a-field-called-metadata">Rename a field called <code>metadata</code><a class="headerlink" href="#rename-a-field-called-metadata" title="Permanent link">&para;</a></h2>
+<p>A box now has <a href="../../explanation/glossary/#metadata">metadata</a> of its own,
+which it reads and adds through four new members: <code>metadata</code>,
+<code>metadata_version</code>, <code>metadata_version_of</code> and <code>add_metadata</code>. A field or an
+<code>InitVar</code> can no longer take one of those names, so give it another:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># 0.7</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="k">class</span><span class="w"> </span><span class="nc">Parcel</span><span class="p">(</span><span class="n">SharedBox</span><span class="p">):</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>    <span class="n">metadata</span><span class="p">:</span> <span class="n">Annotated</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Capacity</span><span class="p">(</span><span class="mi">64</span><span class="p">)]</span> <span class="o">=</span> <span class="s2">""</span>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="c1"># 0.8</span>
+</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="k">class</span><span class="w"> </span><span class="nc">Parcel</span><span class="p">(</span><span class="n">SharedBox</span><span class="p">):</span>
+</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>    <span class="n">label</span><span class="p">:</span> <span class="n">Annotated</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Capacity</span><span class="p">(</span><span class="mi">64</span><span class="p">)]</span> <span class="o">=</span> <span class="s2">""</span>
+</span></code></pre></div>
+<p>The old form fails as the class is defined, with a <code>TypeError</code> that names
+the field. Rename it wherever your code reads or assigns it as well, since
+<code>parcel.metadata</code> now gives the box's metadata, usually <code>None</code>, and
+assigning to it raises <code>AttributeError</code>. The field's name is part of the
+<a href="../../explanation/glossary/#schema-hash">schema hash</a>, so a process that
+still runs the old class cannot attach to a box the new class created:
+update every process that opens the box together.</p>
 
 
 

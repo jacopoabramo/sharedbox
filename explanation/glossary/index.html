@@ -884,6 +884,8 @@
       
         
       
+        
+      
     
     
     
@@ -1322,6 +1324,35 @@
     
   
   How to send items through a stream
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../how-to/attach-metadata/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-wrench" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  How to attach metadata to a box or stream
 
     
   </span>
@@ -2272,6 +2303,28 @@
     <span class="md-ellipsis">
       <span class="md-typeset">
         Lossy
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#metadata" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Metadata
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#metadata-version" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Metadata version
       </span>
     </span>
   </a>
@@ -3419,6 +3472,28 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#metadata" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Metadata
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#metadata-version" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Metadata version
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#reader" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -3700,6 +3775,22 @@ a lossless reader waits for it. See <a class="autorefs autorefs-internal" title=
       &lt;small class=&quot;doc doc-label doc-label-property&quot;&gt;&lt;code&gt;property&lt;/code&gt;&lt;/small&gt;
   &lt;/span&gt;" href="../../reference/api/streams/#sharedbox.SharedReceiveStream.missed"><code>missed</code></a>. See
 <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;reader&lt;/span&gt;" href="../../reference/api/streams/#sharedbox.SharedStream.reader"><code>reader</code></a>.</p>
+<h3 id="metadata">Metadata<a class="headerlink" href="#metadata" title="Permanent link">&para;</a></h3>
+<p>Metadata is a value a <a href="#box">box</a> or <a href="#stream">stream</a> keeps in its
+<a href="#segment">segment</a> to say what its fields or items mean, such as their
+units or the calibration they were taken with. Every process reads it from
+the segment, and adding a new value adds a
+<a href="#metadata-version">metadata version</a>. The <code>metadata</code> of
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-function&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;field&lt;/span&gt;" href="../../reference/api/box/#sharedbox.field"><code>field</code></a> is a different thing, kept in each process's
+class. See
+<a href="../../how-to/attach-metadata/">How to attach metadata to a box or stream</a>.</p>
+<h3 id="metadata-version">Metadata version<a class="headerlink" href="#metadata-version" title="Permanent link">&para;</a></h3>
+<p>A metadata version is one value of a box's or stream's
+<a href="#metadata">metadata</a>, numbered from 1. Adding metadata adds a version and
+leaves the earlier ones as they were, until the box or stream lets the
+oldest go to make room for new ones. A stream item belongs to the newest
+version its <a href="#sender">sender</a> added before sending it. See
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;add_metadata&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.add_metadata"><code>add_metadata</code></a>.</p>
 <h3 id="reader">Reader<a class="headerlink" href="#reader" title="Permanent link">&para;</a></h3>
 <p>A reader is an object that receives the items of a <a href="#stream">stream</a> in one
 process. Each reader has its own position in the stream and a mode:

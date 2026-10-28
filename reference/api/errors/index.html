@@ -884,6 +884,8 @@
       
         
       
+        
+      
     
     
     
@@ -1322,6 +1324,35 @@
     
   
   How to send items through a stream
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../how-to/attach-metadata/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-wrench" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  How to attach metadata to a box or stream
 
     
   </span>
@@ -2474,6 +2505,28 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#sharedbox.MetadataFullError" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-class"></code>&nbsp;MetadataFullError
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sharedbox.MetadataGoneError" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-class"></code>&nbsp;MetadataGoneError
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#sharedbox.SchemaMismatchError" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -3278,6 +3331,28 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#sharedbox.MetadataFullError" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-class"></code>&nbsp;MetadataFullError
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sharedbox.MetadataGoneError" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-class"></code>&nbsp;MetadataGoneError
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#sharedbox.SchemaMismatchError" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -3568,6 +3643,16 @@
 <td>reading a reference field, or <code>snapshot(follow=True)</code>, when no class this process has defined has the stored box's <a href="../../../explanation/glossary/#schema-hash">schema hash</a></td>
 </tr>
 <tr>
+<td><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;MetadataFullError&lt;/span&gt;" href="./#sharedbox.MetadataFullError"><code>MetadataFullError</code></a></td>
+<td><code>RuntimeError</code></td>
+<td>adding <a href="../../../explanation/glossary/#metadata">metadata</a> to a box or stream created without room for it, or by a version of <code>sharedbox</code> without metadata; adding a version to a stream while an item still in its ring was sent under the version the add would let go</td>
+</tr>
+<tr>
+<td><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;MetadataGoneError&lt;/span&gt;" href="./#sharedbox.MetadataGoneError"><code>MetadataGoneError</code></a></td>
+<td><code>LookupError</code></td>
+<td>reading a <a href="../../../explanation/glossary/#metadata-version">metadata version</a> that the box or stream no longer holds, or never held; reading a reader's metadata when the version its last item was sent under is gone</td>
+</tr>
+<tr>
 <td><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;WouldBlock&lt;/span&gt;" href="./#sharedbox.WouldBlock"><code>WouldBlock</code></a></td>
 <td><code>Exception</code></td>
 <td>a <code>_nowait</code> call on a <a href="../../../explanation/glossary/#stream">stream</a> finds nothing to receive or no room to send</td>
@@ -3721,6 +3806,72 @@ message names the field, the box and which of the two happened.</p>
 <p>Raised by a read or write that waits for a write in progress for
 longer than the class's <code>lock_timeout</code>. The message names the process
 that holds the lock.</p>
+
+
+
+
+
+
+
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="sharedbox.MetadataFullError" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-class"></code>            <span class="doc doc-object-name doc-class-name">MetadataFullError</span>
+
+
+<a href="#sharedbox.MetadataFullError" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents first">
+            <p class="doc doc-class-bases">
+              Bases: <code><a class="autorefs autorefs-external" href="https://docs.python.org/3/builtins/exceptions.html#RuntimeError">RuntimeError</a></code></p>
+
+
+
+        <p>A new metadata document cannot be stored now.</p>
+<p>Raised by adding metadata to a segment without a metadata area
+(created with no capacity, or by an older release of sharedbox), or,
+in a stream, while the ring still holds items sent under the version
+the add would overwrite.</p>
+
+
+
+
+
+
+
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="sharedbox.MetadataGoneError" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-class"></code>            <span class="doc doc-object-name doc-class-name">MetadataGoneError</span>
+
+
+<a href="#sharedbox.MetadataGoneError" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents first">
+            <p class="doc doc-class-bases">
+              Bases: <code><a class="autorefs autorefs-external" href="https://docs.python.org/3/builtins/exceptions.html#LookupError">LookupError</a></code></p>
+
+
+
+        <p>The metadata version asked for was reclaimed for newer ones, or never added.</p>
 
 
 
