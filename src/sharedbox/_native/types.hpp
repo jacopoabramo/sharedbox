@@ -70,11 +70,13 @@ public:
     /// fields as Segment.create takes them; info maps a description's offset to its tuple; bytearrays
     /// lists (description offset, member) of each bytes member read back as bytearray, offset -1 for a
     /// field; reusable lists the fields whose values cannot be changed once read; converts lists the
-    /// callables a member's values pass through when read and before they are written, either may be None.
+    /// callables a member's values pass through when read and before they are written, either may be None;
+    /// stream says the table is a stream item's, which alone may hold a max_array.
     Types(const std::vector<std::tuple<std::uint32_t, std::uint32_t, std::uint32_t>> &fields,
           std::vector<std::string> labels, std::string table, const nb::dict &info,
           const std::vector<std::pair<std::int64_t, std::uint32_t>> &bytearrays,
-          const std::vector<std::uint32_t> &reusable = {}, const std::vector<Convert> &converts = {});
+          const std::vector<std::uint32_t> &reusable = {}, const std::vector<Convert> &converts = {},
+          bool stream = false);
 
     const std::string &table() const { return table_; }
     std::size_t field_count() const { return labels_.size(); }
@@ -208,8 +210,14 @@ private:
     /// An array value whose bytes start at data; owned, when it holds data, is taken instead of copied.
     nb::object decode_array(const detail::type_ref &t, const std::byte *data,
                             std::unique_ptr<std::byte[]> *owned) const;
-    /// The array over raw that owner keeps alive, with the node's shape and dtype, through the converter.
-    nb::object wrap_array(const detail::type_ref &t, std::byte *raw, nb::handle owner) const;
+    /// A max_array value whose shape line starts at data; owned, when it holds data, is taken instead of
+    /// copied. Raises ValueError naming name for a stored shape above the maximum.
+    nb::object decode_max_array(const detail::type_ref &t, const std::byte *data,
+                                std::unique_ptr<std::byte[]> *owned, const std::string &name) const;
+    /// The array over raw that owner keeps alive, with the node's dtype and shape, or the node's shape when
+    /// shape is empty, through the converter.
+    nb::object wrap_array(const detail::type_ref &t, std::byte *raw, nb::handle owner,
+                          std::span<const std::size_t> shape = {}) const;
     void prepare(std::uint32_t node, std::uint8_t kind, nb::object info);
     bool read_as_bytearray(std::uint32_t container, std::uint32_t member) const;
 

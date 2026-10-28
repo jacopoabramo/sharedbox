@@ -174,7 +174,7 @@ class Changeable(SharedBox):
     loose: Loose
     hashed: Hashed
     raw: Annotated[bytearray, Capacity(4)]
-    image: Annotated[np.ndarray, Shape(2), DType("int64")]
+    image: Annotated[np.ndarray, Shape((2,)), DType("int64")]
     frozen_with_list: FrozenWithList
     maybe_list: Annotated[list[int] | None, Capacity(2)]
     open_pair: OpenPair

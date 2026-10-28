@@ -13,10 +13,10 @@ pytestmark = pytest.mark.stress
 
 
 class Uniform(SharedBox):
-    image: Annotated[np.ndarray, Shape(1024, 1024), DType("float32")] = np.zeros(
+    image: Annotated[np.ndarray, Shape((1024, 1024)), DType("float32")] = np.zeros(
         (1024, 1024), np.float32
     )
-    small: Annotated[np.ndarray, Shape(64), DType("int64")] = np.zeros(64, np.int64)
+    small: Annotated[np.ndarray, Shape((64,)), DType("int64")] = np.zeros(64, np.int64)
 
 
 def write_uniform(name: str, seconds: float) -> None:

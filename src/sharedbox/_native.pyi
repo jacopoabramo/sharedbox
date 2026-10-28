@@ -367,6 +367,7 @@ class Types:
         converts: Sequence[
             tuple[int, int, Callable[[Any], Any] | None, Callable[[Any], Any] | None]
         ] = (),
+        stream: bool = False,
     ) -> None: ...
     def check(self, field: int, value: object) -> None:
         """Raise what writing `value` to `field` would raise."""

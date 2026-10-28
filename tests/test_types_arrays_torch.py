@@ -6,7 +6,7 @@ from sharedbox import DType, Shape, SharedBox
 
 
 class Tensor(SharedBox):
-    t: Annotated[torch.Tensor, Shape(2, 2), DType(torch.float32)] = torch.zeros(2, 2)
+    t: Annotated[torch.Tensor, Shape((2, 2)), DType(torch.float32)] = torch.zeros(2, 2)
 
 
 def test_a_torch_field_reads_back_as_a_tensor(unique_name: str) -> None:

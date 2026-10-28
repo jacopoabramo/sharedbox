@@ -26,7 +26,7 @@ from sharedbox import (
 )
 from sharedbox._stream import WORKER_THREADS
 
-Frame = Annotated[np.ndarray, Shape(2), DType("int32")]
+Frame = Annotated[np.ndarray, Shape((2,)), DType("int32")]
 
 
 async def worker_started(name: str) -> None:

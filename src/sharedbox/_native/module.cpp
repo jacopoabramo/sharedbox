@@ -1253,12 +1253,14 @@ NB_MODULE(_native, m) {
                const std::vector<std::tuple<std::uint32_t, std::uint32_t, std::uint32_t>> &fields,
                std::vector<std::string> labels, nb::bytes table, const nb::dict &info,
                const std::vector<std::pair<std::int64_t, std::uint32_t>> &bytearrays,
-               const std::vector<std::uint32_t> &reusable, const std::vector<sharedbox::Convert> &converts) {
+               const std::vector<std::uint32_t> &reusable, const std::vector<sharedbox::Convert> &converts,
+               bool stream) {
                 new (self) sharedbox::Types(fields, std::move(labels), std::string(table.c_str(), table.size()),
-                                            info, bytearrays, reusable, converts);
+                                            info, bytearrays, reusable, converts, stream);
             },
             "fields"_a, "labels"_a, "table"_a, "info"_a, "bytearrays"_a,
-            "reusable"_a = std::vector<std::uint32_t>(), "converts"_a = std::vector<sharedbox::Convert>())
+            "reusable"_a = std::vector<std::uint32_t>(), "converts"_a = std::vector<sharedbox::Convert>(),
+            "stream"_a = false)
         .def(
             "check",
             [](const sharedbox::Types &t, std::uint32_t index, nb::handle value) {

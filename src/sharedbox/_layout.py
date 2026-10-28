@@ -27,10 +27,12 @@ from ._arrays import Shape
 from ._native import Types
 from ._types import (
     CODES,
+    MAX_ARRAY_PLACES,
     Table,
     TypeSpec,
     is_box_class,
     parse,
+    reaches_max_array,
     round_up,
 )
 from ._types import (
@@ -79,6 +81,7 @@ Kind = Literal[
     "set",
     "dict",
     "array",
+    "max_array",
 ]
 
 MAX_FIELDS: Final[int] = 256
@@ -217,7 +220,7 @@ def field(
         kw_only=kw_only,
         metadata=MappingProxyType(dict(metadata or {})),
         doc=doc,
-        shape=None if shape is None else Shape(*shape).dims,
+        shape=None if shape is None else Shape(tuple(shape)).dims,
         capacity=None if capacity is None else Capacity(capacity).size,
     )
 
@@ -503,6 +506,8 @@ def build_layout(cls: type, identity: str | None = None) -> Layout:
                 ),
             )
         )
+        if spec is not None and reaches_max_array(spec):
+            raise TypeError(f"{where}: {MAX_ARRAY_PLACES}")
         found.append((name, spec, ref))
     if not found:
         raise TypeError(f"{cls.__qualname__} declares no fields")

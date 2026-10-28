@@ -9,7 +9,7 @@ import pytest
 
 from sharedbox import DType, Shape, SharedStream, StreamClosedError
 
-Image = Annotated[np.ndarray, Shape(4, 4), DType("uint16")]
+Image = Annotated[np.ndarray, Shape((4, 4)), DType("uint16")]
 EMPTY = np.empty((0, 0), np.uint16)
 
 

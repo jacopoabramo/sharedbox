@@ -23,7 +23,7 @@ from sharedbox import (
 class Letter:
     index: int
     recipient: Annotated[str, Capacity(32)]
-    scan: Annotated[np.ndarray, Shape(32, 32), DType("uint8")]
+    scan: Annotated[np.ndarray, Shape((32, 32)), DType("uint8")]
 
 
 # --8<-- [end:types]

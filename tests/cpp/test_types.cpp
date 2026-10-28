@@ -391,8 +391,8 @@ TEST_CASE("a max_array is refused outside a stream item's records and tuples") {
 }
 
 TEST_CASE("a forged max_array description is refused") {
-    for (const auto &dims : {std::vector<std::uint64_t>{0, 3}, std::vector<std::uint64_t>{},
-                             std::vector<std::uint64_t>(9, 2)}) {
+    for (const auto &dims :
+         {std::vector<std::uint64_t>{0, 3}, std::vector<std::uint64_t>{}, std::vector<std::uint64_t>(9, 2)}) {
         table_builder t;
         max_array(t, dims, 64 + 8);
         CHECK(parse(t, entry_of(kind_max_array, 0), true) == status::corrupt);

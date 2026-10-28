@@ -47,12 +47,24 @@ class SupportsDLPack(Protocol):
     def __dlpack_device__(self) -> tuple[int, int]: ...
 
 
-@dataclass(frozen=True, init=False)
+def check_dims(dims: object) -> None:
+    """Raise `ValueError` unless `dims` is a tuple of 1 to 8 `int`s of at least 1."""
+    if (
+        not isinstance(dims, tuple)
+        or not 1 <= len(dims) <= 8
+        or any(not isinstance(d, int) or isinstance(d, bool) or d < 1 for d in dims)
+    ):
+        raise ValueError(
+            f"an array has a tuple of 1 to 8 dimensions of at least 1, got {dims!r}"
+        )
+
+
+@dataclass(frozen=True)
 class Shape:
     """Dimensions of an array field, fixed when the class is defined.
 
     It goes in the annotation, as in
-    `Annotated[numpy.ndarray, Shape(480, 640), DType("uint8")]`. A field of a
+    `Annotated[numpy.ndarray, Shape((480, 640)), DType("uint8")]`. A field of a
     box also takes its sizes from `field(shape=...)` or from a plain default
     array, and they must agree with a `Shape`. An array inside a record or a
     stream item takes its sizes from a `Shape` only. When the annotation
@@ -63,19 +75,37 @@ class Shape:
     Raises
     ------
     ValueError
-        Unless there are 1 to 8 dimensions, each an `int` of at least 1.
+        Unless `dims` is a tuple of 1 to 8 dimensions, each an `int` of at least 1.
     """
 
     dims: tuple[int, ...]
 
-    def __init__(self, *dims: int) -> None:
-        if not 1 <= len(dims) <= 8 or any(
-            not isinstance(d, int) or isinstance(d, bool) or d < 1 for d in dims
-        ):
-            raise ValueError(
-                f"an array has 1 to 8 dimensions of at least 1, got {dims}"
-            )
-        object.__setattr__(self, "dims", dims)
+    def __post_init__(self) -> None:
+        check_dims(self.dims)
+
+
+@dataclass(frozen=True)
+class MaxShape:
+    """Largest dimensions of an array in a stream item, whose own shape each item stores.
+
+    It goes in the annotation, as in
+    `Annotated[numpy.ndarray, MaxShape((2048, 2048)), DType("uint16")]`, and
+    an array takes a `MaxShape` or a [`Shape`][sharedbox.Shape], not both.
+    An item may hold the array as the item itself or as a member of a record
+    or tuple, at any depth, and each value sent has as many dimensions as
+    the `MaxShape`, each from 0 to its maximum. A box field and a member of
+    an optional, union or collection cannot hold one.
+
+    Raises
+    ------
+    ValueError
+        Unless `dims` is a tuple of 1 to 8 dimensions, each an `int` of at least 1.
+    """
+
+    dims: tuple[int, ...]
+
+    def __post_init__(self) -> None:
+        check_dims(self.dims)
 
 
 def dtype_name(dtype: object) -> str:

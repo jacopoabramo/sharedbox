@@ -59,7 +59,7 @@ def test_items_of_each_kind_come_back(unique_name: str) -> None:
         ("r", Point, Point(3, "p")),
         (
             "a",
-            Annotated[np.ndarray, Shape(2, 3), DType("float32")],
+            Annotated[np.ndarray, Shape((2, 3)), DType("float32")],
             np.arange(6, dtype=np.float32).reshape(2, 3),
         ),
     ]:
@@ -238,12 +238,10 @@ def test_close_ends_a_blocked_send(unique_name: str) -> None:
 @dataclass(frozen=True)
 class Frame:
     index: int
-    image: Annotated[np.ndarray, Shape(4, 4), DType("uint16")]
+    image: Annotated[np.ndarray, Shape((4, 4)), DType("uint16")]
     mask: Annotated[
         np.ndarray,
-        Shape(
-            2,
-        ),
+        Shape((2,)),
         DType("uint8"),
     ]
 
@@ -254,9 +252,7 @@ class Shot:
     pair: tuple[
         Annotated[
             np.ndarray,
-            Shape(
-                3,
-            ),
+            Shape((3,)),
             DType("float32"),
         ],
         int,
@@ -302,9 +298,7 @@ def test_receive_into_a_bare_array_returns_the_array(unique_name: str) -> None:
         unique_name,
         Annotated[
             np.ndarray,
-            Shape(
-                8,
-            ),
+            Shape((8,)),
             DType("float64"),
         ],
     )
@@ -369,9 +363,7 @@ def test_receive_into_refuses_a_path_into_a_collection(unique_name: str) -> None
         tags: Annotated[list[int], Capacity(4)]
         image: Annotated[
             np.ndarray,
-            Shape(
-                2,
-            ),
+            Shape((2,)),
             DType("uint8"),
         ]
 

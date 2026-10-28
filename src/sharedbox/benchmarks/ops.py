@@ -175,7 +175,7 @@ class Typed(SharedBox):
     bd16: Annotated[BoundedDict[int, float], Capacity(16)]
     bd1k: Annotated[BoundedDict[int, float], Capacity(1024)]
     bd64k: Annotated[BoundedDict[int, float], Capacity(65536)]
-    image: Annotated[np.ndarray, Shape(512, 512), DType("float32")]
+    image: Annotated[np.ndarray, Shape((512, 512)), DType("float32")]
 
 
 WHEN = datetime.datetime(2026, 10, 2, 9, 30, tzinfo=datetime.UTC)

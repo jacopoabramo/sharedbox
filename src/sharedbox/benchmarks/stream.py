@@ -39,13 +39,13 @@ WARM_LAST = -1
 @dataclass(frozen=True)
 class Small:
     stamp: int
-    data: Annotated[np.ndarray, Shape(1024), DType("uint8")]
+    data: Annotated[np.ndarray, Shape((1024,)), DType("uint8")]
 
 
 @dataclass(frozen=True)
 class Frame:
     stamp: int
-    data: Annotated[np.ndarray, Shape(512, 512), DType("uint16")]
+    data: Annotated[np.ndarray, Shape((512, 512)), DType("uint16")]
 
 
 SIZES = {"1 KiB": Small, "512 KiB": Frame}

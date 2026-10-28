@@ -10,7 +10,9 @@ from sharedbox import DType, Shape, SharedBox
 
 class Blob(SharedBox):
     tick: int = 0
-    big: Annotated[np.ndarray, Shape(512, 512), DType("float64")] = np.zeros((512, 512))
+    big: Annotated[np.ndarray, Shape((512, 512)), DType("float64")] = np.zeros(
+        (512, 512)
+    )
 
 
 def exit_during_a_callback(name: str) -> None:

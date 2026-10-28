@@ -20,7 +20,7 @@ from sharedbox import (
 @dataclass
 class Tile:
     origin: tuple[int, int]
-    pixels: Annotated[np.ndarray, Shape(2, 2), DType("int16")]
+    pixels: Annotated[np.ndarray, Shape((2, 2)), DType("int16")]
 
 
 class Board(SharedBox):
@@ -28,13 +28,13 @@ class Board(SharedBox):
 
 
 class Camera(SharedBox, lock_timeout=0.2):
-    image: Annotated[np.ndarray, Shape(512, 512), DType("float32")] = np.zeros(
+    image: Annotated[np.ndarray, Shape((512, 512)), DType("float32")] = np.zeros(
         (512, 512), np.float32
     )
-    small: Annotated[np.ndarray, Shape(4, 3), DType("int16")] = np.zeros(
+    small: Annotated[np.ndarray, Shape((4, 3)), DType("int16")] = np.zeros(
         (4, 3), np.int16
     )
-    raw: Annotated[SupportsDLPack, Shape(2), DType("uint8")] = np.zeros(2, np.uint8)
+    raw: Annotated[SupportsDLPack, Shape((2,)), DType("uint8")] = np.zeros(2, np.uint8)
     count: int = 0
 
 
@@ -158,10 +158,10 @@ def test_a_field_named_read_into_is_refused() -> None:
 
 
 class Uniform(SharedBox):
-    image: Annotated[np.ndarray, Shape(512, 512), DType("float32")] = np.zeros(
+    image: Annotated[np.ndarray, Shape((512, 512)), DType("float32")] = np.zeros(
         (512, 512), np.float32
     )
-    small: Annotated[np.ndarray, Shape(64), DType("int64")] = np.zeros(64, np.int64)
+    small: Annotated[np.ndarray, Shape((64,)), DType("int64")] = np.zeros(64, np.int64)
 
 
 def write_uniform(box: Uniform, seconds: float) -> None:

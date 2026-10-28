@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from ._arrays import DType, Shape, SupportsDLPack, register_array_type
+from ._arrays import DType, MaxShape, Shape, SupportsDLPack, register_array_type
 from ._bounded import BoundedDict, BoundedList, BoundedSet
 from ._box import SharedBox, SupportsSharedBox, fields
 from ._events import BoxEvents, FieldFuture, FieldWatch
@@ -46,6 +46,7 @@ __all__ = [
     "FieldWatch",
     "KindMismatchError",
     "LockTimeoutError",
+    "MaxShape",
     "ReceiveEvents",
     "ReceiveStreamStatistics",
     "SchemaMismatchError",

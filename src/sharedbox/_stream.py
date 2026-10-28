@@ -54,7 +54,7 @@ from ._native import (
     WouldBlock,
     _Interrupted,
 )
-from ._types import Table, TypeSpec, parse
+from ._types import MAX_ARRAY_PLACES, Table, TypeSpec, misplaced_max_array, parse
 
 T = TypeVar("T")
 Mode = Literal["lossless", "lossy", "latest"]
@@ -101,6 +101,8 @@ def item_of(hint: object, label: str | None = None) -> Item:
     if label is None:
         label = getattr(hint, "__qualname__", None) or repr(hint)
     spec = parse(hint, label)
+    if misplaced_max_array(spec):
+        raise TypeError(f"{label}: {MAX_ARRAY_PLACES}")
     table = Table()
     low = table.describe(spec) if spec.described else spec.entry_low
     if spec.bytearray:
@@ -114,6 +116,7 @@ def item_of(hint: object, label: str | None = None) -> Item:
         table.info,
         table.bytearrays,
         converts=table.converts,
+        stream=True,
     )
     digest = hashlib.sha256(f"stream|{spec.text}".encode()).digest()
     return Item(
@@ -129,7 +132,7 @@ def item_of(hint: object, label: str | None = None) -> Item:
 def holds_array(spec: TypeSpec) -> bool:
     """Return whether an array is reachable from `spec` through records and tuples."""
     match spec.kind:
-        case "array":
+        case "array" | "max_array":
             return True
         case "record" | "tuple":
             return any(holds_array(m.type) for m in spec.members)

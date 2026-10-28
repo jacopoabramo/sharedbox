@@ -367,7 +367,7 @@ class SharedBox(metaclass=SharedBoxMeta):
     | an optional `X` (`Optional[X]`), a union | the member the value's type picks |
     | a dataclass, `NamedTuple`, tuple, `TypedDict`, attrs class or `msgspec.Struct` | its members |
     | `Annotated[list[T], Capacity(n)]`, and `set`, `frozenset`, `dict`, `tuple[T, ...]` | at most `n` elements |
-    | `Annotated[<array type>, Shape(...), DType(...)]` | the array's elements |
+    | `Annotated[<array type>, Shape((...)), DType(...)]` | the array's elements |
 
     A `SharedBox` subclass, optional or not, makes a reference field,
     described below. [`Capacity`][sharedbox.Capacity] sets `n`. A read

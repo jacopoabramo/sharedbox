@@ -38,7 +38,7 @@ def exit_while_delivering(name: str) -> None:
 @dataclass(frozen=True)
 class Frame:
     index: int
-    image: Annotated[np.ndarray, Shape(64, 64), DType("uint16")]
+    image: Annotated[np.ndarray, Shape((64, 64)), DType("uint16")]
 
 
 def frame(i: int) -> Frame:

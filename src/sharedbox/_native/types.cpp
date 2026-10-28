@@ -271,7 +271,7 @@ const Types &need(const Types *types, std::uint32_t index) {
 Types::Types(const std::vector<std::tuple<std::uint32_t, std::uint32_t, std::uint32_t>> &fields,
              std::vector<std::string> labels, std::string table, const nb::dict &info,
              const std::vector<std::pair<std::int64_t, std::uint32_t>> &bytearrays,
-             const std::vector<std::uint32_t> &reusable, const std::vector<Convert> &converts)
+             const std::vector<std::uint32_t> &reusable, const std::vector<Convert> &converts, bool stream)
     : labels_(std::move(labels)), table_(std::move(table)),
       collection_type_(reinterpret_cast<PyTypeObject *>(nb::type<NativeCollection>().ptr())),
       set_type_(reinterpret_cast<PyTypeObject *>(nb::type<NativeSet>().ptr())),
@@ -285,7 +285,7 @@ Types::Types(const std::vector<std::tuple<std::uint32_t, std::uint32_t, std::uin
         entries.push_back(capacity | kind << kind_shift);
     }
     const auto *bytes = reinterpret_cast<const std::byte *>(table_.data());
-    if (tree_.parse({bytes, table_.size()}, entries) != status::ok)
+    if (tree_.parse({bytes, table_.size()}, entries, stream) != status::ok)
         throw std::invalid_argument("the description table does not pass the layout's checks");
     for (std::size_t i = 0; i < fields.size(); ++i)
         if (!detail::kind_known(tree_.field(static_cast<std::uint16_t>(i)).kind))
@@ -420,6 +420,7 @@ void Types::prepare(std::uint32_t node, std::uint8_t kind, nb::object info) {
         break;
     }
     case kind_array:
+    case kind_max_array:
         n.cls = item(n.info, 0);
         n.as_uint16 = item(n.info, 1) == Py_True;
         break;
@@ -558,10 +559,11 @@ nb::object Types::decode(std::uint32_t index, std::span<const std::byte> bytes,
                          std::unique_ptr<std::byte[]> *owned) const {
     const detail::type_ref &t = field(index);
     const std::string &name = labels_[index];
-    if (t.kind == kind_array) {
+    if (t.kind == kind_array || t.kind == kind_max_array) {
         if (bytes.size() != t.size)
             raise(PyExc_ValueError, name + ": the stored array has the wrong size");
-        return decode_array(t, bytes.data(), owned);
+        return t.kind == kind_array ? decode_array(t, bytes.data(), owned)
+                                    : decode_max_array(t, bytes.data(), owned, name);
     }
     // A list, set or dict is read as its length and the slots it uses, so it may be shorter than its size.
     const bool fits = detail::prefixed(t.kind)        ? bytes.size() <= t.size - 4
@@ -778,6 +780,23 @@ void Types::encode_plain(const detail::type_ref &t, PyObject *value, std::byte *
     case kind_dict:
         encode_collection(t, value, out, where);
         return;
+    case kind_max_array: {
+        const nb::ndarray<nb::ro> view = array_view(t, value, where);
+        std::uint64_t line[8] = {};
+        for (std::size_t i = 0; i < view.ndim(); ++i)
+            line[i] = view.shape(i);
+        // No array views a shape line, so writing it now cannot change the source of one still pending.
+        std::memcpy(out, line, sizeof line);
+        std::byte *elements = out + sizeof line;
+        // A view of a reserved stream slot that starts at the elements already is its destination.
+        if (static_cast<const std::byte *>(view.data()) == elements && contiguous(view))
+            return;
+        if (where.pending != nullptr)
+            where.pending->push_back({view, elements});
+        else
+            copy_array(view, elements);
+        return;
+    }
     case kind_array: {
         const nb::ndarray<nb::ro> view = array_view(t, value, where);
         // The arrays of a reserved stream slot already are their destination.
@@ -1065,6 +1084,8 @@ nb::object Types::decode_stored(const detail::type_ref &t, const std::byte *data
     }
     case kind_array:
         return decode_array(t, data, nullptr);
+    case kind_max_array:
+        return decode_max_array(t, data, nullptr, where.name);
     default:
         raise(PyExc_TypeError,
               where.name + ": values of kind " + std::to_string(t.kind) + " are not supported yet");
@@ -1107,9 +1128,20 @@ nb::ndarray<nb::ro> Types::array_view(const detail::type_ref &t, PyObject *value
             view.dtype() != nb::dlpack::dtype{1, 16, 1})
             wrong(where.name, "an array of the field's DType", value);
     }
+    const bool at_most = t.kind == kind_max_array;
     bool same = view.ndim() == node.ndim;
-    for (std::size_t i = 0; same && i < node.ndim; ++i)
-        same = view.shape(i) == tree_.number(node.numbers + static_cast<std::uint32_t>(i));
+    for (std::size_t i = 0; same && i < node.ndim; ++i) {
+        const std::uint64_t dim = tree_.number(node.numbers + static_cast<std::uint32_t>(i));
+        same = at_most ? view.shape(i) <= dim : view.shape(i) == dim;
+    }
+    if (!same && at_most)
+        raise(PyExc_ValueError,
+              where.name + " holds an array of at most MaxShape" +
+                  shape_text(
+                      node.ndim,
+                      [&](std::size_t i) { return tree_.number(node.numbers + static_cast<std::uint32_t>(i)); }) +
+                  "; the value has shape " +
+                  shape_text(view.ndim(), [&](std::size_t i) { return view.shape(i); }));
     if (!same)
         raise(PyExc_ValueError, where.name + " holds an array of the field's Shape; the value's shape differs");
     return view;
@@ -1224,12 +1256,43 @@ nb::object Types::decode_array(const detail::type_ref &t, const std::byte *data,
     return wrap_array(t, raw, owner);
 }
 
-nb::object Types::wrap_array(const detail::type_ref &t, std::byte *raw, nb::handle owner) const {
+nb::object Types::decode_max_array(const detail::type_ref &t, const std::byte *data,
+                                   std::unique_ptr<std::byte[]> *owned, const std::string &name) const {
+    const std::uint64_t bytes = detail::max_array_bytes(tree_, t, data);
+    if (bytes == UINT64_MAX)
+        corrupt(name);
+    const detail::type_node &node = tree_.node(t.node);
+    std::size_t shape[8];
+    for (std::uint32_t i = 0; i < node.ndim; ++i)
+        shape[i] = static_cast<std::size_t>(load<std::uint64_t>(data + std::size_t{i} * 8));
+    std::unique_ptr<std::byte[]> buffer;
+    std::byte *raw = nullptr;
+    if (owned != nullptr && owned->get() == data) {
+        buffer = std::move(*owned);
+        raw = buffer.get() + 64;
+    } else {
+        buffer.reset(new std::byte[bytes == 0 ? 1 : bytes]);
+        raw = buffer.get();
+        if (bytes >= detail::large_copy) {
+            nb::gil_scoped_release unlocked;
+            std::memcpy(raw, data + 64, bytes);
+        } else {
+            std::memcpy(raw, data + 64, bytes);
+        }
+    }
+    nb::capsule owner(buffer.get(), [](void *p) noexcept { delete[] static_cast<std::byte *>(p); });
+    // Released only once the capsule exists, so a failure to make it does not leak the buffer.
+    buffer.release();
+    return wrap_array(t, raw, owner, {shape, node.ndim});
+}
+
+nb::object Types::wrap_array(const detail::type_ref &t, std::byte *raw, nb::handle owner,
+                             std::span<const std::size_t> given) const {
     const NodeInfo &n = nodes_[t.node];
     const detail::type_node &node = tree_.node(t.node);
     std::size_t shape[8];
     for (std::uint32_t i = 0; i < node.ndim; ++i)
-        shape[i] = static_cast<std::size_t>(tree_.number(node.numbers + i));
+        shape[i] = given.empty() ? static_cast<std::size_t>(tree_.number(node.numbers + i)) : given[i];
     const nb::dlpack::dtype dtype = n.as_uint16
                                         ? nb::dlpack::dtype{1, 16, 1}
                                         : nb::dlpack::dtype{node.dtype.code, node.dtype.bits, node.dtype.lanes};

@@ -38,6 +38,7 @@ from ._arrays import (
     CONVERTERS,
     DLPACK,
     DType,
+    MaxShape,
     Shape,
     SupportsDLPack,
     converter,
@@ -92,6 +93,7 @@ CODES: Final[dict[str, int]] = {
     "set": 72,
     "dict": 73,
     "array": 74,
+    "max_array": 75,
 }
 PREFIXED: Final[frozenset[str]] = frozenset({"str", "bytes", "decimal"})
 SUPPORTED: Final[str] = (
@@ -101,7 +103,7 @@ SUPPORTED: Final[str] = (
     "date, time, datetime, timedelta, UUID, an Enum or Flag, a Literal, X | None, a union, "
     "a tuple, a NamedTuple, a dataclass, a TypedDict, an attrs class, a msgspec Struct, "
     "Annotated[list | set | frozenset | dict | tuple[T, ...], Capacity(n)] and their "
-    "collections.abc forms, Annotated[<array type>, Shape(...), DType(...)], or a SharedBox "
+    "collections.abc forms, Annotated[<array type>, Shape((...)), DType(...)], or a SharedBox "
     "subclass, optionally with | None"
 )
 
@@ -439,9 +441,9 @@ def parse(
         raise TypeError(f"{where}: more than one Capacity applies to {hint!r}")
     if capacities:
         capacity = capacities[0]
-    if any(isinstance(extra, (Shape, DType)) for extra in extras) or is_array_type(
-        hint
-    ):
+    if any(
+        isinstance(extra, (Shape, MaxShape, DType)) for extra in extras
+    ) or is_array_type(hint):
         if capacity is not None:
             raise TypeError(
                 f"{where}: Capacity does not apply to an array; give its Shape"
@@ -555,9 +557,16 @@ def array_spec(
     dtypes = [extra.name for extra in extras if isinstance(extra, DType)]
     option, default = sizes or (None, MISSING)
     given = given_sizes(extras, where, option, default)
+    maxes = [extra for extra in extras if isinstance(extra, MaxShape)]
+    if len(maxes) > 1:
+        raise TypeError(f"{where}: an array takes one MaxShape")
+    if maxes and given:
+        raise TypeError(f"{where}: an array takes a Shape or a MaxShape, not both")
+    if maxes:
+        given = [(f"MaxShape{shape_text(maxes[0].dims)}", maxes[0].dims)]
     if not given:
         ways = (
-            "a Shape in the annotation, as in Annotated[numpy.ndarray, Shape(2, 3), DType('float32')]"
+            "a Shape in the annotation, as in Annotated[numpy.ndarray, Shape((2, 3)), DType('float32')]"
             + (
                 ", from field(shape=(2, 3)), or from the shape of a default array"
                 if sizes is not None
@@ -586,7 +595,9 @@ def array_spec(
             f"{where}: the annotation's dtype {named} and DType({name!r}) disagree"
         )
     code, bits = DLPACK[name]
-    size = math.prod(dims) * bits // 8
+    kind = "max_array" if maxes else "array"
+    # A max_array's elements follow the 64-byte line that holds its stored shape.
+    size = math.prod(dims) * bits // 8 + (64 if maxes else 0)
     if size >= 1 << 32:
         raise TypeError(
             f"{where}: the array takes {size} bytes; a record holds less than 4 GiB"
@@ -594,10 +605,10 @@ def array_spec(
     origin = get_origin(hint) or hint
     convert, as_uint16 = converter(origin, name, where)
     return TypeSpec(
-        "array",
+        kind,
         size,
         64,
-        f"array({name},{'x'.join(map(str, dims))})",
+        f"{kind}({name},{'x'.join(map(str, dims))})",
         after=struct.pack("<BBHB3x", code, bits, 1, len(dims))
         + struct.pack(f"<{len(dims)}Q", *dims),
         info=(convert, as_uint16),
@@ -814,7 +825,7 @@ def union_spec(
     if len(members) > 255:
         raise TypeError(f"{where}: a union holds at most 255 members")
     for m in members:
-        if m.kind == "array":
+        if m.kind in ("array", "max_array"):
             raise TypeError(
                 f"{where}: an array can be a field or a record member, not a union member"
             )
@@ -848,6 +859,29 @@ def union_spec(
         hashable=all(m.hashable for m in members),
         reusable=all(m.reusable for m in members),
     )
+
+
+def reaches_max_array(spec: TypeSpec) -> bool:
+    """Return whether `spec` is a `max_array` or holds one at any depth."""
+    return spec.kind == "max_array" or any(
+        reaches_max_array(m.type) for m in spec.members
+    )
+
+
+def misplaced_max_array(spec: TypeSpec) -> bool:
+    """Return whether `spec` holds a `max_array` other than through records and tuples alone."""
+    match spec.kind:
+        case "max_array":
+            return False
+        case "record" | "tuple":
+            return any(misplaced_max_array(m.type) for m in spec.members)
+        case _:
+            return any(reaches_max_array(m.type) for m in spec.members)
+
+
+MAX_ARRAY_PLACES: Final[str] = (
+    "MaxShape applies only to a stream item and the records and tuples inside one"
+)
 
 
 def optional_of(inner: TypeSpec) -> TypeSpec:
@@ -982,7 +1016,7 @@ def record_spec(
         for name, keyword, member, shape in record_members(hint, hints, form, where):
             attrs.append(name)
             keywords.append(keyword)
-            dims = None if shape is None else Shape(*shape).dims
+            dims = None if shape is None else Shape(tuple(shape)).dims
             sizes = (
                 None
                 if dims is None
@@ -1078,6 +1112,10 @@ def record_members(
                 raise TypeError(
                     f"{where}: {hint.__qualname__}.{f.name} has init=False, so a read could not rebuild it"
                 )
+            if "max_shape" in f.metadata:
+                raise TypeError(
+                    f"{where}: {hint.__qualname__}.{f.name}: a MaxShape goes in the annotation, not in max_shape metadata"
+                )
             found.append((f.name, f.name, hints[f.name], f.metadata.get("shape")))
         return found
     if hasattr(hint, "__attrs_attrs__"):
@@ -1094,6 +1132,10 @@ def record_members(
             member = hints.get(a.name, a.type)
             if member is None:
                 raise TypeError(f"{where}: {hint.__qualname__}.{a.name} has no type")
+            if "max_shape" in a.metadata:
+                raise TypeError(
+                    f"{where}: {hint.__qualname__}.{a.name}: a MaxShape goes in the annotation, not in max_shape metadata"
+                )
             keyword = getattr(a, "alias", None) or a.name.lstrip("_")
             found.append((a.name, keyword, member, a.metadata.get("shape")))
         return found
@@ -1401,7 +1443,7 @@ def collection_spec(
         text = f"{kind}[{capacity}]({element.text})"
         element_text, annotation = element.text, args[0]
     for m in members:
-        if m.type.kind == "array":
+        if m.type.kind in ("array", "max_array"):
             raise TypeError(
                 f"{where}: an array can be a field or a record member, not a collection element"
             )
