@@ -60,6 +60,7 @@ with SharedStream.create(
     "example-scale:readings",
     capacity=8,
     metadata=Calibration(unit="kg", offset=0.0),
+    metadata_type=Calibration,
 ) as stream:
     reader = stream.reader()
     with stream.sender() as sender:

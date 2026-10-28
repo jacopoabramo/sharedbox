@@ -1,8 +1,9 @@
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, TypedDict, TypeVar, assert_type
+from typing import Annotated, Any, TypedDict, TypeVar, assert_type
 
 from sharedbox import (
+    Capacity,
     SharedBox,
     SharedReceiveStream,
     SharedSendStream,
@@ -17,6 +18,7 @@ class Item:
 
 class Info(TypedDict):
     unit: str
+
 
 
 class Motor(SharedBox[Info]):
@@ -91,6 +93,21 @@ def check_stream_metadata(
     assert_type(typed.metadata_version_of(1), Info)
     assert_type(typed.reader().metadata, Info | None)
     assert_type(
-        SharedStream.create(Item, capacity=2, metadata=Info(unit="mm")),
-        SharedStream[Item, Info],
+        SharedStream.create(Item, capacity=2, metadata={"unit": "mm"}),
+        SharedStream[Item, Mapping[str, Any]],
+    )
+
+
+def check_annotated_item() -> None:
+    assert_type(
+        SharedStream.create(
+            Annotated[list[int], Capacity(4)], capacity=2, metadata_type=Info
+        ),
+        SharedStream[Any, Info],
+    )
+    assert_type(
+        SharedStream.attach(
+            Annotated[list[int], Capacity(4)], "name", metadata_type=Info
+        ),
+        SharedStream[Any, Info],
     )

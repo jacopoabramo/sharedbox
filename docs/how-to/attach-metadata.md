@@ -109,10 +109,10 @@ before the stream had any version. The stream's own
 [`metadata`][sharedbox.SharedStream.metadata] gives the newest version, as
 a box's does.
 
-`create` infers the metadata's type from the `metadata` you pass. When you
-pass none, or attach to the stream in another process, give the type as
-`metadata_type`, as in
-`SharedStream.attach(Reading, name, metadata_type=Calibration)`.
+A type checker takes the stream's metadata type from `metadata_type`,
+given to `create` as above or to `attach` in another process, as in
+`SharedStream.attach(Reading, name, metadata_type=Calibration)`. Without
+it the metadata is a `Mapping[str, Any]`, whatever `metadata` you pass.
 
 A stream keeps every version that an item still in its ring was sent
 under. An add that would let such a version go raises `MetadataFullError`
