@@ -81,10 +81,13 @@ stream_header &header_of(const stream &st) { return *static_cast<stream_header *
 
 // The entry of the stream's only lossless reader.
 reader_entry &lossless_entry(const stream &st) {
-    auto *entries = reinterpret_cast<reader_entry *>(static_cast<std::byte *>(st.base()) + header_of(st).readers);
-    for (std::uint32_t i = 0;; ++i)
+    const stream_header &h = header_of(st);
+    auto *entries = reinterpret_cast<reader_entry *>(static_cast<std::byte *>(st.base()) + h.readers);
+    for (std::uint32_t i = 0; i < h.max_readers; ++i)
         if (entries[i].mode == static_cast<std::uint32_t>(read_mode::lossless))
             return entries[i];
+    FAIL("no lossless reader is open");
+    return entries[0];
 }
 
 std::uint64_t release_floor(const stream &st) {
@@ -1076,7 +1079,8 @@ TEST_CASE("an item overwritten during its copy reports the release in the same c
     bool overwritten = false;
     const auto got = reader->receive_with(
         [&](std::span<const std::byte>) noexcept {
-            // Position 5 reuses the slot of position 1, the one being copied.
+            // Sends from inside the copy on purpose, which the receive_with contract forbids, so that
+            // position 5 overwrites the slot of position 1 while it is copied.
             if (!overwritten)
                 overwritten = send(*sender, 5, 0.0, on_full::release).has_value();
         },
@@ -1147,33 +1151,27 @@ TEST_CASE("a reader opened at the oldest item after a release starts at the floo
     static_cast<void>(unlink(name));
 }
 
-TEST_CASE("on the smallest ring a resumed reader is not released again") {
-    const std::string name = unique("stream-release-small");
-    stream st = make(name, min_stream_capacity);
+TEST_CASE("a released reader resumes at the floor when it read write_pos before a later release") {
+    const std::string name = unique("stream-release-stale");
+    stream st = make(name, 4);
     auto reader = st.reader(read_mode::lossless, start_at::newest);
     auto sender = st.sender();
     REQUIRE((reader && sender));
     fall_behind(st, *sender, *reader);
-    // The reservation keeps write_pos at 3, so the floor and write_pos - 1 are both 2.
-    const auto slot = sender->begin(seconds(0), on_full::release);
-    REQUIRE(slot);
-    item third;
-    third.fill(3);
-    std::memcpy(slot->data(), third.data(), slot->size());
-    CHECK(release_floor(st) == 2);
-    CHECK(receive(*reader).error().code == status::released);
-    auto fresh = st.reader(read_mode::lossless, start_at::newest);
-    REQUIRE(fresh);
-    for (stream_reader *r : {&*reader, &*fresh}) {
-        const auto got = receive(*r);
-        CHECK((got && got->position == 2));
-        CHECK(receive(*r, 0.0).error().code == status::timeout);
-    }
-    REQUIRE(sender->publish());
-    for (stream_reader *r : {&*reader, &*fresh}) {
-        const auto got = receive(*r);
-        CHECK((got && got->position == 3));
-    }
-    CHECK(send(*sender, 4, 0.0));
+    // The receive reads write_pos 5 before the second take; a sender that went on releasing meanwhile can
+    // leave the floor above write_pos - 1. That interleaving cannot be staged with the receive_with
+    // callback, which runs before the read of write_pos, so the floor and the slot of position 1 are forged.
+    stream_header &h = header_of(st);
+    detail::atomic(h.release_floor).store(7, std::memory_order_release);
+    std::byte *slot = static_cast<std::byte *>(st.base()) + h.slots + 1 * h.slot_size;
+    detail::atomic(*reinterpret_cast<std::uint64_t *>(slot)).store(2 * 5 + 2);
+    const auto released = receive(*reader);
+    REQUIRE_FALSE(released);
+    CHECK(released.error().code == status::released);
+    CHECK(reader->position() == 7);
+    CHECK(reader->missed() == 6);
+    const auto next = receive(*reader, 0.0);
+    REQUIRE_FALSE(next);
+    CHECK(next.error().code == status::timeout);
     static_cast<void>(unlink(name));
 }

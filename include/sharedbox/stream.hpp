@@ -1023,8 +1023,9 @@ result<received> stream_reader::receive_with(F &&copy, seconds timeout) {
         const bool kept = take(r_);
         if (!kept) {
             if (mode_ == read_mode::lossless) {
-                // The sender stored the floor before the seq this copy failed on, so the floor is seen. A
-                // reader without an item yet is checked too, or it would skip ahead untold.
+                // The acquire load of the seq at the start of take read a seq the sender stored after the
+                // floor and its release fence, so the floor is seen. A reader without an item yet is checked
+                // too, or it would skip ahead untold.
                 const std::uint64_t floor = detail::atomic(h.release_floor).load(std::memory_order_acquire);
                 if (r_ < floor) {
                     const std::uint64_t next = (std::max)(w - 1, floor);

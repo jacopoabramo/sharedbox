@@ -56,7 +56,7 @@ TEST_CASE("a new stream is core 1.0, stream layout 1.3, and opens with the same 
     CHECK(h.common.magic == stream_magic);
     CHECK(h.common.core_major == core_major);
     CHECK(h.common.kind_major == stream_layout_major);
-    CHECK(h.common.kind_minor == 3);
+    CHECK(h.common.kind_minor == stream_layout_minor);
     CHECK(h.common.waiter_slots == 3);
     CHECK(h.readers == stream_header_size);
     CHECK(h.slots % 64 == 0);
@@ -179,13 +179,13 @@ TEST_CASE("a stream mapping smaller than a page is refused before its header is 
     CHECK(opened.error().code == status::corrupt);
 }
 
-TEST_CASE("a stream of a max_array item is created at layout 1.2 or later") {
+TEST_CASE("a stream of a max_array item is created at layout 1.2") {
     const std::string name = unique("stream-max-array");
     const table_builder t = max_array_item();
     auto made = stream::create(name, t.span(), entry_of(kind_max_array, 0), 4, 2, 0x5EED);
     REQUIRE(made);
     const stream_header &h = header_of(*made);
-    CHECK(h.common.kind_minor >= 2);
+    CHECK(h.common.kind_minor == stream_layout_minor);
     CHECK(h.slot_size == detail::round_up(detail::item_start(64) + 64 + 24, 64));
     auto opened = stream::open(name, seconds(1.0));
     REQUIRE(opened);
