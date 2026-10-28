@@ -246,7 +246,8 @@ process it spawns inherits it, so the fixed segment names in
 `test_default_name_ignores_the_spawned_main_module`) stay unique to that
 run. That is what lets `-n auto --dist loadfile` and `tox -p auto` run
 several workers or environments at once without fighting over the same
-segment name.
+segment name. It also sets `SHAREDBOX_LEAK_WARNINGS`, without which the
+extension never prints nanobind's leak report at exit.
 
 C++ tests, in `tests/cpp/` (they add this repository the way a
 `FetchContent` user does):

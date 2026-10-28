@@ -16,6 +16,9 @@ from os_names import os_name
 # segment name built from it stays the same across a run's own processes
 # while differing from any other run's.
 TEST_RUN = os.environ.setdefault("SHAREDBOX_TEST_RUN", uuid.uuid4().hex[:8])
+# Set before any test module imports sharedbox, so nanobind still reports what the suite leaks, in
+# this process and in every process it spawns.
+os.environ.setdefault("SHAREDBOX_LEAK_WARNINGS", "1")
 
 # ci keeps the default suite fast; the stress job asks for thorough with --hypothesis-profile.
 settings.register_profile("ci", max_examples=50, deadline=None, derandomize=False)

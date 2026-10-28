@@ -951,6 +951,11 @@ PyType_Slot types_slots[] = {{Py_tp_traverse, reinterpret_cast<void *>(types_tra
 } // namespace
 
 NB_MODULE(_native, m) {
+    // nanobind counts every object of this module still alive after finalization as leaked, and a daemon
+    // thread still running at exit keeps whatever its frames reach alive, a box class included. Its report
+    // then blames the binding, so it is printed only when asked for, as the test suite does.
+    nb::set_leak_warnings(nb::cast<bool>(
+        nb::module_::import_("os").attr("environ").attr("__contains__")("SHAREDBOX_LEAK_WARNINGS")));
     sharedbox::scalars::init();
     nb::exception<sharedbox::SegmentExists>(m, "SegmentExistsError", PyExc_FileExistsError);
     nb::exception<sharedbox::SegmentMissing>(m, "SegmentNotFoundError", PyExc_FileNotFoundError);

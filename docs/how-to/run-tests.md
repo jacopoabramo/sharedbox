@@ -53,6 +53,17 @@ every process the run starts inherits it, so the name stays the same within
 a run and differs between runs. This is what lets several workers, or
 several `tox` environments, run at the same time.
 
+### Read a leak report at exit
+
+`tests/conftest.py` also sets `SHAREDBOX_LEAK_WARNINGS`, which makes the
+extension print nanobind's report of its objects that are still alive when
+the interpreter has finished, as "nanobind: leaked 3 instances!" followed
+by their types. Outside the tests the report stays off, because a daemon
+thread that is still running at exit keeps alive everything its frames
+reach, and the report blames that on the binding. In a test run, a report
+means that a test left such a thread running or kept a reference past the
+run, or that the extension has a reference counting bug.
+
 On CI the Linux wheels are tested in a container with 1 GiB of shared
 memory, so keep the segments a test creates well under that.
 

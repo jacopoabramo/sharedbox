@@ -1,4 +1,7 @@
 import multiprocessing as mp
+import os
+import subprocess
+import sys
 import threading
 import time
 from typing import Annotated
@@ -6,6 +9,18 @@ from typing import Annotated
 import numpy as np
 
 from sharedbox import DType, Shape, SharedBox
+
+# A daemon thread still running at exit keeps the class, and with it the extension's objects, alive
+# past finalization.
+HELD_AT_EXIT = """
+import threading, time
+from sharedbox import SharedBox
+
+class Held(SharedBox):
+    version: int = 0
+
+threading.Thread(target=lambda cls: time.sleep(60), args=(Held,), daemon=True).start()
+"""
 
 
 class Blob(SharedBox):
@@ -51,3 +66,27 @@ def test_a_process_exits_cleanly_while_a_callback_makes_native_calls(
         Blob.unlink(unique_name)
     exitcodes = [child.exitcode for child in children]
     assert exitcodes == [0] * len(children), f"exit codes: {exitcodes}"
+
+
+def exit_holding_a_box_class(env: dict[str, str]) -> str:
+    """Return what a process prints to stderr when it exits while a thread holds a box class."""
+    return subprocess.run(
+        [sys.executable, "-c", HELD_AT_EXIT],
+        env=env,
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=True,
+    ).stderr
+
+
+def test_exit_prints_no_leak_report_by_default() -> None:
+    """Print nothing at exit about objects a running thread still holds, without SHAREDBOX_LEAK_WARNINGS."""
+    env = {k: v for k, v in os.environ.items() if k != "SHAREDBOX_LEAK_WARNINGS"}
+    assert "nanobind: leaked" not in exit_holding_a_box_class(env)
+
+
+def test_sharedbox_leak_warnings_turns_the_leak_report_on() -> None:
+    """Print nanobind's leak report at exit when SHAREDBOX_LEAK_WARNINGS is set."""
+    env = {**os.environ, "SHAREDBOX_LEAK_WARNINGS": "1"}
+    assert "nanobind: leaked" in exit_holding_a_box_class(env)
