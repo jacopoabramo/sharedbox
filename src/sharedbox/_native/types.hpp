@@ -111,18 +111,34 @@ public:
     /// shape; an ml_dtypes bfloat16 array is taken as its uint16 view.
     nb::ndarray<nb::c_contig, nb::device::cpu> array_out(std::uint32_t index, PyObject *out) const;
     /// Where an array the caller passed to receive into goes: its writable view, where its bytes start in the
-    /// field's value and how many there are, and the key decode_given finds it under.
+    /// field's value and how many there are, and the key decode_given finds it under. For a max_array, max is
+    /// its node, offset the start of its shape line and size its whole span; view may then be empty, for a
+    /// max_array whose stored elements go to the scratch copy.
     struct ArrayTarget {
         nb::ndarray<nb::c_contig, nb::device::cpu> view;
         std::uint64_t offset = 0;
         std::uint64_t size = 0;
         std::uint64_t key = 0;
+        const detail::type_ref *max = nullptr;
     };
 
     /// out as the destination of the array that path reaches in field index, through records and tuples; the
     /// empty path is the field itself. Raises as array_out does, and TypeError for a path that steps into
     /// anything else or does not end at an array.
     ArrayTarget array_target(std::uint32_t index, std::span<const std::uint32_t> path, PyObject *out) const;
+    /// given, plus a target with an empty view for each max_array of field index that given lacks, sorted by
+    /// offset.
+    std::vector<ArrayTarget> item_targets(std::uint32_t index, std::vector<ArrayTarget> given) const;
+    /// How many element bytes the max_array t stores after the shape line at line, or UINT64_MAX for a shape
+    /// above its maximum.
+    std::uint64_t stored_bytes(const detail::type_ref &t, const std::byte *line) const noexcept {
+        return detail::max_array_bytes(tree_, t, line);
+    }
+    /// What a receive into out returns for the array t whose stored value starts at data: out itself, or for
+    /// a max_array a view of out's first elements in the stored shape. Raises ValueError naming name for a
+    /// stored shape above the maximum.
+    nb::object out_view(const detail::type_ref &t, PyObject *out, const std::byte *data,
+                        const std::string &name) const;
     /// As decode for field index, with the member under each key of given taken as that object.
     nb::object decode_given(std::uint32_t index, std::span<const std::byte> bytes,
                             const std::unordered_map<std::uint64_t, PyObject *> &given) const;

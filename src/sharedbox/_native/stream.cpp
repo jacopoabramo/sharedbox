@@ -441,8 +441,8 @@ public:
             if (!fresh)
                 throw std::invalid_argument("stream '" + name_ + "': two arrays given for one member");
         }
-        std::sort(targets.begin(), targets.end(),
-                  [](const Types::ArrayTarget &a, const Types::ArrayTarget &b) { return a.offset < b.offset; });
+        // Every max_array is a target too, so only the elements its shape line counts are copied.
+        targets = types.item_targets(0, std::move(targets));
         const std::size_t size = core_->s.item_size();
         // An item of up to 4 KiB is copied to the stack; a larger one to the heap, which a bare array item
         // then keeps as its data instead of copying again.
@@ -466,8 +466,20 @@ public:
                         std::size_t at = 0;
                         for (const Types::ArrayTarget &target : targets) {
                             std::memcpy(scratch + at, item.data() + at, target.offset - at);
-                            std::memcpy(target.view.data(), item.data() + target.offset, target.size);
                             at = target.offset + target.size;
+                            if (target.max == nullptr) {
+                                std::memcpy(target.view.data(), item.data() + target.offset, target.size);
+                                continue;
+                            }
+                            // The count comes from the scratch copy of the line, which no sender writes, so a
+                            // line overwritten during the copy cannot make it run past the span.
+                            std::memcpy(scratch + target.offset, item.data() + target.offset, 64);
+                            std::uint64_t n = types.stored_bytes(*target.max, scratch + target.offset);
+                            if (n == UINT64_MAX)
+                                n = 0;
+                            std::byte *into = target.view.is_valid() ? static_cast<std::byte *>(target.view.data())
+                                                                     : scratch + target.offset + 64;
+                            std::memcpy(into, item.data() + target.offset + 64, n);
                         }
                         std::memcpy(scratch + at, item.data() + at, size - at);
                     },
@@ -486,9 +498,9 @@ public:
         const detail::type_ref &t = types.field(0);
         const std::span<const std::byte> bytes = value_bytes(t, {scratch, size}, name_);
         if (whole.is_valid())
-            return nb::make_tuple(whole, (*got)->position);
+            return nb::make_tuple(types.out_view(t, whole.ptr(), bytes.data(), name_), (*got)->position);
         nb::object value = !given || given->empty()
-                               ? types.decode(0, bytes, large && targets.empty() ? &large : nullptr)
+                               ? types.decode(0, bytes, large && arrays.empty() ? &large : nullptr)
                                : types.decode_given(0, bytes, *given);
         return nb::make_tuple(value, (*got)->position);
     }

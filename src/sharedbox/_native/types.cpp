@@ -926,7 +926,7 @@ nb::object Types::decode_stored(const detail::type_ref &t, const std::byte *data
         if (where.given != nullptr && (t.kind == kind_record || t.kind == kind_tuple)) {
             const auto found = where.given->find(bytearray_key(t.node, index));
             if (found != where.given->end())
-                return Py_NewRef(found->second);
+                return out_view(m, found->second, at, where.name).release().ptr();
         }
         if (m.kind > kind_str || !conversions_.empty())
             return decode_from(m, at, t.node, index, where).release().ptr();
@@ -1191,11 +1191,12 @@ nb::ndarray<nb::c_contig, nb::device::cpu> Types::array_out(std::uint32_t index,
 
 Types::ArrayTarget Types::array_target(std::uint32_t index, std::span<const std::uint32_t> path,
                                        PyObject *out) const {
-    detail::type_ref t = field(index);
+    const detail::type_ref *at = &field(index);
     std::string name = labels_[index];
     std::uint64_t offset = 0;
     std::uint64_t key = field_container;
     for (const std::uint32_t step : path) {
+        const detail::type_ref &t = *at;
         if (t.kind != kind_record && t.kind != kind_tuple)
             raise(PyExc_TypeError,
                   name + " has no array at that place; arrays are reached through records and tuples only");
@@ -1210,11 +1211,51 @@ Types::ArrayTarget Types::array_target(std::uint32_t index, std::span<const std:
             name += std::string(".") + nb::borrow<nb::str>(n.attrs[step]).c_str();
         else
             name += "[" + std::to_string(step) + "]";
-        t = m.type;
+        at = &m.type;
     }
-    if (t.kind != kind_array)
+    if (at->kind != kind_array && at->kind != kind_max_array)
         raise(PyExc_TypeError, name + " is not an array");
-    return {array_out_of(t, name, out), offset, t.size, key};
+    // A max_array's out has its maximum shape, the shape array_out_of checks.
+    return {array_out_of(*at, name, out), offset, at->size, key, at->kind == kind_max_array ? at : nullptr};
+}
+
+std::vector<Types::ArrayTarget> Types::item_targets(std::uint32_t index, std::vector<ArrayTarget> given) const {
+    std::vector<ArrayTarget> targets = std::move(given);
+    const std::size_t passed = targets.size();
+    auto walk = [&](auto &self, const detail::type_ref &t, std::uint64_t offset) -> void {
+        if (t.kind == kind_max_array) {
+            for (std::size_t i = 0; i < passed; ++i)
+                if (targets[i].offset == offset)
+                    return;
+            targets.push_back({{}, offset, t.size, 0, &t});
+            return;
+        }
+        if (t.kind != kind_record && t.kind != kind_tuple)
+            return;
+        const detail::type_node &node = tree_.node(t.node);
+        for (std::uint32_t i = 0; i < node.count; ++i) {
+            const detail::type_member &m = tree_.member(node.members + i);
+            self(self, m.type, offset + m.offset);
+        }
+    };
+    walk(walk, field(index), 0);
+    std::sort(targets.begin(), targets.end(),
+              [](const ArrayTarget &a, const ArrayTarget &b) { return a.offset < b.offset; });
+    return targets;
+}
+
+nb::object Types::out_view(const detail::type_ref &t, PyObject *out, const std::byte *data,
+                           const std::string &name) const {
+    if (t.kind != kind_max_array)
+        return nb::borrow(out);
+    if (stored_bytes(t, data) == UINT64_MAX)
+        corrupt(name);
+    const detail::type_node &node = tree_.node(t.node);
+    std::size_t shape[8];
+    for (std::uint32_t i = 0; i < node.ndim; ++i)
+        shape[i] = static_cast<std::size_t>(load<std::uint64_t>(data + std::size_t{i} * 8));
+    auto *raw = static_cast<std::byte *>(array_out_of(t, name, out).data());
+    return wrap_array(t, raw, out, {shape, node.ndim});
 }
 
 nb::object Types::decode_given(std::uint32_t index, std::span<const std::byte> bytes,
@@ -1312,7 +1353,7 @@ nb::object Types::array_over(std::uint32_t index, std::byte *data, nb::handle ow
 }
 
 bool Types::holds_array(const detail::type_ref &t) const {
-    if (t.kind == kind_array)
+    if (t.kind == kind_array || t.kind == kind_max_array)
         return true;
     if (t.kind != kind_record && t.kind != kind_tuple)
         return false;
@@ -1327,7 +1368,7 @@ nb::object Types::with_arrays(std::uint32_t index, PyObject *template_item, std:
                               nb::handle owner) const {
     const detail::type_ref &t = field(index);
     if (template_item == Py_None) {
-        if (t.kind != kind_array)
+        if (t.kind != kind_array && t.kind != kind_max_array)
             raise(PyExc_TypeError, labels_[index] + " is not an array, so writing needs a template item");
     } else if (t.kind == kind_array) {
         // The template's array is replaced, never read, so any shape and dtype will do.
@@ -1346,6 +1387,16 @@ nb::object Types::rebuild(const detail::type_ref &t, PyObject *value, std::byte 
                           const Where &where) const {
     if (t.kind == kind_array)
         return wrap_array(t, data, owner);
+    if (t.kind == kind_max_array) {
+        // Without a template array the view has the maximum shape; the shape line is written by send.
+        if (value == nullptr || value == Py_None)
+            return wrap_array(t, data + 64, owner);
+        const nb::ndarray<nb::ro> view = array_view(t, value, where);
+        std::size_t shape[8];
+        for (std::size_t i = 0; i < view.ndim(); ++i)
+            shape[i] = view.shape(i);
+        return wrap_array(t, data + 64, owner, {shape, view.ndim()});
+    }
     if (!holds_array(t))
         return nb::borrow(value);
     const NodeInfo &n = nodes_[t.node];

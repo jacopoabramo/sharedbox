@@ -156,7 +156,7 @@ def targets_of(
     if out is None:
         return []
     match spec.kind:
-        case "array":
+        case "array" | "max_array":
             return [(path, out)]
         case "tuple":
             if not isinstance(out, tuple) or len(out) != len(spec.members):
@@ -870,8 +870,10 @@ class SharedSendStream(End, Generic[T]):
         [`slot.item`][sharedbox.SendSlot.item] is an item built from
         `template`, with each array it reaches through records and tuples
         replaced by a writable array over the slot. The template's own
-        arrays are never read, so they may be empty. The block fills the
-        slot's arrays and sends the item with
+        arrays are never read, so an array with a `Shape` may be empty. An
+        array with a [`MaxShape`][sharedbox.MaxShape] gives only the shape
+        of the array over the slot, so `np.empty(shape)` serves. The block
+        fills the slot's arrays and sends the item with
         [`slot.send`][sharedbox.SendSlot.send], which does not copy them:
 
         ```python
@@ -881,7 +883,8 @@ class SharedSendStream(End, Generic[T]):
             slot.send(replace(slot.item, index=n))
         ```
 
-        An item that is an array needs no template. Leaving the block
+        An item that is an array needs no template, and the array over the
+        slot then has the maximum shape for a `MaxShape` item. Leaving the block
         without `send`, or by an exception, gives the slot up: nothing is
         published, and the next send takes its position. Until the slot is
         sent or the block ends, readers see nothing new, and a send or
@@ -895,7 +898,8 @@ class SharedSendStream(End, Generic[T]):
             If `template` is `None` and the item is not an array, or
             `template` is not of the item type.
         ValueError
-            If a value of `template` outside its arrays does not fit.
+            If a value of `template` outside its arrays does not fit, or an
+            array of `template` has a shape beyond its `MaxShape`.
         TimeoutError
             If `timeout` seconds pass while a lossless reader is a full ring
             behind, or while another thread or task holds the slot from
@@ -1156,6 +1160,12 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T]):
 
             scan = np.empty((32, 32), np.uint8)
             letter = reader.receive_into({"scan": scan})
+
+        An entry for a member with a [`MaxShape`][sharedbox.MaxShape] has
+        the maximum shape. The item then holds a view of the stored shape
+        over the entry's first elements in C order, not the entry itself.
+        Those elements are the entry's first rows only when every dimension
+        but the first is at its maximum.
 
         An item that a cancelled `receive_future` or `anext` had already
         received is returned by the next receive of any kind, and holds the
