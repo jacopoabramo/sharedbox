@@ -152,9 +152,9 @@ and bytes 88 to 119, never the changing words, and uses only the copy.
 Box layout 3.2 uses the last spare bytes of line 1 for the metadata
 fields, so only the two bytes of `reserved1` are left. A reader accepts a
 mapping larger than its geometry needs (see Attach), which lets a later
-minor version add after the metadata area. There is one header per box, and readers and
-writers touch only line 1. The waiter slots, not the header, are the large part of the tail, and
-`max_waiters` sizes them. Worked example, a box with an `int`, a `float`
+minor version add after the metadata area. There is one header per box,
+and readers and writers touch only line 1. The waiter slots, not the
+header, are the large part of the tail, and `max_waiters` sizes them. Worked example, a box with an `int`, a `float`
 and a `bool` and the default 64 waiter slots: header 128, field table 24,
 write counts 24, waiter slots 2048, padding 16, record 24 (the Python side
 rounds a record up to a multiple of 8): 2264 bytes used, one 4 KiB page. A
@@ -556,8 +556,8 @@ struct reader_entry {               // sharedbox::reader_entry, 64 bytes
   description table's end, `metadata_size` is at least 64, and the mapping
   is at least the area's end rounded up to 4 KiB; the area is then checked
   as Metadata describes. A larger mapping is accepted, so a later minor
-  version can add after the area. `capacity` must be at least 2, `max_readers` 1 to 4095,
-  `waiter_slots` `max_readers + 1`, `slot_size` a multiple of 64, and
+  version can add after the area. `capacity` must be at least 2,
+  `max_readers` 1 to 4095, `waiter_slots` `max_readers + 1`, `slot_size` a multiple of 64, and
   `types_size` a multiple of 8 and at most 16 MiB. A failed check is
   `status::corrupt`. Last, open parses the item type and requires that
   `slot_size` is what the item needs.

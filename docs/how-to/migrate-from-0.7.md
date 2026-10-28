@@ -6,8 +6,8 @@ icon: lucide/arrow-up-circle
 
 Code written for `sharedbox` 0.7 needs two changes before it runs on the
 next release: a [`Shape`][sharedbox.Shape] now takes its dimensions as one
-tuple, and a box field can no longer be called `metadata`. This guide shows
-the old and the new form of each.
+tuple, and a box field can no longer take the name of a metadata member,
+such as `metadata`. This guide shows the old and the new form of each.
 
 ## Pass the dimensions of a `Shape` as a tuple
 

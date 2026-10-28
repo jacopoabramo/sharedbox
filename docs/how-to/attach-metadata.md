@@ -81,8 +81,8 @@ comes after the box is created, give the class a `metadata_capacity`:
 The capacity is the number of bytes all the kept versions share, 0 or at
 least 24. One version can take up to a third of it, rounded down to a
 multiple of 8, and a longer value raises `ValueError` and adds nothing. A
-value is stored as CBOR, a compact binary form of JSON-like values, so the
-calibration above takes 19 bytes. `metadata_versions`, 2 to 65535, limits
+value is stored as CBOR, a compact binary form of JSON-like values, so
+`{"unit": "kg", "offset": 0.0}` takes 19 bytes. `metadata_versions`, 2 to 65535, limits
 how many versions the box keeps. A stream takes both as keywords of
 [`create`][sharedbox.SharedStream.create].
 
@@ -118,9 +118,10 @@ A stream keeps every version that an item still in its ring was sent
 under. An add that would let such a version go raises `MetadataFullError`
 and adds nothing, and succeeds once the sender has sent enough further
 items that none sent under that version is left in the ring.
-A lossy or latest reader can still find its item's version gone, when it
-received the item just before the sender overwrote it, and its `metadata`
-then raises `MetadataGoneError`.
+Once a reader's last item has left the ring, though, its version can go,
+and the reader's `metadata` then raises `MetadataGoneError`. A lossy or
+latest reader meets this first, because the sender may overwrite its item
+right after the reader receives it.
 
 !!! warning "A callback on the main thread can see a later item's version"
     The reader's `metadata` follows the item the reader received last,
