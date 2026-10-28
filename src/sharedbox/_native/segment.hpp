@@ -52,6 +52,12 @@ struct LockTimeout : std::runtime_error {
 struct NoWaiterSlot : std::runtime_error {
     using std::runtime_error::runtime_error;
 };
+struct MetadataFull : std::runtime_error {
+    using std::runtime_error::runtime_error;
+};
+struct MetadataGone : std::runtime_error {
+    using std::runtime_error::runtime_error;
+};
 
 using WaitHook = void *(*)();
 using ResumeHook = void (*)(void *);

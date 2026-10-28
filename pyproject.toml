@@ -24,7 +24,9 @@ classifiers = [
     "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 dependencies = [
+    "cbor2>=6.1.5",
     "psygnal>=0.16.1",
+    "typing-extensions>=4.16.0 ; python_full_version < '3.13'",
 ]
 
 [project.scripts]

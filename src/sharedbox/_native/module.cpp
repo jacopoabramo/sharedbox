@@ -960,6 +960,8 @@ NB_MODULE(_native, m) {
     nb::exception<sharedbox::SegmentClosed>(m, "BoxClosedError", PyExc_ValueError);
     nb::exception<sharedbox::LockTimeout>(m, "LockTimeoutError", PyExc_TimeoutError);
     nb::exception<sharedbox::NoWaiterSlot>(m, "WaiterSlotsFullError", PyExc_RuntimeError);
+    nb::exception<sharedbox::MetadataFull>(m, "MetadataFullError", PyExc_RuntimeError);
+    nb::exception<sharedbox::MetadataGone>(m, "MetadataGoneError", PyExc_LookupError);
     nb::register_exception_translator([](const std::exception_ptr &p, void *) {
         try {
             std::rethrow_exception(p);

@@ -20,16 +20,16 @@ def valid_name(name: str) -> bool:
 
 
 # Weak, so that a class nothing else uses, such as one defined inside a function, can be freed.
-CLASSES: dict[int, list[weakref.ref[type[SharedBox]]]] = {}
+CLASSES: dict[int, list[weakref.ref[type[SharedBox[Any]]]]] = {}
 
 
-def register(cls: type[SharedBox]) -> None:
+def register(cls: type[SharedBox[Any]]) -> None:
     """Record `cls` under its schema hash, after any class already recorded there."""
     classes = CLASSES.setdefault(cls.__layout__.schema_hash, [])
     classes.append(weakref.ref(cls, classes.remove))
 
 
-def box_class(schema_hash: int) -> type[SharedBox] | None:
+def box_class(schema_hash: int) -> type[SharedBox[Any]] | None:
     """Return the first class defined with `schema_hash` that is still alive, or None if there is none."""
     # A copy, since a class freed during the loop removes its entry from the list.
     for ref in tuple(CLASSES.get(schema_hash, ())):
@@ -71,7 +71,7 @@ class BoxRef:
     """Random number drawn when the box was created; tells it apart from one created later under the same name."""
 
     @property
-    def box_class(self) -> type[SharedBox] | None:
+    def box_class(self) -> type[SharedBox[Any]] | None:
         """The class defined in this process with `schema_hash`, or None if there is none."""
         return box_class(self.schema_hash)
 
@@ -123,7 +123,7 @@ def stored(spec: FieldSpec, value: Any) -> tuple[int, int, str] | None:
 
 def attach_reference(
     spec: FieldSpec, create_id: int, schema_hash: int, name: str
-) -> SharedBox:
+) -> SharedBox[Any]:
     """Attach the box called `name`, which must still be the one with `create_id`.
 
     Raises
@@ -171,10 +171,10 @@ class Reference:
     def __get__(self, box: None, owner: type | None = None) -> Self: ...
     @overload
     def __get__(
-        self, box: SharedBox, owner: type | None = None
+        self, box: SharedBox[Any], owner: type | None = None
     ) -> SharedBox | None: ...
     def __get__(
-        self, box: SharedBox | None, owner: type | None = None
+        self, box: SharedBox[Any] | None, owner: type | None = None
     ) -> Self | SharedBox | None:
         if box is None:
             return self
@@ -187,7 +187,7 @@ class Reference:
             return None
         return box._inner(self.spec, *value)
 
-    def __set__(self, box: SharedBox, value: object) -> None:
+    def __set__(self, box: SharedBox[Any], value: object) -> None:
         box._segment.set(
             [(self.index, stored(self.spec, value))], type(box).__layout__.types
         )

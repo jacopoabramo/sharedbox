@@ -113,6 +113,17 @@ class LockTimeoutError(TimeoutError):
 class WaiterSlotsFullError(RuntimeError):
     """A stream has `max_readers` readers open, or has no free waiter slot."""
 
+class MetadataFullError(RuntimeError):
+    """A new metadata document cannot be stored now.
+
+    Raised by adding metadata larger than the area allows, or, in a stream,
+    while the ring still holds items sent under the version the add would
+    overwrite.
+    """
+
+class MetadataGoneError(LookupError):
+    """The metadata version asked for has been overwritten by a newer one."""
+
 def check(kind: int, capacity: int, name: str, value: object) -> None:
     """Raise what writing `value` to a field of this kind and capacity would raise."""
 

@@ -41,6 +41,7 @@ from typing import (
 from psygnal import Signal, SignalGroup, SignalInstance
 
 from ._box import check_name
+from ._metadata import M
 from ._native import (
     EndOfStream,
     Reader,
@@ -70,9 +71,9 @@ WORKER_THREADS: set[threading.Thread] = set()
 READER_IDS = itertools.count(1)
 YIELD_EVERY: Final = 64
 YIELD_AFTER: Final = 0.001
-LIVE_ENDS: weakref.WeakSet[SharedSendStream[Any] | SharedReceiveStream[Any]] = (
-    weakref.WeakSet()
-)
+LIVE_ENDS: weakref.WeakSet[
+    SharedSendStream[Any, Any] | SharedReceiveStream[Any, Any]
+] = weakref.WeakSet()
 
 
 @dataclass(frozen=True)
@@ -242,7 +243,7 @@ class SharedStreamStatistics:
     readers: tuple[ReceiveStreamStatistics, ...]
 
 
-class SharedStream(Generic[T]):
+class SharedStream(Generic[T, M]):
     """A ring of items in shared memory, sent by one process and received by up to `max_readers` readers.
 
     Create it with [`create`][sharedbox.SharedStream.create] in one process,
@@ -267,8 +268,8 @@ class SharedStream(Generic[T]):
     _item: Item
     _name: str
     _native: Stream
-    _ends: weakref.WeakSet[SharedSendStream[T] | SharedReceiveStream[T]]
-    _sender: SharedSendStream[T] | None
+    _ends: weakref.WeakSet[SharedSendStream[T, M] | SharedReceiveStream[T, M]]
+    _sender: SharedSendStream[T, M] | None
 
     @overload
     @classmethod
@@ -279,7 +280,8 @@ class SharedStream(Generic[T]):
         *,
         capacity: int,
         max_readers: int = 8,
-    ) -> SharedStream[T]: ...
+        metadata_type: type[M] | None = None,
+    ) -> SharedStream[T, M]: ...
     @overload
     @classmethod
     def create(
@@ -289,7 +291,8 @@ class SharedStream(Generic[T]):
         *,
         capacity: int,
         max_readers: int = 8,
-    ) -> SharedStream[Any]: ...
+        metadata_type: object = None,
+    ) -> SharedStream[Any, Any]: ...
     @classmethod
     def create(
         cls,
@@ -298,7 +301,8 @@ class SharedStream(Generic[T]):
         *,
         capacity: int,
         max_readers: int = 8,
-    ) -> SharedStream[Any]:
+        metadata_type: object = None,
+    ) -> SharedStream[Any, Any]:
         """Create the stream `name` holding `capacity` items of `item_type`.
 
         Parameters
@@ -312,6 +316,8 @@ class SharedStream(Generic[T]):
             this many items behind before `send` waits for it.
         max_readers
             Readers that may be open at once, 1 to 4095.
+        metadata_type
+            The type of the stream's metadata documents, for type checkers.
 
         Raises
         ------
@@ -336,13 +342,28 @@ class SharedStream(Generic[T]):
 
     @overload
     @classmethod
-    def attach(cls, item_type: type[T], name: str) -> SharedStream[T]: ...
+    def attach(
+        cls,
+        item_type: type[T],
+        name: str,
+        *,
+        metadata_type: type[M] | None = None,
+    ) -> SharedStream[T, M]: ...
     @overload
     @classmethod
-    def attach(cls, item_type: object, name: str) -> SharedStream[Any]: ...
+    def attach(
+        cls, item_type: object, name: str, *, metadata_type: object = None
+    ) -> SharedStream[Any, Any]: ...
     @classmethod
-    def attach(cls, item_type: object, name: str) -> SharedStream[Any]:
+    def attach(
+        cls, item_type: object, name: str, *, metadata_type: object = None
+    ) -> SharedStream[Any, Any]:
         """Open the stream `name`, whose items must have the type `item_type`.
+
+        Parameters
+        ----------
+        metadata_type
+            The type of the stream's metadata documents, for type checkers.
 
         Raises
         ------
@@ -365,8 +386,8 @@ class SharedStream(Generic[T]):
         Segment.unlink(check_name(name))
 
     @classmethod
-    def _wrap(cls, hint: object, item: Item, native: Stream) -> SharedStream[Any]:
-        stream: SharedStream[Any] = object.__new__(cls)
+    def _wrap(cls, hint: object, item: Item, native: Stream) -> SharedStream[Any, Any]:
+        stream: SharedStream[Any, Any] = object.__new__(cls)
         stream._hint = hint
         stream._item = item
         stream._native = native
@@ -391,7 +412,7 @@ class SharedStream(Generic[T]):
     def closed(self) -> bool:
         return self._native.closed
 
-    def sender(self, on_full: OnFull = "wait") -> SharedSendStream[T]:
+    def sender(self, on_full: OnFull = "wait") -> SharedSendStream[T, M]:
         """Return the stream's sender for this process.
 
         Parameters
@@ -426,7 +447,7 @@ class SharedStream(Generic[T]):
         """
         if on_full not in ("wait", "release"):
             raise ValueError(f"on_full is 'wait' or 'release'; got {on_full!r}")
-        end: SharedSendStream[T] = SharedSendStream(
+        end: SharedSendStream[T, M] = SharedSendStream(
             self, self._native.sender(), on_full == "release"
         )
         self._ends.add(end)
@@ -435,7 +456,7 @@ class SharedStream(Generic[T]):
 
     def reader(
         self, mode: Mode = "lossless", start: Start = "newest"
-    ) -> SharedReceiveStream[T]:
+    ) -> SharedReceiveStream[T, M]:
         """Open a reader.
 
         Parameters
@@ -459,7 +480,7 @@ class SharedStream(Generic[T]):
             raise ValueError(f"mode is 'lossless', 'lossy' or 'latest'; got {mode!r}")
         if start not in ("newest", "oldest"):
             raise ValueError(f"start is 'newest' or 'oldest'; got {start!r}")
-        end: SharedReceiveStream[T] = SharedReceiveStream(
+        end: SharedReceiveStream[T, M] = SharedReceiveStream(
             self, self._native.reader(MODES[mode], start == "newest")
         )
         self._ends.add(end)
@@ -497,7 +518,7 @@ class SharedStream(Generic[T]):
             end.close()
         self._native.close()
 
-    def __enter__(self) -> SharedStream[T]:
+    def __enter__(self) -> SharedStream[T, M]:
         return self
 
     def __exit__(self, *exc_info: object) -> None:
@@ -505,7 +526,7 @@ class SharedStream(Generic[T]):
 
     def __reduce__(
         self,
-    ) -> tuple[Callable[..., SharedStream[Any]], tuple[object, str, int]]:
+    ) -> tuple[Callable[..., SharedStream[Any, Any]], tuple[object, str, int]]:
         return (attach_stream, (self._hint, self.name, self._native.create_id))
 
     def __repr__(self) -> str:
@@ -513,7 +534,9 @@ class SharedStream(Generic[T]):
         return f"<SharedStream[{self._item.label}] {self.name!r}{state}>"
 
 
-def attach_stream(item_type: object, name: str, create_id: int) -> SharedStream[Any]:
+def attach_stream(
+    item_type: object, name: str, create_id: int
+) -> SharedStream[Any, Any]:
     """Attach to the stream a pickle refers to, if it is still the stream that was pickled.
 
     Raises
@@ -623,7 +646,7 @@ class End:
         "_worker",
     )
 
-    def __init__(self, stream: SharedStream[Any], native: Sender | Reader) -> None:
+    def __init__(self, stream: SharedStream[Any, Any], native: Sender | Reader) -> None:
         self._stream = stream
         self._native = native
         self._lock = threading.Lock()
@@ -733,7 +756,7 @@ def holder() -> object:
     return threading.get_ident() if task is None else task
 
 
-class SharedSendStream(End, Generic[T]):
+class SharedSendStream(End, Generic[T, M]):
     """The sender of a stream: one per stream, in the process that holds it.
 
     [`SharedStream.sender`][sharedbox.SharedStream.sender] returns it. The
@@ -748,14 +771,14 @@ class SharedSendStream(End, Generic[T]):
     _holders: set[object]
 
     def __init__(
-        self, stream: SharedStream[Any], native: Sender, release: bool = False
+        self, stream: SharedStream[Any, Any], native: Sender, release: bool = False
     ) -> None:
         super().__init__(stream, native)
         self._holders = set()
         self._release = release
 
     @property
-    def stream(self) -> SharedStream[T]:
+    def stream(self) -> SharedStream[T, M]:
         """The stream this sender sends to."""
         return self._stream
 
@@ -1064,10 +1087,10 @@ class SharedSendStream(End, Generic[T]):
         if self._stream._sender is self:
             self._stream._sender = None
 
-    def __enter__(self) -> SharedSendStream[T]:
+    def __enter__(self) -> SharedSendStream[T, M]:
         return self
 
-    async def __aenter__(self) -> SharedSendStream[T]:
+    async def __aenter__(self) -> SharedSendStream[T, M]:
         return self
 
     def __exit__(self, *exc_info: object) -> None:
@@ -1123,7 +1146,7 @@ class ReceiveEvents(SignalGroup):
     released = Signal(int)
     """Emitted as `(missed,)` when the sender released this lossless reader; delivery goes on at the newest item."""
 
-    def __init__(self, reader: SharedReceiveStream[Any] | None = None) -> None:
+    def __init__(self, reader: SharedReceiveStream[Any, Any] | None = None) -> None:
         """Create the signal group of a stream reader.
 
         Parameters
@@ -1141,7 +1164,7 @@ class ReceiveEvents(SignalGroup):
             reader._reconcile()
 
 
-class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T]):
+class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T, M]):
     """A reader of a stream, in the process that opened it.
 
     [`SharedStream.reader`][sharedbox.SharedStream.reader] returns it.
@@ -1165,7 +1188,7 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T]):
     )
     _native: Reader
 
-    def __init__(self, stream: SharedStream[Any], native: Reader) -> None:
+    def __init__(self, stream: SharedStream[Any, Any], native: Reader) -> None:
         super().__init__(stream, native)
         self._position: int | None = None
         self._carry: collections.deque[tuple[Any, int | None] | ReaderReleased] = (
@@ -1176,7 +1199,7 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T]):
         self._generation = 0
 
     @property
-    def stream(self) -> SharedStream[T]:
+    def stream(self) -> SharedStream[T, M]:
         """The stream this reader receives from."""
         return self._stream
 
@@ -1319,7 +1342,7 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T]):
         self._check_consumer()
         return IterInto(self, self._targets(out))
 
-    def __iter__(self) -> SharedReceiveStream[T]:
+    def __iter__(self) -> SharedReceiveStream[T, M]:
         return self
 
     def __next__(self) -> T:
@@ -1593,7 +1616,7 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T]):
     def _receive_future(self, targets: list[tuple[tuple[int, ...], Any]]) -> CallFuture:
         return self._submit(lambda future: self._receive(targets, None, future))
 
-    def __aiter__(self) -> SharedReceiveStream[T]:
+    def __aiter__(self) -> SharedReceiveStream[T, M]:
         return self
 
     async def __anext__(self) -> T:
@@ -1609,7 +1632,7 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T]):
         except EndOfStream:
             raise StopAsyncIteration from None
 
-    async def __aenter__(self) -> SharedReceiveStream[T]:
+    async def __aenter__(self) -> SharedReceiveStream[T, M]:
         return self
 
     def _receive(
@@ -1644,7 +1667,7 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T]):
                 continue
         raise TimeoutError(f"stream {self._stream.name!r}: no item within {timeout} s")
 
-    def __enter__(self) -> SharedReceiveStream[T]:
+    def __enter__(self) -> SharedReceiveStream[T, M]:
         return self
 
     def __exit__(self, *exc_info: object) -> None:
@@ -1671,7 +1694,9 @@ class IterInto(Iterator[T], AsyncIterator[T], Generic[T]):
     __slots__ = ("_reader", "_targets")
 
     def __init__(
-        self, reader: SharedReceiveStream[T], targets: list[tuple[tuple[int, ...], Any]]
+        self,
+        reader: SharedReceiveStream[T, Any],
+        targets: list[tuple[tuple[int, ...], Any]],
     ) -> None:
         self._reader = reader
         self._targets = targets

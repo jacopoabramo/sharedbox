@@ -100,7 +100,7 @@ def references(cart: Cart, fast: FastWheel, copy: WheelCopy) -> None:
     assert_type(cart.snapshot(follow=True), dict[str, Any])
     ref = BoxRef("w", 1, 2)
     assert_type(ref.name, str)
-    assert_type(ref.box_class, type[SharedBox] | None)
+    assert_type(ref.box_class, type[SharedBox[Any]] | None)
     Cart(fast)
     cart.wheel = fast
     Cart(copy)  # type: ignore[arg-type]
