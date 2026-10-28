@@ -291,8 +291,8 @@ class SharedStream(Generic[T, M]):
         *,
         capacity: int,
         max_readers: int = 8,
-        metadata_type: object = None,
-    ) -> SharedStream[Any, Any]: ...
+        metadata_type: type[M] | None = None,
+    ) -> SharedStream[Any, M]: ...
     @classmethod
     def create(
         cls,
@@ -352,8 +352,12 @@ class SharedStream(Generic[T, M]):
     @overload
     @classmethod
     def attach(
-        cls, item_type: object, name: str, *, metadata_type: object = None
-    ) -> SharedStream[Any, Any]: ...
+        cls,
+        item_type: object,
+        name: str,
+        *,
+        metadata_type: type[M] | None = None,
+    ) -> SharedStream[Any, M]: ...
     @classmethod
     def attach(
         cls, item_type: object, name: str, *, metadata_type: object = None

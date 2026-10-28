@@ -88,7 +88,7 @@ MAX_WAITERS = 4096
 # A reference field's cache entry: its create id, the box attached for it, and
 # that box's Segment. Segment.cached_ref in _native/module.cpp reads this shape.
 RefEntry: TypeAlias = "tuple[int, SharedBox, Segment]"
-LIVE: weakref.WeakSet[SharedBox[Any]] = weakref.WeakSet()
+LIVE: weakref.WeakSet[SharedBox] = weakref.WeakSet()
 
 
 def check_name(name: str) -> str:
@@ -132,7 +132,7 @@ if sys.platform != "win32":
     os.register_at_fork(after_in_child=reset_after_fork)
 
 
-B = TypeVar("B", bound="SharedBox[Any]")
+B = TypeVar("B", bound="SharedBox")
 A = TypeVar("A")
 
 
@@ -192,7 +192,7 @@ def signature(params: list[Field]) -> inspect.Signature:
     )
 
 
-def fields(class_or_box: type[SharedBox[Any]] | SharedBox[Any]) -> tuple[Field, ...]:
+def fields(class_or_box: type[SharedBox] | SharedBox) -> tuple[Field, ...]:
     """Return one [`Field`][sharedbox.Field] per field of a `SharedBox` subclass or box, in declaration order.
 
     `InitVar` annotations are left out. This is how a field's `metadata`
@@ -210,7 +210,7 @@ def fields(class_or_box: type[SharedBox[Any]] | SharedBox[Any]) -> tuple[Field, 
     return tuple(f for f in cls.__sharedbox_init__ if not isinstance(f.type, InitVar))
 
 
-def install_native_methods(cls: type[SharedBox[Any]]) -> None:
+def install_native_methods(cls: type[SharedBox]) -> None:
     """Set the native update and snapshot on `cls` where it would otherwise inherit SharedBox's.
 
     If a base's native method would hide an override that `cls` inherits
@@ -299,13 +299,11 @@ class Unlink:
     """`Box.unlink(name=None)` on the class, `box.unlink()` on an instance."""
 
     @overload
-    def __get__(self, box: None, owner: type[SharedBox[Any]]) -> _ClassUnlink: ...
+    def __get__(self, box: None, owner: type[SharedBox]) -> _ClassUnlink: ...
     @overload
+    def __get__(self, box: SharedBox, owner: type[SharedBox]) -> Callable[[], None]: ...
     def __get__(
-        self, box: SharedBox[Any], owner: type[SharedBox[Any]]
-    ) -> Callable[[], None]: ...
-    def __get__(
-        self, box: SharedBox[Any] | None, owner: type[SharedBox[Any]]
+        self, box: SharedBox | None, owner: type[SharedBox]
     ) -> Callable[..., None]:
         if box is not None:
             return lambda: Segment.unlink(check_name(box.name))
@@ -341,7 +339,7 @@ class SharedBoxMeta(type):
         cls = super().__new__(mcls, cls_name, bases, namespace, **kwargs)
         layout = cls.__dict__.get("__layout__")
         if layout is not None:
-            register(cast("type[SharedBox[Any]]", cls))
+            register(cast("type[SharedBox]", cls))
         return cls
 
 
@@ -740,7 +738,7 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
                 )
             cls.__max_waiters__ = max_waiters
         cls.__events_class__ = events_class(cls, layout)
-        install_native_methods(cls)
+        install_native_methods(cls)  # type: ignore[arg-type]
 
     def __init__(self, *args: Any, **kwargs: Any) -> None:
         self._open(type(self)._layout_name(), args, kwargs)
@@ -819,7 +817,7 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
         self._finalizer = weakref.finalize(
             self, release, self._watcher, self._segment, False
         )
-        LIVE.add(self)
+        LIVE.add(self)  # type: ignore[arg-type]
 
     def _open(self, name: str, args: tuple[Any, ...], values: dict[str, Any]) -> None:
         cls = type(self)
@@ -1065,8 +1063,8 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
         """Replace the references in `values`, read from this box, with nested snapshots, depth first."""
         seen = {(self.name, self._segment.create_id)}
         # A stack instead of recursion, so a chain of boxes can be longer than the recursion limit.
-        stack: list[tuple[SharedBox[Any], dict[str, Any], Iterator[FieldSpec]]] = [
-            (self, values, iter(type(self).__layout__.refs))
+        stack: list[tuple[SharedBox, dict[str, Any], Iterator[FieldSpec]]] = [
+            (self, values, iter(type(self).__layout__.refs))  # type: ignore[list-item]
         ]
         while stack:
             box, box_values, specs = stack[-1]
@@ -1149,7 +1147,7 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
         """
         cls = type(self)
         return self._watcher.events(
-            partial(box_events, cls, self._segment, self._watcher),
+            partial(box_events, cls, self._segment, self._watcher),  # type: ignore[arg-type]
             cls.__layout__.fields,
         )
 
@@ -1163,7 +1161,7 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
 
     def _inner(
         self, spec: FieldSpec, create_id: int, schema_hash: int, name: str
-    ) -> SharedBox[Any]:
+    ) -> SharedBox:
         """Return the box a reference field refers to: the one this handle attached before, or a new one."""
         cached = self._refs.get(spec.index)
         # Reading a dict entry is atomic on every build, so the usual case takes no lock.
@@ -1290,7 +1288,7 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
 
     def _close(self, wait: bool) -> None:
         # A list instead of recursion, so a chain of boxes can be longer than the recursion limit.
-        boxes: list[SharedBox[Any]] = [self]
+        boxes: list[SharedBox] = [self]  # type: ignore[list-item]
         error: BaseException | None = None
         while boxes:
             box = boxes.pop()
@@ -1318,7 +1316,7 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
 
     def __reduce__(
         self,
-    ) -> tuple[Callable[..., SharedBox[Any]], tuple[type, str, int, int]]:
+    ) -> tuple[Callable[..., SharedBox], tuple[type, str, int, int]]:
         return (
             unpickle_box,
             (

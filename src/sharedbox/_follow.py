@@ -61,7 +61,7 @@ class Follower:
         self,
         top: Follower | None,
         spec: FieldSpec | None,
-        cls: type[SharedBox[Any]],
+        cls: type[SharedBox],
         group: BoxEvents | None,
     ) -> None:
         self.top = self if top is None else top
@@ -69,7 +69,7 @@ class Follower:
         # The class whose fields `follow` and `unfollow` accept: the shape of the group.
         self.cls = cls
         self.group = group
-        self.box: SharedBox[Any] | None = None
+        self.box: SharedBox | None = None
         self.ref: Any = None
         self.outer: Segment | None = None
         self.links: dict[str, Follower] = {}
@@ -240,7 +240,7 @@ class Follower:
             raise TypeError(f"{spec.label} is not a reference field")
         return spec
 
-    def source(self) -> tuple[Segment, type[SharedBox[Any]], Watcher] | None:
+    def source(self) -> tuple[Segment, type[SharedBox], Watcher] | None:
         """Return the segment, class and watcher of the box whose reference fields this follower's links and tree follow."""
         if self.box is not None:
             return self.box._segment, type(self.box), self.box._watcher
@@ -254,12 +254,12 @@ class Follower:
         return source is not None and source[0] is segment and not segment.closed
 
     def link_children(
-        self, cls: type[SharedBox[Any]], watcher: Watcher
+        self, cls: type[SharedBox], watcher: Watcher
     ) -> list[tuple[Follower, Any]]:
         return [(link, read(cls, watcher, name)) for name, link in self.links.items()]
 
     def tree_children(
-        self, segment: Segment, cls: type[SharedBox[Any]], watcher: Watcher
+        self, segment: Segment, cls: type[SharedBox], watcher: Watcher
     ) -> list[tuple[Follower, Any]]:
         """Create a node for each reference field of the source, with the value its watcher last saw."""
         if self.nested is None:
@@ -382,7 +382,7 @@ class Follower:
         return boxes
 
 
-def read(cls: type[SharedBox[Any]], watcher: Watcher, name: str) -> Any:
+def read(cls: type[SharedBox], watcher: Watcher, name: str) -> Any:
     # Not from the segment: a value the watcher has not seen yet may change back unreported.
     return watcher.last(cls.__layout__.by_name[name])
 
@@ -426,9 +426,7 @@ def close_all(boxes: list[SharedBox], wait: bool) -> None:
         raise error
 
 
-def box_events(
-    cls: type[SharedBox[Any]], segment: Segment, watcher: Watcher
-) -> BoxEvents:
+def box_events(cls: type[SharedBox], segment: Segment, watcher: Watcher) -> BoxEvents:
     """Create a new events group for the box of `cls` on `segment`, with the follower its `follow` uses."""
     group = cls.__events_class__()
     top = Follower(None, None, cls, group)

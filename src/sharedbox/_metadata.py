@@ -14,7 +14,7 @@ if sys.version_info >= (3, 13):
 else:
     from typing_extensions import TypeVar
 
-M = TypeVar("M", default=Mapping[str, Any])
+M = TypeVar("M", covariant=True, default=Mapping[str, Any])  # noqa: PLC0105
 
 MAX_DEPTH: Final = 32
 INT_MIN: Final = -(2**64)
@@ -64,7 +64,8 @@ def encode(value: object) -> bytes:
     TypeError
         If the document holds another type, or a mapping key is not a `str`.
     ValueError
-        If an integer is out of range, or the nesting is too deep.
+        If an integer is out of range, the nesting is too deep, or a `str`
+        holds a lone surrogate (`UnicodeEncodeError`).
     """
     return cbor2.dumps(_plain(value, 0), canonical=True)
 
@@ -85,7 +86,7 @@ def decode(data: bytes) -> Any:
 
 
 class DocumentCache:
-    """Decoded documents by creation id and version, up to 32 kept, the oldest dropped first."""
+    """Decoded documents by creation id and version, the 32 least recently used kept."""
 
     __slots__ = ("_lock", "_values")
 
@@ -101,6 +102,7 @@ class DocumentCache:
         key = (create_id, version)
         with self._lock:
             if key in self._values:
+                self._values.move_to_end(key)
                 return self._values[key]
         value = decode(read())
         with self._lock:

@@ -1,4 +1,7 @@
 import math
+import subprocess
+import sys
+import sysconfig
 from collections.abc import Mapping
 from types import MappingProxyType
 from typing import Any
@@ -84,22 +87,8 @@ def test_a_decoded_map_can_be_added_again() -> None:
     assert encode(decoded) == encode(DOCUMENT)
 
 
-def test_encoding_stays_in_the_checked_subset() -> None:
-    """Emit untagged integers and definite-length items of the expected major types."""
-    for value in (2**64 - 1, -(2**64), 2**63, -1):
-        assert encode(value)[0] >> 5 in (0, 1)
-    assert encode(b"a")[0] >> 5 == 2
-    assert encode("a")[0] >> 5 == 3
-    assert encode([1])[0] >> 5 == 4
-    assert encode({"a": 1})[0] >> 5 == 5
-    assert encode(None) == bytes([0xF6])
-    assert encode(True) == bytes([0xF5])
-    assert encode(False) == bytes([0xF4])
-    assert encode(math.nan)[0] == 0xF9
-
-
-def check_subset(data: bytes, at: int = 0) -> int:
-    """Walk one item, failing on a tag, an indefinite length or a simple value outside the subset."""
+def check_subset(data: bytes, at: int = 0, depth: int = 0) -> int:
+    """Walk one item, failing on a tag, an indefinite length, a simple value outside the subset, a key that is not text or nesting past 32."""
     major, extra = data[at] >> 5, data[at] & 31
     at += 1
     assert major != 6, "tag"
@@ -112,8 +101,16 @@ def check_subset(data: bytes, at: int = 0) -> int:
     at += width
     if major in (2, 3):
         return at + count
-    for _ in range(count * 2 if major == 5 else count if major == 4 else 0):
-        at = check_subset(data, at)
+    if major in (4, 5):
+        assert depth < 32, "nesting"
+    if major == 4:
+        for _ in range(count):
+            at = check_subset(data, at, depth + 1)
+    elif major == 5:
+        for _ in range(count):
+            assert data[at] >> 5 == 3, "map key is not text"
+            at = check_subset(data, at, depth + 1)
+            at = check_subset(data, at, depth + 1)
     return at
 
 
@@ -131,6 +128,13 @@ def test_documents_stay_in_the_checked_subset() -> None:
     for value in documents:
         data = encode(value)
         assert check_subset(data) == len(data)
+    assert check_subset(encode(nested(32))) > 0
+    assert encode(None) == bytes([0xF6])
+    assert encode(True) == bytes([0xF5])
+    assert encode(False) == bytes([0xF4])
+    assert encode(math.nan)[0] == 0xF9
+    for value in (2**64 - 1, -(2**64), 2**63, -1):
+        assert encode(value)[0] >> 5 in (0, 1)
 
 
 @pytest.mark.parametrize(
@@ -222,3 +226,13 @@ def test_a_box_subclasses_a_parameterised_base(unique_name: str) -> None:
     with Motor(3) as motor:
         assert motor.speed == 3
     Motor.unlink()
+
+
+@pytest.mark.skipif(
+    not sysconfig.get_config_var("Py_GIL_DISABLED"),
+    reason="needs a free-threaded build",
+)
+def test_importing_sharedbox_keeps_the_gil_off() -> None:
+    """Keep the GIL disabled after a fresh process imports sharedbox."""
+    code = "import sharedbox, sys; sys.exit(int(sys._is_gil_enabled()))"
+    assert subprocess.run([sys.executable, "-c", code], check=False).returncode == 0

@@ -116,7 +116,9 @@ class WaiterSlotsFullError(RuntimeError):
 class MetadataFullError(RuntimeError):
     """A new metadata document cannot be stored now.
 
-    Raised by adding metadata larger than the area allows, or, in a stream,
+    Raised by adding metadata larger than the area allows, by adding
+    metadata to a segment without a metadata area (created with no
+    capacity, or by an older version), or, in a stream,
     while the ring still holds items sent under the version the add would
     overwrite.
     """

@@ -1,6 +1,6 @@
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, assert_type
+from typing import Any, TypedDict, TypeVar, assert_type
 
 from sharedbox import (
     SharedBox,
@@ -15,8 +15,7 @@ class Item:
     value: int
 
 
-@dataclass(frozen=True)
-class Info:
+class Info(TypedDict):
     unit: str
 
 
@@ -48,3 +47,20 @@ def check_inference() -> None:
         SharedStream.create(Item, capacity=2),
         SharedStream[Item, Mapping[str, Any]],
     )
+
+
+B = TypeVar("B", bound=SharedBox)
+
+
+def takes_box(box: SharedBox) -> None: ...
+def takes_class(cls: type[SharedBox]) -> None: ...
+def takes_stream(stream: SharedStream[Item]) -> None: ...
+def takes_class_var(cls: type[B]) -> type[B]:
+    return cls
+
+
+def check_covariance(motor: Motor, stream: SharedStream[Item, Info]) -> None:
+    takes_box(motor)
+    takes_class(Motor)
+    takes_stream(stream)
+    assert_type(takes_class_var(Motor), type[Motor])
