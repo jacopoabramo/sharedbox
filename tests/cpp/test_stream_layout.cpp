@@ -48,7 +48,7 @@ status open_status(const std::string &name) {
 
 } // namespace
 
-TEST_CASE("a new stream is core 1.0, stream layout 1.3, and opens with the same shape") {
+TEST_CASE("a new stream is core 1.0, stream layout 1.4, and opens with the same shape") {
     const std::string name = unique("stream-new");
     auto made = stream::create(name, {}, entry_of(kind_int, 8), 4, 2, 0x5EED);
     REQUIRE(made);
@@ -56,7 +56,7 @@ TEST_CASE("a new stream is core 1.0, stream layout 1.3, and opens with the same 
     CHECK(h.common.magic == stream_magic);
     CHECK(h.common.core_major == core_major);
     CHECK(h.common.kind_major == stream_layout_major);
-    CHECK(h.common.kind_minor == 3);
+    CHECK(h.common.kind_minor == 4);
     CHECK(h.common.waiter_slots == 3);
     CHECK(h.readers == stream_header_size);
     CHECK(h.slots % 64 == 0);
@@ -69,6 +69,20 @@ TEST_CASE("a new stream is core 1.0, stream layout 1.3, and opens with the same 
     CHECK(opened->max_readers() == 2);
     CHECK(opened->item_size() == 8);
     CHECK(opened->item_type().kind() == kind_int);
+    static_cast<void>(unlink(name));
+}
+
+TEST_CASE("a stream without metadata keeps the 1.3 bytes") {
+    const std::string name = unique("stream-no-meta");
+    auto made = stream::create(name, {}, entry_of(kind_int, 8), 4, 2, 1);
+    REQUIRE(made);
+    const stream_header &h = header_of(*made);
+    CHECK(h.metadata_size == 0);
+    CHECK(h.metadata == 0);
+    CHECK(h.metadata_head == 0);
+    CHECK(h.common.size == detail::round_up(h.types + h.types_size, page_size));
+    CHECK(made->size() == h.common.size);
+    CHECK(made->metadata_head() == 0);
     static_cast<void>(unlink(name));
 }
 

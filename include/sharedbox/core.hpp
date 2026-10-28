@@ -2282,6 +2282,29 @@ inline status init_metadata(std::byte *area, std::uint32_t entries, std::uint64_
     return status::ok;
 }
 
+// The ring and area sizes create lays out for a metadata_spec, both 0 for no area.
+struct metadata_plan {
+    std::uint64_t ring_size;
+    std::uint64_t area_size;
+};
+
+// Checks spec and sizes its area: status::range for a capacity above what an area of u32 size holds, a
+// version count outside 2 to 65535, a ring below 24 bytes, an initial document that is longer than the
+// ring takes or outside the subset, or an initial document with capacity 0.
+inline result<metadata_plan> plan_metadata(const metadata_spec &spec) noexcept {
+    if (spec.capacity == 0)
+        return spec.initial.empty() ? result<metadata_plan>(metadata_plan{0, 0})
+                                    : result<metadata_plan>(unexpected(status::range));
+    if (spec.capacity > UINT32_MAX || spec.versions < min_metadata_entries || spec.versions > max_metadata_entries)
+        return unexpected(status::range);
+    const std::uint64_t ring = round_up(spec.capacity, 8);
+    const std::uint64_t area = metadata_area_size(spec.versions, ring);
+    if (ring < 24 || area > UINT32_MAX || spec.initial.size() > max_metadata_document(ring) ||
+        (!spec.initial.empty() && !metadata_ok(spec.initial)))
+        return unexpected(status::range);
+    return metadata_plan{ring, area};
+}
+
 // A copy of an area's first line, made once when the segment is opened; only the copy is checked and used.
 inline metadata_line copy_metadata_line(const std::byte *area) noexcept {
     metadata_line line{};

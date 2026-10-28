@@ -1,4 +1,4 @@
-// stream.hpp: layout 1.3 of a stream segment, a ring that one sender writes and readers copy out of.
+// stream.hpp: layout 1.4 of a stream segment, a ring that one sender writes and readers copy out of.
 #ifndef SHAREDBOX_STREAM_HPP
 #define SHAREDBOX_STREAM_HPP
 
@@ -8,7 +8,7 @@ namespace sharedbox {
 inline namespace v3 {
 
 inline constexpr std::uint16_t stream_layout_major = 1;
-inline constexpr std::uint16_t stream_layout_minor = 3;
+inline constexpr std::uint16_t stream_layout_minor = 4;
 inline constexpr std::uint32_t stream_header_size = 256;
 inline constexpr std::uint64_t min_stream_capacity = 2;
 // Each reader and the sender hold one waiter slot.
@@ -44,8 +44,10 @@ struct stream_header {
     std::uint32_t types_size;
     std::uint32_t item_entry;
     std::uint32_t max_readers;
-    std::uint32_t reserved1;
-    std::uint64_t reserved2;
+    // Bytes of the metadata area, 0 for none.
+    std::uint32_t metadata_size;
+    // Where the area starts, a multiple of 64; 0 for none.
+    std::uint64_t metadata;
     std::uint64_t write_pos;
     std::uint64_t sender_start;
     std::uint64_t sender_pidns;
@@ -56,7 +58,8 @@ struct stream_header {
     std::uint32_t space_waiting;
     std::uint8_t reserved3a[4];
     std::uint64_t release_floor;
-    std::uint8_t reserved3b[8];
+    // The newest version of the metadata, 0 for none; an add changes it.
+    std::uint64_t metadata_head;
     std::uint32_t space_word;
     std::uint32_t lossless_readers;
     std::uint32_t data_waiting;
@@ -85,12 +88,13 @@ static_assert(offsetof(stream_header, common) == 0 && offsetof(stream_header, ca
               offsetof(stream_header, slot_size) == 72 && offsetof(stream_header, readers) == 80 &&
               offsetof(stream_header, slots) == 88 && offsetof(stream_header, types) == 96 &&
               offsetof(stream_header, types_size) == 104 && offsetof(stream_header, item_entry) == 108 &&
-              offsetof(stream_header, max_readers) == 112 && offsetof(stream_header, reserved2) == 120);
+              offsetof(stream_header, max_readers) == 112 && offsetof(stream_header, metadata_size) == 116 &&
+              offsetof(stream_header, metadata) == 120);
 static_assert(offsetof(stream_header, write_pos) == 128 && offsetof(stream_header, sender_start) == 136 &&
               offsetof(stream_header, sender_pidns) == 144 && offsetof(stream_header, sender_pid) == 152 &&
               offsetof(stream_header, state) == 156 && offsetof(stream_header, data_word) == 160 &&
               offsetof(stream_header, readers_epoch) == 164 && offsetof(stream_header, space_waiting) == 168 &&
-              offsetof(stream_header, release_floor) == 176);
+              offsetof(stream_header, release_floor) == 176 && offsetof(stream_header, metadata_head) == 184);
 static_assert(offsetof(stream_header, space_word) == 192 && offsetof(stream_header, lossless_readers) == 196 &&
               offsetof(stream_header, data_waiting) == 200 && offsetof(stream_header, waiters) == 204);
 static_assert(sizeof(reader_entry) == 64 && alignof(reader_entry) == 8);
@@ -101,7 +105,9 @@ static_assert(offsetof(reader_entry, position) == 0 && offsetof(reader_entry, ow
 static_assert(offsetof(stream_header, write_pos) % detail::align64 == 0 &&
               offsetof(stream_header, sender_start) % detail::align64 == 0 &&
               offsetof(stream_header, sender_pidns) % detail::align64 == 0 &&
-              offsetof(stream_header, release_floor) % detail::align64 == 0);
+              offsetof(stream_header, release_floor) % detail::align64 == 0 &&
+              offsetof(stream_header, metadata) % detail::align64 == 0 &&
+              offsetof(stream_header, metadata_head) % detail::align64 == 0);
 static_assert(offsetof(stream_header, sender_pid) % detail::align32 == 0 &&
               offsetof(stream_header, state) % detail::align32 == 0 &&
               offsetof(stream_header, data_word) % detail::align32 == 0 &&
@@ -165,7 +171,15 @@ struct stream_layout {
         stream_shape shape;
         if (!stream_shape_of(h.capacity, h.slot_size, h.max_readers, h.types_size, shape))
             return status::corrupt;
-        if (h.readers != shape.readers || h.slots != shape.slots || h.types != shape.types || shape.size != mapped)
+        if (h.readers != shape.readers || h.slots != shape.slots || h.types != shape.types)
+            return status::corrupt;
+        if (h.metadata == 0)
+            return h.metadata_size == 0 && shape.size == mapped ? status::ok : status::corrupt;
+        // The area ends the mapping, so the page-rounded table end is not the mapping size then.
+        const bool placed = h.metadata % align64 == 0 && h.metadata >= shape.types + h.types_size &&
+                            h.metadata <= mapped && h.metadata_size >= sizeof(metadata_line) &&
+                            h.metadata_size <= mapped - h.metadata;
+        if (!placed || round_up(h.metadata + h.metadata_size, page_size) != mapped)
             return status::corrupt;
         return status::ok;
     }
@@ -187,6 +201,9 @@ struct stream_state {
     std::uint64_t schema_hash = 0;
     std::uint64_t create_id = 0;
     std::uint32_t max_readers = 0;
+    // The metadata area, nullptr for none, and the copy of its first line that open checked.
+    std::byte *metadata = nullptr;
+    metadata_line metadata_first{};
     type_table types;
     os_mapping map;
     waiter_table waiters;
@@ -227,8 +244,16 @@ inline status bind_stream(stream_state &s, os_mapping &&map, const stream_header
     const type_ref &item = s.types.field(0);
     if (!kind_known(item.kind) || round_up(item_start(item.alignment) + item.size, 64) != h.slot_size)
         return status::corrupt;
+    metadata_line line{};
+    if (h.metadata != 0) {
+        line = copy_metadata_line(bytes + h.metadata);
+        if (!metadata_geometry_ok(line, h.metadata_size))
+            return status::corrupt;
+    }
     s.map = std::move(map);
     auto *base = static_cast<std::byte *>(s.map.base());
+    s.metadata = h.metadata == 0 ? nullptr : base + h.metadata;
+    s.metadata_first = line;
     s.hdr = reinterpret_cast<stream_header *>(base);
     s.readers = reinterpret_cast<reader_entry *>(base + h.readers);
     s.slots = base + h.slots;
@@ -419,6 +444,12 @@ public:
     [[nodiscard]] result<std::span<std::byte>> begin(seconds timeout, on_full policy = on_full::wait);
     // Publishes the reserved slot and returns its position; status::range without a reservation.
     [[nodiscard]] result<std::uint64_t> publish() noexcept;
+    // Adds doc, one CBOR item of the metadata subset, as the newest version of the stream's metadata, in
+    // force from the item the next send publishes, and returns its number. Wakes nobody. status::range for
+    // a document the subset refuses or longer than a third of the ring, and for a sender that has closed;
+    // status::metadata_full for a stream without a metadata area, and while an item still in the ring or
+    // yet to be sent needs the version the add would overwrite: it succeeds after enough sends.
+    [[nodiscard]] result<std::uint64_t> add_metadata(std::span<const std::byte> doc);
     // Gives the reservation up. The slot keeps its odd seq, which readers skip, and the next begin reserves
     // the same position.
     void abandon() noexcept;
@@ -486,6 +517,10 @@ public:
     // Ends a receive waiting in this reader with status::interrupted. Sent while no receive waits, it ends
     // the next wait.
     [[nodiscard]] result<void> interrupt();
+    // The metadata version in force at an item's position, such as one receive returned: the newest
+    // version added at or before it. status::not_found when that version has been overwritten or the stream
+    // has no metadata.
+    [[nodiscard]] result<std::uint64_t> metadata_version_at(std::uint64_t position) const;
     void close() noexcept;
 
 private:
@@ -517,10 +552,13 @@ public:
     ~stream() { delete s_; }
 
     // Creates a stream of capacity slots whose item is described by item_entry (capacity_and_kind, as a
-    // box field's) and types; status::range for a shape it cannot lay out.
+    // box field's) and types; status::range for a shape it cannot lay out. metadata asks for a metadata
+    // area, placed after the description table, whose version 1 is metadata.initial when that is not
+    // empty, in force from position 0.
     [[nodiscard]] static result<stream> create(std::string_view name, std::span<const std::byte> types,
                                                std::uint32_t item_entry, std::uint64_t capacity,
-                                               std::uint32_t max_readers, std::uint64_t schema_hash);
+                                               std::uint32_t max_readers, std::uint64_t schema_hash,
+                                               const metadata_spec &metadata = {});
     // Opens the stream called name, waiting up to timeout for a creator that has not finished. The caller
     // compares schema_hash() with its own.
     [[nodiscard]] static result<stream> open(std::string_view name, seconds timeout);
@@ -554,6 +592,14 @@ public:
     std::uint32_t sender_pid() const noexcept {
         return detail::atomic(s_->hdr->sender_pid).load(std::memory_order_acquire);
     }
+    // The newest version of the metadata with acquire; 0 when there is none or the stream has no metadata
+    // area.
+    std::uint64_t metadata_head() const noexcept;
+    // The length in bytes of version's document: status::not_found when the stream does not hold it.
+    [[nodiscard]] result<std::uint32_t> metadata_length(std::uint64_t version) const;
+    // Copies version's document into out and returns its length; status::range for an out shorter than the
+    // document, and otherwise as metadata_length.
+    [[nodiscard]] result<std::uint32_t> read_metadata(std::uint64_t version, std::span<std::byte> out) const;
     // Fills out with the open readers, as many as fit, and returns how many are open.
     std::size_t readers(std::span<reader_info> out) const noexcept;
 
@@ -566,7 +612,7 @@ private:
 
 inline result<stream> stream::create(std::string_view name, std::span<const std::byte> types,
                                      std::uint32_t item_entry, std::uint64_t capacity, std::uint32_t max_readers,
-                                     std::uint64_t schema_hash) {
+                                     std::uint64_t schema_hash, const metadata_spec &metadata) {
     if (!detail::name_ok(name) || capacity < min_stream_capacity || max_readers == 0 ||
         max_readers > max_stream_readers || types.size() > max_types_size || types.size() % 8 != 0)
         return unexpected(status::range);
@@ -582,6 +628,16 @@ inline result<stream> stream::create(std::string_view name, std::span<const std:
     detail::stream_shape shape;
     if (!detail::stream_shape_of(capacity, slot_size, max_readers, types_size, shape))
         return unexpected(status::range);
+    const result<detail::metadata_plan> plan = detail::plan_metadata(metadata);
+    if (!plan)
+        return unexpected(plan.error());
+    std::uint64_t area_at = 0, size = shape.size;
+    if (plan->area_size != 0) {
+        area_at = detail::round_up(shape.types + types_size, detail::align64);
+        if (plan->area_size > max_stream_size - area_at)
+            return unexpected(status::range);
+        size = detail::round_up(area_at + plan->area_size, page_size);
+    }
     const auto waiter_slots = static_cast<std::uint16_t>(max_readers + 1);
     std::unique_ptr<detail::stream_state> s = detail::make_stream_state(name, waiter_slots);
     if (s == nullptr)
@@ -589,7 +645,7 @@ inline result<stream> stream::create(std::string_view name, std::span<const std:
     const result<std::uint64_t> id = detail::random_id();
     if (!id)
         return unexpected(id.error());
-    result<detail::os_mapping> map = detail::map_create(name, shape.size);
+    result<detail::os_mapping> map = detail::map_create(name, size);
     if (!map)
         return unexpected(map.error());
     auto *base = static_cast<std::byte *>(map->base());
@@ -604,7 +660,7 @@ inline result<stream> stream::create(std::string_view name, std::span<const std:
     h.common.creator_pidns = detail::current_pidns();
     h.common.creator_pid = detail::current_pid();
     h.common.waiter_slots = waiter_slots;
-    h.common.size = shape.size;
+    h.common.size = size;
     h.capacity = capacity;
     h.slot_size = slot_size;
     h.readers = shape.readers;
@@ -613,8 +669,26 @@ inline result<stream> stream::create(std::string_view name, std::span<const std:
     h.types_size = types_size;
     h.item_entry = item_entry;
     h.max_readers = max_readers;
+    h.metadata_size = static_cast<std::uint32_t>(plan->area_size);
+    h.metadata = area_at;
     if (!types.empty())
         std::memcpy(base + shape.types, types.data(), types.size());
+    if (plan->area_size != 0) {
+        if (const status rc = detail::init_metadata(base + area_at, metadata.versions, plan->ring_size);
+            rc != status::ok) {
+            static_cast<void>(unlink(name));
+            return unexpected(rc);
+        }
+        if (!metadata.initial.empty()) {
+            const result<std::uint64_t> added = detail::add_metadata(
+                base + area_at, detail::copy_metadata_line(base + area_at), detail::atomic(h.metadata_head),
+                metadata.initial, 0, [](std::uint64_t) { return true; });
+            if (!added) {
+                static_cast<void>(unlink(name));
+                return unexpected(added.error());
+            }
+        }
+    }
     if (const status rc = detail::bind_stream(*s, std::move(*map), detail::stream_layout::copy_header(base));
         rc != status::ok) {
         static_cast<void>(unlink(name));
@@ -754,6 +828,49 @@ inline std::size_t stream::readers(std::span<reader_info> out) const noexcept {
         ++open;
     }
     return open;
+}
+
+inline std::uint64_t stream::metadata_head() const noexcept {
+    return s_->metadata == nullptr ? 0 : detail::atomic(s_->hdr->metadata_head).load(std::memory_order_acquire);
+}
+
+inline result<std::uint32_t> stream::metadata_length(std::uint64_t version) const {
+    if (s_->metadata == nullptr)
+        return unexpected(status::not_found);
+    return detail::metadata_length(s_->metadata, s_->metadata_first, version);
+}
+
+inline result<std::uint32_t> stream::read_metadata(std::uint64_t version, std::span<std::byte> out) const {
+    if (s_->metadata == nullptr)
+        return unexpected(status::not_found);
+    return detail::read_metadata(s_->metadata, s_->metadata_first, version, out);
+}
+
+inline result<std::uint64_t> stream_sender::add_metadata(std::span<const std::byte> doc) {
+    if (s_ == nullptr || detail::current_pid() != pid_)
+        return unexpected(status::range);
+    detail::stream_state &s = *s_;
+    if (s.metadata == nullptr)
+        return unexpected(status::metadata_full);
+    if (doc.size() > detail::max_metadata_document(s.metadata_first.ring_size) || !metadata_ok(doc))
+        return unexpected(status::range);
+    // Only this sender stores write_pos. Version u may go once every item under it has left the ring, that is
+    // once the position of version u + 1 is at most write_pos - capacity.
+    const std::uint64_t p = detail::atomic(s.hdr->write_pos).load(std::memory_order_relaxed);
+    return detail::add_metadata(
+        s.metadata, s.metadata_first, detail::atomic(s.hdr->metadata_head), doc, p,
+        [&](std::uint64_t next) noexcept { return p >= s.capacity && next <= p - s.capacity; });
+}
+
+inline result<std::uint64_t> stream_reader::metadata_version_at(std::uint64_t position) const {
+    if (s_ == nullptr)
+        return unexpected(status::range);
+    const detail::stream_state &s = *s_;
+    if (s.metadata == nullptr)
+        return unexpected(status::not_found);
+    return detail::metadata_version_at(s.metadata, s.metadata_first,
+                                       detail::atomic(s.hdr->metadata_head).load(std::memory_order_acquire),
+                                       position);
 }
 
 // The smallest position a lossless reader still has to read, leaving out marked readers below floor; p

@@ -565,19 +565,12 @@ inline result<handle> create_impl(std::string_view name, std::span<const field_s
         static_cast<std::uint32_t>(round_up(tail_end(count, waiter_slots) + types.size(), record_alignment));
     if (std::uint64_t{record} + record_size > max_mapping_size)
         return unexpected(status::range);
-    std::uint64_t ring = 0, area_size = 0, area_at = 0;
-    if (metadata.capacity == 0) {
-        if (!metadata.initial.empty())
-            return unexpected(status::range);
-    } else {
-        if (metadata.capacity > max_mapping_size || metadata.versions < min_metadata_entries ||
-            metadata.versions > max_metadata_entries)
-            return unexpected(status::range);
-        ring = round_up(metadata.capacity, 8);
-        area_size = metadata_area_size(metadata.versions, ring);
-        if (ring < 24 || area_size > UINT32_MAX || metadata.initial.size() > max_metadata_document(ring) ||
-            (!metadata.initial.empty() && !metadata_ok(metadata.initial)))
-            return unexpected(status::range);
+    const result<metadata_plan> plan = plan_metadata(metadata);
+    if (!plan)
+        return unexpected(plan.error());
+    const std::uint64_t ring = plan->ring_size, area_size = plan->area_size;
+    std::uint64_t area_at = 0;
+    if (area_size != 0) {
         area_at = round_up(std::uint64_t{record} + record_size, record_alignment);
         if (area_at + area_size > max_mapping_size)
             return unexpected(status::range);

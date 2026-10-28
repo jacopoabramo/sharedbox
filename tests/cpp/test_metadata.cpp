@@ -3,6 +3,7 @@
 #include <doctest/doctest.h>
 #include <sharedbox/sharedbox.hpp>
 
+#include "table_builder.hpp"
 #include "unique.hpp"
 
 #include <atomic>
@@ -661,5 +662,179 @@ TEST_CASE("metadata is read and added through a duplicate and a taken-over capsu
     CHECK(owner->metadata_head() == 3);
     CHECK(read_version(*owner, 3) == cbor({0x03}));
     delete capsule;
+    static_cast<void>(unlink(name));
+}
+
+namespace {
+
+stream make_stream(const std::string &name, std::uint64_t capacity, const metadata_spec &spec) {
+    auto made = stream::create(name, {}, entry_of(kind_int, 8), capacity, 2, 1, spec);
+    REQUIRE(made);
+    return std::move(*made);
+}
+
+result<std::uint64_t> send_item(stream_sender &sender, std::uint64_t value) {
+    return sender.send(std::as_bytes(std::span{&value, 1}), seconds(1.0));
+}
+
+void send_items(stream_sender &sender, std::uint64_t count) {
+    for (std::uint64_t i = 0; i < count; ++i)
+        REQUIRE(send_item(sender, i));
+}
+
+std::vector<std::byte> read_stream_version(const stream &s, std::uint64_t version) {
+    std::vector<std::byte> out(256);
+    const auto got = s.read_metadata(version, out);
+    REQUIRE(got);
+    out.resize(*got);
+    return out;
+}
+
+status stream_open_status(const std::string &name) {
+    const auto opened = stream::open(name, seconds(0.2));
+    return opened ? status::ok : opened.error().code;
+}
+
+} // namespace
+
+TEST_CASE("a stream version applies from the next item") {
+    const std::string name = unique("meta-stream-next");
+    stream made = make_stream(name, 8, metadata_spec{cbor({0x01}), 1024, 4});
+    auto other = stream::open(name, seconds(1.0));
+    REQUIRE(other);
+    CHECK(other->metadata_head() == 1);
+    CHECK(read_stream_version(*other, 1) == cbor({0x01}));
+    auto sender = made.sender();
+    auto reader = made.reader(read_mode::lossy, start_at::oldest);
+    REQUIRE(sender);
+    REQUIRE(reader);
+    send_items(*sender, 3);
+    CHECK(sender->add_metadata(cbor({0x02})).value_or(0) == 2);
+    send_items(*sender, 2);
+    CHECK(other->metadata_head() == 2);
+    CHECK(read_stream_version(*other, 2) == cbor({0x02}));
+    for (const std::uint64_t position : {0, 1, 2})
+        CHECK(reader->metadata_version_at(position).value_or(0) == 1);
+    for (const std::uint64_t position : {3, 4})
+        CHECK(reader->metadata_version_at(position).value_or(0) == 2);
+    static_cast<void>(unlink(name));
+}
+
+TEST_CASE("a stream refuses to reclaim a version an item in the ring needs") {
+    const std::string name = unique("meta-stream-reclaim");
+    stream made = make_stream(name, 8, metadata_spec{cbor({0x01}), 1024, 2});
+    auto sender = made.sender();
+    REQUIRE(sender);
+    send_items(*sender, 4);
+    REQUIRE(sender->add_metadata(cbor({0x02})).value_or(0) == 2);
+    send_items(*sender, 6);
+    CHECK(code(sender->add_metadata(cbor({0x03}))) == status::metadata_full);
+    CHECK(made.metadata_head() == 2);
+    send_items(*sender, 2);
+    CHECK(sender->add_metadata(cbor({0x03})).value_or(0) == 3);
+    static_cast<void>(unlink(name));
+}
+
+TEST_CASE("a lossy reader whose item version was reclaimed is told") {
+    const std::string name = unique("meta-stream-lossy");
+    stream made = make_stream(name, 4, metadata_spec{cbor({0x01}), 1024, 2});
+    auto sender = made.sender();
+    REQUIRE(sender);
+    send_items(*sender, 3);
+    auto reader = made.reader(read_mode::lossy, start_at::oldest);
+    REQUIRE(reader);
+    std::uint64_t last = 0, value = 0;
+    for (int i = 0; i < 3; ++i) {
+        const auto got = reader->receive(std::as_writable_bytes(std::span{&value, 1}), seconds(1.0));
+        REQUIRE(got);
+        last = got->position;
+    }
+    CHECK(last == 2);
+    REQUIRE(sender->add_metadata(cbor({0x02})).value_or(0) == 2);
+    CHECK(reader->metadata_version_at(last).value_or(0) == 1);
+    send_items(*sender, 4);
+    CHECK(sender->add_metadata(cbor({0x03})).value_or(0) == 3);
+    CHECK(code(reader->metadata_version_at(last)) == status::not_found);
+    CHECK(reader->metadata_version_at(7).value_or(0) == 3);
+    static_cast<void>(unlink(name));
+}
+
+TEST_CASE("a stream without a metadata area has no versions") {
+    const std::string name = unique("meta-stream-none");
+    stream made = make_stream(name, 4, {});
+    auto sender = made.sender();
+    auto reader = made.reader(read_mode::lossy, start_at::newest);
+    REQUIRE(sender);
+    REQUIRE(reader);
+    CHECK(made.metadata_head() == 0);
+    CHECK(code(made.metadata_length(1)) == status::not_found);
+    CHECK(code(sender->add_metadata(cbor({0x01}))) == status::metadata_full);
+    CHECK(code(reader->metadata_version_at(0)) == status::not_found);
+    static_cast<void>(unlink(name));
+}
+
+TEST_CASE("a stream refuses a bad document and reports a closed sender") {
+    const std::string name = unique("meta-stream-bad");
+    stream made = make_stream(name, 4, metadata_spec{{}, 120, 2});
+    auto sender = made.sender();
+    REQUIRE(sender);
+    CHECK(made.metadata_head() == 0);
+    CHECK(code(sender->add_metadata(cbor({0xc0, 0x01}))) == status::range);
+    CHECK(code(sender->add_metadata(byte_string(60, 0x01))) == status::range);
+    CHECK(made.metadata_head() == 0);
+    sender->close();
+    CHECK(code(sender->add_metadata(cbor({0x01}))) == code(send_item(*sender, 0)));
+    static_cast<void>(unlink(name));
+}
+
+TEST_CASE("create refuses a stream metadata spec that cannot be laid out") {
+    const std::string name = unique("meta-stream-spec");
+    const auto refused = [&](const metadata_spec &spec) {
+        const auto made = stream::create(name, {}, entry_of(kind_int, 8), 4, 2, 1, spec);
+        return made ? status::ok : made.error().code;
+    };
+    CHECK(refused(metadata_spec{cbor({0x01}), 0, 4}) == status::range);
+    CHECK(refused(metadata_spec{{}, 1024, 1}) == status::range);
+    CHECK(refused(metadata_spec{{}, 16, 4}) == status::range);
+    CHECK(refused(metadata_spec{cbor({0xc0, 0x01}), 1024, 4}) == status::range);
+    CHECK(stream_open_status(name) == status::not_found);
+}
+
+TEST_CASE("a forged stream metadata offset is refused") {
+    const std::string name = unique("meta-stream-forged");
+    stream made = make_stream(name, 4, metadata_spec{cbor({0x01}), 1024, 4});
+    stream_header &h = *static_cast<stream_header *>(made.base());
+    const auto forged = [&](auto &field, auto value) {
+        const auto saved = field;
+        field = value;
+        const status rc = stream_open_status(name);
+        field = saved;
+        return rc;
+    };
+    const std::uint64_t area = h.metadata;
+    const std::uint32_t used = h.metadata_size;
+    CHECK(stream_open_status(name) == status::ok);
+    CHECK(area % 64 == 0);
+    CHECK(area >= h.types + h.types_size);
+    CHECK(forged(h.metadata, h.common.size) == status::corrupt);
+    CHECK(forged(h.metadata, area + 4096) == status::corrupt);
+    CHECK(forged(h.metadata, h.types - 64) == status::corrupt);
+    CHECK(forged(h.metadata, area + 64) == status::corrupt);
+    CHECK(forged(h.metadata, area + 8) == status::corrupt);
+    CHECK(forged(h.metadata, UINT64_MAX - 63) == status::corrupt);
+    CHECK(forged(h.metadata_size, used + 4096) == status::corrupt);
+    CHECK(forged(h.metadata_size, std::uint32_t{32}) == status::corrupt);
+    CHECK(forged(h.metadata_size, used - 8) == status::corrupt);
+    CHECK(forged(h.metadata_size, std::uint32_t{0}) == status::corrupt);
+    CHECK(forged(h.metadata, std::uint64_t{0}) == status::corrupt);
+    auto *line = reinterpret_cast<metadata_line *>(static_cast<std::byte *>(made.base()) + area);
+    const std::uint32_t entries = line->entries;
+    line->entries = 1;
+    CHECK(stream_open_status(name) == status::corrupt);
+    line->entries = entries;
+    line->ring_size += 8;
+    CHECK(stream_open_status(name) == status::corrupt);
+    line->ring_size -= 8;
+    CHECK(stream_open_status(name) == status::ok);
     static_cast<void>(unlink(name));
 }
