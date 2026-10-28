@@ -54,12 +54,25 @@ USED_AFTER_RELEASE = (
 import sys
 from typing import Annotated
 
-from sharedbox import BoxClosedError, Capacity, SharedBox
+from sharedbox import BoxClosedError, Capacity, SharedBox, SharedStream, StreamClosedError
 from sharedbox._exit import release_native
 """
     + KEPT
     + """
+stream = SharedStream.create(int, sys.argv[1] + "-stream", capacity=4)
+SharedStream.unlink(stream.name)
+sender = stream.sender()
 release_native()
+for action in (
+    lambda: stream.capacity,
+    lambda: stream.sender(),
+    lambda: stream.reader(),
+    lambda: sender.send(1),
+):
+    try:
+        action()
+    except StreamClosedError as exc:
+        print(type(exc).__name__)
 for action in (lambda: box.count, lambda: Kept.create(sys.argv[1] + "-new", 2, b"y")):
     try:
         action()
@@ -163,7 +176,7 @@ def test_a_stream_kept_past_exit_leaks_nothing(unique_name: str, ends: str) -> N
 
 
 def test_a_box_used_after_release_raises(unique_name: str) -> None:
-    """Check that reading a box and creating one after the exit handler raise BoxClosedError."""
+    """Check that after the exit handler a box raises BoxClosedError and a stream and its sender raise StreamClosedError."""
     done = run_child(USED_AFTER_RELEASE, unique_name)
     released = (
         "is unavailable: sharedbox released its native objects at interpreter exit"
@@ -171,6 +184,7 @@ def test_a_box_used_after_release_raises(unique_name: str) -> None:
     assert (done.returncode, done.stdout.splitlines()) == (
         0,
         [
+            *["StreamClosedError"] * 4,
             f"BoxClosedError Kept.count {released}",
             f"BoxClosedError Kept {released}",
             "closed True",

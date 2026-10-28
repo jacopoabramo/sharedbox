@@ -5,7 +5,8 @@ from __future__ import annotations
 import atexit
 import contextlib
 import dataclasses
-from typing import Any, Final, NoReturn, cast
+from collections.abc import Callable
+from typing import Any, Final, NoReturn, TypeVar, cast
 
 from ._bounded import _cached_codec
 from ._box import LIVE, SharedBox
@@ -30,6 +31,7 @@ from ._stream import (
     stop_stream_workers,
 )
 
+T = TypeVar("T")
 RELEASED: Final = (
     "is unavailable: sharedbox released its native objects at interpreter exit"
 )
@@ -134,6 +136,13 @@ def release_class(cls: type[SharedBox]) -> None:
     cls.__layout__ = cast(Any, ReleasedAttribute(cls.__qualname__))
 
 
+def release_each(release: Callable[[T], object], targets: list[T]) -> None:
+    """Call `release` on each of `targets`; one that raises does not keep the others from being released."""
+    for target in targets:
+        with contextlib.suppress(Exception):
+            release(target)
+
+
 def release_native() -> None:
     """Close every box, stream and stream end, and release the native objects of watchers and box classes.
 
@@ -148,21 +157,23 @@ def release_native() -> None:
     [`StreamClosedError`][sharedbox.StreamClosedError]; `close` does
     nothing. Calling it again does nothing more.
     """
-    stop_watchers()
-    stop_stream_workers()
-    for box in list(LIVE):
-        release_box(box)
-    for watcher in list(WATCHERS):
-        release_watcher(watcher)
-    for end in list(LIVE_ENDS):
-        release_end(end)
-    for stream in list(LIVE_STREAMS):
-        release_stream(stream)
-    for refs in list(CLASSES.values()):
-        for ref in tuple(refs):
-            cls = ref()
-            if cls is not None:
-                release_class(cls)
+    for stop in (stop_watchers, stop_stream_workers):
+        with contextlib.suppress(Exception):
+            stop()
+    # Classes first, so a late thread that reads a field meets BoxClosedError rather than a replaced segment.
+    release_each(
+        release_class,
+        [
+            cls
+            for refs in list(CLASSES.values())
+            for ref in tuple(refs)
+            if (cls := ref()) is not None
+        ],
+    )
+    release_each(release_box, list(LIVE))
+    release_each(release_watcher, list(WATCHERS))
+    release_each(release_end, list(LIVE_ENDS))
+    release_each(release_stream, list(LIVE_STREAMS))
     _cached_codec.cache_clear()
 
 
