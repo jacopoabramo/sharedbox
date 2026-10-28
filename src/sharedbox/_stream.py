@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import atexit
 import collections
 import contextlib
 import functools
@@ -1727,9 +1726,6 @@ def stop_stream_workers() -> None:
             EXIT_WAIT,
             ", ".join(late),
         )
-
-
-atexit.register(stop_stream_workers)
 
 
 def reset_streams_after_fork() -> None:

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import atexit
 import contextlib
 import logging
 import threading
@@ -86,9 +85,6 @@ def stop_watchers() -> None:
             EXIT_WAIT,
             ", ".join(late),
         )
-
-
-atexit.register(stop_watchers)
 
 
 class FieldFuture(Future[T]):
