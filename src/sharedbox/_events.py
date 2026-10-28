@@ -5,6 +5,7 @@ import contextlib
 import logging
 import threading
 import time
+import weakref
 from collections.abc import AsyncIterator, Callable, Generator, Iterator
 from concurrent.futures import CancelledError, Future, InvalidStateError
 from typing import (
@@ -46,6 +47,8 @@ class WatcherThread(threading.local):
 
 WATCHER_THREAD = WatcherThread()
 RUNNING: set[Watcher] = set()
+# Every watcher, for the exit handler: a watch or an events group can keep one after its box is gone.
+WATCHERS: weakref.WeakSet[Watcher] = weakref.WeakSet()
 
 
 def on_watcher_thread() -> bool:
@@ -230,6 +233,7 @@ class Watcher:
     """Resolves the pending futures of one box from a background thread."""
 
     __slots__ = (
+        "__weakref__",
         "_fields",
         "_group",
         "_lock",
@@ -260,6 +264,7 @@ class Watcher:
         self._seen: dict[int, tuple[int, bytes, Any]] = {}
         self._slot: int | None = None
         self._slots_full = False
+        WATCHERS.add(self)
 
     @property
     def stopped(self) -> bool:

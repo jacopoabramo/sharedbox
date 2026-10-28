@@ -30,10 +30,21 @@ from sharedbox import Capacity, SharedBox
 """
     + KEPT
     + """
-if sys.argv[2] == "closed":
-    box.close()
-else:
-    ctypes.pythonapi.Py_IncRef(ctypes.py_object(box))
+kept: object = None
+match sys.argv[2]:
+    case "closed":
+        box.close()
+    case "open":
+        kept = box
+    case "watched":
+        kept = box.watch("count")
+        box.close()
+        del box
+    case "events":
+        kept = box.events
+        box.close()
+        del box
+ctypes.pythonapi.Py_IncRef(ctypes.py_object(kept))
 ctypes.pythonapi.Py_IncRef(ctypes.py_object(Kept))
 """
 )
@@ -67,11 +78,14 @@ from sharedbox import SharedStream
 
 stream = SharedStream.create(int, sys.argv[1], capacity=4)
 SharedStream.unlink(sys.argv[1])
-sender = stream.sender()
-reader = stream.reader()
-sender.send(1)
-for kept in (stream, sender, reader):
-    ctypes.pythonapi.Py_IncRef(ctypes.py_object(kept))
+kept: list[object] = [stream]
+if sys.argv[2] == "ends":
+    sender = stream.sender()
+    reader = stream.reader()
+    sender.send(1)
+    kept += [sender, reader]
+for one in kept:
+    ctypes.pythonapi.Py_IncRef(ctypes.py_object(one))
 """
 
 
@@ -132,17 +146,18 @@ def test_a_process_exits_cleanly_while_a_callback_makes_native_calls(
     assert exitcodes == [0] * len(children), f"exit codes: {exitcodes}"
 
 
-@pytest.mark.parametrize("state", ["closed", "open"])
+@pytest.mark.parametrize("state", ["closed", "open", "watched", "events"])
 def test_a_class_kept_past_exit_leaks_nothing(unique_name: str, state: str) -> None:
-    """Check that a box class, and a box closed or left open, kept alive past finalization leak no native objects."""
+    """Check that a box class kept alive past finalization, with an open box, a watch or an events group, leaks no native objects."""
     done = run_child(KEPT_PAST_EXIT, unique_name, state)
     assert "nanobind: leaked" not in done.stderr
     assert done.returncode == 0, done.stderr
 
 
-def test_a_stream_kept_past_exit_leaks_nothing(unique_name: str) -> None:
-    """Check that a stream, its sender and a reader kept alive past finalization leak no native objects."""
-    done = run_child(STREAM_PAST_EXIT, unique_name)
+@pytest.mark.parametrize("ends", ["ends", "alone"])
+def test_a_stream_kept_past_exit_leaks_nothing(unique_name: str, ends: str) -> None:
+    """Check that a stream kept alive past finalization, alone or with its sender and a reader, leaks no native objects."""
+    done = run_child(STREAM_PAST_EXIT, unique_name, ends)
     assert "nanobind: leaked" not in done.stderr
     assert done.returncode == 0, done.stderr
 
