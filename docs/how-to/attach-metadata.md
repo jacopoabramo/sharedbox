@@ -117,9 +117,11 @@ given to `create` as above or to `attach` in another process, as in
 it the metadata is a `Mapping[str, Any]`, whatever `metadata` you pass.
 
 A stream keeps every version that an item still in its ring was sent
-under. An add that would let such a version go raises `MetadataFullError`
-and adds nothing, and succeeds once the sender has sent enough further
-items that none sent under that version is left in the ring.
+under, and keeps version 1 while an item sent before it is in the ring,
+so that a reader can tell such an item from one whose version is gone. An
+add that would let such a version go raises `MetadataFullError` and adds
+nothing, and succeeds once the sender has sent enough further items that
+none of those items is left in the ring.
 Once a reader's last item has left the ring, though, its version can go,
 and the reader's `metadata` then raises `MetadataGoneError`. A lossy or
 latest reader meets this first, because the sender may overwrite its item
