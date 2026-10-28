@@ -1187,10 +1187,11 @@ sender, since the add reads `write_pos`. To add version
    was sent under `u`, and every version older than `u` is gone or goes in
    this add. When version 1 took effect after position 0, the items sent
    before it count as a version older than 1, so version 1 goes only by the
-   first condition. Without the last condition a version could go while an
-   older one stays, and the walk back from the head below would stop at the
-   gap; version 1 could go while an item sent before it stays, and a reader
-   would take that item's version for reclaimed. Otherwise the add gives
+   first condition. Without the condition on older versions a version could
+   go while an older one stays, and the walk back from the head below would
+   stop at the gap. Without the rule for version 1, it could go while an
+   item sent before it is still in the ring, and a reader could not tell
+   that item from one whose version was reclaimed. Otherwise the add gives
    `status::metadata_full` and writes nothing.
 5. Stores `seq` 0 in the entry of each older version whose ring bytes it
    overwrites while its entry is kept, so the entry reads as reclaimed.
@@ -1630,7 +1631,8 @@ Stream layout). Every function returning a `result` is `[[nodiscard]]`.
   version added at or before it. `status::not_found` when that version was
   reclaimed, when the position comes before every version the stream
   holds, and for a stream without a metadata area.
-- Calls on one sender or one reader must not overlap, except `interrupt`;
+- Calls on one sender or one reader must not overlap, except `interrupt`
+  and `stream_reader::metadata_version_at`, which must not overlap `close`;
   a reservation is not a call, so other calls may come between `begin` and
   `publish`.
   Senders and readers must not outlive the `stream` that made them.

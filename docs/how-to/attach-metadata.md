@@ -38,7 +38,9 @@ counting from 1.
 
 A value is `None`, a `bool`, an `int`, a `float`, a `str`, `bytes`, a list
 or tuple, or a mapping with `str` keys, nested up to 32 levels;
-[`add_metadata`][sharedbox.SharedBox.add_metadata] lists the limits.
+[`add_metadata`][sharedbox.SharedBox.add_metadata] lists the limits. The
+type argument must be a mapping type, but only a type checker holds you to
+that: at run time a value that is not a mapping is stored all the same.
 Calling the class takes the `metadata` keyword too, but a type checker
 accepts it only in `create`, where it does not check the value.
 
