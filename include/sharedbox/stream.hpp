@@ -472,7 +472,7 @@ private:
 };
 
 // A reader of a stream, in the process that opened it. Move-only; destroying it closes it. Calls on one
-// reader must not overlap, except interrupt, which must not overlap close.
+// reader must not overlap, except interrupt and metadata_version_at, which must not overlap close.
 class stream_reader {
 public:
     stream_reader() noexcept = default;

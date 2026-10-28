@@ -1068,10 +1068,10 @@ inline result<std::uint64_t> handle::add_metadata(std::span<const std::byte> doc
     if (!locked)
         return unexpected(locked.error());
     // The write lock takes seq from an even value to the next odd one and unlock to the one after, so the
-    // generation once unlocked is one more than now.
-    const result<std::uint64_t> added =
-        detail::add_metadata(s.metadata, s.metadata_first, detail::atomic(s.hdr->metadata_head), doc,
-                             (*locked >> 1) + 1, [](std::uint64_t) { return true; });
+    // generation once unlocked is one more than now. The document was checked above, outside the lock.
+    const result<std::uint64_t> added = detail::add_metadata(
+        s.metadata, s.metadata_first, detail::atomic(s.hdr->metadata_head), doc, (*locked >> 1) + 1,
+        [](std::uint64_t) { return true; }, true);
     if (!added) {
         // Only a forged area gets here. Nothing was written, so the lock is given back without counting a
         // write; a force_unlock that has already released it leaves seq as another writer's, and the swap

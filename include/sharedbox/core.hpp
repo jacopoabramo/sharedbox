@@ -2407,15 +2407,19 @@ inline result<std::uint64_t> metadata_version_at(const std::byte *area, const me
 // bytes of older versions its document covers; may_reclaim, called for each such version u with the
 // position of version u + 1, before which every item under u lies, says whether u may go, and the add
 // gives status::metadata_full when one may not. A document outside the subset or longer than
-// max_metadata_document gives status::range. Both refusals write nothing.
+// max_metadata_document gives status::range, unless checked says the caller has checked it already. Both
+// refusals write nothing.
 template <class F>
     requires std::is_invocable_r_v<bool, F &, std::uint64_t>
 result<std::uint64_t> add_metadata(std::byte *area, const metadata_line &line, std::atomic_ref<std::uint64_t> head,
-                                   std::span<const std::byte> doc, std::uint64_t position, F &&may_reclaim) {
-    if (doc.size() > max_metadata_document(line.ring_size) || !metadata_ok(doc))
+                                   std::span<const std::byte> doc, std::uint64_t position, F &&may_reclaim,
+                                   bool checked = false) {
+    if (!checked && (doc.size() > max_metadata_document(line.ring_size) || !metadata_ok(doc)))
         return unexpected(status::range);
     const std::uint64_t newest = head.load(std::memory_order_acquire);
-    // Only a forged head reaches this; past it the walk below would cover almost every u64.
+    // The next version must stay below metadata_version_limit, where its seq 2v + 2 would wrap to 0, and a
+    // head of UINT64_MAX would wrap v itself to 0 and send the loops below from 1 to the head. In practice
+    // only a forged head gets this high.
     if (newest >= metadata_version_limit - 1)
         return unexpected(status::corrupt);
     const std::uint64_t v = newest + 1;

@@ -75,7 +75,9 @@ def test_versions_across_processes(unique_name: str) -> None:
         sender.send(2)
         sender.add_metadata({"step": 3})
         sender.send(3)
-        results: Queue[list[tuple[int, int, dict[str, Any] | None]]] = CONTEXT.Queue()
+        results: Queue[list[tuple[int, int, dict[str, Any] | None]] | str] = (
+            CONTEXT.Queue()
+        )
         child = CONTEXT.Process(
             target=read_metadata_versions, args=(unique_name, 4, results)
         )
@@ -138,6 +140,20 @@ def test_add_metadata_on_a_closed_sender(unique_name: str) -> None:
         with pytest.raises(StreamClosedError):
             sender.add_metadata({"step": 2})
         assert stream.metadata_version == 1
+    SharedStream.unlink(unique_name)
+
+
+def test_metadata_of_a_closed_reader(unique_name: str) -> None:
+    """Raise StreamClosedError for the metadata of a closed reader that never received an item."""
+    with SharedStream.create(
+        int, unique_name, capacity=4, metadata={"step": 1}
+    ) as stream:
+        reader = stream.reader()
+        reader.close()
+        with pytest.raises(StreamClosedError):
+            _ = reader.metadata_version
+        with pytest.raises(StreamClosedError):
+            _ = reader.metadata
     SharedStream.unlink(unique_name)
 
 

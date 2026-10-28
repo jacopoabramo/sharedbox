@@ -108,7 +108,7 @@ def newest(head: Callable[[], int], version_of: Callable[[int], V]) -> V | None:
 
 
 class DocumentCache:
-    """Decoded documents by creation id and version, the 32 least recently used kept."""
+    """Decoded documents by creation id and version, the 32 most recently used kept."""
 
     __slots__ = ("_lock", "_values")
 

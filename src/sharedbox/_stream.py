@@ -1373,6 +1373,10 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T, M]):
         StreamClosedError
             If this reader is closed.
         """
+        if self.closed:
+            raise StreamClosedError(
+                f"stream {self._stream.name!r}: the reader was closed"
+            )
         position = self._position
         return 0 if position is None else self._native.metadata_version_at(position)
 

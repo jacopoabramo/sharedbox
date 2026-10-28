@@ -547,11 +547,12 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
     ------
     TypeError
         When the class is defined, for an annotation of another type, no
-        fields or more than 256, a field named like a `SharedBox` member
-        (`name`, `closed`, `close`, `unlink`, `update`, `snapshot`,
-        `watch`, `events`, `force_unlock`, `create`, `attach`, `metadata`,
-        `metadata_version`, `metadata_version_of`, `add_metadata`) or like
-        `follow`, `unfollow` or `nested`, a default of the wrong type, a
+        fields or more than 256, a field or `InitVar` named like a
+        `SharedBox` member (`name`, `closed`, `close`, `unlink`, `update`,
+        `snapshot`, `read_into`, `writing`, `watch`, `events`,
+        `force_unlock`, `create`, `attach`, `metadata`, `metadata_version`,
+        `metadata_version_of`, `add_metadata`), a field named `follow`,
+        `unfollow` or `nested`, a default of the wrong type, a
         positional field without a default after one with a default, an
         `InitVar` in a class without `__post_init__`, a reference to a
         class that is not defined yet, `__slots__` that name `_segment` or `_values`, or
@@ -567,8 +568,10 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
         `metadata_versions` out of range, or a default that does not fit
         its field (any of the cases below). When the class is called, for
         `metadata` that [`add_metadata`][sharedbox.SharedBox.add_metadata]
-        would refuse with `ValueError`, or for any `metadata` when the
-        class sets `metadata_capacity=0`. When the class is called
+        would refuse with `ValueError`, for any `metadata` when the class
+        sets `metadata_capacity=0`, or for a metadata area that does not
+        fit after the record in a box of at most 2**32 - 4096 bytes. When
+        the class is called
         or a field is assigned, for a `str`, `bytes` or `Decimal` value longer
         than its capacity, a collection with more elements than its
         capacity, a tuple of the wrong length, an array of the wrong shape,
