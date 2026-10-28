@@ -236,6 +236,37 @@ three private names that the test suite checks against the installed
 room to send. A `KeyboardInterrupt` that lands while a receive is returning
 may lose the item it was taking, as `queue.Queue.get` can.
 
+## Release a reader that holds the sender back
+
+A lossless reader that falls a full ring behind holds the sender back, so a
+sender that cannot wait, such as a sorting machine that never stops, loses
+the item for every reader when its send times out. Open that sender with
+[`on_full="release"`][sharedbox.SharedStream.sender] instead. Once a send
+has waited its whole `timeout`, it releases the lossless readers that hold it
+back and sends the item:
+
+```{.python}
+--8<-- "docs/examples/send_items_through_a_stream.py:release"
+```
+
+A released reader is told on its next receive, which raises
+[`ReaderReleased`][sharedbox.ReaderReleased]. Its `missed` attribute counts
+the items the reader lost, and the reader goes on at the newest item, so
+the next receive works. A `for` loop over the reader ends on the exception,
+which is why `file_letters` catches it and loops again. With a ring of four
+slots and six letters, the reader above prints `missed 5`, then files letter
+5. A reader that delivers to callbacks emits
+[`events.released`][sharedbox.ReceiveEvents] with the count instead and
+goes on delivering.
+
+The release happens only when the `timeout` passes, so a send with no
+`timeout` waits as before, and [`send_nowait`][sharedbox.SharedSendStream.send_nowait]
+releases at once. [`asend`][sharedbox.SharedSendStream.asend] and
+[`awriting`][sharedbox.SharedSendStream.awriting] take a `timeout` for the
+same reason, because a wait that `asyncio.wait_for` cancels releases
+nothing. A reader opened by sharedbox 0.7.0 or earlier cannot be released,
+so a send it holds back still raises `TimeoutError`.
+
 ## Use a stream with asyncio
 
 A reader works with `async for` and `anext`, and a sender has

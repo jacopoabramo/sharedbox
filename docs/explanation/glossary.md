@@ -95,6 +95,15 @@ process. Each reader has its own position in the stream and a mode:
 [lossless](#lossless), [lossy](#lossy) or [latest](#latest). See
 [`SharedReceiveStream`][sharedbox.SharedReceiveStream].
 
+### Released reader
+
+A released reader is a [lossless](#lossless) [reader](#reader) that a
+[sender](#sender) opened with `on_full="release"` stopped waiting for, once a
+send had waited its whole timeout. Its next receive raises
+[`ReaderReleased`][sharedbox.ReaderReleased] with the number of items it
+lost, and it goes on at the newest item. See
+[`sender`][sharedbox.SharedStream.sender].
+
 ### Reference field
 
 A reference field is a [field](#field) annotated with another `SharedBox`
