@@ -2290,6 +2290,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#released-reader" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Released reader
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#reference-field" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -3419,6 +3430,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#released-reader" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Released reader
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#reference-field" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -3683,6 +3705,13 @@ a lossless reader waits for it. See <a class="autorefs autorefs-internal" title=
 process. Each reader has its own position in the stream and a mode:
 <a href="#lossless">lossless</a>, <a href="#lossy">lossy</a> or <a href="#latest">latest</a>. See
 <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;SharedReceiveStream&lt;/span&gt;" href="../../reference/api/streams/#sharedbox.SharedReceiveStream"><code>SharedReceiveStream</code></a>.</p>
+<h3 id="released-reader">Released reader<a class="headerlink" href="#released-reader" title="Permanent link">&para;</a></h3>
+<p>A released reader is a <a href="#lossless">lossless</a> <a href="#reader">reader</a> that the
+<a href="#sender">sender</a> stopped waiting for: the sender was opened with
+<code>on_full="release"</code>, and a send waited its whole timeout. Its next receive raises
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;ReaderReleased&lt;/span&gt;" href="../../reference/api/errors/#sharedbox.ReaderReleased"><code>ReaderReleased</code></a> with the number of items it
+lost, and it goes on at the newest item. See
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;sender&lt;/span&gt;" href="../../reference/api/streams/#sharedbox.SharedStream.sender"><code>sender</code></a>.</p>
 <h3 id="reference-field">Reference field<a class="headerlink" href="#reference-field" title="Permanent link">&para;</a></h3>
 <p>A reference field is a <a href="#field">field</a> annotated with another <code>SharedBox</code>
 subclass, or with that class <code>| None</code>, so one box can point at another. It

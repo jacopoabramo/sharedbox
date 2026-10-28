@@ -2781,6 +2781,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#sharedbox.ReceiveEvents.released" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-attribute"></code>&nbsp;released
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -3982,6 +3993,17 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#sharedbox.ReceiveEvents.released" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-attribute"></code>&nbsp;released
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -4543,12 +4565,49 @@ this many items behind before <code>send</code> waits for it.</p>
 
 
 <a href="#sharedbox.SharedStream.sender" class="headerlink" title="Permanent link">&para;</a></h3>
-<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">sender</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">SharedSendStream</span><span class="p">[</span><span class="n">T</span><span class="p">]</span>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">sender</span><span class="p">(</span><span class="n">on_full</span><span class="p">:</span> <span class="n">OnFull</span> <span class="o">=</span> <span class="s1">'wait'</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">SharedSendStream</span><span class="p">[</span><span class="n">T</span><span class="p">]</span>
 </span></code></pre></div>
 
     <div class="doc doc-contents ">
 
         <p>Return the stream's sender for this process.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>on_full</code>
+            </td>
+            <td>
+                  <code><span title="sharedbox._stream.OnFull">OnFull</span></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>What a send does when its <code>timeout</code> passes while a lossless
+reader is a full ring behind. <code>"wait"</code> raises <code>TimeoutError</code>.
+<code>"release"</code> releases the readers that hold it back and sends:
+each raises <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;ReaderReleased&lt;/span&gt;" href="../errors/#sharedbox.ReaderReleased"><code>ReaderReleased</code></a> from its
+next receive, then goes on at the newest item. A reader from
+sharedbox 0.7.0 or earlier cannot be released, so a send it holds
+back still raises <code>TimeoutError</code>.</p>
+              </div>
+            </td>
+            <td>
+                  <code>&#39;wait&#39;</code>
+            </td>
+          </tr>
+      </tbody>
+    </table>
 
 
 <p><span class="doc-section-title">Raises:</span></p>
@@ -4560,6 +4619,16 @@ this many items behind before <code>send</code> waits for it.</p>
         </tr>
       </thead>
       <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-external" href="https://docs.python.org/3/builtins/exceptions.html#ValueError">ValueError</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If <code>on_full</code> is neither <code>"wait"</code> nor <code>"release"</code>.</p>
+              </div>
+            </td>
+          </tr>
           <tr class="doc-section-item">
             <td>
                   <code><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;StreamBusyError&lt;/span&gt; (&lt;code&gt;sharedbox._native.StreamBusyError&lt;/code&gt;)" href="../errors/#sharedbox.StreamBusyError">StreamBusyError</a></code>
@@ -4761,7 +4830,7 @@ oldest the ring still holds.</p>
 
 
 <a href="#sharedbox.SharedSendStream" class="headerlink" title="Permanent link">&para;</a></h2>
-<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">SharedSendStream</span><span class="p">(</span><span class="n">stream</span><span class="p">:</span> <span class="n">SharedStream</span><span class="p">[</span><span class="n">Any</span><span class="p">],</span> <span class="n">native</span><span class="p">:</span> <span class="n">Sender</span><span class="p">)</span>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">SharedSendStream</span><span class="p">(</span><span class="n">stream</span><span class="p">:</span> <span class="n">SharedStream</span><span class="p">[</span><span class="n">Any</span><span class="p">],</span> <span class="n">native</span><span class="p">:</span> <span class="n">Sender</span><span class="p">,</span> <span class="n">release</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
 </span></code></pre></div>
 
     <div class="doc doc-contents first">
@@ -4838,6 +4907,10 @@ Closing it ends the stream: readers receive what is buffered, then
         <p>Send <code>item</code>, waiting while a lossless reader is a full ring behind.</p>
 <p>The item is encoded straight into its slot once the slot is free, so
 an item that cannot be encoded raises only after that wait.</p>
+<p>With <code>on_full="release"</code>, a send that has waited <code>timeout</code> seconds
+releases the lossless readers that hold it back and sends, instead of
+raising <code>TimeoutError</code>. A <code>timeout</code> of None never passes, so it never
+releases.</p>
 
 
 <p><span class="doc-section-title">Raises:</span></p>
@@ -4855,7 +4928,10 @@ an item that cannot be encoded raises only after that wait.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>If <code>timeout</code> seconds pass first; the item is not sent.</p>
+                <p>If <code>timeout</code> seconds pass first; the item is not sent. With
+<code>on_full="release"</code>, only if another thread or task holds the
+slot from <code>writing</code>, or a reader from sharedbox 0.7.0 or earlier
+holds the sender back.</p>
               </div>
             </td>
           </tr>
@@ -4906,12 +4982,17 @@ although the call raised.</p>
   </span>
 
 <a href="#sharedbox.SharedSendStream.asend" class="headerlink" title="Permanent link">&para;</a></h3>
-<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">asend</span><span class="p">(</span><span class="n">item</span><span class="p">:</span> <span class="n">T</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">asend</span><span class="p">(</span><span class="n">item</span><span class="p">:</span> <span class="n">T</span><span class="p">,</span> <span class="n">timeout</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span>
 </span></code></pre></div>
 
     <div class="doc doc-contents ">
 
         <p>Send <code>item</code>, as <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;send&lt;/span&gt;" href="./#sharedbox.SharedSendStream.send"><code>send</code></a> does, without blocking the event loop.</p>
+<p><code>timeout</code> has the meaning it has in <code>send</code>, including the release of
+readers under <code>on_full="release"</code>. An <code>asend</code> cancelled before its
+<code>timeout</code> passes releases nothing, so a sender that must not stall
+passes a <code>timeout</code> instead of wrapping the call in
+<code>asyncio.wait_for</code>.</p>
 <p>A cancelled <code>asend</code> may still have sent its item, if a reader made
 room just as it was cancelled.</p>
 
@@ -4925,6 +5006,16 @@ room just as it was cancelled.</p>
         </tr>
       </thead>
       <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-external" href="https://docs.python.org/3/builtins/exceptions.html#TimeoutError">TimeoutError</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If <code>timeout</code> seconds pass first; the item is not sent.</p>
+              </div>
+            </td>
+          </tr>
           <tr class="doc-section-item">
             <td>
                   <code><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;StreamClosedError&lt;/span&gt; (&lt;code&gt;sharedbox._native.StreamClosedError&lt;/code&gt;)" href="../errors/#sharedbox.StreamClosedError">StreamClosedError</a></code>
@@ -4976,6 +5067,10 @@ another thread or task holds the slot from
   &lt;span class=&quot;doc doc-labels&quot;&gt;
       &lt;small class=&quot;doc doc-label doc-label-async&quot;&gt;&lt;code&gt;async&lt;/code&gt;&lt;/small&gt;
   &lt;/span&gt;" href="./#sharedbox.SharedSendStream.awriting"><code>awriting</code></a>.</p>
+<p>With <code>on_full="release"</code>, a lossless reader that is a full ring
+behind is released at once and the item is sent. The call still
+raises <code>WouldBlock</code> while another thread or task holds the slot, and
+while a reader from sharedbox 0.7.0 or earlier holds the sender back.</p>
 
 
 <p><span class="doc-section-title">Raises:</span></p>
@@ -5050,6 +5145,9 @@ sent or the block ends, readers see nothing new, and a send or
 <code>writing</code> on this sender from another thread or task waits. That
 includes a task started inside the block by <code>asyncio.wait_for</code> or
 <code>create_task</code>.</p>
+<p>With <code>on_full="release"</code>, the wait for a free slot ends after
+<code>timeout</code> seconds by releasing the lossless readers that hold it
+back, as in <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;send&lt;/span&gt;" href="./#sharedbox.SharedSendStream.send"><code>send</code></a>.</p>
 
 
 <p><span class="doc-section-title">Raises:</span></p>
@@ -5090,8 +5188,8 @@ array of <code>template</code> has a shape beyond its <code>MaxShape</code>.</p>
             <td>
               <div class="doc-md-description">
                 <p>If <code>timeout</code> seconds pass while a lossless reader is a full ring
-behind, or while another thread or task holds the slot from
-<code>writing</code> or <code>awriting</code>.</p>
+behind and the sender does not release it, or while another
+thread or task holds the slot from <code>writing</code> or <code>awriting</code>.</p>
               </div>
             </td>
           </tr>
@@ -5142,13 +5240,14 @@ this sender wait until they time out. Closing the sender ends them.</p>
   </span>
 
 <a href="#sharedbox.SharedSendStream.awriting" class="headerlink" title="Permanent link">&para;</a></h3>
-<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">awriting</span><span class="p">(</span><span class="n">template</span><span class="p">:</span> <span class="n">T</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">AsyncGenerator</span><span class="p">[</span><span class="n">SendSlot</span><span class="p">[</span><span class="n">T</span><span class="p">],</span> <span class="kc">None</span><span class="p">]</span>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">awriting</span><span class="p">(</span><span class="n">template</span><span class="p">:</span> <span class="n">T</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">timeout</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">AsyncGenerator</span><span class="p">[</span><span class="n">SendSlot</span><span class="p">[</span><span class="n">T</span><span class="p">],</span> <span class="kc">None</span><span class="p">]</span>
 </span></code></pre></div>
 
     <div class="doc doc-contents ">
 
         <p>Reserve the next slot, as <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;writing&lt;/span&gt;" href="./#sharedbox.SharedSendStream.writing"><code>writing</code></a> does, without blocking the event loop.</p>
-<p>A cancelled <code>awriting</code> reserves nothing.</p>
+<p><code>timeout</code> has the meaning it has in <code>writing</code>. An <code>awriting</code> cancelled
+before its <code>timeout</code> passes reserves nothing and releases no reader.</p>
 
 
 <p><span class="doc-section-title">Raises:</span></p>
@@ -5168,6 +5267,16 @@ this sender wait until they time out. Closing the sender ends them.</p>
               <div class="doc-md-description">
                 <p>If <code>template</code> is <code>None</code> and the item is not an array, or
 <code>template</code> is not of the item type.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-external" href="https://docs.python.org/3/builtins/exceptions.html#TimeoutError">TimeoutError</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If <code>timeout</code> seconds pass first.</p>
               </div>
             </td>
           </tr>
@@ -5554,7 +5663,7 @@ it is one more than this.</p>
 
     <div class="doc doc-contents ">
 
-        <p>Items a lossy or latest reader skipped; always 0 for a lossless reader.</p>
+        <p>Items a lossy or latest reader skipped, or a lossless reader lost to releases.</p>
 
     </div>
 
@@ -5578,7 +5687,7 @@ it is one more than this.</p>
 
     <div class="doc doc-contents ">
 
-        <p>The reader's psygnal signals: <code>received</code> as <code>(item, position)</code> for each item, and <code>ended</code> once per delivery.</p>
+        <p>The reader's psygnal signals: <code>received</code> as <code>(item, position)</code> for each item, <code>released</code> as <code>(missed,)</code> when the sender releases the reader, and <code>ended</code> once per delivery.</p>
 <p>Connecting the first <code>received</code> callback starts delivery on the reader's
 background thread, and disconnecting the last one stops it. While
 delivery runs, every other way of receiving from this reader raises
@@ -5634,6 +5743,17 @@ methods <code>SignalInstance._append_slot</code> and <code>_remove_slot</code>.<
         </tr>
       </thead>
       <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;ReaderReleased&lt;/span&gt; (&lt;code&gt;sharedbox._native.ReaderReleased&lt;/code&gt;)" href="../errors/#sharedbox.ReaderReleased">ReaderReleased</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If the sender released this lossless reader; the next receive
+returns the newest item.</p>
+              </div>
+            </td>
+          </tr>
           <tr class="doc-section-item">
             <td>
                   <code><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;EndOfStream&lt;/span&gt; (&lt;code&gt;sharedbox._native.EndOfStream&lt;/code&gt;)" href="../errors/#sharedbox.EndOfStream">EndOfStream</a></code>
@@ -5736,6 +5856,17 @@ runs before anything is received, so a refused call takes no item.</p>
       <tbody>
           <tr class="doc-section-item">
             <td>
+                  <code><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;ReaderReleased&lt;/span&gt; (&lt;code&gt;sharedbox._native.ReaderReleased&lt;/code&gt;)" href="../errors/#sharedbox.ReaderReleased">ReaderReleased</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If the sender released this lossless reader; the next receive
+returns the newest item.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
                   <code><a class="autorefs autorefs-external" href="https://docs.python.org/3/builtins/exceptions.html#TypeError">TypeError</a></code>
             </td>
             <td>
@@ -5797,6 +5928,30 @@ stopping after the last <code>events.received</code> callback disconnected, so
 an item that call hands back is received first.</p>
 
 
+<p><span class="doc-section-title">Raises:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;ReaderReleased&lt;/span&gt; (&lt;code&gt;sharedbox._native.ReaderReleased&lt;/code&gt;)" href="../errors/#sharedbox.ReaderReleased">ReaderReleased</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If the sender released this lossless reader; the next receive
+returns the newest item.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
     </div>
 
 </div>
@@ -5817,6 +5972,30 @@ an item that call hands back is received first.</p>
         <p>As <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;receive_into&lt;/span&gt;" href="./#sharedbox.SharedReceiveStream.receive_into"><code>receive_into</code></a>, raising <code>WouldBlock</code> if no item is waiting.</p>
 
 
+<p><span class="doc-section-title">Raises:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;ReaderReleased&lt;/span&gt; (&lt;code&gt;sharedbox._native.ReaderReleased&lt;/code&gt;)" href="../errors/#sharedbox.ReaderReleased">ReaderReleased</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If the sender released this lossless reader; the next receive
+returns the newest item.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
     </div>
 
 </div>
@@ -5835,6 +6014,7 @@ an item that call hands back is received first.</p>
     <div class="doc doc-contents ">
 
         <p>Return an iterator of items read into the arrays in <code>out</code>, as <code>receive_into</code> takes it, for <code>for</code>.</p>
+<p>It raises <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;ReaderReleased&lt;/span&gt;" href="../errors/#sharedbox.ReaderReleased"><code>ReaderReleased</code></a> as <code>receive</code> does.</p>
 
 
     </div>
@@ -5878,7 +6058,9 @@ an item that call hands back is received first.</p>
 <p>The future is a <code>concurrent.futures.Future</code>, so
 <code>concurrent.futures.wait</code> and <code>asyncio.wrap_future</code> take it. Its
 exception is <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;EndOfStream&lt;/span&gt;" href="../errors/#sharedbox.EndOfStream"><code>EndOfStream</code></a> once the stream
-has ended, and <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;StreamClosedError&lt;/span&gt;" href="../errors/#sharedbox.StreamClosedError"><code>StreamClosedError</code></a> if
+has ended, <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;ReaderReleased&lt;/span&gt;" href="../errors/#sharedbox.ReaderReleased"><code>ReaderReleased</code></a> if the sender
+released the reader, and
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;StreamClosedError&lt;/span&gt;" href="../errors/#sharedbox.StreamClosedError"><code>StreamClosedError</code></a> if
 the reader closes first. <code>out</code>, when given, is what
 <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;receive_into&lt;/span&gt;" href="./#sharedbox.SharedReceiveStream.receive_into"><code>receive_into</code></a> takes.</p>
 <p>Cancel the future before it starts to drop it. A running call cannot
@@ -6024,6 +6206,31 @@ callbacks; None for a group tied to no reader.</p>
     <div class="doc doc-contents ">
 
         <p>Emitted once per delivery, when it reaches the end of the stream.</p>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h3 id="sharedbox.ReceiveEvents.released" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-attribute"></code>            <span class="doc doc-object-name doc-attribute-name">released</span>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-class-attribute"><code>class-attribute</code></small>
+      <small class="doc doc-label doc-label-instance-attribute"><code>instance-attribute</code></small>
+  </span>
+
+<a href="#sharedbox.ReceiveEvents.released" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">released</span> <span class="o">=</span> <span class="n">Signal</span><span class="p">(</span><span class="nb">int</span><span class="p">)</span>
+</span></code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Emitted as <code>(missed,)</code> when the sender released this lossless reader; delivery goes on at the newest item.</p>
 
     </div>
 

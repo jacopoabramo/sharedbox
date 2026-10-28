@@ -13,6 +13,7 @@ from sharedbox import (
     DType,
     EndOfStream,
     MaxShape,
+    ReaderReleased,
     Shape,
     SharedReceiveStream,
     SharedSendStream,
@@ -119,6 +120,25 @@ def read_sacks(reader: SharedReceiveStream[Sack]) -> None:
 # --8<-- [end:shapes]
 
 
+# --8<-- [start:release]
+def sort_without_stalling(sender: SharedSendStream[Letter], count: int) -> None:
+    for i in range(count):
+        sender.send(Letter(i, "Ada", np.full((32, 32), i, np.uint8)), timeout=0.1)
+
+
+def file_letters(reader: SharedReceiveStream[Letter]) -> None:
+    while True:
+        try:
+            for letter in reader:
+                print("filed", letter.index)
+            return
+        except ReaderReleased as released:
+            print("missed", released.missed)
+
+
+# --8<-- [end:release]
+
+
 # --8<-- [start:main]
 if __name__ == "__main__":
     context = mp.get_context("spawn")
@@ -159,3 +179,9 @@ if __name__ == "__main__":
             send_sacks(sack_sender)
         read_sacks(sack_reader)
     SharedStream.unlink("example-sorting:sacks")
+    with SharedStream.create(Letter, "example-sorting:release", capacity=4) as stream:
+        reader = stream.reader()
+        with stream.sender(on_full="release") as sender:
+            sort_without_stalling(sender, 6)
+        file_letters(reader)
+    SharedStream.unlink("example-sorting:release")
