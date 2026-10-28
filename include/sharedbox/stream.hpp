@@ -161,8 +161,8 @@ struct stream_layout {
         std::memcpy(&h, base, offsetof(stream_header, write_pos));
         return h;
     }
-    // Line 1 of the copied header, after its line 0 passed the core checks. Every offset must be the
-    // one create computes from the shape, so nothing else needs a range check.
+    // Line 1 of the copied header, after its line 0 passed the core checks. The offsets of the fixed
+    // parts must be the ones create computes from the shape; the metadata area is checked on its own below.
     static status check_geometry(const stream_header &h, std::uint64_t mapped) noexcept {
         if (h.capacity < min_stream_capacity || h.max_readers == 0 || h.max_readers > max_stream_readers ||
             h.common.waiter_slots != h.max_readers + 1 || h.slot_size < 64 || h.slot_size % 64 != 0 ||
@@ -174,12 +174,11 @@ struct stream_layout {
         if (h.readers != shape.readers || h.slots != shape.slots || h.types != shape.types)
             return status::corrupt;
         if (h.metadata == 0)
-            return h.metadata_size == 0 && shape.size == mapped ? status::ok : status::corrupt;
-        // The area ends the mapping, so the page-rounded table end is not the mapping size then.
+            return h.metadata_size == 0 && shape.size <= mapped ? status::ok : status::corrupt;
         const bool placed = h.metadata % align64 == 0 && h.metadata >= shape.types + h.types_size &&
                             h.metadata <= mapped && h.metadata_size >= sizeof(metadata_line) &&
                             h.metadata_size <= mapped - h.metadata;
-        if (!placed || round_up(h.metadata + h.metadata_size, page_size) != mapped)
+        if (!placed || round_up(h.metadata + h.metadata_size, page_size) > mapped)
             return status::corrupt;
         return status::ok;
     }
@@ -852,9 +851,8 @@ inline result<std::uint64_t> stream_sender::add_metadata(std::span<const std::by
     detail::stream_state &s = *s_;
     if (s.metadata == nullptr)
         return unexpected(status::metadata_full);
-    if (doc.size() > detail::max_metadata_document(s.metadata_first.ring_size) || !metadata_ok(doc))
-        return unexpected(status::range);
-    // Only this sender stores write_pos. Version u may go once every item under it has left the ring, that is
+    // Only this sender stores write_pos, so this must not run at the same time as send or begin on the
+    // same sender. Version u may go once every item under it has left the ring, that is
     // once the position of version u + 1 is at most write_pos - capacity.
     const std::uint64_t p = detail::atomic(s.hdr->write_pos).load(std::memory_order_relaxed);
     return detail::add_metadata(

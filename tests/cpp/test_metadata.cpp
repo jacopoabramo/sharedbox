@@ -838,3 +838,60 @@ TEST_CASE("a forged stream metadata offset is refused") {
     CHECK(stream_open_status(name) == status::ok);
     static_cast<void>(unlink(name));
 }
+
+TEST_CASE("a version that covers no item is reclaimed without waiting") {
+    const std::string name = unique("meta-stream-empty-version");
+    stream made = make_stream(name, 8, metadata_spec{cbor({0x01}), 1024, 2});
+    auto sender = made.sender();
+    auto reader = made.reader(read_mode::lossy, start_at::newest);
+    REQUIRE(sender);
+    REQUIRE(reader);
+    CHECK(sender->add_metadata(cbor({0x02})).value_or(0) == 2);
+    CHECK(sender->add_metadata(cbor({0x03})).value_or(0) == 3);
+    CHECK(sender->add_metadata(cbor({0x04})).value_or(0) == 4);
+    CHECK(reader->metadata_version_at(0).value_or(0) == 4);
+    send_items(*sender, 3);
+    CHECK(sender->add_metadata(cbor({0x05})).value_or(0) == 5);
+    CHECK(code(sender->add_metadata(cbor({0x06}))) == status::metadata_full);
+    for (const std::uint64_t position : {0, 1, 2})
+        CHECK(reader->metadata_version_at(position).value_or(0) == 4);
+    CHECK(reader->metadata_version_at(3).value_or(0) == 5);
+    send_items(*sender, 8);
+    CHECK(sender->add_metadata(cbor({0x06})).value_or(0) == 6);
+    CHECK(reader->metadata_version_at(11).value_or(0) == 6);
+    CHECK(reader->metadata_version_at(3).value_or(0) == 5);
+    static_cast<void>(unlink(name));
+}
+
+TEST_CASE("a stream refuses to overwrite the bytes of a version an item needs") {
+    const std::string name = unique("meta-stream-bytes");
+    stream made = make_stream(name, 8, metadata_spec{byte_string(26, 1), 96, 64});
+    auto sender = made.sender();
+    REQUIRE(sender);
+    send_items(*sender, 3);
+    REQUIRE(sender->add_metadata(byte_string(26, 2)).value_or(0) == 2);
+    send_items(*sender, 3);
+    REQUIRE(sender->add_metadata(byte_string(26, 3)).value_or(0) == 3);
+    CHECK(code(sender->add_metadata(byte_string(26, 4))) == status::metadata_full);
+    CHECK(made.metadata_head() == 3);
+    send_items(*sender, 5);
+    CHECK(sender->add_metadata(byte_string(26, 4)).value_or(0) == 4);
+    CHECK(code(made.metadata_length(1)) == status::not_found);
+    CHECK(read_stream_version(made, 2) == byte_string(26, 2));
+    static_cast<void>(unlink(name));
+}
+
+TEST_CASE("a stream mapping larger than its area needs opens") {
+    const std::string name = unique("meta-stream-larger");
+    const auto geometry = [&](const metadata_spec &spec, std::uint64_t extra) {
+        stream made = make_stream(name, 4, spec);
+        const stream_header &h = *static_cast<const stream_header *>(made.base());
+        const stream_header copy = detail::stream_layout::copy_header(&h);
+        const status rc = detail::stream_layout::check_geometry(copy, h.common.size + extra);
+        static_cast<void>(unlink(name));
+        return rc;
+    };
+    CHECK(geometry(metadata_spec{cbor({0x01}), 1024, 4}, 0) == status::ok);
+    CHECK(geometry(metadata_spec{cbor({0x01}), 1024, 4}, 4096) == status::ok);
+    CHECK(geometry(metadata_spec{}, 4096) == status::ok);
+}

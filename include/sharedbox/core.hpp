@@ -2443,7 +2443,9 @@ result<std::uint64_t> add_metadata(std::byte *area, const metadata_line &line, s
         // u + 1 is at most newest, so its entry is not reused yet and still holds its position, even after an
         // earlier add overwrote its bytes and cleared its seq.
         metadata_entry &next = metadata_entry_of(area, line, u + 1);
-        if (!may_reclaim(atomic(next.position).load(std::memory_order_relaxed)))
+        const std::uint64_t next_position = atomic(next.position).load(std::memory_order_relaxed);
+        // A version that starts where the next one does covers no item, so nothing needs it.
+        if (e.position != next_position && !may_reclaim(next_position))
             return unexpected(status::metadata_full);
     }
     for (std::uint64_t u = oldest; u < newest; ++u) {
