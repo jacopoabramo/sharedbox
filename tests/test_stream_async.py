@@ -16,6 +16,7 @@ from crossproc import fork
 
 from sharedbox import (
     DType,
+    ReaderReleased,
     Shape,
     SharedReceiveStream,
     SharedSendStream,
@@ -478,3 +479,37 @@ def test_an_asend_inside_awriting_raises_runtime_error(unique_name: str) -> None
             return stream.statistics().sent
 
     assert asyncio.run(run()) == 1
+
+
+def test_asend_with_a_timeout_releases(unique_name: str) -> None:
+    """Send after the timeout under release, and raise ReaderReleased from async for."""
+
+    async def run() -> int:
+        with SharedStream.create(int, unique_name, capacity=4) as stream:
+            reader = stream.reader()
+            sender = stream.sender(on_full="release")
+            for i in range(4):
+                await sender.asend(i)
+            await sender.asend(4, timeout=0.1)
+            with pytest.raises(ReaderReleased) as released:
+                async for _ in reader:
+                    pass
+            return released.value.missed
+
+    assert asyncio.run(run()) == 4
+
+
+def test_a_cancelled_asend_releases_nothing(unique_name: str) -> None:
+    """Cancel a waiting asend and find the reader still at its first item."""
+
+    async def run() -> int:
+        with SharedStream.create(int, unique_name, capacity=4) as stream:
+            reader = stream.reader()
+            sender = stream.sender(on_full="release")
+            for i in range(4):
+                await sender.asend(i)
+            with pytest.raises(TimeoutError):
+                await asyncio.wait_for(sender.asend(4, timeout=5), 0.1)
+            return reader.receive(timeout=5)
+
+    assert asyncio.run(run()) == 0

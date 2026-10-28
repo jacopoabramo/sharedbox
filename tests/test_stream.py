@@ -19,10 +19,12 @@ from sharedbox import (
     DType,
     EndOfStream,
     MaxShape,
+    ReaderReleased,
     ReceiveStreamStatistics,
     SchemaMismatchError,
     Shape,
     SharedBox,
+    SharedSendStream,
     SharedStream,
     StreamBusyError,
     StreamClosedError,
@@ -938,3 +940,114 @@ def test_a_stored_shape_beyond_the_maximum_is_refused(unique_name: str) -> None:
         assert not out.any()
         assert plain.receive(timeout=5).run == 2
         assert into.receive_into({"counts": out}, timeout=5).run == 2
+
+
+def fill(sender: SharedSendStream[int], count: int) -> None:
+    """Send the integers below `count`."""
+    for i in range(count):
+        sender.send(i, timeout=5)
+
+
+def test_a_release_lets_the_sender_go_on_and_the_reader_resume(
+    unique_name: str,
+) -> None:
+    """Release a lossless reader a full ring behind, then receive from the newest item."""
+    with SharedStream.create(int, unique_name, capacity=4) as stream:
+        reader = stream.reader()
+        sender = stream.sender(on_full="release")
+        fill(sender, 4)
+        sender.send(4, timeout=0.1)
+        with pytest.raises(ReaderReleased) as released:
+            reader.receive(timeout=1)
+        assert released.value.missed == 4
+        assert reader.missed == 4
+        assert reader.receive(timeout=1) == 4
+        sender.send(5)
+        assert reader.receive(timeout=1) == 5
+
+
+def test_the_wait_policy_keeps_timeout_error(unique_name: str) -> None:
+    """Raise TimeoutError and release nothing under the default policy."""
+    with SharedStream.create(int, unique_name, capacity=4) as stream:
+        reader = stream.reader()
+        sender = stream.sender()
+        fill(sender, 4)
+        with pytest.raises(TimeoutError):
+            sender.send(4, timeout=0.1)
+        assert reader.receive(timeout=1) == 0
+        assert reader.missed == 0
+
+
+def test_send_nowait_releases_at_once(unique_name: str) -> None:
+    """Send without raising WouldBlock under release and tell the reader."""
+    with SharedStream.create(int, unique_name, capacity=4) as stream:
+        reader = stream.reader()
+        sender = stream.sender(on_full="release")
+        fill(sender, 4)
+        sender.send_nowait(4)
+        with pytest.raises(ReaderReleased):
+            reader.receive_nowait()
+        assert reader.receive_nowait() == 4
+
+
+def test_writing_with_a_timeout_releases(unique_name: str) -> None:
+    """Reserve a slot after a release timeout and tell the reader."""
+    with SharedStream.create(int, unique_name, capacity=4) as stream:
+        reader = stream.reader()
+        sender = stream.sender(on_full="release")
+        fill(sender, 4)
+        with sender.writing(0, timeout=0.1) as slot:
+            slot.send(4)
+        with pytest.raises(ReaderReleased):
+            reader.receive(timeout=1)
+        assert reader.receive(timeout=1) == 4
+
+
+def test_a_release_waits_the_whole_timeout(unique_name: str) -> None:
+    """Wait the full timeout, across several native steps, before releasing."""
+    with SharedStream.create(int, unique_name, capacity=4) as stream:
+        reader = stream.reader()
+        sender = stream.sender(on_full="release")
+        fill(sender, 4)
+        start = time.monotonic()
+        sender.send(4, timeout=1.3)
+        assert time.monotonic() - start >= 1.3
+        with pytest.raises(ReaderReleased):
+            reader.receive(timeout=1)
+
+
+def test_a_held_writing_slot_is_not_released(unique_name: str) -> None:
+    """Raise TimeoutError and WouldBlock while another thread holds the slot, and release nobody."""
+    with SharedStream.create(int, unique_name, capacity=4) as stream:
+        reader = stream.reader()
+        sender = stream.sender(on_full="release")
+        fill(sender, 3)
+        holding, done = threading.Event(), threading.Event()
+
+        def hold() -> None:
+            with sender.writing(0):
+                holding.set()
+                done.wait(10)
+
+        thread = threading.Thread(target=hold)
+        thread.start()
+        try:
+            assert holding.wait(5)
+            with pytest.raises(TimeoutError):
+                sender.send(9, timeout=0.2)
+            with pytest.raises(WouldBlock):
+                sender.send_nowait(9)
+        finally:
+            done.set()
+            thread.join()
+        assert [reader.receive(timeout=1) for _ in range(3)] == [0, 1, 2]
+        assert reader.missed == 0
+
+
+def test_sender_refuses_an_unknown_policy(unique_name: str) -> None:
+    """Raise ValueError for a policy other than wait and release."""
+    with (
+        SharedStream.create(int, unique_name, capacity=4) as stream,
+        pytest.raises(ValueError, match="drop"),
+    ):
+        stream.sender(on_full="drop")  # type: ignore[arg-type]

@@ -50,6 +50,10 @@ struct StreamClosed : std::runtime_error {
 struct Interrupted : std::runtime_error {
     using std::runtime_error::runtime_error;
 };
+struct ReaderReleased : std::runtime_error {
+    ReaderReleased(const std::string &what, std::uint64_t missed) : std::runtime_error(what), missed(missed) {}
+    std::uint64_t missed;
+};
 
 /// A stream mapped in this process. The Stream object and every end made from it share it, so the mapping
 /// outlives the ends. It holds no Python object: the Stream and each end own a reference to the Types
@@ -216,12 +220,12 @@ public:
         : End(std::move(core), types), end_(std::move(end)) {}
     ~Sender() { close(); }
 
-    std::uint64_t send(nb::handle value, double timeout) {
-        reserve(timeout);
+    std::uint64_t send(nb::handle value, double timeout, bool release) {
+        reserve(timeout, release);
         return commit(value);
     }
 
-    void reserve(double timeout) {
+    void reserve(double timeout, bool release) {
         check_open();
         const seconds wait = wait_of(timeout);
         {
@@ -250,7 +254,8 @@ public:
                 } else {
                     const detail::clock::duration left =
                         (std::max)(deadline - detail::clock::now(), detail::clock::duration::zero());
-                    got.emplace(end_.begin(std::chrono::duration_cast<seconds>(left)));
+                    got.emplace(end_.begin(std::chrono::duration_cast<seconds>(left),
+                                           release ? on_full::release : on_full::wait));
                     if (*got)
                         hold(**got);
                 }
@@ -460,10 +465,12 @@ public:
             scratch = large.get();
         }
         std::optional<result<received>> got;
+        std::uint64_t released = 0;
         {
             nb::gil_scoped_release unlocked;
             std::lock_guard lock(*calls_);
             if (!closed_.load()) {
+                const std::uint64_t before = end_.missed();
                 got.emplace(end_.receive_with(
                     [&](std::span<const std::byte> item) noexcept {
                         std::size_t at = 0;
@@ -487,12 +494,18 @@ public:
                         std::memcpy(scratch + at, item.data() + at, size - at);
                     },
                     wait));
+                released = end_.missed() - before;
                 missed_total_.store(end_.missed(), std::memory_order_relaxed);
             }
         }
         if (!got)
             check_open();
         if (!*got) {
+            if (got->error().code == status::released)
+                throw ReaderReleased("stream '" + name_ +
+                                         "': the sender released this lossless reader, which lost " +
+                                         std::to_string(released) + " items",
+                                     released);
             if (got->error().code == status::corrupt)
                 throw SchemaMismatch("stream '" + name_ +
                                      "': the sender overwrote an item this lossless reader had not read");
@@ -649,10 +662,24 @@ void bind_stream(nb::module_ &m) {
     nb::exception<StreamBusy>(m, "StreamBusyError", PyExc_RuntimeError);
     nb::exception<StreamClosed>(m, "StreamClosedError", PyExc_ValueError);
     nb::exception<Interrupted>(m, "_Interrupted");
+    nb::exception<ReaderReleased> released(m, "ReaderReleased");
+    // Registered after the exception, so it is tried first and can set the attribute the plain translator cannot.
+    nb::register_exception_translator(
+        [](const std::exception_ptr &p, void *type) {
+            try {
+                std::rethrow_exception(p);
+            } catch (const ReaderReleased &e) {
+                nb::object kind = nb::borrow(static_cast<PyObject *>(type));
+                nb::object instance = kind(e.what());
+                instance.attr("missed") = e.missed;
+                PyErr_SetObject(kind.ptr(), instance.ptr());
+            }
+        },
+        released.ptr());
 
     nb::class_<Sender>(m, "Sender", nb::type_slots(gc_slots<Sender>))
-        .def("send", &Sender::send, "value"_a.none(), "timeout"_a)
-        .def("reserve", &Sender::reserve, "timeout"_a)
+        .def("send", &Sender::send, "value"_a.none(), "timeout"_a, "release"_a = false)
+        .def("reserve", &Sender::reserve, "timeout"_a, "release"_a = false)
         .def("commit", &Sender::commit, "value"_a.none())
         .def("abandon", &Sender::abandon)
         .def("interrupt", &Sender::interrupt)

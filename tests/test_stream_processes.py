@@ -22,6 +22,7 @@ from streamproc import (
     read_frames,
     read_ints_as,
     read_then_die,
+    read_when_released,
     reserve_then_die,
     send_blocks,
     send_frames,
@@ -283,3 +284,22 @@ def test_max_shape_items_change_shape_across_processes(unique_name: str) -> None
     assert [item.run for item in got] == list(range(len(BLOCK_SHAPES)))
     for item in got:
         np.testing.assert_array_equal(item.counts, block(item.run).counts)
+
+
+def test_a_slow_reader_in_another_process_is_released(unique_name: str) -> None:
+    """Release a lossless reader of another process and report the lost count and the newest item."""
+    with SharedStream.create(int, unique_name, capacity=4) as stream:
+        ready, go = CONTEXT.Event(), CONTEXT.Event()
+        results: Queue[tuple[str, int, int]] = CONTEXT.Queue()
+        child = CONTEXT.Process(
+            target=read_when_released, args=(unique_name, ready, go, results)
+        )
+        child.start()
+        assert ready.wait(60)
+        sender = stream.sender(on_full="release")
+        for i in range(4):
+            sender.send(i, timeout=10)
+        sender.send(4, timeout=0.2)
+        go.set()
+        assert results.get(timeout=60) == ("ReaderReleased", 4, 4)
+        finish(child)
