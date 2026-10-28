@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import atexit
 import collections
 import contextlib
 import functools
@@ -73,6 +72,7 @@ YIELD_AFTER: Final = 0.001
 LIVE_ENDS: weakref.WeakSet[SharedSendStream[Any] | SharedReceiveStream[Any]] = (
     weakref.WeakSet()
 )
+LIVE_STREAMS: weakref.WeakSet[SharedStream[Any]] = weakref.WeakSet()
 
 
 @dataclass(frozen=True)
@@ -373,6 +373,7 @@ class SharedStream(Generic[T]):
         stream._name = native.name
         stream._ends = weakref.WeakSet()
         stream._sender = None
+        LIVE_STREAMS.add(stream)
         return stream
 
     @property
@@ -1727,9 +1728,6 @@ def stop_stream_workers() -> None:
             EXIT_WAIT,
             ", ".join(late),
         )
-
-
-atexit.register(stop_stream_workers)
 
 
 def reset_streams_after_fork() -> None:
