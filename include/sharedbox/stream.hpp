@@ -492,6 +492,7 @@ private:
     friend class stream;
     result<void> wait_for_data(detail::clock::time_point deadline);
     void advance() noexcept;
+    void wake_sender() noexcept;
 
     detail::stream_state *s_ = nullptr;
     std::uint32_t pid_ = 0;
@@ -796,7 +797,8 @@ inline result<void> stream_sender::gate(std::uint64_t p, seconds timeout, on_ful
         const std::uint64_t m = lossless_min(p, raised);
         if (p >= m + s.capacity)
             return unexpected(status::timeout);
-        detail::atomic(h.release_floor).store(raised, std::memory_order_relaxed);
+        // A floor left above raised stays, so the floor only grows.
+        detail::atomic(h.release_floor).store((std::max)(raised, floor), std::memory_order_relaxed);
         // Orders the floor before the odd seq begin stores next, so a reader whose copy fails on that seq
         // sees the floor.
         std::atomic_thread_fence(std::memory_order_release);
@@ -966,14 +968,19 @@ inline result<void> stream_reader::wait_for_data(detail::clock::time_point deadl
 
 // Publishes this reader's position and, for a lossless reader, wakes a sender waiting for space.
 inline void stream_reader::advance() noexcept {
-    detail::stream_state &s = *s_;
-    stream_header &h = *s.hdr;
-    detail::atomic(s.readers[entry_].position).store(r_, std::memory_order_release);
+    detail::atomic(s_->readers[entry_].position).store(r_, std::memory_order_release);
     if (mode_ != read_mode::lossless)
         return;
     // The sender counts itself in space_waiting before it rescans the positions, so either it sees this
-    // position or this load sees its count.
+    // position or wake_sender's load sees its count.
     std::atomic_thread_fence(std::memory_order_seq_cst);
+    wake_sender();
+}
+
+// Wakes a sender waiting for space. The caller stores its position and issues a seq_cst fence first.
+inline void stream_reader::wake_sender() noexcept {
+    detail::stream_state &s = *s_;
+    stream_header &h = *s.hdr;
     if (detail::atomic(h.space_waiting).load(std::memory_order_seq_cst) != 0) {
         detail::atomic(h.space_word).fetch_add(1, std::memory_order_seq_cst);
         detail::wake_all(s.waiters, h.space_word);
@@ -1043,6 +1050,9 @@ result<received> stream_reader::receive_with(F &&copy, seconds timeout) {
                     detail::atomic(h.readers_epoch).fetch_add(1, std::memory_order_seq_cst);
                     // As at open: the sender's next gate sees the new position before it overwrites it.
                     std::atomic_thread_fence(std::memory_order_seq_cst);
+                    // A sender that ignores the floor still waits on this position; without the wake it
+                    // would sleep until its liveness delay.
+                    wake_sender();
                     return unexpected(status::released);
                 }
             }
