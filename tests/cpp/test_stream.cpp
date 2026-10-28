@@ -1028,7 +1028,7 @@ TEST_CASE("a send under the wait policy still times out") {
     static_cast<void>(unlink(name));
 }
 
-TEST_CASE("a reader whose mark is not its own start is never released") {
+TEST_CASE("a reader whose mark is not its own start and pid is never released") {
     const std::string name = unique("stream-release-mark");
     stream st = make(name, 4);
     auto reader = st.reader(read_mode::lossless, start_at::newest);
@@ -1036,10 +1036,20 @@ TEST_CASE("a reader whose mark is not its own start is never released") {
     REQUIRE((reader && sender));
     reader_entry &e = lossless_entry(st);
     CHECK(e.release_mark == e.owner_start);
+    CHECK(e.release_pid == e.owner_pid);
     fall_behind(st, *sender, *reader);
     for (const std::uint64_t mark : {std::uint64_t{0}, e.owner_start + 1}) {
         CAPTURE(mark);
         detail::atomic(e.release_mark).store(mark, std::memory_order_release);
+        const auto sent = send(*sender, 5, 0.0, on_full::release);
+        REQUIRE_FALSE(sent);
+        CHECK(sent.error().code == status::timeout);
+        CHECK(release_floor(st) == 0);
+    }
+    detail::atomic(e.release_mark).store(e.owner_start, std::memory_order_release);
+    for (const std::uint32_t pid : {std::uint32_t{0}, e.owner_pid + 1}) {
+        CAPTURE(pid);
+        detail::atomic(e.release_pid).store(pid, std::memory_order_release);
         const auto sent = send(*sender, 5, 0.0, on_full::release);
         REQUIRE_FALSE(sent);
         CHECK(sent.error().code == status::timeout);

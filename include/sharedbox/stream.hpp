@@ -65,8 +65,8 @@ struct stream_header {
 };
 
 // One line of the reader table. owner_pid is 0 when the entry is free, mode 0 until its reader has a
-// position. The reader is marked, so the sender may release it, while release_mark equals owner_start;
-// readers of earlier layouts never store it.
+// position. The reader is marked, so the sender may release it, while release_mark equals owner_start and
+// release_pid equals owner_pid; readers of earlier layouts never store either.
 struct reader_entry {
     std::uint64_t position;
     std::uint64_t owner_start;
@@ -74,7 +74,8 @@ struct reader_entry {
     std::uint32_t owner_pid;
     std::uint32_t mode;
     std::uint64_t release_mark;
-    std::uint8_t reserved[24];
+    std::uint32_t release_pid;
+    std::uint8_t reserved[20];
 };
 
 static_assert(std::is_standard_layout_v<stream_header> && std::is_trivially_copyable_v<stream_header>);
@@ -95,7 +96,8 @@ static_assert(offsetof(stream_header, space_word) == 192 && offsetof(stream_head
 static_assert(sizeof(reader_entry) == 64 && alignof(reader_entry) == 8);
 static_assert(offsetof(reader_entry, position) == 0 && offsetof(reader_entry, owner_start) == 8 &&
               offsetof(reader_entry, owner_pidns) == 16 && offsetof(reader_entry, owner_pid) == 24 &&
-              offsetof(reader_entry, mode) == 28 && offsetof(reader_entry, release_mark) == 32);
+              offsetof(reader_entry, mode) == 28 && offsetof(reader_entry, release_mark) == 32 &&
+              offsetof(reader_entry, release_pid) == 40);
 static_assert(offsetof(stream_header, write_pos) % detail::align64 == 0 &&
               offsetof(stream_header, sender_start) % detail::align64 == 0 &&
               offsetof(stream_header, sender_pidns) % detail::align64 == 0 &&
@@ -709,6 +711,7 @@ inline result<stream_reader> stream::reader(read_mode mode, start_at start) {
         detail::atomic(e.owner_start).store(detail::current_start(), std::memory_order_release);
         // Before the mode: the sender counts an entry as marked only from the mode on.
         detail::atomic(e.release_mark).store(detail::current_start(), std::memory_order_release);
+        detail::atomic(e.release_pid).store(pid, std::memory_order_release);
         const std::uint64_t w = detail::atomic(h.write_pos).load(std::memory_order_acquire);
         std::uint64_t r = start == start_at::newest ? (w == 0 ? 0 : w - 1) : (w > s.capacity ? w - s.capacity : 0);
         // A reader below the floor would be released at its first receive.
@@ -762,8 +765,11 @@ inline std::uint64_t stream_sender::lossless_min(std::uint64_t p, std::uint64_t 
             static_cast<std::uint32_t>(read_mode::lossless))
             continue;
         const std::uint64_t position = detail::atomic(e.position).load(std::memory_order_seq_cst);
-        if (position < floor && detail::atomic(e.release_mark).load(std::memory_order_acquire) ==
-                                    detail::atomic(e.owner_start).load(std::memory_order_acquire))
+        if (position < floor &&
+            detail::atomic(e.release_mark).load(std::memory_order_acquire) ==
+                detail::atomic(e.owner_start).load(std::memory_order_acquire) &&
+            detail::atomic(e.release_pid).load(std::memory_order_acquire) ==
+                detail::atomic(e.owner_pid).load(std::memory_order_acquire))
             continue;
         least = (std::min)(least, position);
     }
