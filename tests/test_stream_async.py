@@ -513,3 +513,38 @@ def test_a_cancelled_asend_releases_nothing(unique_name: str) -> None:
             return reader.receive(timeout=5)
 
     assert asyncio.run(run()) == 0
+
+
+def test_a_release_a_cancelled_anext_received_is_raised_by_the_next_receive(
+    unique_name: str, hold: Hold
+) -> None:
+    """Raise from the next receive the ReaderReleased that a cancelled anext had already received."""
+
+    async def run() -> tuple[int, int]:
+        with SharedStream.create(hold.type, unique_name, capacity=4) as stream:
+            reader = stream.reader()
+            sender = stream.sender(on_full="release")
+            first = asyncio.create_task(anext(reader))
+            await worker_started(unique_name)
+            hold.send_and_wait(sender)
+            for i in range(10, 14):
+                sender.send(hold.type(i))
+            sender.send(hold.type(14), timeout=0.1)
+            second = asyncio.create_task(anext(reader))
+            await asyncio.sleep(0.05)
+            hold.release.set()
+            # A blocking wait keeps the event loop from handing the result to second
+            # before it is cancelled.
+            deadline = time.monotonic() + 5
+            while stream.statistics().readers[0].position != 5:
+                assert time.monotonic() < deadline
+                time.sleep(0.01)  # noqa: ASYNC251
+            second.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await second
+            assert (await first).index == 1
+            with pytest.raises(ReaderReleased) as released:
+                reader.receive(timeout=5)
+            return released.value.missed, reader.receive(timeout=5).index
+
+    assert asyncio.run(run()) == (4, 14)

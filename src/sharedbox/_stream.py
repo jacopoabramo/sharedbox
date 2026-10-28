@@ -1168,7 +1168,9 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T]):
     def __init__(self, stream: SharedStream[Any], native: Reader) -> None:
         super().__init__(stream, native)
         self._position: int | None = None
-        self._carry: collections.deque[tuple[Any, int | None]] = collections.deque()
+        self._carry: collections.deque[tuple[Any, int | None] | ReaderReleased] = (
+            collections.deque()
+        )
         self._events: ReceiveEvents | None = None
         self._delivering = False
         self._generation = 0
@@ -1473,8 +1475,10 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T]):
                 return
             except ReaderReleased as released:
                 with events.received._lock:
-                    if not self._stopped(generation):
-                        self._emit(events.released, released.missed)
+                    if self._stopped(generation):
+                        self._carry.appendleft(released)
+                        return
+                    self._emit(events.released, released.missed)
                 continue
             except Exception:
                 logger.exception(
@@ -1523,7 +1527,10 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T]):
                     f"stream {self._stream.name!r}: the reader was closed"
                 )
             if self._carry:
-                item, position = self._carry.popleft()
+                kept = self._carry.popleft()
+                if isinstance(kept, ReaderReleased):
+                    raise kept
+                item, position = kept
                 self._position = position
                 if future is not None:
                     future.position = position
@@ -1551,10 +1558,16 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T]):
         future.add_done_callback(self._keep)
 
     def _keep(self, future: Future[Any]) -> None:
-        """Keep the item of a call whose awaiter gave up, for the next receive."""
-        if not future.cancelled() and future.exception() is None:
+        """Keep the item or the release of a call whose awaiter gave up, for the next receive."""
+        if future.cancelled():
+            return
+        error = future.exception()
+        if error is None:
             with self._lock:
                 self._carry.append((future.result(), cast(CallFuture, future).position))
+        elif isinstance(error, ReaderReleased):
+            with self._lock:
+                self._carry.append(error)
 
     def receive_future(self, out: Any = None, /) -> Future[T]:
         """Return a future of the next item, received by this reader's background thread.
