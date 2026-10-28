@@ -400,17 +400,21 @@ TEST_CASE("a forged head is refused without a walk over every version") {
     CHECK(code(a.version_at(UINT64_MAX, 0)) == status::not_found);
     CHECK(a.words == before);
 
-    // The newest version an add can make, with an entry that holds it: the next add's seq would wrap to 0.
+    // The head before the newest version an add can make, with an entry that holds it: the add still makes
+    // that version, and the add after it, whose seq would wrap to 0, is refused.
     const std::uint64_t last = detail::metadata_version_limit - 1;
-    metadata_entry &e = a.entry(last);
+    metadata_entry &e = a.entry(last - 1);
     e = a.entry(1);
-    e.seq = 2 * last + 2;
-    e.version = last;
-    a.head().store(last);
-    CHECK(a.read(last).value_or(std::vector<std::byte>{}) == byte_string(30, 1));
+    e.seq = 2 * (last - 1) + 2;
+    e.version = last - 1;
+    a.head().store(last - 1);
+    CHECK(a.read(last - 1).value_or(std::vector<std::byte>{}) == byte_string(30, 1));
+    CHECK(a.add(byte_string(30, 2), 1).value_or(0) == last);
+    CHECK(a.read(last).value_or(std::vector<std::byte>{}) == byte_string(30, 2));
     const std::vector<std::uint64_t> forged = a.words;
-    CHECK(code(a.add(byte_string(30, 2), 1)) == status::corrupt);
+    CHECK(code(a.add(byte_string(30, 3), 2)) == status::corrupt);
     CHECK(a.words == forged);
+    CHECK(a.head().load() == last);
 }
 
 TEST_CASE("a reclaim is decided by the position of the version after the one reclaimed") {

@@ -19,6 +19,7 @@ from typing import Any, Optional, Union
 
 import pytest
 from refs_future import Link
+from signatures import box_signature
 
 from sharedbox import (
     BoxClosedError,
@@ -32,15 +33,6 @@ from sharedbox import (
 
 if sys.platform.startswith("linux"):
     import resource
-
-
-def box_signature(plain: type) -> str:
-    """Return the signature of the dataclass `plain` followed by the keyword `metadata`, as a box with its fields has."""
-    signature = inspect.signature(plain)
-    metadata = inspect.Parameter(
-        "metadata", inspect.Parameter.KEYWORD_ONLY, default=None, annotation=object
-    )
-    return str(signature.replace(parameters=[*signature.parameters.values(), metadata]))
 
 
 class Motor(SharedBox, identity="sbtest/motor"):

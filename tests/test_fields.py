@@ -12,6 +12,7 @@ from typing import Annotated, Any, ClassVar, cast
 
 import pytest
 from os_names import os_name
+from signatures import box_signature
 
 from sharedbox import (
     Capacity,
@@ -50,15 +51,6 @@ class PlainStage:
 
 def post_init(self: object, *initvars: object) -> None:
     pass
-
-
-def box_signature(plain: type) -> str:
-    """Return the signature of the dataclass `plain` followed by the keyword `metadata`, as a box with its fields has."""
-    signature = inspect.signature(plain)
-    metadata = inspect.Parameter(
-        "metadata", inspect.Parameter.KEYWORD_ONLY, default=None, annotation=object
-    )
-    return str(signature.replace(parameters=[*signature.parameters.values(), metadata]))
 
 
 def box_twin(
@@ -474,7 +466,7 @@ def test_initvars_reach_post_init_in_order_and_are_not_stored(
     """Check that InitVar values reach __post_init__ in order and are not stored as fields."""
     with Offsets.create(unique_name, 5, 1, 2) as box:
         assert box.snapshot() == {"position": 5, "total": 102}
-        assert sorted(box.events) == ["metadata", "position", "total"]
+        assert list(box.events) == ["metadata", "position", "total"]
         assert not hasattr(box, "second")
         with Stored.attach(unique_name) as stored:
             assert stored.total == 102

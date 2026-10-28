@@ -20,7 +20,6 @@ class Info(TypedDict):
     unit: str
 
 
-
 class Motor(SharedBox[Info]):
     speed: int
 

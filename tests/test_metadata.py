@@ -1,4 +1,5 @@
 import math
+import os
 import queue
 import subprocess
 import sys
@@ -127,11 +128,11 @@ def test_documents_stay_in_the_checked_subset() -> None:
         [[], {}],
         b"",
         "",
+        nested(32),
     ]
     for value in documents:
         data = encode(value)
         assert check_subset(data) == len(data)
-    assert check_subset(encode(nested(32))) > 0
     assert encode(None) == bytes([0xF6])
     assert encode(True) == bytes([0xF5])
     assert encode(False) == bytes([0xF4])
@@ -171,6 +172,13 @@ def test_out_of_range_raises_value_error() -> None:
         encode(cycle)
 
 
+@pytest.mark.parametrize("value", ["\ud800", {"\udfff": 1}, ["a\udc00"]])
+def test_a_lone_surrogate_raises_value_error(value: object) -> None:
+    """Refuse a str holding a lone surrogate, as a value or as a key."""
+    with pytest.raises(ValueError):
+        encode(value)
+
+
 def test_decoded_values_are_read_only() -> None:
     """Refuse item assignment on a decoded map and on a map inside it."""
     decoded = decode(encode({"outer": {"inner": 1}}))
@@ -197,18 +205,25 @@ def test_document_cache_reads_once_per_version() -> None:
 
 
 def test_document_cache_is_bounded() -> None:
-    """Drop the oldest versions once many are cached."""
+    """Drop the least recently used version once 32 are cached, counting a version read again as used."""
     cache = DocumentCache()
-    for version in range(200):
-        cache.get(1, version, lambda: encode(None))
-    calls: list[int] = []
+    reads: list[int] = []
 
-    def read() -> bytes:
-        calls.append(1)
-        return encode(None)
+    def get(version: int) -> None:
+        def read() -> bytes:
+            reads.append(version)
+            return encode(version)
 
-    cache.get(1, 0, read)
-    assert calls
+        cache.get(1, version, read)
+
+    for version in range(31):
+        get(version)
+    get(0)
+    get(31)
+    get(32)
+    get(0)
+    get(1)
+    assert reads == [*range(33), 1]
 
 
 def test_newest_follows_a_moving_head() -> None:
@@ -253,7 +268,15 @@ def test_a_box_subclasses_a_parameterised_base(unique_name: str) -> None:
 def test_importing_sharedbox_keeps_the_gil_off() -> None:
     """Keep the GIL disabled after a fresh process imports sharedbox."""
     code = "import sharedbox, sys; sys.exit(int(sys._is_gil_enabled()))"
-    assert subprocess.run([sys.executable, "-c", code], check=False).returncode == 0
+    env = {key: value for key, value in os.environ.items() if key != "PYTHON_GIL"}
+    child = subprocess.run(
+        [sys.executable, "-c", code],
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert child.returncode == 0, child.stderr
 
 
 class Stage(SharedBox):
