@@ -2177,8 +2177,8 @@ private:
         return !check || sorted || keys_unique(first, pairs, depth);
     }
 
-    // Whether the keys of the checked map of pairs pairs at first are all different. Refuses the map when
-    // the memory to sort them cannot be had.
+    // Whether the pairs keys of the map starting at first, already checked, are all different. Refuses the
+    // map when the memory to sort them cannot be had.
     bool keys_unique(const std::byte *first, std::uint64_t pairs, std::uint32_t depth) noexcept {
         const auto n = static_cast<std::size_t>(pairs);
         std::unique_ptr<std::string_view[]> keys(new (std::nothrow) std::string_view[n]);
@@ -2243,6 +2243,9 @@ static_assert(offsetof(metadata_entry, seq) % align64 == 0 && offsetof(metadata_
               offsetof(metadata_entry, position) % align64 == 0);
 static_assert(offsetof(metadata_entry, offset) % align32 == 0 && offsetof(metadata_entry, length) % align32 == 0);
 
+// Versions are below this, so that 2 * version + 2, an entry's seq, does not wrap to 0.
+inline constexpr std::uint64_t metadata_version_limit = UINT64_MAX >> 1;
+
 // The bytes of an area of entries entries and a ring of ring_size bytes; UINT64_MAX when that overflows.
 inline std::uint64_t metadata_area_size(std::uint32_t entries, std::uint64_t ring_size) noexcept {
     const std::uint64_t fixed = sizeof(metadata_line) + std::uint64_t{entries} * sizeof(metadata_entry);
@@ -2254,9 +2257,10 @@ inline std::uint64_t metadata_area_size(std::uint32_t entries, std::uint64_t rin
 // start of the newest one.
 inline std::uint64_t max_metadata_document(std::uint64_t ring_size) noexcept { return ring_size / 3 / 8 * 8; }
 
-// Whether a line's geometry can be used at all. An area that fits a u32 size keeps every ring offset a u32.
+// Whether a line's geometry can be used at all: a ring below 24 bytes takes no document, and an area that
+// fits a u32 size keeps every ring offset a u32.
 inline bool metadata_line_ok(const metadata_line &line) noexcept {
-    return line.entries >= min_metadata_entries && line.entries <= max_metadata_entries && line.ring_size != 0 &&
+    return line.entries >= min_metadata_entries && line.entries <= max_metadata_entries && line.ring_size >= 24 &&
            line.ring_size % 8 == 0 && metadata_area_size(line.entries, line.ring_size) <= UINT32_MAX;
 }
 
@@ -2293,8 +2297,11 @@ inline metadata_entry &metadata_entry_of(const std::byte *area, const metadata_l
     return table[version % line.entries];
 }
 
-// Loads entry e's seq with acquire, then its fields into out; false when e does not hold version.
+// Loads entry e's seq with acquire, then its fields into out; false when e does not hold version, and for
+// a version no add makes.
 inline bool load_metadata_entry(metadata_entry &e, std::uint64_t version, metadata_entry &out) noexcept {
+    if (version >= metadata_version_limit)
+        return false;
     out.seq = atomic(e.seq).load(std::memory_order_acquire);
     if (out.seq != 2 * version + 2)
         return false;
@@ -2385,6 +2392,9 @@ result<std::uint64_t> add_metadata(std::byte *area, const metadata_line &line, s
     if (doc.size() > max_metadata_document(line.ring_size) || !metadata_ok(doc))
         return unexpected(status::range);
     const std::uint64_t newest = head.load(std::memory_order_acquire);
+    // Only a forged head reaches this; past it the walk below would cover almost every u64.
+    if (newest >= metadata_version_limit - 1)
+        return unexpected(status::corrupt);
     const std::uint64_t v = newest + 1;
     const std::uint64_t size = doc.size();
     std::uint64_t at = 0;

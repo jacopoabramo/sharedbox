@@ -47,6 +47,17 @@ std::vector<std::byte> nested(std::size_t count) {
 // The status of r, status::ok for a value, so a check on a refusal fails rather than crashes on a success.
 template <class T> status code(const result<T> &r) { return r ? status::ok : r.error().code; }
 
+// count maps, each holding the next under the key "", the innermost empty.
+std::vector<std::byte> nested_maps(std::size_t count) {
+    std::vector<std::byte> out;
+    for (std::size_t i = 1; i < count; ++i) {
+        out.push_back(std::byte{0xa1});
+        out.push_back(std::byte{0x60});
+    }
+    out.push_back(std::byte{0xa0});
+    return out;
+}
+
 // An area in a heap buffer, the checked copy of its first line an open would keep, and the head word that
 // a segment header would hold.
 struct area {
@@ -115,6 +126,7 @@ TEST_CASE("the subset checker accepts each allowed construct") {
         // Unique keys out of order, which the sorted shortcut does not settle.
         cbor({0xa3, 0x61, 0x63, 0x01, 0x61, 0x61, 0x02, 0x62, 0x61, 0x61, 0x03}),
         nested(32),
+        nested_maps(32),
     };
     for (const auto &doc : accepted)
         CHECK(metadata_ok(doc));
@@ -134,7 +146,13 @@ TEST_CASE("the subset checker refuses the rest") {
         // The same key twice with another between them, inside an array.
         cbor({0x81, 0xa3, 0x61, 0x62, 0x01, 0x61, 0x61, 0x02, 0x61, 0x62, 0x03}),
         cbor({0x62, 0xc3, 0x28}),
+        cbor({0x62, 0xc0, 0xaf}),
+        cbor({0x63, 0xed, 0xa0, 0x80}),
+        cbor({0x64, 0xf4, 0x90, 0x80, 0x80}),
+        cbor({0xa1, 0x62, 0xc3, 0x28, 0x00}),
+        cbor({0x5b, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff}),
         nested(33),
+        nested_maps(33),
         cbor({0x62, 0x61}),
         cbor({0x82, 0x00}),
         cbor({0x00, 0x00}),
@@ -195,6 +213,32 @@ TEST_CASE("a document of a third of the ring is the largest accepted") {
     area b(4, 200);
     CHECK(code(b.add(byte_string(65, 3), 0)) == status::range);
     CHECK(b.add(byte_string(64, 3), 0));
+}
+
+TEST_CASE("an add never overwrites the newest version, whatever the ring size") {
+    // On a ring of 200 a document of 60 then documents of the largest size wrap with the newest past a third
+    // of the ring; with a limit of a third unrounded, the wrapping document would reach the newest.
+    const std::size_t largest = detail::max_metadata_document(200);
+    area a(8, 200);
+    REQUIRE(a.add(byte_string(60, 0), 0));
+    for (std::uint8_t v = 2; v <= 12; ++v) {
+        REQUIRE(a.add(byte_string(largest, v), v));
+        const std::vector<std::byte> previous =
+            v == 2 ? byte_string(60, 0) : byte_string(largest, static_cast<std::uint8_t>(v - 1));
+        CHECK(a.read(v - 1).value_or(std::vector<std::byte>{}) == previous);
+        CHECK(a.read(v).value_or(std::vector<std::byte>{}) == byte_string(largest, v));
+    }
+}
+
+TEST_CASE("a ring below 24 bytes is refused") {
+    metadata_line l{};
+    l.entries = 4;
+    l.ring_size = 16;
+    CHECK_FALSE(detail::metadata_geometry_ok(l, UINT32_MAX));
+    CHECK(detail::init_metadata(nullptr, 4, 16) == status::range);
+    area a(4, 24);
+    CHECK(code(a.add(cbor({0x48, 1, 1, 1, 1, 1, 1, 1, 1}), 0)) == status::range);
+    CHECK(a.add(cbor({0x47, 1, 1, 1, 1, 1, 1, 1}), 0).value_or(0) == 1);
 }
 
 TEST_CASE("wrapping reclaims old versions and keeps the newest") {
@@ -259,9 +303,12 @@ TEST_CASE("a read during adds is never torn") {
     for (int value = 0; value < 256; ++value)
         docs.push_back(byte_string(size, static_cast<std::uint8_t>(value)));
     constexpr std::uint64_t adds = 10000;
+    std::atomic<bool> started{false};
     std::atomic<bool> done{false};
     std::uint64_t failed_adds = 0;
     std::thread writer([&] {
+        while (!started.load())
+            std::this_thread::yield();
         for (std::uint64_t v = 1; v <= adds; ++v)
             if (!a.add(docs[v % 256], v))
                 ++failed_adds;
@@ -281,6 +328,7 @@ TEST_CASE("a read during adds is never torn") {
             ++early_misses;
         }
     };
+    started = true;
     while (!done.load()) {
         const std::uint64_t h = a.head().load(std::memory_order_acquire);
         if (h == 0)
@@ -329,6 +377,33 @@ TEST_CASE("a forged area is refused") {
     reinterpret_cast<metadata_line *>(a.data())->ring_size = std::uint64_t{1} << 40;
     CHECK(code(a.length(1)) == status::corrupt);
     CHECK(code(a.read_into(1, std::span<std::byte>(short_out))) == status::corrupt);
+    CHECK(code(a.add(byte_string(30, 8), 1)) == status::corrupt);
+}
+
+TEST_CASE("a forged head is refused without a walk over every version") {
+    area a(4, 192);
+    REQUIRE(a.add(byte_string(30, 1), 0));
+    // For UINT64_MAX, 2 * version + 2 wraps to 0, the seq of an entry whose bytes were overwritten.
+    a.entry(UINT64_MAX).version = UINT64_MAX;
+    a.entry(UINT64_MAX).length = 30;
+    const std::vector<std::uint64_t> before = a.words;
+    a.head().store(UINT64_MAX);
+    CHECK(code(a.add(byte_string(30, 2), 1)) == status::corrupt);
+    CHECK(code(a.read(UINT64_MAX)) == status::not_found);
+    CHECK(code(a.version_at(UINT64_MAX, 0)) == status::not_found);
+    CHECK(a.words == before);
+
+    // The newest version an add can make, with an entry that holds it: the next add's seq would wrap to 0.
+    const std::uint64_t last = detail::metadata_version_limit - 1;
+    metadata_entry &e = a.entry(last);
+    e = a.entry(1);
+    e.seq = 2 * last + 2;
+    e.version = last;
+    a.head().store(last);
+    CHECK(a.read(last).value_or(std::vector<std::byte>{}) == byte_string(30, 1));
+    const std::vector<std::uint64_t> forged = a.words;
+    CHECK(code(a.add(byte_string(30, 2), 1)) == status::corrupt);
+    CHECK(a.words == forged);
 }
 
 TEST_CASE("a reclaim is decided by the position of the version after the one reclaimed") {
