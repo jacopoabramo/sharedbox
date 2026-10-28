@@ -42,7 +42,7 @@ class Bag(SharedBox):
     maybe: Annotated[list[int] | None, Capacity(3)] = None
 
 
-VALUES = {
+VALUES: dict[str, Any] = {
     "numbers": [0.5, -1.0, 2.0],
     "names": ("a", "bb"),
     "tags": {3, 1, 2},

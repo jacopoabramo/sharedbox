@@ -23,6 +23,17 @@ class Motor(SharedBox[Info]):
     speed: int
 
 
+class Plain(SharedBox):
+    speed: int
+
+
+def check_box_metadata(motor: Motor, plain: Plain) -> None:
+    assert_type(motor.metadata, Info | None)
+    assert_type(motor.metadata_version_of(1), Info)
+    assert_type(plain.metadata, Mapping[str, Any] | None)
+    assert_type(plain.metadata_version_of(1), Mapping[str, Any])
+
+
 def check_default(stream: SharedStream[Item]) -> None:
     assert_type(stream, SharedStream[Item, Mapping[str, Any]])
     assert_type(stream.sender(), SharedSendStream[Item, Mapping[str, Any]])

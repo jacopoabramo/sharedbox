@@ -83,6 +83,28 @@ print("closed", box.closed)
 """
 )
 
+METADATA_AFTER_RELEASE = """
+import sys
+
+from sharedbox import BoxClosedError, SharedBox
+from sharedbox._exit import release_native
+
+
+class Tagged(SharedBox):
+    count: int
+
+
+box = Tagged.create(sys.argv[1], 1, metadata={"units": "mm"})
+Tagged.unlink(sys.argv[1])
+print(dict(box.metadata))
+release_native()
+for action in (lambda: box.metadata, lambda: box.add_metadata({"units": "um"})):
+    try:
+        action()
+    except BoxClosedError as exc:
+        print(type(exc).__name__)
+"""
+
 STREAM_PAST_EXIT = """
 import ctypes
 import sys
@@ -189,4 +211,13 @@ def test_a_box_used_after_release_raises(unique_name: str) -> None:
             f"BoxClosedError Kept {released}",
             "closed True",
         ],
+    ), done.stderr
+
+
+def test_box_metadata_used_after_release_raises(unique_name: str) -> None:
+    """Raise BoxClosedError for reading or adding metadata after the exit handler, even once it was read."""
+    done = run_child(METADATA_AFTER_RELEASE, unique_name)
+    assert (done.returncode, done.stdout.splitlines()) == (
+        0,
+        ["{'units': 'mm'}", "BoxClosedError", "BoxClosedError"],
     ), done.stderr

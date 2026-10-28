@@ -2,7 +2,7 @@
 
 import multiprocessing as mp
 import sys
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from multiprocessing.process import BaseProcess
 from typing import Any
 
@@ -17,6 +17,16 @@ def snapshot(box: SharedBox, results: "mp.Queue[dict[str, Any]]") -> None:
 def update(box: SharedBox, values: dict[str, Any]) -> None:
     box.update(**values)
     box.close()
+
+
+def read_and_add_metadata(
+    box: SharedBox, value: Mapping[str, Any]
+) -> dict[str, Any] | None:
+    """Read the metadata of `box`, add `value` as its next version, close the box and return what was read."""
+    seen = box.metadata
+    box.add_metadata(value)
+    box.close()
+    return None if seen is None else dict(seen)
 
 
 def snapshot_in_child(box: SharedBox) -> dict[str, Any]:

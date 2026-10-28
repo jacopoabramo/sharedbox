@@ -39,10 +39,11 @@ from ._layout import (
     own_annotations,
     own_kw_only,
 )
-from ._metadata import M
+from ._metadata import DocumentCache, M, encode
 from ._native import (
     BoxClosedError,
     BoxMethod,
+    MetadataGoneError,
     SchemaMismatchError,
     Segment,
     SegmentNotFoundError,
@@ -80,11 +81,19 @@ RESERVED = frozenset(
         "force_unlock",
         "create",
         "attach",
+        "metadata",
+        "metadata_version",
+        "metadata_version_of",
+        "add_metadata",
     }
 )
 # The events group has these as its own names, so no field can take them.
 EVENTS_RESERVED = frozenset({"follow", "unfollow", "nested"})
 MAX_WAITERS = 4096
+METADATA_CAPACITY = 65536
+MIN_METADATA_CAPACITY = 24
+MAX_METADATA_CAPACITY = 2**32 - 1
+MAX_METADATA_VERSIONS = 65535
 # A reference field's cache entry: its create id, the box attached for it, and
 # that box's Segment. Segment.cached_ref in _native/module.cpp reads this shape.
 RefEntry: TypeAlias = "tuple[int, SharedBox, Segment]"
@@ -98,6 +107,12 @@ def check_name(name: str) -> str:
             f"at most {MAX_NAME} characters; got {name!r}"
         )
     return name
+
+
+def int_in(value: object, low: int, high: int) -> bool:
+    return (
+        isinstance(value, int) and not isinstance(value, bool) and low <= value <= high
+    )
 
 
 def release(watcher: Watcher, segment: Segment, wait: bool = True) -> None:
@@ -122,8 +137,9 @@ def reset_after_fork() -> None:
         box._segment._after_fork()
         box._values._after_fork()
         box._watcher.after_fork()
-        # Another thread of the parent may have held it at the fork.
+        # Another thread of the parent may have held these at the fork.
         box._refs_lock = threading.Lock()
+        box._documents = DocumentCache()
         if box._watcher.follower is not None:
             box._watcher.follower.after_fork()
 
@@ -448,6 +464,20 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
       counted across every process. A watcher that finds every slot taken
       logs a warning to the `sharedbox` logger and checks for changes once
       a second until a slot is free.
+    - `metadata_capacity`: bytes of the box's metadata area, 0 or 24 to
+      2**32 - 1. A metadata document takes at most about a third of it.
+      By default a box created with `metadata` gets 65536, and any other
+      box no area, so [`add_metadata`][sharedbox.SharedBox.add_metadata]
+      on it raises `MetadataFullError`.
+    - `metadata_versions`: how many metadata versions the box keeps at
+      most, 2 to 65535, 64 by default.
+
+    Calling the class, or [`create`][sharedbox.SharedBox.create], with the
+    keyword `metadata` stores that value as the box's first metadata
+    version; see [`metadata`][sharedbox.SharedBox.metadata]. A type
+    checker reads the type of the metadata from the class's base, as in
+    `class Motor(SharedBox[Info])`, and accepts the keyword only in
+    `create`.
 
     A field annotated with a `SharedBox` subclass `X`, or with `X | None`
     (or `Optional[X]`), refers to another box, which keeps its own
@@ -509,19 +539,25 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
         When the class is defined, for an annotation of another type, no
         fields or more than 256, a field named like a `SharedBox` member
         (`name`, `closed`, `close`, `unlink`, `update`, `snapshot`,
-        `watch`, `events`, `force_unlock`, `create`, `attach`) or like
+        `watch`, `events`, `force_unlock`, `create`, `attach`, `metadata`,
+        `metadata_version`, `metadata_version_of`, `add_metadata`) or like
         `follow`, `unfollow` or `nested`, a default of the wrong type, a
         positional field without a default after one with a default, an
         `InitVar` in a class without `__post_init__`, a reference to a
         class that is not defined yet, `__slots__` that name `_segment` or `_values`, or
         an `identity` that is not a non-empty string. When the class is
-        called, for a missing, unknown or repeated value, or a value of
-        the wrong type.
+        called, for a missing, unknown or repeated value, a value of the
+        wrong type, or `metadata` that
+        [`add_metadata`][sharedbox.SharedBox.add_metadata] would refuse
+        with `TypeError`.
     ValueError
         When the class is defined, for a `name` that is not segments of
         `[A-Za-z0-9_-]` joined by `:`, at most 240 characters, a
-        `lock_timeout` or `max_waiters` out of range, or a default that does
-        not fit its field (any of the cases below). When the class is called
+        `lock_timeout`, `max_waiters`, `metadata_capacity` or
+        `metadata_versions` out of range, or a default that does not fit
+        its field (any of the cases below). When the class is called, for
+        `metadata` that [`add_metadata`][sharedbox.SharedBox.add_metadata]
+        would refuse with `ValueError`. When the class is called
         or a field is assigned, for a `str`, `bytes` or `Decimal` value longer
         than its capacity, a collection with more elements than its
         capacity, a tuple of the wrong length, an array of the wrong shape,
@@ -553,6 +589,7 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
 
     __slots__ = (
         "__weakref__",
+        "_documents",
         "_finalizer",
         "_refs",
         "_refs_lock",
@@ -567,6 +604,8 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
     __signature__: ClassVar[inspect.Signature]
     __lock_timeout__: ClassVar[float] = 5.0
     __max_waiters__: ClassVar[int] = 64
+    __metadata_capacity__: ClassVar[int | None] = None
+    __metadata_versions__: ClassVar[int] = 64
     __sharedbox_name__: ClassVar[str]
     __sharedbox_identity__: ClassVar[str]
     __events_class__: ClassVar[type[BoxEvents]]
@@ -579,6 +618,8 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
         lock_timeout: float | None = None,
         max_waiters: int | None = None,
         identity: str | None = None,
+        metadata_capacity: int | None = None,
+        metadata_versions: int | None = None,
         **kwargs: Any,
     ) -> None:
         super().__init_subclass__(**kwargs)
@@ -728,27 +769,53 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
                 raise ValueError("lock_timeout must be finite and in (0, 86400]")
             cls.__lock_timeout__ = lock_timeout
         if max_waiters is not None:
-            if (
-                isinstance(max_waiters, bool)
-                or not isinstance(max_waiters, int)
-                or not 1 <= max_waiters <= MAX_WAITERS
-            ):
+            if not int_in(max_waiters, 1, MAX_WAITERS):
                 raise ValueError(
                     f"max_waiters must be an int between 1 and {MAX_WAITERS}"
                 )
             cls.__max_waiters__ = max_waiters
+        if metadata_capacity is not None:
+            if not (
+                int_in(metadata_capacity, 0, 0)
+                or int_in(
+                    metadata_capacity, MIN_METADATA_CAPACITY, MAX_METADATA_CAPACITY
+                )
+            ):
+                raise ValueError(
+                    f"metadata_capacity must be 0, or an int between "
+                    f"{MIN_METADATA_CAPACITY} and {MAX_METADATA_CAPACITY}"
+                )
+            cls.__metadata_capacity__ = metadata_capacity
+        if metadata_versions is not None:
+            if not int_in(metadata_versions, 2, MAX_METADATA_VERSIONS):
+                raise ValueError(
+                    f"metadata_versions must be an int between 2 and {MAX_METADATA_VERSIONS}"
+                )
+            cls.__metadata_versions__ = metadata_versions
         cls.__events_class__ = events_class(cls, layout)
         install_native_methods(cls)
 
-    def __init__(self, *args: Any, **kwargs: Any) -> None:
-        self._open(type(self)._layout_name(), args, kwargs)
+    def __init__(
+        self,
+        *args: Any,
+        metadata: M | None = None,
+        **kwargs: Any,
+    ) -> None:
+        self._open(type(self)._layout_name(), args, kwargs, metadata)
 
     @classmethod
-    def create(cls, name: str, /, *args: Any, **kwargs: Any) -> Self:
+    def create(
+        cls,
+        name: str,
+        /,
+        *args: Any,
+        metadata: M | None = None,
+        **kwargs: Any,
+    ) -> Self:
         """Create a box under `name` instead of the class's name.
 
-        Takes the field values and runs `__post_init__` as calling the
-        class does.
+        Takes the field values and the keyword `metadata`, and runs
+        `__post_init__`, as calling the class does.
 
         Raises
         ------
@@ -759,7 +826,7 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
             most 240 characters.
         """
         box = cls.__new__(cls)
-        box._open(check_name(name), args, kwargs)
+        box._open(check_name(name), args, kwargs, metadata)
         return box
 
     @classmethod
@@ -812,6 +879,7 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
         self._values = ValueCache(len(type(self).__layout__.fields))
         self._refs: dict[int, RefEntry] = {}
         self._refs_lock = threading.Lock()
+        self._documents = DocumentCache()
         # The finalizer may run on a thread that holds the watcher's lock, which the
         # watcher thread may be waiting for, so it must not join that thread.
         self._finalizer = weakref.finalize(
@@ -819,7 +887,13 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
         )
         LIVE.add(self)
 
-    def _open(self, name: str, args: tuple[Any, ...], values: dict[str, Any]) -> None:
+    def _open(
+        self,
+        name: str,
+        args: tuple[Any, ...],
+        values: dict[str, Any],
+        metadata: object,
+    ) -> None:
         cls = type(self)
         layout = cls._layout()
         params = [p for p in cls.__sharedbox_init__ if p.init]
@@ -857,6 +931,9 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
                 values[p.name] = (
                     p.default if p.default_factory is MISSING else p.default_factory()
                 )
+        capacity = cls.__metadata_capacity__
+        if capacity is None:
+            capacity = 0 if metadata is None else METADATA_CAPACITY
         self._segment = Segment.create(
             name,
             [spec.native for spec in layout.fields],
@@ -876,6 +953,9 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
             cls.__max_waiters__,
             publish=False,
             types=layout.types,
+            metadata=None if metadata is None else encode(metadata),
+            metadata_capacity=capacity,
+            metadata_versions=cls.__metadata_versions__,
         )
         tracked = False
         try:
@@ -920,6 +1000,90 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
     def closed(self) -> bool:
         """True once [`close`][sharedbox.SharedBox.close] was called on this box."""
         return self._segment.closed
+
+    @property
+    def metadata(self) -> M | None:
+        """The value of the box's newest metadata version, or None if it has none.
+
+        Metadata is a document stored beside the fields, such as the units
+        or calibration the values were taken with. Adding a version with
+        [`add_metadata`][sharedbox.SharedBox.add_metadata] keeps the
+        earlier ones until the box reclaims them for newer ones, and
+        [`metadata_version_of`][sharedbox.SharedBox.metadata_version_of]
+        reads them until then. A mapping reads back as a read-only mapping
+        and a list as a tuple, nested the same way. Each box object decodes
+        a version once and keeps the 32 it used last.
+
+        Raises
+        ------
+        BoxClosedError
+            If the box is closed.
+        """
+        while True:
+            version = self._segment.metadata_head()
+            if version == 0:
+                return None
+            # Two adds after the head was read can reclaim it; the new head is read then.
+            with contextlib.suppress(MetadataGoneError):
+                return self.metadata_version_of(version)
+
+    @property
+    def metadata_version(self) -> int:
+        """The number of the box's newest metadata version, 0 if it has none."""
+        return self._segment.metadata_head()
+
+    def metadata_version_of(self, version: int) -> M:
+        """Return the value of metadata version `version`.
+
+        A version this box object read before may come from its cache of
+        the 32 versions it used last, also after the box reclaimed it.
+
+        Raises
+        ------
+        MetadataGoneError
+            If the box no longer holds that version, or never did.
+        BoxClosedError
+            If the box is closed.
+        """
+        return cast(
+            M,
+            self._documents.get(
+                self._segment.create_id,
+                version,
+                partial(self._segment.read_metadata, version),
+            ),
+        )
+
+    def add_metadata(self, value: M) -> int:  # type: ignore[misc]
+        """Store `value` as the box's next metadata version and return that version.
+
+        Any process may add metadata to a box. The value is `None`, a
+        `bool`, an `int` from -2**64 to 2**64 - 1, a `float`, a `str`,
+        `bytes`, a mapping with `str` keys, or a `list` or `tuple`, nested
+        up to 32 levels. The add takes the write lock as a write does and
+        changes no field. The `metadata` signal of
+        [`events`][sharedbox.SharedBox.events] is emitted with the new
+        version in every process that listens to it. The oldest versions
+        are reclaimed once the box holds `metadata_versions` of them, or
+        needs their room in its metadata area.
+
+        Raises
+        ------
+        TypeError
+            If the value holds another type, or a mapping key is not a `str`.
+        ValueError
+            If an `int` is out of range, the nesting is deeper than 32
+            levels, or the document is longer than the metadata area takes,
+            about a third of the class's `metadata_capacity`.
+        MetadataFullError
+            If the box has no metadata area: its class sets no
+            `metadata_capacity` and it was created without `metadata`.
+        LockTimeoutError
+            If another writer holds the lock longer than the lock timeout.
+        BoxClosedError
+            If the box is closed.
+        """
+        return self._segment.add_metadata(encode(value))
 
     def update(self, **values: Any) -> None:
         """Write several fields under one lock; a reader sees all of the new values or none.
@@ -1099,7 +1263,9 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
 
         A [`BoxEvents`][sharedbox.BoxEvents] group:
         `box.events.<field>.connect(cb)` listens to one field and
-        `box.events.connect(cb)` to all of them.
+        `box.events.connect(cb)` to all of them. The group's signal
+        [`metadata`][sharedbox.BoxEvents.metadata] is emitted with the new
+        version number when any process adds metadata to the box.
 
         Unlike the callbacks of a local evented dataclass, these run on the
         box's watcher thread; connect with `thread="main"` and call

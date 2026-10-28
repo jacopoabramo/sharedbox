@@ -116,15 +116,14 @@ class WaiterSlotsFullError(RuntimeError):
 class MetadataFullError(RuntimeError):
     """A new metadata document cannot be stored now.
 
-    Raised by adding metadata larger than the area allows, by adding
-    metadata to a segment without a metadata area (created with no
-    capacity, or by an older version), or, in a stream,
-    while the ring still holds items sent under the version the add would
-    overwrite.
+    Raised by adding metadata to a segment without a metadata area
+    (created with no capacity, or by an older release of sharedbox), or,
+    in a stream, while the ring still holds items sent under the version
+    the add would overwrite.
     """
 
 class MetadataGoneError(LookupError):
-    """The metadata version asked for has been overwritten by a newer one."""
+    """The metadata version asked for was reclaimed for newer ones, or never added."""
 
 def check(kind: int, capacity: int, name: str, value: object) -> None:
     """Raise what writing `value` to a field of this kind and capacity would raise."""
@@ -161,6 +160,9 @@ class Segment:
         waiter_slots: int = 64,
         publish: bool = True,
         types: Types | None = None,
+        metadata: bytes | None = None,
+        metadata_capacity: int = 0,
+        metadata_versions: int = 64,
     ) -> Segment:
         """Create the segment with `values` written before any other process can see it.
 
@@ -178,6 +180,20 @@ class Segment:
         types
             Converts the values of kinds above 5, and gives the description
             table the segment stores.
+        metadata
+            The encoded document stored as metadata version 1.
+        metadata_capacity
+            Bytes of the metadata ring; 0 gives the segment no metadata
+            area.
+        metadata_versions
+            How many metadata versions the area keeps at most.
+
+        Raises
+        ------
+        ValueError
+            If the metadata document is longer than about a third of
+            `metadata_capacity`, or `metadata_capacity` and
+            `metadata_versions` make no metadata area.
         """
 
     @staticmethod
@@ -274,6 +290,33 @@ class Segment:
 
     def versions(self) -> list[int]:
         """Return the [`version`][sharedbox._native.Segment.version] of every field, in field order."""
+
+    def metadata_head(self) -> int:
+        """Return the newest metadata version, 0 for none."""
+
+    def read_metadata(self, version: int) -> bytes:
+        """Return the encoded document of a metadata version.
+
+        Raises
+        ------
+        MetadataGoneError
+            If the segment no longer holds that version, or never did.
+        """
+
+    def add_metadata(self, doc: bytes) -> int:
+        """Store an encoded document as the next metadata version and return that version.
+
+        Takes the write lock, so waiters wake, but no field changes.
+
+        Raises
+        ------
+        MetadataFullError
+            If the segment has no metadata area.
+        ValueError
+            If the document is longer than the area takes.
+        LockTimeoutError
+            If another writer holds the lock longer than the lock timeout.
+        """
 
     def publish(self) -> None:
         """Let other processes attach to a segment created with `publish=False`.

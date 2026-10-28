@@ -7,6 +7,7 @@ import sys
 from dataclasses import InitVar, dataclass
 from typing import (
     Annotated,
+    Any,
     Generic,
     Literal,
     NamedTuple,
@@ -58,7 +59,7 @@ class Shapes(SharedBox):
     options: Options = field(default_factory=lambda: Options(speed=1.0))
 
 
-VALUES = {
+VALUES: dict[str, Any] = {
     "sample": Sample("label", Point(1.5, -2.0), datetime.datetime(2026, 1, 1)),  # noqa: DTZ001
     "pair": Pair(3, b"ab"),
     "coords": (7, 0.25, True),

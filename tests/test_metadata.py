@@ -1,4 +1,5 @@
 import math
+import queue
 import subprocess
 import sys
 import sysconfig
@@ -7,9 +8,10 @@ from types import MappingProxyType
 from typing import Any
 
 import pytest
+from crossproc import call_in_child, read_and_add_metadata
 
 import sharedbox
-from sharedbox import SharedBox
+from sharedbox import BoxClosedError, MetadataFullError, MetadataGoneError, SharedBox
 from sharedbox._metadata import DocumentCache, decode, encode
 
 DOCUMENT = {
@@ -236,3 +238,110 @@ def test_importing_sharedbox_keeps_the_gil_off() -> None:
     """Keep the GIL disabled after a fresh process imports sharedbox."""
     code = "import sharedbox, sys; sys.exit(int(sys._is_gil_enabled()))"
     assert subprocess.run([sys.executable, "-c", code], check=False).returncode == 0
+
+
+class Stage(SharedBox):
+    position: int = 0
+
+
+class Kept(SharedBox, metadata_versions=2):
+    position: int = 0
+
+
+def test_box_metadata_end_to_end(unique_name: str) -> None:
+    """Read metadata in another process and see the version it adds signalled here."""
+    added: queue.Queue[int] = queue.Queue()
+    with Stage.create(unique_name, metadata={"units": "mm"}) as box:
+        box.events.metadata.connect(added.put)
+        seen = call_in_child(read_and_add_metadata, box, {"units": "um"})
+        assert seen == {"units": "mm"}
+        assert added.get(timeout=20) == 2
+        assert box.metadata == {"units": "um"}
+        assert box.metadata_version == 2
+        assert box.metadata_version_of(1) == {"units": "mm"}
+    Stage.unlink(unique_name)
+
+
+def test_box_metadata_version_is_reclaimed(unique_name: str) -> None:
+    """Raise MetadataGoneError for a version that later adds reclaimed."""
+    with Kept.create(unique_name, metadata={"step": 1}) as box:
+        for step in (2, 3, 4):
+            box.add_metadata({"step": step})
+        with pytest.raises(MetadataGoneError):
+            box.metadata_version_of(1)
+        assert box.metadata == {"step": 4}
+    Kept.unlink(unique_name)
+
+
+def test_box_without_metadata(unique_name: str) -> None:
+    """Read no metadata from a box created without it, and refuse to add any."""
+    with Stage.create(unique_name) as box:
+        assert box.metadata is None
+        assert box.metadata_version == 0
+        with pytest.raises(MetadataFullError, match="metadata_capacity"):
+            box.add_metadata({"units": "mm"})
+    Stage.unlink(unique_name)
+
+
+def test_add_metadata_on_a_closed_box(unique_name: str) -> None:
+    """Raise BoxClosedError for reading or adding metadata on a closed box."""
+    box = Stage.create(unique_name, metadata={"units": "mm"})
+    assert box.metadata == {"units": "mm"}
+    box.close()
+    with pytest.raises(BoxClosedError):
+        box.add_metadata({"units": "um"})
+    with pytest.raises(BoxClosedError):
+        _ = box.metadata
+    Stage.unlink(unique_name)
+
+
+def test_a_box_created_again_shows_its_own_metadata(unique_name: str) -> None:
+    """Read the metadata of the box created again under a name, not of the one before."""
+    with Stage.create(unique_name, metadata={"a": 1}) as box:
+        assert box.metadata == {"a": 1}
+    Stage.unlink(unique_name)
+    with Stage.create(unique_name, metadata={"a": 2}) as box:
+        assert box.metadata == {"a": 2}
+    Stage.unlink(unique_name)
+
+
+@pytest.mark.parametrize("versions", [1, 65536])
+def test_metadata_versions_out_of_range(versions: int) -> None:
+    """Refuse a metadata_versions class keyword outside 2 to 65535."""
+    with pytest.raises(ValueError, match="metadata_versions"):
+        type(
+            "Narrow",
+            (SharedBox,),
+            {"__annotations__": {"x": int}},
+            metadata_versions=versions,
+        )
+
+
+@pytest.mark.parametrize("capacity", [-1, 8, 2**32])
+def test_metadata_capacity_out_of_range(capacity: int) -> None:
+    """Refuse a metadata_capacity class keyword that no area can have."""
+    with pytest.raises(ValueError, match="metadata_capacity"):
+        type(
+            "Small",
+            (SharedBox,),
+            {"__annotations__": {"x": int}},
+            metadata_capacity=capacity,
+        )
+
+
+def test_a_document_longer_than_the_area_is_refused(unique_name: str) -> None:
+    """Raise ValueError for a document longer than the box takes, creating or adding."""
+    with pytest.raises(ValueError, match="metadata_capacity"):
+        Stage.create(unique_name, metadata={"text": "x" * 30000})
+    with Stage.create(unique_name, metadata={"units": "mm"}) as box:
+        with pytest.raises(ValueError, match="metadata_capacity"):
+            box.add_metadata({"text": "x" * 30000})
+        assert box.metadata_version == 1
+    Stage.unlink(unique_name)
+
+
+@pytest.mark.parametrize("name", ["metadata", "add_metadata"])
+def test_a_field_named_metadata_is_refused(name: str) -> None:
+    """Refuse a field named like a metadata member of SharedBox when the class is defined."""
+    with pytest.raises(TypeError, match=rf"field name\(s\) {name} clash"):
+        type("Clash", (SharedBox,), {"__annotations__": {name: int}})

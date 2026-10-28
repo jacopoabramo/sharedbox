@@ -79,11 +79,8 @@ def follow_round(
         spare = chain(stack, f"{name}-spare", depth)
         followed = [box for boxes in chains for box in boxes]
         stack.callback(WIDE[width].unlink, f"{name}-w")
-        outer = stack.enter_context(
-            WIDE[width].create(
-                f"{name}-w", **{f"r{i}": boxes[0] for i, boxes in enumerate(chains)}
-            )
-        )
+        refs: dict[str, Any] = {f"r{i}": boxes[0] for i, boxes in enumerate(chains)}
+        outer = stack.enter_context(WIDE[width].create(f"{name}-w", **refs))
         seen: queue.Queue[tuple[int, int]] = queue.Queue()
         outer.events.nested.connect(
             lambda path, new, old: seen.put((new, time.perf_counter_ns()))

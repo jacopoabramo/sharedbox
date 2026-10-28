@@ -1003,7 +1003,8 @@ NB_MODULE(_native, m) {
                const std::vector<std::tuple<std::uint32_t, std::uint32_t, std::uint32_t>> &fields,
                const std::vector<std::string> &names, std::uint64_t record_size, std::uint64_t schema_hash,
                double lock_timeout, const Values &values, std::uint16_t waiter_slots, bool publish,
-               nb::handle types) {
+               nb::handle types, std::optional<nb::bytes> metadata, std::uint64_t metadata_capacity,
+               std::uint32_t metadata_versions) {
                 const sharedbox::Types *t = types_of(types);
                 std::vector<sharedbox::FieldDesc> descs;
                 descs.reserve(fields.size());
@@ -1023,10 +1024,14 @@ NB_MODULE(_native, m) {
                                          std::string(reinterpret_cast<const char *>(bytes.data()), bytes.size()));
                 }
                 return Segment::create(name, descs, names, record_size, schema_hash, lock_timeout, waiter_slots,
-                                       encoded, t == nullptr ? std::string() : t->table(), publish);
+                                       encoded, t == nullptr ? std::string() : t->table(), publish,
+                                       metadata ? std::string_view(metadata->c_str(), metadata->size())
+                                                : std::string_view(),
+                                       metadata_capacity, metadata_versions);
             },
             "name"_a, "fields"_a, "names"_a, "record_size"_a, "schema_hash"_a, "lock_timeout"_a, "values"_a,
-            "waiter_slots"_a = sharedbox::default_waiter_slots, "publish"_a = true, "types"_a = nb::none())
+            "waiter_slots"_a = sharedbox::default_waiter_slots, "publish"_a = true, "types"_a = nb::none(),
+            "metadata"_a = nb::none(), "metadata_capacity"_a = 0, "metadata_versions"_a = 64)
         .def_static(
             "attach",
             [](const std::string &name, const std::vector<std::string> &names, std::uint64_t schema_hash,
@@ -1179,6 +1184,18 @@ NB_MODULE(_native, m) {
             "values"_a)
         .def("version", &Segment::version, "field"_a)
         .def("versions", &Segment::versions)
+        .def("metadata_head", &Segment::metadata_head)
+        .def(
+            "read_metadata",
+            [](const Segment &s, std::uint64_t version) {
+                const std::string doc = s.read_metadata(version);
+                return nb::bytes(doc.data(), doc.size());
+            },
+            "version"_a)
+        .def(
+            "add_metadata",
+            [](Segment &s, nb::bytes doc) { return s.add_metadata(std::string_view(doc.c_str(), doc.size())); },
+            "doc"_a)
         .def("publish", &Segment::publish)
         .def("generation", &Segment::generation)
         .def("register_waiter", &Segment::register_waiter)
