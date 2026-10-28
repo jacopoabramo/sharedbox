@@ -734,6 +734,8 @@
       
         
       
+        
+      
     
     
     
@@ -795,6 +797,35 @@
     
   
   How to install sharedbox
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../how-to/migrate-from-0.7/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-arrow-up-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m16 12-4-4-4 4M12 16V8"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  How to migrate from 0.7
 
     
   </span>
@@ -2294,6 +2325,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#sharedbox.MaxShape" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-class"></code>&nbsp;MaxShape
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#sharedbox.DType" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -3104,6 +3146,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#sharedbox.MaxShape" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-class"></code>&nbsp;MaxShape
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#sharedbox.DType" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -3285,12 +3338,16 @@
 <td>the dimensions of an array field; a box field can take them from <code>field(shape=...)</code> or its default array instead</td>
 </tr>
 <tr>
-<td><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;DType&lt;/span&gt;
+<td><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;MaxShape&lt;/span&gt;
 
 
   &lt;span class=&quot;doc doc-labels&quot;&gt;
       &lt;small class=&quot;doc doc-label doc-label-dataclass&quot;&gt;&lt;code&gt;dataclass&lt;/code&gt;&lt;/small&gt;
-  &lt;/span&gt;" href="./#sharedbox.DType"><code>DType</code></a></td>
+  &lt;/span&gt;" href="./#sharedbox.MaxShape"><code>MaxShape</code></a></td>
+<td>the largest dimensions of an array in a stream item, which stores its own shape with each item</td>
+</tr>
+<tr>
+<td><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;DType&lt;/span&gt;" href="./#sharedbox.DType"><code>DType</code></a></td>
 <td>the element type of an array field; a numpy annotation that names its dtype needs none</td>
 </tr>
 <tr>
@@ -3318,7 +3375,7 @@
   </span>
 
 <a href="#sharedbox.Shape" class="headerlink" title="Permanent link">&para;</a></h2>
-<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">Shape</span><span class="p">(</span><span class="o">*</span><span class="n">dims</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">Shape</span><span class="p">(</span><span class="n">dims</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">])</span>
 </span></code></pre></div>
 
     <div class="doc doc-contents first">
@@ -3327,7 +3384,7 @@
 
         <p>Dimensions of an array field, fixed when the class is defined.</p>
 <p>It goes in the annotation, as in
-<code>Annotated[numpy.ndarray, Shape(480, 640), DType("uint8")]</code>. A field of a
+<code>Annotated[numpy.ndarray, Shape((480, 640)), DType("uint8")]</code>. A field of a
 box also takes its sizes from <code>field(shape=...)</code> or from a plain default
 array, and they must agree with a <code>Shape</code>. An array inside a record or a
 stream item takes its sizes from a <code>Shape</code> only. When the annotation
@@ -3351,7 +3408,93 @@ must have as many.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>Unless there are 1 to 8 dimensions, each an <code>int</code> of at least 1.</p>
+                <p>Unless <code>dims</code> is a tuple of 1 to 8 dimensions, each an <code>int</code> of at least 1.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="sharedbox.MaxShape" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-class"></code>            <span class="doc doc-object-name doc-class-name">MaxShape</span>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
+  </span>
+
+<a href="#sharedbox.MaxShape" class="headerlink" title="Permanent link">&para;</a></h2>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">MaxShape</span><span class="p">(</span><span class="n">dims</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">])</span>
+</span></code></pre></div>
+
+    <div class="doc doc-contents first">
+
+
+
+        <p>Largest dimensions of an array in a stream item, whose own shape each item stores.</p>
+<p>It goes in the annotation, as in
+<code>Annotated[numpy.ndarray, MaxShape((2048, 2048)), DType("uint16")]</code>, and
+an array takes a <code>MaxShape</code> or a <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;Shape&lt;/span&gt;
+
+
+  &lt;span class=&quot;doc doc-labels&quot;&gt;
+      &lt;small class=&quot;doc doc-label doc-label-dataclass&quot;&gt;&lt;code&gt;dataclass&lt;/code&gt;&lt;/small&gt;
+  &lt;/span&gt;" href="./#sharedbox.Shape"><code>Shape</code></a>, not both.
+An item may hold the array as the item itself or as a member of a record
+or tuple, at any depth, and each value sent has as many dimensions as
+the <code>MaxShape</code>, each from 0 to its maximum. A box field and a member of
+an optional, union or collection cannot hold one.</p>
+
+
+<p><span class="doc-section-title">Raises:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-external" href="https://docs.python.org/3/builtins/exceptions.html#ValueError">ValueError</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>Unless <code>dims</code> is a tuple of 1 to 8 dimensions, each an <code>int</code> of at least 1.</p>
               </div>
             </td>
           </tr>
@@ -3395,22 +3538,21 @@ must have as many.</p>
 <code class="doc-symbol doc-symbol-heading doc-symbol-class"></code>            <span class="doc doc-object-name doc-class-name">DType</span>
 
 
-  <span class="doc doc-labels">
-      <small class="doc doc-label doc-label-dataclass"><code>dataclass</code></small>
-  </span>
-
 <a href="#sharedbox.DType" class="headerlink" title="Permanent link">&para;</a></h2>
-<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">DType</span><span class="p">(</span><span class="n">dtype</span><span class="p">:</span> <span class="nb">object</span><span class="p">)</span>
-</span></code></pre></div>
+
 
     <div class="doc doc-contents first">
+            <p class="doc doc-class-bases">
+              Bases: <code><a class="autorefs autorefs-external" title="&lt;code&gt;enum.StrEnum&lt;/code&gt;" href="https://docs.python.org/3/library/enum.html#enum.StrEnum">StrEnum</a></code></p>
 
 
 
         <p>Element type of an array field.</p>
-<p>It takes a name as numpy spells it (<code>"float32"</code>, <code>"bfloat16"</code>,
+<p>Calling it takes a name as numpy spells it (<code>"float32"</code>, <code>"bfloat16"</code>,
 <code>"complex64"</code>, <code>"bool"</code>), a <code>numpy.dtype</code> or scalar type, or a
-<code>torch.dtype</code>. A numpy annotation that names its dtype, as in
+<code>torch.dtype</code>, and returns the member of that name, so
+<code>DType(numpy.uint8)</code> is <code>DType("uint8")</code> is <code>DType.uint8</code>, which equals
+the string <code>"uint8"</code>. A numpy annotation that names its dtype, as in
 <code>numpy.ndarray[tuple[int], numpy.dtype[numpy.uint8]]</code>, needs no <code>DType</code>.</p>
 
 

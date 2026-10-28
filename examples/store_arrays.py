@@ -13,7 +13,9 @@ from sharedbox import DType, Shape, SharedBox, SupportsDLPack, field
 class Scanner(SharedBox, name="example-scanner"):
     scan: npt.NDArray[np.uint8] = np.zeros((4, 6), np.uint8)
     gain: npt.NDArray[np.float64] = field(shape=(2,), default=np.ones(2))
-    raw: Annotated[SupportsDLPack, Shape(3), DType("float32")] = np.zeros(3, np.float32)
+    raw: Annotated[SupportsDLPack, Shape((3,)), DType("float32")] = np.zeros(
+        3, np.float32
+    )
 
 
 # --8<-- [end:declare]

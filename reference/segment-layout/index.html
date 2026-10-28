@@ -734,6 +734,8 @@
       
         
       
+        
+      
     
     
     
@@ -795,6 +797,35 @@
     
   
   How to install sharedbox
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../how-to/migrate-from-0.7/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-arrow-up-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m16 12-4-4-4 4M12 16V8"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  How to migrate from 0.7
 
     
   </span>
@@ -3885,9 +3916,9 @@ to understand the ideas first, read
 <code>include/sharedbox/core.hpp</code>, <code>include/sharedbox/box.hpp</code> and
 <code>include/sharedbox/stream.hpp</code> implement this contract, and the Python
 extension runs on the first two.</p>
-<p>It describes core version 1.0, box layout 3.1 and stream layout 1.1. It
+<p>It describes core version 1.0, box layout 3.1 and stream layout 1.2. It
 also opens box layout 3.0 and stream layout 1.0, which <code>sharedbox</code> 0.6.0
-writes, and nothing older: box layouts 1.0 and 2.0, which 0.5 and earlier
+writes, stream layout 1.1, which 0.7.0 writes, and nothing older: box layouts 1.0 and 2.0, which 0.5 and earlier
 wrote, are refused.</p>
 <h2 id="goal">Goal<a class="headerlink" href="#goal" title="Permanent link">&para;</a></h2>
 <p>C++ and C code can use a sharedbox box, both as an extension loaded in a
@@ -4360,6 +4391,12 @@ record (4096 - 2240 = 1856).</p>
 <td>description offset</td>
 <td>data size, 64</td>
 </tr>
+<tr>
+<td>75</td>
+<td>max_array</td>
+<td>description offset</td>
+<td>64 + data size of the maximum shape, 64</td>
+</tr>
 </tbody>
 </table>
 <p>A field of a kind the reader does not know is opened as opaque bytes: a
@@ -4404,6 +4441,13 @@ it does not know. Every described size is a multiple of its alignment.</p>
 <li><code>dict</code>: as <code>list</code>, with a key and value pair as the slot: the key at 0,
   the value at <code>round_up(key size, value alignment)</code>.</li>
 <li><code>array</code>: the elements in C order.</li>
+<li><code>max_array</code>: a 64-byte line holding the <code>ndim</code> <code>u64</code> dimensions of the
+  stored value, each from 0 to its maximum, then zero bytes; the elements
+  follow at offset 64, packed in C order for the stored dimensions. The
+  bytes after them, up to the room for the maximum shape, keep what an older
+  item wrote. A reader checks each dimension against its maximum before it
+  copies any element. A dimension above it in a torn copy is retried like
+  any torn copy; in a stable copy it makes the value corrupt.</li>
 </ul>
 <h3 id="descriptions">Descriptions<a class="headerlink" href="#descriptions" title="Permanent link">&para;</a></h3>
 <p>The description table follows the waiter slots. Each description is an
@@ -4470,6 +4514,11 @@ the value. A name is a <code>u16</code> length, then UTF-8.</p>
 <td>0</td>
 <td><code>u8</code> <abbr title="An open in-memory tensor format that array libraries use to share an array's memory without copying it.">DLPack</abbr> code, <code>u8</code> bits, <code>u16</code> lanes (1), <code>u8</code> ndim (1 to 8), 3 zero bytes, then <code>ndim</code> <code>u64</code> dimensions</td>
 </tr>
+<tr>
+<td>max_array</td>
+<td>0</td>
+<td>as <code>array</code>, the dimensions being the maximum ones</td>
+</tr>
 </tbody>
 </table>
 <p>Attach copies the table and checks it before using it: every description
@@ -4480,7 +4529,9 @@ description implies is computed without overflow and matches the head; an
 array's code is one of 0, 1, 2, 4, 5, 6, its bits a multiple of 8 and every
 dimension at least 1. A failure refuses the segment. A reference may only
 be a field, and an array only a field, a record or tuple member, or the
-member of an optional.</p>
+member of an optional. A <code>max_array</code> may only be a stream's item, or a
+record or tuple member reached from the item through records and tuples
+alone; a box, or a <code>max_array</code> under any other kind, is refused.</p>
 <h3 id="decoding-checks">Decoding checks<a class="headerlink" href="#decoding-checks" title="Permanent link">&para;</a></h3>
 <p>A stable sequence number shows a copy is consistent, not that it holds a
 value Python can have. Readers check presence bytes and <code>bool</code> (0 or 1),
@@ -4540,6 +4591,8 @@ attacher agree on it and on the class's meaning.</p>
 <li><code>list[n](T)</code>, <code>set[n](T)</code> and <code>dict[n](K,V)</code>: <code>n</code> is the capacity in
   elements. A <code>frozenset</code> is a <code>set</code>; <code>tuple[T, ...]</code> is a <code>list</code>.</li>
 <li><code>array(dtype,d1xd2x...)</code>, as in <code>array(float32,2x3)</code>.</li>
+<li><code>max_array(dtype,d1xd2x...)</code> with the maximum dimensions, as in
+  <code>max_array(uint16,2048x2048)</code>.</li>
 </ul>
 </li>
 <li>
@@ -4588,7 +4641,7 @@ attacher agree on it and on the class's meaning.</p>
 <p>A stream is a ring of <code>capacity</code> slots, at least 2, that one sender writes
 and up to <code>max_readers</code> readers (1 to 4095) copy out of. Its common line
 holds the magic <code>SBX_STRM</code> (<code>0x4D5254535F584253</code>), <code>kind_major</code> 1 and
-<code>kind_minor</code> 1 (stream layout 1.1), and a <code>waiter_slots</code> of
+<code>kind_minor</code> 2 (stream layout 1.2), and a <code>waiter_slots</code> of
 <code>max_readers + 1</code>, one slot for each reader and one for the sender. Every
 size and offset is 64-bit, so a ring may pass 4 GiB; the slots end at or
 below 2^46 bytes. The mapping holds, from offset 0:</p>
@@ -4703,7 +4756,9 @@ layout version of its kind, for the rest. Each has a major and a minor.</p>
   <code>status::corrupt</code>, a segment that uses one inside a described type or as
   a stream item. Box layout 3.1 and stream layout 1.1 also allow an array
   as the member of an optional, which a reader of box layout 3.0 or stream
-  layout 1.0 refuses with <code>status::corrupt</code>.</li>
+  layout 1.0 refuses with <code>status::corrupt</code>. Stream layout 1.2 adds kind
+  75, <code>max_array</code>, which a reader of stream layout 1.1 or 1.0 refuses with
+  <code>status::corrupt</code> as a stream item or inside one.</li>
 <li>A change to how existing bytes are read or written raises a major: the
   core's (the common line, the object names, liveness) raises <code>core_major</code>,
   and a kind's own (the sequence lock, field encoding, the slot layout)

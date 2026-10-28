@@ -734,6 +734,8 @@
       
         
       
+        
+      
     
     
     
@@ -795,6 +797,35 @@
     
   
   How to install sharedbox
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../how-to/migrate-from-0.7/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-arrow-up-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m16 12-4-4-4 4M12 16V8"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  How to migrate from 0.7
 
     
   </span>
@@ -4996,15 +5027,23 @@ another thread or task holds the slot from
   &lt;/span&gt;" href="./#sharedbox.SendSlot.item"><code>slot.item</code></a> is an item built from
 <code>template</code>, with each array it reaches through records and tuples
 replaced by a writable array over the slot. The template's own
-arrays are never read, so they may be empty. The block fills the
-slot's arrays and sends the item with
+arrays are never read, so an array with a <code>Shape</code> may be empty. An
+array with a <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;MaxShape&lt;/span&gt;
+
+
+  &lt;span class=&quot;doc doc-labels&quot;&gt;
+      &lt;small class=&quot;doc doc-label doc-label-dataclass&quot;&gt;&lt;code&gt;dataclass&lt;/code&gt;&lt;/small&gt;
+  &lt;/span&gt;" href="../arrays/#sharedbox.MaxShape"><code>MaxShape</code></a> gives only the shape
+of the array over the slot, so <code>np.empty(shape)</code> serves. The block
+fills the slot's arrays and sends the item with
 <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;send&lt;/span&gt;" href="./#sharedbox.SendSlot.send"><code>slot.send</code></a>, which does not copy them:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">blank</span> <span class="o">=</span> <span class="n">Letter</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="s2">""</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">uint8</span><span class="p">))</span>
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="k">with</span> <span class="n">sender</span><span class="o">.</span><span class="n">writing</span><span class="p">(</span><span class="n">blank</span><span class="p">)</span> <span class="k">as</span> <span class="n">slot</span><span class="p">:</span>
 </span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    <span class="n">scanner</span><span class="o">.</span><span class="n">read_into</span><span class="p">(</span><span class="n">slot</span><span class="o">.</span><span class="n">item</span><span class="o">.</span><span class="n">scan</span><span class="p">)</span>
 </span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    <span class="n">slot</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">replace</span><span class="p">(</span><span class="n">slot</span><span class="o">.</span><span class="n">item</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="n">n</span><span class="p">))</span>
 </span></code></pre></div>
-<p>An item that is an array needs no template. Leaving the block
+<p>An item that is an array needs no template, and the array over the
+slot then has the maximum shape for a <code>MaxShape</code> item. Leaving the block
 without <code>send</code>, or by an exception, gives the slot up: nothing is
 published, and the next send takes its position. Until the slot is
 sent or the block ends, readers see nothing new, and a send or
@@ -5039,7 +5078,8 @@ includes a task started inside the block by <code>asyncio.wait_for</code> or
             </td>
             <td>
               <div class="doc-md-description">
-                <p>If a value of <code>template</code> outside its arrays does not fit.</p>
+                <p>If a value of <code>template</code> outside its arrays does not fit, or an
+array of <code>template</code> has a shape beyond its <code>MaxShape</code>.</p>
               </div>
             </td>
           </tr>
@@ -5262,7 +5302,8 @@ item.</p>
 <p>Each array the item reaches through records and tuples is a writable
 array of its member's declared type, dtype and shape, which views
 the slot in shared memory and starts with the bytes of an older
-item. The arrays keep the stream's mapping alive, so using them
+item. An array with a <code>MaxShape</code> has the shape of the template's
+array, or the maximum shape without one. The arrays keep the stream's mapping alive, so using them
 after the block or after the stream is closed cannot crash, but
 writing to them after <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;send&lt;/span&gt;" href="./#sharedbox.SendSlot.send"><code>send</code></a> changes
 an item readers may have received and tells no one.</p>
@@ -5295,7 +5336,10 @@ one of <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-sym
   &lt;span class=&quot;doc doc-labels&quot;&gt;
       &lt;small class=&quot;doc doc-label doc-label-property&quot;&gt;&lt;code&gt;property&lt;/code&gt;&lt;/small&gt;
   &lt;/span&gt;" href="./#sharedbox.SendSlot.item"><code>item</code></a>'s arrays, is not copied;
-any other array is copied into the slot.</p>
+any other array is copied into the slot. For an array with a
+<code>MaxShape</code>, that holds for any C-contiguous array that starts at
+its place in the slot, such as the first rows <code>counts[:n]</code> of the
+slot's array, and only its shape is written.</p>
 
 
 <p><span class="doc-section-title">Raises:</span></p>
@@ -5662,6 +5706,16 @@ place. Allocate the arrays once and pass them to every call:</p>
 <div class="language-text highlight"><pre><span></span><code>scan = np.empty((32, 32), np.uint8)
 letter = reader.receive_into({"scan": scan})
 </code></pre></div>
+<p>An entry for a member with a <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;MaxShape&lt;/span&gt;
+
+
+  &lt;span class=&quot;doc doc-labels&quot;&gt;
+      &lt;small class=&quot;doc doc-label doc-label-dataclass&quot;&gt;&lt;code&gt;dataclass&lt;/code&gt;&lt;/small&gt;
+  &lt;/span&gt;" href="../arrays/#sharedbox.MaxShape"><code>MaxShape</code></a> has
+the maximum shape. The item then holds a view of the stored shape
+over the entry's first elements in C order, not the entry itself.
+Those elements are the entry's first rows only when every dimension
+but the first is at its maximum.</p>
 <p>An item that a cancelled <code>receive_future</code> or <code>anext</code> had already
 received is returned by the next receive of any kind, and holds the
 arrays of the call that received it, not <code>out</code>.</p>
