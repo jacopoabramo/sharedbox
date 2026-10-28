@@ -2278,6 +2278,7 @@ inline status init_metadata(std::byte *area, std::uint32_t entries, std::uint64_
     return status::ok;
 }
 
+// A copy of an area's first line, made once when the segment is opened; only the copy is checked and used.
 inline metadata_line copy_metadata_line(const std::byte *area) noexcept {
     metadata_line line{};
     std::memcpy(&line, area, sizeof line);
@@ -2312,13 +2313,12 @@ inline bool metadata_entry_kept(metadata_entry &e, std::uint64_t seq) noexcept {
 }
 
 // The length of version's document: status::not_found when the area does not hold version, and
-// status::corrupt when its entry places the document outside the ring.
-inline result<std::uint32_t> metadata_length(const std::byte *area, std::uint64_t version) noexcept {
+// status::corrupt when its entry places the document outside the ring. line is the copy of the area's
+// first line that metadata_geometry_ok accepted, here and in every function below.
+inline result<std::uint32_t> metadata_length(const std::byte *area, const metadata_line &line,
+                                             std::uint64_t version) noexcept {
     if (version == 0)
         return unexpected(status::not_found);
-    const metadata_line line = copy_metadata_line(area);
-    if (!metadata_line_ok(line))
-        return unexpected(status::corrupt);
     metadata_entry &e = metadata_entry_of(area, line, version);
     metadata_entry copy{};
     if (!load_metadata_entry(e, version, copy))
@@ -2333,13 +2333,10 @@ inline result<std::uint32_t> metadata_length(const std::byte *area, std::uint64_
 
 // Copies version's document into out and returns its length. As metadata_length, and status::range for an
 // out shorter than the document; status::not_found also when the version is overwritten during the copy.
-inline result<std::uint32_t> read_metadata(const std::byte *area, std::uint64_t version,
+inline result<std::uint32_t> read_metadata(const std::byte *area, const metadata_line &line, std::uint64_t version,
                                            std::span<std::byte> out) noexcept {
     if (version == 0)
         return unexpected(status::not_found);
-    const metadata_line line = copy_metadata_line(area);
-    if (!metadata_line_ok(line))
-        return unexpected(status::corrupt);
     metadata_entry &e = metadata_entry_of(area, line, version);
     metadata_entry copy{};
     if (!load_metadata_entry(e, version, copy))
@@ -2361,11 +2358,8 @@ inline result<std::uint32_t> read_metadata(const std::byte *area, std::uint64_t 
 // The newest version at or before head whose position is at most position, found by walking back at most
 // one step per entry. status::not_found when position comes before every version still held, or when a
 // version the walk passes has been overwritten.
-inline result<std::uint64_t> metadata_version_at(const std::byte *area, std::uint64_t head,
-                                                 std::uint64_t position) noexcept {
-    const metadata_line line = copy_metadata_line(area);
-    if (!metadata_line_ok(line))
-        return unexpected(status::corrupt);
+inline result<std::uint64_t> metadata_version_at(const std::byte *area, const metadata_line &line,
+                                                 std::uint64_t head, std::uint64_t position) noexcept {
     std::uint64_t steps = 0;
     for (std::uint64_t v = head; v != 0 && steps < line.entries; --v, ++steps) {
         metadata_entry &e = metadata_entry_of(area, line, v);
@@ -2380,17 +2374,14 @@ inline result<std::uint64_t> metadata_version_at(const std::byte *area, std::uin
 
 // Adds doc as version head + 1, taking effect at position, stores it in head and returns it. Only one
 // process at a time adds to an area. The add writes over the entry of an older version, and over the
-// bytes of older versions its document covers; may_reclaim, called with a copy of each such version's
-// entry, says whether that version may go, and the add gives status::metadata_full when one may not. A
-// document outside the subset or longer than max_metadata_document gives status::range. Both refusals
-// write nothing.
+// bytes of older versions its document covers; may_reclaim, called for each such version u with the
+// position of version u + 1, before which every item under u lies, says whether u may go, and the add
+// gives status::metadata_full when one may not. A document outside the subset or longer than
+// max_metadata_document gives status::range. Both refusals write nothing.
 template <class F>
-    requires std::is_invocable_r_v<bool, F &, const metadata_entry &>
-result<std::uint64_t> add_metadata(std::byte *area, std::atomic_ref<std::uint64_t> head,
+    requires std::is_invocable_r_v<bool, F &, std::uint64_t>
+result<std::uint64_t> add_metadata(std::byte *area, const metadata_line &line, std::atomic_ref<std::uint64_t> head,
                                    std::span<const std::byte> doc, std::uint64_t position, F &&may_reclaim) {
-    const metadata_line line = copy_metadata_line(area);
-    if (!metadata_line_ok(line))
-        return unexpected(status::corrupt);
     if (doc.size() > max_metadata_document(line.ring_size) || !metadata_ok(doc))
         return unexpected(status::range);
     const std::uint64_t newest = head.load(std::memory_order_acquire);
@@ -2414,7 +2405,12 @@ result<std::uint64_t> add_metadata(std::byte *area, std::atomic_ref<std::uint64_
     };
     for (std::uint64_t u = oldest; u < newest; ++u) {
         metadata_entry e{};
-        if (load_metadata_entry(metadata_entry_of(area, line, u), u, e) && overwritten(u, e) && !may_reclaim(e))
+        if (!load_metadata_entry(metadata_entry_of(area, line, u), u, e) || !overwritten(u, e))
+            continue;
+        // u + 1 is at most newest, so its entry is not reused yet and still holds its position, even after an
+        // earlier add overwrote its bytes and cleared its seq.
+        metadata_entry &next = metadata_entry_of(area, line, u + 1);
+        if (!may_reclaim(atomic(next.position).load(std::memory_order_relaxed)))
             return unexpected(status::metadata_full);
     }
     for (std::uint64_t u = oldest; u < newest; ++u) {

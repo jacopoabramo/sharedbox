@@ -47,33 +47,47 @@ std::vector<std::byte> nested(std::size_t count) {
 // The status of r, status::ok for a value, so a check on a refusal fails rather than crashes on a success.
 template <class T> status code(const result<T> &r) { return r ? status::ok : r.error().code; }
 
-// An area in a heap buffer, with the head word that a segment header would hold.
+// An area in a heap buffer, the checked copy of its first line an open would keep, and the head word that
+// a segment header would hold.
 struct area {
     area(std::uint32_t entries, std::uint64_t ring_size)
         : words((detail::metadata_area_size(entries, ring_size) + 7) / 8) {
         REQUIRE(detail::init_metadata(data(), entries, ring_size) == status::ok);
+        line = detail::copy_metadata_line(data());
+        REQUIRE(detail::metadata_geometry_ok(line, static_cast<std::uint32_t>(words.size() * 8)));
     }
     std::byte *data() { return reinterpret_cast<std::byte *>(words.data()); }
     std::atomic_ref<std::uint64_t> head() { return std::atomic_ref<std::uint64_t>(head_word); }
     metadata_entry &entry(std::uint64_t version) {
-        auto *line = reinterpret_cast<metadata_line *>(data());
-        return reinterpret_cast<metadata_entry *>(data() + sizeof(metadata_line))[version % line->entries];
+        return reinterpret_cast<metadata_entry *>(data() + sizeof(metadata_line))[version % line.entries];
+    }
+    template <class F>
+    result<std::uint64_t> add_with(std::span<const std::byte> doc, std::uint64_t position, F &&f) {
+        return detail::add_metadata(data(), line, head(), doc, position, f);
     }
     result<std::uint64_t> add(std::span<const std::byte> doc, std::uint64_t position) {
-        return detail::add_metadata(data(), head(), doc, position, [](const metadata_entry &) { return true; });
+        return add_with(doc, position, [](std::uint64_t) { return true; });
+    }
+    result<std::uint32_t> length(std::uint64_t version) { return detail::metadata_length(data(), line, version); }
+    result<std::uint32_t> read_into(std::uint64_t version, std::span<std::byte> out) {
+        return detail::read_metadata(data(), line, version, out);
+    }
+    result<std::uint64_t> version_at(std::uint64_t at_head, std::uint64_t position) {
+        return detail::metadata_version_at(data(), line, at_head, position);
     }
     result<std::vector<std::byte>> read(std::uint64_t version) {
-        const result<std::uint32_t> length = detail::metadata_length(data(), version);
-        if (!length)
-            return sharedbox::unexpected(length.error());
-        std::vector<std::byte> out(*length);
-        const result<std::uint32_t> got = detail::read_metadata(data(), version, out);
+        const result<std::uint32_t> n = length(version);
+        if (!n)
+            return sharedbox::unexpected(n.error());
+        std::vector<std::byte> out(*n);
+        const result<std::uint32_t> got = read_into(version, out);
         if (!got)
             return sharedbox::unexpected(got.error());
         out.resize(*got);
         return out;
     }
     std::vector<std::uint64_t> words;
+    metadata_line line{};
     std::uint64_t head_word = 0;
 };
 
@@ -132,7 +146,7 @@ TEST_CASE("the subset checker refuses the rest") {
 
 TEST_CASE("a version added is read back by number and found by position") {
     area a(4, 192);
-    CHECK(code(detail::metadata_version_at(a.data(), 0, 0)) == status::not_found);
+    CHECK(code(a.version_at(0, 0)) == status::not_found);
     CHECK(code(a.read(1)) == status::not_found);
     const std::vector<std::vector<std::byte>> docs = {
         cbor({0x61, 0x61}),
@@ -154,15 +168,15 @@ TEST_CASE("a version added is read back by number and found by position") {
     CHECK(code(a.read(0)) == status::not_found);
     CHECK(code(a.read(4)) == status::not_found);
     const std::uint64_t head = a.head().load();
-    CHECK(detail::metadata_version_at(a.data(), head, 4).value_or(0) == 1);
-    CHECK(detail::metadata_version_at(a.data(), head, 5).value_or(0) == 2);
-    CHECK(detail::metadata_version_at(a.data(), head, 8).value_or(0) == 2);
-    CHECK(detail::metadata_version_at(a.data(), head, 9).value_or(0) == 3);
-    CHECK(detail::metadata_version_at(a.data(), head, 100).value_or(0) == 3);
+    CHECK(a.version_at(head, 4).value_or(0) == 1);
+    CHECK(a.version_at(head, 5).value_or(0) == 2);
+    CHECK(a.version_at(head, 8).value_or(0) == 2);
+    CHECK(a.version_at(head, 9).value_or(0) == 3);
+    CHECK(a.version_at(head, 100).value_or(0) == 3);
 
     area late(4, 192);
     REQUIRE(late.add(docs[0], 3));
-    CHECK(code(detail::metadata_version_at(late.data(), 1, 2)) == status::not_found);
+    CHECK(code(late.version_at(1, 2)) == status::not_found);
 }
 
 TEST_CASE("a document of a third of the ring is the largest accepted") {
@@ -177,9 +191,9 @@ TEST_CASE("a document of a third of the ring is the largest accepted") {
     CHECK(*accepted == 1);
     CHECK(a.read(1).value_or(std::vector<std::byte>{}) == byte_string(64, 2));
 
-    // A third of 200 is 66, rounded down to 64 so that a document wrapping to 0 stops before the newest.
+    // A third of 200 is 66, rounded down to 64, so that a document wrapping to 0 stops before the newest.
     area b(4, 200);
-    CHECK(code(b.add(byte_string(66, 3), 0)) == status::range);
+    CHECK(code(b.add(byte_string(65, 3), 0)) == status::range);
     CHECK(b.add(byte_string(64, 3), 0));
 }
 
@@ -196,14 +210,14 @@ TEST_CASE("wrapping reclaims old versions and keeps the newest") {
 TEST_CASE("a version whose bytes are overwritten is gone though its entry is not reused") {
     area a(8, 192);
     std::vector<std::uint64_t> asked;
-    auto record = [&](const metadata_entry &e) {
-        asked.push_back(e.version);
+    auto record = [&](std::uint64_t next) {
+        asked.push_back(next);
         return true;
     };
     for (std::uint8_t v = 1; v <= 4; ++v)
-        REQUIRE(detail::add_metadata(a.data(), a.head(), byte_string(64, v), v, record));
+        REQUIRE(a.add_with(byte_string(64, v), 10 * v, record));
     // The fourth document does not fit after the third and starts again at 0, over the first.
-    CHECK(asked == std::vector<std::uint64_t>{1});
+    CHECK(asked == std::vector<std::uint64_t>{20});
     CHECK(code(a.read(1)) == status::not_found);
     for (std::uint8_t v = 2; v <= 4; ++v)
         CHECK(a.read(v).value_or(std::vector<std::byte>{}) == byte_string(64, v));
@@ -215,22 +229,22 @@ TEST_CASE("a refused reclaim writes nothing") {
     SUBCASE("the bytes are overwritten") { entries = 8; }
     area a(entries, 192);
     std::vector<std::uint64_t> asked;
-    auto refuse = [&](const metadata_entry &e) {
-        asked.push_back(e.version);
+    auto refuse = [&](std::uint64_t next) {
+        asked.push_back(next);
         return false;
     };
     for (std::uint8_t v = 1; v <= 2; ++v)
-        REQUIRE(detail::add_metadata(a.data(), a.head(), byte_string(64, v), v, refuse));
+        REQUIRE(a.add_with(byte_string(64, v), 10 * v, refuse));
     // With 8 entries the third fits before the end, so only a fourth reaches the first's bytes.
     if (entries == 8)
-        REQUIRE(detail::add_metadata(a.data(), a.head(), byte_string(64, 3), 3, refuse));
+        REQUIRE(a.add_with(byte_string(64, 3), 30, refuse));
     CHECK(asked.empty());
     const std::vector<std::uint64_t> before = a.words;
     const std::uint64_t head = a.head().load();
-    const result<std::uint64_t> added = detail::add_metadata(a.data(), a.head(), byte_string(64, 9), 9, refuse);
+    const result<std::uint64_t> added = a.add_with(byte_string(64, 9), 90, refuse);
     REQUIRE_FALSE(added);
     CHECK(code(added) == status::metadata_full);
-    CHECK(asked == std::vector<std::uint64_t>{1});
+    CHECK(asked == std::vector<std::uint64_t>{20});
     CHECK(a.head().load() == head);
     CHECK(a.words == before);
 }
@@ -258,7 +272,7 @@ TEST_CASE("a read during adds is never torn") {
     std::uint64_t reads = 0;
     std::vector<std::byte> out(size);
     const auto read = [&](std::uint64_t v) {
-        const result<std::uint32_t> got = detail::read_metadata(a.data(), v, out);
+        const result<std::uint32_t> got = a.read_into(v, out);
         if (got) {
             ++reads;
             if (*got != size || out != docs[v % 256])
@@ -304,12 +318,33 @@ TEST_CASE("a forged area is refused") {
     const std::vector<std::byte> doc = byte_string(30, 7);
     REQUIRE(a.add(doc, 0));
     std::vector<std::byte> short_out(doc.size() - 1);
-    CHECK(code(detail::read_metadata(a.data(), 1, short_out)) == status::range);
+    CHECK(code(a.read_into(1, short_out)) == status::range);
 
     a.entry(1).offset = 192 - 8;
-    CHECK(code(detail::read_metadata(a.data(), 1, std::span<std::byte>(short_out))) == status::corrupt);
-    CHECK(code(detail::metadata_length(a.data(), 1)) == status::corrupt);
+    CHECK(code(a.read_into(1, std::span<std::byte>(short_out))) == status::corrupt);
+    CHECK(code(a.length(1)) == status::corrupt);
 
-    reinterpret_cast<metadata_line *>(a.data())->entries = 0;
-    CHECK(code(detail::metadata_length(a.data(), 1)) == status::corrupt);
+    // A ring size rewritten in the area after the open would place the document inside; the checked copy
+    // does not.
+    reinterpret_cast<metadata_line *>(a.data())->ring_size = std::uint64_t{1} << 40;
+    CHECK(code(a.length(1)) == status::corrupt);
+    CHECK(code(a.read_into(1, std::span<std::byte>(short_out))) == status::corrupt);
+}
+
+TEST_CASE("a reclaim is decided by the position of the version after the one reclaimed") {
+    // A stream of 8 slots whose sender is at write_pos: version u may go once no item in the ring was sent
+    // under it, that is once version u + 1 took effect at or before write_pos - 8.
+    area a(2, 192);
+    std::uint64_t write_pos = 0;
+    const auto stream_rule = [&](std::uint64_t next) { return next + 8 <= write_pos; };
+    REQUIRE(a.add_with(cbor({0x01}), 0, stream_rule));
+    REQUIRE(a.add_with(cbor({0x02}), 4, stream_rule));
+    write_pos = 10;
+    const result<std::uint64_t> early = a.add_with(cbor({0x03}), write_pos, stream_rule);
+    REQUIRE_FALSE(early);
+    CHECK(code(early) == status::metadata_full);
+    write_pos = 12;
+    CHECK(a.add_with(cbor({0x03}), write_pos, stream_rule).value_or(0) == 3);
+    CHECK(code(a.read(1)) == status::not_found);
+    CHECK(a.version_at(a.head().load(), 11).value_or(0) == 2);
 }
