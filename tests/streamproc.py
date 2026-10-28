@@ -209,9 +209,15 @@ def read_when_released(
     stream = SharedStream.attach(int, name)
     reader = stream.reader(mode="lossless")
     ready.set()
-    assert go.wait(60)
     try:
-        reader.receive(timeout=10)
-    except ReaderReleased as error:
-        results.put((type(error).__name__, error.missed, reader.receive(timeout=10)))
-    stream.close()
+        assert go.wait(60)
+        try:
+            reader.receive(timeout=10)
+        except ReaderReleased as error:
+            results.put(
+                (type(error).__name__, error.missed, reader.receive(timeout=10))
+            )
+        else:
+            results.put(("no exception", 0, 0))
+    finally:
+        stream.close()

@@ -301,5 +301,6 @@ def test_a_slow_reader_in_another_process_is_released(unique_name: str) -> None:
             sender.send(i, timeout=10)
         sender.send(4, timeout=0.2)
         go.set()
-        assert results.get(timeout=60) == ("ReaderReleased", 4, 4)
+        report = results.get(timeout=60)
         finish(child)
+        assert report == ("ReaderReleased", 4, 4)

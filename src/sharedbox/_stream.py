@@ -776,7 +776,10 @@ class SharedSendStream(End, Generic[T]):
         Raises
         ------
         TimeoutError
-            If `timeout` seconds pass first; the item is not sent.
+            If `timeout` seconds pass first; the item is not sent. With
+            `on_full="release"`, only if another thread or task holds the
+            slot from `writing`, or a reader from sharedbox 0.7.0 or earlier
+            holds the sender back.
         StreamClosedError
             If this sender is closed, before or during the wait.
         RuntimeError
@@ -795,9 +798,10 @@ class SharedSendStream(End, Generic[T]):
         """Send `item`, as [`send`][sharedbox.SharedSendStream.send] does, without blocking the event loop.
 
         `timeout` has the meaning it has in `send`, including the release of
-        readers under `on_full="release"`. Cancelling `asend` releases
-        nothing, so a sender that must not stall passes a `timeout` instead
-        of wrapping the call in `asyncio.wait_for`.
+        readers under `on_full="release"`. An `asend` cancelled before its
+        `timeout` passes releases nothing, so a sender that must not stall
+        passes a `timeout` instead of wrapping the call in
+        `asyncio.wait_for`.
 
         A cancelled `asend` may still have sent its item, if a reader made
         room just as it was cancelled.
@@ -895,7 +899,8 @@ class SharedSendStream(End, Generic[T]):
             if future is not None and self._cancelled is future:
                 self._cancelled = None
                 raise CancelledError()
-            # The loop above releases nothing: it ends only once the whole timeout has passed, and this last call, with no wait, is the one that releases.
+            # The step loop ends only once the whole timeout has passed, so the
+            # release attempt comes after it.
             try:
                 call(*args, 0.0, True)
                 return
@@ -990,8 +995,8 @@ class SharedSendStream(End, Generic[T]):
     ) -> AsyncGenerator[SendSlot[T], None]:
         """Reserve the next slot, as [`writing`][sharedbox.SharedSendStream.writing] does, without blocking the event loop.
 
-        `timeout` has the meaning it has in `writing`. A cancelled `awriting`
-        reserves nothing and releases no reader.
+        `timeout` has the meaning it has in `writing`. An `awriting` cancelled
+        before its `timeout` passes reserves nothing and releases no reader.
 
         Raises
         ------
