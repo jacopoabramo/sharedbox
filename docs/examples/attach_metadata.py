@@ -1,7 +1,5 @@
 """The script of the guide "How to attach metadata to a box or stream"."""
 
-from dataclasses import dataclass
-
 # --8<-- [start:box]
 from typing import TypedDict
 
@@ -55,13 +53,8 @@ scale.update(metadata={**stored, "offset": 0.5})
 
 
 # --8<-- [start:stream]
-@dataclass(frozen=True)
-class Reading:
-    weight: float
-
-
 with SharedStream.create(
-    Reading,
+    float,
     "example-scale:readings",
     capacity=8,
     metadata={"unit": "kg", "offset": 0.0},
@@ -69,12 +62,12 @@ with SharedStream.create(
 ) as stream:
     reader = stream.reader()
     with stream.sender() as sender:
-        sender.send(Reading(1.5))
-        sender.send(Reading(1.75), metadata={"unit": "kg", "offset": 0.25})
-    for reading in reader:
+        sender.send(1.5)
+        sender.send(1.75, metadata={"unit": "kg", "offset": 0.25})
+    for weight in reader:
         calibration = reader.metadata
         if calibration is not None:
-            print(reader.metadata_version, reading.weight - calibration["offset"])
+            print(reader.metadata_version, weight - calibration["offset"])
             # prints 1 1.5, then 2 1.5
 SharedStream.unlink("example-scale:readings")
 # --8<-- [end:stream]

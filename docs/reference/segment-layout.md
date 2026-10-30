@@ -1357,6 +1357,8 @@ public:
     result<read_value> read_large(std::uint16_t field, std::span<std::byte> buf) const;
     result<std::uint64_t> read_record_large(std::span<std::byte> buf) const;
     result<void> write_large(std::span<const value> values, seconds lock_timeout);
+    result<std::uint64_t> write_large(std::span<const value> values, std::span<const std::byte> doc,
+                                      seconds lock_timeout);
     std::span<const std::byte> payload(std::uint16_t field, std::span<const std::byte> record) const noexcept;
     result<void> write(std::span<const value> values, seconds lock_timeout);
     result<std::uint64_t> write(std::span<const value> values, std::span<const std::byte> doc, seconds lock_timeout);
@@ -1479,7 +1481,8 @@ The header also declares these names:
   adds `doc` as the next version in the same write: one generation, so a
   reader sees the values and the version together. It returns the version,
   and gives the statuses of `write` and of `add_metadata`. A refused
-  document writes no field.
+  document writes no field. `write_large(values, doc, lock_timeout)` is the
+  same write for large values, running the wait hooks once around it.
 - Thread safety: every member function may be called from several threads
   on one handle. Destroying or moving a handle must not overlap another
   call on it.

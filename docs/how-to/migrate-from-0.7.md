@@ -8,8 +8,8 @@ Code written for `sharedbox` 0.7 needs two changes before it runs on the
 next release: a [`Shape`][sharedbox.Shape] now takes its dimensions as one
 tuple, and a box field can no longer take the name of a metadata member,
 such as `metadata`. A third change concerns only type checkers: they refuse
-`update(**values)` when the values are typed more narrowly than `Any`. This
-guide shows the old and the new form of each.
+`update(**values)` for some dictionaries that 0.7 accepted. This guide
+shows the old and the new form of each.
 
 ## Pass the dimensions of a `Shape` as a tuple
 
@@ -63,8 +63,9 @@ update every process that opens the box together.
 [`update`][sharedbox.SharedBox.update] now has a keyword `metadata` besides
 the field names it takes. A type checker cannot tell which keys a `dict` holds,
 so it assumes that `update(**values)` may fill `metadata`, and it refuses the
-call when the values are typed as anything but `Any`, such as `str`. Type
-the dictionary as `dict[str, Any]`, or cast it where you pass it:
+call when the values have a type the box's metadata type does not accept,
+such as `str`. Type the dictionary as `dict[str, Any]`, or cast it where
+you pass it:
 
 ```python
 # 0.7

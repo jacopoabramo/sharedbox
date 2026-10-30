@@ -126,7 +126,7 @@ a box's does.
 
 A type checker takes the stream's metadata type from `metadata_type`,
 given to `create` as above or to `attach` in another process, as in
-`SharedStream.attach(Reading, name, metadata_type=Calibration)`. Without
+`SharedStream.attach(float, name, metadata_type=Calibration)`. Without
 it the metadata is a `Mapping[str, Any]`, whatever `metadata` you pass.
 
 A stream keeps every version that an item still in its ring was sent
@@ -134,7 +134,8 @@ under, and keeps version 1 while an item sent before it is in the ring,
 so that a reader can tell such an item from one whose version is gone. A
 send with `metadata` that would let such a version go raises
 `MetadataFullError` before it waits for room in the ring, so it sends
-nothing and releases no reader. The same send succeeds once the sender has
+nothing and releases no reader; the slot's `send` in a `writing` block
+raises it the same way and leaves the slot reserved. The same send succeeds once the sender has
 sent enough further items that none of those items is left in the ring.
 Once a reader's last item has left the ring, though, its version can go,
 and the reader's `metadata` then raises `MetadataGoneError`. A lossy or
