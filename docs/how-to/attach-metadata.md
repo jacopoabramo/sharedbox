@@ -49,8 +49,8 @@ accepts it only in `create`, where it does not check the value.
 Any process that has the box open adds a version by passing `metadata` to
 [`update`][sharedbox.SharedBox.update]. The call may also name fields, and
 then the new values and the new version go in as one write, so a reader
-never sees the new fields under the old version. Without fields, the call
-only adds the version:
+that reads the fields and then `metadata` gets the version written with
+them, or a newer one. Without fields, the call only adds the version:
 
 ```{.python}
 --8<-- "docs/examples/attach_metadata.py:add"
