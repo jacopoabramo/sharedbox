@@ -170,6 +170,18 @@ def test_a_slot_send_with_metadata(unique_name: str) -> None:
     SharedStream.unlink(unique_name)
 
 
+def test_a_refused_slot_send_leaves_the_slot_to_send_again(unique_name: str) -> None:
+    """Refuse slot.send with metadata on a stream without a metadata area, and publish on a later slot.send."""
+    with SharedStream.create(int, unique_name, capacity=4) as stream:
+        reader = stream.reader("lossless")
+        with stream.sender().writing(0) as slot:
+            with pytest.raises(MetadataFullError):
+                slot.send(5, metadata={})
+            slot.send(5)
+        assert reader.receive(timeout=5) == 5
+    SharedStream.unlink(unique_name)
+
+
 def test_asend_with_metadata(unique_name: str) -> None:
     """Add the version with an asend, and none when the asend times out on a full ring."""
 
