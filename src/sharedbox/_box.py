@@ -476,7 +476,7 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
       2**32 - 1 bytes in all. A metadata document takes at most about a
       third of the capacity. By default a box created with `metadata`
       gets 65536, and any other box no area, so
-      [`update`][sharedbox.SharedBox.update] on it raises
+      [`update`][sharedbox.SharedBox.update] with `metadata` on it raises
       `MetadataFullError`.
     - `metadata_versions`: how many metadata versions the box keeps at
       most, 2 to 65535, 64 by default.

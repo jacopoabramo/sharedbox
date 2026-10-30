@@ -1,17 +1,18 @@
 """The script of the guide "How to attach metadata to a box or stream"."""
 
 # --8<-- [start:box]
-from dataclasses import dataclass
 from typing import TypedDict
 
 from sharedbox import SharedBox, SharedStream
 
 
+# --8<-- [start:calibration]
 class Calibration(TypedDict):
     unit: str
     offset: float
 
 
+# --8<-- [end:calibration]
 class Scale(SharedBox[Calibration]):
     weight: float = 0.0
 
@@ -22,10 +23,12 @@ print(scale.metadata)  # {'unit': 'kg', 'offset': 0.0}
 # --8<-- [end:box]
 
 # --8<-- [start:add]
-scale.update(metadata={"unit": "kg", "offset": 0.25})
-print(scale.metadata_version)  # 2
+scale.update(weight=1.2, metadata={"unit": "kg", "offset": 0.25})
+print(scale.weight, scale.metadata_version)  # 1.2 2
 print(scale.metadata_version_of(1)["offset"])  # 0.0
 print(scale.metadata_version_of(2)["offset"])  # 0.25
+scale.update(metadata={"unit": "kg", "offset": 0.3})
+print(scale.weight, scale.metadata_version)  # 1.2 3
 # --8<-- [end:add]
 
 
@@ -50,6 +53,9 @@ scale.update(metadata={**stored, "offset": 0.5})
 
 
 # --8<-- [start:stream]
+from dataclasses import dataclass
+
+
 @dataclass(frozen=True)
 class Reading:
     weight: float
@@ -59,13 +65,13 @@ with SharedStream.create(
     Reading,
     "example-scale:readings",
     capacity=8,
-    metadata=Calibration(unit="kg", offset=0.0),
+    metadata={"unit": "kg", "offset": 0.0},
     metadata_type=Calibration,
 ) as stream:
     reader = stream.reader()
     with stream.sender() as sender:
         sender.send(Reading(1.5))
-        sender.send(Reading(1.75), metadata=Calibration(unit="kg", offset=0.25))
+        sender.send(Reading(1.75), metadata={"unit": "kg", "offset": 0.25})
     for reading in reader:
         calibration = reader.metadata
         if calibration is not None:

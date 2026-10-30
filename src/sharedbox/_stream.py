@@ -329,9 +329,9 @@ class SharedStream(Generic[T, M]):
             Readers that may be open at once, 1 to 4095.
         metadata
             The stream's first metadata version, in force from the first
-            item; see [`metadata`][sharedbox.SharedStream.metadata]. It
-            takes the values
-            `metadata` of [`send`][sharedbox.SharedSendStream.send] takes.
+            item; see [`metadata`][sharedbox.SharedStream.metadata]. Its
+            value follows the same rules as the `metadata` of
+            [`send`][sharedbox.SharedSendStream.send].
         metadata_capacity
             Bytes of the stream's metadata area, 0 for none or at least 24.
             The area takes 64 bytes, plus 32 per version, plus the capacity
@@ -954,11 +954,11 @@ class SharedSendStream(End, Generic[T, M]):
     ) -> None:
         """Send `item`, as [`send`][sharedbox.SharedSendStream.send] does, without blocking the event loop.
 
-        `timeout` and `metadata` have the meaning they have in `send`,
-        including the release of readers under `on_full="release"`. An `asend` cancelled before its
-        `timeout` passes releases nothing, so a sender that must not stall
-        passes a `timeout` instead of wrapping the call in
-        `asyncio.wait_for`.
+        `metadata` has the meaning it has in `send`, and so does `timeout`,
+        including the release of readers under `on_full="release"`. An
+        `asend` cancelled before its `timeout` passes releases nothing, so a
+        sender that must not stall passes a `timeout` instead of wrapping
+        the call in `asyncio.wait_for`.
 
         A cancelled `asend` may still have sent its item, if a reader made
         room just as it was cancelled.

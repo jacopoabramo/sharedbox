@@ -1359,6 +1359,7 @@ public:
     result<void> write_large(std::span<const value> values, seconds lock_timeout);
     std::span<const std::byte> payload(std::uint16_t field, std::span<const std::byte> record) const noexcept;
     result<void> write(std::span<const value> values, seconds lock_timeout);
+    result<std::uint64_t> write(std::span<const value> values, std::span<const std::byte> doc, seconds lock_timeout);
     std::uint64_t generation() const noexcept;
     std::uint64_t version(std::uint16_t field) const noexcept;
     std::uint32_t writer_pid() const noexcept;
@@ -1474,6 +1475,11 @@ The header also declares these names:
   `status::range` for a document outside the subset or longer than a third
   of the ring, and `status::lock_timeout` as for `write`. A refused add
   leaves the generation as it was.
+- `write(values, doc, lock_timeout)` writes `values` as `write` does and
+  adds `doc` as the next version in the same write: one generation, so a
+  reader sees the values and the version together. It returns the version,
+  and gives the statuses of `write` and of `add_metadata`. A refused
+  document writes no field.
 - Thread safety: every member function may be called from several threads
   on one handle. Destroying or moving a handle must not overlap another
   call on it.
@@ -1510,6 +1516,7 @@ public:
     result<std::span<std::byte>> begin(seconds timeout, on_full policy = on_full::wait);
     result<std::uint64_t> publish() noexcept;
     result<std::uint64_t> add_metadata(std::span<const std::byte> doc);
+    result<void> can_add_metadata(std::span<const std::byte> doc) const;
     void abandon() noexcept;
     result<void> interrupt();
     void close() noexcept;
@@ -1623,6 +1630,9 @@ Stream layout). Every function returning a `result` is `[[nodiscard]]`.
   `status::metadata_full` for a stream without a metadata area, and while
   an item still in the ring, or yet to be sent, needs a version the add
   would overwrite; an add after enough further sends succeeds.
+- `stream_sender::can_add_metadata(doc)` gives the status `add_metadata(doc)`
+  would give now, and writes nothing. The answer holds until the next send
+  or add on the same sender.
   `status::range` for a document outside the subset or longer than a third
   of the ring, for a closed sender, and in a child of `fork`. It must not
   overlap a send on the same sender.
