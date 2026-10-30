@@ -34,8 +34,8 @@ at run time passes the tuple it already has, `Shape(dims)`, in place of
 ## Rename a field called `metadata`
 
 A box now has [metadata](../explanation/glossary.md#metadata) of its own,
-which it reads and adds through four new members: `metadata`,
-`metadata_version`, `metadata_version_of` and `add_metadata`. A field or an
+which it reads through three new members: `metadata`,
+`metadata_version` and `metadata_version_of`. A field or an
 `InitVar` can no longer take one of those names, so give it another:
 
 ```python

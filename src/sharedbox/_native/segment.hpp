@@ -174,9 +174,10 @@ public:
     std::uint32_t metadata_length(std::uint64_t version) const;
     /// The document of a metadata version; throws MetadataGone when the box no longer holds it.
     std::string read_metadata(std::uint64_t version) const;
-    /// Adds doc as the next metadata version and returns it; throws MetadataFull for a box without a
-    /// metadata area and std::invalid_argument for a document the area does not take.
-    std::uint64_t add_metadata(std::string_view doc);
+    /// Writes values and adds doc as the next metadata version under one lock, and returns that version;
+    /// writes nothing and throws MetadataFull for a box without a metadata area, std::invalid_argument
+    /// for a bad value or a document the area does not take.
+    std::uint64_t write(std::span<const value> values, std::string_view doc);
     /// A heap handle with its own mapping of the segment, for a capsule. Call its release, then
     /// delete it.
     sbx_handle *export_handle() const;

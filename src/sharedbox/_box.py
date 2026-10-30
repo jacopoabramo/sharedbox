@@ -83,7 +83,6 @@ RESERVED = frozenset(
         "metadata",
         "metadata_version",
         "metadata_version_of",
-        "add_metadata",
     }
 )
 # The events group has these as its own names, so no field can take them.
@@ -477,7 +476,7 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
       2**32 - 1 bytes in all. A metadata document takes at most about a
       third of the capacity. By default a box created with `metadata`
       gets 65536, and any other box no area, so
-      [`add_metadata`][sharedbox.SharedBox.add_metadata] on it raises
+      [`update`][sharedbox.SharedBox.update] on it raises
       `MetadataFullError`.
     - `metadata_versions`: how many metadata versions the box keeps at
       most, 2 to 65535, 64 by default.
@@ -485,7 +484,7 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
     Calling the class, or [`create`][sharedbox.SharedBox.create], with the
     keyword `metadata` stores that value as the box's first metadata
     version; see [`metadata`][sharedbox.SharedBox.metadata]. A type
-    checker takes the type of the metadata a box reads and adds from the
+    checker takes the type of the metadata a box reads and writes from the
     class's base, as in `class Motor(SharedBox[Info])`. It accepts the
     keyword `metadata` only in `create`, and does not check its value.
 
@@ -551,7 +550,7 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
         `SharedBox` member (`name`, `closed`, `close`, `unlink`, `update`,
         `snapshot`, `read_into`, `writing`, `watch`, `events`,
         `force_unlock`, `create`, `attach`, `metadata`, `metadata_version`,
-        `metadata_version_of`, `add_metadata`), a field named `follow`,
+        `metadata_version_of`), a field named `follow`,
         `unfollow` or `nested`, a default of the wrong type, a
         positional field without a default after one with a default, an
         `InitVar` in a class without `__post_init__`, a reference to a
@@ -559,7 +558,7 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
         an `identity` that is not a non-empty string. When the class is
         called, for a missing, unknown or repeated value, a value of the
         wrong type, or `metadata` that
-        [`add_metadata`][sharedbox.SharedBox.add_metadata] would refuse
+        [`update`][sharedbox.SharedBox.update] would refuse
         with `TypeError`.
     ValueError
         When the class is defined, for a `name` that is not segments of
@@ -567,7 +566,7 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
         `lock_timeout`, `max_waiters`, `metadata_capacity` or
         `metadata_versions` out of range, or a default that does not fit
         its field (any of the cases below). When the class is called, for
-        `metadata` that [`add_metadata`][sharedbox.SharedBox.add_metadata]
+        `metadata` that [`update`][sharedbox.SharedBox.update]
         would refuse with `ValueError`, for any `metadata` when the class
         sets `metadata_capacity=0`, or for a metadata area that does not
         fit after the record in a box of at most 2**32 - 4096 bytes. When
@@ -1022,7 +1021,7 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
 
         Metadata is a document stored beside the fields, such as the units
         or calibration the values were taken with. Adding a version with
-        [`add_metadata`][sharedbox.SharedBox.add_metadata] keeps the
+        [`update`][sharedbox.SharedBox.update] keeps the
         earlier ones until the box reclaims them for newer ones, and
         [`metadata_version_of`][sharedbox.SharedBox.metadata_version_of]
         reads them until then. A mapping reads back as a read-only mapping
@@ -1071,50 +1070,41 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
             ),
         )
 
-    def add_metadata(self, value: M) -> int:  # type: ignore[misc]
-        """Store `value` as the box's next metadata version and return that version.
-
-        Any process may add metadata to a box. The value is `None`, a
-        `bool`, an `int` from -2**64 to 2**64 - 1, a `float`, a `str`,
-        `bytes`, a mapping with `str` keys, or a `list` or `tuple`, nested
-        up to 32 levels. The add takes the write lock as a write does and
-        changes no field. The `metadata` signal of
-        [`events`][sharedbox.SharedBox.events] is emitted with the new
-        version in every process that listens to it. The oldest versions
-        are reclaimed once the box holds `metadata_versions` of them, or
-        needs their room in its metadata area.
-
-        Raises
-        ------
-        TypeError
-            If the value holds another type, or a mapping key is not a `str`.
-        ValueError
-            If an `int` is out of range, the nesting is deeper than 32
-            levels, or the document is longer than the metadata area takes,
-            about a third of the class's `metadata_capacity`.
-        MetadataFullError
-            If the box has no metadata area: its class sets no
-            `metadata_capacity` and it was created without `metadata`.
-        LockTimeoutError
-            If another writer holds the lock longer than the lock timeout.
-        BoxClosedError
-            If the box is closed.
-        """
-        return self._segment.add_metadata(encode(value))
-
-    def update(self, **values: Any) -> None:
+    def update(self, *, metadata: M | None = None, **values: Any) -> None:
         """Write several fields under one lock; a reader sees all of the new values or none.
 
         Every value is checked before any is written, so an update that
         raises changes nothing. A reference field takes a box or None,
         checked as when it is assigned.
 
+        With `metadata`, the same lock also adds the value as the box's
+        next metadata version, and no reader sees the fields without it. The
+        value is `None`, a `bool`, an `int` from -2**64 to 2**64 - 1, a
+        `float`, a `str`, `bytes`, a mapping with `str` keys, or a `list` or
+        `tuple`, nested up to 32 levels. The `metadata` signal of
+        [`events`][sharedbox.SharedBox.events] is emitted before the signals
+        of the fields, in every process that listens to them. The oldest
+        versions are reclaimed once the box holds `metadata_versions` of
+        them, or needs their room in its metadata area. `metadata=None`
+        adds no version.
+
         Raises
         ------
         TypeError
-            If a name is not a field or a value has the wrong type.
+            If a name is not a field or a value has the wrong type, or the
+            metadata holds another type or a mapping key that is not a `str`.
         ValueError
-            If a `str` or `bytes` value is longer than its capacity.
+            If a `str` or `bytes` value is longer than its capacity, or an
+            `int` of the metadata is out of range, its nesting is deeper than
+            32 levels, or its document is longer than the metadata area
+            takes, about a third of the class's `metadata_capacity`.
+        MetadataFullError
+            With `metadata`, if the box has no metadata area: its class sets
+            no `metadata_capacity` and it was created without `metadata`.
+        LockTimeoutError
+            If another writer holds the lock longer than the lock timeout.
+        BoxClosedError
+            If the box is closed.
         """
         # A native method replaces this on every class that does not define or inherit its own update.
         layout = type(self).__layout__
@@ -1130,7 +1120,9 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
                 (i, v if specs[i].target is None else stored(specs[i], v))
                 for i, v in pairs
             ]
-        self._segment.set(pairs, layout.types)
+        self._segment.set(
+            pairs, layout.types, None if metadata is None else encode(metadata)
+        )
 
     def snapshot(self, *, follow: bool = False) -> dict[str, Any]:
         """Return every field's value, with this box read at one point in time.

@@ -22,8 +22,8 @@ print(scale.metadata)  # {'unit': 'kg', 'offset': 0.0}
 # --8<-- [end:box]
 
 # --8<-- [start:add]
-version = scale.add_metadata({"unit": "kg", "offset": 0.25})
-print(version)  # 2
+scale.update(metadata={"unit": "kg", "offset": 0.25})
+print(scale.metadata_version)  # 2
 print(scale.metadata_version_of(1)["offset"])  # 0.0
 print(scale.metadata_version_of(2)["offset"])  # 0.25
 # --8<-- [end:add]
@@ -36,7 +36,7 @@ class Display(SharedBox[Calibration], metadata_capacity=4096, metadata_versions=
 
 display = Display.create("example-display")
 print(display.metadata)  # None
-display.add_metadata({"unit": "g", "offset": 0.0})
+display.update(metadata={"unit": "g", "offset": 0.0})
 # --8<-- [end:capacity]
 
 # --8<-- [start:read-only]
@@ -45,7 +45,7 @@ try:
     stored["offset"] = 0.5
 except TypeError as error:
     print(error)  # 'mappingproxy' object does not support item assignment
-scale.add_metadata({**stored, "offset": 0.5})
+scale.update(metadata={**stored, "offset": 0.5})
 # --8<-- [end:read-only]
 
 

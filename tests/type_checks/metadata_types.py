@@ -35,6 +35,11 @@ def check_box_metadata(motor: Motor, plain: Plain) -> None:
     assert_type(plain.metadata_version_of(1), Mapping[str, Any])
 
 
+def check_update_metadata(motor: Motor) -> None:
+    motor.update(speed=1, metadata={"unit": "mm"})
+    motor.update(metadata={"unit": 1})  # type: ignore[arg-type]
+
+
 def check_default(stream: SharedStream[Item]) -> None:
     assert_type(stream, SharedStream[Item, Mapping[str, Any]])
     assert_type(stream.sender(), SharedSendStream[Item, Mapping[str, Any]])

@@ -269,11 +269,23 @@ class Segment:
         """Return every field's value under its name in `names`, read at one point in time."""
 
     def set(
-        self, values: Sequence[tuple[int, object]], types: Types | None = None
+        self,
+        values: Sequence[tuple[int, object]],
+        types: Types | None = None,
+        doc: bytes | None = None,
     ) -> None:
         """Convert every value, then write them all under one lock.
 
         A reference field takes `(create_id, schema_hash, name)`, or None to empty it.
+        With `doc`, an encoded document, the same lock adds it as the next metadata
+        version, and nothing is written if the segment refuses it.
+
+        Raises
+        ------
+        MetadataFullError
+            With `doc`, if the segment has no metadata area.
+        ValueError
+            With `doc`, if the document is longer than the area takes.
         """
 
     def _read(self, field: int) -> bytes:
@@ -310,21 +322,6 @@ class Segment:
         ------
         MetadataGoneError
             If the segment no longer holds that version, or never did.
-        """
-
-    def add_metadata(self, doc: bytes) -> int:
-        """Store an encoded document as the next metadata version and return that version.
-
-        Takes the write lock, so waiters wake, but no field changes.
-
-        Raises
-        ------
-        MetadataFullError
-            If the segment has no metadata area.
-        ValueError
-            If the document is longer than the area takes.
-        LockTimeoutError
-            If another writer holds the lock longer than the lock timeout.
         """
 
     def publish(self) -> None:

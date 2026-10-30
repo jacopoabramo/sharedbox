@@ -38,7 +38,7 @@ counting from 1.
 
 A value is `None`, a `bool`, an `int`, a `float`, a `str`, `bytes`, a list
 or tuple, or a mapping with `str` keys, nested up to 32 levels;
-[`add_metadata`][sharedbox.SharedBox.add_metadata] lists the limits. The
+[`update`][sharedbox.SharedBox.update] lists the limits. The
 type argument must be a mapping type, but only a type checker holds you to
 that: at run time a value that is not a mapping is stored all the same.
 Calling the class takes the `metadata` keyword too, but a type checker
@@ -47,8 +47,8 @@ accepts it only in `create`, where it does not check the value.
 ## Add a version
 
 Any process that has the box open adds a version with
-[`add_metadata`][sharedbox.SharedBox.add_metadata], which returns the new
-version's number:
+[`update`][sharedbox.SharedBox.update] with the `metadata` keyword; it can
+write fields in the same call:
 
 ```{.python}
 --8<-- "docs/examples/attach_metadata.py:add"
@@ -72,7 +72,7 @@ it has let go raises [`MetadataGoneError`][sharedbox.MetadataGoneError].
 ## Leave room for metadata added later
 
 A box created with `metadata` gets 65536 bytes of room for its metadata,
-and one created without it gets none, so `add_metadata` on it raises
+and one created without it gets none, so `update(metadata=...)` on it raises
 [`MetadataFullError`][sharedbox.MetadataFullError]. When the first version
 comes after the box is created, give the class a `metadata_capacity`:
 

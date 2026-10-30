@@ -19,12 +19,12 @@ def update(box: SharedBox, values: dict[str, Any]) -> None:
     box.close()
 
 
-def read_and_add_metadata(
+def read_and_update_metadata(
     box: SharedBox, value: Mapping[str, Any]
 ) -> dict[str, Any] | None:
-    """Read the metadata of `box`, add `value` as its next version, close the box and return what was read."""
+    """Read the metadata of `box`, write `value` as its next metadata version, close the box and return what was read."""
     seen = box.metadata
-    box.add_metadata(value)
+    box.update(metadata=value)
     box.close()
     return None if seen is None else dict(seen)
 

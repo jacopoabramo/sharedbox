@@ -520,9 +520,9 @@ class BoxEvents(SignalGroup):
 
     _sharedbox_follower: Follower
     metadata: SignalInstance
-    """Emitted with the new version number when any process adds metadata to the box.
+    """Emitted with the new version number when any process writes a new metadata version.
 
-    Several adds between two checks of the watcher thread emit once, with
+    Several versions between two checks of the watcher thread emit once, with
     the newest version. `box.events.connect(cb)` receives it too. A group
     that [`follow`][sharedbox.BoxEvents.follow] returns has it but does
     not emit it.

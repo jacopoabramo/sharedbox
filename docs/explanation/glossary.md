@@ -106,7 +106,7 @@ A metadata version is one value of a box's or stream's
 leaves the earlier ones as they were, until the box or stream lets the
 oldest go to make room for new ones. A stream item belongs to the newest
 version its [sender](#sender) added before sending it. See
-[`add_metadata`][sharedbox.SharedBox.add_metadata].
+[`update`][sharedbox.SharedBox.update].
 
 ### Reader
 

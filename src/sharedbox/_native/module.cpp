@@ -425,6 +425,11 @@ PyObject *box_update(PyObject *callable, PyObject *const *args, std::size_t narg
         for (std::size_t k = 0; k < count; ++k) {
             const Py_ssize_t index = field_index(m, tuple_item(kwnames, static_cast<Py_ssize_t>(k)));
             if (index < 0) {
+                // Only an update that writes metadata is left to the Python method, so this costs the others
+                // nothing.
+                if (PyUnicode_CompareWithASCIIString(tuple_item(kwnames, static_cast<Py_ssize_t>(k)),
+                                                     "metadata") == 0)
+                    return PyObject_Vectorcall(m.fallback, args, nargsf, kwnames);
                 raise_unknown(m, kwnames);
                 return nullptr;
             }
@@ -1139,16 +1144,19 @@ NB_MODULE(_native, m) {
             "names"_a, "types"_a = nb::none())
         .def(
             "set",
-            [](Segment &s, const Values &values, nb::handle types) {
+            [](Segment &s, const Values &values, nb::handle types, std::optional<nb::bytes> doc) {
                 Scratch<sharedbox::Pending, 8> pending(values.size());
                 for (std::size_t i = 0; i < values.size(); ++i)
                     pending[i] = {values[i].first, values[i].second.ptr()};
                 Scratch<sharedbox::EncodeBuffer, 8> buffers(values.size());
                 Scratch<sharedbox::value, 8> encoded(values.size());
                 sharedbox::encode_all(s, types_of(types), pending.span(), buffers.span(), encoded.span());
-                s.write(encoded.span());
+                if (doc)
+                    s.write(encoded.span(), std::string_view(doc->c_str(), doc->size()));
+                else
+                    s.write(encoded.span());
             },
-            "values"_a, "types"_a = nb::none())
+            "values"_a, "types"_a = nb::none(), "doc"_a = nb::none())
         .def(
             "_read",
             [](const Segment &s, std::uint32_t index) {
@@ -1193,10 +1201,6 @@ NB_MODULE(_native, m) {
                 return nb::bytes(doc.data(), doc.size());
             },
             "version"_a)
-        .def(
-            "add_metadata",
-            [](Segment &s, nb::bytes doc) { return s.add_metadata(std::string_view(doc.c_str(), doc.size())); },
-            "doc"_a)
         .def("publish", &Segment::publish)
         .def("generation", &Segment::generation)
         .def("register_waiter", &Segment::register_waiter)
