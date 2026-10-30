@@ -92,8 +92,8 @@ how many versions the box keeps. A stream takes both as keywords of
 
 A stream takes its first version as `metadata` in
 [`create`][sharedbox.SharedStream.create], and its sender adds the next
-ones with [`add_metadata`][sharedbox.SharedSendStream.add_metadata]. A
-version applies from the next item the sender sends, and a reader's
+ones with the `metadata` of [`send`][sharedbox.SharedSendStream.send]. A
+version applies from the item sent with it, and a reader's
 [`metadata`][sharedbox.SharedReceiveStream.metadata] and
 [`metadata_version`][sharedbox.SharedReceiveStream.metadata_version]
 describe the item it received last, so the reader can tell which version

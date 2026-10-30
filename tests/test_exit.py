@@ -122,7 +122,7 @@ release_native()
 for action in (
     lambda: stream.metadata,
     lambda: reader.metadata,
-    lambda: sender.add_metadata({"units": "um"}),
+    lambda: sender.send(2, metadata={"units": "um"}),
 ):
     try:
         action()

@@ -40,6 +40,12 @@ def check_update_metadata(motor: Motor) -> None:
     motor.update(metadata={"unit": 1})  # type: ignore[arg-type]
 
 
+def check_send_metadata(stream: SharedStream[Item, Info]) -> None:
+    sender = stream.sender()
+    sender.send(Item(1), metadata={"unit": "mm"})
+    sender.send(Item(1), metadata={"unit": 1})  # type: ignore[arg-type]
+
+
 def check_default(stream: SharedStream[Item]) -> None:
     assert_type(stream, SharedStream[Item, Mapping[str, Any]])
     assert_type(stream.sender(), SharedSendStream[Item, Mapping[str, Any]])

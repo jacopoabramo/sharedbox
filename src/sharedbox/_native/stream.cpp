@@ -135,6 +135,20 @@ const PyType_Slot gc_slots[] = {{Py_tp_traverse, reinterpret_cast<void *>(traver
 
 std::span<const std::byte> bytes_of(const nb::bytes &b) { return std::as_bytes(std::span(b.c_str(), b.size())); }
 
+/// sharedbox._metadata.encode, looked up on first use because that module imports this one, then kept.
+nb::handle metadata_encoder() {
+    static std::atomic<PyObject *> encode{nullptr};
+    PyObject *found = encode.load(std::memory_order_acquire);
+    if (found == nullptr) {
+        PyObject *looked = nb::object(nb::module_::import_("sharedbox._metadata").attr("encode")).release().ptr();
+        if (encode.compare_exchange_strong(found, looked, std::memory_order_acq_rel))
+            found = looked;
+        else
+            Py_DECREF(looked);
+    }
+    return found;
+}
+
 seconds wait_of(double timeout) {
     if (!(timeout >= 0.0) || timeout > 1.0)
         throw std::invalid_argument("a stream wait lasts 0 to 1 s at a time; got " + std::to_string(timeout));
@@ -236,13 +250,23 @@ public:
         return commit(value);
     }
 
-    void reserve(double timeout, bool release) {
+    std::uint64_t send_metadata(const nb::bytes &doc, nb::handle value, double timeout, bool release) {
+        reserve(timeout, release, bytes_of(doc));
+        return commit(value, bytes_of(doc));
+    }
+
+    /// With doc, refuses before the reservation an add that commit would refuse, so a refused add neither
+    /// waits nor releases a reader.
+    void reserve(double timeout, bool release, std::span<const std::byte> doc = {}) {
         check_open();
         const seconds wait = wait_of(timeout);
         {
             // The usual case, no other reservation and room in the ring, takes the slot without giving up the GIL.
             std::unique_lock lock(*calls_, std::try_to_lock);
             if (lock && !reserved_ && !closed_.load()) {
+                if (!doc.empty())
+                    if (const result<void> can = end_.can_add_metadata(doc); !can)
+                        fail_add(can.error(), doc.size());
                 const result<std::span<std::byte>> got = end_.begin(seconds(0));
                 if (got) {
                     hold(*got);
@@ -253,6 +277,7 @@ public:
             }
         }
         std::optional<result<std::span<std::byte>>> got;
+        std::optional<error> refused;
         {
             nb::gil_scoped_release unlocked;
             const detail::clock::time_point deadline =
@@ -262,6 +287,9 @@ public:
             if (!closed_.load()) {
                 if (reserved_) {
                     got.emplace(unexpected(status::timeout));
+                } else if (const result<void> can = doc.empty() ? result<void>{} : end_.can_add_metadata(doc);
+                           !can) {
+                    refused = can.error();
                 } else {
                     const detail::clock::duration left =
                         (std::max)(deadline - detail::clock::now(), detail::clock::duration::zero());
@@ -272,13 +300,16 @@ public:
                 }
             }
         }
+        if (refused)
+            fail_add(*refused, doc.size());
         if (!got)
             check_open();
         if (!*got)
             fail(got->error());
     }
 
-    std::uint64_t commit(nb::handle value) {
+    /// With doc, adds it as the version of this item before publishing it; a refused add gives the slot up.
+    std::uint64_t commit(nb::handle value, std::span<const std::byte> doc = {}) {
         check_open();
         if (slot_ == nullptr)
             throw std::runtime_error("stream '" + name_ + "': no slot is reserved");
@@ -289,6 +320,14 @@ public:
             throw;
         }
         std::unique_lock lock = lock_calls();
+        if (!doc.empty() && !closed_.load()) {
+            if (const result<std::uint64_t> added = end_.add_metadata(doc); !added) {
+                // abandon() would take calls again, which this thread holds.
+                end_.abandon();
+                release_slot();
+                fail_add(added.error(), doc.size());
+            }
+        }
         release_slot();
         if (closed_.load())
             throw StreamClosed("stream '" + name_ + "': this end is closed");
@@ -304,30 +343,15 @@ public:
         release_slot();
     }
 
-    std::uint64_t add_metadata(const nb::bytes &doc) {
+    /// Raises what commit would for adding doc now; Slot calls it before it gives up its slot.
+    void check_metadata(std::span<const std::byte> doc) {
         check_open();
-        // The add reads write_pos as the sender's only writer, so it must not overlap a send.
+        // The check reads write_pos as the sender's only writer, so it must not overlap a send.
         std::unique_lock lock = lock_calls();
         if (closed_.load())
             throw StreamClosed("stream '" + name_ + "': this end is closed");
-        const result<std::uint64_t> added = end_.add_metadata(bytes_of(doc));
-        if (added)
-            return *added;
-        if (added.error().code == status::metadata_full) {
-            if (static_cast<const stream_header *>(core_->s.base())->metadata == 0)
-                throw MetadataFull("stream '" + name_ +
-                                   "' has no metadata area; create it with metadata or a metadata_capacity");
-            throw MetadataFull("stream '" + name_ +
-                               "': an item still in the ring needs the metadata version this add "
-                               "would reclaim; send more items first, or create the stream with a larger "
-                               "metadata_versions or metadata_capacity");
-        }
-        if (added.error().code == status::range)
-            throw std::invalid_argument("stream '" + name_ + "': the metadata document is " +
-                                        std::to_string(doc.size()) +
-                                        " bytes, more than its metadata area takes, about a third of "
-                                        "metadata_capacity");
-        fail(added.error());
+        if (const result<void> can = end_.can_add_metadata(doc); !can)
+            fail_add(can.error(), doc.size());
     }
 
     void interrupt() {
@@ -386,6 +410,24 @@ private:
         }
         return lock;
     }
+    /// Raises for an add the sender refused with e, of a document of size bytes.
+    [[noreturn]] void fail_add(const error &e, std::size_t size) const {
+        if (e.code == status::metadata_full) {
+            if (static_cast<const stream_header *>(core_->s.base())->metadata == 0)
+                throw MetadataFull("stream '" + name_ +
+                                   "' has no metadata area; create it with metadata or a metadata_capacity");
+            throw MetadataFull("stream '" + name_ +
+                               "': an item still in the ring needs the metadata version this add "
+                               "would reclaim; send more items first, or create the stream with a larger "
+                               "metadata_versions or metadata_capacity");
+        }
+        if (e.code == status::range)
+            throw std::invalid_argument("stream '" + name_ + "': the metadata document is " +
+                                        std::to_string(size) +
+                                        " bytes, more than its metadata area takes, about a third of "
+                                        "metadata_capacity");
+        fail(e);
+    }
     /// Called with calls held.
     void hold(std::span<std::byte> slot) {
         reserved_ = true;
@@ -421,11 +463,18 @@ public:
         return item_;
     }
 
-    void send(nb::handle value) {
+    void send(nb::handle value, nb::handle metadata) {
         check_ready();
+        Sender &end = nb::cast<Sender &>(sender_);
+        std::optional<nb::bytes> doc;
+        if (!metadata.is_none()) {
+            doc = nb::cast<nb::bytes>(metadata_encoder()(metadata));
+            // Checked before the slot is marked sent, so a refused document leaves the slot to send again.
+            end.check_metadata(bytes_of(*doc));
+        }
         if (!open_.exchange(false))
             throw std::runtime_error("stream '" + name_ + "': this slot was already sent or given up");
-        nb::cast<Sender &>(sender_).commit(value);
+        end.commit(value, doc ? bytes_of(*doc) : std::span<const std::byte>());
     }
 
     void abandon() {
@@ -756,10 +805,13 @@ void bind_stream(nb::module_ &m) {
 
     nb::class_<Sender>(m, "Sender", nb::type_slots(gc_slots<Sender>))
         .def("send", &Sender::send, "value"_a.none(), "timeout"_a, "release"_a = false)
-        .def("reserve", &Sender::reserve, "timeout"_a, "release"_a = false)
-        .def("commit", &Sender::commit, "value"_a.none())
+        .def("send_metadata", &Sender::send_metadata, "doc"_a, "value"_a.none(), "timeout"_a, "release"_a = false)
+        .def(
+            "reserve", [](Sender &s, double timeout, bool release) { s.reserve(timeout, release); }, "timeout"_a,
+            "release"_a = false)
+        .def(
+            "commit", [](Sender &s, nb::handle value) { return s.commit(value); }, "value"_a.none())
         .def("abandon", &Sender::abandon)
-        .def("add_metadata", &Sender::add_metadata, "doc"_a)
         .def("interrupt", &Sender::interrupt)
         .def("close", &Sender::close)
         .def("_after_fork", &Sender::after_fork)
@@ -767,7 +819,7 @@ void bind_stream(nb::module_ &m) {
     nb::class_<Slot>(m, "Slot", nb::is_generic(), nb::type_slots(gc_slots<Slot>))
         .def(nb::init<nb::handle, nb::handle>(), "sender"_a, "template"_a.none())
         .def_prop_ro("item", &Slot::item)
-        .def("send", &Slot::send, "item"_a.none())
+        .def("send", &Slot::send, "item"_a.none(), "metadata"_a.none() = nb::none())
         .def("abandon", &Slot::abandon);
     nb::class_<Reader>(m, "Reader", nb::type_slots(gc_slots<Reader>))
         .def("receive", &Reader::receive, "timeout"_a,

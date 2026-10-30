@@ -65,8 +65,7 @@ with SharedStream.create(
     reader = stream.reader()
     with stream.sender() as sender:
         sender.send(Reading(1.5))
-        sender.add_metadata(Calibration(unit="kg", offset=0.25))
-        sender.send(Reading(1.75))
+        sender.send(Reading(1.75), metadata=Calibration(unit="kg", offset=0.25))
     for reading in reader:
         calibration = reader.metadata
         if calibration is not None:

@@ -311,17 +311,19 @@ class MetadataMachine(RuleBasedStateMachine):
         self.sender.send_nowait(self.sent)
         self.sent += 1
 
+    @precondition(lambda self: self.sent < self.received + CAPACITY)
     @rule(pad=st.integers(0, 20))
-    def add_metadata(self, pad: int) -> None:
-        """Add the next version, which applies from the next item; MetadataFullError exactly when it would overwrite a version a reader may still need."""
-        version = len(self.versions) + 1
-        document = self.document(version, pad)
+    def send_with_metadata(self, pad: int) -> None:
+        """Send the next position with the next version, which applies from it; MetadataFullError, sending nothing, exactly when it would overwrite a version a reader may still need."""
+        document = self.document(len(self.versions) + 1, pad)
         if self.full(document):
             with pytest.raises(MetadataFullError):
-                self.sender.add_metadata(document)
+                self.sender.send_nowait(self.sent, metadata=document)
+            assert self.stream.metadata_version == len(self.versions)
             return
-        assert self.sender.add_metadata(document) == version
+        self.sender.send_nowait(self.sent, metadata=document)
         self.store(document)
+        self.sent += 1
 
     @precondition(lambda self: self.received < self.sent)
     @rule()
