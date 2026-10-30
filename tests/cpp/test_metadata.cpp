@@ -542,6 +542,54 @@ TEST_CASE("adding box metadata is one write") {
     static_cast<void>(unlink(name));
 }
 
+TEST_CASE("a write with a document stores the fields and the version in one generation") {
+    const std::string name = unique("meta-write-doc");
+    auto owner = handle::create(name, box_fields, 32, 1, 4, {}, {}, metadata_spec{cbor({0x01}), 4096, 8});
+    REQUIRE(owner);
+    const std::uint8_t number[8] = {7};
+    const value v{0, std::as_bytes(std::span(number))};
+    const std::uint64_t generation = owner->generation();
+    const std::uint64_t before_version = owner->version(0);
+    const auto written = owner->write({&v, 1}, cbor({0x02}), seconds(1.0));
+    CHECK(written.value_or(0) == 2);
+    CHECK(owner->generation() == generation + 1);
+    CHECK(owner->version(0) == before_version + 1);
+    CHECK(owner->writer_pid() == 0);
+    const metadata_line line = detail::copy_metadata_line(area_of(*owner));
+    CHECK(detail::metadata_version_at(area_of(*owner), line, 2, owner->generation()).value_or(0) == 2);
+    CHECK(read_version(*owner, 2) == cbor({0x02}));
+    const auto large = owner->write_large({&v, 1}, cbor({0x03}), seconds(1.0));
+    CHECK(large.value_or(0) == 3);
+    CHECK(owner->generation() == generation + 2);
+    CHECK(owner->version(0) == before_version + 2);
+    CHECK(read_version(*owner, 3) == cbor({0x03}));
+    static_cast<void>(unlink(name));
+}
+
+TEST_CASE("a write with a document that is refused writes nothing") {
+    const std::string none = unique("meta-write-none");
+    auto bare = handle::create(none, box_fields, 32, 1, 4, {}, {}, {});
+    REQUIRE(bare);
+    const std::uint8_t number[8] = {7};
+    const value v{0, std::as_bytes(std::span(number))};
+    const std::uint64_t generation = bare->generation();
+    const std::uint64_t before_version = bare->version(0);
+    CHECK(code(bare->write({&v, 1}, cbor({0x02}), seconds(1.0))) == status::metadata_full);
+    CHECK(code(bare->write_large({&v, 1}, cbor({0x02}), seconds(1.0))) == status::metadata_full);
+    CHECK(bare->generation() == generation);
+    CHECK(bare->version(0) == before_version);
+
+    const std::string named = unique("meta-write-range");
+    auto owner = handle::create(named, box_fields, 32, 1, 4, {}, {}, metadata_spec{cbor({0x01}), 1024, 4});
+    REQUIRE(owner);
+    CHECK(code(owner->write({&v, 1}, cbor({0xc0, 0x01}), seconds(1.0))) == status::range);
+    CHECK(code(owner->write_large({&v, 1}, cbor({0xc0, 0x01}), seconds(1.0))) == status::range);
+    CHECK(owner->generation() == generation);
+    CHECK(owner->version(0) == before_version);
+    static_cast<void>(unlink(none));
+    static_cast<void>(unlink(named));
+}
+
 TEST_CASE("a refused add leaves the generation alone") {
     const std::string name = unique("meta-refused");
     auto owner = handle::create(name, box_fields, 32, 1, 4, {}, {}, metadata_spec{cbor({0x01}), 1024, 4});
@@ -737,6 +785,31 @@ TEST_CASE("a stream refuses to reclaim a version an item in the ring needs") {
     send_items(*sender, 2);
     CHECK(sender->add_metadata(cbor({0x03})).value_or(0) == 3);
     static_cast<void>(unlink(name));
+}
+
+TEST_CASE("can_add_metadata refuses what add_metadata refuses and changes nothing") {
+    const std::string name = unique("meta-stream-can-add");
+    stream made = make_stream(name, 8, metadata_spec{cbor({0x01}), 1024, 2});
+    auto sender = made.sender();
+    REQUIRE(sender);
+    send_items(*sender, 4);
+    REQUIRE(sender->add_metadata(cbor({0x02})).value_or(0) == 2);
+    send_items(*sender, 6);
+    CHECK(code(sender->can_add_metadata(cbor({0x03}))) == status::metadata_full);
+    CHECK(made.metadata_head() == 2);
+    CHECK(code(sender->can_add_metadata(cbor({0xc0, 0x01}))) == status::range);
+    send_items(*sender, 2);
+    CHECK(sender->can_add_metadata(cbor({0x03})).has_value());
+    CHECK(made.metadata_head() == 2);
+    CHECK(sender->add_metadata(cbor({0x03})).value_or(0) == 3);
+    static_cast<void>(unlink(name));
+
+    const std::string bare = unique("meta-stream-can-add-none");
+    stream plain = make_stream(bare, 8, {});
+    auto other = plain.sender();
+    REQUIRE(other);
+    CHECK(code(other->can_add_metadata(cbor({0x02}))) == status::metadata_full);
+    static_cast<void>(unlink(bare));
 }
 
 TEST_CASE("a lossy reader whose item version was reclaimed is told") {

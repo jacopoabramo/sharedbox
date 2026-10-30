@@ -280,11 +280,21 @@ public:
     [[nodiscard]] result<std::uint64_t> read_record_large(std::span<std::byte> buf) const;
     // As write, with the wait hooks run once around the whole call.
     [[nodiscard]] result<void> write_large(std::span<const value> values, seconds lock_timeout);
+    // As write_large, and add doc as the next metadata version in the same write, as add_metadata does:
+    // one generation, readers seeing the values and the version together. Returns the version. Nothing is
+    // written when the add is refused, which is checked before any field is touched.
+    [[nodiscard]] result<std::uint64_t> write_large(std::span<const value> values, std::span<const std::byte> doc,
+                                                    seconds lock_timeout);
     // The stored bytes of field inside a copy made by read_record.
     std::span<const std::byte> payload(std::uint16_t field, std::span<const std::byte> record) const noexcept;
     // Writes every value under one lock, so readers see all of them or none, then wakes waiters.
     // status::range for a field of a kind this header does not know.
     [[nodiscard]] result<void> write(std::span<const value> values, seconds lock_timeout);
+    // As write, and add doc as the next metadata version in the same write, as add_metadata does: one
+    // generation, readers seeing the values and the version together. Returns the version.
+    // status::metadata_full and status::range as add_metadata gives them, with no field written.
+    [[nodiscard]] result<std::uint64_t> write(std::span<const value> values, std::span<const std::byte> doc,
+                                              seconds lock_timeout);
     // Writes since creation, seq >> 1: every write adds 2 to seq, and a force_unlock counts as one.
     std::uint64_t generation() const noexcept;
     // Writes to the field since creation; field must be below field_count().
@@ -351,6 +361,9 @@ public:
 
 private:
     template <bool Hooks> result<std::uint64_t> lock_with(seconds lock_timeout);
+    template <bool Hooks>
+    result<std::uint64_t> write_with_document(std::span<const value> values, std::span<const std::byte> doc,
+                                              seconds lock_timeout);
     explicit handle(detail::state *s) noexcept : s_(s) {}
     void swap(handle &other) noexcept { std::swap(s_, other.s_); }
 
@@ -961,6 +974,12 @@ inline result<void> handle::write_large(std::span<const value> values, seconds l
     return {};
 }
 
+inline result<std::uint64_t> handle::write_large(std::span<const value> values, std::span<const std::byte> doc,
+                                                 seconds lock_timeout) {
+    const detail::hooks_around hooks(*s_);
+    return write_with_document<false>(values, doc, lock_timeout);
+}
+
 inline std::span<const std::byte> handle::payload(std::uint16_t field,
                                                   std::span<const std::byte> record) const noexcept {
     return detail::payload(s_->fields[field], record.data());
@@ -1058,13 +1077,17 @@ inline result<std::uint32_t> handle::read_metadata(std::uint64_t version, std::s
     return detail::read_metadata(s_->metadata, s_->metadata_first, version, out);
 }
 
-inline result<std::uint64_t> handle::add_metadata(std::span<const std::byte> doc, seconds lock_timeout) {
+template <bool Hooks>
+result<std::uint64_t> handle::write_with_document(std::span<const value> values, std::span<const std::byte> doc,
+                                                  seconds lock_timeout) {
     detail::state &s = *s_;
+    if (!detail::values_ok(s, values))
+        return unexpected(status::range);
     if (s.metadata == nullptr)
         return unexpected(status::metadata_full);
     if (doc.size() > detail::max_metadata_document(s.metadata_first.ring_size) || !metadata_ok(doc))
         return unexpected(status::range);
-    const result<std::uint64_t> locked = lock(lock_timeout);
+    const result<std::uint64_t> locked = lock_with<Hooks>(lock_timeout);
     if (!locked)
         return unexpected(locked.error());
     // The write lock takes seq from an even value to the next odd one and unlock to the one after, so the
@@ -1073,9 +1096,9 @@ inline result<std::uint64_t> handle::add_metadata(std::span<const std::byte> doc
         s.metadata, s.metadata_first, detail::atomic(s.hdr->metadata_head), doc, (*locked >> 1) + 1,
         [](std::uint64_t) { return true; }, true);
     if (!added) {
-        // Only a forged area gets here. Nothing was written, so the lock is given back without counting a
-        // write; a force_unlock that has already released it leaves seq as another writer's, and the swap
-        // then changes nothing.
+        // Only a forged area gets here, and no field is stored yet. Nothing was written, so the lock is given
+        // back without counting a write; a force_unlock that has already released it leaves seq as another
+        // writer's, and the swap then changes nothing.
         std::uint64_t held = *locked + 1;
         if (detail::atomic(s.hdr->seq).load(std::memory_order_relaxed) == held)
             detail::atomic(s.hdr->writer_pid).store(0, std::memory_order_relaxed);
@@ -1083,9 +1106,23 @@ inline result<std::uint64_t> handle::add_metadata(std::span<const std::byte> doc
             .compare_exchange_strong(held, *locked, std::memory_order_release, std::memory_order_relaxed);
         return unexpected(added.error());
     }
+    for (const value &v : values) {
+        detail::store(s, v);
+        auto count = detail::atomic(s.counts[v.field]);
+        count.store(count.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
+    }
     unlock(*locked);
     detail::wake_waiters(s);
-    return added;
+    return *added;
+}
+
+inline result<std::uint64_t> handle::write(std::span<const value> values, std::span<const std::byte> doc,
+                                           seconds lock_timeout) {
+    return write_with_document<true>(values, doc, lock_timeout);
+}
+
+inline result<std::uint64_t> handle::add_metadata(std::span<const std::byte> doc, seconds lock_timeout) {
+    return write({}, doc, lock_timeout);
 }
 
 inline std::uint64_t handle::generation() const noexcept {
