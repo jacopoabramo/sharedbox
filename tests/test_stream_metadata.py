@@ -1,5 +1,6 @@
 import asyncio
 import multiprocessing as mp
+import threading
 import time
 from multiprocessing.queues import Queue
 from typing import Any
@@ -151,6 +152,40 @@ def test_a_refused_add_releases_no_reader(unique_name: str) -> None:
         assert time.monotonic() - start < 1
         assert [reader.receive(timeout=5) for _ in range(4)] == [0, 1, 2, 3]
         assert stream.metadata_version == 2
+    SharedStream.unlink(unique_name)
+
+
+def test_a_send_that_waited_for_a_slot_holder_is_refused_without_release(
+    unique_name: str,
+) -> None:
+    """Refuse a send with metadata once another thread's slot is sent, before the ring wait or a release."""
+    timeout = 5.0
+    outcome: list[tuple[BaseException | None, float]] = []
+
+    def send_with_metadata() -> None:
+        start = time.monotonic()
+        try:
+            sender.send(9, timeout=timeout, metadata={"step": 2})
+        except BaseException as error:
+            outcome.append((error, time.monotonic() - start))
+
+    with SharedStream.create(int, unique_name, capacity=2) as stream:
+        reader = stream.reader("lossless")
+        sender = stream.sender(on_full="release")
+        sender.send(0)
+        with sender.writing(0) as slot:
+            thread = threading.Thread(target=send_with_metadata)
+            thread.start()
+            time.sleep(0.2)
+            slot.send(1)
+        thread.join()
+        error, elapsed = outcome[0]
+        assert isinstance(error, MetadataFullError)
+        # Without the refusal on waking, the send waits for the ring to the end of its one-second step.
+        assert elapsed < 0.9
+        assert [reader.receive(timeout=5) for _ in range(2)] == [0, 1]
+        with pytest.raises(WouldBlock):
+            reader.receive_nowait()
     SharedStream.unlink(unique_name)
 
 
