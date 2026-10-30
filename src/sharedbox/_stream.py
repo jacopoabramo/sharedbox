@@ -1134,7 +1134,7 @@ class SharedSendStream(End, Generic[T, M]):
     @contextlib.contextmanager
     def writing(
         self, template: T | None = None, timeout: float | None = None
-    ) -> Generator[SendSlot[T], None, None]:
+    ) -> Generator[SendSlot[T, M], None, None]:
         """Reserve the next slot and yield it, to fill the item's arrays in place and send it.
 
         [`slot.item`][sharedbox.SendSlot.item] is an item built from
@@ -1197,7 +1197,7 @@ class SharedSendStream(End, Generic[T, M]):
     @contextlib.asynccontextmanager
     async def awriting(
         self, template: T | None = None, timeout: float | None = None
-    ) -> AsyncGenerator[SendSlot[T], None]:
+    ) -> AsyncGenerator[SendSlot[T, M], None]:
         """Reserve the next slot, as [`writing`][sharedbox.SharedSendStream.writing] does, without blocking the event loop.
 
         `timeout` has the meaning it has in `writing`. An `awriting` cancelled
@@ -1242,10 +1242,10 @@ class SharedSendStream(End, Generic[T, M]):
             self._native.abandon()
 
     @contextlib.contextmanager
-    def _held(self, template: T | None) -> Generator[SendSlot[T], None, None]:
+    def _held(self, template: T | None) -> Generator[SendSlot[T, M], None, None]:
         """Yield the reserved slot with its item built from `template`, and give it up at the end unless it was sent."""
         try:
-            slot: SendSlot[T] = SendSlot(self._native, template)
+            slot: SendSlot[T, M] = SendSlot(self._native, template)
         except BaseException:
             self._native.abandon()
             raise
@@ -1285,7 +1285,7 @@ class SharedSendStream(End, Generic[T, M]):
         )
 
 
-class SendSlot(Slot[T]):
+class SendSlot(Slot[T, M]):
     """A slot of a stream that [`SharedSendStream.writing`][sharedbox.SharedSendStream.writing] reserved for one item.
 
     [`writing`][sharedbox.SharedSendStream.writing] and

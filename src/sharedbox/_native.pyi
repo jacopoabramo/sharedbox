@@ -33,6 +33,7 @@ from typing_extensions import disjoint_base
 
 from ._box import RefEntry
 from ._layout import FieldSpec
+from ._metadata import M
 
 if sys.version_info >= (3, 13):
     from types import CapsuleType
@@ -1267,7 +1268,7 @@ class Sender:
     def closed(self) -> bool: ...
 
 @disjoint_base
-class Slot(Generic[_T]):
+class Slot(Generic[_T, M]):
     def __init__(self, sender: Sender, template: _T | None) -> None: ...
     @property
     def item(self) -> _T:
@@ -1282,7 +1283,7 @@ class Slot(Generic[_T]):
         writing to them after [`send`][sharedbox.SendSlot.send] changes
         an item readers may have received and tells no one.
         """
-    def send(self, item: _T, *, metadata: object = None) -> None:
+    def send(self, item: _T, *, metadata: M | None = None) -> None:
         """Encode `item` into the slot and publish it.
 
         An array of `item` that already is its place in the slot, such as
