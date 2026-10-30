@@ -98,7 +98,7 @@ box = Tagged.create(sys.argv[1], 1, metadata={"units": "mm"})
 Tagged.unlink(sys.argv[1])
 print(dict(box.metadata))
 release_native()
-for action in (lambda: box.metadata, lambda: box.add_metadata({"units": "um"})):
+for action in (lambda: box.metadata, lambda: box.update(metadata={"units": "um"})):
     try:
         action()
     except BoxClosedError as exc:
@@ -122,7 +122,7 @@ release_native()
 for action in (
     lambda: stream.metadata,
     lambda: reader.metadata,
-    lambda: sender.add_metadata({"units": "um"}),
+    lambda: sender.send(2, metadata={"units": "um"}),
 ):
     try:
         action()

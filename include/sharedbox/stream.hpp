@@ -449,6 +449,9 @@ public:
     // status::metadata_full for a stream without a metadata area, and while an item still in the ring or
     // yet to be sent needs the version the add would overwrite: it succeeds after enough sends.
     [[nodiscard]] result<std::uint64_t> add_metadata(std::span<const std::byte> doc);
+    // Whether add_metadata(doc) would succeed now: status::metadata_full and status::range as it gives them,
+    // and nothing is written. The answer holds until the next send or add on this sender.
+    [[nodiscard]] result<void> can_add_metadata(std::span<const std::byte> doc) const;
     // Gives the reservation up. The slot keeps its odd seq, which readers skip, and the next begin reserves
     // the same position.
     void abandon() noexcept;
@@ -462,6 +465,7 @@ private:
     friend class stream;
     result<void> gate(std::uint64_t p, seconds timeout, on_full policy);
     std::uint64_t lossless_min(std::uint64_t p, std::uint64_t floor) const noexcept;
+    result<std::uint64_t> add_or_check(std::span<const std::byte> doc, bool check_only) const;
 
     detail::stream_state *s_ = nullptr;
     std::uint32_t pid_ = 0;
@@ -846,6 +850,17 @@ inline result<std::uint32_t> stream::read_metadata(std::uint64_t version, std::s
 }
 
 inline result<std::uint64_t> stream_sender::add_metadata(std::span<const std::byte> doc) {
+    return add_or_check(doc, false);
+}
+
+inline result<void> stream_sender::can_add_metadata(std::span<const std::byte> doc) const {
+    const result<std::uint64_t> checked = add_or_check(doc, true);
+    if (!checked)
+        return unexpected(checked.error());
+    return {};
+}
+
+inline result<std::uint64_t> stream_sender::add_or_check(std::span<const std::byte> doc, bool check_only) const {
     if (s_ == nullptr || detail::current_pid() != pid_)
         return unexpected(status::range);
     detail::stream_state &s = *s_;
@@ -857,7 +872,7 @@ inline result<std::uint64_t> stream_sender::add_metadata(std::span<const std::by
     const std::uint64_t p = detail::atomic(s.hdr->write_pos).load(std::memory_order_relaxed);
     return detail::add_metadata(
         s.metadata, s.metadata_first, detail::atomic(s.hdr->metadata_head), doc, p,
-        [&](std::uint64_t next) noexcept { return p >= s.capacity && next <= p - s.capacity; });
+        [&](std::uint64_t next) noexcept { return p >= s.capacity && next <= p - s.capacity; }, false, check_only);
 }
 
 inline result<std::uint64_t> stream_reader::metadata_version_at(std::uint64_t position) const {

@@ -1357,8 +1357,11 @@ public:
     result<read_value> read_large(std::uint16_t field, std::span<std::byte> buf) const;
     result<std::uint64_t> read_record_large(std::span<std::byte> buf) const;
     result<void> write_large(std::span<const value> values, seconds lock_timeout);
+    result<std::uint64_t> write_large(std::span<const value> values, std::span<const std::byte> doc,
+                                      seconds lock_timeout);
     std::span<const std::byte> payload(std::uint16_t field, std::span<const std::byte> record) const noexcept;
     result<void> write(std::span<const value> values, seconds lock_timeout);
+    result<std::uint64_t> write(std::span<const value> values, std::span<const std::byte> doc, seconds lock_timeout);
     std::uint64_t generation() const noexcept;
     std::uint64_t version(std::uint16_t field) const noexcept;
     std::uint32_t writer_pid() const noexcept;
@@ -1474,6 +1477,12 @@ The header also declares these names:
   `status::range` for a document outside the subset or longer than a third
   of the ring, and `status::lock_timeout` as for `write`. A refused add
   leaves the generation as it was.
+- `write(values, doc, lock_timeout)` writes `values` as `write` does and
+  adds `doc` as the next version in the same write: one generation, so a
+  reader sees the values and the version together. It returns the version,
+  and gives the statuses of `write` and of `add_metadata`. A refused
+  document writes no field. `write_large(values, doc, lock_timeout)` is the
+  same write for large values, running the wait hooks once around it.
 - Thread safety: every member function may be called from several threads
   on one handle. Destroying or moving a handle must not overlap another
   call on it.
@@ -1510,6 +1519,7 @@ public:
     result<std::span<std::byte>> begin(seconds timeout, on_full policy = on_full::wait);
     result<std::uint64_t> publish() noexcept;
     result<std::uint64_t> add_metadata(std::span<const std::byte> doc);
+    result<void> can_add_metadata(std::span<const std::byte> doc) const;
     void abandon() noexcept;
     result<void> interrupt();
     void close() noexcept;
@@ -1626,6 +1636,9 @@ Stream layout). Every function returning a `result` is `[[nodiscard]]`.
   `status::range` for a document outside the subset or longer than a third
   of the ring, for a closed sender, and in a child of `fork`. It must not
   overlap a send on the same sender.
+- `stream_sender::can_add_metadata(doc)` gives the status `add_metadata(doc)`
+  would give now, and writes nothing. The answer holds until the next send
+  or add on the same sender.
 - `stream_reader::metadata_version_at(position)` is the version in force at
   an item's position, such as the one `receive` returned: the newest
   version added at or before it. `status::not_found` when that version was

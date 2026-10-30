@@ -2408,12 +2408,13 @@ inline result<std::uint64_t> metadata_version_at(const std::byte *area, const me
 // position of version u + 1, before which every item under u lies, says whether u may go, and the add
 // gives status::metadata_full when one may not. A document outside the subset or longer than
 // max_metadata_document gives status::range, unless checked says the caller has checked it already. Both
-// refusals write nothing.
+// refusals write nothing. With check_only the add stops after the loop that asks may_reclaim and returns the
+// version it would get, so a caller learns whether the add would be refused without making it.
 template <class F>
     requires std::is_invocable_r_v<bool, F &, std::uint64_t>
 result<std::uint64_t> add_metadata(std::byte *area, const metadata_line &line, std::atomic_ref<std::uint64_t> head,
                                    std::span<const std::byte> doc, std::uint64_t position, F &&may_reclaim,
-                                   bool checked = false) {
+                                   bool checked = false, bool check_only = false) {
     if (!checked && (doc.size() > max_metadata_document(line.ring_size) || !metadata_ok(doc)))
         return unexpected(status::range);
     const std::uint64_t newest = head.load(std::memory_order_acquire);
@@ -2461,6 +2462,8 @@ result<std::uint64_t> add_metadata(std::byte *area, const metadata_line &line, s
             !may_reclaim(next_position))
             return unexpected(status::metadata_full);
     }
+    if (check_only)
+        return v;
     for (std::uint64_t u = oldest; u < newest; ++u) {
         metadata_entry &shared = metadata_entry_of(area, line, u);
         metadata_entry e{};

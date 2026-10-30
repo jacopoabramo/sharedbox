@@ -4,13 +4,14 @@ import queue
 import subprocess
 import sys
 import sysconfig
-from collections.abc import Mapping
+import time
+from collections.abc import Callable, Mapping
 from dataclasses import InitVar
 from types import MappingProxyType
 from typing import Any
 
 import pytest
-from crossproc import call_in_child, read_and_add_metadata
+from crossproc import call_in_child, read_and_update_metadata
 
 import sharedbox
 from sharedbox import BoxClosedError, MetadataFullError, MetadataGoneError, SharedBox
@@ -296,7 +297,7 @@ def test_box_metadata_end_to_end(unique_name: str) -> None:
     added: queue.Queue[int] = queue.Queue()
     with Stage.create(unique_name, metadata={"units": "mm"}) as box:
         box.events.metadata.connect(added.put)
-        seen = call_in_child(read_and_add_metadata, box, {"units": "um"})
+        seen = call_in_child(read_and_update_metadata, box, {"units": "um"})
         assert seen == {"units": "mm"}
         assert added.get(timeout=20) == 2
         assert box.metadata == {"units": "um"}
@@ -309,7 +310,7 @@ def test_box_metadata_version_is_reclaimed(unique_name: str) -> None:
     """Raise MetadataGoneError for a version that later adds reclaimed."""
     with Kept.create(unique_name, metadata={"step": 1}) as box:
         for step in (2, 3, 4):
-            box.add_metadata({"step": step})
+            box.update(metadata={"step": step})
         with pytest.raises(MetadataGoneError):
             box.metadata_version_of(1)
         assert box.metadata == {"step": 4}
@@ -321,7 +322,7 @@ def test_a_cached_version_is_gone_once_reclaimed(unique_name: str) -> None:
     with Kept.create(unique_name, metadata={"step": 1}) as box:
         assert box.metadata_version_of(1) == {"step": 1}
         for step in (2, 3):
-            box.add_metadata({"step": step})
+            box.update(metadata={"step": step})
         with pytest.raises(MetadataGoneError):
             box.metadata_version_of(1)
     Kept.unlink(unique_name)
@@ -331,28 +332,29 @@ def test_a_class_metadata_capacity_gives_an_area(unique_name: str) -> None:
     """Add a first metadata version to a box created without metadata whose class sets metadata_capacity."""
     with Roomy.create(unique_name) as box:
         assert (box.metadata, box.metadata_version) == (None, 0)
-        assert box.add_metadata({"units": "mm"}) == 1
+        box.update(metadata={"units": "mm"})
+        assert box.metadata_version == 1
         assert box.metadata == {"units": "mm"}
     Roomy.unlink(unique_name)
 
 
 def test_box_without_metadata(unique_name: str) -> None:
-    """Read no metadata from a box created without it, and refuse to add any."""
+    """Read no metadata from a box created without it, and refuse to write any."""
     with Stage.create(unique_name) as box:
         assert box.metadata is None
         assert box.metadata_version == 0
         with pytest.raises(MetadataFullError, match="metadata_capacity"):
-            box.add_metadata({"units": "mm"})
+            box.update(metadata={"units": "mm"})
     Stage.unlink(unique_name)
 
 
-def test_add_metadata_on_a_closed_box(unique_name: str) -> None:
-    """Raise BoxClosedError for reading or adding metadata on a closed box."""
+def test_update_with_metadata_on_a_closed_box(unique_name: str) -> None:
+    """Raise BoxClosedError for reading or writing metadata on a closed box."""
     box = Stage.create(unique_name, metadata={"units": "mm"})
     assert box.metadata == {"units": "mm"}
     box.close()
     with pytest.raises(BoxClosedError):
-        box.add_metadata({"units": "um"})
+        box.update(metadata={"units": "um"})
     with pytest.raises(BoxClosedError):
         _ = box.metadata
     Stage.unlink(unique_name)
@@ -398,13 +400,102 @@ def test_a_document_longer_than_the_area_is_refused(unique_name: str) -> None:
         Stage.create(unique_name, metadata={"text": "x" * 30000})
     with Stage.create(unique_name, metadata={"units": "mm"}) as box:
         with pytest.raises(ValueError, match="metadata_capacity"):
-            box.add_metadata({"text": "x" * 30000})
+            box.update(metadata={"text": "x" * 30000})
         assert box.metadata_version == 1
     Stage.unlink(unique_name)
 
 
+class StageWithSpeed(Stage):
+    speed: int = 0
+
+
+def wait_for(condition: Callable[[], bool]) -> None:
+    deadline = time.monotonic() + 20
+    while not condition():
+        assert time.monotonic() < deadline
+        time.sleep(0.01)
+
+
+def test_update_writes_fields_and_metadata_together(unique_name: str) -> None:
+    """Write a field and a metadata version in one update, signalling the metadata before the field."""
+    order: list[str] = []
+    with Stage.create(unique_name, metadata={"units": "mm"}) as box:
+        box.events.metadata.connect(lambda version: order.append("metadata"))
+        box.events.position.connect(lambda new, old: order.append("position"))
+        box.update(position=5, metadata={"units": "um"})
+        assert (box.position, box.metadata, box.metadata_version) == (
+            5,
+            {"units": "um"},
+            2,
+        )
+        wait_for(lambda: len(order) == 2)
+        assert order == ["metadata", "position"]
+    Stage.unlink(unique_name)
+
+
+def test_update_with_only_metadata_changes_no_field(unique_name: str) -> None:
+    """Add a version with update(metadata=...) alone and signal no field change."""
+    versions: list[int] = []
+    positions: list[int] = []
+    with Roomy.create(unique_name) as box:
+        box.events.metadata.connect(versions.append)
+        box.events.position.connect(lambda new, old: positions.append(new))
+        box.update(metadata={"units": "mm"})
+        wait_for(lambda: len(versions) == 1)
+        assert box.metadata_version == 1
+        assert positions == []
+    Roomy.unlink(unique_name)
+
+
+def test_update_with_metadata_none_adds_no_version(unique_name: str) -> None:
+    """Treat metadata=None as no metadata: write the fields and add no version."""
+    with Stage.create(unique_name, metadata={"units": "mm"}) as box:
+        box.update(metadata=None, position=3)
+        assert box.position == 3
+        assert box.metadata_version == 1
+    Stage.unlink(unique_name)
+
+
+def test_a_failed_update_writes_neither(unique_name: str) -> None:
+    """Write neither the fields nor the version when a field value or the document is refused."""
+    with Stage.create(unique_name, metadata={"units": "mm"}) as box:
+        with pytest.raises(TypeError):
+            box.update(position="x", metadata={"a": 1})
+        with pytest.raises(TypeError):
+            box.update(position=4, metadata={"a": object()})
+        with pytest.raises(ValueError, match="metadata_capacity"):
+            box.update(position=4, metadata={"text": "x" * 30000})
+        assert box.position == 0
+        assert box.metadata_version == 1
+    Stage.unlink(unique_name)
+
+
+def test_update_names_only_the_unknown_field_next_to_metadata(
+    unique_name: str,
+) -> None:
+    """Report an unknown name without naming metadata, in either order of the keywords."""
+    with Stage.create(unique_name, metadata={"units": "mm"}) as box:
+        with pytest.raises(TypeError, match=r"has no field\(s\) bogus$"):
+            box.update(bogus=1, metadata={"a": 1})
+        with pytest.raises(TypeError, match=r"has no field\(s\) bogus$"):
+            box.update(metadata={"a": 1}, bogus=1)
+        assert box.metadata_version == 1
+    Stage.unlink(unique_name)
+
+
+def test_update_with_metadata_on_a_subclass(unique_name: str) -> None:
+    """Add the version and write the subclass's own fields when the call goes to the Python update."""
+    with StageWithSpeed.create(unique_name, metadata={"units": "mm"}) as box:
+        box.update(position=1, speed=2, metadata={"units": "um"})
+        assert (box.position, box.speed) == (1, 2)
+        assert box.metadata == {"units": "um"}
+    StageWithSpeed.unlink(unique_name)
+
+
 @pytest.mark.parametrize("hint", [int, InitVar[int]], ids=["field", "InitVar"])
-@pytest.mark.parametrize("name", ["metadata", "add_metadata"])
+@pytest.mark.parametrize(
+    "name", ["metadata", "metadata_version", "metadata_version_of"]
+)
 def test_a_field_named_metadata_is_refused(name: str, hint: object) -> None:
     """Refuse a field or InitVar named like a metadata member of SharedBox when the class is defined."""
     with pytest.raises(TypeError, match=rf"field name\(s\) {name} clash"):

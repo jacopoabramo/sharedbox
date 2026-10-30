@@ -339,19 +339,23 @@ class Watcher:
         if spec.target is not None and self.follower is not None:
             self.follower.moved(spec, new, self._segment)
 
+    def _emit_metadata(self, group: BoxEvents | None) -> None:
+        if group is None:
+            return
+        head = self._segment.metadata_head()
+        if head != self._metadata_head:
+            self._metadata_head = head
+            try:
+                group.metadata.emit(head)
+            except Exception:
+                logger.exception("a callback for the metadata raised")
+
     def _emit_changes(self) -> None:
         with self._lock:
             sink, fields, group = self._sink, self._fields, self._group
         if sink is None:
             return
-        if group is not None:
-            head = self._segment.metadata_head()
-            if head != self._metadata_head:
-                self._metadata_head = head
-                try:
-                    group.metadata.emit(head)
-                except Exception:
-                    logger.exception("a callback for the metadata raised")
+        self._emit_metadata(group)
         versions = self._segment.versions()
         for spec in fields:
             seen_version, seen_raw, old = self._seen[spec.index]
@@ -369,6 +373,8 @@ class Watcher:
                 logger.exception("reading a change of field %r failed", spec.name)
                 continue
             self._seen[spec.index] = (version, raw, new)
+            # An update that wrote this field with a version signals the version first.
+            self._emit_metadata(group)
             try:
                 sink(spec, new, old)
             except Exception:
@@ -520,9 +526,9 @@ class BoxEvents(SignalGroup):
 
     _sharedbox_follower: Follower
     metadata: SignalInstance
-    """Emitted with the new version number when any process adds metadata to the box.
+    """Emitted with the new version number when any process writes a new metadata version.
 
-    Several adds between two checks of the watcher thread emit once, with
+    Several versions between two checks of the watcher thread emit once, with
     the newest version. `box.events.connect(cb)` receives it too. A group
     that [`follow`][sharedbox.BoxEvents.follow] returns has it but does
     not emit it.

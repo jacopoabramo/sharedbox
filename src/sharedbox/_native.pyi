@@ -33,6 +33,7 @@ from typing_extensions import disjoint_base
 
 from ._box import RefEntry
 from ._layout import FieldSpec
+from ._metadata import M
 
 if sys.version_info >= (3, 13):
     from types import CapsuleType
@@ -269,11 +270,23 @@ class Segment:
         """Return every field's value under its name in `names`, read at one point in time."""
 
     def set(
-        self, values: Sequence[tuple[int, object]], types: Types | None = None
+        self,
+        values: Sequence[tuple[int, object]],
+        types: Types | None = None,
+        doc: bytes | None = None,
     ) -> None:
         """Convert every value, then write them all under one lock.
 
         A reference field takes `(create_id, schema_hash, name)`, or None to empty it.
+        With `doc`, an encoded document, the same lock adds it as the next metadata
+        version, and nothing is written if the segment refuses it.
+
+        Raises
+        ------
+        MetadataFullError
+            With `doc`, if the segment has no metadata area.
+        ValueError
+            With `doc`, if the document is longer than the area takes.
         """
 
     def _read(self, field: int) -> bytes:
@@ -310,21 +323,6 @@ class Segment:
         ------
         MetadataGoneError
             If the segment no longer holds that version, or never did.
-        """
-
-    def add_metadata(self, doc: bytes) -> int:
-        """Store an encoded document as the next metadata version and return that version.
-
-        Takes the write lock, so waiters wake, but no field changes.
-
-        Raises
-        ------
-        MetadataFullError
-            If the segment has no metadata area.
-        ValueError
-            If the document is longer than the area takes.
-        LockTimeoutError
-            If another writer holds the lock longer than the lock timeout.
         """
 
     def publish(self) -> None:
@@ -1241,14 +1239,14 @@ class _Interrupted(Exception): ...
 @disjoint_base
 class Sender:
     def send(self, value: object, timeout: float, release: bool = False) -> int: ...
-    def reserve(self, timeout: float, release: bool = False) -> None: ...
-    def commit(self, value: object) -> int: ...
-    def abandon(self) -> None: ...
-    def add_metadata(self, doc: bytes) -> int:
-        """Store an encoded document as the next metadata version and return that version.
+    def send_metadata(
+        self, doc: bytes, value: object, timeout: float, release: bool = False
+    ) -> int:
+        """Send `value` with an encoded document as its new metadata version, and return its position.
 
-        The version applies from the next item sent. Waits while another
-        thread sends on this sender.
+        The document is checked before the wait for a slot, so a refused one
+        neither waits nor releases a reader. When the document or the item is
+        refused, neither is stored.
 
         Raises
         ------
@@ -1260,6 +1258,9 @@ class Sender:
         StreamClosedError
             If the sender is closed.
         """
+    def reserve(self, timeout: float, release: bool = False) -> None: ...
+    def commit(self, value: object) -> int: ...
+    def abandon(self) -> None: ...
     def interrupt(self) -> None: ...
     def close(self) -> None: ...
     def _after_fork(self) -> None: ...
@@ -1267,7 +1268,7 @@ class Sender:
     def closed(self) -> bool: ...
 
 @disjoint_base
-class Slot(Generic[_T]):
+class Slot(Generic[_T, M]):
     def __init__(self, sender: Sender, template: _T | None) -> None: ...
     @property
     def item(self) -> _T:
@@ -1282,7 +1283,7 @@ class Slot(Generic[_T]):
         writing to them after [`send`][sharedbox.SendSlot.send] changes
         an item readers may have received and tells no one.
         """
-    def send(self, item: _T) -> None:
+    def send(self, item: _T, *, metadata: M | None = None) -> None:
         """Encode `item` into the slot and publish it.
 
         An array of `item` that already is its place in the slot, such as
@@ -1292,18 +1293,31 @@ class Slot(Generic[_T]):
         its place in the slot, such as the first rows `counts[:n]` of the
         slot's array, and only its shape is written.
 
+        With `metadata`, the item is published with a new metadata version,
+        as by the `metadata` of
+        [`SharedSendStream.send`][sharedbox.SharedSendStream.send], which
+        takes the same values; `metadata=None` adds no version. A document
+        the stream cannot store raises and leaves the slot reserved, so the
+        block can still send it.
+
         Raises
         ------
         RuntimeError
             If this slot was sent or given up already.
+        MetadataFullError
+            If `metadata` is given and the stream has no metadata area, or
+            the new version would reclaim one that an item still in the ring
+            was sent under; the slot stays reserved.
         StreamClosedError
             If the sender was closed after the slot was reserved; nothing is
             published.
         TypeError
-            If `item` does not have the stream's item type; the slot is
-            given up.
+            If `item` does not have the stream's item type, and the slot is
+            given up; or if `metadata` holds a type a metadata document
+            cannot hold, and the slot stays reserved.
         ValueError
-            If a value in `item` does not fit; the slot is given up.
+            If a value in `item` does not fit, and the slot is given up; or
+            if `metadata` does not fit, and the slot stays reserved.
         """
     def abandon(self) -> None:
         """Give the slot up unless it was sent: nothing is published, and the next send takes its position.

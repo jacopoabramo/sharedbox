@@ -329,17 +329,17 @@ class SharedStream(Generic[T, M]):
             Readers that may be open at once, 1 to 4095.
         metadata
             The stream's first metadata version, in force from the first
-            item; see [`metadata`][sharedbox.SharedStream.metadata]. It
-            takes the values
-            [`add_metadata`][sharedbox.SharedSendStream.add_metadata] takes.
+            item; see [`metadata`][sharedbox.SharedStream.metadata]. Its
+            value follows the same rules as the `metadata` of
+            [`send`][sharedbox.SharedSendStream.send].
         metadata_capacity
             Bytes of the stream's metadata area, 0 for none or at least 24.
             The area takes 64 bytes, plus 32 per version, plus the capacity
             rounded up to a multiple of 8, and must not pass 2**32 - 1
             bytes in all. A metadata document takes at most about a third
             of the capacity. By default a stream created with `metadata`
-            gets 65536, and any other stream no area, so `add_metadata` on
-            its sender raises `MetadataFullError`.
+            gets 65536, and any other stream no area, so a send with
+            `metadata` on its sender raises `MetadataFullError`.
         metadata_versions
             How many metadata versions the stream keeps at most, 2 to 65535.
         metadata_type
@@ -351,7 +351,7 @@ class SharedStream(Generic[T, M]):
             If the name is taken.
         TypeError
             If a box field could not hold `item_type`, or `metadata` holds
-            a value `add_metadata` refuses.
+            a value `send` refuses as `metadata`.
         ValueError
             If the name breaks the naming rules, `capacity` or
             `max_readers` is out of range, or `metadata`,
@@ -457,9 +457,9 @@ class SharedStream(Generic[T, M]):
         """The value of the stream's newest metadata version, or None if it has none.
 
         Metadata is a document stored beside the items, such as the units or
-        settings they were taken with. The sender adds a version with
-        [`add_metadata`][sharedbox.SharedSendStream.add_metadata], in force
-        from the next item it sends, and a reader's
+        settings they were taken with. The sender adds a version with the
+        `metadata` of [`send`][sharedbox.SharedSendStream.send], in force
+        from the item sent with it, and a reader's
         [`metadata`][sharedbox.SharedReceiveStream.metadata] gives the
         version of the item it received last. The stream keeps the earlier
         versions until it reclaims them for newer ones, and
@@ -883,11 +883,27 @@ class SharedSendStream(End, Generic[T, M]):
     def _thread_role(self) -> str:
         return "sender"
 
-    def send(self, item: T, timeout: float | None = None) -> None:
+    def send(
+        self, item: T, timeout: float | None = None, *, metadata: M | None = None
+    ) -> None:
         """Send `item`, waiting while a lossless reader is a full ring behind.
 
         The item is encoded straight into its slot once the slot is free, so
         an item that cannot be encoded raises only after that wait.
+
+        With `metadata`, the item is sent with a new metadata version, in
+        force from this item on: a reader that receives it or a later one
+        sees the version in
+        [`metadata`][sharedbox.SharedReceiveStream.metadata]. The value is
+        `None`, a `bool`, an `int` from -2**64 to 2**64 - 1, a `float`, a
+        `str`, `bytes`, a mapping with `str` keys, or a `list` or `tuple`,
+        nested up to 32 levels; `metadata=None` adds no version. A document
+        the stream cannot store raises before the send waits, and when
+        either the document or the item is refused, neither is stored. The
+        oldest versions are reclaimed once the stream holds
+        `metadata_versions` of them, or needs their room in its metadata
+        area, but never while an item still in the ring was sent under one;
+        version 1 is also kept while an item sent before it is in the ring.
 
         With `on_full="release"`, a send that has waited `timeout` seconds
         releases the lossless readers that hold it back and sends, instead of
@@ -906,6 +922,19 @@ class SharedSendStream(End, Generic[T, M]):
         RuntimeError
             If called inside a block of this sender's
             [`writing`][sharedbox.SharedSendStream.writing].
+        TypeError
+            If `metadata` holds another type, or a mapping key is not a
+            `str`.
+        ValueError
+            If an `int` in `metadata` is out of range, the nesting is deeper
+            than 32 levels, or the document is longer than the metadata area
+            takes, about a third of the stream's `metadata_capacity`.
+        MetadataFullError
+            If `metadata` is given and the stream has no metadata area, or
+            the new version would reclaim one that an item still in the ring
+            was sent under, or version 1 while an item sent before it is in
+            the ring; the item is not sent. A send after enough further sends
+            succeeds.
 
         Notes
         -----
@@ -913,16 +942,23 @@ class SharedSendStream(End, Generic[T, M]):
         although the call raised.
         """
         self._refuse_nested()
-        self._send(item, timeout)
+        if metadata is None:
+            self._send(item, timeout)
+        else:
+            self._retry(
+                self._native.send_metadata, timeout, None, encode(metadata), item
+            )
 
-    async def asend(self, item: T, timeout: float | None = None) -> None:
+    async def asend(
+        self, item: T, timeout: float | None = None, *, metadata: M | None = None
+    ) -> None:
         """Send `item`, as [`send`][sharedbox.SharedSendStream.send] does, without blocking the event loop.
 
-        `timeout` has the meaning it has in `send`, including the release of
-        readers under `on_full="release"`. An `asend` cancelled before its
-        `timeout` passes releases nothing, so a sender that must not stall
-        passes a `timeout` instead of wrapping the call in
-        `asyncio.wait_for`.
+        `metadata` has the meaning it has in `send`, and so does `timeout`,
+        including the release of readers under `on_full="release"`. An
+        `asend` cancelled before its `timeout` passes releases nothing, so a
+        sender that must not stall passes a `timeout` instead of wrapping
+        the call in `asyncio.wait_for`.
 
         A cancelled `asend` may still have sent its item, if a reader made
         room just as it was cancelled.
@@ -935,8 +971,18 @@ class SharedSendStream(End, Generic[T, M]):
             If this sender is closed, before or during the wait.
         RuntimeError
             If called inside a block of this sender's `writing`.
+        TypeError
+            If `metadata` holds a value `send` refuses.
+        ValueError
+            If `metadata` does not fit, as in `send`.
+        MetadataFullError
+            If `metadata` is given and the stream cannot take a new version
+            now, as in `send`; the item is not sent.
         """
         self._refuse_nested()
+        if metadata is not None:
+            await self._asend_metadata(item, timeout, encode(metadata))
+            return
         await self._yield()
         if self._fast():
             try:
@@ -946,7 +992,23 @@ class SharedSendStream(End, Generic[T, M]):
                 pass
         await self._wait(self._submit(lambda future: self._send(item, timeout, future)))
 
-    def send_nowait(self, item: T) -> None:
+    async def _asend_metadata(self, item: T, timeout: float | None, doc: bytes) -> None:
+        await self._yield()
+        if self._fast():
+            try:
+                self._send_nowait_metadata(doc, item, False)
+                return
+            except WouldBlock:
+                pass
+        await self._wait(
+            self._submit(
+                lambda future: self._retry(
+                    self._native.send_metadata, timeout, future, doc, item
+                )
+            )
+        )
+
+    def send_nowait(self, item: T, *, metadata: M | None = None) -> None:
         """Send `item`, or raise [`WouldBlock`][sharedbox.WouldBlock] if that needs a wait.
 
         It would wait while a lossless reader is a full ring behind, or while
@@ -959,50 +1021,39 @@ class SharedSendStream(End, Generic[T, M]):
         raises `WouldBlock` while another thread or task holds the slot, and
         while a reader from sharedbox 0.7.0 or earlier holds the sender back.
 
+        `metadata` has the meaning it has in
+        [`send`][sharedbox.SharedSendStream.send]; a document the stream
+        cannot store raises before `WouldBlock`.
+
         Raises
         ------
         RuntimeError
             If called inside a block of this sender's `writing`.
+        TypeError
+            If `metadata` holds a value `send` refuses.
+        ValueError
+            If `metadata` does not fit, as in `send`.
+        MetadataFullError
+            If `metadata` is given and the stream cannot take a new version
+            now, as in `send`; the item is not sent.
         """
         self._refuse_nested()
-        self._send_nowait(item, self._release)
-
-    def add_metadata(self, value: M) -> int:  # type: ignore[misc]
-        """Store `value` as the stream's next metadata version and return that version.
-
-        The version is in force from the next item this sender sends: a
-        reader that receives that item or a later one sees it in
-        [`metadata`][sharedbox.SharedReceiveStream.metadata]. The value is
-        `None`, a `bool`, an `int` from -2**64 to 2**64 - 1, a `float`, a
-        `str`, `bytes`, a mapping with `str` keys, or a `list` or `tuple`,
-        nested up to 32 levels. The add wakes no reader and does not wait
-        for one, but waits while another thread sends on this sender. The
-        oldest versions are reclaimed once the stream holds
-        `metadata_versions` of them, or needs their room in its metadata
-        area, but never while an item still in the ring was sent under one;
-        version 1 is also kept while an item sent before it is in the ring.
-
-        Raises
-        ------
-        TypeError
-            If the value holds another type, or a mapping key is not a `str`.
-        ValueError
-            If an `int` is out of range, the nesting is deeper than 32
-            levels, or the document is longer than the metadata area takes,
-            about a third of the stream's `metadata_capacity`.
-        MetadataFullError
-            If the stream has no metadata area, or this add would reclaim a
-            version that an item still in the ring was sent under, or version
-            1 while an item sent before it is in the ring. An add after enough
-            further sends succeeds.
-        StreamClosedError
-            If this sender is closed.
-        """
-        return self._native.add_metadata(encode(value))
+        if metadata is None:
+            self._send_nowait(item, self._release)
+        else:
+            self._send_nowait_metadata(encode(metadata), item, self._release)
 
     def _send_nowait(self, item: T, release: bool) -> None:
         try:
             self._native.send(item, 0.0, release)
+        except _Interrupted:
+            raise WouldBlock(
+                f"stream {self._stream.name!r}: a lossless reader is a full ring behind"
+            ) from None
+
+    def _send_nowait_metadata(self, doc: bytes, item: T, release: bool) -> None:
+        try:
+            self._native.send_metadata(doc, item, 0.0, release)
         except _Interrupted:
             raise WouldBlock(
                 f"stream {self._stream.name!r}: a lossless reader is a full ring behind"
@@ -1083,7 +1134,7 @@ class SharedSendStream(End, Generic[T, M]):
     @contextlib.contextmanager
     def writing(
         self, template: T | None = None, timeout: float | None = None
-    ) -> Generator[SendSlot[T], None, None]:
+    ) -> Generator[SendSlot[T, M], None, None]:
         """Reserve the next slot and yield it, to fill the item's arrays in place and send it.
 
         [`slot.item`][sharedbox.SendSlot.item] is an item built from
@@ -1146,7 +1197,7 @@ class SharedSendStream(End, Generic[T, M]):
     @contextlib.asynccontextmanager
     async def awriting(
         self, template: T | None = None, timeout: float | None = None
-    ) -> AsyncGenerator[SendSlot[T], None]:
+    ) -> AsyncGenerator[SendSlot[T, M], None]:
         """Reserve the next slot, as [`writing`][sharedbox.SharedSendStream.writing] does, without blocking the event loop.
 
         `timeout` has the meaning it has in `writing`. An `awriting` cancelled
@@ -1191,10 +1242,10 @@ class SharedSendStream(End, Generic[T, M]):
             self._native.abandon()
 
     @contextlib.contextmanager
-    def _held(self, template: T | None) -> Generator[SendSlot[T], None, None]:
+    def _held(self, template: T | None) -> Generator[SendSlot[T, M], None, None]:
         """Yield the reserved slot with its item built from `template`, and give it up at the end unless it was sent."""
         try:
-            slot: SendSlot[T] = SendSlot(self._native, template)
+            slot: SendSlot[T, M] = SendSlot(self._native, template)
         except BaseException:
             self._native.abandon()
             raise
@@ -1234,7 +1285,7 @@ class SharedSendStream(End, Generic[T, M]):
         )
 
 
-class SendSlot(Slot[T]):
+class SendSlot(Slot[T, M]):
     """A slot of a stream that [`SharedSendStream.writing`][sharedbox.SharedSendStream.writing] reserved for one item.
 
     [`writing`][sharedbox.SharedSendStream.writing] and

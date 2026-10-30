@@ -607,19 +607,28 @@ std::string Segment::read_metadata(std::uint64_t version) const {
     return out;
 }
 
-std::uint64_t Segment::add_metadata(std::string_view doc) {
+std::uint64_t Segment::write(std::span<const value> values, std::string_view doc) {
     auto guard = impl_->enter();
-    const result<std::uint64_t> added = impl_->box.add_metadata(bytes_of(doc), seconds(impl_->lock_timeout));
+    std::size_t total = doc.size();
+    for (const value &v : values)
+        total += v.bytes.size();
+    const seconds timeout(impl_->lock_timeout);
+    const result<std::uint64_t> added = total >= detail::large_copy
+                                            ? impl_->box.write_large(values, bytes_of(doc), timeout)
+                                            : impl_->box.write(values, bytes_of(doc), timeout);
     if (added)
         return *added;
     if (added.error().code == status::metadata_full)
         throw MetadataFull(
             "box '" + impl_->name +
             "' has no metadata area; give its class a metadata_capacity, or create it with metadata");
-    if (added.error().code == status::range)
+    if (added.error().code == status::range) {
+        // A bad value is named first; what is left is the document.
+        check_values(impl_->fields, values);
         throw std::invalid_argument(
             "box '" + impl_->name + "': the metadata document is " + std::to_string(doc.size()) +
             " bytes, more than its metadata area takes, about a third of metadata_capacity");
+    }
     impl_->fail(added.error());
 }
 

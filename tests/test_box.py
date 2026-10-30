@@ -840,7 +840,7 @@ def test_update_finds_a_field_whose_name_is_built_at_run_time(
 ) -> None:
     """Check that a keyword name that is not the interned field name still finds its field."""
     with Point.create(unique_name) as box:
-        box.update(**{"LABEL".lower(): "run time"})
+        box.update(**{"LABEL".lower(): "run time"})  # type: ignore[arg-type]
         assert box.label == "run time"
 
 
@@ -848,7 +848,7 @@ def test_update_refuses_positional_arguments(unique_name: str) -> None:
     """Check that update with a positional argument raises TypeError and writes nothing."""
     with Point.create(unique_name) as box:
         with pytest.raises(TypeError):
-            box.update(1.0)  # type: ignore[call-arg]
+            box.update(1.0)  # type: ignore[call-arg, arg-type]
         assert box.x == 0.0
 
 

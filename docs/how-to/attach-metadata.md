@@ -38,7 +38,7 @@ counting from 1.
 
 A value is `None`, a `bool`, an `int`, a `float`, a `str`, `bytes`, a list
 or tuple, or a mapping with `str` keys, nested up to 32 levels;
-[`add_metadata`][sharedbox.SharedBox.add_metadata] lists the limits. The
+[`update`][sharedbox.SharedBox.update] lists the limits. The
 type argument must be a mapping type, but only a type checker holds you to
 that: at run time a value that is not a mapping is stored all the same.
 Calling the class takes the `metadata` keyword too, but a type checker
@@ -46,18 +46,24 @@ accepts it only in `create`, where it does not check the value.
 
 ## Add a version
 
-Any process that has the box open adds a version with
-[`add_metadata`][sharedbox.SharedBox.add_metadata], which returns the new
-version's number:
+Any process that has the box open adds a version by passing `metadata` to
+[`update`][sharedbox.SharedBox.update]. The call may also name fields, and
+then the new values and the new version go in as one write, so a reader
+that reads the fields and then `metadata` gets the version written with
+them, or a newer one. Without fields, the call only adds the version:
 
 ```{.python}
 --8<-- "docs/examples/attach_metadata.py:add"
 ```
 
-Adding a version counts as one write to the box, so it takes the write
-lock, but it changes no field. Every process that listens to the `metadata`
-signal of the box's [`events`][sharedbox.SharedBox.events] gets the new
-version's number, once for several adds that come close together:
+The first call writes `weight` and version 2 together, and the second adds
+version 3. An `update` that raises, because a value is out of range or the
+box has no room for the version, writes neither the fields nor the version,
+and `metadata=None`, the default, adds no version. Every process that
+listens to the `metadata` signal of the box's
+[`events`][sharedbox.SharedBox.events] gets the new version's number, once
+for several versions added close together, and gets it before the signals
+of the fields written with it:
 
 ```python
 scale.events.metadata.connect(lambda version: print("calibration", version))
@@ -72,7 +78,7 @@ it has let go raises [`MetadataGoneError`][sharedbox.MetadataGoneError].
 ## Leave room for metadata added later
 
 A box created with `metadata` gets 65536 bytes of room for its metadata,
-and one created without it gets none, so `add_metadata` on it raises
+and one created without it gets none, so `update(metadata=...)` on it raises
 [`MetadataFullError`][sharedbox.MetadataFullError]. When the first version
 comes after the box is created, give the class a `metadata_capacity`:
 
@@ -91,37 +97,47 @@ how many versions the box keeps. A stream takes both as keywords of
 ## Attach metadata to a stream
 
 A stream takes its first version as `metadata` in
-[`create`][sharedbox.SharedStream.create], and its sender adds the next
-ones with [`add_metadata`][sharedbox.SharedSendStream.add_metadata]. A
-version applies from the next item the sender sends, and a reader's
-[`metadata`][sharedbox.SharedReceiveStream.metadata] and
+[`create`][sharedbox.SharedStream.create], and its sender adds each later
+one with the `metadata` of [`send`][sharedbox.SharedSendStream.send].
+[`asend`][sharedbox.SharedSendStream.asend],
+[`send_nowait`][sharedbox.SharedSendStream.send_nowait] and the `send` of
+the slot that [`writing`][sharedbox.SharedSendStream.writing] gives take
+the keyword too. A version applies from the item sent with it, and a
+reader's [`metadata`][sharedbox.SharedReceiveStream.metadata] and
 [`metadata_version`][sharedbox.SharedReceiveStream.metadata_version]
 describe the item it received last, so the reader can tell which version
-each item was sent under:
+each item was sent under. The metadata of this stream is a `TypedDict` too:
+
+```{.python}
+--8<-- "docs/examples/attach_metadata.py:calibration"
+```
 
 ```{.python}
 --8<-- "docs/examples/attach_metadata.py:stream"
 ```
 
-The reader receives both readings after the second version was added, but
-the first reading prints version 1, because that version was in force when
-the reading was sent. Before its first item, a reader's `metadata_version`
-is 0 and its `metadata` is `None`, and the same holds for an item sent
-before the stream had any version. The stream's own
+The reader prints version 1 for the first reading, which was sent before
+version 2 existed, and version 2 for the reading sent with it. Before its
+first item, a reader's `metadata_version` is 0
+and its `metadata` is `None`, and the same holds for an item sent before the
+stream had any version. The stream's own
 [`metadata`][sharedbox.SharedStream.metadata] gives the newest version, as
 a box's does.
 
 A type checker takes the stream's metadata type from `metadata_type`,
 given to `create` as above or to `attach` in another process, as in
-`SharedStream.attach(Reading, name, metadata_type=Calibration)`. Without
+`SharedStream.attach(float, name, metadata_type=Calibration)`. Without
 it the metadata is a `Mapping[str, Any]`, whatever `metadata` you pass.
 
 A stream keeps every version that an item still in its ring was sent
 under, and keeps version 1 while an item sent before it is in the ring,
-so that a reader can tell such an item from one whose version is gone. An
-add that would let such a version go raises `MetadataFullError` and adds
-nothing, and succeeds once the sender has sent enough further items that
-none of those items is left in the ring.
+so that a reader can tell such an item from one whose version is gone. A
+send with `metadata` that would let such a version go raises
+`MetadataFullError` before it waits for room in the ring, so it sends
+nothing and releases no reader; the slot's `send` in a `writing` block
+raises it the same way and leaves the slot reserved. The same send
+succeeds once the sender has sent enough further items that none of
+those items is left in the ring.
 Once a reader's last item has left the ring, though, its version can go,
 and the reader's `metadata` then raises `MetadataGoneError`. A lossy or
 latest reader meets this first, because the sender may overwrite its item

@@ -4,6 +4,7 @@ from typing import Annotated, Any, TypedDict, TypeVar, assert_type
 
 from sharedbox import (
     Capacity,
+    SendSlot,
     SharedBox,
     SharedReceiveStream,
     SharedSendStream,
@@ -33,6 +34,25 @@ def check_box_metadata(motor: Motor, plain: Plain) -> None:
     assert_type(motor.metadata_version_of(1), Info)
     assert_type(plain.metadata, Mapping[str, Any] | None)
     assert_type(plain.metadata_version_of(1), Mapping[str, Any])
+
+
+def check_update_metadata(motor: Motor) -> None:
+    motor.update(speed=1, metadata={"unit": "mm"})
+    motor.update(metadata={"unit": 1})  # type: ignore[arg-type]
+
+
+def check_send_metadata(stream: SharedStream[Item, Info]) -> None:
+    sender = stream.sender()
+    sender.send(Item(1), metadata={"unit": "mm"})
+    sender.send(Item(1), metadata={"unit": 1})  # type: ignore[arg-type]
+
+
+def check_slot_metadata(sender: SharedSendStream[Item, Info]) -> None:
+    with sender.writing() as slot:
+        assert_type(slot, SendSlot[Item, Info])
+        slot.send(Item(1), metadata={"unit": "mm"})
+    with sender.writing() as slot:
+        slot.send(Item(1), metadata={"unit": 1})  # type: ignore[arg-type]
 
 
 def check_default(stream: SharedStream[Item]) -> None:

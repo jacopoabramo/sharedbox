@@ -389,17 +389,6 @@ Py_ssize_t field_index(const BoxMethod &m, PyObject *name) {
     return -1;
 }
 
-// Raises the TypeError of SharedBox._check_names for every name in kwnames that is not a field.
-void raise_unknown(const BoxMethod &m, PyObject *kwnames) {
-    nb::list unknown;
-    for (Py_ssize_t k = 0; k < tuple_size(kwnames); ++k)
-        if (field_index(m, tuple_item(kwnames, k)) < 0)
-            unknown.append(nb::handle(tuple_item(kwnames, k)));
-    unknown.sort();
-    const nb::object joined = nb::str(", ").attr("join")(unknown);
-    PyErr_Format(PyExc_TypeError, "%U has no field(s) %U", m.qualname, joined.ptr());
-}
-
 PyObject *box_update(PyObject *callable, PyObject *const *args, std::size_t nargsf, PyObject *kwnames) noexcept {
     const BoxMethod &m = *reinterpret_cast<BoxMethod *>(callable);
     const Py_ssize_t nargs = PyVectorcall_NARGS(nargsf);
@@ -424,10 +413,10 @@ PyObject *box_update(PyObject *callable, PyObject *const *args, std::size_t narg
         // Every name is found before any value is converted, so unknown names are reported first.
         for (std::size_t k = 0; k < count; ++k) {
             const Py_ssize_t index = field_index(m, tuple_item(kwnames, static_cast<Py_ssize_t>(k)));
-            if (index < 0) {
-                raise_unknown(m, kwnames);
-                return nullptr;
-            }
+            // The Python method checks the names and handles metadata, so a name that is no field is left to
+            // it; only those updates cost more.
+            if (index < 0)
+                return PyObject_Vectorcall(m.fallback, args, nargsf, kwnames);
             pending[k] = {static_cast<std::uint32_t>(index), args[1 + k]};
         }
         for (std::size_t k = 0; m.has_refs && k < count; ++k) {
@@ -1139,16 +1128,19 @@ NB_MODULE(_native, m) {
             "names"_a, "types"_a = nb::none())
         .def(
             "set",
-            [](Segment &s, const Values &values, nb::handle types) {
+            [](Segment &s, const Values &values, nb::handle types, std::optional<nb::bytes> doc) {
                 Scratch<sharedbox::Pending, 8> pending(values.size());
                 for (std::size_t i = 0; i < values.size(); ++i)
                     pending[i] = {values[i].first, values[i].second.ptr()};
                 Scratch<sharedbox::EncodeBuffer, 8> buffers(values.size());
                 Scratch<sharedbox::value, 8> encoded(values.size());
                 sharedbox::encode_all(s, types_of(types), pending.span(), buffers.span(), encoded.span());
-                s.write(encoded.span());
+                if (doc)
+                    s.write(encoded.span(), std::string_view(doc->c_str(), doc->size()));
+                else
+                    s.write(encoded.span());
             },
-            "values"_a, "types"_a = nb::none())
+            "values"_a, "types"_a = nb::none(), "doc"_a = nb::none())
         .def(
             "_read",
             [](const Segment &s, std::uint32_t index) {
@@ -1193,10 +1185,6 @@ NB_MODULE(_native, m) {
                 return nb::bytes(doc.data(), doc.size());
             },
             "version"_a)
-        .def(
-            "add_metadata",
-            [](Segment &s, nb::bytes doc) { return s.add_metadata(std::string_view(doc.c_str(), doc.size())); },
-            "doc"_a)
         .def("publish", &Segment::publish)
         .def("generation", &Segment::generation)
         .def("register_waiter", &Segment::register_waiter)
