@@ -62,7 +62,7 @@ box has no room for the version, writes neither the fields nor the version,
 and `metadata=None`, the default, adds no version. Every process that
 listens to the `metadata` signal of the box's
 [`events`][sharedbox.SharedBox.events] gets the new version's number, once
-for several adds that come close together, and gets it before the signals
+for several versions added close together, and gets it before the signals
 of the fields written with it:
 
 ```python
@@ -116,17 +116,13 @@ each item was sent under. The metadata of this stream is a `TypedDict` too:
 --8<-- "docs/examples/attach_metadata.py:stream"
 ```
 
-The reader receives both readings after the sender added version 2, but it
-prints version 1 for the first, because that version was in force when the
-reading was sent. Before its first item, a reader's `metadata_version` is 0
+The reader prints version 1 for the first reading, which was sent before
+version 2 existed, and version 2 for the reading sent with it. Before its
+first item, a reader's `metadata_version` is 0
 and its `metadata` is `None`, and the same holds for an item sent before the
 stream had any version. The stream's own
 [`metadata`][sharedbox.SharedStream.metadata] gives the newest version, as
 a box's does.
-
-A `send` with `metadata` checks that the stream can take the version before
-it waits for room in the ring. When it cannot, `send` raises
-`MetadataFullError` at once, sends nothing and releases no reader.
 
 A type checker takes the stream's metadata type from `metadata_type`,
 given to `create` as above or to `attach` in another process, as in
@@ -137,8 +133,9 @@ A stream keeps every version that an item still in its ring was sent
 under, and keeps version 1 while an item sent before it is in the ring,
 so that a reader can tell such an item from one whose version is gone. A
 send with `metadata` that would let such a version go raises
-`MetadataFullError` and sends nothing, and succeeds once the sender has sent
-enough further items that none of those items is left in the ring.
+`MetadataFullError` before it waits for room in the ring, so it sends
+nothing and releases no reader. The same send succeeds once the sender has
+sent enough further items that none of those items is left in the ring.
 Once a reader's last item has left the ring, though, its version can go,
 and the reader's `metadata` then raises `MetadataGoneError`. A lossy or
 latest reader meets this first, because the sender may overwrite its item

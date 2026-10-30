@@ -1,5 +1,7 @@
 """The script of the guide "How to attach metadata to a box or stream"."""
 
+from dataclasses import dataclass
+
 # --8<-- [start:box]
 from typing import TypedDict
 
@@ -53,9 +55,6 @@ scale.update(metadata={**stored, "offset": 0.5})
 
 
 # --8<-- [start:stream]
-from dataclasses import dataclass
-
-
 @dataclass(frozen=True)
 class Reading:
     weight: float

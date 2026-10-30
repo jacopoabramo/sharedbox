@@ -1630,12 +1630,12 @@ Stream layout). Every function returning a `result` is `[[nodiscard]]`.
   `status::metadata_full` for a stream without a metadata area, and while
   an item still in the ring, or yet to be sent, needs a version the add
   would overwrite; an add after enough further sends succeeds.
-- `stream_sender::can_add_metadata(doc)` gives the status `add_metadata(doc)`
-  would give now, and writes nothing. The answer holds until the next send
-  or add on the same sender.
   `status::range` for a document outside the subset or longer than a third
   of the ring, for a closed sender, and in a child of `fork`. It must not
   overlap a send on the same sender.
+- `stream_sender::can_add_metadata(doc)` gives the status `add_metadata(doc)`
+  would give now, and writes nothing. The answer holds until the next send
+  or add on the same sender.
 - `stream_reader::metadata_version_at(position)` is the version in force at
   an item's position, such as the one `receive` returned: the newest
   version added at or before it. `status::not_found` when that version was
