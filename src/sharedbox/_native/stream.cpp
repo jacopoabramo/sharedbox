@@ -320,7 +320,8 @@ public:
             throw;
         }
         std::unique_lock lock = lock_calls();
-        if (!doc.empty() && !closed_.load()) {
+        const bool closed = closed_.load();
+        if (!doc.empty() && !closed) {
             if (const result<std::uint64_t> added = end_.add_metadata(doc); !added) {
                 // abandon() would take calls again, which this thread holds.
                 end_.abandon();
@@ -329,7 +330,7 @@ public:
             }
         }
         release_slot();
-        if (closed_.load())
+        if (closed)
             throw StreamClosed("stream '" + name_ + "': this end is closed");
         const result<std::uint64_t> sent = end_.publish();
         if (!sent)
