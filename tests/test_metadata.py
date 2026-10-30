@@ -470,6 +470,19 @@ def test_a_failed_update_writes_neither(unique_name: str) -> None:
     Stage.unlink(unique_name)
 
 
+def test_update_names_only_the_unknown_field_next_to_metadata(
+    unique_name: str,
+) -> None:
+    """Report an unknown name without naming metadata, in either order of the keywords."""
+    with Stage.create(unique_name, metadata={"units": "mm"}) as box:
+        with pytest.raises(TypeError, match=r"has no field\(s\) bogus$"):
+            box.update(bogus=1, metadata={"a": 1})
+        with pytest.raises(TypeError, match=r"has no field\(s\) bogus$"):
+            box.update(metadata={"a": 1}, bogus=1)
+        assert box.metadata_version == 1
+    Stage.unlink(unique_name)
+
+
 def test_update_with_metadata_on_a_subclass(unique_name: str) -> None:
     """Add the version and write the subclass's own fields when the call goes to the Python update."""
     with StageWithSpeed.create(unique_name, metadata={"units": "mm"}) as box:
