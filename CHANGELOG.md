@@ -9,6 +9,108 @@ Dates are marked as `DD-MM-YYYY`
 
 <!-- towncrier release notes start -->
 
+## [0.8.0](https://github.com/jacopoabramo/sharedbox/releases/tag/v0.8.0) - 30-10-2026
+
+### Breaking
+
+- `sharedbox.Shape` takes its dimensions as one tuple, `Shape((480, 640))`, in
+  place of one argument per dimension. See
+  [How to migrate from 0.7](https://jacopoabramo.github.io/sharedbox/how-to/migrate-from-0.7/). ([#88](https://github.com/jacopoabramo/sharedbox/pull/88))
+- `SharedBox` reserves the names `metadata`, `metadata_version` and
+  `metadata_version_of`: a field or `InitVar` with one of them raises
+  `TypeError` when the class is defined. Rename the field:
+
+  ```python
+  # 0.7
+  class Parcel(SharedBox):
+      metadata: Annotated[str, Capacity(64)] = ""
+
+  # 0.8
+  class Parcel(SharedBox):
+      label: Annotated[str, Capacity(64)] = ""
+  ```
+
+  `SharedBox.update` takes the keyword `metadata`, so a type checker refuses
+  `update(**values)` when the values of the dictionary have a type that the
+  box's metadata type does not accept, such as `str`:
+
+  ```python
+  # 0.7
+  def restock(parcel: Parcel, values: dict[str, str]) -> None:
+      parcel.update(**values)
+
+  # 0.8
+  def restock(parcel: Parcel, values: dict[str, Any]) -> None:
+      parcel.update(**values)
+  ```
+
+  See
+  [How to migrate from 0.7](https://jacopoabramo.github.io/sharedbox/how-to/migrate-from-0.7/). ([#91](https://github.com/jacopoabramo/sharedbox/pull/91))
+
+### Added
+
+- `MaxShape`: an array of a stream item declared with a maximum shape, as in
+  `Annotated[npt.NDArray[np.uint16], MaxShape((2048, 2048))]`, stores its own
+  shape with each item, as kind 75 of stream layout 1.2. `writing()` views the
+  slot in the shape of the template's array, `slot.send` publishes the first
+  rows of that view without a copy, and `receive_into` returns a view of the
+  stored shape over `out`. ([#88](https://github.com/jacopoabramo/sharedbox/pull/88))
+- `SharedStream.sender(on_full="release")`: a send that has waited its whole
+  `timeout` releases the lossless readers a full ring behind and sends, as in
+  `stream.sender(on_full="release").send(item, timeout=0.1)`. Each released
+  reader raises `ReaderReleased`, whose `missed` counts the items it lost, and
+  goes on at the newest item; `ReceiveEvents.released` reports the count to
+  callbacks. `SharedSendStream.asend` and `awriting` take a `timeout`. In
+  `stream.hpp`, `send`, `send_with` and `begin` take an `on_full` policy, and a
+  released reader's `receive` gives `status::released`, in stream layout 1.3. ([#89](https://github.com/jacopoabramo/sharedbox/pull/89))
+- `MetadataFullError` and `MetadataGoneError`: raised when an add finds no
+  room for a version, and when the version a read asks for is no longer held. ([#91](https://github.com/jacopoabramo/sharedbox/pull/91))
+- `SharedStream.metadata`: a stream keeps metadata the same way.
+  `SharedStream.create(Reading, capacity=8, metadata={"unit": "kg"})` stores
+  version 1. `SharedSendStream.send`, `asend`, `send_nowait` and
+  `SendSlot.send` take `metadata=` and add a version that applies from that
+  item. `SharedReceiveStream.metadata` and `metadata_version` give the version
+  of the item the reader received last. `SharedStream.create` takes
+  `metadata_capacity` and `metadata_versions`, and `create` and `attach` take
+  `metadata_type`. `sharedbox` 0.7.0 and earlier cannot open a stream created
+  with metadata or a `metadata_capacity`. ([#91](https://github.com/jacopoabramo/sharedbox/pull/91))
+- `box.hpp`, `stream.hpp` and `sharedbox_c.h`: box layout 3.2 and stream
+  layout 1.4 hold metadata after the record or the description table.
+  `handle` and `stream` gain `metadata_head` and `read_metadata`, and
+  `stream_reader` gains `metadata_version_at`. `handle` and `stream_sender`
+  gain `add_metadata`. `handle::write(values, doc, lock_timeout)` and
+  `write_large` with the same arguments write fields and add a version in one
+  write, and
+  `stream_sender::can_add_metadata` checks an add without making it.
+  `sharedbox_c.h` adds `sbx_metadata_head`, `sbx_read_metadata`,
+  `sbx_add_metadata` and `SBX_E_METADATA_FULL`. ([#91](https://github.com/jacopoabramo/sharedbox/pull/91))
+- `SharedBox.metadata`: a box keeps metadata, JSON-like values stored as CBOR
+  in its segment, in numbered versions. `Scale.create(name, metadata={"unit":
+  "kg"})` stores version 1, and `SharedBox.update(metadata=...)` adds the next
+  one from any process, with or without field values, in one write.
+  `metadata`, `metadata_version` and `metadata_version_of` read the versions,
+  a map as a read-only mapping and a list as a tuple. `BoxEvents.metadata` is
+  emitted with each new version. The class keywords `metadata_capacity` and
+  `metadata_versions` size the room for versions, and
+  `class Scale(SharedBox[Calibration])` gives the metadata's type to type
+  checkers. ([#91](https://github.com/jacopoabramo/sharedbox/pull/91))
+
+### Changed
+
+- `sharedbox.DType` is a `StrEnum` with one member per element type:
+  `DType(numpy.uint8)` returns `DType.uint8`, which equals `"uint8"`. ([#88](https://github.com/jacopoabramo/sharedbox/pull/88))
+
+### Fixed
+
+- `SharedBox` and `SharedStream` at exit: the `atexit` hook of `sharedbox`
+  closes every box and stream the process still has open and releases the
+  native objects of `SharedBox` subclasses, their watches and events groups,
+  so nanobind reports no leaked instances when a box class defined at module
+  level outlives shutdown. A box or stream used after the hook raises
+  `BoxClosedError` or `StreamClosedError`, and creating or attaching a box
+  raises `BoxClosedError`. ([#90](https://github.com/jacopoabramo/sharedbox/pull/90))
+
+
 ## [0.7.0](https://github.com/jacopoabramo/sharedbox/releases/tag/v0.7.0) - 28-10-2026
 
 ### Added
