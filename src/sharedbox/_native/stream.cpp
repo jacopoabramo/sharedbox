@@ -344,7 +344,7 @@ public:
         release_slot();
     }
 
-    /// Raises what commit would for adding doc now; Slot calls it before it gives up its slot.
+    /// Raises what commit would for adding doc now; Slot calls it before it marks the slot sent.
     void check_metadata(std::span<const std::byte> doc) {
         check_open();
         // The check reads write_pos as the sender's only writer, so it must not overlap a send.
