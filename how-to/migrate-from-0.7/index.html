@@ -910,6 +910,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#type-a-dictionary-passed-to-update-as-dictstr-any" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Type a dictionary passed to <code>update</code> as <code>dict[str, Any]</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -3163,6 +3174,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#type-a-dictionary-passed-to-update-as-dictstr-any" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Type a dictionary passed to <code>update</code> as <code>dict[str, Any]</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -3286,7 +3308,9 @@ next release: a <a class="autorefs autorefs-internal" title="&lt;code class=&quo
       &lt;small class=&quot;doc doc-label doc-label-dataclass&quot;&gt;&lt;code&gt;dataclass&lt;/code&gt;&lt;/small&gt;
   &lt;/span&gt;" href="../../reference/api/arrays/#sharedbox.Shape"><code>Shape</code></a> now takes its dimensions as one
 tuple, and a box field can no longer take the name of a metadata member,
-such as <code>metadata</code>. This guide shows the old and the new form of each.</p>
+such as <code>metadata</code>. A third change concerns only type checkers: they refuse
+<code>update(**values)</code> for some dictionaries that 0.7 accepted. This guide
+shows the old and the new form of each.</p>
 <h2 id="pass-the-dimensions-of-a-shape-as-a-tuple">Pass the dimensions of a <code>Shape</code> as a tuple<a class="headerlink" href="#pass-the-dimensions-of-a-shape-as-a-tuple" title="Permanent link">&para;</a></h2>
 <p><code>Shape</code> used to take each dimension as its own argument. It now takes a
 single tuple, so a one-dimensional shape needs the trailing comma that makes
@@ -3306,8 +3330,8 @@ at run time passes the tuple it already has, <code>Shape(dims)</code>, in place 
 <code>Shape(*dims)</code>.</p>
 <h2 id="rename-a-field-called-metadata">Rename a field called <code>metadata</code><a class="headerlink" href="#rename-a-field-called-metadata" title="Permanent link">&para;</a></h2>
 <p>A box now has <a href="../../explanation/glossary/#metadata">metadata</a> of its own,
-which it reads and adds through four new members: <code>metadata</code>,
-<code>metadata_version</code>, <code>metadata_version_of</code> and <code>add_metadata</code>. A field or an
+which it reads through three new members: <code>metadata</code>,
+<code>metadata_version</code> and <code>metadata_version_of</code>. A field or an
 <code>InitVar</code> can no longer take one of those names, so give it another:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># 0.7</span>
 </span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="k">class</span><span class="w"> </span><span class="nc">Parcel</span><span class="p">(</span><span class="n">SharedBox</span><span class="p">):</span>
@@ -3324,6 +3348,25 @@ assigning to it raises <code>AttributeError</code>. The field's name is part of 
 <a href="../../explanation/glossary/#schema-hash">schema hash</a>, so a process that
 still runs the old class cannot attach to a box the new class created:
 update every process that opens the box together.</p>
+<h2 id="type-a-dictionary-passed-to-update-as-dictstr-any">Type a dictionary passed to <code>update</code> as <code>dict[str, Any]</code><a class="headerlink" href="#type-a-dictionary-passed-to-update-as-dictstr-any" title="Permanent link">&para;</a></h2>
+<p><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;update&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.update"><code>update</code></a> now has a keyword <code>metadata</code> besides
+the field names it takes. A type checker cannot tell which keys a <code>dict</code> holds,
+so it assumes that <code>update(**values)</code> may fill <code>metadata</code>, and it refuses the
+call when the values have a type the box's metadata type does not accept,
+such as <code>str</code>. Type the dictionary as <code>dict[str, Any]</code>, or cast it where
+you pass it:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># 0.7</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="k">def</span><span class="w"> </span><span class="nf">restock</span><span class="p">(</span><span class="n">parcel</span><span class="p">:</span> <span class="n">Parcel</span><span class="p">,</span> <span class="n">values</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>    <span class="n">parcel</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="o">**</span><span class="n">values</span><span class="p">)</span>
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>
+</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="c1"># 0.8</span>
+</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="k">def</span><span class="w"> </span><span class="nf">restock</span><span class="p">(</span><span class="n">parcel</span><span class="p">:</span> <span class="n">Parcel</span><span class="p">,</span> <span class="n">values</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Any</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>    <span class="n">parcel</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="o">**</span><span class="n">values</span><span class="p">)</span>
+</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a>
+</span><span id="__span-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a><span class="k">def</span><span class="w"> </span><span class="nf">restock_cast</span><span class="p">(</span><span class="n">parcel</span><span class="p">:</span> <span class="n">Parcel</span><span class="p">,</span> <span class="n">values</span><span class="p">:</span> <span class="nb">dict</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="nb">str</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+</span><span id="__span-2-10"><a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>    <span class="n">parcel</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="o">**</span><span class="n">cast</span><span class="p">(</span><span class="s2">"dict[str, Any]"</span><span class="p">,</span> <span class="n">values</span><span class="p">))</span>
+</span></code></pre></div>
+<p>Nothing changes when the program runs.</p>
 
 
 

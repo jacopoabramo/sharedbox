@@ -2427,17 +2427,6 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#sharedbox.SharedBox.add_metadata" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;add_metadata
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
   <a href="#sharedbox.SharedBox.update" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -3929,17 +3918,6 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#sharedbox.SharedBox.add_metadata" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;add_metadata
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
   <a href="#sharedbox.SharedBox.update" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -4905,7 +4883,7 @@ exception propagates.</p>
   2**32 - 1 bytes in all. A metadata document takes at most about a
   third of the capacity. By default a box created with <code>metadata</code>
   gets 65536, and any other box no area, so
-  <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;add_metadata&lt;/span&gt;" href="./#sharedbox.SharedBox.add_metadata"><code>add_metadata</code></a> on it raises
+  <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;update&lt;/span&gt;" href="./#sharedbox.SharedBox.update"><code>update</code></a> with <code>metadata</code> on it raises
   <code>MetadataFullError</code>.</li>
 <li><code>metadata_versions</code>: how many metadata versions the box keeps at
   most, 2 to 65535, 64 by default.</li>
@@ -4923,7 +4901,7 @@ version; see <a class="autorefs autorefs-internal" title="&lt;code class=&quot;d
   &lt;span class=&quot;doc doc-labels&quot;&gt;
       &lt;small class=&quot;doc doc-label doc-label-property&quot;&gt;&lt;code&gt;property&lt;/code&gt;&lt;/small&gt;
   &lt;/span&gt;" href="./#sharedbox.SharedBox.metadata"><code>metadata</code></a>. A type
-checker takes the type of the metadata a box reads and adds from the
+checker takes the type of the metadata a box reads and writes from the
 class's base, as in <code>class Motor(SharedBox[Info])</code>. It accepts the
 keyword <code>metadata</code> only in <code>create</code>, and does not check its value.</p>
 <p>A field annotated with a <code>SharedBox</code> subclass <code>X</code>, or with <code>X | None</code>
@@ -4998,7 +4976,7 @@ fields or more than 256, a field or <code>InitVar</code> named like a
 <code>SharedBox</code> member (<code>name</code>, <code>closed</code>, <code>close</code>, <code>unlink</code>, <code>update</code>,
 <code>snapshot</code>, <code>read_into</code>, <code>writing</code>, <code>watch</code>, <code>events</code>,
 <code>force_unlock</code>, <code>create</code>, <code>attach</code>, <code>metadata</code>, <code>metadata_version</code>,
-<code>metadata_version_of</code>, <code>add_metadata</code>), a field named <code>follow</code>,
+<code>metadata_version_of</code>), a field named <code>follow</code>,
 <code>unfollow</code> or <code>nested</code>, a default of the wrong type, a
 positional field without a default after one with a default, an
 <code>InitVar</code> in a class without <code>__post_init__</code>, a reference to a
@@ -5006,7 +4984,7 @@ class that is not defined yet, <code>__slots__</code> that name <code>_segment</
 an <code>identity</code> that is not a non-empty string. When the class is
 called, for a missing, unknown or repeated value, a value of the
 wrong type, or <code>metadata</code> that
-<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;add_metadata&lt;/span&gt;" href="./#sharedbox.SharedBox.add_metadata"><code>add_metadata</code></a> would refuse
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;update&lt;/span&gt;" href="./#sharedbox.SharedBox.update"><code>update</code></a> would refuse
 with <code>TypeError</code>.</p>
               </div>
             </td>
@@ -5022,7 +5000,7 @@ with <code>TypeError</code>.</p>
 <code>lock_timeout</code>, <code>max_waiters</code>, <code>metadata_capacity</code> or
 <code>metadata_versions</code> out of range, or a default that does not fit
 its field (any of the cases below). When the class is called, for
-<code>metadata</code> that <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;add_metadata&lt;/span&gt;" href="./#sharedbox.SharedBox.add_metadata"><code>add_metadata</code></a>
+<code>metadata</code> that <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;update&lt;/span&gt;" href="./#sharedbox.SharedBox.update"><code>update</code></a>
 would refuse with <code>ValueError</code>, for any <code>metadata</code> when the class
 sets <code>metadata_capacity=0</code>, or for a metadata area that does not
 fit after the record in a box of at most 2**32 - 4096 bytes. When
@@ -5185,7 +5163,7 @@ can still attach it.</p>
         <p>The value of the box's newest metadata version, or None if it has none.</p>
 <p>Metadata is a document stored beside the fields, such as the units
 or calibration the values were taken with. Adding a version with
-<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;add_metadata&lt;/span&gt;" href="./#sharedbox.SharedBox.add_metadata"><code>add_metadata</code></a> keeps the
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;update&lt;/span&gt;" href="./#sharedbox.SharedBox.update"><code>update</code></a> keeps the
 earlier ones until the box reclaims them for newer ones, and
 <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;metadata_version_of&lt;/span&gt;" href="./#sharedbox.SharedBox.metadata_version_of"><code>metadata_version_of</code></a>
 reads them until then. A mapping reads back as a read-only mapping
@@ -5615,31 +5593,35 @@ last.</p>
 <div class="doc doc-object doc-function">
 
 
-<h3 id="sharedbox.SharedBox.add_metadata" class="doc doc-heading">
-<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <span class="doc doc-object-name doc-function-name">add_metadata</span>
+<h3 id="sharedbox.SharedBox.update" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <span class="doc doc-object-name doc-function-name">update</span>
 
 
-<a href="#sharedbox.SharedBox.add_metadata" class="headerlink" title="Permanent link">&para;</a></h3>
-<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">add_metadata</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="n">M</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span>
+<a href="#sharedbox.SharedBox.update" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">update</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">metadata</span><span class="p">:</span> <span class="n">M</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="o">**</span><span class="n">values</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span>
 </span></code></pre></div>
 
     <div class="doc doc-contents ">
 
-        <p>Store <code>value</code> as the box's next metadata version and return that version.</p>
-<p>Any process may add metadata to a box. The value is <code>None</code>, a
-<code>bool</code>, an <code>int</code> from -2**64 to 2**64 - 1, a <code>float</code>, a <code>str</code>,
-<code>bytes</code>, a mapping with <code>str</code> keys, or a <code>list</code> or <code>tuple</code>, nested
-up to 32 levels. The add takes the write lock as a write does and
-changes no field. The <code>metadata</code> signal of
+        <p>Write several fields under one lock; a reader sees all of the new values or none.</p>
+<p>Every value is checked before any is written, so an update that
+raises changes nothing. A reference field takes a box or None,
+checked as when it is assigned.</p>
+<p>With <code>metadata</code>, the same lock also adds the value as the box's
+next metadata version, and no reader sees the fields without it. The
+value is <code>None</code>, a <code>bool</code>, an <code>int</code> from -2**64 to 2**64 - 1, a
+<code>float</code>, a <code>str</code>, <code>bytes</code>, a mapping with <code>str</code> keys, or a <code>list</code> or
+<code>tuple</code>, nested up to 32 levels. The <code>metadata</code> signal of
 <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-attribute&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-attribute-name&quot;&gt;events&lt;/span&gt;
 
 
   &lt;span class=&quot;doc doc-labels&quot;&gt;
       &lt;small class=&quot;doc doc-label doc-label-property&quot;&gt;&lt;code&gt;property&lt;/code&gt;&lt;/small&gt;
-  &lt;/span&gt;" href="./#sharedbox.SharedBox.events"><code>events</code></a> is emitted with the new
-version in every process that listens to it. The oldest versions
-are reclaimed once the box holds <code>metadata_versions</code> of them, or
-needs their room in its metadata area.</p>
+  &lt;/span&gt;" href="./#sharedbox.SharedBox.events"><code>events</code></a> is emitted before the signals
+of the fields, in every process that listens to them. The oldest
+versions are reclaimed once the box holds <code>metadata_versions</code> of
+them, or needs their room in its metadata area. <code>metadata=None</code>
+adds no version.</p>
 
 
 <p><span class="doc-section-title">Raises:</span></p>
@@ -5657,7 +5639,8 @@ needs their room in its metadata area.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>If the value holds another type, or a mapping key is not a <code>str</code>.</p>
+                <p>If a name is not a field or a value has the wrong type, or the
+metadata holds another type or a mapping key that is not a <code>str</code>.</p>
               </div>
             </td>
           </tr>
@@ -5667,9 +5650,10 @@ needs their room in its metadata area.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>If an <code>int</code> is out of range, the nesting is deeper than 32
-levels, or the document is longer than the metadata area takes,
-about a third of the class's <code>metadata_capacity</code>.</p>
+                <p>If a <code>str</code> or <code>bytes</code> value is longer than its capacity, or an
+<code>int</code> of the metadata is out of range, its nesting is deeper than
+32 levels, or its document is longer than the metadata area
+takes, about a third of the class's <code>metadata_capacity</code>.</p>
               </div>
             </td>
           </tr>
@@ -5679,8 +5663,8 @@ about a third of the class's <code>metadata_capacity</code>.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>If the box has no metadata area: its class sets no
-<code>metadata_capacity</code> and it was created without <code>metadata</code>.</p>
+                <p>With <code>metadata</code>, if the box has no metadata area: its class sets
+no <code>metadata_capacity</code> and it was created without <code>metadata</code>.</p>
               </div>
             </td>
           </tr>
@@ -5701,62 +5685,6 @@ about a third of the class's <code>metadata_capacity</code>.</p>
             <td>
               <div class="doc-md-description">
                 <p>If the box is closed.</p>
-              </div>
-            </td>
-          </tr>
-      </tbody>
-    </table>
-
-
-    </div>
-
-</div>
-
-<div class="doc doc-object doc-function">
-
-
-<h3 id="sharedbox.SharedBox.update" class="doc doc-heading">
-<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <span class="doc doc-object-name doc-function-name">update</span>
-
-
-<a href="#sharedbox.SharedBox.update" class="headerlink" title="Permanent link">&para;</a></h3>
-<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">update</span><span class="p">(</span><span class="o">**</span><span class="n">values</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span>
-</span></code></pre></div>
-
-    <div class="doc doc-contents ">
-
-        <p>Write several fields under one lock; a reader sees all of the new values or none.</p>
-<p>Every value is checked before any is written, so an update that
-raises changes nothing. A reference field takes a box or None,
-checked as when it is assigned.</p>
-
-
-<p><span class="doc-section-title">Raises:</span></p>
-    <table>
-      <thead>
-        <tr>
-          <th>Type</th>
-          <th>Description</th>
-        </tr>
-      </thead>
-      <tbody>
-          <tr class="doc-section-item">
-            <td>
-                  <code><a class="autorefs autorefs-external" href="https://docs.python.org/3/builtins/exceptions.html#TypeError">TypeError</a></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>If a name is not a field or a value has the wrong type.</p>
-              </div>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td>
-                  <code><a class="autorefs autorefs-external" href="https://docs.python.org/3/builtins/exceptions.html#ValueError">ValueError</a></code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>If a <code>str</code> or <code>bytes</code> value is longer than its capacity.</p>
               </div>
             </td>
           </tr>
