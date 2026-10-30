@@ -1282,7 +1282,7 @@ class Slot(Generic[_T]):
         writing to them after [`send`][sharedbox.SendSlot.send] changes
         an item readers may have received and tells no one.
         """
-    def send(self, item: _T, metadata: object = None) -> None:
+    def send(self, item: _T, *, metadata: object = None) -> None:
         """Encode `item` into the slot and publish it.
 
         An array of `item` that already is its place in the slot, such as

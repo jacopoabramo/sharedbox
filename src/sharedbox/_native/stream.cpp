@@ -819,7 +819,7 @@ void bind_stream(nb::module_ &m) {
     nb::class_<Slot>(m, "Slot", nb::is_generic(), nb::type_slots(gc_slots<Slot>))
         .def(nb::init<nb::handle, nb::handle>(), "sender"_a, "template"_a.none())
         .def_prop_ro("item", &Slot::item)
-        .def("send", &Slot::send, "item"_a.none(), "metadata"_a.none() = nb::none())
+        .def("send", &Slot::send, "item"_a.none(), nb::kw_only(), "metadata"_a.none() = nb::none())
         .def("abandon", &Slot::abandon);
     nb::class_<Reader>(m, "Reader", nb::type_slots(gc_slots<Reader>))
         .def("receive", &Reader::receive, "timeout"_a,
