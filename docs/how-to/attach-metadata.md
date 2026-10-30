@@ -135,8 +135,9 @@ so that a reader can tell such an item from one whose version is gone. A
 send with `metadata` that would let such a version go raises
 `MetadataFullError` before it waits for room in the ring, so it sends
 nothing and releases no reader; the slot's `send` in a `writing` block
-raises it the same way and leaves the slot reserved. The same send succeeds once the sender has
-sent enough further items that none of those items is left in the ring.
+raises it the same way and leaves the slot reserved. The same send
+succeeds once the sender has sent enough further items that none of
+those items is left in the ring.
 Once a reader's last item has left the ring, though, its version can go,
 and the reader's `metadata` then raises `MetadataGoneError`. A lossy or
 latest reader meets this first, because the sender may overwrite its item
