@@ -2828,6 +2828,39 @@
   
 </li>
         
+          <li class="md-nav__item">
+  <a href="#sharedbox.SharedReceiveStream.fetch" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;fetch
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sharedbox.SharedReceiveStream.fetch_into" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;fetch_into
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sharedbox.SharedReceiveStream.fetch_future" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;fetch_future
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
       </ul>
     </nav>
   
@@ -4089,6 +4122,39 @@
     <span class="md-ellipsis">
       <span class="md-typeset">
         <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;receive_future
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sharedbox.SharedReceiveStream.fetch" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;fetch
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sharedbox.SharedReceiveStream.fetch_into" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;fetch_into
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sharedbox.SharedReceiveStream.fetch_future" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;fetch_future
       </span>
     </span>
   </a>
@@ -6189,7 +6255,7 @@ then come after a later item.</p>
 
     <div class="doc doc-contents ">
 
-        <p>The position of the last item received, None before the first.</p>
+        <p>The position of the item this reader returned last, by a receive or a fetch, None before the first.</p>
 <p><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-attribute&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-attribute-name&quot;&gt;position&lt;/span&gt;
 
 
@@ -6755,6 +6821,264 @@ call goes on. An item it takes after its future was abandoned, or
 after an <code>asyncio.wrap_future</code> around it was cancelled, is lost. To
 wait on several readers, keep one outstanding future per reader and
 submit a new one only for the readers whose future completed.</p>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="sharedbox.SharedReceiveStream.fetch" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <span class="doc doc-object-name doc-function-name">fetch</span>
+
+
+<a href="#sharedbox.SharedReceiveStream.fetch" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">fetch</span><span class="p">(</span><span class="n">position</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="o">/</span><span class="p">,</span> <span class="n">timeout</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">T</span>
+</span></code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Return the item at <code>position</code>, with new arrays, once the sender has sent it.</p>
+<p>A fetch leaves the receive cursor and
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-attribute&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-attribute-name&quot;&gt;missed&lt;/span&gt;
+
+
+  &lt;span class=&quot;doc doc-labels&quot;&gt;
+      &lt;small class=&quot;doc doc-label doc-label-property&quot;&gt;&lt;code&gt;property&lt;/code&gt;&lt;/small&gt;
+  &lt;/span&gt;" href="./#sharedbox.SharedReceiveStream.missed"><code>missed</code></a> alone, so the next
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;receive&lt;/span&gt;" href="./#sharedbox.SharedReceiveStream.receive"><code>receive</code></a> returns what it
+would have returned without it.
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-attribute&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-attribute-name&quot;&gt;position&lt;/span&gt;
+
+
+  &lt;span class=&quot;doc doc-labels&quot;&gt;
+      &lt;small class=&quot;doc doc-label doc-label-property&quot;&gt;&lt;code&gt;property&lt;/code&gt;&lt;/small&gt;
+  &lt;/span&gt;" href="./#sharedbox.SharedReceiveStream.position"><code>position</code></a> and
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-attribute&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-attribute-name&quot;&gt;metadata&lt;/span&gt;
+
+
+  &lt;span class=&quot;doc doc-labels&quot;&gt;
+      &lt;small class=&quot;doc doc-label doc-label-property&quot;&gt;&lt;code&gt;property&lt;/code&gt;&lt;/small&gt;
+  &lt;/span&gt;" href="./#sharedbox.SharedReceiveStream.metadata"><code>metadata</code></a> then describe the
+fetched item. An item the ring still holds is returned at once, and
+<code>timeout=0</code> does not wait for one not sent yet.</p>
+
+
+<p><span class="doc-section-title">Raises:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;ItemGoneError&lt;/span&gt; (&lt;code&gt;sharedbox._native.ItemGoneError&lt;/code&gt;)" href="../errors/#sharedbox.ItemGoneError">ItemGoneError</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If the ring no longer holds the item, because the sender wrote a
+later item over it before or during the copy.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;EndOfStream&lt;/span&gt; (&lt;code&gt;sharedbox._native.EndOfStream&lt;/code&gt;)" href="../errors/#sharedbox.EndOfStream">EndOfStream</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If the sender closed or died without sending the item.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-external" href="https://docs.python.org/3/builtins/exceptions.html#TimeoutError">TimeoutError</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If <code>timeout</code> seconds pass first.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;StreamClosedError&lt;/span&gt; (&lt;code&gt;sharedbox._native.StreamClosedError&lt;/code&gt;)" href="../errors/#sharedbox.StreamClosedError">StreamClosedError</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If this reader is closed, before or during the wait.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-external" href="https://docs.python.org/3/builtins/exceptions.html#ValueError">ValueError</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If <code>position</code> is negative or above <code>2**63 - 2</code>.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+<details class="note" open>
+  <summary>Notes</summary>
+  <p>A blocking fetch first waits for calls already on the reader's
+background thread, and that wait counts against <code>timeout</code>. A
+lossless reader still holds the sender back from its receive
+cursor, so a fetch more than <code>capacity</code> items past the cursor waits
+until a receive moves it; open a reader that only fetches as lossy.</p>
+</details>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="sharedbox.SharedReceiveStream.fetch_into" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <span class="doc doc-object-name doc-function-name">fetch_into</span>
+
+
+<a href="#sharedbox.SharedReceiveStream.fetch_into" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">fetch_into</span><span class="p">(</span><span class="n">position</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">out</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="o">/</span><span class="p">,</span> <span class="o">*</span><span class="p">,</span> <span class="n">timeout</span><span class="p">:</span> <span class="nb">float</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">T</span>
+</span></code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>As <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;fetch&lt;/span&gt;" href="./#sharedbox.SharedReceiveStream.fetch"><code>fetch</code></a>, with the item's arrays read into the arrays in <code>out</code>.</p>
+<p><code>out</code> has the shape that
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;receive_into&lt;/span&gt;" href="./#sharedbox.SharedReceiveStream.receive_into"><code>receive_into</code></a> takes.
+After an exception the contents of <code>out</code> are unspecified.</p>
+
+
+<p><span class="doc-section-title">Raises:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;ItemGoneError&lt;/span&gt; (&lt;code&gt;sharedbox._native.ItemGoneError&lt;/code&gt;)" href="../errors/#sharedbox.ItemGoneError">ItemGoneError</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If the ring no longer holds the item.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;EndOfStream&lt;/span&gt; (&lt;code&gt;sharedbox._native.EndOfStream&lt;/code&gt;)" href="../errors/#sharedbox.EndOfStream">EndOfStream</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If the sender closed or died without sending the item.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-external" href="https://docs.python.org/3/builtins/exceptions.html#TimeoutError">TimeoutError</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If <code>timeout</code> seconds pass first.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;StreamClosedError&lt;/span&gt; (&lt;code&gt;sharedbox._native.StreamClosedError&lt;/code&gt;)" href="../errors/#sharedbox.StreamClosedError">StreamClosedError</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If this reader is closed, before or during the wait.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-external" href="https://docs.python.org/3/builtins/exceptions.html#ValueError">ValueError</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If <code>position</code> is negative or above <code>2**63 - 2</code>.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="sharedbox.SharedReceiveStream.fetch_future" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <span class="doc doc-object-name doc-function-name">fetch_future</span>
+
+
+<a href="#sharedbox.SharedReceiveStream.fetch_future" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">fetch_future</span><span class="p">(</span><span class="n">position</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">out</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Future</span><span class="p">[</span><span class="n">T</span><span class="p">]</span>
+</span></code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Return a future of the item at <code>position</code>, fetched by this reader's background thread.</p>
+<p>The future is a <code>concurrent.futures.Future</code>, as
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;receive_future&lt;/span&gt;" href="./#sharedbox.SharedReceiveStream.receive_future"><code>receive_future</code></a>
+returns. Its exception is <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;ItemGoneError&lt;/span&gt;" href="../errors/#sharedbox.ItemGoneError"><code>ItemGoneError</code></a>,
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;EndOfStream&lt;/span&gt;" href="../errors/#sharedbox.EndOfStream"><code>EndOfStream</code></a> or
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;StreamClosedError&lt;/span&gt;" href="../errors/#sharedbox.StreamClosedError"><code>StreamClosedError</code></a> in the cases where
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;fetch&lt;/span&gt;" href="./#sharedbox.SharedReceiveStream.fetch"><code>fetch</code></a> raises them. <code>out</code>,
+when given, is what
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;fetch_into&lt;/span&gt;" href="./#sharedbox.SharedReceiveStream.fetch_into"><code>fetch_into</code></a> takes.
+Cancelling the future stops the fetch, even once it is running, so a
+fetch given up on, such as one an <code>asyncio.wait_for</code> timed out, does
+not hold up later calls on the reader. <code>cancel()</code> returns False for a
+running fetch, as for any <code>Future</code>, and the future then ends with
+<code>CancelledError</code>.</p>
+
+
+<p><span class="doc-section-title">Raises:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-external" href="https://docs.python.org/3/builtins/exceptions.html#ValueError">ValueError</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If <code>position</code> is negative or above <code>2**63 - 2</code>.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
 
 
     </div>

@@ -2593,6 +2593,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#sharedbox.ItemGoneError" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-class"></code>&nbsp;ItemGoneError
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#sharedbox.ReaderReleased" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -3419,6 +3430,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#sharedbox.ItemGoneError" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-class"></code>&nbsp;ItemGoneError
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#sharedbox.ReaderReleased" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -3666,6 +3688,11 @@
 <td><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;ReaderReleased&lt;/span&gt;" href="./#sharedbox.ReaderReleased"><code>ReaderReleased</code></a></td>
 <td><code>Exception</code></td>
 <td>receiving on a lossless reader that a sender opened with <code>on_full="release"</code> stopped waiting for; the reader goes on at the newest item, see <a href="../../../explanation/glossary/#released-reader">released reader</a></td>
+</tr>
+<tr>
+<td><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;ItemGoneError&lt;/span&gt;" href="./#sharedbox.ItemGoneError"><code>ItemGoneError</code></a></td>
+<td><code>LookupError</code></td>
+<td>fetching an item of a <a href="../../../explanation/glossary/#stream">stream</a> that the ring no longer holds, because the sender wrote a later item over it</td>
 </tr>
 <tr>
 <td><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;StreamBusyError&lt;/span&gt;" href="./#sharedbox.StreamBusyError"><code>StreamBusyError</code></a></td>
@@ -4099,6 +4126,80 @@ that defines the class.</p>
 
 
 
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="sharedbox.ItemGoneError" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-class"></code>            <span class="doc doc-object-name doc-class-name">ItemGoneError</span>
+
+
+<a href="#sharedbox.ItemGoneError" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents first">
+            <p class="doc doc-class-bases">
+              Bases: <code><a class="autorefs autorefs-external" href="https://docs.python.org/3/builtins/exceptions.html#LookupError">LookupError</a></code></p>
+
+
+
+        <p>The stream's ring no longer holds the item at a position; the sender wrote a later item over it.</p>
+
+
+<p><span class="doc-section-title">Attributes:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td><code><span title="sharedbox.ItemGoneError.oldest">oldest</span></code></td>
+            <td>
+                  <code><a class="autorefs autorefs-external" href="https://docs.python.org/3/builtins/functions.html#int">int</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The oldest position the ring held when the fetch checked. The sender
+may have overwritten it too by the time it is read.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+
+
+  </div>
 
     </div>
 
