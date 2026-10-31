@@ -1544,6 +1544,9 @@ public:
     result<received> receive(std::span<std::byte> out, seconds timeout);
     template <class F> requires std::is_nothrow_invocable_v<F &, std::span<const std::byte>>
     result<received> receive_with(F &&copy, seconds timeout);
+    result<received> fetch(std::uint64_t position, std::span<std::byte> out, seconds timeout);
+    template <class F> requires std::is_nothrow_invocable_v<F &, std::span<const std::byte>>
+    result<received> fetch_with(std::uint64_t position, F &&copy, seconds timeout);
     result<void> interrupt();
     result<std::uint64_t> metadata_version_at(std::uint64_t position) const;
     void close() noexcept;
@@ -1624,6 +1627,19 @@ Stream layout). Every function returning a `result` is `[[nodiscard]]`.
   `interrupt()`, and `status::range` for an `out` shorter than `item_size()`.
   A lossless reader that a sender released gets `status::released`, already
   moved to the newest item, so its next receive works.
+- `fetch` copies the item at `position` into `out`, waiting as `receive`
+  does until the sender has sent it, and `fetch_with` calls `copy` under the
+  same rule as `receive_with`. Neither moves the reader: `position()` and
+  `missed()` stay as they were, and a release is reported by the next
+  receive. The item is whole when its slot's `seq` reads `2 * position + 2`
+  before and after the copy. `write_pos` is read before that check, and
+  because the sender stores `write_pos` only after it publishes, a failed
+  check with `write_pos` above `position` means a later item overwrote the
+  slot. The call then gives `status::not_found`, with `found` set to the
+  oldest position the ring held, `write_pos - capacity` or 0. It gives
+  `status::ended` when the sender closed or died without sending the item,
+  and `status::range` for a position above `(UINT64_MAX - 2) / 2`, where
+  `2 * position + 2` would wrap.
 - `missed()` counts the items this reader skipped. For a lossless reader it
   counts the items lost to releases, and the count of one release is
   `missed()` after the call that gave `status::released` minus `missed()`

@@ -8,6 +8,7 @@
 #include <array>
 #include <atomic>
 #include <chrono>
+#include <cstdint>
 #include <cstring>
 #include <string>
 #include <thread>
@@ -70,6 +71,15 @@ bool whole(const item &it, std::uint64_t position) {
 result<received> receive(stream_reader &r, double timeout = 5.0) {
     item it{};
     result<received> got = r.receive(std::as_writable_bytes(std::span{it}), seconds(timeout));
+    if (got && !whole(it, got->position))
+        return sharedbox::unexpected(status::corrupt);
+    return got;
+}
+
+// Fetches one item; a torn one counts as a failure.
+result<received> fetch(stream_reader &r, std::uint64_t position, double timeout = 5.0) {
+    item it{};
+    result<received> got = r.fetch(position, std::as_writable_bytes(std::span{it}), seconds(timeout));
     if (got && !whole(it, got->position))
         return sharedbox::unexpected(status::corrupt);
     return got;
@@ -1183,5 +1193,147 @@ TEST_CASE("a released reader resumes at the floor when it read write_pos before 
     const auto next = receive(*reader, 0.0);
     REQUIRE_FALSE(next);
     CHECK(next.error().code == status::timeout);
+    static_cast<void>(unlink(name));
+}
+
+TEST_CASE("fetch waits for an item sent later and leaves the cursor alone") {
+    const std::string name = unique("stream-fetch-wait");
+    stream st = make(name, 4);
+    auto reader = st.reader(read_mode::lossy, start_at::oldest);
+    auto sender = st.sender();
+    REQUIRE((reader && sender));
+    REQUIRE(send(*sender, 0));
+    result<received> got = sharedbox::unexpected(status::ok);
+    std::thread waiter([&] { got = fetch(*reader, 2); });
+    std::this_thread::sleep_for(100ms);
+    REQUIRE(send(*sender, 1));
+    REQUIRE(send(*sender, 2));
+    waiter.join();
+    CHECK((got && got->position == 2 && got->missed == 0));
+    CHECK(reader->position() == 0);
+    CHECK(reader->missed() == 0);
+    const auto next = receive(*reader, 0.0);
+    CHECK((next && next->position == 0));
+    static_cast<void>(unlink(name));
+}
+
+TEST_CASE("fetch with a timeout of 0 on an item not sent yet times out") {
+    const std::string name = unique("stream-fetch-timeout");
+    stream st = make(name, 4);
+    auto reader = st.reader(read_mode::lossy, start_at::oldest);
+    auto sender = st.sender();
+    REQUIRE((reader && sender));
+    REQUIRE(send(*sender, 0));
+    CHECK(fetch(*reader, 1, 0.0).error().code == status::timeout);
+    static_cast<void>(unlink(name));
+}
+
+TEST_CASE("fetch of an overwritten item gives not_found with the oldest position") {
+    const std::string name = unique("stream-fetch-gone");
+    stream st = make(name, 2);
+    auto reader = st.reader(read_mode::lossy, start_at::oldest);
+    auto sender = st.sender();
+    REQUIRE((reader && sender));
+    for (std::uint64_t i = 0; i < 5; ++i)
+        REQUIRE(send(*sender, i));
+    const auto gone = fetch(*reader, 1, 0.0);
+    REQUIRE_FALSE(gone);
+    CHECK(gone.error().code == status::not_found);
+    CHECK(gone.error().found == 3);
+    const auto kept = fetch(*reader, 3, 0.0);
+    CHECK((kept && kept->position == 3));
+    static_cast<void>(unlink(name));
+}
+
+TEST_CASE("fetch of an item overwritten during the copy gives not_found") {
+    const std::string name = unique("stream-fetch-lapped");
+    stream st = make(name, 2);
+    auto reader = st.reader(read_mode::lossy, start_at::oldest);
+    auto sender = st.sender();
+    REQUIRE((reader && sender));
+    REQUIRE(send(*sender, 0));
+    bool lapped = false;
+    item it{};
+    const auto got = reader->fetch_with(
+        0,
+        [&](std::span<const std::byte> bytes) noexcept {
+            const std::size_t half = bytes.size() / 2;
+            std::memcpy(it.data(), bytes.data(), half);
+            if (!lapped) {
+                lapped = true;
+                // Position 2 reuses the slot being copied.
+                static_cast<void>(send(*sender, 1, 0.0));
+                static_cast<void>(send(*sender, 2, 0.0));
+            }
+            std::memcpy(reinterpret_cast<std::byte *>(it.data()) + half, bytes.data() + half, bytes.size() - half);
+        },
+        seconds(1.0));
+    REQUIRE_FALSE(got);
+    CHECK(got.error().code == status::not_found);
+    CHECK(got.error().found == 1);
+    CHECK(reader->missed() == 0);
+    static_cast<void>(unlink(name));
+}
+
+TEST_CASE("fetch beyond the last item of an ended stream gives ended, and an overwritten one not_found") {
+    const std::string name = unique("stream-fetch-ended");
+    stream st = make(name, 2);
+    auto reader = st.reader(read_mode::lossy, start_at::oldest);
+    auto sender = st.sender();
+    REQUIRE((reader && sender));
+    for (std::uint64_t i = 0; i < 4; ++i)
+        REQUIRE(send(*sender, i));
+    sender->close();
+    const auto start = clock::now();
+    CHECK(fetch(*reader, 4).error().code == status::ended);
+    CHECK(clock::now() - start < 1s);
+    CHECK(fetch(*reader, 0).error().code == status::not_found);
+    const auto last = fetch(*reader, 3);
+    CHECK((last && last->position == 3));
+    static_cast<void>(unlink(name));
+}
+
+TEST_CASE("interrupt ends a waiting fetch") {
+    const std::string name = unique("stream-fetch-interrupt");
+    stream st = make(name, 4);
+    auto reader = st.reader(read_mode::lossy, start_at::oldest);
+    auto sender = st.sender();
+    REQUIRE((reader && sender));
+    result<received> got = sharedbox::unexpected(status::ok);
+    std::thread waiter([&] { got = fetch(*reader, 5); });
+    std::this_thread::sleep_for(100ms);
+    REQUIRE(reader->interrupt());
+    waiter.join();
+    CHECK(got.error().code == status::interrupted);
+    static_cast<void>(unlink(name));
+}
+
+TEST_CASE("fetch waits through a reservation and an abandoned one") {
+    const std::string name = unique("stream-fetch-reserved");
+    stream st = make(name, 4);
+    auto reader = st.reader(read_mode::lossy, start_at::oldest);
+    auto sender = st.sender();
+    REQUIRE((reader && sender));
+    REQUIRE(send(*sender, 0));
+    REQUIRE(sender->begin(seconds(0)));
+    CHECK(fetch(*reader, 1, 0.0).error().code == status::timeout);
+    sender->abandon();
+    CHECK(fetch(*reader, 1, 0.0).error().code == status::timeout);
+    REQUIRE(send(*sender, 1));
+    const auto got = fetch(*reader, 1, 0.0);
+    CHECK((got && got->position == 1));
+    static_cast<void>(unlink(name));
+}
+
+TEST_CASE("fetch refuses a position whose seq would wrap") {
+    const std::string name = unique("stream-fetch-wrap");
+    stream st = make(name, 4);
+    auto reader = st.reader(read_mode::lossy, start_at::oldest);
+    auto sender = st.sender();
+    REQUIRE((reader && sender));
+    // Slot 0 now holds seq 2, which 2 * position + 2 wraps to for position 2**63.
+    REQUIRE(send(*sender, 0));
+    CHECK(fetch(*reader, (UINT64_MAX - 2) / 2 + 1, 0.0).error().code == status::range);
+    CHECK(fetch(*reader, std::uint64_t{1} << 63, 0.0).error().code == status::range);
     static_cast<void>(unlink(name));
 }
