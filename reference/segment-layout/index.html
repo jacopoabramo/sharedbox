@@ -5712,9 +5712,11 @@ Windows.</p>
 </span><span id="__span-9-96"><a id="__codelineno-9-96" name="__codelineno-9-96" href="#__codelineno-9-96"></a>
 </span><span id="__span-9-97"><a id="__codelineno-9-97" name="__codelineno-9-97" href="#__codelineno-9-97"></a><span class="n">result</span><span class="o">&lt;</span><span class="kt">void</span><span class="o">&gt;</span><span class="w"> </span><span class="n">unlink</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="n">string_view</span><span class="w"> </span><span class="n">name</span><span class="p">)</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
 </span><span id="__span-9-98"><a id="__codelineno-9-98" name="__codelineno-9-98" href="#__codelineno-9-98"></a><span class="n">result</span><span class="o">&lt;</span><span class="n">common_header</span><span class="o">&gt;</span><span class="w"> </span><span class="n">inspect</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="n">string_view</span><span class="w"> </span><span class="n">name</span><span class="p">)</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
-</span><span id="__span-9-99"><a id="__codelineno-9-99" name="__codelineno-9-99" href="#__codelineno-9-99"></a>
-</span><span id="__span-9-100"><a id="__codelineno-9-100" name="__codelineno-9-100" href="#__codelineno-9-100"></a><span class="p">}</span><span class="w">  </span><span class="c1">// namespace v3</span>
-</span><span id="__span-9-101"><a id="__codelineno-9-101" name="__codelineno-9-101" href="#__codelineno-9-101"></a><span class="p">}</span><span class="w">  </span><span class="c1">// namespace sharedbox</span>
+</span><span id="__span-9-99"><a id="__codelineno-9-99" name="__codelineno-9-99" href="#__codelineno-9-99"></a><span class="k">enum</span><span class="w"> </span><span class="k">class</span><span class="w"> </span><span class="nc">segment_state</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">missing</span><span class="p">,</span><span class="w"> </span><span class="n">running</span><span class="p">,</span><span class="w"> </span><span class="n">creator_exited</span><span class="w"> </span><span class="p">};</span>
+</span><span id="__span-9-100"><a id="__codelineno-9-100" name="__codelineno-9-100" href="#__codelineno-9-100"></a><span class="n">result</span><span class="o">&lt;</span><span class="n">segment_state</span><span class="o">&gt;</span><span class="w"> </span><span class="n">segment_status</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="n">string_view</span><span class="w"> </span><span class="n">name</span><span class="p">,</span><span class="w"> </span><span class="n">seconds</span><span class="w"> </span><span class="n">wait</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="n">seconds</span><span class="p">(</span><span class="mf">1.0</span><span class="p">))</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
+</span><span id="__span-9-101"><a id="__codelineno-9-101" name="__codelineno-9-101" href="#__codelineno-9-101"></a>
+</span><span id="__span-9-102"><a id="__codelineno-9-102" name="__codelineno-9-102" href="#__codelineno-9-102"></a><span class="p">}</span><span class="w">  </span><span class="c1">// namespace v3</span>
+</span><span id="__span-9-103"><a id="__codelineno-9-103" name="__codelineno-9-103" href="#__codelineno-9-103"></a><span class="p">}</span><span class="w">  </span><span class="c1">// namespace sharedbox</span>
 </span></code></pre></div>
 <p>Every function returning <code>result</code> is <code>[[nodiscard]]</code>. <code>handle</code> also has
 <code>lock</code>, <code>unlock</code> and <code>set_wait_hooks</code>, which the tests and the Python
@@ -5784,6 +5786,14 @@ extension use.</p>
   kind, without waiting and without the checks of <code>open</code>. The Python
   extension uses it to name the layout of a segment it refuses and the
   creator in <code>SegmentExistsError</code>.</li>
+<li><code>segment_status(name, wait)</code> says whether a segment of any kind is
+  called <code>name</code> and whether its creator still runs. It waits up to <code>wait</code>
+  for a segment being created and counts one still unpublished as
+  <code>missing</code>. A creator it cannot judge, in another pid namespace or with a
+  start time it cannot read, counts as <code>running</code>. A core major version
+  other than 1 is <code>status::layout</code>, with <code>found</code> as <code>open</code> gives it, and a
+  <code>wait</code> that is negative, not a number or above 86400 s is
+  <code>status::range</code>.</li>
 <li><code>duplicate()</code> makes a second handle with its own mapping from this
   handle's <abbr title="Operating system.">OS</abbr> handle (<code>dup</code> and <code>mmap</code> on Linux, <code>DuplicateHandle</code> and
   <code>MapViewOfFile</code> on Windows), not from the name, so it works after

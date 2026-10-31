@@ -3011,6 +3011,67 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#sharedbox.segment_status" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-function"></code>&nbsp;segment_status
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sharedbox.SegmentStatus" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-class"></code>&nbsp;SegmentStatus
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="SegmentStatus">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#sharedbox.SegmentStatus.MISSING" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-attribute"></code>&nbsp;MISSING
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sharedbox.SegmentStatus.RUNNING" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-attribute"></code>&nbsp;RUNNING
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sharedbox.SegmentStatus.CREATOR_EXITED" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-attribute"></code>&nbsp;CREATOR_EXITED
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -4502,6 +4563,67 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#sharedbox.segment_status" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-function"></code>&nbsp;segment_status
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sharedbox.SegmentStatus" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-class"></code>&nbsp;SegmentStatus
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="SegmentStatus">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#sharedbox.SegmentStatus.MISSING" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-attribute"></code>&nbsp;MISSING
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sharedbox.SegmentStatus.RUNNING" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-attribute"></code>&nbsp;RUNNING
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sharedbox.SegmentStatus.CREATOR_EXITED" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-attribute"></code>&nbsp;CREATOR_EXITED
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -4682,6 +4804,14 @@
       &lt;small class=&quot;doc doc-label doc-label-dataclass&quot;&gt;&lt;code&gt;dataclass&lt;/code&gt;&lt;/small&gt;
   &lt;/span&gt;" href="./#sharedbox.Capacity"><code>Capacity</code></a></td>
 <td>maximum size of a field: bytes for text and bytes, elements for a collection. See <a href="../../../explanation/glossary/#capacity">capacity</a></td>
+</tr>
+<tr>
+<td><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-function&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;segment_status&lt;/span&gt;" href="./#sharedbox.segment_status"><code>segment_status</code></a></td>
+<td>says whether a box or stream exists under a name and whether its creator still runs</td>
+</tr>
+<tr>
+<td><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;SegmentStatus&lt;/span&gt;" href="./#sharedbox.SegmentStatus"><code>SegmentStatus</code></a></td>
+<td>what <code>segment_status</code> found: <code>missing</code>, <code>running</code> or <code>creator_exited</code></td>
 </tr>
 </tbody>
 </table>
@@ -7978,6 +8108,217 @@ instead.</p>
     <div class="doc doc-contents ">
 
         <p>Bytes for text and bytes, not characters: a UTF-8 character can take up to 4 bytes; elements for a collection.</p>
+
+    </div>
+
+</div>
+
+
+
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="sharedbox.segment_status" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-function"></code>            <span class="doc doc-object-name doc-function-name">segment_status</span>
+
+
+<a href="#sharedbox.segment_status" class="headerlink" title="Permanent link">&para;</a></h2>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">segment_status</span><span class="p">(</span><span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">SegmentStatus</span>
+</span></code></pre></div>
+
+    <div class="doc doc-contents first">
+
+        <p>Say whether a box or stream exists under <code>name</code> and whether its creator still runs.</p>
+<p>A segment that another process is creating is waited for up to 1 s, and
+one still not published then counts as missing.</p>
+
+
+<p><span class="doc-section-title">Raises:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-external" href="https://docs.python.org/3/builtins/exceptions.html#ValueError">ValueError</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If <code>name</code> is not segments of <code>[A-Za-z0-9_-]</code> joined by <code>:</code>, at most
+240 characters.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;SchemaMismatchError&lt;/span&gt; (&lt;code&gt;sharedbox._native.SchemaMismatchError&lt;/code&gt;)" href="../errors/#sharedbox.SchemaMismatchError">SchemaMismatchError</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If the segment uses a core version of the layout this sharedbox
+cannot read.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-external" href="https://docs.python.org/3/builtins/exceptions.html#OSError">OSError</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If the operating system refuses to open the segment on Linux, such
+as one of another user.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-external" href="https://docs.python.org/3/builtins/exceptions.html#RuntimeError">RuntimeError</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If the operating system refuses to open the segment on Windows.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+<details class="note" open>
+  <summary>Notes</summary>
+  <p>On Windows a segment goes away with its last handle, so
+<code>CREATOR_EXITED</code> appears only while another process still holds the
+segment open.</p>
+</details>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="sharedbox.SegmentStatus" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-class"></code>            <span class="doc doc-object-name doc-class-name">SegmentStatus</span>
+
+
+<a href="#sharedbox.SegmentStatus" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents first">
+            <p class="doc doc-class-bases">
+              Bases: <code><a class="autorefs autorefs-external" title="&lt;code&gt;enum.StrEnum&lt;/code&gt;" href="https://docs.python.org/3/library/enum.html#enum.StrEnum">StrEnum</a></code></p>
+
+
+
+        <p>What <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-function&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;segment_status&lt;/span&gt;" href="./#sharedbox.segment_status"><code>segment_status</code></a> found under a name.</p>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h3 id="sharedbox.SegmentStatus.MISSING" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-attribute"></code>            <span class="doc doc-object-name doc-attribute-name">MISSING</span>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-class-attribute"><code>class-attribute</code></small>
+      <small class="doc doc-label doc-label-instance-attribute"><code>instance-attribute</code></small>
+  </span>
+
+<a href="#sharedbox.SegmentStatus.MISSING" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">MISSING</span> <span class="o">=</span> <span class="s1">'missing'</span>
+</span></code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>No box or stream is published under the name.</p>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h3 id="sharedbox.SegmentStatus.RUNNING" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-attribute"></code>            <span class="doc doc-object-name doc-attribute-name">RUNNING</span>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-class-attribute"><code>class-attribute</code></small>
+      <small class="doc doc-label doc-label-instance-attribute"><code>instance-attribute</code></small>
+  </span>
+
+<a href="#sharedbox.SegmentStatus.RUNNING" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">RUNNING</span> <span class="o">=</span> <span class="s1">'running'</span>
+</span></code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>A box or stream is published under the name, and the process that
+created it still runs or cannot be judged from this process, such as one
+in another pid namespace.</p>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h3 id="sharedbox.SegmentStatus.CREATOR_EXITED" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-attribute"></code>            <span class="doc doc-object-name doc-attribute-name">CREATOR_EXITED</span>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-class-attribute"><code>class-attribute</code></small>
+      <small class="doc doc-label doc-label-instance-attribute"><code>instance-attribute</code></small>
+  </span>
+
+<a href="#sharedbox.SegmentStatus.CREATOR_EXITED" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">CREATOR_EXITED</span> <span class="o">=</span> <span class="s1">'creator_exited'</span>
+</span></code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>A box or stream is published under the name, and the process that
+created it has exited.</p>
 
     </div>
 
