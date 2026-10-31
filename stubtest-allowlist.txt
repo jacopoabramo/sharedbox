@@ -17,6 +17,7 @@ sharedbox._native.ValueCache
 sharedbox._native._process_alive
 sharedbox._native._process_start
 sharedbox._native.check
+sharedbox._native.segment_status
 sharedbox._native.Segment.attach
 sharedbox._native.Segment.create
 sharedbox._native.Segment.unlink

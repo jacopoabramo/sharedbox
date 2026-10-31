@@ -128,6 +128,14 @@ std::string exists_message(const std::string &name, const std::vector<std::strin
 #endif
 }
 
+// found is the version error::found gives for status::layout.
+std::string layout_message(const std::string &name, std::uint64_t found) {
+    return "segment '" + name + "' uses core version " + std::to_string(found >> 48) + "." +
+           std::to_string(found >> 32 & 0xFFFF) + " and box layout " + std::to_string(found >> 16 & 0xFFFF) + "." +
+           std::to_string(found & 0xFFFF) + "; this sharedbox reads core version " + std::to_string(core_major) +
+           " and box layout " + std::to_string(layout_major);
+}
+
 [[noreturn]] void throw_status(const error &e, const std::string &name) {
 #ifdef _WIN32
     const std::error_category &category = std::system_category();
@@ -154,6 +162,24 @@ std::string exists_message(const std::string &name, const std::vector<std::strin
 }
 
 } // namespace
+
+std::string segment_status_of(const std::string &name) {
+    const result<segment_state> state = segment_status(name);
+    if (!state) {
+        if (state.error().code == status::layout)
+            throw SchemaMismatch(layout_message(name, state.error().found));
+        throw_status(state.error(), name);
+    }
+    switch (*state) {
+    case segment_state::missing:
+        return "missing";
+    case segment_state::running:
+        return "running";
+    case segment_state::creator_exited:
+        break;
+    }
+    return "creator_exited";
+}
 
 void check_index(std::uint32_t index, std::size_t count) {
     if (index >= count)
@@ -413,14 +439,8 @@ std::unique_ptr<Segment> Segment::attach(const std::string &name, const std::vec
     if (!opened && opened.error().code == status::foreign)
         throw SchemaMismatch("segment '" + name +
                              "' was made by another version of sharedbox or is not a sharedbox segment");
-    if (!opened && opened.error().code == status::layout) {
-        const error &e = opened.error();
-        throw SchemaMismatch("segment '" + name + "' uses core version " + std::to_string(e.found >> 48) + "." +
-                             std::to_string(e.found >> 32 & 0xFFFF) + " and box layout " +
-                             std::to_string(e.found >> 16 & 0xFFFF) + "." + std::to_string(e.found & 0xFFFF) +
-                             "; this sharedbox reads core version " + std::to_string(core_major) +
-                             " and box layout " + std::to_string(layout_major));
-    }
+    if (!opened && opened.error().code == status::layout)
+        throw SchemaMismatch(layout_message(name, opened.error().found));
     impl->box = impl->check(std::move(opened));
     if (impl->box.schema_hash() != schema_hash)
         throw SchemaMismatch("segment '" + name + "' was created by a different class");

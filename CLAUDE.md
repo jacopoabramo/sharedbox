@@ -34,6 +34,7 @@ sharedbox/
 |   |-- _stream.py             SharedStream, SharedSendStream, SharedReceiveStream, ReceiveEvents, the statistics classes, the worker threads
 |   |-- _metadata.py           metadata documents: the type variable M, CBOR encoding, read-only decoding, the cache of decoded versions
 |   |-- _refs.py               reference fields: BoxRef, the class registry, BrokenReferenceError, UnknownBoxClassError
+|   |-- _status.py             segment_status and SegmentStatus: whether a name holds a segment and its creator runs
 |   |-- _exit.py               the exit handler: stops the watcher and stream threads, closes boxes, streams and ends,
 |   |                          replaces the native objects of watchers and box classes
 |   |-- _native.pyi            hand-written stub for the extension
@@ -71,6 +72,7 @@ sharedbox/
 |   |-- test_native_waiters.py waiter slots, dead owners, interrupt
 |   |-- test_box_sync_async.py a sync and an async watch on one box in two threads
 |   |-- test_metadata.py       metadata of a box: documents, versions, events, typed access, reserved names
+|   |-- test_segment_status.py segment_status: missing, running and an exited creator
 |   |-- test_stream.py         SharedStream, sender and reader, blocking and non-blocking calls
 |   |-- test_stream_metadata.py  metadata of a stream: the version of each item, in one process and across processes
 |   |-- test_stream_async.py   asyncio calls on a stream, cancellation
