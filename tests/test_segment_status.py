@@ -1,13 +1,36 @@
+import contextlib
+import mmap
 import multiprocessing as mp
+import os
+import sys
+import threading
+import time
+from collections.abc import Generator
 from multiprocessing.synchronize import Event
 
 import pytest
+from os_names import os_name
 
 from sharedbox import SegmentStatus, SharedBox, SharedStream, segment_status
 
 
 class Beacon(SharedBox):
     on: bool = False
+
+
+@contextlib.contextmanager
+def unpublished(name: str) -> Generator[None, None, None]:
+    """A zeroed page under the segment's object name, which never gets a magic."""
+    if sys.platform == "win32":
+        with mmap.mmap(-1, 4096, tagname=os_name(name)):
+            yield
+    else:
+        fd = os.open(f"/dev/shm/{os_name(name)}", os.O_CREAT | os.O_RDWR, 0o600)
+        try:
+            os.ftruncate(fd, 4096)
+            yield
+        finally:
+            os.close(fd)
 
 
 def create_and_wait(name: str, created: Event, attached: Event) -> None:
@@ -45,3 +68,25 @@ def test_a_name_sharedbox_refuses_raises(name: str) -> None:
     """Raise ValueError for a name that is not segments of [A-Za-z0-9_-] joined by ':'."""
     with pytest.raises(ValueError):
         segment_status(name)
+
+
+def test_the_wait_lets_other_threads_run(unique_name: str) -> None:
+    """Let other Python threads run while waiting on a segment that is never published."""
+    ticks = 0
+    done = threading.Event()
+
+    def tick() -> None:
+        nonlocal ticks
+        while not done.is_set():
+            ticks += 1
+            time.sleep(0.01)
+
+    ticker = threading.Thread(target=tick)
+    with unpublished(unique_name):
+        ticker.start()
+        try:
+            assert segment_status(unique_name) is SegmentStatus.MISSING
+        finally:
+            done.set()
+            ticker.join()
+    assert ticks >= 20

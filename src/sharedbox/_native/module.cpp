@@ -982,7 +982,7 @@ NB_MODULE(_native, m) {
         "_process_alive",
         [](std::uint32_t pid, std::uint64_t start) { return sharedbox::detail::process_alive(pid, start); },
         "pid"_a, "start"_a);
-    m.def("segment_status", &sharedbox::segment_status_of, "name"_a);
+    m.def("segment_status", &sharedbox::segment_status_of, "name"_a, nb::call_guard<nb::gil_scoped_release>());
 
     nb::class_<sharedbox::FieldWriter>(m, "FieldWriter").def("end", &sharedbox::FieldWriter::end);
 
