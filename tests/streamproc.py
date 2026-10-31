@@ -251,3 +251,15 @@ def read_metadata_versions(
         results.put(traceback.format_exc())
     finally:
         stream.close()
+
+
+def fetch_frames(
+    name: str, first: int, last: int, results: "Queue[list[int]]", ready: Event
+) -> None:
+    """Fetch frames `first` to `last` from the stream `name`, waiting for each; report their indexes."""
+    stream = SharedStream.attach(Frame, name)
+    reader = stream.reader(mode="lossy")
+    ready.set()
+    results.put([reader.fetch(p, timeout=60).index for p in range(first, last + 1)])
+    reader.close()
+    stream.close()

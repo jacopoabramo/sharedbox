@@ -19,6 +19,7 @@ icon: lucide/code
 | [`WouldBlock`][sharedbox.WouldBlock] | `Exception` | a `_nowait` call on a [stream](../../explanation/glossary.md#stream) finds nothing to receive or no room to send |
 | [`EndOfStream`][sharedbox.EndOfStream] | `Exception` | receiving from a stream whose sender closed or died after every item was received; asking for the sender of a stream that has ended |
 | [`ReaderReleased`][sharedbox.ReaderReleased] | `Exception` | receiving on a lossless reader that a sender opened with `on_full="release"` stopped waiting for; the reader goes on at the newest item, see [released reader](../../explanation/glossary.md#released-reader) |
+| [`ItemGoneError`][sharedbox.ItemGoneError] | `LookupError` | fetching an item of a [stream](../../explanation/glossary.md#stream) that the ring no longer holds, because the sender wrote a later item over it |
 | [`StreamBusyError`][sharedbox.StreamBusyError] | `RuntimeError` | asking for the sender of a stream while another live sender exists |
 | [`StreamClosedError`][sharedbox.StreamClosedError] | `ValueError` | using a stream, sender or reader after `close()`, or waiting in one that is closed meanwhile |
 | [`WaiterSlotsFullError`][sharedbox.WaiterSlotsFullError] | `RuntimeError` | opening a reader of a [stream](../../explanation/glossary.md#stream) that has `max_readers` readers open or no free [waiter slot](../../explanation/glossary.md#waiter-slot); a box never raises it and checks for changes once a second instead |
@@ -68,6 +69,10 @@ icon: lucide/code
       show_root_heading: true
 
 ::: sharedbox.EndOfStream
+    options:
+      show_root_heading: true
+
+::: sharedbox.ItemGoneError
     options:
       show_root_heading: true
 

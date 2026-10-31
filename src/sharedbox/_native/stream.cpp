@@ -55,6 +55,10 @@ struct ReaderReleased : std::runtime_error {
     ReaderReleased(const std::string &what, std::uint64_t missed) : std::runtime_error(what), missed(missed) {}
     std::uint64_t missed;
 };
+struct ItemGone : std::runtime_error {
+    ItemGone(const std::string &what, std::uint64_t oldest) : std::runtime_error(what), oldest(oldest) {}
+    std::uint64_t oldest;
+};
 
 /// A stream mapped in this process. The Stream object and every end made from it share it, so the mapping
 /// outlives the ends. It holds no Python object: the Stream and each end own a reference to the Types
@@ -513,99 +517,12 @@ public:
 
     nb::tuple receive(double timeout,
                       const std::vector<std::pair<std::vector<std::uint32_t>, nb::object>> &arrays) {
-        check_open();
-        const seconds wait = wait_of(timeout);
-        const Types &types = this->types();
-        // Each array the caller passed, sorted by where its bytes start in the item, so the copy below walks the
-        // item once: the gaps go to scratch, each array's bytes straight into the array. Everything is checked
-        // here, with the GIL held and before the wait, so a bad array consumes no item. The arguments keep
-        // each array alive for the whole call.
-        std::vector<Types::ArrayTarget> targets;
-        // Made only when arrays are given, so a plain receive builds no map.
-        std::optional<std::unordered_map<std::uint64_t, PyObject *>> given;
-        if (!arrays.empty())
-            given.emplace();
-        nb::object whole;
-        for (const auto &[path, out] : arrays) {
-            Types::ArrayTarget &target = targets.emplace_back(types.array_target(0, path, out.ptr()));
-            const bool fresh = path.empty() ? !std::exchange(whole, out).is_valid()
-                                            : given->emplace(target.key, out.ptr()).second;
-            if (!fresh)
-                throw std::invalid_argument("stream '" + name_ + "': two arrays given for one member");
-        }
-        std::sort(targets.begin(), targets.end(),
-                  [](const Types::ArrayTarget &a, const Types::ArrayTarget &b) { return a.offset < b.offset; });
-        // Every max_array is a target too, so only the elements its shape line counts are copied.
-        if (types.has_max_arrays())
-            targets = types.item_targets(0, std::move(targets));
-        const std::size_t size = core_->s.item_size();
-        // An item of up to 4 KiB is copied to the stack; a larger one to the heap, which a bare array item
-        // then keeps as its data instead of copying again.
-        alignas(std::max_align_t) std::byte small[4096];
-        std::unique_ptr<std::byte[]> large;
-        std::byte *scratch = small;
-        // ponytail: the scratch holds the whole item even when arrays take most of it, and its pages under the
-        // arrays are never touched; a scratch of only the gaps is the upgrade if a measurement shows the
-        // allocation.
-        if (size > sizeof small) {
-            large.reset(new std::byte[size]);
-            scratch = large.get();
-        }
-        std::optional<result<received>> got;
-        std::uint64_t released = 0;
-        {
-            nb::gil_scoped_release unlocked;
-            std::lock_guard lock(*calls_);
-            if (!closed_.load()) {
-                const std::uint64_t before = end_.missed();
-                got.emplace(end_.receive_with(
-                    [&](std::span<const std::byte> item) noexcept {
-                        std::size_t at = 0;
-                        for (const Types::ArrayTarget &target : targets) {
-                            std::memcpy(scratch + at, item.data() + at, target.offset - at);
-                            at = target.offset + target.size;
-                            if (target.max == nullptr) {
-                                std::memcpy(target.view.data(), item.data() + target.offset, target.size);
-                                continue;
-                            }
-                            // The count comes from the scratch copy of the line, which no sender writes, so a
-                            // line overwritten during the copy cannot make it run past the span.
-                            std::memcpy(scratch + target.offset, item.data() + target.offset, 64);
-                            std::uint64_t n = types.stored_bytes(*target.max, scratch + target.offset);
-                            if (n == UINT64_MAX)
-                                n = 0;
-                            std::byte *into = target.view.is_valid() ? static_cast<std::byte *>(target.view.data())
-                                                                     : scratch + target.offset + 64;
-                            std::memcpy(into, item.data() + target.offset + 64, n);
-                        }
-                        std::memcpy(scratch + at, item.data() + at, size - at);
-                    },
-                    wait));
-                released = end_.missed() - before;
-                missed_total_.store(end_.missed(), std::memory_order_relaxed);
-            }
-        }
-        if (!got)
-            check_open();
-        if (!*got) {
-            if (got->error().code == status::released)
-                throw ReaderReleased("stream '" + name_ +
-                                         "': the sender released this lossless reader, which lost " +
-                                         std::to_string(released) + " items",
-                                     released);
-            if (got->error().code == status::corrupt)
-                throw SchemaMismatch("stream '" + name_ +
-                                     "': the sender overwrote an item this lossless reader had not read");
-            fail(got->error());
-        }
-        const detail::type_ref &t = types.field(0);
-        const std::span<const std::byte> bytes = value_bytes(t, {scratch, size}, name_);
-        if (whole.is_valid())
-            return nb::make_tuple(types.out_view(t, whole.ptr(), bytes.data(), name_), (*got)->position);
-        nb::object value = !given || given->empty()
-                               ? types.decode(0, bytes, large && arrays.empty() ? &large : nullptr)
-                               : types.decode_given(0, bytes, *given);
-        return nb::make_tuple(value, (*got)->position);
+        return copy_item(std::nullopt, timeout, arrays);
+    }
+
+    nb::tuple fetch(std::uint64_t position, double timeout,
+                    const std::vector<std::pair<std::vector<std::uint32_t>, nb::object>> &arrays) {
+        return copy_item(position, timeout, arrays);
     }
 
     std::uint64_t metadata_version_at(std::uint64_t position) {
@@ -655,6 +572,112 @@ public:
     void after_fork() { forget_locks_after_fork(); }
 
 private:
+    nb::tuple copy_item(std::optional<std::uint64_t> position, double timeout,
+                        const std::vector<std::pair<std::vector<std::uint32_t>, nb::object>> &arrays) {
+        check_open();
+        const seconds wait = wait_of(timeout);
+        const Types &types = this->types();
+        // Each array the caller passed, sorted by where its bytes start in the item, so the copy below walks the
+        // item once: the gaps go to scratch, each array's bytes straight into the array. Everything is checked
+        // here, with the GIL held and before the wait, so a bad array consumes no item. The arguments keep
+        // each array alive for the whole call.
+        std::vector<Types::ArrayTarget> targets;
+        // Made only when arrays are given, so a plain receive builds no map.
+        std::optional<std::unordered_map<std::uint64_t, PyObject *>> given;
+        if (!arrays.empty())
+            given.emplace();
+        nb::object whole;
+        for (const auto &[path, out] : arrays) {
+            Types::ArrayTarget &target = targets.emplace_back(types.array_target(0, path, out.ptr()));
+            const bool fresh = path.empty() ? !std::exchange(whole, out).is_valid()
+                                            : given->emplace(target.key, out.ptr()).second;
+            if (!fresh)
+                throw std::invalid_argument("stream '" + name_ + "': two arrays given for one member");
+        }
+        std::sort(targets.begin(), targets.end(),
+                  [](const Types::ArrayTarget &a, const Types::ArrayTarget &b) { return a.offset < b.offset; });
+        // Every max_array is a target too, so only the elements its shape line counts are copied.
+        if (types.has_max_arrays())
+            targets = types.item_targets(0, std::move(targets));
+        const std::size_t size = core_->s.item_size();
+        // An item of up to 4 KiB is copied to the stack; a larger one to the heap, which a bare array item
+        // then keeps as its data instead of copying again.
+        alignas(std::max_align_t) std::byte small[4096];
+        std::unique_ptr<std::byte[]> large;
+        std::byte *scratch = small;
+        // ponytail: the scratch holds the whole item even when arrays take most of it, and its pages under the
+        // arrays are never touched; a scratch of only the gaps is the upgrade if a measurement shows the
+        // allocation.
+        if (size > sizeof small) {
+            large.reset(new std::byte[size]);
+            scratch = large.get();
+        }
+        std::optional<result<received>> got;
+        std::uint64_t released = 0;
+        {
+            nb::gil_scoped_release unlocked;
+            std::lock_guard lock(*calls_);
+            if (!closed_.load()) {
+                const auto copy = [&](std::span<const std::byte> item) noexcept {
+                    std::size_t at = 0;
+                    for (const Types::ArrayTarget &target : targets) {
+                        std::memcpy(scratch + at, item.data() + at, target.offset - at);
+                        at = target.offset + target.size;
+                        if (target.max == nullptr) {
+                            std::memcpy(target.view.data(), item.data() + target.offset, target.size);
+                            continue;
+                        }
+                        // The count comes from the scratch copy of the line, which no sender writes, so a
+                        // line overwritten during the copy cannot make it run past the span.
+                        std::memcpy(scratch + target.offset, item.data() + target.offset, 64);
+                        std::uint64_t n = types.stored_bytes(*target.max, scratch + target.offset);
+                        if (n == UINT64_MAX)
+                            n = 0;
+                        std::byte *into = target.view.is_valid() ? static_cast<std::byte *>(target.view.data())
+                                                                 : scratch + target.offset + 64;
+                        std::memcpy(into, item.data() + target.offset + 64, n);
+                    }
+                    std::memcpy(scratch + at, item.data() + at, size - at);
+                };
+                if (position) {
+                    got.emplace(end_.fetch_with(*position, copy, wait));
+                } else {
+                    const std::uint64_t before = end_.missed();
+                    got.emplace(end_.receive_with(copy, wait));
+                    released = end_.missed() - before;
+                    missed_total_.store(end_.missed(), std::memory_order_relaxed);
+                }
+            }
+        }
+        if (!got)
+            check_open();
+        if (!*got) {
+            if (got->error().code == status::released)
+                throw ReaderReleased("stream '" + name_ +
+                                         "': the sender released this lossless reader, which lost " +
+                                         std::to_string(released) + " items",
+                                     released);
+            // fail would report not_found as a missing segment.
+            if (got->error().code == status::not_found)
+                throw ItemGone("stream '" + name_ + "' no longer holds the item at position " +
+                                   std::to_string(*position) + "; the oldest it held was " +
+                                   std::to_string(got->error().found),
+                               got->error().found);
+            if (got->error().code == status::corrupt)
+                throw SchemaMismatch("stream '" + name_ +
+                                     "': the sender overwrote an item this lossless reader had not read");
+            fail(got->error());
+        }
+        const detail::type_ref &t = types.field(0);
+        const std::span<const std::byte> bytes = value_bytes(t, {scratch, size}, name_);
+        if (whole.is_valid())
+            return nb::make_tuple(types.out_view(t, whole.ptr(), bytes.data(), name_), (*got)->position);
+        nb::object value = !given || given->empty()
+                               ? types.decode(0, bytes, large && arrays.empty() ? &large : nullptr)
+                               : types.decode_given(0, bytes, *given);
+        return nb::make_tuple(value, (*got)->position);
+    }
+
     stream_reader end_;
     // end_.missed() is only read under calls_; this copy lets a polling thread read it without waiting.
     std::atomic<std::uint64_t> missed_total_{0};
@@ -803,6 +826,19 @@ void bind_stream(nb::module_ &m) {
             }
         },
         released.ptr());
+    nb::exception<ItemGone> gone(m, "ItemGoneError", PyExc_LookupError);
+    nb::register_exception_translator(
+        [](const std::exception_ptr &p, void *type) {
+            try {
+                std::rethrow_exception(p);
+            } catch (const ItemGone &e) {
+                nb::object kind = nb::borrow(static_cast<PyObject *>(type));
+                nb::object instance = kind(e.what());
+                instance.attr("oldest") = e.oldest;
+                PyErr_SetObject(kind.ptr(), instance.ptr());
+            }
+        },
+        gone.ptr());
 
     nb::class_<Sender>(m, "Sender", nb::type_slots(gc_slots<Sender>))
         .def("send", &Sender::send, "value"_a.none(), "timeout"_a, "release"_a = false)
@@ -827,6 +863,8 @@ void bind_stream(nb::module_ &m) {
              "arrays"_a = std::vector<std::pair<std::vector<std::uint32_t>, nb::object>>{})
         .def_prop_ro("mode", &Reader::mode)
         .def_prop_ro("missed", &Reader::missed)
+        .def("fetch", &Reader::fetch, "position"_a, "timeout"_a,
+             "arrays"_a = std::vector<std::pair<std::vector<std::uint32_t>, nb::object>>{})
         .def("metadata_version_at", &Reader::metadata_version_at, "position"_a)
         .def("interrupt", &Reader::interrupt)
         .def("close", &Reader::close)

@@ -77,6 +77,7 @@ sharedbox/
 |   |-- test_stream_metadata.py  metadata of a stream: the version of each item, in one process and across processes
 |   |-- test_stream_async.py   asyncio calls on a stream, cancellation
 |   |-- test_stream_events.py  ReceiveEvents delivery
+|   |-- test_stream_fetch.py   fetching an item by its position, in one process and across processes
 |   |-- test_stream_processes.py  streams across processes, dead senders and readers
 |   |-- test_stream_fork.py    stream ends inherited through fork
 |   |-- streamproc.py          helpers that run a stream end in another process

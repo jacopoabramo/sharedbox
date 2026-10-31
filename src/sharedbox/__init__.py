@@ -9,6 +9,7 @@ from ._layout import Capacity, Field, field
 from ._native import (
     BoxClosedError,
     EndOfStream,
+    ItemGoneError,
     KindMismatchError,
     LockTimeoutError,
     MetadataFullError,
@@ -49,6 +50,7 @@ __all__ = [
     "Field",
     "FieldFuture",
     "FieldWatch",
+    "ItemGoneError",
     "KindMismatchError",
     "LockTimeoutError",
     "MaxShape",
