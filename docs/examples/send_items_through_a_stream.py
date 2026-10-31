@@ -204,7 +204,7 @@ if __name__ == "__main__":
         file_letters(reader)
     SharedStream.unlink("example-sorting:release")
     with SharedStream.create(Letter, "example-sorting:fetch", capacity=8) as stream:
-        reader = stream.reader()
+        reader = stream.reader(mode="lossy")
         with stream.sender() as sender:
             for i in range(6):
                 sender.send(Letter(i, "Ada", np.full((32, 32), i, np.uint8)))

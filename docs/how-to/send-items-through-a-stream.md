@@ -181,6 +181,12 @@ the arrays into arrays you pass, as `receive_into` does, and
 [`fetch_future`][sharedbox.SharedReceiveStream.fetch_future] returns a
 future for asyncio.
 
+Because a fetch leaves the reader where it was, a lossless reader that only
+fetches still holds the sender back from its own position: the sender stops
+`capacity` items past it, and a fetch of a later position waits for an item
+that never comes. Open a reader that only fetches with `mode="lossy"`, as
+the example does.
+
 The stream holds only its last `capacity` items, so a position the sender
 has written over is gone, and the fetch raises
 [`ItemGoneError`][sharedbox.ItemGoneError]. Its `oldest` attribute is the
