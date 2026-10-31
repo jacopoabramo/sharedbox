@@ -3538,8 +3538,9 @@ reader's <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-s
   &lt;span class=&quot;doc doc-labels&quot;&gt;
       &lt;small class=&quot;doc doc-label doc-label-property&quot;&gt;&lt;code&gt;property&lt;/code&gt;&lt;/small&gt;
   &lt;/span&gt;" href="../../reference/api/streams/#sharedbox.SharedReceiveStream.metadata_version"><code>metadata_version</code></a>
-describe the item it received last, so the reader can tell which version
-each item was sent under. The metadata of this stream is a <code>TypedDict</code> too:</p>
+describe the item it returned last, by a receive or a fetch, so the reader
+can tell which version each item was sent under. The metadata of this stream
+is a <code>TypedDict</code> too:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="k">class</span><span class="w"> </span><span class="nc">Calibration</span><span class="p">(</span><span class="n">TypedDict</span><span class="p">):</span>
 </span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>    <span class="n">unit</span><span class="p">:</span> <span class="nb">str</span>
 </span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>    <span class="n">offset</span><span class="p">:</span> <span class="nb">float</span>
@@ -3593,7 +3594,7 @@ latest reader meets this first, because the sender may overwrite its item
 right after the reader receives it.</p>
 <div class="admonition warning">
 <p class="admonition-title">A callback on the main thread can see a later item's version</p>
-<p>The reader's <code>metadata</code> follows the item the reader received last,
+<p>The reader's <code>metadata</code> follows the item the reader returned last,
 which may be later than the item a callback was given. A callback of
 <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-attribute&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-attribute-name&quot;&gt;events&lt;/span&gt;
 

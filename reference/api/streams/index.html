@@ -4557,7 +4557,7 @@ from the item sent with it, and a reader's
   &lt;span class=&quot;doc doc-labels&quot;&gt;
       &lt;small class=&quot;doc doc-label doc-label-property&quot;&gt;&lt;code&gt;property&lt;/code&gt;&lt;/small&gt;
   &lt;/span&gt;" href="./#sharedbox.SharedReceiveStream.metadata"><code>metadata</code></a> gives the
-version of the item it received last. The stream keeps the earlier
+version of the item it returned last. The stream keeps the earlier
 versions until it reclaims them for newer ones, and
 <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;metadata_version_of&lt;/span&gt;" href="./#sharedbox.SharedStream.metadata_version_of"><code>metadata_version_of</code></a>
 reads them until then. A mapping reads back as a read-only mapping
@@ -6311,10 +6311,11 @@ it is one more than this.</p>
 
     <div class="doc doc-contents ">
 
-        <p>The metadata version the item this reader received last was sent under.</p>
-<p>It is the newest version the sender added before it sent that item,
-and 0 before the first item, or for an item sent before the stream
-had any version.</p>
+        <p>The metadata version the item this reader returned last was sent under.</p>
+<p>The item is the last one a receive or a fetch returned. The version
+is the newest one the sender added before it sent that item, and 0
+before the first item, or for an item sent before the stream had any
+version.</p>
 
 
 <p><span class="doc-section-title">Raises:</span></p>
@@ -6333,7 +6334,7 @@ had any version.</p>
             <td>
               <div class="doc-md-description">
                 <p>If the stream no longer holds that version. A version can be
-reclaimed once the item this reader received last has left the
+reclaimed once the item this reader returned last has left the
 ring, which for a lossy or latest reader can happen right after
 the receive.</p>
               </div>
