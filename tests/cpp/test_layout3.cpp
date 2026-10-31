@@ -5,9 +5,12 @@
 
 #include "unique.hpp"
 
+#include <chrono>
+#include <cmath>
 #include <cstring>
 #include <memory>
 #include <string>
+#include <thread>
 #include <vector>
 
 using namespace sharedbox;
@@ -251,4 +254,66 @@ TEST_CASE("a 3.1 box, whose last 20 header bytes are zero, opens with no metadat
     CHECK(other->minor_version() == 1);
     CHECK(other->metadata_head() == 0);
     static_cast<void>(unlink(name));
+}
+
+TEST_CASE("segment_status reports a missing name, a running creator and an exited one") {
+    const std::string name = unique("status");
+    CHECK(segment_status(name).value() == segment_state::missing);
+    auto owner = handle::create(name, fields, 32, 1, 4, {});
+    REQUIRE(owner);
+    CHECK(segment_status(name).value() == segment_state::running);
+    // This pid with another start time is a process that has exited and whose pid was reused.
+    header_of(*owner).common.creator_start = 1;
+    CHECK(segment_status(name).value() == segment_state::creator_exited);
+    static_cast<void>(unlink(name));
+}
+
+TEST_CASE("segment_status counts an unpublished segment as missing once the wait ends") {
+    const std::string name = unique("status-unpublished");
+    auto owner = handle::create_unpublished(name, fields, 32, 1, 4, {});
+    REQUIRE(owner);
+    CHECK(segment_status(name, seconds(0.05)).value() == segment_state::missing);
+    REQUIRE(owner->publish());
+    CHECK(segment_status(name, seconds(0.05)).value() == segment_state::running);
+    static_cast<void>(unlink(name));
+}
+
+TEST_CASE("segment_status judges an unknown magic by its creator and refuses another core major") {
+    const std::string name = unique("status-core");
+    auto owner = handle::create(name, fields, 32, 1, 4, {});
+    REQUIRE(owner);
+    header_of(*owner).common.magic = 0x3158424445524853;
+    CHECK(segment_status(name).value() == segment_state::running);
+    header_of(*owner).common.core_major = 2;
+    const auto refused = segment_status(name);
+    REQUIRE_FALSE(refused);
+    CHECK(refused.error().code == status::layout);
+    CHECK((refused.error().found >> 48) == 2);
+    static_cast<void>(unlink(name));
+}
+
+TEST_CASE("segment_status refuses a name sharedbox does not accept") {
+    const auto refused = segment_status("a.b");
+    REQUIRE_FALSE(refused);
+    CHECK(refused.error().code == status::range);
+}
+
+TEST_CASE("segment_status waits for a segment its creator publishes during the wait") {
+    const std::string name = unique("status-publishing");
+    auto owner = handle::create_unpublished(name, fields, 32, 1, 4, {});
+    REQUIRE(owner);
+    std::thread publisher([&owner] {
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        static_cast<void>(owner->publish());
+    });
+    const auto found = segment_status(name, seconds(2.0));
+    publisher.join();
+    CHECK(found.value() == segment_state::running);
+    static_cast<void>(unlink(name));
+}
+
+TEST_CASE("segment_status refuses a wait open would refuse") {
+    CHECK(segment_status(unique("status-wait"), seconds(std::nan(""))).error().code == status::range);
+    CHECK(segment_status(unique("status-wait"), seconds(-1.0)).error().code == status::range);
+    CHECK(segment_status(unique("status-wait"), seconds(1e300)).error().code == status::range);
 }

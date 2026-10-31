@@ -1,7 +1,7 @@
 """The script of the guide "How to clean up segments"."""
 
 # --8<-- [start:close]
-from sharedbox import LockTimeoutError, SharedBox
+from sharedbox import LockTimeoutError, SharedBox, segment_status
 
 
 class Delivery(SharedBox, name="example-delivery"):
@@ -17,6 +17,10 @@ delivery.close()
 # --8<-- [start:unlink]
 Delivery.unlink()
 # --8<-- [end:unlink]
+
+# --8<-- [start:status]
+print(segment_status("example-delivery"))  # missing
+# --8<-- [end:status]
 
 creator = Delivery(True)
 

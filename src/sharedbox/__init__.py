@@ -23,6 +23,7 @@ from ._native import (
     WouldBlock,
 )
 from ._refs import BoxRef, BrokenReferenceError, UnknownBoxClassError
+from ._status import SegmentStatus, segment_status
 from ._stream import (
     ReceiveEvents,
     ReceiveStreamStatistics,
@@ -59,6 +60,7 @@ __all__ = [
     "SchemaMismatchError",
     "SegmentExistsError",
     "SegmentNotFoundError",
+    "SegmentStatus",
     "SendSlot",
     "Shape",
     "SharedBox",
@@ -78,6 +80,7 @@ __all__ = [
     "fields",
     "get_include",
     "register_array_type",
+    "segment_status",
 ]
 
 

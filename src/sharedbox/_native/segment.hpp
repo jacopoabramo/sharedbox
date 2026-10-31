@@ -32,6 +32,8 @@ void check_names(const std::vector<std::string> &names, std::size_t count);
 void check_metadata_spec(const std::string &what, const metadata_spec &spec);
 /// The stored bytes of field inside a copy of the record made by Segment::read_record.
 std::string_view payload(const FieldDesc &field, const std::byte *record);
+/// "missing", "running" or "creator_exited": whether a segment is called name and its creator still runs.
+std::string segment_status_of(const std::string &name);
 
 struct SegmentExists : std::runtime_error {
     using std::runtime_error::runtime_error;

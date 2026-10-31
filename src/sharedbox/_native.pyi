@@ -135,6 +135,9 @@ def _process_start(pid: int) -> int:
 def _process_alive(pid: int, start: int) -> bool:
     """Return True if a process with this pid and start time is running; for tests."""
 
+def segment_status(name: str) -> str:
+    """Return `"missing"`, `"running"` or `"creator_exited"` for the segment called `name`."""
+
 @disjoint_base
 class FieldWriter:
     """The write lock taken by [`Segment.begin_write`][sharedbox._native.Segment.begin_write]."""
