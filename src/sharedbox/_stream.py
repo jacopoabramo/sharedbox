@@ -463,7 +463,7 @@ class SharedStream(Generic[T, M]):
         `metadata` of [`send`][sharedbox.SharedSendStream.send], in force
         from the item sent with it, and a reader's
         [`metadata`][sharedbox.SharedReceiveStream.metadata] gives the
-        version of the item it received last. The stream keeps the earlier
+        version of the item it returned last. The stream keeps the earlier
         versions until it reclaims them for newer ones, and
         [`metadata_version_of`][sharedbox.SharedStream.metadata_version_of]
         reads them until then. A mapping reads back as a read-only mapping
@@ -1432,17 +1432,18 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T, M]):
 
     @property
     def metadata_version(self) -> int:
-        """The metadata version the item this reader received last was sent under.
+        """The metadata version the item this reader returned last was sent under.
 
-        It is the newest version the sender added before it sent that item,
-        and 0 before the first item, or for an item sent before the stream
-        had any version.
+        The item is the last one a receive or a fetch returned. The version
+        is the newest one the sender added before it sent that item, and 0
+        before the first item, or for an item sent before the stream had any
+        version.
 
         Raises
         ------
         MetadataGoneError
             If the stream no longer holds that version. A version can be
-            reclaimed once the item this reader received last has left the
+            reclaimed once the item this reader returned last has left the
             ring, which for a lossy or latest reader can happen right after
             the receive.
         StreamClosedError

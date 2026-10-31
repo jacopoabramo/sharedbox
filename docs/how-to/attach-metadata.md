@@ -105,8 +105,9 @@ the slot that [`writing`][sharedbox.SharedSendStream.writing] gives take
 the keyword too. A version applies from the item sent with it, and a
 reader's [`metadata`][sharedbox.SharedReceiveStream.metadata] and
 [`metadata_version`][sharedbox.SharedReceiveStream.metadata_version]
-describe the item it received last, so the reader can tell which version
-each item was sent under. The metadata of this stream is a `TypedDict` too:
+describe the item it returned last, by a receive or a fetch, so the reader
+can tell which version each item was sent under. The metadata of this stream
+is a `TypedDict` too:
 
 ```{.python}
 --8<-- "docs/examples/attach_metadata.py:calibration"
@@ -144,7 +145,7 @@ latest reader meets this first, because the sender may overwrite its item
 right after the reader receives it.
 
 !!! warning "A callback on the main thread can see a later item's version"
-    The reader's `metadata` follows the item the reader received last,
+    The reader's `metadata` follows the item the reader returned last,
     which may be later than the item a callback was given. A callback of
     [`reader.events`][sharedbox.SharedReceiveStream.events] connected with
     `thread="main"` runs after the reader's thread has received its item,
