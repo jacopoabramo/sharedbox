@@ -136,7 +136,8 @@ std::string layout_message(const std::string &name, std::uint64_t found) {
            " and box layout " + std::to_string(layout_major);
 }
 
-[[noreturn]] void throw_status(const error &e, const std::string &name) {
+// kind names what the caller opened: "box", or "segment" where it may be either kind.
+[[noreturn]] void throw_status(const error &e, const std::string &name, const std::string &kind = "box") {
 #ifdef _WIN32
     const std::error_category &category = std::system_category();
 #else
@@ -152,11 +153,11 @@ std::string layout_message(const std::string &name, std::uint64_t found) {
     case status::kind_mismatch:
         throw KindMismatch("'" + name + "' is a " + std::string(detail::kind_name(e.found)) + ", not a box");
     case status::range:
-        throw std::invalid_argument("box '" + name + "': a field, size or name is out of range");
+        throw std::invalid_argument(kind + " '" + name + "': a field, size or name is out of range");
     case status::os:
-        throw std::system_error(e.os, category, "box '" + name + "'");
+        throw std::system_error(e.os, category, kind + " '" + name + "'");
     default:
-        throw std::runtime_error("box '" + name + "': sharedbox.hpp returned " +
+        throw std::runtime_error(kind + " '" + name + "': sharedbox.hpp returned " +
                                  std::to_string(static_cast<int>(e.code)));
     }
 }
@@ -166,9 +167,11 @@ std::string layout_message(const std::string &name, std::uint64_t found) {
 std::string segment_status_of(const std::string &name) {
     const result<segment_state> state = segment_status(name);
     if (!state) {
-        if (state.error().code == status::layout)
-            throw SchemaMismatch(layout_message(name, state.error().found));
-        throw_status(state.error(), name);
+        if (const std::uint64_t found = state.error().found; state.error().code == status::layout)
+            throw SchemaMismatch("segment '" + name + "' uses core version " + std::to_string(found >> 48) + "." +
+                                 std::to_string(found >> 32 & 0xFFFF) + "; this sharedbox reads core version " +
+                                 std::to_string(core_major));
+        throw_status(state.error(), name, "segment");
     }
     switch (*state) {
     case segment_state::missing:

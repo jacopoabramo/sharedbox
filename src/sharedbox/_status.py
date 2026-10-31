@@ -37,10 +37,8 @@ def segment_status(name: str) -> SegmentStatus:
         If the segment uses a core version of the layout this sharedbox
         cannot read.
     OSError
-        If the operating system refuses to open the segment on Linux, such
-        as one of another user.
-    RuntimeError
-        If the operating system refuses to open the segment on Windows.
+        If the operating system refuses to open the segment, such as one of
+        another user.
 
     Notes
     -----
