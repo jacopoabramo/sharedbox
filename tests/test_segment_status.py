@@ -1,4 +1,5 @@
 import contextlib
+import ctypes
 import mmap
 import multiprocessing as mp
 import os
@@ -117,3 +118,56 @@ def test_a_core_version_this_sharedbox_cannot_read_names_no_kind(
     assert f"segment '{unique_name}' uses core version 2.0" in message
     assert "layout" not in message
 
+
+# The Windows-only parts of ctypes and OSError exist only in the Windows type stubs.
+if sys.platform == "win32":
+
+    class SecurityAttributes(ctypes.Structure):
+        _fields_ = [
+            ("length", ctypes.c_uint32),
+            ("descriptor", ctypes.c_void_p),
+            ("inherit", ctypes.c_int),
+        ]
+
+    @contextlib.contextmanager
+    def denied(name: str) -> Generator[None, None, None]:
+        """A Windows file mapping under the segment's object name that denies every access to everyone."""
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        advapi32 = ctypes.WinDLL("advapi32", use_last_error=True)
+        kernel32.CreateFileMappingW.restype = ctypes.c_void_p
+        kernel32.CreateFileMappingW.argtypes = [
+            ctypes.c_void_p,
+            ctypes.c_void_p,
+            ctypes.c_uint32,
+            ctypes.c_uint32,
+            ctypes.c_uint32,
+            ctypes.c_wchar_p,
+        ]
+        kernel32.CloseHandle.argtypes = [ctypes.c_void_p]
+        kernel32.LocalFree.argtypes = [ctypes.c_void_p]
+        descriptor = ctypes.c_void_p()
+        # Deny all access (GA) to everyone (WD).
+        assert advapi32.ConvertStringSecurityDescriptorToSecurityDescriptorW(
+            "D:(D;;GA;;;WD)", 1, ctypes.byref(descriptor), None
+        )
+        attributes = SecurityAttributes(
+            ctypes.sizeof(SecurityAttributes), descriptor.value, False
+        )
+        handle = kernel32.CreateFileMappingW(
+            ctypes.c_void_p(-1), ctypes.byref(attributes), 0x04, 0, 4096, os_name(name)
+        )
+        try:
+            assert handle, ctypes.get_last_error()
+            yield
+        finally:
+            kernel32.CloseHandle(handle)
+            kernel32.LocalFree(descriptor)
+
+    def test_a_refused_open_raises_permission_error_on_windows(
+        unique_name: str,
+    ) -> None:
+        """Raise PermissionError, naming the segment, when Windows denies opening the mapping."""
+        with denied(unique_name), pytest.raises(PermissionError) as excinfo:
+            segment_status(unique_name)
+        assert excinfo.value.winerror == 5
+        assert f"segment '{unique_name}':" in str(excinfo.value)
