@@ -12,6 +12,7 @@ from sharedbox import (
     Capacity,
     DType,
     EndOfStream,
+    ItemGoneError,
     MaxShape,
     ReaderReleased,
     Shape,
@@ -41,6 +42,23 @@ def register(stream: SharedStream[Letter], ready: "mp.synchronize.Event") -> Non
 
 
 # --8<-- [end:reader]
+
+
+# --8<-- [start:fetch]
+def fetch_letters(reader: SharedReceiveStream[Letter], first: int, last: int) -> None:
+    position = first
+    while position <= last:
+        try:
+            letter = reader.fetch(position, timeout=5)
+        except ItemGoneError as gone:
+            print("skipped", position, "to", gone.oldest - 1)
+            position = gone.oldest
+            continue
+        print("fetched", letter.index)
+        position += 1
+
+
+# --8<-- [end:fetch]
 
 
 # --8<-- [start:tasks]
@@ -185,3 +203,10 @@ if __name__ == "__main__":
             sort_without_stalling(sender, 6)
         file_letters(reader)
     SharedStream.unlink("example-sorting:release")
+    with SharedStream.create(Letter, "example-sorting:fetch", capacity=8) as stream:
+        reader = stream.reader(mode="lossy")
+        with stream.sender() as sender:
+            for i in range(6):
+                sender.send(Letter(i, "Ada", np.full((32, 32), i, np.uint8)))
+        fetch_letters(reader, 2, 4)
+    SharedStream.unlink("example-sorting:fetch")

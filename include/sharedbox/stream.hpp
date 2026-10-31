@@ -517,6 +517,17 @@ public:
     template <class F>
         requires std::is_nothrow_invocable_v<F &, std::span<const std::byte>>
     [[nodiscard]] result<received> receive_with(F &&copy, seconds timeout);
+    // Copies the item at position into out, at least item_size() bytes, waiting up to timeout until the
+    // sender has sent it, as receive waits: status::timeout, status::ended once the sender has closed or died
+    // without sending it, status::interrupted after interrupt(). status::not_found once the ring no longer
+    // holds the item, before the call or during the copy, with error().found the oldest position the ring
+    // held; status::range for a position above (UINT64_MAX - 2) / 2. Changes neither position() nor missed(),
+    // and never reports a release, which the next receive does.
+    [[nodiscard]] result<received> fetch(std::uint64_t position, std::span<std::byte> out, seconds timeout);
+    // As fetch, with copy given the item's bytes in the slot, under the same rule as receive_with's copy.
+    template <class F>
+        requires std::is_nothrow_invocable_v<F &, std::span<const std::byte>>
+    [[nodiscard]] result<received> fetch_with(std::uint64_t position, F &&copy, seconds timeout);
     // Ends a receive waiting in this reader with status::interrupted. Sent while no receive waits, it ends
     // the next wait.
     [[nodiscard]] result<void> interrupt();
@@ -528,7 +539,8 @@ public:
 
 private:
     friend class stream;
-    result<void> wait_for_data(detail::clock::time_point deadline);
+    result<void> wait_for_data(std::uint64_t position, detail::clock::time_point deadline);
+    template <class F> bool take(std::uint64_t position, F &copy) noexcept;
     void advance() noexcept;
     void wake_sender() noexcept;
 
@@ -1061,14 +1073,14 @@ inline void stream_sender::close() noexcept {
     s_ = nullptr;
 }
 
-inline result<void> stream_reader::wait_for_data(detail::clock::time_point deadline) {
+inline result<void> stream_reader::wait_for_data(std::uint64_t position, detail::clock::time_point deadline) {
     stream_header &h = *s_->hdr;
     if (detail::atomic(h.state).load(std::memory_order_acquire) == stream_ended &&
-        detail::atomic(h.write_pos).load(std::memory_order_acquire) <= r_)
+        detail::atomic(h.write_pos).load(std::memory_order_acquire) <= position)
         return unexpected(status::ended);
     if (deadline > detail::clock::now()) {
         for (unsigned i = 0; i < spin_before_sleep; ++i) {
-            if (detail::atomic(h.write_pos).load(std::memory_order_seq_cst) > r_)
+            if (detail::atomic(h.write_pos).load(std::memory_order_seq_cst) > position)
                 return {};
             detail::cpu_relax();
         }
@@ -1076,7 +1088,7 @@ inline result<void> stream_reader::wait_for_data(detail::clock::time_point deadl
     for (;;) {
         // write_pos is read after state: the sender stores state after its last write_pos.
         if (detail::atomic(h.state).load(std::memory_order_acquire) == stream_ended &&
-            detail::atomic(h.write_pos).load(std::memory_order_acquire) <= r_)
+            detail::atomic(h.write_pos).load(std::memory_order_acquire) <= position)
             return unexpected(status::ended);
         const detail::clock::duration left = deadline - detail::clock::now();
         if (left <= detail::clock::duration::zero())
@@ -1084,7 +1096,7 @@ inline result<void> stream_reader::wait_for_data(detail::clock::time_point deadl
         const result<wake> woken = detail::wait_on(
             s_->waiters, slot_, h.data_word,
             [&]() noexcept {
-                return detail::atomic(h.write_pos).load(std::memory_order_seq_cst) > r_ ||
+                return detail::atomic(h.write_pos).load(std::memory_order_seq_cst) > position ||
                        detail::atomic(h.state).load(std::memory_order_seq_cst) == stream_ended;
             },
             (std::min)(std::chrono::duration_cast<seconds>(left), seconds(liveness_delay)), &h.data_waiting);
@@ -1117,6 +1129,20 @@ inline void stream_reader::wake_sender() noexcept {
     }
 }
 
+// Copies the item at position when its slot still holds it whole: its seq reads 2 * position + 2 before and
+// after the copy.
+template <class F> bool stream_reader::take(std::uint64_t position, F &copy) noexcept {
+    const detail::stream_state &s = *s_;
+    std::byte *slot = s.slots + position % s.capacity * s.slot_size;
+    auto seq = detail::atomic(*reinterpret_cast<std::uint64_t *>(slot));
+    const std::uint64_t expected = 2 * position + 2;
+    if (seq.load(std::memory_order_acquire) != expected)
+        return false;
+    copy(std::span<const std::byte>(slot + s.item_offset, s.item_size));
+    std::atomic_thread_fence(std::memory_order_acquire);
+    return seq.load(std::memory_order_relaxed) == expected;
+}
+
 template <class F>
     requires std::is_nothrow_invocable_v<F &, std::span<const std::byte>>
 result<received> stream_reader::receive_with(F &&copy, seconds timeout) {
@@ -1127,23 +1153,12 @@ result<received> stream_reader::receive_with(F &&copy, seconds timeout) {
     const detail::clock::time_point deadline =
         detail::clock::now() + std::chrono::duration_cast<detail::clock::duration>(timeout);
     const std::uint64_t missed_before = missed_;
-    // Copies the item at position r when its slot still holds it whole.
-    auto take = [&](std::uint64_t r) noexcept {
-        std::byte *slot = s.slots + r % s.capacity * s.slot_size;
-        auto seq = detail::atomic(*reinterpret_cast<std::uint64_t *>(slot));
-        const std::uint64_t expected = 2 * r + 2;
-        if (seq.load(std::memory_order_acquire) != expected)
-            return false;
-        copy(std::span<const std::byte>(slot + s.item_offset, s.item_size));
-        std::atomic_thread_fence(std::memory_order_acquire);
-        return seq.load(std::memory_order_relaxed) == expected;
-    };
     for (;;) {
         // A slot whose seq is 2 * r_ + 2 holds item r_ whole, so write_pos need not be read: it is only
         // needed to decide whether to wait, where a lap was lost, and to find the newest item. A later
         // lap shows a larger seq and fails this check. A reader may take an item a moment before the
         // sender stores write_pos for it, so r_ may be write_pos + 1 and "nothing to read" is write_pos <= r_.
-        if (mode_ != read_mode::latest && take(r_)) {
+        if (mode_ != read_mode::latest && take(r_, copy)) {
             const received out{r_, missed_ - missed_before};
             ++r_;
             started_ = true;
@@ -1152,7 +1167,7 @@ result<received> stream_reader::receive_with(F &&copy, seconds timeout) {
         }
         const std::uint64_t w = detail::atomic(h.write_pos).load(std::memory_order_acquire);
         if (w <= r_) {
-            if (const result<void> waited = wait_for_data(deadline); !waited)
+            if (const result<void> waited = wait_for_data(r_, deadline); !waited)
                 return unexpected(waited.error());
             continue;
         }
@@ -1163,7 +1178,7 @@ result<received> stream_reader::receive_with(F &&copy, seconds timeout) {
             missed_ += w - 1 - r_;
             r_ = w - 1;
         }
-        const bool kept = take(r_);
+        const bool kept = take(r_, copy);
         if (!kept) {
             if (mode_ == read_mode::lossless) {
                 // Whichever of take's seq loads failed read a seq stored after the sender's release fence, so
@@ -1202,6 +1217,44 @@ result<received> stream_reader::receive_with(F &&copy, seconds timeout) {
         advance();
         return out;
     }
+}
+
+template <class F>
+    requires std::is_nothrow_invocable_v<F &, std::span<const std::byte>>
+result<received> stream_reader::fetch_with(std::uint64_t position, F &&copy, seconds timeout) {
+    // 2 * position + 2 must not wrap, or an old item could pass for this one.
+    if (s_ == nullptr || detail::current_pid() != pid_ || !detail::timeout_ok(timeout, true) ||
+        position > (UINT64_MAX - 2) / 2)
+        return unexpected(status::range);
+    const detail::stream_state &s = *s_;
+    stream_header &h = *s.hdr;
+    const detail::clock::time_point deadline =
+        detail::clock::now() + std::chrono::duration_cast<detail::clock::duration>(timeout);
+    for (;;) {
+        // Read before the check: the sender stores write_pos after it publishes, so a write_pos above position
+        // means the slot held the item whole before the check, and a failed check means a later lap.
+        const std::uint64_t w = detail::atomic(h.write_pos).load(std::memory_order_acquire);
+        if (take(position, copy))
+            return received{position, 0};
+        if (w > position) {
+            // A reservation in progress, abandoned or left by a dead sender ends the item write_pos - capacity
+            // while write_pos stays put, so the oldest item held is at least the one after position.
+            const std::uint64_t now = detail::atomic(h.write_pos).load(std::memory_order_acquire);
+            const std::uint64_t oldest = now > s.capacity ? now - s.capacity : 0;
+            return unexpected(error{status::not_found, 0, (std::max)(oldest, position + 1)});
+        }
+        if (const result<void> waited = wait_for_data(position, deadline); !waited)
+            return unexpected(waited.error());
+    }
+}
+
+inline result<received> stream_reader::fetch(std::uint64_t position, std::span<std::byte> out, seconds timeout) {
+    if (s_ == nullptr || out.size() < s_->item_size)
+        return unexpected(status::range);
+    return fetch_with(
+        position,
+        [&](std::span<const std::byte> item) noexcept { std::memcpy(out.data(), item.data(), item.size()); },
+        timeout);
 }
 
 inline result<received> stream_reader::receive(std::span<std::byte> out, seconds timeout) {

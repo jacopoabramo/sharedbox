@@ -1231,6 +1231,18 @@ class ReaderReleased(Exception):
 
     missed: int
 
+class ItemGoneError(LookupError):
+    """The stream's ring no longer holds the item at a position; the sender wrote a later item over it.
+
+    Attributes
+    ----------
+    oldest
+        The oldest position the ring held when the fetch checked. The sender
+        may have overwritten it too by the time it is read.
+    """
+
+    oldest: int
+
 class StreamBusyError(RuntimeError):
     """Another live end holds the stream's sender."""
 
@@ -1333,6 +1345,12 @@ class Slot(Generic[_T, M]):
 class Reader:
     def receive(
         self, timeout: float, arrays: Sequence[tuple[Sequence[int], object]] = ()
+    ) -> tuple[Any, int]: ...
+    def fetch(
+        self,
+        position: int,
+        timeout: float,
+        arrays: Sequence[tuple[Sequence[int], object]] = (),
     ) -> tuple[Any, int]: ...
     @property
     def mode(self) -> int: ...

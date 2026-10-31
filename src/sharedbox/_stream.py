@@ -70,6 +70,8 @@ WORKER_THREADS: set[threading.Thread] = set()
 READER_IDS = itertools.count(1)
 YIELD_EVERY: Final = 64
 YIELD_AFTER: Final = 0.001
+# A slot's sequence number for item p is 2 * p + 2, which must fit in 64 bits.
+MAX_POSITION: Final = 2**63 - 2
 LIVE_ENDS: weakref.WeakSet[
     SharedSendStream[Any, Any] | SharedReceiveStream[Any, Any]
 ] = weakref.WeakSet()
@@ -652,9 +654,21 @@ def attach_stream(
 
 
 class CallFuture(Future[Any]):
-    """The future of one call on a worker; `position` is where a receive stopped."""
+    """The future of one call on a worker; `position` is where a receive stopped.
+
+    `on_cancel`, when set, is called by a `cancel()` that finds the call
+    already running, to interrupt it.
+    """
 
     position: int | None = None
+    on_cancel: Callable[[CallFuture], None] | None = None
+
+    def cancel(self) -> bool:
+        if super().cancel():
+            return True
+        if self.on_cancel is not None and not self.done():
+            self.on_cancel(self)
+        return False
 
 
 Call = Callable[[CallFuture], Any]
@@ -801,6 +815,10 @@ class End:
         """Stop the call behind `future`: drop it if it has not started, else interrupt its wait."""
         if future.cancel() or future.done():
             return
+        self._interrupt_call(future)
+
+    def _interrupt_call(self, future: Future[Any]) -> None:
+        """End the wait of the running call behind `future`, which then raises `CancelledError`."""
         with self._lock:
             self._cancelled = future
         self._native.interrupt()
@@ -843,6 +861,12 @@ def steps(timeout: float | None) -> Iterator[float]:
     yield min(STEP, max(0.0, timeout))
     while (left := deadline - time.monotonic()) > 0:
         yield min(STEP, left)
+
+
+def check_position(position: int) -> None:
+    """Raise `ValueError` for a position no item can have."""
+    if not 0 <= position <= MAX_POSITION:
+        raise ValueError(f"a position is 0 to {MAX_POSITION}, not {position}")
 
 
 def holder() -> object:
@@ -1393,7 +1417,7 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T, M]):
 
     @property
     def position(self) -> int | None:
-        """The position of the last item received, None before the first.
+        """The position of the item this reader returned last, by a receive or a fetch, None before the first.
 
         [`ReceiveStreamStatistics.position`][sharedbox.ReceiveStreamStatistics.position]
         is the position of the item received next, so right after a receive
@@ -1779,13 +1803,15 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T, M]):
         targets: list[tuple[tuple[int, ...], Any]],
         step: float,
         future: CallFuture | None = None,
+        position: int | None = None,
     ) -> T:
         with self._lock:
             if self.closed:
                 raise StreamClosedError(
                     f"stream {self._stream.name!r}: the reader was closed"
                 )
-            if self._carry:
+            # Items kept from cancelled receives belong to the receive cursor, which a fetch leaves alone.
+            if self._carry and position is None:
                 kept = self._carry.popleft()
                 if isinstance(kept, ReaderReleased):
                     raise kept
@@ -1794,10 +1820,14 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T, M]):
                 if future is not None:
                     future.position = position
                 return cast(T, item)
-        item, position = self._native.receive(step, targets)
-        self._position = position
+        item, at = (
+            self._native.receive(step, targets)
+            if position is None
+            else self._native.fetch(position, step, targets)
+        )
+        self._position = at
         if future is not None:
-            future.position = position
+            future.position = at
         return cast(T, item)
 
     def close(self) -> None:
@@ -1849,6 +1879,101 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T, M]):
         """
         return self._receive_future([] if out is None else self._targets(out))
 
+    def fetch(self, position: int, /, timeout: float | None = None) -> T:
+        """Return the item at `position`, with new arrays, once the sender has sent it.
+
+        A fetch leaves the receive cursor and
+        [`missed`][sharedbox.SharedReceiveStream.missed] alone, so the next
+        [`receive`][sharedbox.SharedReceiveStream.receive] returns what it
+        would have returned without it.
+        [`position`][sharedbox.SharedReceiveStream.position] and
+        [`metadata`][sharedbox.SharedReceiveStream.metadata] then describe the
+        fetched item. An item the ring still holds is returned at once, and
+        `timeout=0` does not wait for one not sent yet.
+
+        Raises
+        ------
+        ItemGoneError
+            If the ring no longer holds the item, because the sender wrote a
+            later item over it before or during the copy.
+        EndOfStream
+            If the sender closed or died without sending the item.
+        TimeoutError
+            If `timeout` seconds pass first.
+        StreamClosedError
+            If this reader is closed, before or during the wait.
+        ValueError
+            If `position` is negative or above `2**63 - 2`.
+
+        Notes
+        -----
+        A blocking fetch first waits for calls already on the reader's
+        background thread, and that wait counts against `timeout`. A
+        lossless reader still holds the sender back from its receive
+        cursor, so a fetch more than `capacity` items past the cursor waits
+        until a receive moves it; open a reader that only fetches as lossy.
+        """
+        self._check_consumer()
+        check_position(position)
+        return self._receive([], timeout, position=position)
+
+    def fetch_into(
+        self, position: int, out: Any, /, *, timeout: float | None = None
+    ) -> T:
+        """As [`fetch`][sharedbox.SharedReceiveStream.fetch], with the item's arrays read into the arrays in `out`.
+
+        `out` has the shape that
+        [`receive_into`][sharedbox.SharedReceiveStream.receive_into] takes.
+        After an exception the contents of `out` are unspecified.
+
+        Raises
+        ------
+        ItemGoneError
+            If the ring no longer holds the item.
+        EndOfStream
+            If the sender closed or died without sending the item.
+        TimeoutError
+            If `timeout` seconds pass first.
+        StreamClosedError
+            If this reader is closed, before or during the wait.
+        ValueError
+            If `position` is negative or above `2**63 - 2`.
+        """
+        self._check_consumer()
+        check_position(position)
+        return self._receive(self._targets(out), timeout, position=position)
+
+    def fetch_future(self, position: int, out: Any = None, /) -> Future[T]:
+        """Return a future of the item at `position`, fetched by this reader's background thread.
+
+        The future is a `concurrent.futures.Future`, as
+        [`receive_future`][sharedbox.SharedReceiveStream.receive_future]
+        returns. Its exception is [`ItemGoneError`][sharedbox.ItemGoneError],
+        [`EndOfStream`][sharedbox.EndOfStream] or
+        [`StreamClosedError`][sharedbox.StreamClosedError] in the cases where
+        [`fetch`][sharedbox.SharedReceiveStream.fetch] raises them. `out`,
+        when given, is what
+        [`fetch_into`][sharedbox.SharedReceiveStream.fetch_into] takes.
+        Cancelling the future stops the fetch, even once it is running, so a
+        fetch given up on, such as one an `asyncio.wait_for` timed out, does
+        not hold up later calls on the reader. `cancel()` returns False for a
+        running fetch, as for any `Future`, and the future then ends with
+        `CancelledError`.
+
+        Raises
+        ------
+        ValueError
+            If `position` is negative or above `2**63 - 2`.
+        """
+        check_position(position)
+        targets = [] if out is None else self._targets(out)
+        future = self._submit(
+            lambda future: self._receive(targets, None, future, position=position)
+        )
+        # A fetch takes nothing from the cursor, so stopping it mid-wait loses no item.
+        future.on_cancel = self._interrupt_call
+        return future
+
     def _receive_future(self, targets: list[tuple[tuple[int, ...], Any]]) -> CallFuture:
         return self._submit(lambda future: self._receive(targets, None, future))
 
@@ -1877,17 +2002,18 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T, M]):
         timeout: float | None,
         future: CallFuture | None = None,
         delivering: int | None = None,
+        position: int | None = None,
     ) -> T:
         if future is None and delivering is None:
             timeout = self._after_worker(timeout)
             # A waiting item needs no wait; without one, the loop below waits as before.
             try:
-                return self._take(targets, 0.0)
+                return self._take(targets, 0.0, None, position)
             except (WouldBlock, _Interrupted):
                 pass
         for step in steps(timeout):
             try:
-                return self._take(targets, step, future)
+                return self._take(targets, step, future, position)
             except WouldBlock:
                 continue
             except _Interrupted:
