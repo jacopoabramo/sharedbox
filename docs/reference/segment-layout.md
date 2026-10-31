@@ -1383,6 +1383,8 @@ public:
 
 result<void> unlink(std::string_view name) noexcept;
 result<common_header> inspect(std::string_view name) noexcept;
+enum class segment_state { missing, running, creator_exited };
+result<segment_state> segment_status(std::string_view name, seconds wait = seconds(1.0)) noexcept;
 
 }  // namespace v3
 }  // namespace sharedbox
@@ -1454,6 +1456,12 @@ The header also declares these names:
   kind, without waiting and without the checks of `open`. The Python
   extension uses it to name the layout of a segment it refuses and the
   creator in `SegmentExistsError`.
+- `segment_status(name, wait)` says whether a segment of any kind is
+  called `name` and whether its creator still runs. It waits up to `wait`
+  for a segment being created and counts one still unpublished as
+  `missing`. A creator it cannot judge, in another pid namespace or with a
+  start time it cannot read, counts as `running`. A core major version
+  other than 1 is `status::layout`, with `found` as `open` gives it.
 - `duplicate()` makes a second handle with its own mapping from this
   handle's OS handle (`dup` and `mmap` on Linux, `DuplicateHandle` and
   `MapViewOfFile` on Windows), not from the name, so it works after

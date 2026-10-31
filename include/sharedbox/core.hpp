@@ -2516,6 +2516,30 @@ result<std::uint64_t> add_metadata(std::byte *area, const metadata_line &line, s
     return detail::copy_common(line0);
 }
 
+enum class segment_state { missing, running, creator_exited };
+
+// Whether a segment of any kind is called name and whether its creator still runs, waiting up to wait for
+// one being created. A segment still unpublished then counts as missing, and a creator this process cannot
+// judge, in another pid namespace or with a start time it cannot read, as running.
+[[nodiscard]] inline result<segment_state> segment_status(std::string_view name,
+                                                          seconds wait = seconds(1.0)) noexcept {
+    if (!detail::name_ok(name))
+        return unexpected(status::range);
+    detail::backoff waited(wait.count());
+    result<detail::os_mapping> map = detail::map_open(name, waited);
+    if (!map)
+        return map.error().code == status::not_found ? result<segment_state>(segment_state::missing)
+                                                     : unexpected(map.error());
+    if (!detail::wait_published(map->base(), waited))
+        return segment_state::missing;
+    const common_header line0 = detail::copy_common(map->base());
+    if (line0.core_major != core_major)
+        return unexpected(error{status::layout, 0, detail::layout_found(line0)});
+    return detail::owner_exited(line0.creator_pid, line0.creator_start, line0.creator_pidns)
+               ? segment_state::creator_exited
+               : segment_state::running;
+}
+
 class stream;
 
 // The type of a field or of a member inside one, read from a handle's checked copy of the description
