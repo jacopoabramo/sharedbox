@@ -171,3 +171,20 @@ def test_fetch_refuses_while_delivering(unique_name: str) -> None:
         with pytest.raises(RuntimeError, match="second reader"):
             reader.fetch_future(0)
     SharedStream.unlink(unique_name)
+
+
+def test_cancelling_a_fetch_future_frees_the_reader(unique_name: str) -> None:
+    """Stop a waiting fetch when its future is cancelled, so later calls on the reader do not wait for it."""
+    with SharedStream.create(int, unique_name, capacity=8) as stream:
+        reader = stream.reader("lossy", start="oldest")
+        sender = stream.sender()
+        sender.send(0)
+
+        async def give_up() -> None:
+            await asyncio.wait_for(asyncio.wrap_future(reader.fetch_future(100)), 0.2)
+
+        with pytest.raises(TimeoutError):
+            asyncio.run(give_up())
+        assert reader.receive(timeout=2) == 0
+        assert reader.fetch(0, timeout=2) == 0
+    SharedStream.unlink(unique_name)

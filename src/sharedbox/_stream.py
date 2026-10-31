@@ -654,9 +654,21 @@ def attach_stream(
 
 
 class CallFuture(Future[Any]):
-    """The future of one call on a worker; `position` is where a receive stopped."""
+    """The future of one call on a worker; `position` is where a receive stopped.
+
+    `on_cancel`, when set, is called by a `cancel()` that finds the call
+    already running, to interrupt it.
+    """
 
     position: int | None = None
+    on_cancel: Callable[[CallFuture], None] | None = None
+
+    def cancel(self) -> bool:
+        if super().cancel():
+            return True
+        if self.on_cancel is not None and not self.done():
+            self.on_cancel(self)
+        return False
 
 
 Call = Callable[[CallFuture], Any]
@@ -803,6 +815,10 @@ class End:
         """Stop the call behind `future`: drop it if it has not started, else interrupt its wait."""
         if future.cancel() or future.done():
             return
+        self._interrupt_call(future)
+
+    def _interrupt_call(self, future: Future[Any]) -> None:
+        """End the wait of the running call behind `future`, which then raises `CancelledError`."""
         with self._lock:
             self._cancelled = future
         self._native.interrupt()
@@ -1892,7 +1908,10 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T, M]):
         Notes
         -----
         A blocking fetch first waits for calls already on the reader's
-        background thread, and that wait counts against `timeout`.
+        background thread, and that wait counts against `timeout`. A
+        lossless reader still holds the sender back from its receive
+        cursor, so a fetch more than `capacity` items past the cursor waits
+        until a receive moves it; open a reader that only fetches as lossy.
         """
         self._check_consumer()
         check_position(position)
@@ -1934,9 +1953,12 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T, M]):
         [`StreamClosedError`][sharedbox.StreamClosedError] in the cases where
         [`fetch`][sharedbox.SharedReceiveStream.fetch] raises them. `out`,
         when given, is what
-        [`fetch_into`][sharedbox.SharedReceiveStream.fetch_into] takes. A
-        running fetch cannot be cancelled, and it drops the item it takes after
-        its future was abandoned.
+        [`fetch_into`][sharedbox.SharedReceiveStream.fetch_into] takes.
+        Cancelling the future stops the fetch, even once it is running, so a
+        fetch given up on, such as one an `asyncio.wait_for` timed out, does
+        not hold up later calls on the reader. `cancel()` returns False for a
+        running fetch, as for any `Future`, and the future then ends with
+        `CancelledError`.
 
         Raises
         ------
@@ -1945,9 +1967,12 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T, M]):
         """
         check_position(position)
         targets = [] if out is None else self._targets(out)
-        return self._submit(
+        future = self._submit(
             lambda future: self._receive(targets, None, future, position=position)
         )
+        # A fetch takes nothing from the cursor, so stopping it mid-wait loses no item.
+        future.on_cancel = self._interrupt_call
+        return future
 
     def _receive_future(self, targets: list[tuple[tuple[int, ...], Any]]) -> CallFuture:
         return self._submit(lambda future: self._receive(targets, None, future))
