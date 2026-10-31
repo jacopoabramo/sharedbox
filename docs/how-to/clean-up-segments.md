@@ -47,15 +47,18 @@ handle is closed. Either way you write the same code, and it works on both.
 On Linux, a process that crashed before calling `unlink` leaves its segment
 behind as a file in `/dev/shm`. For one name,
 [`segment_status`][sharedbox.segment_status] says whether a box or stream
-exists under it and whether the process that created it still runs:
+is published under it and whether the process that created it still runs:
 
 ```{.python}
 --8<-- "docs/examples/clean_up_segments.py:status"
 ```
 
 It returns `missing`, `running` or `creator_exited`. A segment whose creator
-has exited is one to remove once no other process uses it. To see every
-segment at once, list the files:
+has exited is one to remove once no other process uses it. A process that
+crashed in the middle of `create` leaves a segment that was never published,
+which reads as `missing` although the name is still taken; creating under
+that name raises `SegmentExistsError`, which says so. To see every segment at
+once, list the files:
 
 ```bash
 ls /dev/shm/SBX:*
