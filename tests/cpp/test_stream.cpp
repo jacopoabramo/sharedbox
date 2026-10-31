@@ -1337,3 +1337,26 @@ TEST_CASE("fetch refuses a position whose seq would wrap") {
     CHECK(fetch(*reader, std::uint64_t{1} << 63, 0.0).error().code == status::range);
     static_cast<void>(unlink(name));
 }
+
+TEST_CASE("fetch of an item a held reservation overwrites reports an oldest above it") {
+    const std::string name = unique("stream-fetch-held");
+    stream st = make(name, 2);
+    auto reader = st.reader(read_mode::lossy, start_at::oldest);
+    auto sender = st.sender();
+    REQUIRE((reader && sender));
+    REQUIRE(send(*sender, 0));
+    REQUIRE(send(*sender, 1));
+    // Position 2 takes slot 0, whose odd seq now ends item 0 while write_pos is still 2.
+    REQUIRE(sender->begin(seconds(0)));
+    const auto held = fetch(*reader, 0, 0.0);
+    REQUIRE_FALSE(held);
+    CHECK(held.error().code == status::not_found);
+    CHECK(held.error().found == 1);
+    sender->abandon();
+    const auto abandoned = fetch(*reader, 0, 0.0);
+    REQUIRE_FALSE(abandoned);
+    CHECK(abandoned.error().found == 1);
+    const auto kept = fetch(*reader, 1, 0.0);
+    CHECK((kept && kept->position == 1));
+    static_cast<void>(unlink(name));
+}

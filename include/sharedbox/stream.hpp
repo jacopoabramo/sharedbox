@@ -1237,8 +1237,11 @@ result<received> stream_reader::fetch_with(std::uint64_t position, F &&copy, sec
         if (take(position, copy))
             return received{position, 0};
         if (w > position) {
+            // A reservation in progress, abandoned or left by a dead sender ends the item write_pos - capacity
+            // while write_pos stays put, so the oldest item held is at least the one after position.
             const std::uint64_t now = detail::atomic(h.write_pos).load(std::memory_order_acquire);
-            return unexpected(error{status::not_found, 0, now > s.capacity ? now - s.capacity : 0});
+            const std::uint64_t oldest = now > s.capacity ? now - s.capacity : 0;
+            return unexpected(error{status::not_found, 0, (std::max)(oldest, position + 1)});
         }
         if (const result<void> waited = wait_for_data(position, deadline); !waited)
             return unexpected(waited.error());

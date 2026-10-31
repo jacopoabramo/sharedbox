@@ -1636,7 +1636,9 @@ Stream layout). Every function returning a `result` is `[[nodiscard]]`.
   because the sender stores `write_pos` only after it publishes, a failed
   check with `write_pos` above `position` means a later item overwrote the
   slot. The call then gives `status::not_found`, with `found` set to the
-  oldest position the ring held, `write_pos - capacity` or 0. It gives
+  oldest position the ring held: `write_pos - capacity` or 0, but at least
+  `position + 1`, because a reservation in progress or abandoned ends the
+  item `write_pos - capacity` before `write_pos` moves. It gives
   `status::ended` when the sender closed or died without sending the item,
   and `status::range` for a position above `(UINT64_MAX - 2) / 2`, where
   `2 * position + 2` would wrap.
