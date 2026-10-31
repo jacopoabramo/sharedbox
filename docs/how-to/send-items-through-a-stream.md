@@ -159,6 +159,34 @@ returned item holds your arrays. A member that is a list, set or dict takes
 `None`, because an array cannot be an element of a collection, and an item
 that is itself a collection has no arrays to read into.
 
+## Fetch an item by its position
+
+A receive always returns the item after the last one, but sometimes another
+message names the items to read, such as "letters 2 to 4" in a sorting
+report. [`fetch`][sharedbox.SharedReceiveStream.fetch] returns the item at
+a given position, waiting until the sender has sent it, so a reader can
+fetch positions the sender has not reached yet:
+
+```{.python}
+--8<-- "docs/examples/send_items_through_a_stream.py:fetch"
+```
+
+A fetch leaves the reader where it was: the next `receive` returns what it
+would have returned without the fetch, and
+[`missed`][sharedbox.SharedReceiveStream.missed] does not change. The
+reader's [`position`][sharedbox.SharedReceiveStream.position] and
+[`metadata`][sharedbox.SharedReceiveStream.metadata] then describe the
+fetched item. [`fetch_into`][sharedbox.SharedReceiveStream.fetch_into] reads
+the arrays into arrays you pass, as `receive_into` does, and
+[`fetch_future`][sharedbox.SharedReceiveStream.fetch_future] returns a
+future for asyncio.
+
+The stream holds only its last `capacity` items, so a position the sender
+has written over is gone, and the fetch raises
+[`ItemGoneError`][sharedbox.ItemGoneError]. Its `oldest` attribute is the
+oldest position the stream still held, which is where the loop above goes
+on.
+
 ## Send arrays whose shape changes
 
 An array declared with a `Shape` has the same shape in every item. When the
