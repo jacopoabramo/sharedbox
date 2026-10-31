@@ -112,6 +112,38 @@ def test_an_overwritten_item_raises_item_gone(unique_name: str) -> None:
     SharedStream.unlink(unique_name)
 
 
+def test_an_item_overwritten_before_the_sender_closed_raises_item_gone(
+    unique_name: str,
+) -> None:
+    """Raise ItemGoneError, not EndOfStream, for an item the closed sender sent and then overwrote."""
+    with SharedStream.create(int, unique_name, capacity=2) as stream:
+        reader = stream.reader("lossy", start="oldest")
+        with stream.sender() as sender:
+            for i in range(5):
+                sender.send(i)
+        with pytest.raises(ItemGoneError) as excinfo:
+            reader.fetch(1, timeout=0)
+        assert excinfo.value.oldest == 3
+    SharedStream.unlink(unique_name)
+
+
+def test_a_lossless_reader_fetches_behind_its_cursor(unique_name: str) -> None:
+    """Fetch an item a lossless reader already received, without holding the sender back for it."""
+    with SharedStream.create(int, unique_name, capacity=4) as stream:
+        reader = stream.reader("lossless", start="oldest")
+        sender = stream.sender()
+        for i in range(4):
+            sender.send(i)
+        assert [reader.receive(timeout=5) for _ in range(4)] == [0, 1, 2, 3]
+        assert reader.fetch(1, timeout=0) == 1
+        for i in range(4, 8):
+            sender.send(i, timeout=5)
+        with pytest.raises(ItemGoneError):
+            reader.fetch(1, timeout=0)
+        assert reader.receive(timeout=5) == 4
+    SharedStream.unlink(unique_name)
+
+
 def test_metadata_after_fetch_describes_the_fetched_item(unique_name: str) -> None:
     """Report the metadata version of the item fetched last."""
     with SharedStream.create(

@@ -955,6 +955,16 @@ NB_MODULE(_native, m) {
         try {
             std::rethrow_exception(p);
         } catch (const std::system_error &e) {
+#ifdef _WIN32
+            // A GetLastError() code goes in OSError's winerror, from which Python sets errno and the subclass.
+            if (e.code().category() == std::system_category()) {
+                nb::object error = nb::steal(
+                    PyObject_CallFunction(PyExc_OSError, "isOi", 0, e.what(), Py_None, e.code().value()));
+                if (error.is_valid())
+                    PyErr_SetObject(PyExc_OSError, error.ptr());
+                return;
+            }
+#endif
             // Only errno values map onto OSError's errno; other categories fall through to RuntimeError.
             if (e.code().category() != std::generic_category())
                 throw;
