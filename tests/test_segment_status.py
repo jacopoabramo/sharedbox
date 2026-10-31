@@ -9,9 +9,16 @@ from collections.abc import Generator
 from multiprocessing.synchronize import Event
 
 import pytest
+from forged_open import raw_bytes
 from os_names import os_name
 
-from sharedbox import SegmentStatus, SharedBox, SharedStream, segment_status
+from sharedbox import (
+    SchemaMismatchError,
+    SegmentStatus,
+    SharedBox,
+    SharedStream,
+    segment_status,
+)
 
 
 class Beacon(SharedBox):
@@ -90,3 +97,23 @@ def test_the_wait_lets_other_threads_run(unique_name: str) -> None:
             done.set()
             ticker.join()
     assert ticks >= 20
+
+
+def test_a_core_version_this_sharedbox_cannot_read_names_no_kind(
+    unique_name: str,
+) -> None:
+    """Raise SchemaMismatchError naming the segment and its core version, not a box layout, for a stream."""
+    with (
+        SharedStream.create(int, unique_name, capacity=4),
+        raw_bytes(unique_name) as view,
+    ):
+        view[8:10] = (2).to_bytes(2, "little")
+        try:
+            with pytest.raises(SchemaMismatchError) as excinfo:
+                segment_status(unique_name)
+        finally:
+            view[8:10] = (1).to_bytes(2, "little")
+    message = str(excinfo.value)
+    assert f"segment '{unique_name}' uses core version 2.0" in message
+    assert "layout" not in message
+
