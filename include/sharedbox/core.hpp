@@ -2523,7 +2523,7 @@ enum class segment_state { missing, running, creator_exited };
 // judge, in another pid namespace or with a start time it cannot read, as running.
 [[nodiscard]] inline result<segment_state> segment_status(std::string_view name,
                                                           seconds wait = seconds(1.0)) noexcept {
-    if (!detail::name_ok(name))
+    if (!detail::name_ok(name) || !detail::timeout_ok(wait, true))
         return unexpected(status::range);
     detail::backoff waited(wait.count());
     result<detail::os_mapping> map = detail::map_open(name, waited);

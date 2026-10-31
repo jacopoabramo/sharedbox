@@ -5,9 +5,12 @@
 
 #include "unique.hpp"
 
+#include <chrono>
+#include <cmath>
 #include <cstring>
 #include <memory>
 #include <string>
+#include <thread>
 #include <vector>
 
 using namespace sharedbox;
@@ -293,4 +296,24 @@ TEST_CASE("segment_status refuses a name sharedbox does not accept") {
     const auto refused = segment_status("a.b");
     REQUIRE_FALSE(refused);
     CHECK(refused.error().code == status::range);
+}
+
+TEST_CASE("segment_status waits for a segment its creator publishes during the wait") {
+    const std::string name = unique("status-publishing");
+    auto owner = handle::create_unpublished(name, fields, 32, 1, 4, {});
+    REQUIRE(owner);
+    std::thread publisher([&owner] {
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        static_cast<void>(owner->publish());
+    });
+    const auto found = segment_status(name, seconds(2.0));
+    publisher.join();
+    CHECK(found.value() == segment_state::running);
+    static_cast<void>(unlink(name));
+}
+
+TEST_CASE("segment_status refuses a wait open would refuse") {
+    CHECK(segment_status(unique("status-wait"), seconds(std::nan(""))).error().code == status::range);
+    CHECK(segment_status(unique("status-wait"), seconds(-1.0)).error().code == status::range);
+    CHECK(segment_status(unique("status-wait"), seconds(1e300)).error().code == status::range);
 }

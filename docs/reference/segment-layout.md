@@ -1461,7 +1461,9 @@ The header also declares these names:
   for a segment being created and counts one still unpublished as
   `missing`. A creator it cannot judge, in another pid namespace or with a
   start time it cannot read, counts as `running`. A core major version
-  other than 1 is `status::layout`, with `found` as `open` gives it.
+  other than 1 is `status::layout`, with `found` as `open` gives it, and a
+  `wait` that is negative, not a number or above 86400 s is
+  `status::range`.
 - `duplicate()` makes a second handle with its own mapping from this
   handle's OS handle (`dup` and `mmap` on Linux, `DuplicateHandle` and
   `MapViewOfFile` on Windows), not from the name, so it works after
