@@ -378,6 +378,7 @@ TEST_CASE("a max_array value is its shape line and its stored elements") {
     const std::uint64_t generation = box->generation();
     CHECK(write(value_of(2, 3, 64 + 4)).error().code == status::range);
     CHECK(write(value_of(5, 3, 64 + 5 * 3 * 4)).error().code == status::range);
+    CHECK(write(value_of(2, 5, 64 + 2 * 5 * 4)).error().code == status::range);
     CHECK(write(value_of(2, 3, 64 + 4 * 3 * 4 + 4)).error().code == status::range);
     CHECK(box->generation() == generation);
     std::vector<std::byte> after(out.size());
