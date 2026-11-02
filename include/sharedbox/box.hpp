@@ -1,4 +1,4 @@
-// box.hpp: layout 3.2 of a box segment and the protocols that use it.
+// box.hpp: layout 3.3 of a box segment and the protocols that use it.
 #ifndef SHAREDBOX_BOX_HPP
 #define SHAREDBOX_BOX_HPP
 
@@ -8,7 +8,7 @@ namespace sharedbox {
 inline namespace v3 {
 
 inline constexpr std::uint16_t layout_major = 3;
-inline constexpr std::uint16_t layout_minor = 2;
+inline constexpr std::uint16_t layout_minor = 3;
 inline constexpr std::uint32_t handle_version = 1;
 inline constexpr std::uint32_t header_size = 128;
 inline constexpr std::uint32_t record_alignment = 64;
@@ -288,7 +288,8 @@ public:
     // The stored bytes of field inside a copy made by read_record.
     std::span<const std::byte> payload(std::uint16_t field, std::span<const std::byte> record) const noexcept;
     // Writes every value under one lock, so readers see all of them or none, then wakes waiters.
-    // status::range for a field of a kind this header does not know.
+    // status::range for a field of a kind this header does not know. A max_array value is its 64-byte shape
+    // line and the elements that shape holds, no more.
     [[nodiscard]] result<void> write(std::span<const value> values, seconds lock_timeout);
     // As write, and add doc as the next metadata version in the same write, as add_metadata does: one
     // generation, readers seeing the values and the version together. Returns the version.
@@ -487,7 +488,7 @@ inline status copy_fields(state &s, const void *base, const header &h) noexcept 
         entries[i] = stored.capacity_and_kind;
     }
     const std::span<const std::byte> table(bytes + tail_end(s.field_count, s.waiter_slots), h.types_size);
-    if (const status rc = s.types.parse(table, {entries.get(), s.field_count}); rc != status::ok)
+    if (const status rc = s.types.parse(table, {entries.get(), s.field_count}, true); rc != status::ok)
         return rc;
     return place_fields(s.fields.get(), s.field_count, s.types, s.record_size, true);
 }
@@ -503,6 +504,14 @@ inline bool collection_fits(const type_node &node, std::span<const std::byte> by
     return length <= node.capacity && bytes.size() == node.slots + std::uint64_t{length} * node.stride;
 }
 
+// A max_array value is its shape line and the elements that shape holds, no more.
+inline bool max_array_fits(const type_table &types, const type_ref &t, std::span<const std::byte> bytes,
+                           std::uint32_t capacity) noexcept {
+    if (bytes.size() < 64 || bytes.size() > capacity)
+        return false;
+    return bytes.size() - 64 == max_array_bytes(types, t, bytes.data());
+}
+
 SHAREDBOX_HOT bool values_ok(const state &s, std::span<const value> values) noexcept {
     for (const value &v : values) {
         if (v.field >= s.field_count)
@@ -515,6 +524,9 @@ SHAREDBOX_HOT bool values_ok(const state &s, std::span<const value> values) noex
                 return false;
         } else if (is_collection(f.kind)) [[unlikely]] {
             if (!collection_fits(s.types.node(s.types.field(v.field).node), v.bytes))
+                return false;
+        } else if (f.kind == kind_max_array) [[unlikely]] {
+            if (!max_array_fits(s.types, s.types.field(v.field), v.bytes, f.capacity))
                 return false;
         } else if (v.bytes.size() != f.capacity) {
             return false;
@@ -569,7 +581,7 @@ inline result<handle> create_impl(std::string_view name, std::span<const field_s
         return unexpected(status::os);
     std::copy(fields.begin(), fields.end(), s->fields.get());
     // A table the caller built wrong is its mistake, status::range; running out of memory is not.
-    if (const status rc = s->types.parse(types, {entries.get(), count}); rc != status::ok)
+    if (const status rc = s->types.parse(types, {entries.get(), count}, true); rc != status::ok)
         return unexpected(rc == status::os ? status::os : status::range);
     if (place_fields(s->fields.get(), count, s->types, record_size, false) != status::ok ||
         !values_ok(*s, initial))
@@ -1025,7 +1037,7 @@ SHAREDBOX_HOT void handle::unlock(std::uint64_t locked) noexcept {
 
 inline result<field_write> handle::begin_write(std::uint16_t field, seconds lock_timeout) {
     detail::state &s = *s_;
-    if (field >= s.field_count || s.fields[field].kind != kind_array)
+    if (field >= s.field_count || (s.fields[field].kind != kind_array && s.fields[field].kind != kind_max_array))
         return unexpected(status::range);
     const result<std::uint64_t> locked = lock(lock_timeout);
     if (!locked)

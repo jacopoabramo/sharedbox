@@ -3,6 +3,7 @@
 #include <doctest/doctest.h>
 #include <sharedbox/sharedbox.hpp>
 
+#include "table_builder.hpp"
 #include "unique.hpp"
 
 #include <chrono>
@@ -31,7 +32,7 @@ status open_status(const std::string &name) {
 
 } // namespace
 
-TEST_CASE("a new box is core 1.0, box layout 3.2") {
+TEST_CASE("a new box is core 1.0, box layout 3.3") {
     const std::string name = unique("layout3");
     auto owner = handle::create(name, fields, 32, 0x5EED, 4, {});
     REQUIRE(owner);
@@ -39,7 +40,7 @@ TEST_CASE("a new box is core 1.0, box layout 3.2") {
     CHECK(h.common.magic == box_magic);
     CHECK(h.common.core_major == core_major);
     CHECK(h.common.kind_major == 3);
-    CHECK(h.common.kind_minor == 2);
+    CHECK(h.common.kind_minor == 3);
     CHECK(h.tail == header_size);
     CHECK(owner->major_version() == 3);
     auto other = handle::open(name, seconds(1.0));
@@ -197,7 +198,7 @@ TEST_CASE("a box without metadata keeps the 3.1 bytes") {
     auto owner = handle::create(name, fields, 32, 0x5EED, 4, {}, {}, metadata_spec{});
     REQUIRE(owner);
     const header &h = header_of(*owner);
-    CHECK(h.common.kind_minor == 2);
+    CHECK(h.common.kind_minor == 3);
     CHECK(h.metadata_size == 0);
     CHECK(h.metadata == 0);
     CHECK(h.metadata_head == 0);
@@ -316,4 +317,71 @@ TEST_CASE("segment_status refuses a wait open would refuse") {
     CHECK(segment_status(unique("status-wait"), seconds(std::nan(""))).error().code == status::range);
     CHECK(segment_status(unique("status-wait"), seconds(-1.0)).error().code == status::range);
     CHECK(segment_status(unique("status-wait"), seconds(1e300)).error().code == status::range);
+}
+
+TEST_CASE("a box opens with a max_array field and a record holding one") {
+    const std::uint32_t data = 64 + 2048 * 2048 * 2;
+    for (const std::uint8_t kind : {kind_max_array, kind_record}) {
+        table_builder t;
+        if (kind == kind_max_array)
+            max_array(t);
+        else
+            t = around_max_array(kind);
+        const std::string name = unique("l3-max-array");
+        const field_spec spec[1] = {{0, 0, kind}};
+        auto owner = handle::create(name, spec, data, 1, 4, {}, t.span());
+        REQUIRE(owner);
+        auto other = handle::open(name, seconds(1.0));
+        CHECK(other.has_value());
+        static_cast<void>(unlink(name));
+    }
+    for (const std::uint8_t kind : {kind_optional, kind_list}) {
+        const table_builder t = around_max_array(kind);
+        const field_spec spec[1] = {{0, 0, kind}};
+        const auto made = handle::create(unique("l3-max-array-refused"), spec, 2 * data, 1, 4, {}, t.span());
+        REQUIRE_FALSE(made);
+        CHECK(made.error().code == status::range);
+    }
+}
+
+TEST_CASE("a max_array value is its shape line and its stored elements") {
+    table_builder t;
+    t.head(kind_max_array, 0, 64 + 4 * 3 * 4);
+    t.put(dl_dtype{1, 32, 1});
+    t.put(std::uint8_t{2});
+    t.put(std::uint8_t{0});
+    t.put(std::uint16_t{0});
+    t.put(std::uint64_t{4});
+    t.put(std::uint64_t{3});
+    const std::string name = unique("l3-max-array-value");
+    const field_spec spec[1] = {{0, 0, kind_max_array}};
+    auto box = handle::create(name, spec, 64 + 4 * 3 * 4, 1, 4, {}, t.span());
+    REQUIRE(box);
+    auto value_of = [](std::uint64_t rows, std::uint64_t cols, std::size_t size) {
+        std::vector<std::byte> bytes(size);
+        const std::uint64_t line[2] = {rows, cols};
+        std::memcpy(bytes.data(), line, sizeof line);
+        for (std::size_t i = 64; i < size; ++i)
+            bytes[i] = static_cast<std::byte>(i);
+        return bytes;
+    };
+    const auto write = [&](const std::vector<std::byte> &bytes) {
+        const value v{0, bytes};
+        return box->write({&v, 1}, seconds(1.0));
+    };
+    const std::vector<std::byte> good = value_of(2, 3, 64 + 2 * 3 * 4);
+    REQUIRE(write(good).has_value());
+    std::vector<std::byte> out(64 + 4 * 3 * 4);
+    const auto read = box->read(0, out);
+    REQUIRE(read);
+    CHECK(std::memcmp(out.data(), good.data(), good.size()) == 0);
+    const std::uint64_t generation = box->generation();
+    CHECK(write(value_of(2, 3, 64 + 4)).error().code == status::range);
+    CHECK(write(value_of(5, 3, 64 + 5 * 3 * 4)).error().code == status::range);
+    CHECK(write(value_of(2, 3, 64 + 4 * 3 * 4 + 4)).error().code == status::range);
+    CHECK(box->generation() == generation);
+    std::vector<std::byte> after(out.size());
+    REQUIRE(box->read(0, after));
+    CHECK(after == out);
+    static_cast<void>(unlink(name));
 }

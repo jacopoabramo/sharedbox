@@ -81,3 +81,18 @@ TEST_CASE("begin_write refuses a field that is not an array and times out on a h
     CHECK(h->version(0) == 2);
     static_cast<void>(unlink(name));
 }
+
+TEST_CASE("begin_write hands out the whole of a max_array field") {
+    table_builder t;
+    max_array(t, {4, 3});
+    const std::string name = unique("write-in-place-max");
+    const field_spec fields[2] = {{0, 0, kind_max_array}, {128, 8, kind_int}};
+    auto h = handle::create(name, fields, 136, 1, 4, {}, t.span());
+    REQUIRE(h.has_value());
+    const auto w = h->begin_write(0, seconds(1.0));
+    REQUIRE(w.has_value());
+    CHECK(w->bytes.size() == 64 + 4 * 3 * 2);
+    h->end_write(*w);
+    CHECK(h->begin_write(1, seconds(1.0)).error().code == status::range);
+    static_cast<void>(unlink(name));
+}

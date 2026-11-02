@@ -49,42 +49,6 @@ status parse(const table_builder &t, std::uint32_t entry, bool max_arrays = fals
     return table.parse(t.span(), {&entry, 1}, max_arrays);
 }
 
-// A max_array description of uint16 at most 2048 x 2048, or of the given dimensions and head size.
-void max_array(table_builder &t, std::vector<std::uint64_t> dims = {2048, 2048}, std::uint32_t size = 0,
-               std::uint8_t reserved = 0) {
-    std::uint64_t data = 2;
-    for (const std::uint64_t d : dims)
-        data *= d;
-    t.head(kind_max_array, 0, size != 0 ? size : static_cast<std::uint32_t>(64 + data));
-    t.put(dl_dtype{1, 16, 1});
-    t.put(static_cast<std::uint8_t>(dims.size()));
-    t.put(reserved);
-    t.put(std::uint16_t{0});
-    for (const std::uint64_t d : dims)
-        t.put(d);
-}
-
-// kind, holding a max_array of uint16 at most 2048 x 2048 as its one member.
-table_builder around_max_array(std::uint8_t kind) {
-    table_builder t;
-    const std::uint32_t data = 64 + 2048 * 2048 * 2;
-    // A record or tuple member starts at 0; an optional's follows its presence byte and a list's element its
-    // count, each padded to the alignment of 64.
-    const bool first = kind == kind_record || kind == kind_tuple;
-    t.head(kind, 1, first ? data : 64 + data);
-    if (kind == kind_list)
-        t.put(std::uint32_t{1});
-    const std::size_t entry = t.bytes.size();
-    t.entry(first ? 0 : 64, kind_max_array, 0);
-    if (kind == kind_record)
-        t.name("a");
-    t.pad();
-    const auto at = static_cast<std::uint32_t>(t.bytes.size());
-    max_array(t);
-    t.patch(entry + 4, entry_of(kind_max_array, at));
-    return t;
-}
-
 // A chain of n optionals around an int, each description after the one that refers to it. Level k from the
 // inside takes 8 + 8k bytes: a presence byte padded to 8, then the level below.
 table_builder optionals(int n) {
