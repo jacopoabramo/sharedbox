@@ -49,7 +49,8 @@ same name and reads the same values.
 ## 2. Create the box with a BoundedSet value
 
 A type checker expects a `BoundedSet` for this field, so build the initial
-value with `BoundedSet[int](values, capacity=n)`:
+value with `BoundedSet(int, values, capacity=n)`, which gives the element
+type first. `BoundedSet[int](values, capacity=n)` builds the same value:
 
 ```{.python}
 --8<-- "docs/examples/store_a_large_set_or_dict.py:create"
@@ -165,8 +166,8 @@ what every value needs in its elements.
 A [`BoundedDict[K, V]`][sharedbox.BoundedDict] does for a `dict[K, V]`
 field what a `BoundedSet` does for a set: a read copies the stored bytes,
 assigning it back copies them in one step, and a lookup encodes only the
-key it looks for. Declare and create it as the set above, with the
-capacity counting key and value pairs:
+key it looks for. Declare and create it as the set above, with the key
+and value types first and the capacity counting key and value pairs:
 
 ```{.python}
 --8<-- "docs/examples/store_a_large_set_or_dict.py:dict-declare"

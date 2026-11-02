@@ -15,11 +15,11 @@ to understand the ideas first, read
 `include/sharedbox/stream.hpp` implement this contract, and the Python
 extension runs on the first two.
 
-It describes core version 1.0, box layout 3.2 and stream layout 1.4. It
+It describes core version 1.0, box layout 3.3 and stream layout 1.4. It
 also opens box layout 3.0 and stream layout 1.0, which `sharedbox` 0.6.0
-writes, box layout 3.1 and stream layout 1.1, which 0.7.0 writes, and
-nothing older: box layouts 1.0 and 2.0, which 0.5 and earlier wrote, are
-refused.
+writes, box layout 3.1 and stream layout 1.1, which 0.7.0 writes, box
+layout 3.2, which 0.8.0 writes, and nothing older: box layouts 1.0 and
+2.0, which 0.5 and earlier wrote, are refused.
 
 ## Goal
 
@@ -162,8 +162,8 @@ box with three fields and 64 slots stays in one page up to about 1.8 KB of
 record (4096 - 2240 = 1856).
 
 - Versions: bytes 8 to 11 are `01 00 00 00` (core 1.0: `core_major` 1,
-  `core_minor` 0) and bytes 12 to 15 are `03 00 02 00` (box layout 3.2:
-  `kind_major` 3, `kind_minor` 2). The two versions count the segment
+  `core_minor` 0) and bytes 12 to 15 are `03 00 03 00` (box layout 3.3:
+  `kind_major` 3, `kind_minor` 3). The two versions count the segment
   format and are not tied to the package version.
 - Magic: `SBX_BOX_` for a box and `SBX_STRM` for a stream, each read as a
   little-endian `u64`. The magic names the kind, so attach checks it first.
@@ -302,9 +302,10 @@ Little-endian.
   stored value, each from 0 to its maximum, then zero bytes; the elements
   follow at offset 64, packed in C order for the stored dimensions. The
   bytes after them, up to the room for the maximum shape, keep what an older
-  item wrote. A reader checks each dimension against its maximum before it
-  copies any element. A dimension above it in a torn copy is retried like
-  any torn copy; in a stable copy it makes the value corrupt.
+  item or write left there. A reader checks each dimension against its
+  maximum before it copies any element. A dimension above it in a torn
+  copy is retried like any torn copy; in a stable copy it makes the value
+  corrupt.
 
 ### Descriptions
 
@@ -336,9 +337,9 @@ description implies is computed without overflow and matches the head; an
 array's code is one of 0, 1, 2, 4, 5, 6, its bits a multiple of 8 and every
 dimension at least 1. A failure refuses the segment. A reference may only
 be a field, and an array only a field, a record or tuple member, or the
-member of an optional. A `max_array` may only be a stream's item, or a
-record or tuple member reached from the item through records and tuples
-alone; a box, or a `max_array` under any other kind, is refused.
+member of an optional. A `max_array` may only be a box field or a stream's
+item, or a record or tuple member reached from one through records and
+tuples alone; a `max_array` under any other kind is refused.
 
 ### Decoding checks
 
@@ -352,6 +353,14 @@ value.
 
 Only a `bool` inside a described kind has to be 0 or 1. A `bool` field
 (kind 0) whose byte is not 0 reads as `True`.
+
+### Writing a max_array box field
+
+The bytes written for a `max_array` box field are its shape line and the
+elements that line counts, no more, so a box write of a small array
+copies only that array. A writer that sends any other length, or a line
+with a dimension above its maximum, gets `status::range` and the field
+keeps its value.
 
 ### Writing a list, set or dict
 
@@ -701,6 +710,9 @@ layout version of its kind, for the rest. Each has a major and a minor.
   `status::corrupt`, and opens a stream created without one. A segment that
   an older version created has `metadata` 0: a reader of 3.2 or 1.4 finds
   no metadata in it, and an add gives `status::metadata_full`.
+- Box layout 3.3 allows kind 75, `max_array`, as a box field and inside
+  one. A reader of box layout 3.2 or older refuses a box that has such a
+  field with `status::corrupt`, and opens a box of 3.3 that has none.
 - A change to how existing bytes are read or written raises a major: the
   core's (the common line, the object names, liveness) raises `core_major`,
   and a kind's own (the sequence lock, field encoding, the slot layout)
@@ -1289,7 +1301,7 @@ namespace sharedbox {
 inline namespace v3 {
 
 inline constexpr std::uint16_t core_major = 1, core_minor = 0;
-inline constexpr std::uint16_t layout_major = 3, layout_minor = 2;   // the box layout
+inline constexpr std::uint16_t layout_major = 3, layout_minor = 3;   // the box layout
 inline constexpr std::uint64_t box_magic = 0x5F584F425F584253;       // "SBX_BOX_"
 inline constexpr std::uint64_t stream_magic = 0x4D5254535F584253;    // "SBX_STRM"
 // Also: the layout constants handle_version, header_size, name_max, max_fields,
@@ -1836,7 +1848,7 @@ no Python-level export method.
   `sharedbox/sharedbox_c.cpp` in the installed package.
 - `sharedbox.SupportsSharedBox` is a `typing.Protocol` with
   `__sharedbox_box__`, for annotations in consuming libraries.
-- `sharedbox._native.LAYOUT_VERSION` is `(3, 2)`, the box layout.
+- `sharedbox._native.LAYOUT_VERSION` is `(3, 3)`, the box layout.
 
 ## Rust crate (deferred)
 

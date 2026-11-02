@@ -14,7 +14,7 @@ the layout and the native module converts values.
 sharedbox/
 |-- include/sharedbox/
 |   |-- core.hpp               what every segment kind uses: result and error, liveness, names, mappings, the open step, waiter slots, the type codec, the metadata area and its CBOR check
-|   |-- box.hpp                box layout 3.2 and its protocols: create, publish, open, lock, read, write, metadata, capsule handle
+|   |-- box.hpp                box layout 3.3 and its protocols: create, publish, open, lock, read, write, metadata, capsule handle
 |   |-- stream.hpp             stream layout 1.4: create, open, the sender, readers, the gate, dead ends, metadata
 |   |-- sharedbox.hpp          includes every kind; the header consumers include
 |   |-- sharedbox_c.h          minimal C interface: sbx_open, sbx_import, sbx_read, sbx_write, sbx_schema_hash, sbx_release, sbx_field_desc, typed sbx_read_* and sbx_write_*, sbx_metadata_head, sbx_read_metadata, sbx_add_metadata
@@ -99,7 +99,7 @@ sharedbox/
 |   |-- examples/              one script per how-to guide, included by the guide
 |   |-- javascripts/charts.js  draws each div of class sbx-chart from a plotly figure JSON file
 |   |-- assets/benchmarks/     the figure JSON files of the performance page, from benchbox plot
-|   `-- reference/segment-layout.md  core 1.0, box layout 3.2, stream layout 1.4, names and protocols
+|   `-- reference/segment-layout.md  core 1.0, box layout 3.3, stream layout 1.4, names and protocols
 |-- includes/abbreviations.md  acronym tooltips appended to every page
 |-- zensical.toml              site configuration and navigation
 |-- .github/workflows/ci.yaml  lint, docs check, C++ tests, cibuildwheel wheels, tests, stress,
@@ -143,11 +143,11 @@ class's identity (the `identity` class keyword, by default
 always asks for a new name and raises `SegmentExistsError` if it is taken.
 
 Every segment starts with the same 64-byte line, whatever its kind. Core
-version 1.0, box layout 3.2, from offset 0:
+version 1.0, box layout 3.3, from offset 0:
 
 - Common line 0, written once at creation: `magic` (`SBX_BOX_` for a box,
   `SBX_STRM` for a stream), `core_major` 1, `core_minor` 0, `kind_major` 3,
-  `kind_minor` 2, `schema_hash`, `create_id`, `creator_start`,
+  `kind_minor` 3, `schema_hash`, `create_id`, `creator_start`,
   `creator_pidns`, `creator_pid`, `waiter_slots`, `size`.
 - Box line 1, at offset 64: `seq` (sequence lock; the generation is
   `seq >> 1`, there is no generation field), `writer_pid`, `wake_word`,
@@ -165,7 +165,8 @@ version 1.0, box layout 3.2, from offset 0:
   which freeing a dead owner's slot takes back), then the description
   table of `types_size` bytes. Kinds are 0 to 5, 6 to 12 (fixed-size
   scalars), 13 to 23 (fixed-width numbers and `datetime64`) and 64 to 75
-  (described types; 75, an array up to a maximum shape, only in a stream).
+  (described types; 75, an array up to a maximum shape, in a stream item
+  or a box field, written as its shape line and the elements in use).
 - The record, at a multiple of 64. `record + record_size <= 2**32 - 4096`.
 - The metadata area, when `metadata` is not 0, at the first multiple of 64
   after the record, `metadata + metadata_size <= 2**32 - 4096`: a 64-byte

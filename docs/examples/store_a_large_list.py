@@ -15,7 +15,7 @@ class Recording(SharedBox, name="example-recording"):
 # --8<-- [end:declare]
 
 # --8<-- [start:create]
-recording = Recording(BoundedList[float]([0.0] * 50000, capacity=65536))
+recording = Recording(BoundedList(float, [0.0] * 50000, capacity=65536))
 # --8<-- [end:create]
 
 # --8<-- [start:change]
