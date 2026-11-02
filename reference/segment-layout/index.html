@@ -2615,6 +2615,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#writing-a-max_array-box-field" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Writing a max_array box field
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#writing-a-list-set-or-dict" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -3607,6 +3618,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#writing-a-max_array-box-field" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Writing a max_array box field
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#writing-a-list-set-or-dict" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -4025,11 +4047,11 @@ to understand the ideas first, read
 <code>include/sharedbox/core.hpp</code>, <code>include/sharedbox/box.hpp</code> and
 <code>include/sharedbox/stream.hpp</code> implement this contract, and the Python
 extension runs on the first two.</p>
-<p>It describes core version 1.0, box layout 3.2 and stream layout 1.4. It
+<p>It describes core version 1.0, box layout 3.3 and stream layout 1.4. It
 also opens box layout 3.0 and stream layout 1.0, which <code>sharedbox</code> 0.6.0
-writes, box layout 3.1 and stream layout 1.1, which 0.7.0 writes, and
-nothing older: box layouts 1.0 and 2.0, which 0.5 and earlier wrote, are
-refused.</p>
+writes, box layout 3.1 and stream layout 1.1, which 0.7.0 writes, box
+layout 3.2, which 0.8.0 writes, and nothing older: box layouts 1.0 and
+2.0, which 0.5 and earlier wrote, are refused.</p>
 <h2 id="goal">Goal<a class="headerlink" href="#goal" title="Permanent link">&para;</a></h2>
 <p>C++ and C code can use a sharedbox box, both as an extension loaded in a
 Python process and as a standalone program with no Python, without linking
@@ -4243,8 +4265,8 @@ box with three fields and 64 slots stays in one page up to about 1.8 KB of
 record (4096 - 2240 = 1856).</p>
 <ul>
 <li>Versions: bytes 8 to 11 are <code>01 00 00 00</code> (core 1.0: <code>core_major</code> 1,
-  <code>core_minor</code> 0) and bytes 12 to 15 are <code>03 00 02 00</code> (box layout 3.2:
-  <code>kind_major</code> 3, <code>kind_minor</code> 2). The two versions count the segment
+  <code>core_minor</code> 0) and bytes 12 to 15 are <code>03 00 03 00</code> (box layout 3.3:
+  <code>kind_major</code> 3, <code>kind_minor</code> 3). The two versions count the segment
   format and are not tied to the package version.</li>
 <li>Magic: <code>SBX_BOX_</code> for a box and <code>SBX_STRM</code> for a stream, each read as a
   little-endian <code>u64</code>. The magic names the kind, so attach checks it first.
@@ -4565,9 +4587,10 @@ it does not know. Every described size is a multiple of its alignment.</p>
   stored value, each from 0 to its maximum, then zero bytes; the elements
   follow at offset 64, packed in C order for the stored dimensions. The
   bytes after them, up to the room for the maximum shape, keep what an older
-  item wrote. A reader checks each dimension against its maximum before it
-  copies any element. A dimension above it in a torn copy is retried like
-  any torn copy; in a stable copy it makes the value corrupt.</li>
+  item or write left there. A reader checks each dimension against its
+  maximum before it copies any element. A dimension above it in a torn
+  copy is retried like any torn copy; in a stable copy it makes the value
+  corrupt.</li>
 </ul>
 <h3 id="descriptions">Descriptions<a class="headerlink" href="#descriptions" title="Permanent link">&para;</a></h3>
 <p>The description table follows the waiter slots. Each description is an
@@ -4649,9 +4672,9 @@ description implies is computed without overflow and matches the head; an
 array's code is one of 0, 1, 2, 4, 5, 6, its bits a multiple of 8 and every
 dimension at least 1. A failure refuses the segment. A reference may only
 be a field, and an array only a field, a record or tuple member, or the
-member of an optional. A <code>max_array</code> may only be a stream's item, or a
-record or tuple member reached from the item through records and tuples
-alone; a box, or a <code>max_array</code> under any other kind, is refused.</p>
+member of an optional. A <code>max_array</code> may only be a box field or a stream's
+item, or a record or tuple member reached from one through records and
+tuples alone; a <code>max_array</code> under any other kind is refused.</p>
 <h3 id="decoding-checks">Decoding checks<a class="headerlink" href="#decoding-checks" title="Permanent link">&para;</a></h3>
 <p>A stable sequence number shows a copy is consistent, not that it holds a
 value Python can have. Readers check presence bytes and <code>bool</code> (0 or 1),
@@ -4662,6 +4685,12 @@ and timedeltas (within Python's range), and treat a failure as a corrupt
 value.</p>
 <p>Only a <code>bool</code> inside a described kind has to be 0 or 1. A <code>bool</code> field
 (kind 0) whose byte is not 0 reads as <code>True</code>.</p>
+<h3 id="writing-a-max_array-box-field">Writing a max_array box field<a class="headerlink" href="#writing-a-max_array-box-field" title="Permanent link">&para;</a></h3>
+<p>The bytes written for a <code>max_array</code> box field are its shape line and the
+elements that line counts, no more, so a box write of a small array
+copies only that array. A writer that sends any other length, or a line
+with a dimension above its maximum, gets <code>status::range</code> and the field
+keeps its value.</p>
 <h3 id="writing-a-list-set-or-dict">Writing a list, set or dict<a class="headerlink" href="#writing-a-list-set-or-dict" title="Permanent link">&para;</a></h3>
 <p>The bytes written for a list, set or dict field are its length and the
 slots it uses, shorter than the field when it is not full; a reader copies
@@ -5048,6 +5077,11 @@ layout version of its kind, for the rest. Each has a major and a minor.</p>
   <code>status::corrupt</code>, and opens a stream created without one. A segment that
   an older version created has <code>metadata</code> 0: a reader of 3.2 or 1.4 finds
   no metadata in it, and an add gives <code>status::metadata_full</code>.</li>
+<li>Box layout 3.3 allows kind 75, <code>max_array</code>, as a box field and inside
+  one. A reader of box layout 3.2 refuses a box that has such a field with
+  <code>status::corrupt</code>. A reader of 3.1 or older opens a box whose <code>max_array</code>
+  is a field, as a field of a kind it does not know, and refuses one inside
+  a record or tuple. Every older reader opens a box of 3.3 that has none.</li>
 <li>A change to how existing bytes are read or written raises a major: the
   core's (the common line, the object names, liveness) raises <code>core_major</code>,
   and a kind's own (the sequence lock, field encoding, the slot layout)
@@ -5618,7 +5652,7 @@ Windows.</p>
 </span><span id="__span-9-2"><a id="__codelineno-9-2" name="__codelineno-9-2" href="#__codelineno-9-2"></a><span class="kr">inline</span><span class="w"> </span><span class="k">namespace</span><span class="w"> </span><span class="nn">v3</span><span class="w"> </span><span class="p">{</span>
 </span><span id="__span-9-3"><a id="__codelineno-9-3" name="__codelineno-9-3" href="#__codelineno-9-3"></a>
 </span><span id="__span-9-4"><a id="__codelineno-9-4" name="__codelineno-9-4" href="#__codelineno-9-4"></a><span class="kr">inline</span><span class="w"> </span><span class="k">constexpr</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">core_major</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span><span class="w"> </span><span class="n">core_minor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">0</span><span class="p">;</span>
-</span><span id="__span-9-5"><a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="kr">inline</span><span class="w"> </span><span class="k">constexpr</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">layout_major</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">3</span><span class="p">,</span><span class="w"> </span><span class="n">layout_minor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">2</span><span class="p">;</span><span class="w">   </span><span class="c1">// the box layout</span>
+</span><span id="__span-9-5"><a id="__codelineno-9-5" name="__codelineno-9-5" href="#__codelineno-9-5"></a><span class="kr">inline</span><span class="w"> </span><span class="k">constexpr</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">layout_major</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">3</span><span class="p">,</span><span class="w"> </span><span class="n">layout_minor</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">3</span><span class="p">;</span><span class="w">   </span><span class="c1">// the box layout</span>
 </span><span id="__span-9-6"><a id="__codelineno-9-6" name="__codelineno-9-6" href="#__codelineno-9-6"></a><span class="kr">inline</span><span class="w"> </span><span class="k">constexpr</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">uint64_t</span><span class="w"> </span><span class="n">box_magic</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mh">0x5F584F425F584253</span><span class="p">;</span><span class="w">       </span><span class="c1">// "SBX_BOX_"</span>
 </span><span id="__span-9-7"><a id="__codelineno-9-7" name="__codelineno-9-7" href="#__codelineno-9-7"></a><span class="kr">inline</span><span class="w"> </span><span class="k">constexpr</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">uint64_t</span><span class="w"> </span><span class="n">stream_magic</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mh">0x4D5254535F584253</span><span class="p">;</span><span class="w">    </span><span class="c1">// "SBX_STRM"</span>
 </span><span id="__span-9-8"><a id="__codelineno-9-8" name="__codelineno-9-8" href="#__codelineno-9-8"></a><span class="c1">// Also: the layout constants handle_version, header_size, name_max, max_fields,</span>
@@ -6154,7 +6188,7 @@ no Python-level export method.</p>
   <code>sharedbox/sharedbox_c.cpp</code> in the installed package.</li>
 <li><code>sharedbox.SupportsSharedBox</code> is a <code>typing.Protocol</code> with
   <code>__sharedbox_box__</code>, for annotations in consuming libraries.</li>
-<li><code>sharedbox._native.LAYOUT_VERSION</code> is <code>(3, 2)</code>, the box layout.</li>
+<li><code>sharedbox._native.LAYOUT_VERSION</code> is <code>(3, 3)</code>, the box layout.</li>
 </ul>
 <h2 id="rust-crate-deferred">Rust crate (deferred)<a class="headerlink" href="#rust-crate-deferred" title="Permanent link">&para;</a></h2>
 <p>A Rust crate is not part of this release. It will be a safe layer over

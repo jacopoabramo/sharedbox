@@ -7,7 +7,7 @@ from typing import Annotated
 import numpy as np
 import numpy.typing as npt
 
-from sharedbox import DType, Shape, SharedBox, SupportsDLPack, field
+from sharedbox import DType, MaxShape, Shape, SharedBox, SupportsDLPack, field
 
 
 class Scanner(SharedBox, name="example-scanner"):
@@ -54,6 +54,23 @@ with scanner.writing("scan") as scan:
 print(int(scanner.scan[0].sum()))  # 1530
 # --8<-- [end:writing]
 
+
+# --8<-- [start:max-shape]
+class Sorter(SharedBox, name="example-sorter"):
+    label: Annotated[npt.NDArray[np.uint8], MaxShape((8, 12))] = np.zeros(
+        (0, 12), np.uint8
+    )
+
+
+sorter = Sorter()
+print(sorter.label.shape)  # (0, 12)
+sorter.label = np.ones((3, 12), np.uint8)
+print(sorter.label.shape)  # (3, 12)
+with sorter.writing("label", shape=(5, 12)) as label:
+    label[:] = 2
+print(sorter.label.shape, int(sorter.label.sum()))  # (5, 12) 120
+# --8<-- [end:max-shape]
+
 # --8<-- [start:any-library]
 raw = scanner.raw
 print(np.from_dlpack(raw))  # [0. 0. 0.]
@@ -85,5 +102,7 @@ scanner.close()
 Scanner.unlink()
 tray.close()
 Tray.unlink()
+sorter.close()
+Sorter.unlink()
 binder.close()
 Binder.unlink()

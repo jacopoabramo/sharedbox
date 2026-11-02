@@ -13,7 +13,7 @@ class Catalogue(SharedBox, name="example-catalogue"):
 # --8<-- [end:declare]
 
 # --8<-- [start:create]
-catalogue = Catalogue(BoundedSet[int](range(50000), capacity=65536))
+catalogue = Catalogue(BoundedSet(int, range(50000), capacity=65536))
 # --8<-- [end:create]
 
 # --8<-- [start:change]
@@ -80,7 +80,7 @@ class Scores(SharedBox, name="example-scores"):
     by_id: Annotated[BoundedDict[int, float], Capacity(4096)]
 
 
-scores = Scores(BoundedDict[int, float](dict.fromkeys(range(3000), 1.0), capacity=4096))
+scores = Scores(BoundedDict(int, float, dict.fromkeys(range(3000), 1.0), capacity=4096))
 by_id = scores.by_id
 print(by_id[2999], by_id.get(5000), 5000 in by_id)  # 1.0 None False
 # --8<-- [end:dict-declare]

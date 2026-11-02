@@ -3375,7 +3375,7 @@
   &lt;span class=&quot;doc doc-labels&quot;&gt;
       &lt;small class=&quot;doc doc-label doc-label-dataclass&quot;&gt;&lt;code&gt;dataclass&lt;/code&gt;&lt;/small&gt;
   &lt;/span&gt;" href="./#sharedbox.MaxShape"><code>MaxShape</code></a></td>
-<td>the largest dimensions of an array in a stream item, which stores its own shape with each item</td>
+<td>the largest dimensions of an array in a stream item or a box field, which stores its own shape with each value</td>
 </tr>
 <tr>
 <td><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;DType&lt;/span&gt;" href="./#sharedbox.DType"><code>DType</code></a></td>
@@ -3495,7 +3495,7 @@ must have as many.</p>
 
 
 
-        <p>Largest dimensions of an array in a stream item, whose own shape each item stores.</p>
+        <p>Largest dimensions of an array in a box field or a stream item, whose own shape each value stores.</p>
 <p>It goes in the annotation, as in
 <code>Annotated[numpy.ndarray, MaxShape((2048, 2048)), DType("uint16")]</code>, and
 an array takes a <code>MaxShape</code> or a <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;Shape&lt;/span&gt;
@@ -3504,10 +3504,10 @@ an array takes a <code>MaxShape</code> or a <a class="autorefs autorefs-internal
   &lt;span class=&quot;doc doc-labels&quot;&gt;
       &lt;small class=&quot;doc doc-label doc-label-dataclass&quot;&gt;&lt;code&gt;dataclass&lt;/code&gt;&lt;/small&gt;
   &lt;/span&gt;" href="./#sharedbox.Shape"><code>Shape</code></a>, not both.
-An item may hold the array as the item itself or as a member of a record
-or tuple, at any depth, and each value sent has as many dimensions as
-the <code>MaxShape</code>, each from 0 to its maximum. A box field and a member of
-an optional, union or collection cannot hold one.</p>
+A box field or a stream item may hold the array as the field or item
+itself or as a member of a record or tuple, at any depth, and each value
+written has as many dimensions as the <code>MaxShape</code>, each from 0 to its
+maximum. A member of an optional, union or collection cannot hold one.</p>
 
 
 <p><span class="doc-section-title">Raises:</span></p>
