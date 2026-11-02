@@ -92,7 +92,7 @@ class BoundedList(NativeCollection[T]):
     def __init__(
         self: BoundedList[Any],
         element: object,
-        values: Iterable[Any] = (),
+        values: Iterable[Any],
         /,
         *,
         capacity: int,
@@ -203,7 +203,7 @@ class BoundedSet(NativeSet[T]):
     def __init__(
         self: BoundedSet[Any],
         element: object,
-        values: Iterable[Any] = (),
+        values: Iterable[Any],
         /,
         *,
         capacity: int,
@@ -310,7 +310,7 @@ class BoundedDict(NativeDict[K, V]):
         self: BoundedDict[Any, Any],
         key: object,
         value: object,
-        values: Mapping[Any, Any] | Iterable[tuple[Any, Any]] = (),
+        values: Mapping[Any, Any] | Iterable[tuple[Any, Any]],
         /,
         *,
         capacity: int,

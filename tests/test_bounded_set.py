@@ -460,7 +460,7 @@ def test_a_bounded_set_is_built_outside_a_box() -> None:
     ):
         BoundedSet[int]([1, 2, 3], capacity=2)
     with pytest.raises(TypeError, match=r"BoundedSet\[int\] expects int, got str"):
-        BoundedSet[int](["x"], capacity=4)
+        BoundedSet[int](["x"], capacity=4)  # type: ignore[list-item]
     with pytest.raises(TypeError, match=r"BoundedSet\[int\]\(values, capacity=n\)"):
         BoundedSet([1], capacity=4)
 

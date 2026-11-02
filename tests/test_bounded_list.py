@@ -473,7 +473,7 @@ def test_a_bounded_list_is_built_outside_a_box() -> None:
     with pytest.raises(ValueError, match=r"BoundedList\[float\] holds at most 4"):
         BoundedList[float]([1.0] * 5, capacity=4)
     with pytest.raises(TypeError, match=r"BoundedList\[float\] expects float"):
-        BoundedList[float](["x"], capacity=4)
+        BoundedList[float](["x"], capacity=4)  # type: ignore[list-item]
     with pytest.raises(TypeError, match=r"BoundedList\[float\]\(values, capacity=n\)"):
         BoundedList([1.0], capacity=4)
 
