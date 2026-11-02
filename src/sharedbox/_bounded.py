@@ -5,7 +5,7 @@ from __future__ import annotations
 import functools
 import types
 from collections.abc import Iterable, Mapping
-from typing import Annotated, Any, Self, TypeVar, cast
+from typing import Annotated, Any, Self, TypeVar, cast, get_origin, overload
 
 from ._layout import Capacity
 from ._native import NativeCollection, NativeDict, NativeSet, Types
@@ -28,7 +28,8 @@ class BoundedList(NativeCollection[T]):
     leave more elements than the capacity raises `ValueError` and leaves
     the value as it was.
 
-    `BoundedList[T](values, capacity=n)` builds one outside a box. Copies,
+    `BoundedList(int, values, capacity=n)` or
+    `BoundedList[int](values, capacity=n)` builds one outside a box. Copies,
     slices, `+` and `*` keep the class, the element type and the capacity,
     and a pickled value is rebuilt from them and its bytes.
 
@@ -51,17 +52,17 @@ class BoundedList(NativeCollection[T]):
 
     def __new__(
         cls,
-        values: Iterable[T] = (),
+        values: Any = (),
         *args: Any,
         capacity: int,
         **kwargs: Any,
     ) -> Self:
-        """Build a value of `capacity` holding `values`, of the element type `cls` fixes.
+        """Build a value of `capacity` holding `values`, of the element type `cls` fixes or the first argument gives.
 
         Other arguments are left to `__init__`, as `list.__new__` leaves
         them, so a subclass's `__init__` may take more. It receives the same
-        `values` object after `__new__` has consumed it, so a generator
-        arrives empty.
+        arguments after `__new__` has consumed them, so a generator arrives
+        empty.
 
         Raises
         ------
@@ -71,9 +72,33 @@ class BoundedList(NativeCollection[T]):
         ValueError
             If an element does not fit, or there are more than `capacity`.
         """
-        return _build(cls, _element(cls), values, capacity)
+        element, items = _split(cls, values, args)
+        return _build(cls, element, items, capacity)
 
-    def __init__(self, values: Iterable[T] = (), *, capacity: int) -> None:
+    @overload
+    def __init__(
+        self: BoundedList[T],
+        element: type[T],
+        values: Iterable[T] = (),
+        /,
+        *,
+        capacity: int,
+    ) -> None: ...
+
+    @overload
+    def __init__(self, values: Iterable[T] = (), *, capacity: int) -> None: ...
+
+    @overload
+    def __init__(
+        self: BoundedList[Any],
+        element: object,
+        values: Iterable[Any] = (),
+        /,
+        *,
+        capacity: int,
+    ) -> None: ...
+
+    def __init__(self, values: Any = (), *args: Any, capacity: int) -> None:
         """Do nothing; `__new__` has built the value."""
 
     def __class_getitem__(cls, element: object) -> types.GenericAlias:
@@ -130,22 +155,25 @@ class BoundedSet(NativeSet[T]):
     type fixed as `class Tags(BoundedSet[int])`. A read from a box calls
     neither `__new__` nor `__init__`. `copy.copy`, `copy.deepcopy` and
     pickling keep a subclass's attributes, as for a `set` subclass.
+
+    `BoundedSet(int, values, capacity=n)` or
+    `BoundedSet[int](values, capacity=n)` builds one outside a box.
     """
 
     __slots__ = ()
 
     def __new__(
         cls,
-        values: Iterable[T] = (),
+        values: Any = (),
         *args: Any,
         capacity: int,
         **kwargs: Any,
     ) -> Self:
-        """Build a value of `capacity` holding `values`, of the element type `cls` fixes.
+        """Build a value of `capacity` holding `values`, of the element type `cls` fixes or the first argument gives.
 
         Other arguments are left to `__init__`, so a subclass's `__init__`
-        may take more. It receives the same `values` object after `__new__`
-        has consumed it, so a generator arrives empty.
+        may take more. It receives the same arguments after `__new__` has
+        consumed them, so a generator arrives empty.
 
         Raises
         ------
@@ -155,9 +183,33 @@ class BoundedSet(NativeSet[T]):
         ValueError
             If an element does not fit, or there are more than `capacity`.
         """
-        return _build(cls, _element(cls), values, capacity)
+        element, items = _split(cls, values, args)
+        return _build(cls, element, items, capacity)
 
-    def __init__(self, values: Iterable[T] = (), *, capacity: int) -> None:
+    @overload
+    def __init__(
+        self: BoundedSet[T],
+        element: type[T],
+        values: Iterable[T] = (),
+        /,
+        *,
+        capacity: int,
+    ) -> None: ...
+
+    @overload
+    def __init__(self, values: Iterable[T] = (), *, capacity: int) -> None: ...
+
+    @overload
+    def __init__(
+        self: BoundedSet[Any],
+        element: object,
+        values: Iterable[Any] = (),
+        /,
+        *,
+        capacity: int,
+    ) -> None: ...
+
+    def __init__(self, values: Any = (), *args: Any, capacity: int) -> None:
         """Do nothing; `__new__` has built the value."""
 
     def __class_getitem__(cls, element: object) -> types.GenericAlias:
@@ -202,22 +254,25 @@ class BoundedDict(NativeDict[K, V]):
     read from a box calls neither `__new__` nor `__init__`. `copy.copy`,
     `copy.deepcopy` and pickling keep a subclass's attributes, as for a
     `dict` subclass.
+
+    `BoundedDict(int, float, values, capacity=n)` or
+    `BoundedDict[int, float](values, capacity=n)` builds one outside a box.
     """
 
     __slots__ = ()
 
     def __new__(
         cls,
-        values: Mapping[K, V] | Iterable[tuple[K, V]] = (),
+        values: Any = (),
         *args: Any,
         capacity: int,
         **kwargs: Any,
     ) -> Self:
-        """Build a value of `capacity` holding `values`, a mapping or pairs, of the key and value types `cls` fixes.
+        """Build a value of `capacity` holding `values`, a mapping or pairs, of the key and value types `cls` fixes or the first two arguments give.
 
         Other arguments are left to `__init__`, so a subclass's `__init__`
-        may take more. It receives the same `values` object after `__new__`
-        has consumed it, so a generator arrives empty.
+        may take more. It receives the same arguments after `__new__` has
+        consumed them, so a generator arrives empty.
 
         Raises
         ------
@@ -228,14 +283,40 @@ class BoundedDict(NativeDict[K, V]):
             If a key or value does not fit, or there are more than
             `capacity` keys.
         """
-        return _build(cls, _element(cls), values, capacity)
+        element, items = _split(cls, values, args)
+        return _build(cls, element, items, capacity)
 
+    @overload
+    def __init__(
+        self: BoundedDict[K, V],
+        key: type[K],
+        value: type[V],
+        values: Mapping[K, V] | Iterable[tuple[K, V]] = (),
+        /,
+        *,
+        capacity: int,
+    ) -> None: ...
+
+    @overload
     def __init__(
         self,
         values: Mapping[K, V] | Iterable[tuple[K, V]] = (),
         *,
         capacity: int,
-    ) -> None:
+    ) -> None: ...
+
+    @overload
+    def __init__(
+        self: BoundedDict[Any, Any],
+        key: object,
+        value: object,
+        values: Mapping[Any, Any] | Iterable[tuple[Any, Any]] = (),
+        /,
+        *,
+        capacity: int,
+    ) -> None: ...
+
+    def __init__(self, values: Any = (), *args: Any, capacity: int) -> None:
         """Do nothing; `__new__` has built the value."""
 
     def __class_getitem__(cls, params: object) -> types.GenericAlias:
@@ -279,6 +360,25 @@ def _element(hint: object) -> object:
     return args[0] if len(args) == 1 else args
 
 
+def _is_type(hint: object) -> bool:
+    return isinstance(hint, type) or get_origin(hint) is not None
+
+
+def _split(
+    cls: type, values: object, args: tuple[Any, ...]
+) -> tuple[object, Iterable[Any]]:
+    """Return the element type of `cls` or of the leading arguments, and the values; the type is None when there is none."""
+    fixed = _element(cls)
+    if fixed is not None:
+        return fixed, cast("Iterable[Any]", values)
+    mapping = issubclass(cls, NativeDict)
+    leading = (values, *args[:1]) if mapping else (values,)
+    if len(leading) < (2 if mapping else 1) or not all(map(_is_type, leading)):
+        return None, ()
+    given = _element(_parametrise(cls, leading if mapping else values))
+    return given, args[len(leading) - 1] if len(args) >= len(leading) else ()
+
+
 def _parametrise(cls: type, element: object) -> types.GenericAlias:
     """Return `cls` with its element type, or a dict's key and value types, `element`, as `__class_getitem__` does."""
     mapping = issubclass(cls, NativeDict)
@@ -315,7 +415,8 @@ def _build(cls: type[C], element: object, values: Iterable[Any], capacity: int) 
         example = "float" if listed else "int, float" if mapping else "int"
         raise TypeError(
             f"{cls.__name__} needs its {needs}, as in"
-            f" {cls.__name__}[{example}](values, capacity=n)"
+            f" {cls.__name__}({example}, values, capacity=n)"
+            f" or {cls.__name__}[{example}](values, capacity=n)"
         )
     codec, empty = _codec(cls, element, capacity)
     value: Any = codec.decode(0, bytes(empty))

@@ -460,7 +460,7 @@ def test_a_bounded_set_is_built_outside_a_box() -> None:
     ):
         BoundedSet[int]([1, 2, 3], capacity=2)
     with pytest.raises(TypeError, match=r"BoundedSet\[int\] expects int, got str"):
-        BoundedSet[int](["x"], capacity=4)  # type: ignore[list-item]
+        BoundedSet[int](["x"], capacity=4)
     with pytest.raises(TypeError, match=r"BoundedSet\[int\]\(values, capacity=n\)"):
         BoundedSet([1], capacity=4)
 
@@ -871,3 +871,27 @@ def test_a_value_is_its_own_operand() -> None:
     assert not value < value  # noqa: PLR0124
     value ^= value
     assert value == set()
+
+
+def test_the_element_type_as_first_argument_builds_the_same_value() -> None:
+    """Build the same value from the element type as the first argument as from the subscripted class."""
+    value = BoundedSet(Name, {"a"}, capacity=4)
+    assert value == BoundedSet[Name]({"a"}, capacity=4)
+    assert repr(value) == repr(BoundedSet[Name]({"a"}, capacity=4))
+    copied = pickle.loads(pickle.dumps(value))
+    assert copied == value
+    assert repr(copied) == repr(value)
+    assert BoundedSet(Annotated[str, Capacity(8)], {"a"}, capacity=2) == {"a"}
+    assert BoundedSet(int, capacity=2) == set()
+
+
+def test_a_missing_type_is_reported_with_both_forms() -> None:
+    """Name both constructor forms when the element type is missing."""
+    with pytest.raises(
+        TypeError, match=re.escape("BoundedSet(int, values, capacity=n)")
+    ):
+        BoundedSet({1}, capacity=4)
+    with pytest.raises(
+        TypeError, match=re.escape("BoundedSet[int](values, capacity=n)")
+    ):
+        BoundedSet(capacity=4)

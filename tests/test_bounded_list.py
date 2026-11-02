@@ -5,6 +5,7 @@ import enum
 import gc
 import pickle
 import queue
+import re
 import threading
 import weakref
 from dataclasses import dataclass, make_dataclass
@@ -472,7 +473,7 @@ def test_a_bounded_list_is_built_outside_a_box() -> None:
     with pytest.raises(ValueError, match=r"BoundedList\[float\] holds at most 4"):
         BoundedList[float]([1.0] * 5, capacity=4)
     with pytest.raises(TypeError, match=r"BoundedList\[float\] expects float"):
-        BoundedList[float](["x"], capacity=4)  # type: ignore[list-item]
+        BoundedList[float](["x"], capacity=4)
     with pytest.raises(TypeError, match=r"BoundedList\[float\]\(values, capacity=n\)"):
         BoundedList([1.0], capacity=4)
 
@@ -672,8 +673,16 @@ def test_a_subclass_is_built_copied_and_combined_as_itself(cls: Any) -> None:
 @pytest.mark.parametrize("cls", [BoundedList, MyList])
 def test_a_class_without_its_element_type_is_refused(cls: Any) -> None:
     """Refuse to build or declare BoundedList or a generic subclass without an element type."""
-    with pytest.raises(TypeError, match=rf"{cls.__name__} needs its element type"):
+    with pytest.raises(
+        TypeError,
+        match=re.escape(f"{cls.__name__}(float, values, capacity=n)"),
+    ):
         cls([1.0], capacity=4)
+    with pytest.raises(
+        TypeError,
+        match=re.escape(f"{cls.__name__}[float](values, capacity=n)"),
+    ):
+        cls(capacity=4)
     with pytest.raises(TypeError, match=rf"T.x: {cls.__name__} needs its element type"):
         build_layout(make(Annotated[cls, Capacity(4)]))
 
@@ -942,3 +951,38 @@ def test_exporting_a_bounded_list_that_was_never_built_raises() -> None:
     """Raise TypeError when a BoundedList made by the native __new__ alone is exported."""
     with pytest.raises(TypeError, match="never built"):
         memoryview(NativeCollection.__new__(BoundedList))
+
+
+def test_the_element_type_as_first_argument_builds_the_same_value() -> None:
+    """Build the same value from the element type as the first argument as from the subscripted class."""
+    value = BoundedList(int, [1, 2], capacity=4)
+    assert value == BoundedList[int]([1, 2], capacity=4)
+    assert repr(value) == repr(BoundedList[int]([1, 2], capacity=4))
+    copied = pickle.loads(pickle.dumps(value))
+    assert copied == value
+    assert repr(copied) == repr(value)
+    assert BoundedList(Annotated[str, Capacity(8)], ["a"], capacity=2) == ["a"]
+    assert BoundedList(int, capacity=2) == []
+
+
+def test_a_subclass_init_receives_the_type() -> None:
+    """Pass the element type and the values on to a subclass's __init__."""
+
+    class Received(BoundedList[T]):
+        def __init__(self, *args: Any, capacity: int) -> None:
+            self.received = args
+
+    assert Received(int, [1], capacity=2).received == (int, [1])
+
+
+@pytest.mark.parametrize("args", [([1.0],), ()])
+def test_a_missing_type_is_still_reported(args: tuple[Any, ...]) -> None:
+    """Report the missing element type when the first argument is not a type."""
+    with pytest.raises(TypeError, match="BoundedList needs its element type"):
+        BoundedList(*args, capacity=4)
+
+
+def test_values_by_keyword_still_builds_a_fixed_class() -> None:
+    """Build a class that fixes its type from values given by keyword."""
+    assert Points(values=[1.0], capacity=4) == [1.0]
+    assert BoundedList[float](values=[1.0], capacity=4) == [1.0]

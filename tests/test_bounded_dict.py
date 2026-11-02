@@ -726,3 +726,29 @@ def test_a_new_key_fits_where_forged_duplicates_fill_the_capacity() -> None:
     defaulted = forged(items)
     assert defaulted.setdefault(99, 1.0) == 1.0
     assert defaulted[99] == 1.0
+
+
+def test_the_element_type_as_first_argument_builds_the_same_value() -> None:
+    """Build the same value from the key and value types as the first arguments as from the subscripted class."""
+    value = BoundedDict(Name, float, {"a": 1.0}, capacity=8)
+    assert value == BoundedDict[Name, float]({"a": 1.0}, capacity=8)
+    assert repr(value) == repr(BoundedDict[Name, float]({"a": 1.0}, capacity=8))
+    copied = pickle.loads(pickle.dumps(value))
+    assert copied == value
+    assert repr(copied) == repr(value)
+    assert BoundedDict(Annotated[str, Capacity(8)], float, {"a": 1.0}, capacity=2) == {
+        "a": 1.0
+    }
+    assert BoundedDict(Name, float, capacity=2) == {}
+
+
+def test_a_missing_type_is_reported_with_both_forms() -> None:
+    """Name both constructor forms when the key and value types are missing."""
+    with pytest.raises(
+        TypeError, match=re.escape("BoundedDict(int, float, values, capacity=n)")
+    ):
+        BoundedDict({1: 1.0}, capacity=4)
+    with pytest.raises(
+        TypeError, match=re.escape("BoundedDict[int, float](values, capacity=n)")
+    ):
+        BoundedDict(capacity=4)
