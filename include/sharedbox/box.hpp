@@ -309,8 +309,9 @@ public:
     [[nodiscard]] result<std::uint64_t> lock(seconds lock_timeout);
     void unlock(std::uint64_t locked) noexcept;
     // Takes the write lock and returns the bytes of an array field for writing in place, with the seq to end
-    // with. status::range for a field past field_count() or of another kind. Readers in every process retry
-    // until end_write.
+    // with. For a max_array field the bytes start with the shape line, which the caller must keep within
+    // the maximum, since begin_write skips values_ok. status::range for a field past field_count() or of another
+    // kind. Readers in every process retry until end_write.
     [[nodiscard]] result<field_write> begin_write(std::uint16_t field, seconds lock_timeout);
     // Adds one to the field's write count, releases the lock begin_write took and wakes waiters.
     void end_write(const field_write &w) noexcept;

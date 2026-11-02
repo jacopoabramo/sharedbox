@@ -983,7 +983,7 @@ class type_table {
 public:
     // Copies table and checks it with the field entries, capacity_and_kind as stored. max_arrays lets a
     // max_array be an entry's type, or a member reached from one through records and tuples alone, as a
-    // stream item's table may hold it. On failure the table is left empty.
+    // stream item's or a box's table may hold it. On failure the table is left empty.
     status parse(std::span<const std::byte> table, std::span<const std::uint32_t> entries,
                  bool max_arrays = false) noexcept;
     status copy(type_table &out) const noexcept {

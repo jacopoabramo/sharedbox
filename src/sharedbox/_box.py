@@ -1204,8 +1204,9 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
         [`MaxShape`][sharedbox.MaxShape] field the array has the stored
         shape, or `shape` when given, which is stored under the same lock,
         so a watcher never sees a new shape with old data. When the view is
-        larger than the stored shape, the elements past the stored ones hold
-        whatever an earlier, larger write left there. Leaving the
+        larger than the stored shape, the part past the stored elements,
+        counted in C order, holds what an earlier and larger write left, so
+        fill all of the view. Leaving the
         block releases the lock, counts the write and wakes watchers, also
         when the block raises, since the bytes have already changed.
         While the block runs, reads and writes of the box in every process

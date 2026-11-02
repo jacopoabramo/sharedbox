@@ -218,7 +218,7 @@ def define_with_option() -> None:
 )
 def test_max_shape_is_refused_in_a_box_where_a_stream_refuses_it(define: Any) -> None:
     """Raise TypeError at class definition for MaxShape under an optional, union or list, or with a Shape."""
-    with pytest.raises(TypeError):
+    with pytest.raises(TypeError, match="MaxShape|union member"):
         define()
 
 
