@@ -975,14 +975,20 @@ def test_a_subclass_init_receives_the_type() -> None:
     assert Received(int, [1], capacity=2).received == (int, [1])
 
 
-@pytest.mark.parametrize("args", [([1.0],), ()])
-def test_a_missing_type_is_still_reported(args: tuple[Any, ...]) -> None:
-    """Report the missing element type when the first argument is not a type."""
-    with pytest.raises(TypeError, match="BoundedList needs its element type"):
-        BoundedList(*args, capacity=4)
-
-
 def test_values_by_keyword_still_builds_a_fixed_class() -> None:
     """Build a class that fixes its type from values given by keyword."""
     assert Points(values=[1.0], capacity=4) == [1.0]
     assert BoundedList[float](values=[1.0], capacity=4) == [1.0]
+
+
+@pytest.mark.parametrize(
+    "build",
+    [
+        lambda: BoundedList[int]([1], [2], capacity=4),
+        lambda: BoundedList(int, [1], [2], capacity=4),  # type: ignore[call-overload]
+    ],
+)
+def test_extra_positional_arguments_are_refused(build: Any) -> None:
+    """Raise TypeError for a positional argument beyond the type and the values."""
+    with pytest.raises(TypeError, match="extra positional"):
+        build()

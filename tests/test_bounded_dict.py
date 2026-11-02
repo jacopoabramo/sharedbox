@@ -752,3 +752,16 @@ def test_a_missing_type_is_reported_with_both_forms() -> None:
         TypeError, match=re.escape("BoundedDict[int, float](values, capacity=n)")
     ):
         BoundedDict(capacity=4)
+
+
+@pytest.mark.parametrize(
+    "build",
+    [
+        lambda: BoundedDict[int, float]({1: 1.0}, {2: 2.0}, capacity=4),  # type: ignore[call-overload]
+        lambda: BoundedDict(int, float, {1: 1.0}, {2: 2.0}, capacity=4),  # type: ignore[call-overload]
+    ],
+)
+def test_extra_positional_arguments_are_refused(build: Any) -> None:
+    """Raise TypeError for a positional argument beyond the types and the values."""
+    with pytest.raises(TypeError, match="extra positional"):
+        build()

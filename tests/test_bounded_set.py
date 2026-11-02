@@ -895,3 +895,16 @@ def test_a_missing_type_is_reported_with_both_forms() -> None:
         TypeError, match=re.escape("BoundedSet[int](values, capacity=n)")
     ):
         BoundedSet(capacity=4)
+
+
+@pytest.mark.parametrize(
+    "build",
+    [
+        lambda: BoundedSet[int]([1], [2], capacity=4),
+        lambda: BoundedSet(int, [1], [2], capacity=4),  # type: ignore[call-overload]
+    ],
+)
+def test_extra_positional_arguments_are_refused(build: Any) -> None:
+    """Raise TypeError for a positional argument beyond the type and the values."""
+    with pytest.raises(TypeError, match="extra positional"):
+        build()

@@ -67,7 +67,7 @@ class BoundedList(NativeCollection[T]):
         Raises
         ------
         TypeError
-            If `cls` fixes no element type, as `BoundedList` alone does, or
+            If neither `cls` nor the leading arguments give an element type, or
             an element is not of that type.
         ValueError
             If an element does not fit, or there are more than `capacity`.
@@ -99,7 +99,15 @@ class BoundedList(NativeCollection[T]):
     ) -> None: ...
 
     def __init__(self, values: Any = (), *args: Any, capacity: int) -> None:
-        """Do nothing; `__new__` has built the value."""
+        """Do nothing; `__new__` has built the value.
+
+        Raises
+        ------
+        TypeError
+            If there are positional arguments beyond the values and the
+            type.
+        """
+        _refuse_extra(type(self), len(args), _is_type(values))
 
     def __class_getitem__(cls, element: object) -> types.GenericAlias:
         """Return `cls` with its element type `element`.
@@ -178,7 +186,7 @@ class BoundedSet(NativeSet[T]):
         Raises
         ------
         TypeError
-            If `cls` fixes no element type, as `BoundedSet` alone does, or
+            If neither `cls` nor the leading arguments give an element type, or
             an element is not of that type.
         ValueError
             If an element does not fit, or there are more than `capacity`.
@@ -210,7 +218,15 @@ class BoundedSet(NativeSet[T]):
     ) -> None: ...
 
     def __init__(self, values: Any = (), *args: Any, capacity: int) -> None:
-        """Do nothing; `__new__` has built the value."""
+        """Do nothing; `__new__` has built the value.
+
+        Raises
+        ------
+        TypeError
+            If there are positional arguments beyond the values and the
+            type.
+        """
+        _refuse_extra(type(self), len(args), _is_type(values))
 
     def __class_getitem__(cls, element: object) -> types.GenericAlias:
         """Return `cls` with its element type `element`.
@@ -277,8 +293,8 @@ class BoundedDict(NativeDict[K, V]):
         Raises
         ------
         TypeError
-            If `cls` fixes no key and value types, as `BoundedDict` alone
-            does, or a key or value is not of its type.
+            If neither `cls` nor the leading arguments give key and value
+            types, or a key or value is not of its type.
         ValueError
             If a key or value does not fit, or there are more than
             `capacity` keys.
@@ -317,7 +333,15 @@ class BoundedDict(NativeDict[K, V]):
     ) -> None: ...
 
     def __init__(self, values: Any = (), *args: Any, capacity: int) -> None:
-        """Do nothing; `__new__` has built the value."""
+        """Do nothing; `__new__` has built the value.
+
+        Raises
+        ------
+        TypeError
+            If there are positional arguments beyond the values and the
+            types.
+        """
+        _refuse_extra(type(self), len(args), 2 * _is_type(values))
 
     def __class_getitem__(cls, params: object) -> types.GenericAlias:
         """Return `cls` with its key and value types `params`.
@@ -362,6 +386,13 @@ def _element(hint: object) -> object:
 
 def _is_type(hint: object) -> bool:
     return isinstance(hint, type) or get_origin(hint) is not None
+
+
+def _refuse_extra(cls: type, given: int, allowed: int) -> None:
+    if given > allowed:
+        raise TypeError(
+            f"{cls.__name__} got {given - allowed} extra positional arguments"
+        )
 
 
 def _split(
