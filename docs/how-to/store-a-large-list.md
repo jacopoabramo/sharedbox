@@ -39,7 +39,8 @@ the same name and reads the same values.
 ## 2. Create the box with a BoundedList value
 
 A type checker expects a `BoundedList` for this field, so build the initial
-value with `BoundedList[float](values, capacity=n)`:
+value with `BoundedList(float, values, capacity=n)`, which gives the element
+type first. `BoundedList[float](values, capacity=n)` builds the same value:
 
 ```{.python}
 --8<-- "docs/examples/store_a_large_list.py:create"

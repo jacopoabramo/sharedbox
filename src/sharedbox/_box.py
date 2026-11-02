@@ -1194,11 +1194,19 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
         return out
 
     @contextlib.contextmanager
-    def writing(self, field: str) -> Generator[Any, None, None]:
+    def writing(
+        self, field: str, shape: tuple[int, ...] | None = None
+    ) -> Generator[Any, None, None]:
         """Hold the box's write lock and yield the array field to fill in place.
 
         The block gets an array of the field's declared type that views the
-        field in shared memory and holds its current value. Leaving the
+        field in shared memory and holds its current value. For a
+        [`MaxShape`][sharedbox.MaxShape] field the array has the stored
+        shape, or `shape` when given, which is stored under the same lock,
+        so a watcher never sees a new shape with old data. When the view is
+        larger than the stored shape, the part past the stored elements,
+        counted in C order, holds what an earlier and larger write left, so
+        fill all of the view. Leaving the
         block releases the lock, counts the write and wakes watchers, also
         when the block raises, since the bytes have already changed.
         While the block runs, reads and writes of the box in every process
@@ -1208,24 +1216,31 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
         its own mapping, so using it after the box is closed cannot crash,
         but writing to it after the block takes no lock and tells no one.
 
+        Parameters
+        ----------
+        shape
+            The shape to store, for a `MaxShape` field.
+
         Raises
         ------
         TypeError
-            If the field is not an array field.
+            If the field is not an array field, or `shape` is given for a
+            field with a fixed [`Shape`][sharedbox.Shape].
         ValueError
-            If the box has no such field.
+            If the box has no such field, or `shape` has another number of
+            dimensions than the field's `MaxShape` or a dimension beyond it.
         LockTimeoutError
             If another writer holds the lock longer than the lock timeout.
         BoxClosedError
             If the box is closed.
         """
         spec = self._spec(field)
-        if spec.kind != "array":
+        if spec.kind not in ("array", "max_array"):
             raise TypeError(
                 f"{spec.label} is not an array field; writing takes array fields only"
             )
         writer, view = self._segment.begin_write(
-            spec.index, type(self).__layout__.types
+            spec.index, type(self).__layout__.types, shape
         )
         try:
             yield view

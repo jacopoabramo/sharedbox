@@ -556,8 +556,9 @@ def array_spec(
 ) -> TypeSpec:
     dtypes = [extra.name for extra in extras if isinstance(extra, DType)]
     option, default = sizes or (None, MISSING)
-    given = given_sizes(extras, where, option, default)
     maxes = [extra for extra in extras if isinstance(extra, MaxShape)]
+    # A default array gives a MaxShape field its value, not its size.
+    given = given_sizes(extras, where, option, MISSING if maxes else default)
     if len(maxes) > 1:
         raise TypeError(f"{where}: an array takes one MaxShape")
     if maxes and given:
@@ -880,7 +881,7 @@ def misplaced_max_array(spec: TypeSpec) -> bool:
 
 
 MAX_ARRAY_PLACES: Final[str] = (
-    "MaxShape applies only to a stream item and the records and tuples inside one"
+    "MaxShape applies only to a stream item or a box field, and the records and tuples inside one"
 )
 
 

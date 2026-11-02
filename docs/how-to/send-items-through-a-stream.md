@@ -221,8 +221,9 @@ only when every dimension but the first is at its maximum, so read the
 values through the item rather than by slicing your own array.
 
 A `MaxShape` array belongs to a stream item, as the item itself or inside
-its records and tuples. A box field, and a member of an optional, a union or
-a collection, cannot hold one.
+its records and tuples, or to a box field, as
+[How to store arrays](store-arrays.md) shows. A member of an optional, a
+union or a collection cannot hold one.
 
 ## Run a callback for each item
 

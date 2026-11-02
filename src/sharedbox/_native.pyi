@@ -223,14 +223,22 @@ class Segment:
         """Return the field's value; `(create_id, schema_hash, name)`, or None when empty, for a reference field."""
 
     def begin_write(
-        self, field: int, types: Types | None = None
+        self,
+        field: int,
+        types: Types | None = None,
+        shape: tuple[int, ...] | None = None,
     ) -> tuple[FieldWriter, object]:
         """Take the write lock and return it with an array viewing the array field in shared memory.
+
+        For a `MaxShape` field, `shape` is stored under the lock and the array has it;
+        without `shape` the array has the stored shape.
 
         Raises
         ------
         TypeError
-            If the field is not an array.
+            If the field is not an array, or `shape` is given for a field with a fixed shape.
+        ValueError
+            If `shape` does not fit the field's maximum, or the stored shape is beyond it.
         """
 
     def read_into(self, field: int, out: object, types: Types | None = None) -> None:
@@ -433,7 +441,6 @@ class Types:
         converts: Sequence[
             tuple[int, int, Callable[[Any], Any] | None, Callable[[Any], Any] | None]
         ] = (),
-        stream: bool = False,
     ) -> None: ...
     def check(self, field: int, value: object) -> None:
         """Raise what writing `value` to `field` would raise."""

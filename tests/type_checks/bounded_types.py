@@ -1,7 +1,7 @@
 from collections.abc import MutableSequence
-from typing import Annotated, TypeVar, assert_type
+from typing import Annotated, Any, TypeVar, assert_type
 
-from sharedbox import BoundedList, Capacity, SharedBox
+from sharedbox import BoundedDict, BoundedList, Capacity, SharedBox
 
 T = TypeVar("T")
 
@@ -34,3 +34,11 @@ def builds() -> None:
     assert_type(BoundedList[float]([1.0], capacity=4), BoundedList[float])
     assert_type(Points([1.0], capacity=4), Points)
     assert_type(MyList[float]([1.0], capacity=4), MyList[float])
+    assert_type(BoundedList(int, [1], capacity=4), BoundedList[int])
+    assert_type(
+        BoundedDict(str, float, {"a": 1.0}, capacity=8), BoundedDict[str, float]
+    )
+    assert_type(
+        BoundedList(Annotated[str, Capacity(8)], ["a"], capacity=2), BoundedList[Any]
+    )
+    assert_type(MyList(int, [1], capacity=4), MyList[int])

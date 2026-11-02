@@ -35,13 +35,28 @@ void check_values(const std::vector<FieldDesc> &fields, std::span<const value> v
     for (const value &v : values) {
         check_index(v.field, fields.size());
         const FieldDesc &f = fields[v.field];
+        const bool max_array = static_cast<std::uint32_t>(f.kind) == kind_max_array;
         const bool shorter_ok = detail::prefixed(static_cast<std::uint32_t>(f.kind)) ||
-                                detail::is_collection(static_cast<std::uint32_t>(f.kind));
+                                detail::is_collection(static_cast<std::uint32_t>(f.kind)) || max_array;
         if (shorter_ok ? v.bytes.size() > f.capacity : v.bytes.size() != f.capacity)
             throw std::invalid_argument("value for field " + std::to_string(v.field) + " is " +
                                         std::to_string(v.bytes.size()) + " bytes; the field holds " +
                                         std::to_string(f.capacity));
+        if (max_array && v.bytes.size() < 64)
+            throw std::invalid_argument("value for field " + std::to_string(v.field) + " is " +
+                                        std::to_string(v.bytes.size()) +
+                                        " bytes; a max_array value starts with a 64-byte shape line");
     }
+}
+
+// Segment has no type table, so it cannot tell which max_array value breaks its shape line: the first one in
+// a refused write is named.
+void check_max_arrays(const std::vector<FieldDesc> &fields, std::span<const value> values) {
+    for (const value &v : values)
+        if (static_cast<std::uint32_t>(fields[v.field].kind) == kind_max_array)
+            throw std::invalid_argument("value for field " + std::to_string(v.field) +
+                                        " does not match its shape line, which must give the number of element "
+                                        "bytes that follow it");
 }
 
 field_spec to_spec(const FieldDesc &f) { return {f.offset, f.capacity, static_cast<std::uint8_t>(f.kind)}; }
@@ -366,8 +381,10 @@ struct Segment::Impl {
         const result<void> written = total >= detail::large_copy ? box.write_large(values, seconds(lock_timeout))
                                                                  : box.write(values, seconds(lock_timeout));
         // write checks the values too; this finds which one, for the message.
-        if (!written && written.error().code == status::range)
+        if (!written && written.error().code == status::range) {
             check_values(fields, values);
+            check_max_arrays(fields, values);
+        }
         check(result<void>(written));
     }
 };

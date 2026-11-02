@@ -188,6 +188,13 @@ template <class Dim> std::string shape_text(std::size_t ndim, Dim dim) {
     return text + (ndim == 1 ? ",)" : ")");
 }
 
+template <class Max, class Dim>
+[[noreturn]] void refuse_max_shape(const std::string &name, std::size_t max_ndim, Max max, std::size_t ndim,
+                                   Dim dim) {
+    raise(PyExc_ValueError, name + " holds an array of at most MaxShape" + shape_text(max_ndim, max) +
+                                "; the value has shape " + shape_text(ndim, dim));
+}
+
 // Whether the array's elements lie in C order with no gaps, so one memcpy copies it.
 bool contiguous(const nb::ndarray<nb::ro> &view) {
     std::int64_t expected = 1;
@@ -271,7 +278,7 @@ const Types &need(const Types *types, std::uint32_t index) {
 Types::Types(const std::vector<std::tuple<std::uint32_t, std::uint32_t, std::uint32_t>> &fields,
              std::vector<std::string> labels, std::string table, const nb::dict &info,
              const std::vector<std::pair<std::int64_t, std::uint32_t>> &bytearrays,
-             const std::vector<std::uint32_t> &reusable, const std::vector<Convert> &converts, bool stream)
+             const std::vector<std::uint32_t> &reusable, const std::vector<Convert> &converts)
     : labels_(std::move(labels)), table_(std::move(table)),
       collection_type_(reinterpret_cast<PyTypeObject *>(nb::type<NativeCollection>().ptr())),
       set_type_(reinterpret_cast<PyTypeObject *>(nb::type<NativeSet>().ptr())),
@@ -285,7 +292,7 @@ Types::Types(const std::vector<std::tuple<std::uint32_t, std::uint32_t, std::uin
         entries.push_back(capacity | kind << kind_shift);
     }
     const auto *bytes = reinterpret_cast<const std::byte *>(table_.data());
-    if (tree_.parse({bytes, table_.size()}, entries, stream) != status::ok)
+    if (tree_.parse({bytes, table_.size()}, entries, true) != status::ok)
         throw std::invalid_argument("the description table does not pass the layout's checks");
     for (std::size_t i = 0; i < fields.size(); ++i)
         if (!detail::kind_known(tree_.field(static_cast<std::uint16_t>(i)).kind))
@@ -496,6 +503,17 @@ std::span<const std::byte> Types::encode(std::uint32_t index, PyObject *value, E
         std::byte *out = buffer.reserve(text.size());
         std::memcpy(out, text.data(), text.size());
         return {out, text.size()};
+    }
+    if (t.kind == kind_max_array) {
+        // Only the shape line and the elements the shape holds are stored, so the buffer is no larger.
+        const nb::ndarray<nb::ro> view = array_view(t, value, {name});
+        std::byte *out = buffer.reserve(64 + view.nbytes());
+        std::uint64_t line[8] = {};
+        for (std::size_t i = 0; i < view.ndim(); ++i)
+            line[i] = view.shape(i);
+        std::memcpy(out, line, sizeof line);
+        copy_array(view, out + sizeof line);
+        return {out, 64 + view.nbytes()};
     }
     if (t.kind == kind_array) {
         const nb::ndarray<nb::ro> &view = buffer.keep.emplace(array_view(t, value, {name}));
@@ -1136,13 +1154,10 @@ nb::ndarray<nb::ro> Types::array_view(const detail::type_ref &t, PyObject *value
         same = at_most ? view.shape(i) <= dim : view.shape(i) == dim;
     }
     if (!same && at_most)
-        raise(PyExc_ValueError,
-              where.name + " holds an array of at most MaxShape" +
-                  shape_text(
-                      node.ndim,
-                      [&](std::size_t i) { return tree_.number(node.numbers + static_cast<std::uint32_t>(i)); }) +
-                  "; the value has shape " +
-                  shape_text(view.ndim(), [&](std::size_t i) { return view.shape(i); }));
+        refuse_max_shape(
+            where.name, node.ndim,
+            [&](std::size_t i) { return tree_.number(node.numbers + static_cast<std::uint32_t>(i)); }, view.ndim(),
+            [&](std::size_t i) { return view.shape(i); });
     if (!same)
         raise(PyExc_ValueError, where.name + " holds an array of the field's Shape; the value's shape differs");
     return view;
@@ -1347,11 +1362,40 @@ nb::object Types::wrap_array(const detail::type_ref &t, std::byte *raw, nb::hand
     return nb::steal(owned(made));
 }
 
-nb::object Types::array_over(std::uint32_t index, std::byte *data, nb::handle owner) const {
+nb::object Types::array_over(std::uint32_t index, std::byte *data, nb::handle owner,
+                             std::span<const std::size_t> shape) const {
     const detail::type_ref &t = field(index);
-    if (t.kind != kind_array)
+    if (t.kind == kind_array)
+        return wrap_array(t, data, owner);
+    if (t.kind != kind_max_array)
         raise(PyExc_TypeError, labels_[index] + " is not an array field");
-    return wrap_array(t, data, owner);
+    const detail::type_node &node = tree_.node(t.node);
+    std::size_t stored[8];
+    if (shape.empty()) {
+        if (detail::max_array_bytes(tree_, t, data) == UINT64_MAX)
+            corrupt(labels_[index]);
+        for (std::uint32_t i = 0; i < node.ndim; ++i)
+            stored[i] = static_cast<std::size_t>(load<std::uint64_t>(data + std::size_t{i} * 8));
+        shape = {stored, node.ndim};
+    } else {
+        std::uint64_t line[8] = {};
+        for (std::size_t i = 0; i < shape.size(); ++i)
+            line[i] = shape[i];
+        std::memcpy(data, line, sizeof line);
+    }
+    return wrap_array(t, data + 64, owner, shape);
+}
+
+void Types::check_max_shape(std::uint32_t index, std::span<const std::int64_t> shape) const {
+    const detail::type_ref &t = field(index);
+    const detail::type_node &node = tree_.node(t.node);
+    auto maximum = [&](std::size_t i) { return tree_.number(node.numbers + static_cast<std::uint32_t>(i)); };
+    bool fits = shape.size() == node.ndim;
+    for (std::size_t i = 0; fits && i < shape.size(); ++i)
+        fits = shape[i] >= 0 && static_cast<std::uint64_t>(shape[i]) <= maximum(i);
+    if (!fits)
+        refuse_max_shape(labels_[index], node.ndim, maximum, shape.size(),
+                         [&](std::size_t i) { return shape[i]; });
 }
 
 bool Types::holds_array(const detail::type_ref &t) const {

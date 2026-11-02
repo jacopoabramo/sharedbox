@@ -10,6 +10,7 @@ from sharedbox import (
     Capacity,
     DType,
     Field,
+    MaxShape,
     Shape,
     SharedBox,
     SupportsSharedBox,
@@ -48,6 +49,17 @@ def fields(motor: Motor) -> None:
 
 class Frame(SharedBox, identity="camera/frame/1", max_waiters=8):
     exposure: float
+
+
+class Picture(SharedBox):
+    image: Annotated[npt.NDArray[np.uint8], MaxShape((4, 3))] = np.zeros(
+        (1, 3), np.uint8
+    )
+
+
+def writing_a_shape(picture: Picture) -> None:
+    with picture.writing("image", shape=(2, 3)) as view:
+        view[:] = 1
 
 
 def run(frame: SupportsSharedBox) -> None: ...

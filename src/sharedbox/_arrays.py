@@ -87,15 +87,15 @@ class Shape:
 
 @dataclass(frozen=True)
 class MaxShape:
-    """Largest dimensions of an array in a stream item, whose own shape each item stores.
+    """Largest dimensions of an array in a box field or a stream item, whose own shape each value stores.
 
     It goes in the annotation, as in
     `Annotated[numpy.ndarray, MaxShape((2048, 2048)), DType("uint16")]`, and
     an array takes a `MaxShape` or a [`Shape`][sharedbox.Shape], not both.
-    An item may hold the array as the item itself or as a member of a record
-    or tuple, at any depth, and each value sent has as many dimensions as
-    the `MaxShape`, each from 0 to its maximum. A box field and a member of
-    an optional, union or collection cannot hold one.
+    A box field or a stream item may hold the array as the field or item
+    itself or as a member of a record or tuple, at any depth, and each value
+    written has as many dimensions as the `MaxShape`, each from 0 to its
+    maximum. A member of an optional, union or collection cannot hold one.
 
     Raises
     ------

@@ -871,3 +871,40 @@ def test_a_value_is_its_own_operand() -> None:
     assert not value < value  # noqa: PLR0124
     value ^= value
     assert value == set()
+
+
+def test_the_element_type_as_first_argument_builds_the_same_value() -> None:
+    """Build the same value from the element type as the first argument as from the subscripted class."""
+    value = BoundedSet(Name, {"a"}, capacity=4)
+    assert value == BoundedSet[Name]({"a"}, capacity=4)
+    assert repr(value) == repr(BoundedSet[Name]({"a"}, capacity=4))
+    copied = pickle.loads(pickle.dumps(value))
+    assert copied == value
+    assert repr(copied) == repr(value)
+    assert BoundedSet(Annotated[str, Capacity(8)], {"a"}, capacity=2) == {"a"}
+    assert BoundedSet(int, capacity=2) == set()
+
+
+def test_a_missing_type_is_reported_with_both_forms() -> None:
+    """Name both constructor forms when the element type is missing."""
+    with pytest.raises(
+        TypeError, match=re.escape("BoundedSet(int, values, capacity=n)")
+    ):
+        BoundedSet({1}, capacity=4)
+    with pytest.raises(
+        TypeError, match=re.escape("BoundedSet[int](values, capacity=n)")
+    ):
+        BoundedSet(capacity=4)
+
+
+@pytest.mark.parametrize(
+    "build",
+    [
+        lambda: BoundedSet[int]([1], [2], capacity=4),
+        lambda: BoundedSet(int, [1], [2], capacity=4),  # type: ignore[call-overload]
+    ],
+)
+def test_extra_positional_arguments_are_refused(build: Any) -> None:
+    """Raise TypeError for a positional argument beyond the type and the values."""
+    with pytest.raises(TypeError, match="extra positional"):
+        build()

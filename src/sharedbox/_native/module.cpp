@@ -1054,10 +1054,19 @@ NB_MODULE(_native, m) {
             "field"_a, "out"_a, "types"_a = nb::none())
         .def(
             "begin_write",
-            [](const Segment &s, std::uint32_t index, nb::handle types) {
+            [](const Segment &s, std::uint32_t index, nb::handle types,
+               const std::optional<std::vector<std::int64_t>> &shape) {
                 const sharedbox::Types &t = sharedbox::need(types_of(types), index);
-                if (t.field(index).kind != sharedbox::kind_array)
+                const std::uint32_t kind = t.field(index).kind;
+                if (kind != sharedbox::kind_array && kind != sharedbox::kind_max_array)
                     throw nb::type_error((t.label(index) + " is not an array field").c_str());
+                if (shape && kind == sharedbox::kind_array)
+                    throw nb::type_error((t.label(index) + " has a fixed Shape; writing takes no shape").c_str());
+                std::vector<std::size_t> dims;
+                if (shape) {
+                    t.check_max_shape(index, *shape);
+                    dims.assign(shape->begin(), shape->end());
+                }
                 std::unique_ptr<sharedbox::FieldWriter> writer = s.begin_write(index);
                 auto keep = std::make_unique<std::shared_ptr<sharedbox::handle>>(writer->box());
                 nb::capsule owner(keep.get(), [](void *p) noexcept {
@@ -1065,10 +1074,10 @@ NB_MODULE(_native, m) {
                 });
                 // Released only once the capsule exists, so a failure to make it does not leak the copy.
                 keep.release();
-                nb::object view = t.array_over(index, writer->bytes().data(), owner);
+                nb::object view = t.array_over(index, writer->bytes().data(), owner, dims);
                 return nb::make_tuple(nb::cast(std::move(writer)), view);
             },
-            "field"_a, "types"_a = nb::none())
+            "field"_a, "types"_a = nb::none(), "shape"_a = nb::none())
         .def(
             "get_versioned",
             [](const Segment &s, std::uint32_t index, nb::handle types) {
@@ -1272,14 +1281,12 @@ NB_MODULE(_native, m) {
                const std::vector<std::tuple<std::uint32_t, std::uint32_t, std::uint32_t>> &fields,
                std::vector<std::string> labels, nb::bytes table, const nb::dict &info,
                const std::vector<std::pair<std::int64_t, std::uint32_t>> &bytearrays,
-               const std::vector<std::uint32_t> &reusable, const std::vector<sharedbox::Convert> &converts,
-               bool stream) {
+               const std::vector<std::uint32_t> &reusable, const std::vector<sharedbox::Convert> &converts) {
                 new (self) sharedbox::Types(fields, std::move(labels), std::string(table.c_str(), table.size()),
-                                            info, bytearrays, reusable, converts, stream);
+                                            info, bytearrays, reusable, converts);
             },
             "fields"_a, "labels"_a, "table"_a, "info"_a, "bytearrays"_a,
-            "reusable"_a = std::vector<std::uint32_t>(), "converts"_a = std::vector<sharedbox::Convert>(),
-            "stream"_a = false)
+            "reusable"_a = std::vector<std::uint32_t>(), "converts"_a = std::vector<sharedbox::Convert>())
         .def(
             "check",
             [](const sharedbox::Types &t, std::uint32_t index, nb::handle value) {

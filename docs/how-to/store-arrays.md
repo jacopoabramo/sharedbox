@@ -5,11 +5,13 @@ icon: lucide/wrench
 # How to store arrays
 
 A box can hold arrays too, such as the scan of an envelope or a block of
-samples. An array [field](../explanation/glossary.md#field) has a fixed shape and element type,
-and it takes arrays from `numpy`, `torch` or any other library that can
-hand its arrays over through DLPack or the buffer protocol, as long as they
-are in CPU memory. This guide shows how to declare one, how to read and
-write it, and the two ways to save a copy when the arrays are large.
+samples. An array [field](../explanation/glossary.md#field) has an element
+type and a shape, fixed or up to a maximum, and it takes arrays from
+`numpy`, `torch` or any other library that can hand its arrays over
+through DLPack or the buffer protocol, as long as they are in CPU memory.
+This guide shows how to declare one, how to read and write it, the two
+ways to save a copy when the arrays are large, and how to store an array
+whose shape changes.
 
 ## 1. Declare the field with a shape and a dtype
 
@@ -185,7 +187,39 @@ field keeps whatever the block wrote before it stopped.
     so a reader can see half of your change. Use it inside the `with`
     block and nowhere else.
 
-## 5. Read with another library
+## 5. Store an array whose shape changes
+
+A field declared with a fixed shape keeps that shape for good. When the
+size changes from one write to the next, such as the label of an envelope
+that holds a different number of lines each time, annotate the field with a
+[`MaxShape`][sharedbox.MaxShape] instead. The field then stores the shape
+of each array written to it, from 0 up to the maximum along each dimension,
+and keeps room for the maximum, so choose the smallest maximum your data
+allows:
+
+```{.python}
+--8<-- "docs/examples/store_arrays.py:max-shape"
+```
+
+A write takes an array of any shape that fits the maximum, and a read
+returns an array of the shape stored last. A default array may be smaller
+than the maximum, down to a dimension of 0 as `label` shows, because it
+gives the field its first value and not its sizes. A write copies only the
+elements in use, so a small array costs little to write even when the
+maximum is large.
+
+To fill the field in place, give [`writing`][sharedbox.SharedBox.writing]
+the shape you are about to write, as above. The box stores that shape and
+hands you an array of it under the same lock, so a reader never sees the
+new shape with the old values. Without `shape`, `writing` hands you the
+shape stored last. The elements past those stored before, counted in C
+order, hold whatever an earlier and larger write left there, and old
+elements move when a dimension other than the first changes, so fill all
+of the array.
+`read_into` takes fields of a fixed shape only, and raises `TypeError` for
+this one.
+
+## 6. Read with another library
 
 A `SupportsDLPack` field reads back an object any DLPack library imports:
 
@@ -197,7 +231,7 @@ To read fields back as an array type other than `numpy`'s and `torch`'s,
 call [`register_array_type`][sharedbox.register_array_type] with the type
 and its `from_dlpack` function before you define the box class.
 
-## 6. Leave an array field empty
+## 7. Leave an array field empty
 
 An array field annotated `X | None` holds either `None` or an array of its
 sizes, which suits a value that isn't always there, such as the scan of an
@@ -214,7 +248,7 @@ hold no array, `read_into` and `writing` refuse it, and
 [`receive_into`][sharedbox.SharedReceiveStream.receive_into] doesn't fill
 it; a plain read or `receive` gives you a new array or `None`.
 
-## 7. Handle the wrong shape or dtype
+## 8. Handle the wrong shape or dtype
 
 ```{.python}
 --8<-- "docs/examples/store_arrays.py:wrong-shape"

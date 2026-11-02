@@ -121,7 +121,6 @@ def item_of(hint: object, label: str | None = None) -> Item:
         table.info,
         table.bytearrays,
         converts=table.converts,
-        stream=True,
     )
     digest = hashlib.sha256(f"stream|{spec.text}".encode()).digest()
     return Item(
