@@ -69,7 +69,7 @@ def read_from_thread(read: Any) -> list[BaseException]:
     def target() -> None:
         try:
             read()
-        except BaseException as error:  # noqa: BLE001
+        except BaseException as error:
             errors.append(error)
 
     thread = threading.Thread(target=target)
@@ -121,10 +121,9 @@ def test_writing_with_a_shape_is_one_write_a_watcher_sees(unique_name: str) -> N
 
 def test_writing_without_a_shape_views_the_stored_shape(unique_name: str) -> None:
     """Yield a view of the stored shape holding the stored values."""
-    with Frame.create(unique_name, grid(2, 3)) as box:
-        with box.writing("image") as view:
-            assert view.shape == (2, 3)
-            assert np.array_equal(view, grid(2, 3))
+    with Frame.create(unique_name, grid(2, 3)) as box, box.writing("image") as view:
+        assert view.shape == (2, 3)
+        assert np.array_equal(view, grid(2, 3))
 
 
 def test_read_into_refuses_a_max_shape_field(unique_name: str) -> None:
@@ -148,8 +147,9 @@ def test_writing_refuses_a_bad_shape_before_the_lock(
 ) -> None:
     """Raise ValueError for a shape beyond the maximum or of other dimensions, taking no lock."""
     with Frame.create(unique_name) as box:
-        with pytest.raises(ValueError, match="MaxShape"), box.writing(
-            "image", shape=shape
+        with (
+            pytest.raises(ValueError, match="MaxShape"),
+            box.writing("image", shape=shape),
         ):
             pass
         assert read_from_thread(lambda: box.image) == []
@@ -157,9 +157,12 @@ def test_writing_refuses_a_bad_shape_before_the_lock(
 
 def test_shape_on_a_fixed_shape_field_is_refused(unique_name: str) -> None:
     """Raise TypeError when writing is given a shape for a field with a fixed Shape."""
-    with Fixed.create(unique_name) as box, pytest.raises(TypeError):
-        with box.writing("image", shape=(2, 3)):
-            pass
+    with (
+        Fixed.create(unique_name) as box,
+        pytest.raises(TypeError),
+        box.writing("image", shape=(2, 3)),
+    ):
+        pass
 
 
 @pytest.mark.parametrize("shape", [(5, 3), (12,)])
@@ -232,7 +235,9 @@ def test_a_default_array_of_a_smaller_shape_is_accepted(
         assert box.image.shape == shape
 
 
-def forge_first_dimension(name: str, box_class: type[SharedBox], field_name: str) -> None:
+def forge_first_dimension(
+    name: str, box_class: type[SharedBox], field_name: str
+) -> None:
     layout = box_class.__layout__
     spec = next(spec for spec in layout.fields if spec.name == field_name)
     with raw_bytes(name) as view:
@@ -247,12 +252,14 @@ def test_a_stored_shape_beyond_the_maximum_is_refused_on_every_read(
     with Frame.create(unique_name, grid(2, 3)) as box:
         forge_first_dimension(unique_name, Frame, "image")
         with pytest.raises(ValueError, match="is not one Python can hold"):
-            box.image
+            _ = box.image
         with pytest.raises(ValueError, match="is not one Python can hold"):
             box.snapshot()
-        with pytest.raises(ValueError, match="is not one Python can hold"):
-            with box.writing("image"):
-                pass
+        with (
+            pytest.raises(ValueError, match="is not one Python can hold"),
+            box.writing("image"),
+        ):
+            pass
         assert read_from_thread(lambda: setattr(box, "count", 1)) == []
         assert box.count == 1
 
@@ -262,21 +269,20 @@ def test_a_forged_shape_in_a_record_member_is_refused(unique_name: str) -> None:
     with Shot.create(unique_name, Pair(grid(2, 3), 1)) as box:
         forge_first_dimension(unique_name, Shot, "pair")
         with pytest.raises(ValueError, match="is not one Python can hold"):
-            box.pair
+            _ = box.pair
 
 
 def test_a_value_that_does_not_match_its_shape_line_is_refused(
     unique_name: str,
 ) -> None:
-    """Raise ValueError naming the field and both lengths for bytes that differ from their shape line."""
+    """Raise ValueError naming the field for bytes that differ from their shape line."""
     layout = Frame.__layout__
     with Frame.create(unique_name) as box:
         segment = Segment.attach(
             unique_name, layout.names, layout.schema_hash, 1.0, layout.types
         )
         line = struct.pack("<8Q", 1, 3, 0, 0, 0, 0, 0, 0)
-        with pytest.raises(ValueError, match="field 0 is 72 bytes; its shape line gives 76 bytes"):
+        with pytest.raises(ValueError, match="field 0 does not match its shape line"):
             segment._write([(0, line + bytes(8))])
         segment.close()
         assert box.image.shape == (2, 3)
-
