@@ -711,8 +711,10 @@ layout version of its kind, for the rest. Each has a major and a minor.
   an older version created has `metadata` 0: a reader of 3.2 or 1.4 finds
   no metadata in it, and an add gives `status::metadata_full`.
 - Box layout 3.3 allows kind 75, `max_array`, as a box field and inside
-  one. A reader of box layout 3.2 or older refuses a box that has such a
-  field with `status::corrupt`, and opens a box of 3.3 that has none.
+  one. A reader of box layout 3.2 refuses a box that has such a field with
+  `status::corrupt`. A reader of 3.1 or older opens a box whose `max_array`
+  is a field, as a field of a kind it does not know, and refuses one inside
+  a record or tuple. Every older reader opens a box of 3.3 that has none.
 - A change to how existing bytes are read or written raises a major: the
   core's (the common line, the object names, liveness) raises `core_major`,
   and a kind's own (the sequence lock, field encoding, the slot layout)

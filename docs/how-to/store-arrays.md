@@ -212,8 +212,10 @@ To fill the field in place, give [`writing`][sharedbox.SharedBox.writing]
 the shape you are about to write, as above. The box stores that shape and
 hands you an array of it under the same lock, so a reader never sees the
 new shape with the old values. Without `shape`, `writing` hands you the
-shape stored last. The part of the array beyond the shape stored before
-holds whatever an earlier and larger write left there, so fill all of it.
+shape stored last. The elements past those stored before, counted in C
+order, hold whatever an earlier and larger write left there, and old
+elements move when a dimension other than the first changes, so fill all
+of the array.
 `read_into` takes fields of a fixed shape only, and raises `TypeError` for
 this one.
 
