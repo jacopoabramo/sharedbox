@@ -287,6 +287,9 @@ public:
                                                     seconds lock_timeout);
     // The stored bytes of field inside a copy made by read_record.
     std::span<const std::byte> payload(std::uint16_t field, std::span<const std::byte> record) const noexcept;
+    // How many element bytes the max_array field stores after the shape line at the start of line, or
+    // UINT64_MAX for a dimension above its maximum. line holds at least 64 bytes of a field of that kind.
+    std::uint64_t max_array_bytes(std::uint16_t field, std::span<const std::byte> line) const noexcept;
     // Writes every value under one lock, so readers see all of them or none, then wakes waiters.
     // status::range for a field of a kind this header does not know. A max_array value is its 64-byte shape
     // line and the elements that shape holds, no more.
@@ -995,6 +998,10 @@ inline result<std::uint64_t> handle::write_large(std::span<const value> values, 
 inline std::span<const std::byte> handle::payload(std::uint16_t field,
                                                   std::span<const std::byte> record) const noexcept {
     return detail::payload(s_->fields[field], record.data());
+}
+
+inline std::uint64_t handle::max_array_bytes(std::uint16_t field, std::span<const std::byte> line) const noexcept {
+    return detail::max_array_bytes(s_->types, s_->types.field(field), line.data());
 }
 
 template <bool Hooks> SHAREDBOX_HOT result<std::uint64_t> handle::lock_with(seconds lock_timeout) {

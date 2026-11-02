@@ -70,13 +70,11 @@ public:
     /// fields as Segment.create takes them; info maps a description's offset to its tuple; bytearrays
     /// lists (description offset, member) of each bytes member read back as bytearray, offset -1 for a
     /// field; reusable lists the fields whose values cannot be changed once read; converts lists the
-    /// callables a member's values pass through when read and before they are written, either may be None;
-    /// stream says the table is a stream item's, which alone may hold a max_array.
+    /// callables a member's values pass through when read and before they are written, either may be None.
     Types(const std::vector<std::tuple<std::uint32_t, std::uint32_t, std::uint32_t>> &fields,
           std::vector<std::string> labels, std::string table, const nb::dict &info,
           const std::vector<std::pair<std::int64_t, std::uint32_t>> &bytearrays,
-          const std::vector<std::uint32_t> &reusable = {}, const std::vector<Convert> &converts = {},
-          bool stream = false);
+          const std::vector<std::uint32_t> &reusable = {}, const std::vector<Convert> &converts = {});
 
     const std::string &table() const { return table_; }
     std::size_t field_count() const { return labels_.size(); }
@@ -145,8 +143,14 @@ public:
     nb::object decode_given(std::uint32_t index, std::span<const std::byte> bytes,
                             const std::unordered_map<std::uint64_t, PyObject *> &given) const;
     /// A writable array over data, the bytes of array field index, which owner keeps alive, passed through the
-    /// field's converter as a read is. Raises TypeError unless the field is an array.
-    nb::object array_over(std::uint32_t index, std::byte *data, nb::handle owner) const;
+    /// field's converter as a read is. For a max_array, data starts at its shape line: a non-empty shape is
+    /// stored there and the array has it, and an empty one gives the array of the stored shape, with ValueError
+    /// for a stored shape above the maximum. Raises TypeError unless the field is an array.
+    nb::object array_over(std::uint32_t index, std::byte *data, nb::handle owner,
+                          std::span<const std::size_t> shape = {}) const;
+    /// Raises ValueError unless shape has as many dimensions as max_array field index and none is negative or
+    /// above its maximum.
+    void check_max_shape(std::uint32_t index, std::span<const std::int64_t> shape) const;
     /// The value of field index built from template_item, with each array that records and tuples lead to
     /// replaced by a writable array over its place in data, which owner keeps alive. Members that lead to no
     /// array are template_item's own objects, and records are built as decode builds them. A template_item

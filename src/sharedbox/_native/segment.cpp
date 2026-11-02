@@ -31,16 +31,34 @@ void check_lock_timeout(double lock_timeout) {
         throw std::invalid_argument("lock_timeout must be finite and in (0, 86400]");
 }
 
-void check_values(const std::vector<FieldDesc> &fields, std::span<const value> values) {
+void check_values(const std::vector<FieldDesc> &fields, std::span<const value> values,
+                  const handle *box = nullptr) {
     for (const value &v : values) {
         check_index(v.field, fields.size());
         const FieldDesc &f = fields[v.field];
+        const bool max_array = static_cast<std::uint32_t>(f.kind) == kind_max_array;
         const bool shorter_ok = detail::prefixed(static_cast<std::uint32_t>(f.kind)) ||
-                                detail::is_collection(static_cast<std::uint32_t>(f.kind));
+                                detail::is_collection(static_cast<std::uint32_t>(f.kind)) || max_array;
         if (shorter_ok ? v.bytes.size() > f.capacity : v.bytes.size() != f.capacity)
             throw std::invalid_argument("value for field " + std::to_string(v.field) + " is " +
                                         std::to_string(v.bytes.size()) + " bytes; the field holds " +
                                         std::to_string(f.capacity));
+        if (!max_array)
+            continue;
+        if (v.bytes.size() < 64)
+            throw std::invalid_argument("value for field " + std::to_string(v.field) + " is " +
+                                        std::to_string(v.bytes.size()) +
+                                        " bytes; a max_array value starts with a 64-byte shape line");
+        if (box == nullptr)
+            continue;
+        const std::uint64_t elements = box->max_array_bytes(static_cast<std::uint16_t>(v.field), v.bytes);
+        if (elements == UINT64_MAX)
+            throw std::invalid_argument("value for field " + std::to_string(v.field) +
+                                        " has a shape line above the field's maximum");
+        if (v.bytes.size() - 64 != elements)
+            throw std::invalid_argument("value for field " + std::to_string(v.field) + " is " +
+                                        std::to_string(v.bytes.size()) + " bytes; its shape line gives " +
+                                        std::to_string(64 + elements) + " bytes");
     }
 }
 
@@ -367,7 +385,7 @@ struct Segment::Impl {
                                                                  : box.write(values, seconds(lock_timeout));
         // write checks the values too; this finds which one, for the message.
         if (!written && written.error().code == status::range)
-            check_values(fields, values);
+            check_values(fields, values, &box);
         check(result<void>(written));
     }
 };
@@ -647,7 +665,7 @@ std::uint64_t Segment::write(std::span<const value> values, std::string_view doc
             "' has no metadata area; give its class a metadata_capacity, or create it with metadata");
     if (added.error().code == status::range) {
         // A bad value is named first; what is left is the document.
-        check_values(impl_->fields, values);
+        check_values(impl_->fields, values, &impl_->box);
         throw std::invalid_argument(
             "box '" + impl_->name + "': the metadata document is " + std::to_string(doc.size()) +
             " bytes, more than its metadata area takes, about a third of metadata_capacity");

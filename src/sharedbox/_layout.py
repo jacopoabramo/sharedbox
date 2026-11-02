@@ -31,8 +31,8 @@ from ._types import (
     Table,
     TypeSpec,
     is_box_class,
+    misplaced_max_array,
     parse,
-    reaches_max_array,
     round_up,
 )
 from ._types import (
@@ -506,7 +506,7 @@ def build_layout(cls: type, identity: str | None = None) -> Layout:
                 ),
             )
         )
-        if spec is not None and reaches_max_array(spec):
+        if spec is not None and misplaced_max_array(spec):
             raise TypeError(f"{where}: {MAX_ARRAY_PLACES}")
         found.append((name, spec, ref))
     if not found:

@@ -2,14 +2,16 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Iterator
+from typing import Annotated
 
 import numpy as np
+import numpy.typing as npt
 import pytest
 from hypothesis import given
 from hypothesis import strategies as st
-from hypothesis.extra.numpy import from_dtype
+from hypothesis.extra.numpy import arrays, from_dtype
 
-from sharedbox import SharedBox
+from sharedbox import MaxShape, SharedBox
 
 TYPES = [
     np.int8,
@@ -46,6 +48,12 @@ class Every(SharedBox):
     complex128: np.complex128 = np.complex128(0)
     bool: np.bool_ = np.False_
     datetime64: np.datetime64 = np.datetime64("NaT", "ns")
+
+
+class Grid(SharedBox):
+    cells: Annotated[npt.NDArray[np.uint16], MaxShape((5, 4, 3))] = np.zeros(
+        (1, 1, 1), np.uint16
+    )
 
 
 def dtype_of(t: type) -> np.dtype:
@@ -97,3 +105,31 @@ def test_python_ints_fit_their_width_or_overflow(
     else:
         with pytest.raises(OverflowError):
             setattr(box, name, value)
+
+
+@pytest.fixture(scope="module")
+def grid() -> Iterator[Grid]:
+    name = f"sbtest-{uuid.uuid4().hex[:16]}"
+    with Grid.create(name) as created:
+        yield created
+    Grid.unlink(name)
+
+
+@given(
+    values=st.lists(
+        st.tuples(st.integers(0, 5), st.integers(0, 4), st.integers(0, 3)).flatmap(
+            lambda shape: arrays(np.uint16, shape)
+        ),
+        min_size=1,
+        max_size=3,
+    )
+)
+def test_max_shape_box_fields_come_back_equal(
+    grid: Grid, values: list[npt.NDArray[np.uint16]]
+) -> None:
+    """Read back every array up to the maximum shape as written, also after a larger one."""
+    for value in values:
+        grid.cells = value
+        got = grid.cells
+        assert got.shape == value.shape
+        assert np.array_equal(got, value)

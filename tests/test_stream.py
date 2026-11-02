@@ -740,15 +740,9 @@ class MetadataMaxShape:
     counts: npt.NDArray[np.uint32] = field(metadata={"max_shape": (4, 3)})
 
 
-def define_box_field() -> None:
-    class Held(SharedBox):
-        counts: Counts
-
-
 @pytest.mark.parametrize(
     "make",
     [
-        pytest.param(define_box_field, id="box field"),
         pytest.param(
             lambda name: SharedStream.create(Counts | None, name, capacity=2),
             id="optional",
@@ -777,12 +771,9 @@ def define_box_field() -> None:
     ],
 )
 def test_max_shape_is_refused_outside_stream_items(unique_name: str, make: Any) -> None:
-    """Refuse MaxShape on a box field, under an optional, union or list, with Shape, and as metadata."""
+    """Refuse MaxShape under an optional, union or list, with Shape, and as metadata."""
     with pytest.raises(TypeError, match="MaxShape|max_shape|union member"):
-        if make is define_box_field:
-            make()
-        else:
-            make(unique_name)
+        make(unique_name)
 
 
 @pytest.mark.parametrize("dims", [(), (0,), (2,) * 9, (True,), 4, [2, 3]])
