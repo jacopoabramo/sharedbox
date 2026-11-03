@@ -426,3 +426,26 @@ def test_closing_the_box_inside_a_take_frees_the_field(
             pending.result(timeout=5)
         other.move.serve(lambda target: target.position * 2)
         assert other.move(target).result(timeout=5) == 2.0
+
+
+class Guarded(SharedBox, lock_timeout=0.2):
+    move: Call[[float], float] = field(init=False)
+
+
+def test_a_lock_timeout_keeps_a_call_pending(
+    names: Callable[[str], str], caplog: pytest.LogCaptureFixture
+) -> None:
+    """Keep a call pending while the lock is held past its timeout, and deliver its answer after."""
+    with Guarded.create(names("locked")) as box, caplog.at_level(logging.WARNING):
+        pending = box.move(1.0)
+        box._segment._hold_write_lock()
+        deadline = time.monotonic() + 5
+        while (
+            "locked" not in caplog.text
+            and not pending.done()
+            and time.monotonic() < deadline
+        ):
+            time.sleep(0.05)
+        box.force_unlock()
+        box.move.serve(double)
+        assert pending.result(timeout=5) == 2.0

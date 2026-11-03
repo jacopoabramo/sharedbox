@@ -633,7 +633,7 @@ class Watcher:
                 outcome, value = self._segment.call_answer_of(
                     fut._field.index, fut._number, check, self._types
                 )
-            except BoxClosedError:
+            except (BoxClosedError, LockTimeoutError):
                 raise
             except Exception as error:
                 # Decoding the result can run Python code, such as a record's __post_init__.
