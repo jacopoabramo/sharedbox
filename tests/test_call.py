@@ -3,9 +3,11 @@ import gc
 import logging
 import multiprocessing as mp
 import sys
+import threading
 import time
 from collections.abc import Callable
 from concurrent.futures import CancelledError
+from dataclasses import dataclass
 from functools import partial
 from multiprocessing.sharedctypes import Synchronized
 from multiprocessing.synchronize import Event as EventType
@@ -18,6 +20,7 @@ from sharedbox import (
     Call,
     CallError,
     CallServedError,
+    CallServer,
     CallSupersededError,
     ServerExitedError,
     SharedBox,
@@ -212,3 +215,73 @@ def test_a_forked_child_serves_nothing_it_inherited(
         assert count.value == 1
         assert box.move(1.0).result(timeout=10) == 2.0
         assert count.value == 2
+
+
+class Counter(SharedBox):
+    bump: Call[[int], int] = field(init=False)
+
+
+def too_large(count: int) -> int:
+    return 2**64
+
+
+def test_a_result_that_cannot_be_stored_fails_the_call(
+    names: Callable[[str], str],
+) -> None:
+    """Fail a call whose handler returns a value its result type cannot hold."""
+    with Counter.create(names("overflow")) as box:
+        box.bump.serve(too_large)
+        with pytest.raises(CallError, match="OverflowError"):
+            box.bump(1).result(timeout=10)
+
+
+def test_closing_cancels_a_call_a_handler_waits_on(
+    names: Callable[[str], str],
+) -> None:
+    """Cancel, on close, a call that a sync handler of the same box waits on."""
+    waiting = threading.Event()
+    seen: list[str] = []
+    box = Scanner.create(names("nested"))
+
+    def home() -> None:
+        pending = box.move(0.0)
+        waiting.set()
+        try:
+            pending.result(timeout=10)
+        except CancelledError:
+            seen.append("cancelled")
+        except TimeoutError:
+            seen.append("timed out")
+
+    box.home.serve(home)
+    box.home()
+    assert waiting.wait(10)
+    box.close()
+    assert seen == ["cancelled"]
+
+
+def test_a_server_stopped_inside_its_take_fails_the_request(
+    names: Callable[[str], str],
+) -> None:
+    """Fail the request a server took while stopping it from inside its take."""
+    servers: list[CallServer] = []
+
+    @dataclass(frozen=True)
+    class Target:
+        position: float
+
+        def __post_init__(self) -> None:
+            # Decoding the request runs this inside the server's take, as a finalizer may.
+            if servers:
+                servers.pop().stop()
+
+    class Mover(SharedBox):
+        move: Call[[Target], float] = field(init=False)
+
+    with Mover.create(names("inside")) as box:
+        target = Target(1.0)
+        servers.append(box.move.serve(lambda target: target.position))
+        with pytest.raises(CallError, match="the server stopped"):
+            box.move(target).result(timeout=10)
+        box.move.serve(lambda target: target.position * 2)
+        assert box.move(target).result(timeout=10) == 2.0

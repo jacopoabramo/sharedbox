@@ -466,7 +466,7 @@ class Watcher:
         with self._lock:
             servers = list(self._servers)
         for server in servers:
-            server._halt(join=wait)
+            server._halt(join=False)
         with self._lock:
             thread = self._thread
         if wait and thread is not None and thread is not threading.current_thread():
@@ -485,6 +485,10 @@ class Watcher:
             calls, self._calls = self._calls, []
         for fut in [*pending, *calls]:
             fut.cancel()
+        # Last, so a handler waiting on a future of this box sees it cancelled and returns.
+        if wait:
+            for server in servers:
+                server._join()
 
     def after_fork(self) -> None:
         """Forget the parent's thread, futures and servers in a child created by `fork`.

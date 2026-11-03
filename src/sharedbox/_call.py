@@ -243,7 +243,9 @@ class CallServer:
         self._loop = loop
         # Held while checking for a stop and taking, so no take follows the release.
         self._lock = threading.Lock()
-        self._stopped = False
+        self._stopped = threading.Event()
+        # The ident of the thread inside _take, which a _halt on that same thread must not wait for.
+        self._taker: int | None = None
         self._task: asyncio.Task[None] | None = None
         self._wake = threading.Event()
         self._thread: threading.Thread | None = None
@@ -284,10 +286,16 @@ class CallServer:
 
     def _halt(self, join: bool, cancel: bool = True) -> None:
         """Stop serving and release the field; join a running sync thread only if `join`."""
-        with self._lock:
-            if self._stopped:
-                return
-            self._stopped = True
+        # A finalizer that garbage collection runs inside this thread's own _take
+        # must not wait for the lock that _take holds; _take releases instead.
+        inside_take = self._taker == threading.get_ident()
+        if inside_take:
+            self._stopped.set()
+        else:
+            with self._lock:
+                if self._stopped.is_set():
+                    return
+                self._stopped.set()
         self._watcher.forget(self)
         if self._loop is not None:
             if cancel:
@@ -295,25 +303,44 @@ class CallServer:
                     self._loop.call_soon_threadsafe(self._cancel_task)
         else:
             self._wake.set()
-            thread = self._thread
-            if join and thread is not None and thread is not threading.current_thread():
-                with contextlib.suppress(RuntimeError):
-                    thread.join()
+            if join:
+                self._join()
+        if not inside_take:
+            self._release()
+
+    def _join(self) -> None:
+        """Wait for a sync server's thread to end, unless this is that thread."""
+        thread = self._thread
+        if thread is not None and thread is not threading.current_thread():
+            with contextlib.suppress(RuntimeError):
+                thread.join()
+
+    def _release(self) -> None:
         with contextlib.suppress(BoxClosedError):
             self._watcher._segment.call_release(self._field.index)
 
     def _after_fork(self) -> None:
         """Stop serving in a child created by `fork`, without releasing the parent's field."""
         self._lock = threading.Lock()
-        self._stopped = True
+        self._taker = None
+        self._stopped = threading.Event()
+        self._stopped.set()
 
     def _take(self) -> tuple[int, tuple[Any, ...]] | None:
         with self._lock:
-            if self._stopped:
+            if self._stopped.is_set():
                 return None
-            return self._watcher._segment.call_take(
-                self._field.index, self._watcher._types
-            )
+            self._taker = threading.get_ident()
+            try:
+                request = self._watcher._segment.call_take(
+                    self._field.index, self._watcher._types
+                )
+            finally:
+                self._taker = None
+            if self._stopped.is_set():
+                self._release()
+                return None
+            return request
 
     def _answer(self, number: int, ok: bool, value: Any) -> None:
         segment, types = self._watcher._segment, self._watcher._types
@@ -321,7 +348,7 @@ class CallServer:
             try:
                 segment.call_answer(self._field.index, number, True, value, types)
                 return
-            except (TypeError, ValueError) as error:
+            except Exception as error:
                 logger.exception("the result of %s cannot be stored", self._field.label)
                 value = error_text(error)
         segment.call_answer(self._field.index, number, False, value, types)
@@ -330,12 +357,24 @@ class CallServer:
         logger.exception("the handler of %s raised", self._field.label)
         self._answer(number, False, error_text(error))
 
+    def _failed_serving(self, number: int | None, error: Exception) -> None:
+        """Log an error of the serving loop and answer the request it had taken, if any, as failed."""
+        logger.exception("serving %s failed", self._field.label)
+        if number is not None:
+            try:
+                self._answer(number, False, error_text(error))
+            except Exception:
+                logger.exception(
+                    "answering request %s of %s failed", number, self._field.label
+                )
+
     def _run(self) -> None:
         while True:
             self._wake.wait()
             self._wake.clear()
-            if self._stopped:
+            if self._stopped.is_set():
                 return
+            number: int | None = None
             try:
                 while (request := self._take()) is not None:
                     number, arguments = request
@@ -345,13 +384,14 @@ class CallServer:
                         self._fail(number, error)
                     else:
                         self._answer(number, True, result)
+                    number = None
             except BoxClosedError:
                 return
-            except Exception:
-                logger.exception("serving %s failed", self._field.label)
+            except Exception as error:
+                self._failed_serving(number, error)
 
     def _start_task(self) -> None:
-        if not self._stopped and (self._task is None or self._task.done()):
+        if not self._stopped.is_set() and (self._task is None or self._task.done()):
             assert self._loop is not None
             self._task = self._loop.create_task(
                 self._serve(), name=f"sharedbox-serve-{self._field.label}"
@@ -381,5 +421,5 @@ class CallServer:
             raise
         except BoxClosedError:
             return
-        except Exception:
-            logger.exception("serving %s failed", self._field.label)
+        except Exception as error:
+            self._failed_serving(number, error)
