@@ -15,11 +15,11 @@ to understand the ideas first, read
 `include/sharedbox/stream.hpp` implement this contract, and the Python
 extension runs on the first two.
 
-It describes core version 1.0, box layout 3.3 and stream layout 1.4. It
+It describes core version 1.0, box layout 3.3 and stream layout 1.5. It
 also opens box layout 3.0 and stream layout 1.0, which `sharedbox` 0.6.0
 writes, box layout 3.1 and stream layout 1.1, which 0.7.0 writes, box
-layout 3.2, which 0.8.0 writes, and nothing older: box layouts 1.0 and
-2.0, which 0.5 and earlier wrote, are refused.
+layout 3.2 and stream layout 1.4, which 0.8.0 writes, and nothing older:
+box layouts 1.0 and 2.0, which 0.5 and earlier wrote, are refused.
 
 ## Goal
 
@@ -253,6 +253,9 @@ record (4096 - 2240 = 1856).
 | 73 | dict | description offset | from the description |
 | 74 | array | description offset | data size, 64 |
 | 75 | max_array | description offset | 64 + data size of the maximum shape, 64 |
+| 78 | timed | description offset | from the description |
+
+Codes 76 and 77 are reserved for kinds a later layout adds.
 
 A field of a kind the reader does not know is opened as opaque bytes: a
 kind below 64 is sized by its entry, one from 64 by its description's
@@ -306,6 +309,11 @@ Little-endian.
   maximum before it copies any element. A dimension above it in a torn
   copy is retried like any torn copy; in a stable copy it makes the value
   corrupt.
+- `timed`: the member at offset 0, then an `i64` timestamp in nanoseconds
+  since 1970-01-01T00:00 UTC at `round_up(member size, 8)`; size
+  `round_up(round_up(member size, 8) + 8, A)` with `A` the larger of the
+  member's alignment and 8. The timestamp `-2**63` is the mark a write
+  replaces (see "The timestamp of a timed value").
 
 ### Descriptions
 
@@ -328,6 +336,7 @@ the value. A name is a `u16` length, then UTF-8.
 | dict | 2 | `u32` capacity, then the key's entry and the value's |
 | array | 0 | `u8` DLPack code, `u8` bits, `u16` lanes (1), `u8` ndim (1 to 8), 3 zero bytes, then `ndim` `u64` dimensions |
 | max_array | 0 | as `array`, the dimensions being the maximum ones |
+| timed | 1 | one entry, at offset 0 |
 
 Attach copies the table and checks it before using it: every description
 is 8-aligned, inside the table, read once, after its parent and apart from
@@ -337,9 +346,10 @@ description implies is computed without overflow and matches the head; an
 array's code is one of 0, 1, 2, 4, 5, 6, its bits a multiple of 8 and every
 dimension at least 1. A failure refuses the segment. A reference may only
 be a field, and an array only a field, a record or tuple member, or the
-member of an optional. A `max_array` may only be a box field or a stream's
-item, or a record or tuple member reached from one through records and
-tuples alone; a `max_array` under any other kind is refused.
+member of an optional or a `timed`. A `max_array` may only be a box field
+or a stream's item, or the member of a record, tuple or `timed` reached
+from one through records, tuples and `timed` values alone; a `max_array`
+under any other kind is refused. A `timed` may go wherever a record may.
 
 ### Decoding checks
 
@@ -360,7 +370,20 @@ The bytes written for a `max_array` box field are its shape line and the
 elements that line counts, no more, so a box write of a small array
 copies only that array. A writer that sends any other length, or a line
 with a dimension above its maximum, gets `status::range` and the field
-keeps its value.
+keeps its value. A `max_array` inside a record, a tuple or a `timed` is
+written with the whole value around it, at the size of its maximum.
+
+### The timestamp of a timed value
+
+A writer that wants the time of the write in a `timed` value stores the mark
+`-2**63` as its timestamp. A box write replaces every mark in the values it
+stores with the system clock in nanoseconds since the Unix epoch, read once
+after the write takes the lock, so all the marks of one write get one time
+and the stamps follow the order of the writes. Create stamps the initial
+values the same way before it stores the magic, and a stream sender stamps
+an item before it publishes its slot. A C or C++ writer may store the mark
+or a time of its own. Since the mark is replaced, a timestamp of `-2**63`
+cannot be stored, and no reader finds one in a value it reads.
 
 ### Writing a list, set or dict
 
@@ -464,7 +487,7 @@ attacher agree on it and on the class's meaning.
 A stream is a ring of `capacity` slots, at least 2, that one sender writes
 and up to `max_readers` readers (1 to 4095) copy out of. Its common line
 holds the magic `SBX_STRM` (`0x4D5254535F584253`), `kind_major` 1 and
-`kind_minor` 4 (stream layout 1.4), and a `waiter_slots` of
+`kind_minor` 5 (stream layout 1.5), and a `waiter_slots` of
 `max_readers + 1`, one slot for each reader and one for the sender. Every
 size and offset is 64-bit, so a ring may pass 4 GiB; the slots end at or
 below 2^46 bytes. The mapping holds, from offset 0:
@@ -715,6 +738,15 @@ layout version of its kind, for the rest. Each has a major and a minor.
   `status::corrupt`. A reader of 3.1 or older opens a box whose `max_array`
   is a field, as a field of a kind it does not know, and refuses one inside
   a record or tuple. Every older reader opens a box of 3.3 that has none.
+- Box layout 3.3 also adds kind 78, `timed`, wherever a record may go. A
+  reader of box layout 3.2 or older opens a box whose `timed` is a field, as
+  a field of a kind it does not know: its C++ `handle` reads the bytes and
+  refuses to write them with `status::range`, and its Python extension
+  refuses the box with `SchemaMismatchError`. It refuses a box with a
+  `timed` inside a described type with `status::corrupt`.
+- Stream layout 1.5 allows kind 78 in a stream's item. A reader of stream
+  layout 1.4 or older refuses a stream whose item is or holds a `timed`
+  with `status::corrupt`, and opens one whose item holds none.
 - A change to how existing bytes are read or written raises a major: the
   core's (the common line, the object names, liveness) raises `core_major`,
   and a kind's own (the sequence lock, field encoding, the slot layout)
@@ -1517,7 +1549,7 @@ The header also declares these names:
 ### `stream.hpp`
 
 ```cpp
-inline constexpr std::uint16_t stream_layout_major = 1, stream_layout_minor = 4;
+inline constexpr std::uint16_t stream_layout_major = 1, stream_layout_minor = 5;
 inline constexpr std::uint32_t stream_header_size = 256;
 inline constexpr std::uint64_t min_stream_capacity = 2;
 inline constexpr std::uint32_t max_stream_readers = max_waiter_slots - 1;   // 4095
@@ -1791,7 +1823,8 @@ int      sbx_add_metadata(sbx_handle *h, const void *doc, size_t len, double loc
 - `sbx_read`, `sbx_write` and `sbx_schema_hash` accept only handles made
   by `sbx_open` or `sbx_import`; for any other, `sbx_read` and `sbx_write`
   return `SBX_E_RANGE` and `sbx_schema_hash` returns 0. `sbx_write` also
-  returns `SBX_E_RANGE` for a field of a kind the header does not know. When the stored
+  returns `SBX_E_RANGE` for a field of a kind the header does not know, and
+  stores a `timed` value's mark as the time of the write. When the stored
   value is longer than `cap`, `sbx_read` copies nothing, sets `*len` and
   returns `SBX_E_RANGE`. `sbx_release` releases any handle.
 - `sbx_metadata_head` returns the box's newest metadata version, 0 when it

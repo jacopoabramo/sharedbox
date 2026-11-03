@@ -26,6 +26,8 @@ items through a [stream](../explanation/glossary.md#stream).
   capacity and handle values that do not fit
 - [How to store records](store-records.md): dataclasses, named tuples and
   typed dicts as one field
+- [How to store a value with its time](store-a-value-with-its-time.md):
+  a timestamp the write takes, or one you already have
 - [How to store lists, sets and dicts](store-collections.md): collections
   with a capacity in elements
 - [How to store arrays](store-arrays.md): a shape, a dtype and any DLPack
