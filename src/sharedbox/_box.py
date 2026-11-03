@@ -26,6 +26,7 @@ from typing import (
     overload,
 )
 
+from ._call import CallAttribute
 from ._events import BoxEvents, FieldWatch, Watcher, events_class, on_watcher_thread
 from ._follow import box_events
 from ._layout import (
@@ -239,7 +240,7 @@ def install_native_methods(cls: type[SharedBox]) -> None:
     from a base later in its MRO, the override is set on `cls` instead.
     """
     layout = cls.__layout__
-    names = tuple(sys.intern(spec.name) for spec in layout.fields)
+    names = tuple(None if name is None else sys.intern(name) for name in layout.names)
     specs = tuple(spec if spec.target is not None else None for spec in layout.fields)
     segment_slot = SharedBox.__dict__["_segment"]
     for method, kind, helper, follow in (
@@ -691,7 +692,7 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
             if isinstance(value, Field):
                 options[attr] = value
             elif value is not MISSING and not isinstance(
-                value, (FieldDescriptor, Reference)
+                value, (FieldDescriptor, Reference, CallAttribute)
             ):
                 if attr not in own:
                     base = next(
@@ -718,8 +719,13 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
                 attr_kw_only = own[attr]
             else:
                 attr_kw_only = given.kw_only
+            is_call = attr in layout.by_name and layout.by_name[attr].kind == "call"
             param = dataclasses.replace(
-                given, name=attr, type=hint, kw_only=attr_kw_only
+                given,
+                name=attr,
+                type=hint,
+                kw_only=attr_kw_only,
+                init=given.init and not is_call,
             )
             if isinstance(hint, InitVar):
                 if param.shape is not None:
@@ -738,18 +744,24 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
                 setattr(cls, attr, InitVarAttribute(f"{cls.__qualname__}.{attr}"))
             else:
                 spec = layout.by_name[attr]
+                if is_call and has_default(param):
+                    raise TypeError(
+                        f"{cls.__qualname__}.{attr}: a Call field holds no value, so it takes no default"
+                    )
                 if param.default is not MISSING and spec.target is not None:
                     stored(spec, param.default)
                 elif param.default is not MISSING:
                     layout.check(spec, param.default)
-                if not param.init and not has_default(param):
+                if not param.init and not has_default(param) and not is_call:
                     raise TypeError(
                         f"{cls.__qualname__}: field {attr!r} has init=False and no default"
                     )
                 setattr(
                     cls,
                     attr,
-                    FieldDescriptor(spec, segment_slot, layout.types, values_slot)
+                    CallAttribute(spec)
+                    if is_call
+                    else FieldDescriptor(spec, segment_slot, layout.types, values_slot)
                     if spec.target is None
                     else Reference(spec),
                 )
@@ -962,7 +974,7 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
                     if spec.target is None
                     else stored(spec, values[spec.name]),
                 )
-                for spec in layout.fields
+                for spec in layout.values
             ],
             cls.__max_waiters__,
             publish=False,
@@ -1114,6 +1126,11 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
         except KeyError:
             self._check_names(values)
             raise
+        for n in values:
+            if by_name[n].kind == "call":
+                raise TypeError(
+                    f"{by_name[n].label} is a Call field, which holds no value"
+                )
         if layout.refs:
             specs = layout.fields
             pairs = [
@@ -1279,6 +1296,10 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
             If the class has no field `field`.
         """
         spec = self._spec(field)
+        if spec.kind == "call":
+            raise TypeError(
+                f"{spec.label} is a Call field, which holds no value to watch"
+            )
         return FieldWatch(self._watcher, spec, self._segment.version(spec.index))
 
     @property
@@ -1338,7 +1359,7 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
         cls = type(self)
         return self._watcher.events(
             partial(box_events, cls, self._segment, self._watcher),
-            cls.__layout__.fields,
+            cls.__layout__.values,
         )
 
     def _spec(self, field: str) -> FieldSpec:

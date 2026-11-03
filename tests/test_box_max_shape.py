@@ -279,7 +279,11 @@ def test_a_value_that_does_not_match_its_shape_line_is_refused(
     layout = Frame.__layout__
     with Frame.create(unique_name) as box:
         segment = Segment.attach(
-            unique_name, layout.names, layout.schema_hash, 1.0, layout.types
+            unique_name,
+            [spec.label for spec in layout.fields],
+            layout.schema_hash,
+            1.0,
+            layout.types,
         )
         line = struct.pack("<8Q", 1, 3, 0, 0, 0, 0, 0, 0)
         with pytest.raises(ValueError, match="field 0 does not match its shape line"):

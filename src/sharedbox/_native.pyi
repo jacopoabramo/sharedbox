@@ -276,9 +276,12 @@ class Segment:
         """Return the field's version and stored bytes, read together."""
 
     def get_dict(
-        self, names: tuple[str, ...], types: Types | None = None
+        self, names: tuple[str | None, ...], types: Types | None = None
     ) -> dict[str, object]:
-        """Return every field's value under its name in `names`, read at one point in time."""
+        """Return every field's value under its name in `names`, read at one point in time.
+
+        A field whose name is None, a call field, is left out.
+        """
 
     def set(
         self,
@@ -308,6 +311,57 @@ class Segment:
 
     def _write(self, values: Sequence[tuple[int, bytes]]) -> None:
         """Write several fields' bytes under one lock; for tests."""
+
+    def call_send(self, field: int, arguments: tuple[object, ...], types: Types) -> int:
+        """Store `arguments` as the newest request of call field `field` and return its number.
+
+        Raises
+        ------
+        TypeError
+            If the number of arguments is wrong or one has the wrong type.
+        ValueError
+            If an argument does not fit its type.
+        """
+
+    def call_take(
+        self, field: int, types: Types
+    ) -> tuple[int, tuple[object, ...]] | None:
+        """Mark the newest request of call field `field` as taken and return its number and arguments.
+
+        None when the newest request was taken already.
+        """
+
+    def call_answer(
+        self, field: int, number: int, ok: bool, value: object, types: Types
+    ) -> bool:
+        """Answer request `number`, the one taken last, and return True.
+
+        `value` is the result when `ok`, else the error text, a `str` of at
+        most 256 UTF-8 bytes. False, writing nothing, when `number` is not
+        the request taken last or already has an answer.
+        """
+
+    def call_answer_of(
+        self, field: int, number: int, check_server: bool, types: Types
+    ) -> tuple[int, object]:
+        """Return what became of request `number`: the outcome and the result, the error text or None.
+
+        The outcome is 0 for pending, 1 answered, 2 failed, 3 superseded, 4
+        overwritten and 5 server exited. With `check_server`, a pending
+        request reads server exited when the process that serves the field
+        has ended.
+
+        Raises
+        ------
+        ValueError
+            If no such request was ever sent.
+        """
+
+    def call_claim(self, field: int) -> bool:
+        """Record this process as the server of call field `field`; False while another live process serves it."""
+
+    def call_release(self, field: int) -> None:
+        """Clear this process as the server of call field `field`, if it is one."""
 
     def version(self, field: int) -> int:
         """Return how many writes the field has had."""
@@ -1201,7 +1255,7 @@ class BoxMethod:
         kind: int,
         owner: type,
         qualname: str,
-        names: tuple[str, ...],
+        names: tuple[str | None, ...],
         specs: tuple[FieldSpec | None, ...],
         helper: Callable[..., object],
         follow: Callable[..., object] | None,

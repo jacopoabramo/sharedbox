@@ -8,11 +8,13 @@ import time
 import weakref
 from collections.abc import AsyncIterator, Callable, Generator, Iterator
 from concurrent.futures import CancelledError, Future, InvalidStateError
+from functools import partial
 from typing import (
     TYPE_CHECKING,
     Any,
     Final,
     Generic,
+    NoReturn,
     TypeAlias,
     TypeVar,
     overload,
@@ -636,13 +638,22 @@ class BoxEvents(SignalGroup):
         self._sharedbox_follower.unfollow(field)
 
 
+def refuse_call_signal(label: str, group: object) -> NoReturn:
+    raise TypeError(f"{label} is a Call field, which holds no value and has no signal")
+
+
 def events_class(owner: type, layout: Layout) -> type[BoxEvents]:
     """Create a [`BoxEvents`][sharedbox.BoxEvents] subclass with one `(new, old)` signal per field of `owner`.
 
     It also gets the signal `metadata`, and a class with reference fields
-    the signal `nested`.
+    the signal `nested`. A call field gets a property that raises `TypeError`.
     """
-    signals = {spec.name: Signal(object, object) for spec in layout.fields}
+    signals: dict[str, Any] = {
+        spec.name: Signal(object, object) for spec in layout.values
+    }
+    for spec in layout.fields:
+        if spec.kind == "call":
+            signals[spec.name] = property(partial(refuse_call_signal, spec.label))
     signals["metadata"] = Signal(int)
     if layout.refs:
         signals["nested"] = Signal(tuple, object, object)

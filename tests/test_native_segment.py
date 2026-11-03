@@ -14,6 +14,7 @@ from typing import cast
 
 import pytest
 from os_names import os_name
+from test_call_fields import Scanner
 
 from sharedbox import SharedBox
 from sharedbox._layout import NativeField
@@ -893,3 +894,30 @@ def test_attaching_a_stream_name_as_a_box_raises_kind_mismatch(
     with raw_bytes(unique_name) as view:
         view[0:8] = MAGIC
     owner.close()
+
+
+def test_call_steps_round_trip(unique_name: str) -> None:
+    """Send, take, answer and read the answer of requests through the call steps."""
+    box = Scanner.create(unique_name)
+    segment = box._segment
+    types = Scanner.__layout__.types
+    move = Scanner.__layout__.by_name["move"].index
+    assert segment.call_take(move, types) is None
+    assert segment.call_send(move, (5.0,), types) == 1
+    assert segment.call_take(move, types) == (1, (5.0,))
+    assert segment.call_answer(move, 1, True, 6.0, types) is True
+    assert segment.call_answer(move, 1, True, 7.0, types) is False
+    assert segment.call_answer_of(move, 1, False, types) == (1, 6.0)
+    assert segment.call_send(move, (8.0,), types) == 2
+    assert segment.call_take(move, types) == (2, (8.0,))
+    assert segment.call_answer(move, 2, False, "ValueError: x", types) is True
+    assert segment.call_answer_of(move, 2, False, types) == (2, "ValueError: x")
+    assert segment.call_claim(move) is True
+    assert segment.call_claim(move) is False
+    segment.call_release(move)
+    assert segment.call_claim(move) is True
+    with pytest.raises(TypeError):
+        segment.call_send(move, ("x",), types)
+    with pytest.raises(TypeError, match="takes 1 arguments"):
+        segment.call_send(move, (1.0, 2.0), types)
+    box.close()

@@ -6,6 +6,7 @@
 #include <nanobind/stl/unique_ptr.h>
 #include <nanobind/stl/vector.h>
 
+#include <algorithm>
 #include <concepts>
 #include <cstddef>
 #include <cstring>
@@ -19,6 +20,7 @@
 #include <system_error>
 #include <type_traits>
 #include <utility>
+#include <vector>
 
 #include <sharedbox/sharedbox.hpp>
 
@@ -384,7 +386,7 @@ Py_ssize_t field_index(const BoxMethod &m, PyObject *name) {
         if (tuple_item(m.names, i) == name)
             return i;
     for (Py_ssize_t i = 0; i < count; ++i)
-        if (PyUnicode_Compare(tuple_item(m.names, i), name) == 0)
+        if (tuple_item(m.names, i) != Py_None && PyUnicode_Compare(tuple_item(m.names, i), name) == 0)
             return i;
     return -1;
 }
@@ -472,6 +474,8 @@ PyObject *box_snapshot(PyObject *callable, PyObject *const *args, std::size_t na
             if (!out.is_valid())
                 throw nb::python_error();
             for (Py_ssize_t i = 0; i < tuple_size(m.names); ++i) {
+                if (tuple_item(m.names, i) == Py_None)
+                    continue;
                 const auto index = static_cast<std::uint32_t>(i);
                 sharedbox::check_index(index, fields.size());
                 nb::object value = decode_payload(m.t, fields[index], index, record);
@@ -533,8 +537,8 @@ PyObject *box_method_new(PyTypeObject *type, PyObject *args, PyObject *kwargs) n
         return nullptr;
     }
     for (Py_ssize_t i = 0; i < tuple_size(names); ++i)
-        if (!PyUnicode_Check(tuple_item(names, i))) {
-            PyErr_SetString(PyExc_TypeError, "names must hold only str");
+        if (tuple_item(names, i) != Py_None && !PyUnicode_Check(tuple_item(names, i))) {
+            PyErr_SetString(PyExc_TypeError, "names must hold only str or None");
             return nullptr;
         }
     if (!PyCallable_Check(helper) || !PyCallable_Check(fallback) ||
@@ -1141,7 +1145,8 @@ NB_MODULE(_native, m) {
                 return sharedbox::with_record(s, [&](const std::byte *record) {
                     nb::dict out;
                     for (std::uint32_t i = 0; i < s.field_count(); ++i)
-                        out[names[i]] = decode_payload(t, s.fields()[i], i, record);
+                        if (!names[i].is_none())
+                            out[names[i]] = decode_payload(t, s.fields()[i], i, record);
                     return out;
                 });
             },
@@ -1194,6 +1199,72 @@ NB_MODULE(_native, m) {
                 s.write(converted);
             },
             "values"_a)
+        .def(
+            "call_send",
+            [](Segment &s, std::uint32_t index, nb::tuple arguments, nb::handle types) {
+                const sharedbox::Types &t = sharedbox::need(types_of(types), index);
+                std::vector<std::byte> bytes(t.call_arguments_size(index));
+                t.encode_call_arguments(index, arguments.ptr(), bytes);
+                return s.call_send(index, bytes);
+            },
+            "field"_a, "arguments"_a, "types"_a)
+        .def(
+            "call_take",
+            [](Segment &s, std::uint32_t index, nb::handle types) -> nb::object {
+                const sharedbox::Types &t = sharedbox::need(types_of(types), index);
+                std::vector<std::byte> bytes(t.call_arguments_size(index));
+                const std::uint64_t number = s.call_take(index, bytes);
+                if (number == 0)
+                    return nb::none();
+                return nb::make_tuple(number, t.decode_call_arguments(index, bytes));
+            },
+            "field"_a, "types"_a)
+        .def(
+            "call_answer",
+            [](Segment &s, std::uint32_t index, std::uint64_t number, bool ok, nb::handle value,
+               nb::handle types) {
+                const sharedbox::Types &t = sharedbox::need(types_of(types), index);
+                if (ok) {
+                    std::vector<std::byte> bytes(t.call_result_size(index));
+                    t.encode_call_result(index, value.ptr(), bytes);
+                    return s.call_answer(index, number, true, bytes);
+                }
+                if (!PyUnicode_Check(value.ptr()))
+                    throw nb::type_error("the error text of an answer must be a str");
+                Py_ssize_t length = 0;
+                const char *text = PyUnicode_AsUTF8AndSize(value.ptr(), &length);
+                if (text == nullptr)
+                    throw nb::python_error();
+                return s.call_answer(index, number, false,
+                                     std::as_bytes(std::span(text, static_cast<std::size_t>(length))));
+            },
+            "field"_a, "number"_a, "ok"_a, "value"_a.none(), "types"_a)
+        .def(
+            "call_answer_of",
+            [](const Segment &s, std::uint32_t index, std::uint64_t number, bool check_server,
+               nb::handle types) -> nb::tuple {
+                const sharedbox::Types &t = sharedbox::need(types_of(types), index);
+                std::vector<std::byte> bytes((std::max)(t.call_result_size(index), sharedbox::call_error_size));
+                const sharedbox::call_reply reply = s.call_answer_of(index, number, bytes, check_server);
+                const auto outcome = static_cast<int>(reply.outcome);
+                switch (reply.outcome) {
+                case sharedbox::call_outcome::answered:
+                    return nb::make_tuple(outcome, t.decode_call_result(index, {bytes.data(), reply.length}));
+                case sharedbox::call_outcome::failed: {
+                    const nb::object text =
+                        nb::steal(PyUnicode_DecodeUTF8(reinterpret_cast<const char *>(bytes.data()),
+                                                       static_cast<Py_ssize_t>(reply.length), "replace"));
+                    if (!text.is_valid())
+                        throw nb::python_error();
+                    return nb::make_tuple(outcome, text);
+                }
+                default:
+                    return nb::make_tuple(outcome, nb::none());
+                }
+            },
+            "field"_a, "number"_a, "check_server"_a, "types"_a)
+        .def("call_claim", &Segment::call_claim, "field"_a)
+        .def("call_release", &Segment::call_release, "field"_a)
         .def("version", &Segment::version, "field"_a)
         .def("versions", &Segment::versions)
         .def("metadata_head", &Segment::metadata_head)
