@@ -30,6 +30,7 @@ sharedbox/
 |   |-- _types.py              annotation parsing into TypeSpec, the description table
 |   |-- _arrays.py             Shape, MaxShape, DType, SupportsDLPack, register_array_type
 |   |-- _timed.py              Timed: a value with its timestamp in ns, Timed.now and the mark a write replaces
+|   |-- _call.py               Call fields: Call, CallFuture, CallServer, the call errors, serving threads and tasks
 |   |-- _events.py             BoxEvents, FieldWatch, the watcher thread
 |   |-- _follow.py             BoxEvents.follow and unfollow: forwarding the events of boxes that references reach
 |   |-- _stream.py             SharedStream, SharedSendStream, SharedReceiveStream, ReceiveEvents, the statistics classes, the worker threads
@@ -82,6 +83,9 @@ sharedbox/
 |   |-- test_stream_processes.py  streams across processes, dead senders and readers
 |   |-- test_stream_fork.py    stream ends inherited through fork
 |   |-- test_timed.py          Timed fields and stream items: stamps, given times, where a Timed may go
+|   |-- test_call.py           Call fields across processes: answers, superseding, a killed server, close
+|   |-- test_call_async.py     async handlers: tasks, cancellation, a call from inside a handler
+|   |-- test_call_fields.py    Call in the layout: no value, refused operations, where a Call may go
 |   |-- streamproc.py          helpers that run a stream end in another process
 |   |-- test_properties_*.py   Hypothesis property tests, streams included
 |   |-- stress/                stress tests, marker stress, deselected by default
@@ -166,11 +170,13 @@ version 1.0, box layout 3.3, from offset 0:
   `asleep_on`: the offset of the count the slot's current wait added 1 to,
   which freeing a dead owner's slot takes back), then the description
   table of `types_size` bytes. Kinds are 0 to 5, 6 to 12 (fixed-size
-  scalars), 13 to 23 (fixed-width numbers and `datetime64`), and 64 to 75
+  scalars), 13 to 23 (fixed-width numbers and `datetime64`), and 64 to 76
   and 78 (described types; 75, an array up to a maximum shape, in a stream
   item or a box field, written as its shape line and the elements in use;
-  78, a value with an `i64` timestamp in ns, wherever a record may go, its
-  timestamp `-2**63` replaced by the time of the write).
+  76, a call, a box field only, holding the request line, the server's
+  identity, the arguments and a ring of 4 answers; 78, a value with an
+  `i64` timestamp in ns, wherever a record may go, its timestamp `-2**63`
+  replaced by the time of the write).
 - The record, at a multiple of 64. `record + record_size <= 2**32 - 4096`.
 - The metadata area, when `metadata` is not 0, at the first multiple of 64
   after the record, `metadata + metadata_size <= 2**32 - 4096`: a 64-byte

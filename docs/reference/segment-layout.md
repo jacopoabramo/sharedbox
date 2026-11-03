@@ -253,9 +253,10 @@ record (4096 - 2240 = 1856).
 | 73 | dict | description offset | from the description |
 | 74 | array | description offset | data size, 64 |
 | 75 | max_array | description offset | 64 + data size of the maximum shape, 64 |
+| 76 | call | description offset | from the description |
 | 78 | timed | description offset | from the description |
 
-Codes 76 and 77 are reserved for kinds a later version adds.
+Code 77 is reserved for a kind a later version adds.
 
 A field of a kind the reader does not know is opened as opaque bytes: a
 kind below 64 is sized by its entry, one from 64 by its description's
@@ -314,6 +315,20 @@ Little-endian.
   `round_up(round_up(member size, 8) + 8, A)` with `A` the larger of the
   member's alignment and 8. The timestamp `-2**63` is the mark a write
   replaces (see "The timestamp of a timed value").
+- `call`: from offset 0, the request line `u64 sent`, `u64 taken` and
+  `u64 answered`, then the server's `u64 start`, `u64 pidns`, `u32 pid` and
+  4 zero bytes, all 0 when none serves. The arguments follow from offset
+  48 in order, each at a multiple of its own alignment, and then, at
+  `answers = round_up(end of the arguments, A_r)`, four answer entries of
+  `stride` bytes. An entry is `u64 number`, `u32 status` (0 empty, 1
+  answered, 2 failed), `u32 length` of the error text, the error text in
+  256 bytes of UTF-8, and the result at `result_at = round_up(272, result
+  alignment)`, or 272 with no result. `A_r` is the larger of 8 and the
+  result's alignment, `stride = round_up(result_at + result size, A_r)`,
+  the field's alignment `A` is the largest of 8, `A_r` and every argument's
+  alignment, and its size is `round_up(answers + 4 * stride, A)`: 1176
+  bytes for `Call[[int], int]` and 1136 for `Call[[], None]`. "The call
+  protocol" says how the steps use these bytes.
 
 ### Descriptions
 
@@ -337,6 +352,7 @@ the value. A name is a `u16` length, then UTF-8.
 | array | 0 | `u8` DLPack code, `u8` bits, `u16` lanes (1), `u8` ndim (1 to 8), 3 zero bytes, then `ndim` `u64` dimensions |
 | max_array | 0 | as `array`, the dimensions being the maximum ones |
 | timed | 1 | one entry, at offset 0 |
+| call | arguments + results, 0 to 256 | `u16` arguments, `u8` results (0 or 1), 5 zero bytes, then the arguments' entries, with offsets from the field's start, and the result's entry, with offset `result_at` from the start of an answer entry |
 
 Attach copies the table and checks it before using it: every description
 is 8-aligned, inside the table, read once, after its parent and apart from
@@ -350,6 +366,10 @@ member of an optional or a `timed`. A `max_array` may only be a box field
 or a stream's item, or the member of a record, tuple or `timed` reached
 from one through records, tuples and `timed` values alone; a `max_array`
 under any other kind is refused. A `timed` may go wherever a record may.
+A `call` may only be a box field, never a stream's item or a member, and
+its arguments and result may not be or hold a `timed`; a reader recomputes
+every offset and the size from the encoding above and refuses a
+description that differs.
 
 ### Decoding checks
 
@@ -385,6 +405,64 @@ values the same way before it stores the magic, and a stream sender stamps
 an item before it publishes its slot. A C or C++ writer may store the mark
 or a time of its own. Since the mark is replaced, a timestamp of `-2**63`
 cannot be stored, and no reader finds one in a value it reads.
+
+### The call protocol
+
+A `call` field carries requests from any process to the one process that
+serves the field, and carries the answers back. Each step that changes the
+field runs under the box's write lock, as a write does (see Sequence lock),
+so it moves the generation and the field's write count and wakes the
+waiters, and every existing wait notices it. A step that finds nothing to
+change gives the lock back with `seq` and the write count as they were and
+wakes nobody, because otherwise an idle server and the process watching it
+would wake each other forever. The steps, with the `handle` function of
+each:
+
+1. Send (`call_send`) adds 1 to `sent`, stores the arguments and returns
+   `sent` as the request's number. Numbers start at 1, and no two callers
+   get the same one.
+2. Take (`call_take`) returns 0 when `taken` equals `sent`, since no
+   request is waiting. Otherwise it copies the arguments, sets `taken` to
+   `sent` and returns that number, which leaves every request below it that
+   was never taken superseded.
+3. Answer (`call_answer`) runs after the server's handler, which runs
+   without the lock. It writes the answer to request `taken` into entry
+   `answered % 4` and adds 1 to `answered`: status 1 with the result, or
+   status 2 with an error text of at most 256 bytes. An answer to any other
+   request, or to one already answered, writes nothing and gives
+   `status::ended`, so a handler that finishes after its server left
+   changes nothing.
+4. Claim (`call_claim`) records the serving process's `start`, `pidns` and
+   `pid` (see Liveness). While the recorded process runs, a claim gives
+   `status::busy`, including a second claim by that same process. When the
+   recorded process has exited, the claim replaces it and first writes the
+   failed answer "the server exited" to the request it took and never
+   answered.
+5. Release (`call_release`) clears the identity when it names the releasing
+   process, and writes the failed answer "the server stopped" to a request
+   that process took and never answered. A release by any other process
+   changes nothing.
+
+A caller learns what became of its request `n` through `call_answer_of`,
+which reads without the lock: it copies the request line, the identity and
+the four entries and retries on `seq`, as a read does. It then decides in
+this order:
+
+- an entry numbered `n` holds the answer, or its error text;
+- `n` of 0 or above `sent` is `status::range`;
+- `n` at or above `taken` is still pending, or, when the caller asks for
+  the server check, `server_exited` once a recorded server's process has
+  ended;
+- when all four entries hold numbers above `n`, four later answers
+  overwrote its answer;
+- otherwise a later request superseded it before the server took it.
+
+The answers form a ring of four because a single entry would let a fast
+handler overwrite an answer before a caller woken late had read it. The
+ring is indexed by `answered` rather than by request number, so the entries
+stay in the order they were written and an answer is overwritten only by
+four later ones, which only a caller that stalls through four whole handler
+runs sees.
 
 ### Writing a list, set or dict
 
@@ -439,6 +517,9 @@ attacher agree on it and on the class's meaning.
     - `array(dtype,d1xd2x...)`, as in `array(float32,2x3)`.
     - `max_array(dtype,d1xd2x...)` with the maximum dimensions, as in
       `max_array(uint16,2048x2048)`.
+    - `call(T,...->R)` with the argument texts in order and `R` the
+      result's text, or `None` for no result, as in
+      `call(float:8,int:8->float:8)` and `call(->None)`.
 
 - `schema_hash`: the first 8 bytes of SHA-256 over that text, read as a
   little-endian `u64`.
@@ -745,6 +826,11 @@ layout version of its kind, for the rest. Each has a major and a minor.
   refuses to write them with `status::range`, and its Python extension
   refuses the box with `SchemaMismatchError`. It refuses a box with a
   `timed` inside a described type with `status::corrupt`.
+- Box layout 3.3 also adds kind 76, `call`, as a box field. A reader of
+  box layout 3.2 or older opens a box with a `call` field as one with a
+  field of a kind it does not know: its C++ `handle` reads the bytes and
+  refuses to write them with `status::range`, and its Python extension
+  refuses the box with `SchemaMismatchError`.
 - Stream layout 1.5 allows kind 78 in a stream's item. A reader of stream
   layout 1.4 or older refuses a stream whose item is or holds a `timed`
   with `status::corrupt`, and opens one whose item holds none.
@@ -1346,7 +1432,8 @@ inline constexpr std::uint64_t stream_magic = 0x4D5254535F584253;    // "SBX_STR
 // unix_epoch_ordinal, micros_per_day, max_offset_minutes, literal_none through
 // literal_enum, and the kind codes kind_bool, kind_int, kind_float, kind_str,
 // kind_bytes, kind_ref, kind_complex through kind_decimal, kind_enum through
-// kind_max_array and kind_timed, and timed_mark, the timestamp a write replaces;
+// kind_max_array, kind_call and kind_timed, timed_mark, the timestamp a write
+// replaces, and call_answers, call_error_size and call_arguments_at (see Encodings);
 // the structs common_header, header, stored_field, waiter_slot, box_ref and
 // type_head (see Layout); dl_dtype and literal_value, which type_view's dtype()
 // and literal() return (see the list below); error, result<T> and unexpected (see
@@ -1365,6 +1452,8 @@ struct read_value { std::size_t len; std::uint64_t version; };
 enum class wake { changed, interrupted };      // a timeout is status::timeout
 struct metadata_spec { std::span<const std::byte> initial; std::uint64_t capacity; std::uint32_t versions; };
 bool metadata_ok(std::span<const std::byte> doc) noexcept;
+enum class call_outcome : std::uint8_t { pending, answered, failed, superseded, overwritten, server_exited };
+struct call_reply { call_outcome outcome; std::uint32_t length; };
 
 class handle {                                  // move-only; the destructor releases it
 public:
@@ -1427,6 +1516,16 @@ public:
     result<std::uint32_t> metadata_length(std::uint64_t version) const;
     result<std::uint32_t> read_metadata(std::uint64_t version, std::span<std::byte> out) const;
     result<std::uint64_t> add_metadata(std::span<const std::byte> doc, seconds lock_timeout);
+
+    result<std::uint64_t> call_send(std::uint16_t field, std::span<const std::byte> arguments,
+                                    seconds lock_timeout);
+    result<std::uint64_t> call_take(std::uint16_t field, std::span<std::byte> arguments, seconds lock_timeout);
+    result<void> call_answer(std::uint16_t field, std::uint64_t number, bool ok,
+                             std::span<const std::byte> bytes, seconds lock_timeout);
+    result<call_reply> call_answer_of(std::uint16_t field, std::uint64_t number, std::span<std::byte> out,
+                                      bool check_server) const;
+    result<void> call_claim(std::uint16_t field, seconds lock_timeout);
+    result<void> call_release(std::uint16_t field, seconds lock_timeout);
 };
 
 result<void> unlink(std::string_view name) noexcept;
@@ -1541,6 +1640,17 @@ The header also declares these names:
   and gives the statuses of `write` and of `add_metadata`. A refused
   document writes no field. `write_large(values, doc, lock_timeout)` is the
   same write for large values, running the wait hooks once around it.
+- `call_send`, `call_take`, `call_answer`, `call_answer_of`, `call_claim`
+  and `call_release` are the steps of the call protocol on a `call` field
+  (see The call protocol). `call_send` takes the bytes from offset 48 to
+  `answers`, and `call_take` copies them into a span of that size.
+  `call_answer` takes the result at its exact size when `ok`, otherwise the
+  error text. `call_answer_of` copies the result or the error text into
+  `out`, which holds at least the larger of the result's size and 256
+  bytes, and `call_reply::length` gives how many bytes it copied. Each
+  gives `status::range` for a field that is not a `call` or for a span of
+  the wrong size, and the steps that take the lock give
+  `status::lock_timeout` as `write` does.
 - Thread safety: every member function may be called from several threads
   on one handle. Destroying or moving a handle must not overlap another
   call on it.
@@ -1826,7 +1936,9 @@ int      sbx_add_metadata(sbx_handle *h, const void *doc, size_t len, double loc
   by `sbx_open` or `sbx_import`; for any other, `sbx_read` and `sbx_write`
   return `SBX_E_RANGE` and `sbx_schema_hash` returns 0. `sbx_write` also
   returns `SBX_E_RANGE` for a field of a kind the header does not know, and
-  stores a `timed` value's mark as the time of the write. When the stored
+  stores a `timed` value's mark as the time of the write. A `call` field's
+  bytes move as they are, at the field's full size, without the call
+  protocol. When the stored
   value is longer than `cap`, `sbx_read` copies nothing, sets `*len` and
   returns `SBX_E_RANGE`. `sbx_release` releases any handle.
 - `sbx_metadata_head` returns the box's newest metadata version, 0 when it

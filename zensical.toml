@@ -35,6 +35,7 @@ nav = [
             "how-to/set-defaults-and-check-values.md",
             "how-to/change-several-fields-at-once.md",
             "how-to/send-a-box-to-another-process.md",
+            "how-to/call-a-function-in-the-owner.md",
             "how-to/clean-up-segments.md",
             "how-to/follow-a-whole-reference-graph.md",
             "how-to/send-items-through-a-stream.md",
