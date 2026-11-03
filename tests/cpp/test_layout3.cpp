@@ -565,3 +565,67 @@ TEST_CASE("a write stamps the marks a value holds wherever they sit") {
         static_cast<void>(unlink(name));
     }
 }
+
+TEST_CASE("a write through a duplicated handle stamps a timed field's mark") {
+    const table_builder t = timed(kind_int, 8);
+    const field_spec spec[1] = {{0, 0, kind_timed}};
+    const std::string name = unique("l3-timed-duplicate");
+    auto owner = handle::create(name, spec, 16, 1, 4, {}, t.span());
+    REQUIRE(owner);
+    auto copy = owner->duplicate();
+    REQUIRE(copy);
+    const std::vector<std::byte> bytes = timed_int(5, timed_mark);
+    const value v{0, bytes};
+    const std::int64_t before = detail::wall_ns();
+    REQUIRE(copy->write({&v, 1}, seconds(1.0)).has_value());
+    const std::int64_t after = detail::wall_ns();
+    std::vector<std::byte> out(16);
+    REQUIRE(owner->read(0, out));
+    CHECK((get_at<std::int64_t>(out, 8) >= before && get_at<std::int64_t>(out, 8) <= after));
+    static_cast<void>(unlink(name));
+}
+
+TEST_CASE("a write stamps a timed that is a tuple member or holds a timed") {
+    SUBCASE("a tuple member") {
+        table_builder t;
+        t.head(kind_tuple, 1, 16);
+        t.entry(0, kind_timed, 16);
+        const table_builder inner = timed(kind_int, 8);
+        t.bytes.insert(t.bytes.end(), inner.bytes.begin(), inner.bytes.end());
+        const field_spec spec[1] = {{0, 0, kind_tuple}};
+        const std::string name = unique("l3-timed-tuple");
+        auto box = handle::create(name, spec, 16, 1, 4, {}, t.span());
+        REQUIRE(box);
+        const std::vector<std::byte> bytes = timed_int(5, timed_mark);
+        const value v{0, bytes};
+        const std::int64_t before = detail::wall_ns();
+        REQUIRE(box->write({&v, 1}, seconds(1.0)).has_value());
+        std::vector<std::byte> out(16);
+        REQUIRE(box->read(0, out));
+        CHECK((get_at<std::int64_t>(out, 8) >= before && get_at<std::int64_t>(out, 8) <= detail::wall_ns()));
+        static_cast<void>(unlink(name));
+    }
+    SUBCASE("a timed inside a timed") {
+        table_builder t;
+        t.head(kind_timed, 1, 24);
+        t.entry(0, kind_timed, 16);
+        const table_builder inner = timed(kind_int, 8);
+        t.bytes.insert(t.bytes.end(), inner.bytes.begin(), inner.bytes.end());
+        const field_spec spec[1] = {{0, 0, kind_timed}};
+        const std::string name = unique("l3-timed-timed");
+        auto box = handle::create(name, spec, 24, 1, 4, {}, t.span());
+        REQUIRE(box);
+        std::vector<std::byte> bytes(24);
+        put_at(bytes, 0, std::int64_t{5});
+        put_at(bytes, 8, timed_mark);
+        put_at(bytes, 16, std::int64_t{77});
+        const value v{0, bytes};
+        const std::int64_t before = detail::wall_ns();
+        REQUIRE(box->write({&v, 1}, seconds(1.0)).has_value());
+        std::vector<std::byte> out(24);
+        REQUIRE(box->read(0, out));
+        CHECK((get_at<std::int64_t>(out, 8) >= before && get_at<std::int64_t>(out, 8) <= detail::wall_ns()));
+        CHECK(get_at<std::int64_t>(out, 16) == 77);
+        static_cast<void>(unlink(name));
+    }
+}

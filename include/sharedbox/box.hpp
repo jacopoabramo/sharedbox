@@ -1328,6 +1328,8 @@ inline result<handle> handle::duplicate() const {
     std::copy_n(src.fields.get(), src.field_count, s->fields.get());
     if (const status rc = src.types.copy(s->types); rc != status::ok)
         return unexpected(rc);
+    if (const status rc = detail::find_stamps(*s); rc != status::ok)
+        return unexpected(rc);
     s->record_size = src.record_size;
     s->record_offset = src.record_offset;
     s->metadata_first = src.metadata_first;
