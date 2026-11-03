@@ -10,7 +10,7 @@ import pytest
 from hypothesis import example, given
 from hypothesis import strategies as st
 
-from sharedbox import Capacity, SharedBox
+from sharedbox import Capacity, SharedBox, Timed
 
 
 class Level(enum.IntEnum):
@@ -28,6 +28,7 @@ class Kinds(SharedBox):
     z: complex = 0j
     price: Annotated[decimal.Decimal, Capacity(32)] = decimal.Decimal(0)
     level: Level = Level.LOW
+    reading: Timed[int] = Timed(0, 0)
     pick: int | bool | float | Annotated[str, Capacity(8)] | None = None
     numbers: Annotated[list[int], Capacity(8)] = []
     ratios: Annotated[tuple[float, ...], Capacity(8)] = ()
@@ -137,3 +138,11 @@ def test_collections_round_trip_from_empty_to_full(
     assert_round_trip(box, "numbers", numbers)
     assert_round_trip(box, "ratios", ratios)
     assert_round_trip(box, "table", table)
+
+
+@given(st.integers(-(2**63), 2**63 - 1), st.integers(-(2**63) + 1, 2**63 - 1))
+def test_timed_values_come_back_equal(
+    box: Kinds, value: int, timestamp_ns: int
+) -> None:
+    """Check that any int value with any timestamp except the mark reads back equal."""
+    assert_round_trip(box, "reading", Timed(value, timestamp_ns))

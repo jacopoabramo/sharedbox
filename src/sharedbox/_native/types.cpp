@@ -129,6 +129,11 @@ void store_new_item(PyObject *container, bool is_list, std::uint32_t index, PyOb
 #endif
 }
 
+// The int64 stored after the value of a timed.
+constexpr detail::type_ref timestamp_type{kind_int, 8, 8, detail::no_node};
+
+std::size_t timestamp_at(const detail::type_ref &value) { return (std::size_t{value.size} + 7) & ~std::size_t{7}; }
+
 FieldDesc desc_of(const detail::type_ref &t) {
     return {0, detail::prefixed(t.kind) ? t.size - 4 : t.size, static_cast<FieldKind>(t.kind)};
 }
@@ -381,6 +386,7 @@ void Types::prepare(std::uint32_t node, std::uint8_t kind, nb::object info) {
         break;
     }
     case kind_flag:
+    case kind_timed:
         n.cls = item(n.info, 0);
         break;
     case kind_literal: {
@@ -794,6 +800,14 @@ void Types::encode_plain(const detail::type_ref &t, PyObject *value, std::byte *
         encode_into(m.type, value, out + m.offset, where);
         return;
     }
+    case kind_timed: {
+        if (!instance(value, n.cls) || PyTuple_Size(value) != 2)
+            wrong(where.name, "a " + type_name(n.cls), value);
+        const detail::type_member &inner = tree_.member(tree_.node(t.node).members);
+        encode_into(inner.type, PyTuple_GetItem(value, 0), out + inner.offset, where);
+        encode_plain(timestamp_type, PyTuple_GetItem(value, 1), out + timestamp_at(inner.type), where);
+        return;
+    }
     case kind_list:
     case kind_set:
     case kind_dict:
@@ -1099,6 +1113,23 @@ nb::object Types::decode_stored(const detail::type_ref &t, const std::byte *data
         if (n.form == 2)
             return items;
         PyObject *made = PyObject_CallObject(n.cls, items.ptr());
+        return nb::steal(owned(made));
+    }
+    case kind_timed: {
+        const detail::type_member &inner = tree_.member(node.members);
+        PyObject *args[2] = {nullptr, nullptr};
+        struct Release {
+            PyObject **held;
+            ~Release() {
+                Py_XDECREF(held[0]);
+                Py_XDECREF(held[1]);
+            }
+        } release{args};
+        args[0] = element(inner.type, data + inner.offset, 0);
+        args[1] = PyLong_FromLongLong(load<long long>(data + timestamp_at(inner.type)));
+        if (args[1] == nullptr)
+            throw nb::python_error();
+        PyObject *made = PyObject_Vectorcall(n.cls, args, 2, nullptr);
         return nb::steal(owned(made));
     }
     case kind_array:
@@ -1546,6 +1577,8 @@ bool Types::accepts(const detail::type_ref &t, PyObject *value) const {
         if (n.form == 3)
             return instance(value, scalars::mapping());
         return n.form == 2 ? PyTuple_Check(value) != 0 : instance(value, n.cls);
+    case kind_timed:
+        return instance(value, n.cls);
     default:
         return false;
     }

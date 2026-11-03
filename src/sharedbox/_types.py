@@ -46,6 +46,7 @@ from ._arrays import (
     key,
 )
 from ._native import NativeCollection, NativeDict, NativeSet
+from ._timed import Timed
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -94,6 +95,7 @@ CODES: Final[dict[str, int]] = {
     "dict": 73,
     "array": 74,
     "max_array": 75,
+    "timed": 78,
 }
 PREFIXED: Final[frozenset[str]] = frozenset({"str", "bytes", "decimal"})
 SUPPORTED: Final[str] = (
@@ -656,6 +658,10 @@ def dispatch(
         )
     if capacity is not None and not takes_capacity(hint, where, path):
         raise TypeError(f"{where}: Capacity does not apply to {hint!r}")
+    if hint is Timed:
+        raise TypeError(f"{where}: Timed needs its value type, as Timed[float]")
+    if get_origin(hint) is Timed:
+        return timed_spec(hint, where, depth, path)
     if isinstance(hint, type) and hint in SCALARS:
         return SCALARS[hint]
     if (spec := numpy_spec(hint)) is not None:
@@ -870,18 +876,18 @@ def reaches_max_array(spec: TypeSpec) -> bool:
 
 
 def misplaced_max_array(spec: TypeSpec) -> bool:
-    """Return whether `spec` holds a `max_array` other than through records and tuples alone."""
+    """Return whether `spec` holds a `max_array` other than through records, tuples and `Timed` values alone."""
     match spec.kind:
         case "max_array":
             return False
-        case "record" | "tuple":
+        case "record" | "tuple" | "timed":
             return any(misplaced_max_array(m.type) for m in spec.members)
         case _:
             return any(reaches_max_array(m.type) for m in spec.members)
 
 
 MAX_ARRAY_PLACES: Final[str] = (
-    "MaxShape applies only to a stream item or a box field, and the records and tuples inside one"
+    "MaxShape applies only to a stream item or a box field, and the records, tuples and Timed values inside one"
 )
 
 
@@ -1143,6 +1149,26 @@ def record_members(
     return [(name, name, hints[name], None) for name in hint.__struct_fields__]  # type: ignore[attr-defined]
 
 
+def timed_spec(hint: Any, where: str, depth: int, path: frozenset[int]) -> TypeSpec:
+    """Return how a `Timed[T]` is stored: the bytes of `T`, then an int64 timestamp."""
+    (arg,) = get_args(hint)
+    inner = parse(arg, f"{where}.value", depth=deeper(depth, where), path=path)
+    alignment = max(inner.alignment, 8)
+    return TypeSpec(
+        "timed",
+        round_up(round_up(inner.size, 8) + 8, alignment),
+        alignment,
+        f"timed({inner.text})",
+        members=(Member(0, inner),),
+        count=1,
+        info=(Timed,),
+        match=(Timed,),
+        exact=Timed,
+        hashable=inner.hashable,
+        reusable=inner.reusable,
+    )
+
+
 def tuple_spec(hint: Any, where: str, depth: int, path: frozenset[int]) -> TypeSpec:
     """Return how a fixed-length `tuple[A, B, ...]` is stored."""
     args = get_args(hint)
@@ -1335,6 +1361,8 @@ def key_refusal(spec: TypeSpec, inside: str | None = None) -> str | None:
         return "a Decimal"
     if spec.kind == "set":
         return "a frozenset"
+    if spec.kind == "timed":
+        return "a Timed"
     if (departs := uncompared(spec)) is not None:
         return f"a {spec.info[1].__qualname__} whose equality {departs}"
     if inside is not None and spec.kind in INEXACT_KINDS:
