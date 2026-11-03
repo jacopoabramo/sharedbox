@@ -159,11 +159,26 @@ def test_a_timestamp_past_64_bits_is_refused(unique_name: str) -> None:
 
 
 def test_timed_is_refused_where_it_cannot_go() -> None:
-    """Raise TypeError at class definition for a bare Timed, a Timed key of a bounded set or dict and a misplaced MaxShape."""
+    """Raise TypeError at class definition for a bare Timed, a Timed element of a set or key of a dict and a misplaced MaxShape."""
     with pytest.raises(TypeError, match="Timed needs its value type"):
 
         class Bare(SharedBox):
             value: Timed  # type: ignore[type-arg]
+
+    with pytest.raises(TypeError, match="a Timed"):
+
+        class InPlainSet(SharedBox):
+            values: Annotated[set[Timed[int]], Capacity(4)]
+
+    with pytest.raises(TypeError, match="a Timed"):
+
+        class InFrozenSet(SharedBox):
+            values: Annotated[frozenset[Timed[int]], Capacity(4)]
+
+    with pytest.raises(TypeError, match="a Timed"):
+
+        class AsPlainKey(SharedBox):
+            values: Annotated[dict[Timed[int], int], Capacity(4)]
 
     with pytest.raises(TypeError, match="a Timed"):
 

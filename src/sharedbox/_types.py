@@ -1431,12 +1431,11 @@ def collection_spec(
             raise TypeError(
                 f"{where}: dict keys of {key.text} are not hashable when read back"
             )
-        if bounded is not None:
-            reason = key_refusal(key)
-            if reason is not None:
-                raise TypeError(
-                    f"{where}: {bounded.__name__} keys cannot hold {reason}"
-                )
+        reason = key_refusal(key)
+        if reason is not None and (bounded is not None or reason == "a Timed"):
+            raise TypeError(
+                f"{where}: {bounded.__name__ if bounded else read.__name__} keys cannot hold {reason}"
+            )
         element_text = f"{key.text},{value.text}"
         annotation: object = (args[0], args[1])
         pair = max(key.alignment, value.alignment)
@@ -1460,11 +1459,11 @@ def collection_spec(
             raise TypeError(
                 f"{where}: set elements of {element.text} are not hashable when read back"
             )
-        if bounded is not None and kind == "set":
+        if kind == "set":
             reason = key_refusal(element)
-            if reason is not None:
+            if reason is not None and (bounded is not None or reason == "a Timed"):
                 raise TypeError(
-                    f"{where}: {bounded.__name__} keys cannot hold {reason}"
+                    f"{where}: {bounded.__name__ if bounded else read.__name__} keys cannot hold {reason}"
                 )
         stride = round_up(element.size, element.alignment)
         a = max(4, element.alignment)
