@@ -34,6 +34,7 @@ from ._layout import (
     FieldSpec,
     Layout,
     build_layout,
+    call,
     class_identity,
     declared,
     field,
@@ -366,7 +367,7 @@ class SharedBoxMeta(type):
         return cls
 
 
-@dataclass_transform(eq_default=False, field_specifiers=(field,))
+@dataclass_transform(eq_default=False, field_specifiers=(field, call))
 class SharedBox(Generic[M], metaclass=SharedBoxMeta):
     """A record whose annotated fields live in a named shared-memory segment.
 

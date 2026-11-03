@@ -229,6 +229,28 @@ def field(
     )
 
 
+def call(
+    *,
+    init: Literal[False] = False,
+    metadata: Mapping[Any, Any] | None = None,
+    doc: str | None = None,
+) -> Any:
+    """Declare a [`Call`][sharedbox.Call] field of a `SharedBox` class.
+
+    Write `move: Call[[float], float] = call()`. A call field holds no
+    value, so the box's constructor takes none for it, for type checkers
+    too.
+
+    Parameters
+    ----------
+    init
+        Leave it out. Type checkers read its default.
+    metadata, doc
+        As [`field`][sharedbox.field] takes them.
+    """
+    return field(init=init, metadata=metadata, doc=doc)
+
+
 class NativeField(NamedTuple):
     """A field's place in the record, in the form the native segment takes."""
 

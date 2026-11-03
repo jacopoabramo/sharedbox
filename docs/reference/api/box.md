@@ -15,6 +15,7 @@ icon: lucide/code
 | [`BoundedDict`][sharedbox.BoundedDict] | a dict value that keeps the stored form of a dict field, so reading and writing it copies bytes and a lookup compares the stored bytes of one key |
 | [`Timed`][sharedbox.Timed] | a value with its timestamp in nanoseconds, written in one go; `Timed.now` asks the write to stamp it |
 | [`Call`][sharedbox.Call] | a field through which any process sends a typed request to the process that serves it |
+| [`call`][sharedbox.call] | declares a `Call` field, which the box's constructor takes no value for |
 | [`CallFuture`][sharedbox.CallFuture] | the answer to one request, waited on with `result` or `await` |
 | [`CallServer`][sharedbox.CallServer] | answers the requests of one call field; `Call.serve` returns it |
 | [`Capacity`][sharedbox.Capacity] | maximum size of a field: bytes for text and bytes, elements for a collection. See [capacity](../../explanation/glossary.md#capacity) |
@@ -42,6 +43,10 @@ icon: lucide/code
       show_root_heading: true
 
 ::: sharedbox.Call
+    options:
+      show_root_heading: true
+
+::: sharedbox.call
     options:
       show_root_heading: true
 

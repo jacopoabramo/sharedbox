@@ -14,7 +14,7 @@ from ._call import (
     ServerExitedError,
 )
 from ._events import BoxEvents, FieldFuture, FieldWatch
-from ._layout import Capacity, Field, field
+from ._layout import Capacity, Field, call, field
 from ._native import (
     BoxClosedError,
     EndOfStream,
@@ -96,6 +96,7 @@ __all__ = [
     "WaiterSlotsFullError",
     "WouldBlock",
     "__version__",
+    "call",
     "field",
     "fields",
     "get_include",

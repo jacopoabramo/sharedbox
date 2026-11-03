@@ -20,10 +20,10 @@ and the result type after it, or `None` when the call returns nothing:
 --8<-- "docs/examples/call_a_function_in_the_owner.py:declare"
 ```
 
-A call field holds no value, so it takes `field(init=False)` and the box's
-constructor has no parameter for it. Without it, type checkers count the
-field as a constructor parameter and flag `Scanner()` as missing an
-argument. Reading `scanner.move` gives the call itself, and assigning to it,
+A call field holds no value, so you give it [`call()`][sharedbox.call]
+and the box's constructor has no parameter for it. Without `call()`, type
+checkers count the field as a constructor parameter and flag `Scanner()` as
+missing an argument. Reading `scanner.move` gives the call itself, and assigning to it,
 `update`, `watch` and `events` refuse it with `TypeError`. The arguments and
 the result may be any type a record member may be, except a
 [`Timed`][sharedbox.Timed], another `Call` or a reference to a box.

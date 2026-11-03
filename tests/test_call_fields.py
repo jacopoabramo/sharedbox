@@ -5,13 +5,22 @@ from typing import Annotated
 import numpy as np
 import pytest
 
-from sharedbox import Call, Capacity, SharedBox, SharedStream, Timed, field, fields
+from sharedbox import (
+    Call,
+    Capacity,
+    SharedBox,
+    SharedStream,
+    Timed,
+    call,
+    field,
+    fields,
+)
 
 
 class Scanner(SharedBox):
     position: float = 0.0
-    move: Call[[float], float] = field(init=False)
-    home: Call[[], None] = field(init=False)
+    move: Call[[float], float] = call()
+    home: Call[[], None] = call()
 
 
 class Bare(SharedBox):
@@ -88,22 +97,22 @@ def test_call_is_refused_where_it_cannot_go() -> None:
     with pytest.raises(TypeError, match="list of argument types"):
 
         class Untyped(SharedBox):
-            move: Call[..., int] = field(init=False)
+            move: Call[..., int] = call()
 
     with pytest.raises(TypeError):
 
         class TimedArgument(SharedBox):
-            move: Call[[Timed[int]], int] = field(init=False)
+            move: Call[[Timed[int]], int] = call()
 
     with pytest.raises(TypeError):
 
         class TimedResult(SharedBox):
-            move: Call[[int], Timed[int]] = field(init=False)
+            move: Call[[int], Timed[int]] = call()
 
     with pytest.raises(TypeError):
 
         class ReferenceArgument(SharedBox):
-            move: Call[[Plain], int] = field(init=False)
+            move: Call[[Plain], int] = call()
 
     with pytest.raises(TypeError):
         SharedStream.create(Call[[int], int], capacity=2)
