@@ -391,3 +391,80 @@ TEST_CASE("max_array_bytes refuses a dimension above its maximum") {
     CHECK(bytes_of(5, 3) == UINT64_MAX);
     CHECK(bytes_of(4, UINT64_MAX) == UINT64_MAX);
 }
+
+TEST_CASE("a timed description holds one value and its timestamp") {
+    const auto parsed = [](const table_builder &t, type_table &table, bool max_arrays = false) {
+        const std::uint32_t entry = entry_of(kind_timed, 0);
+        return table.parse(t.span(), {&entry, 1}, max_arrays);
+    };
+    type_table table;
+    REQUIRE(parsed(timed(kind_int, 8), table) == status::ok);
+    CHECK((table.field(0).kind == kind_timed && table.field(0).size == 16 && table.field(0).alignment == 8));
+    CHECK(table.node(table.field(0).node).timed);
+    const detail::type_member &member = table.member(table.node(table.field(0).node).members);
+    CHECK((member.offset == 0 && member.type.kind == kind_int));
+
+    type_table small;
+    REQUIRE(parsed(timed(kind_uint8, 1), small) == status::ok);
+    CHECK((small.field(0).size == 16 && small.field(0).alignment == 8));
+    CHECK(small.member(small.node(small.field(0).node).members).offset == 0);
+
+    table_builder record;
+    timed_around(record, kind_record);
+    type_table around_record;
+    REQUIRE(parsed(record, around_record) == status::ok);
+    CHECK(around_record.field(0).size == 16);
+
+    table_builder array;
+    timed_around(array, kind_max_array);
+    type_table around_array;
+    REQUIRE(parsed(array, around_array, true) == status::ok);
+    CHECK((around_array.field(0).alignment == 64 && around_array.field(0).size == 64 + 2048 * 2048 * 2 + 64));
+    type_table refused;
+    CHECK(parsed(array, refused) == status::corrupt);
+}
+
+TEST_CASE("a node reaching a timed is marked, and one that does not is not") {
+    table_builder t;
+    t.head(kind_list, 1, 24);
+    t.put(std::uint32_t{1});
+    t.entry(8, kind_timed, 24);
+    t.pad();
+    const table_builder inner = timed(kind_int, 8);
+    t.bytes.insert(t.bytes.end(), inner.bytes.begin(), inner.bytes.end());
+    type_table table;
+    const std::uint32_t entry = entry_of(kind_list, 0);
+    REQUIRE(table.parse(t.span(), {&entry, 1}) == status::ok);
+    CHECK(table.node(table.field(0).node).timed);
+    type_table plain;
+    const table_builder lone = record_with_list();
+    const std::uint32_t record = entry_of(kind_record, 0);
+    REQUIRE(plain.parse(lone.span(), {&record, 1}) == status::ok);
+    CHECK_FALSE(plain.node(plain.field(0).node).timed);
+}
+
+TEST_CASE("a forged timed description is refused") {
+    SUBCASE("a size that is not the member rounded up plus a timestamp") {
+        CHECK(parse(timed(kind_int, 8, 12), entry_of(kind_timed, 0)) == status::corrupt);
+    }
+    SUBCASE("two members") { CHECK(parse(timed(kind_int, 8, 0, 2), entry_of(kind_timed, 0)) == status::corrupt); }
+    SUBCASE("a member that does not start at 0") {
+        CHECK(parse(timed(kind_int, 8, 0, 1, 4), entry_of(kind_timed, 0)) == status::corrupt);
+    }
+    SUBCASE("a max_array under an optional") {
+        table_builder t;
+        t.head(kind_optional, 1, 64 + 64 + 2048 * 2048 * 2 + 64);
+        t.entry(64, kind_timed, 16);
+        timed_around(t, kind_max_array);
+        CHECK(parse(t, entry_of(kind_optional, 0), true) == status::corrupt);
+    }
+    SUBCASE("a record whose member is kind 76") {
+        table_builder t;
+        t.head(kind_record, 1, 8);
+        t.entry(0, 76, 24);
+        t.name("a");
+        t.pad();
+        t.head(76, 0, 8);
+        CHECK(parse(t, entry_of(kind_record, 0)) == status::corrupt);
+    }
+}

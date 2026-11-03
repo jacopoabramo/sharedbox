@@ -93,7 +93,8 @@ SBX_API int sbx_read(const sbx_handle *h, uint16_t field, void *buf, size_t cap,
 
 /* Writes every value under one lock, so readers see all of them or none. SBX_E_RANGE for a field of a
  * kind this header does not know. A list, set or dict value is its length and the slots it uses, no more.
- * A max_array value is its 64-byte shape line and the elements that shape holds, no more. */
+ * A max_array value is its 64-byte shape line and the elements that shape holds, no more. A timestamp equal
+ * to INT64_MIN in a timed value is stored as the time of the write, in nanoseconds since the Unix epoch. */
 SBX_API int sbx_write(sbx_handle *h, const sbx_value *values, size_t n, double lock_timeout);
 
 /* The schema hash the box was created with; compare it with the one the caller expects. 0 when h was

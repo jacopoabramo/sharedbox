@@ -136,6 +136,10 @@ inline constexpr std::uint8_t kind_dict = 73;
 inline constexpr std::uint8_t kind_array = 74;
 // An array of a stream item that stores its own shape, up to the maximum its description gives.
 inline constexpr std::uint8_t kind_max_array = 75;
+// A value followed by an i64 timestamp in nanoseconds since the Unix epoch.
+inline constexpr std::uint8_t kind_timed = 78;
+// The timestamp that a write replaces with the time of the write.
+inline constexpr std::int64_t timed_mark = INT64_MIN;
 
 enum class status : int {
     ok = 0,
@@ -834,7 +838,7 @@ inline bool prefixed(std::uint32_t kind) noexcept {
 }
 
 inline bool kind_known(std::uint32_t kind) noexcept {
-    return kind <= kind_datetime64 || (kind >= kind_enum && kind <= kind_max_array);
+    return kind <= kind_datetime64 || (kind >= kind_enum && kind <= kind_max_array) || kind == kind_timed;
 }
 
 // Alignment of a fixed kind within the record; 1 for a kind this header does not know, whose alignment
@@ -939,6 +943,8 @@ struct type_node {
     std::uint32_t stride = 0;
     dl_dtype dtype{};
     std::uint8_t ndim = 0;
+    // A timed, or a type with a member that has one: the walk that replaces marks goes only where this is set.
+    bool timed = false;
 };
 
 struct type_counts {
@@ -1201,8 +1207,9 @@ inline status type_parser::describe(std::uint8_t kind, std::uint32_t at, std::ui
     const std::byte *entries = nullptr;
     std::uint32_t entry_count = 0;
     bool members_take_arrays = false;
-    // Only a record's or tuple's members may be max_arrays, and only when the record itself may be one.
-    const bool members_take_max_arrays = max_ok && (kind == kind_record || kind == kind_tuple);
+    // Only a record's, tuple's or timed's members may be max_arrays, and only when it may be one itself.
+    const bool members_take_max_arrays =
+        max_ok && (kind == kind_record || kind == kind_tuple || kind == kind_timed);
     bool ok = true;
     switch (kind) {
     case kind_enum:
@@ -1243,6 +1250,13 @@ inline status type_parser::describe(std::uint8_t kind, std::uint32_t at, std::ui
         members_take_arrays = kind == kind_record || kind == kind_tuple || kind == kind_optional;
         if (ok && kind == kind_record)
             ok = names(c, head.count, node.names);
+        break;
+    case kind_timed:
+        ok = head.count == 1;
+        entries = c.at;
+        entry_count = 1;
+        c.skip(8);
+        members_take_arrays = true;
         break;
     case kind_list:
     case kind_set:
@@ -1297,11 +1311,14 @@ inline status type_parser::describe(std::uint8_t kind, std::uint32_t at, std::ui
                 member(entries + std::size_t{i} * 8, at, depth, members_take_arrays, members_take_max_arrays, m);
             rc != status::ok)
             return rc;
-        if (out_ != nullptr)
+        if (out_ != nullptr) {
             out_->members_[node.members + i] = m;
+            node.timed = node.timed || (m.type.node != no_node && out_->nodes_[m.type.node].timed);
+        }
     }
     if (out_ == nullptr)
         return status::ok;
+    node.timed = node.timed || kind == kind_timed;
     if (const status rc = place(kind, head, node, out); rc != status::ok)
         return rc;
     out_->nodes_[index] = node;
@@ -1359,6 +1376,12 @@ inline status type_parser::place(std::uint8_t kind, const type_head &head, type_
         }
         out.alignment = a;
         return size % a == 0 ? status::ok : status::corrupt;
+    }
+    case kind_timed: {
+        const type_ref &e = m[0].type;
+        const std::uint32_t a = (std::max)(e.alignment, 8u);
+        out.alignment = a;
+        return m[0].offset == 0 && size == round_up(round_up(e.size, 8) + 8, a) ? status::ok : status::corrupt;
     }
     case kind_list:
     case kind_set: {
@@ -1464,6 +1487,70 @@ inline std::uint64_t max_array_bytes(const type_table &table, const type_ref &t,
         total *= dim;
     }
     return total;
+}
+
+// The system clock in nanoseconds since the Unix epoch, the time a write gives a timed value that holds the mark.
+inline std::int64_t wall_ns() noexcept {
+    return std::chrono::duration_cast<std::chrono::nanoseconds>(
+               std::chrono::system_clock::now().time_since_epoch())
+        .count();
+}
+
+// Replaces each timestamp equal to timed_mark in the value of type t at at with now. now is 0 until the first
+// mark found, which reads the clock, so one call to a write gives all its marks one time. Goes only where a
+// timed can be, and takes a length above a collection's capacity as the end of that collection: the bytes are
+// a value this process checked before it stored them.
+inline void stamp(const type_table &table, const type_ref &t, std::byte *at, std::int64_t &now) noexcept {
+    if (t.node == no_node || !table.node(t.node).timed)
+        return;
+    const type_node &node = table.node(t.node);
+    const type_member *m = &table.member(node.members);
+    switch (t.kind) {
+    case kind_timed: {
+        stamp(table, m[0].type, at + m[0].offset, now);
+        std::byte *place = at + round_up(m[0].type.size, 8);
+        std::int64_t found;
+        std::memcpy(&found, place, sizeof found);
+        if (found == timed_mark) {
+            if (now == 0)
+                now = wall_ns();
+            std::memcpy(place, &now, sizeof now);
+        }
+        return;
+    }
+    case kind_optional:
+        if (at[0] != std::byte{0})
+            stamp(table, m[0].type, at + m[0].offset, now);
+        return;
+    case kind_union: {
+        const auto tag = std::to_integer<std::uint8_t>(at[0]);
+        if (tag < node.count)
+            stamp(table, m[tag].type, at + m[tag].offset, now);
+        return;
+    }
+    case kind_record:
+    case kind_tuple:
+        for (std::uint32_t i = 0; i < node.count; ++i)
+            stamp(table, m[i].type, at + m[i].offset, now);
+        return;
+    case kind_list:
+    case kind_set:
+    case kind_dict: {
+        std::uint32_t length;
+        std::memcpy(&length, at, sizeof length);
+        if (length > node.capacity)
+            return;
+        // A list or set element starts its slot; a dict slot holds the key and the value at their offsets.
+        for (std::uint32_t i = 0; i < length; ++i)
+            for (std::uint32_t k = 0; k < node.count; ++k)
+                stamp(table, m[k].type,
+                      at + node.slots + std::size_t{i} * node.stride + (t.kind == kind_dict ? m[k].offset : 0),
+                      now);
+        return;
+    }
+    default:
+        return;
+    }
 }
 
 // One or more segments of [A-Za-z0-9_-] joined by ':', at most name_max characters. '.' is kept for a

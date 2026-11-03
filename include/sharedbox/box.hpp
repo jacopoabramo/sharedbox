@@ -289,7 +289,8 @@ public:
     std::span<const std::byte> payload(std::uint16_t field, std::span<const std::byte> record) const noexcept;
     // Writes every value under one lock, so readers see all of them or none, then wakes waiters.
     // status::range for a field of a kind this header does not know. A max_array value is its 64-byte shape
-    // line and the elements that shape holds, no more.
+    // line and the elements that shape holds, no more. A timestamp equal to timed_mark in a value is stored as
+    // the time of the write, taken once after the lock.
     [[nodiscard]] result<void> write(std::span<const value> values, seconds lock_timeout);
     // As write, and add doc as the next metadata version in the same write, as add_metadata does: one
     // generation, readers seeing the values and the version together. Returns the version.
@@ -401,6 +402,9 @@ struct state {
     std::uint64_t size = 0;
     std::unique_ptr<field_spec[]> fields;
     type_table types;
+    // Whether each field is, or holds, a timed value, and whether any does.
+    std::unique_ptr<bool[]> stamped;
+    bool stamps = false;
     os_mapping map;
     double lock_timeout = default_lock_timeout;
     void *(*before_wait)() = nullptr;
@@ -475,6 +479,19 @@ inline status bind_metadata(state &s, void *base, const header &h) noexcept {
     return status::ok;
 }
 
+// Sets stamped and stamps from the checked types of s.
+inline status find_stamps(state &s) noexcept {
+    s.stamped.reset(new (std::nothrow) bool[s.field_count]());
+    if (s.stamped == nullptr)
+        return status::os;
+    for (std::uint16_t i = 0; i < s.field_count; ++i) {
+        const type_ref &t = s.types.field(i);
+        s.stamped[i] = t.node != no_node && s.types.node(t.node).timed;
+        s.stamps = s.stamps || s.stamped[i];
+    }
+    return status::ok;
+}
+
 // Copies and checks the field table and the description table of a mapping; h is the copy of its
 // header, which passed open_check.
 inline status copy_fields(state &s, const void *base, const header &h) noexcept {
@@ -491,7 +508,10 @@ inline status copy_fields(state &s, const void *base, const header &h) noexcept 
     const std::span<const std::byte> table(bytes + tail_end(s.field_count, s.waiter_slots), h.types_size);
     if (const status rc = s.types.parse(table, {entries.get(), s.field_count}, true); rc != status::ok)
         return rc;
-    return place_fields(s.fields.get(), s.field_count, s.types, s.record_size, true);
+    if (const status rc = place_fields(s.fields.get(), s.field_count, s.types, s.record_size, true);
+        rc != status::ok)
+        return rc;
+    return find_stamps(s);
 }
 
 inline bool is_collection(std::uint32_t kind) noexcept { return kind - kind_list <= 2u; }
@@ -536,7 +556,9 @@ SHAREDBOX_HOT bool values_ok(const state &s, std::span<const value> values) noex
     return true;
 }
 
-SHAREDBOX_HOT void store(const state &s, const value &v) noexcept {
+// Copies v into the record. A mark in a timed value becomes now, which is 0 until the first mark; a caller
+// passes the same now to every store of one write.
+SHAREDBOX_HOT void store(const state &s, const value &v, std::int64_t &now) noexcept {
     const field_spec &f = s.fields[v.field];
     std::byte *dst = s.record + f.offset;
     if (prefixed(f.kind)) {
@@ -546,6 +568,8 @@ SHAREDBOX_HOT void store(const state &s, const value &v) noexcept {
     }
     if (!v.bytes.empty())
         std::memcpy(dst, v.bytes.data(), v.bytes.size());
+    if (s.stamps && s.stamped[v.field]) [[unlikely]]
+        stamp(s.types, s.types.field(v.field), s.record + f.offset, now);
 }
 
 // The field's payload in record; a torn read may see any length, so it is capped at the capacity.
@@ -587,6 +611,8 @@ inline result<handle> create_impl(std::string_view name, std::span<const field_s
     if (place_fields(s->fields.get(), count, s->types, record_size, false) != status::ok ||
         !values_ok(*s, initial))
         return unexpected(status::range);
+    if (const status rc = find_stamps(*s); rc != status::ok)
+        return unexpected(rc);
     const auto record =
         static_cast<std::uint32_t>(round_up(tail_end(count, waiter_slots) + types.size(), record_alignment));
     if (std::uint64_t{record} + record_size > max_mapping_size)
@@ -642,8 +668,9 @@ inline result<handle> create_impl(std::string_view name, std::span<const field_s
     s->schema_hash = schema_hash;
     s->create_id = *id;
     bind(*s, base, size, layout_major, layout_minor);
+    std::int64_t now = 0;
     for (const value &v : initial)
-        store(*s, v);
+        store(*s, v, now);
     if (area_size != 0) {
         auto *area = static_cast<std::byte *>(base) + area_at;
         if (const status rc = init_metadata(area, metadata.versions, ring); rc != status::ok)
@@ -977,8 +1004,9 @@ inline result<void> handle::write_large(std::span<const value> values, seconds l
     const result<std::uint64_t> locked = lock_with<false>(lock_timeout);
     if (!locked)
         return unexpected(locked.error());
+    std::int64_t now = 0;
     for (const value &v : values) {
-        detail::store(s, v);
+        detail::store(s, v, now);
         auto count = detail::atomic(s.counts[v.field]);
         count.store(count.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
     }
@@ -1063,8 +1091,9 @@ SHAREDBOX_HOT result<void> handle::write(std::span<const value> values, seconds 
     const result<std::uint64_t> locked = lock(lock_timeout);
     if (!locked)
         return unexpected(locked.error());
+    std::int64_t now = 0;
     for (const value &v : values) {
-        detail::store(s, v);
+        detail::store(s, v, now);
         // Only the lock holder changes a count, so a plain store of the sum is enough.
         auto count = detail::atomic(s.counts[v.field]);
         count.store(count.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
@@ -1119,8 +1148,9 @@ result<std::uint64_t> handle::write_with_document(std::span<const value> values,
             .compare_exchange_strong(held, *locked, std::memory_order_release, std::memory_order_relaxed);
         return unexpected(added.error());
     }
+    std::int64_t now = 0;
     for (const value &v : values) {
-        detail::store(s, v);
+        detail::store(s, v, now);
         auto count = detail::atomic(s.counts[v.field]);
         count.store(count.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
     }

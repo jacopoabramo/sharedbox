@@ -1,4 +1,4 @@
-// stream.hpp: layout 1.4 of a stream segment, a ring that one sender writes and readers copy out of.
+// stream.hpp: layout 1.5 of a stream segment, a ring that one sender writes and readers copy out of.
 #ifndef SHAREDBOX_STREAM_HPP
 #define SHAREDBOX_STREAM_HPP
 
@@ -8,7 +8,7 @@ namespace sharedbox {
 inline namespace v3 {
 
 inline constexpr std::uint16_t stream_layout_major = 1;
-inline constexpr std::uint16_t stream_layout_minor = 4;
+inline constexpr std::uint16_t stream_layout_minor = 5;
 inline constexpr std::uint32_t stream_header_size = 256;
 inline constexpr std::uint64_t min_stream_capacity = 2;
 // Each reader and the sender hold one waiter slot.
@@ -200,6 +200,8 @@ struct stream_state {
     std::uint64_t schema_hash = 0;
     std::uint64_t create_id = 0;
     std::uint32_t max_readers = 0;
+    // Whether the item is, or holds, a timed value.
+    bool stamps = false;
     // The metadata area, nullptr for none, and the copy of its first line that open checked.
     std::byte *metadata = nullptr;
     metadata_line metadata_first{};
@@ -260,6 +262,7 @@ inline status bind_stream(stream_state &s, os_mapping &&map, const stream_header
     s.slot_size = h.slot_size;
     s.item_offset = item_start(item.alignment);
     s.item_size = item.size;
+    s.stamps = item.node != no_node && s.types.node(item.node).timed;
     s.size = h.common.size;
     s.schema_hash = h.common.schema_hash;
     s.create_id = h.common.create_id;
@@ -1013,6 +1016,10 @@ inline result<std::uint64_t> stream_sender::publish() noexcept {
     detail::stream_state &s = *s_;
     stream_header &h = *s.hdr;
     const std::uint64_t p = detail::atomic(h.write_pos).load(std::memory_order_relaxed);
+    if (s.stamps) [[unlikely]] {
+        std::int64_t now = 0;
+        detail::stamp(s.types, s.types.field(0), reserved_ + s.item_offset, now);
+    }
     detail::atomic(*reinterpret_cast<std::uint64_t *>(std::exchange(reserved_, nullptr)))
         .store(2 * p + 2, std::memory_order_release);
     detail::atomic(h.write_pos).store(p + 1, std::memory_order_release);

@@ -386,3 +386,182 @@ TEST_CASE("a max_array value is its shape line and its stored elements") {
     CHECK(after == out);
     static_cast<void>(unlink(name));
 }
+
+namespace {
+
+template <class T> void put_at(std::vector<std::byte> &bytes, std::size_t offset, T value) {
+    std::memcpy(bytes.data() + offset, &value, sizeof value);
+}
+
+template <class T> T get_at(const std::vector<std::byte> &bytes, std::size_t offset) {
+    T value;
+    std::memcpy(&value, bytes.data() + offset, sizeof value);
+    return value;
+}
+
+// A timed(int) value of 16 bytes: the number, then the timestamp.
+std::vector<std::byte> timed_int(std::int64_t number, std::int64_t stamp) {
+    std::vector<std::byte> bytes(16);
+    put_at(bytes, 0, number);
+    put_at(bytes, 8, stamp);
+    return bytes;
+}
+
+} // namespace
+
+TEST_CASE("a write stamps a timed field's mark under the lock") {
+    const table_builder t = timed(kind_int, 8);
+    const field_spec spec[1] = {{0, 0, kind_timed}};
+    const std::string name = unique("l3-timed");
+    auto box = handle::create(name, spec, 16, 1, 4, {}, t.span());
+    REQUIRE(box);
+    const auto stored = [&] {
+        std::vector<std::byte> out(16);
+        REQUIRE(box->read(0, out));
+        return out;
+    };
+    for (const bool large : {false, true}) {
+        const auto write = [&](const std::vector<std::byte> &bytes) {
+            const value v{0, bytes};
+            const auto done = large ? box->write_large({&v, 1}, seconds(1.0)) : box->write({&v, 1}, seconds(1.0));
+            REQUIRE(done.has_value());
+        };
+        const std::int64_t before = detail::wall_ns();
+        write(timed_int(5, timed_mark));
+        const std::int64_t after = detail::wall_ns();
+        const std::vector<std::byte> marked = stored();
+        CHECK(get_at<std::int64_t>(marked, 0) == 5);
+        CHECK((get_at<std::int64_t>(marked, 8) >= before && get_at<std::int64_t>(marked, 8) <= after));
+        write(timed_int(6, 123));
+        CHECK(get_at<std::int64_t>(stored(), 8) == 123);
+    }
+    const std::vector<std::byte> mark = timed_int(1, timed_mark);
+    const value initial{0, mark};
+    const std::int64_t before = detail::wall_ns();
+    const std::string initial_name = unique("l3-timed-initial");
+    auto created = handle::create(initial_name, spec, 16, 1, 4, {&initial, 1}, t.span());
+    REQUIRE(created);
+    std::vector<std::byte> out(16);
+    REQUIRE(created->read(0, out));
+    CHECK((get_at<std::int64_t>(out, 8) >= before && get_at<std::int64_t>(out, 8) <= detail::wall_ns()));
+    static_cast<void>(unlink(initial_name));
+    static_cast<void>(unlink(name));
+}
+
+TEST_CASE("a write stamps the marks a value holds wherever they sit") {
+    SUBCASE("a list of timed values") {
+        table_builder t;
+        t.head(kind_list, 1, 40);
+        t.put(std::uint32_t{2});
+        t.entry(8, kind_timed, 24);
+        t.pad();
+        const table_builder inner = timed(kind_int, 8);
+        t.bytes.insert(t.bytes.end(), inner.bytes.begin(), inner.bytes.end());
+        const field_spec spec[1] = {{0, 0, kind_list}};
+        const std::string name = unique("l3-timed-list");
+        auto box = handle::create(name, spec, 40, 1, 4, {}, t.span());
+        REQUIRE(box);
+        const auto write = [&](std::uint32_t length, std::int64_t first, std::int64_t second) {
+            std::vector<std::byte> bytes(8 + length * 16);
+            put_at(bytes, 0, length);
+            put_at(bytes, 16, first);
+            if (length > 1)
+                put_at(bytes, 32, second);
+            const value v{0, bytes};
+            REQUIRE(box->write({&v, 1}, seconds(1.0)));
+            std::vector<std::byte> out(40);
+            REQUIRE(box->read(0, out));
+            return out;
+        };
+        const std::int64_t before = detail::wall_ns();
+        std::vector<std::byte> out = write(2, timed_mark, 9);
+        std::int64_t stamp = get_at<std::int64_t>(out, 16);
+        CHECK((stamp >= before && stamp <= detail::wall_ns()));
+        CHECK(get_at<std::int64_t>(out, 32) == 9);
+        out = write(2, timed_mark, timed_mark);
+        stamp = get_at<std::int64_t>(out, 16);
+        CHECK((stamp != timed_mark && get_at<std::int64_t>(out, 32) == stamp));
+        static_cast<void>(unlink(name));
+    }
+    SUBCASE("the values of a dict") {
+        table_builder t;
+        t.head(kind_dict, 2, 56);
+        t.put(std::uint32_t{2});
+        t.entry(0, kind_int, 8);
+        t.entry(8, kind_timed, 32);
+        t.pad();
+        const table_builder inner = timed(kind_int, 8);
+        t.bytes.insert(t.bytes.end(), inner.bytes.begin(), inner.bytes.end());
+        const field_spec spec[1] = {{0, 0, kind_dict}};
+        const std::string name = unique("l3-timed-dict");
+        auto box = handle::create(name, spec, 56, 1, 4, {}, t.span());
+        REQUIRE(box);
+        std::vector<std::byte> bytes(32);
+        put_at(bytes, 0, std::uint32_t{1});
+        put_at(bytes, 24, timed_mark);
+        const value v{0, bytes};
+        const std::int64_t before = detail::wall_ns();
+        REQUIRE(box->write({&v, 1}, seconds(1.0)).has_value());
+        std::vector<std::byte> out(56);
+        REQUIRE(box->read(0, out));
+        CHECK((get_at<std::int64_t>(out, 24) >= before && get_at<std::int64_t>(out, 24) <= detail::wall_ns()));
+        static_cast<void>(unlink(name));
+    }
+    SUBCASE("a present optional in a record") {
+        table_builder t;
+        t.head(kind_record, 1, 24);
+        t.entry(0, kind_optional, 24);
+        t.name("a");
+        t.pad();
+        t.head(kind_optional, 1, 24);
+        t.entry(8, kind_timed, 40);
+        const table_builder inner = timed(kind_int, 8);
+        t.bytes.insert(t.bytes.end(), inner.bytes.begin(), inner.bytes.end());
+        const field_spec spec[1] = {{0, 0, kind_record}};
+        const std::string name = unique("l3-timed-optional");
+        auto box = handle::create(name, spec, 24, 1, 4, {}, t.span());
+        REQUIRE(box);
+        const auto write = [&](std::uint8_t present) {
+            std::vector<std::byte> bytes(24);
+            put_at(bytes, 0, present);
+            put_at(bytes, 16, timed_mark);
+            const value v{0, bytes};
+            REQUIRE(box->write({&v, 1}, seconds(1.0)));
+            std::vector<std::byte> out(24);
+            REQUIRE(box->read(0, out));
+            return get_at<std::int64_t>(out, 16);
+        };
+        const std::int64_t before = detail::wall_ns();
+        const std::int64_t present = write(1);
+        CHECK((present >= before && present <= detail::wall_ns()));
+        CHECK(write(0) == timed_mark);
+        static_cast<void>(unlink(name));
+    }
+    SUBCASE("a union whose tagged member is timed") {
+        table_builder t;
+        t.head(kind_union, 2, 24);
+        t.entry(8, kind_int, 8);
+        t.entry(8, kind_timed, 24);
+        const table_builder inner = timed(kind_int, 8);
+        t.bytes.insert(t.bytes.end(), inner.bytes.begin(), inner.bytes.end());
+        const field_spec spec[1] = {{0, 0, kind_union}};
+        const std::string name = unique("l3-timed-union");
+        auto box = handle::create(name, spec, 24, 1, 4, {}, t.span());
+        REQUIRE(box);
+        const auto write = [&](std::uint8_t tag) {
+            std::vector<std::byte> bytes(24);
+            put_at(bytes, 0, tag);
+            put_at(bytes, 16, timed_mark);
+            const value v{0, bytes};
+            REQUIRE(box->write({&v, 1}, seconds(1.0)));
+            std::vector<std::byte> out(24);
+            REQUIRE(box->read(0, out));
+            return get_at<std::int64_t>(out, 16);
+        };
+        const std::int64_t before = detail::wall_ns();
+        const std::int64_t tagged = write(1);
+        CHECK((tagged >= before && tagged <= detail::wall_ns()));
+        CHECK(write(0) == timed_mark);
+        static_cast<void>(unlink(name));
+    }
+}
