@@ -3,6 +3,7 @@ import threading
 import time
 from collections.abc import Iterable
 from dataclasses import dataclass
+from decimal import Decimal
 from typing import Annotated
 
 import numpy as np
@@ -88,6 +89,7 @@ def test_stamps_follow_the_order_of_writes(unique_name: str) -> None:
         late = Timed.now(1.0)
         box.temperature = Timed.now(2.0)
         first = box.temperature.timestamp_ns
+        assert first > 0
         box.temperature = late
         assert box.temperature.timestamp_ns >= first
 
@@ -106,6 +108,28 @@ def test_marks_inside_collections_and_records_are_stamped(unique_name: str) -> N
         assert box.maybe is not None
         assert box.maybe.timestamp_ns > 0
         assert NOW not in {first.timestamp_ns, box.reading.level.timestamp_ns}
+
+
+class Nested(SharedBox):
+    scores: Annotated[dict[int, Timed[int]], Capacity(4)]
+    either: Timed[int] | Annotated[str, Capacity(8)] = "none"
+    twice: Timed[Timed[int]] = Timed(Timed(0, 0), 0)
+
+
+def test_marks_in_a_dict_value_a_union_and_a_nested_timed_are_stamped(
+    unique_name: str,
+) -> None:
+    """Stamp a Timed held as a dict value, as a union member and around another Timed."""
+    with Nested.create(unique_name, {}) as box:
+        box.scores = {7: Timed.now(1)}
+        assert box.scores[7].timestamp_ns > 0
+        box.either = Timed.now(2)
+        assert isinstance(box.either, Timed)
+        assert box.either.timestamp_ns > 0
+        box.twice = Timed(Timed.now(3), NOW)
+        assert box.twice.value.value == 3
+        assert box.twice.value.timestamp_ns > 0
+        assert box.twice.timestamp_ns > 0
 
 
 def test_a_stream_item_holds_a_timed_value(unique_name: str) -> None:
@@ -179,6 +203,21 @@ def test_timed_is_refused_where_it_cannot_go() -> None:
 
         class AsPlainKey(SharedBox):
             values: Annotated[dict[Timed[int], int], Capacity(4)]
+
+    with pytest.raises(TypeError, match="a Timed"):
+
+        class TupleInPlainSet(SharedBox):
+            values: Annotated[
+                set[tuple[Annotated[Decimal, Capacity(8)], Timed[int]]], Capacity(4)
+            ]
+
+    with pytest.raises(TypeError, match="a Timed"):
+
+        class TupleAsPlainKey(SharedBox):
+            values: Annotated[
+                dict[tuple[Annotated[Decimal, Capacity(8)], Timed[int]], int],
+                Capacity(4),
+            ]
 
     with pytest.raises(TypeError, match="a Timed"):
 

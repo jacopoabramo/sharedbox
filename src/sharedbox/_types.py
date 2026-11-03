@@ -102,7 +102,7 @@ SUPPORTED: Final[str] = (
     "bool, int, float, complex, a numpy scalar type: bool_, int8 to int64, uint8 to uint64, "
     "float16 to float64, complex64, complex128 or datetime64, "
     "Annotated[str | bytes | bytearray | Decimal, Capacity(n)], "
-    "date, time, datetime, timedelta, UUID, an Enum or Flag, a Literal, X | None, a union, "
+    "date, time, datetime, timedelta, UUID, an Enum or Flag, a Literal, X | None, Timed[T], a union, "
     "a tuple, a NamedTuple, a dataclass, a TypedDict, an attrs class, a msgspec Struct, "
     "Annotated[list | set | frozenset | dict | tuple[T, ...], Capacity(n)] and their "
     "collections.abc forms, Annotated[<array type>, Shape((...)), DType(...)], or a SharedBox "
@@ -1389,6 +1389,22 @@ def key_refusal(spec: TypeSpec, inside: str | None = None) -> str | None:
     )
 
 
+def reaches_timed(spec: TypeSpec) -> bool:
+    """Return whether `spec` is a `Timed` or holds one among its members."""
+    return spec.kind == "timed" or any(reaches_timed(m.type) for m in spec.members)
+
+
+def collection_key_refusal(spec: TypeSpec, bounded: type | None) -> str | None:
+    """Return what a set element or dict key of `spec` cannot hold in a collection of the `bounded` class, or None.
+
+    A plain `set`, `frozenset` or `dict` refuses only a `Timed`, which a bounded class
+    checks like any other key.
+    """
+    if bounded is not None:
+        return key_refusal(spec)
+    return "a Timed" if reaches_timed(spec) else None
+
+
 def collection_spec(
     hint: Any, where: str, capacity: int | None, depth: int, path: frozenset[int]
 ) -> TypeSpec:
@@ -1431,8 +1447,7 @@ def collection_spec(
             raise TypeError(
                 f"{where}: dict keys of {key.text} are not hashable when read back"
             )
-        reason = key_refusal(key)
-        if reason is not None and (bounded is not None or reason == "a Timed"):
+        if (reason := collection_key_refusal(key, bounded)) is not None:
             raise TypeError(
                 f"{where}: {bounded.__name__ if bounded else read.__name__} keys cannot hold {reason}"
             )
@@ -1459,12 +1474,13 @@ def collection_spec(
             raise TypeError(
                 f"{where}: set elements of {element.text} are not hashable when read back"
             )
-        if kind == "set":
-            reason = key_refusal(element)
-            if reason is not None and (bounded is not None or reason == "a Timed"):
-                raise TypeError(
-                    f"{where}: {bounded.__name__ if bounded else read.__name__} keys cannot hold {reason}"
-                )
+        if (
+            kind == "set"
+            and (reason := collection_key_refusal(element, bounded)) is not None
+        ):
+            raise TypeError(
+                f"{where}: {bounded.__name__ if bounded else read.__name__} keys cannot hold {reason}"
+            )
         stride = round_up(element.size, element.alignment)
         a = max(4, element.alignment)
         members = (Member(round_up(4, a), element),)  # type: ignore[assignment]

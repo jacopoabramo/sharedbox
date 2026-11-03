@@ -2640,7 +2640,7 @@ public:
     std::uint32_t size() const noexcept { return ref_.size; }
     std::uint32_t alignment() const noexcept { return ref_.alignment; }
     bool described() const noexcept { return ref_.node != detail::no_node; }
-    // enum, flag, literal: values; optional 1; union, record, tuple: members; list, set and timed 1; dict 2; else 0.
+    // enum, flag, literal: values; optional, list, set, timed 1; union, record, tuple: members; dict 2; else 0.
     std::uint16_t count() const noexcept { return described() ? node().count : 0; }
     // str, bytes, decimal: bytes; list, set, dict: elements; else 0.
     std::uint32_t capacity() const noexcept {
