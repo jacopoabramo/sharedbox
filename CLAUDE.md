@@ -31,13 +31,13 @@ sharedbox/
 |   |-- _arrays.py             Shape, MaxShape, DType, SupportsDLPack, register_array_type
 |   |-- _timed.py              Timed: a value with its timestamp in ns, Timed.now and the mark a write replaces
 |   |-- _call.py               Call fields: Call, CallFuture, CallServer, the call errors, serving threads and tasks
-|   |-- _events.py             BoxEvents, FieldWatch, the watcher thread
+|   |-- _events.py             BoxEvents, FieldWatch, the watcher thread, which also completes call futures and kicks call servers
 |   |-- _follow.py             BoxEvents.follow and unfollow: forwarding the events of boxes that references reach
 |   |-- _stream.py             SharedStream, SharedSendStream, SharedReceiveStream, ReceiveEvents, the statistics classes, the worker threads
 |   |-- _metadata.py           metadata documents: the type variable M, CBOR encoding, read-only decoding, the cache of decoded versions
 |   |-- _refs.py               reference fields: BoxRef, the class registry, BrokenReferenceError, UnknownBoxClassError
 |   |-- _status.py             segment_status and SegmentStatus: whether a name holds a segment and its creator runs
-|   |-- _exit.py               the exit handler: stops the watcher and stream threads, closes boxes, streams and ends,
+|   |-- _exit.py               the exit handler: stops the watcher, call server and stream threads, closes boxes, streams and ends,
 |   |                          replaces the native objects of watchers and box classes
 |   |-- _native.pyi            hand-written stub for the extension
 |   |-- py.typed
@@ -218,8 +218,10 @@ capacity counts elements, 1 to 1048576.
 
 ### Lifecycle
 
-- `close()` interrupts and stops the watcher thread, stops forwarding
-  started with `events.follow`, and detaches this box. Later reads and
+- `close()` interrupts and stops the watcher thread, stops the box's
+  call servers, releasing each field, and cancels its pending call
+  futures, stops forwarding started with `events.follow`, and detaches
+  this box. Later reads and
   writes raise `BoxClosedError`. Garbage collection closes a box too, but
   forwarding it started keeps running until the cycle collector frees its
   events groups.

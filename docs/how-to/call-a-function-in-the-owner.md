@@ -47,8 +47,13 @@ raises `RuntimeError`. Only one process serves a field at a time: a second
 [`CallServedError`][sharedbox.CallServedError].
 
 [`CallServer.stop`][sharedbox.CallServer.stop] stops serving and frees the
-field for another server. Closing the box stops every server it started,
-and so does the end of the process.
+field for another server. It waits for a running plain handler to finish
+and answer first, and it asks a running `async def` handler to cancel,
+whose caller then gets [`CallError`][sharedbox.CallError]. Closing the box
+stops every server it started, and so does garbage collection of the box
+or the end of the process, but these free the field at once: a request
+whose handler is still running fails with `CallError` saying the server
+stopped, and only then does the close wait for a plain handler's thread.
 
 ## 3. Call it
 
@@ -79,9 +84,9 @@ cut to 256 bytes:
 
 A caller waiting on a server whose process ends gets
 [`ServerExitedError`][sharedbox.ServerExitedError] within about a tenth of
-a second. Stopping a server waits for a running plain handler to finish and
-answer, while a running `async def` handler is cancelled and its caller
-gets `CallError`, so no caller waits for an answer that can't come.
+a second. A server that stops while it handles a request answers that
+request, as section 2 describes, so no caller waits for an answer that
+can't come.
 
 ## 5. Expect the latest request to win
 
