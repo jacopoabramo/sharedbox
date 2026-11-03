@@ -73,8 +73,9 @@ class Call(Generic[P, R]):
     """A box field through which a process sends a typed request to the process that serves it.
 
     Annotate a field `Call[[A, ...], R]`, where the list holds the argument
-    types and `R` the result type, or `None` for no result. The field holds
-    no value: reading it from a box gives the `Call` bound to that box.
+    types and `R` the result type, or `None` for no result, and declare it
+    with [`call`][sharedbox.call]. The field holds no value: reading it
+    from a box gives the `Call` bound to that box.
     Arguments and result may be anything a record member may be, except a
     [`Timed`][sharedbox.Timed], a `Call` or a reference to a box.
 

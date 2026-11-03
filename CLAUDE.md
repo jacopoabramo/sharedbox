@@ -26,7 +26,7 @@ sharedbox/
 |-- src/sharedbox/
 |   |-- __init__.py            re-exports the public API, get_include()
 |   |-- _box.py                SharedBox: class keywords, fields, fields(), create/attach, __post_init__, update, snapshot, unlink, __sharedbox_box__
-|   |-- _layout.py             Capacity, field() and Field, field offsets and kind codes, schema hash
+|   |-- _layout.py             Capacity, field(), call() and Field, field offsets and kind codes, schema hash
 |   |-- _types.py              annotation parsing into TypeSpec, the description table
 |   |-- _arrays.py             Shape, MaxShape, DType, SupportsDLPack, register_array_type
 |   |-- _timed.py              Timed: a value with its timestamp in ns, Timed.now and the mark a write replaces

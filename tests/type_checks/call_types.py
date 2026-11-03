@@ -1,11 +1,11 @@
 from typing import assert_type
 
-from sharedbox import Call, CallFuture, CallServer, SharedBox, field
+from sharedbox import Call, CallFuture, CallServer, SharedBox, call, field
 
 
 class Scanner(SharedBox):
     position: float = 0.0
-    move: Call[[float], float] = field(init=False)
+    move: Call[[float], float] = call()
     home: Call[[], None] = field(init=False)
 
 

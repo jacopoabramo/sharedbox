@@ -4,13 +4,13 @@
 import asyncio
 import threading
 
-from sharedbox import Call, CallError, CallSupersededError, SharedBox, field
+from sharedbox import Call, CallError, CallSupersededError, SharedBox, call
 
 
 class Scanner(SharedBox, name="example-scanner"):
     position: float = 0.0
-    move: Call[[float], float] = field(init=False)
-    home: Call[[], None] = field(init=False)
+    move: Call[[float], float] = call()
+    home: Call[[], None] = call()
 
 
 # --8<-- [end:declare]

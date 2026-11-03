@@ -25,14 +25,14 @@ from sharedbox import (
     CallSupersededError,
     ServerExitedError,
     SharedBox,
-    field,
+    call,
 )
 
 
 class Scanner(SharedBox):
     position: float = 0.0
-    move: Call[[float], float] = field(init=False)
-    home: Call[[], None] = field(init=False)
+    move: Call[[float], float] = call()
+    home: Call[[], None] = call()
 
 
 def double(position: float) -> float:
@@ -226,7 +226,7 @@ def test_a_forked_child_serves_nothing_it_inherited(
 
 
 class Counter(SharedBox):
-    bump: Call[[int], int] = field(init=False)
+    bump: Call[[int], int] = call()
 
 
 def too_large(count: int) -> int:
@@ -284,7 +284,7 @@ def test_a_server_stopped_inside_its_take_fails_the_request(
                 servers.pop().stop()
 
     class Mover(SharedBox):
-        move: Call[[Target], float] = field(init=False)
+        move: Call[[Target], float] = call()
 
     with Mover.create(names("inside")) as box:
         target = Target(1.0)
@@ -318,7 +318,7 @@ def test_a_result_that_fails_to_decode_reaches_the_caller(
                 raise ValueError("refused")
 
     class Probe(SharedBox):
-        read: Call[[], Reading] = field(init=False)
+        read: Call[[], Reading] = call()
 
     reading = Reading(1.0)
     with Probe.create(names("decode")) as box:
@@ -413,7 +413,7 @@ def test_closing_the_box_inside_a_take_frees_the_field(
                 boxes.pop().close()
 
     class Mover(SharedBox):
-        move: Call[[Target], float] = field(init=False)
+        move: Call[[Target], float] = call()
 
     name = names("closing")
     target = Target(1.0)
@@ -429,7 +429,7 @@ def test_closing_the_box_inside_a_take_frees_the_field(
 
 
 class Guarded(SharedBox, lock_timeout=0.2):
-    move: Call[[float], float] = field(init=False)
+    move: Call[[float], float] = call()
 
 
 def test_a_lock_timeout_keeps_a_call_pending(

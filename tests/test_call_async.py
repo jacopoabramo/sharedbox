@@ -7,15 +7,15 @@ from typing import Any, TypeVar
 import pytest
 from crossproc import call_in_child, serve_once
 
-from sharedbox import Call, CallError, CallServer, SharedBox, field
+from sharedbox import Call, CallError, CallServer, SharedBox, call
 
 T = TypeVar("T")
 
 
 class Scanner(SharedBox):
     position: float = 0.0
-    move: Call[[float], float] = field(init=False)
-    home: Call[[], None] = field(init=False)
+    move: Call[[float], float] = call()
+    home: Call[[], None] = call()
 
 
 @contextlib.contextmanager
