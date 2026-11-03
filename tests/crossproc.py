@@ -9,7 +9,7 @@ from multiprocessing.process import BaseProcess
 from multiprocessing.synchronize import Event as EventType
 from typing import Any
 
-from sharedbox import CallServedError, SharedBox
+from sharedbox import AlreadyServedError, SharedBox
 
 
 def snapshot(box: SharedBox, results: "mp.Queue[dict[str, Any]]") -> None:
@@ -83,7 +83,7 @@ def serve_once(box: SharedBox, name: str) -> bool:
     """Return whether `box` could serve its call field `name`, stopping at once if so."""
     try:
         getattr(box, name).serve(len)
-    except CallServedError:
+    except AlreadyServedError:
         return False
     finally:
         box.close()

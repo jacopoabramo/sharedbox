@@ -4,15 +4,6 @@ from . import _exit as _exit
 from ._arrays import DType, MaxShape, Shape, SupportsDLPack, register_array_type
 from ._bounded import BoundedDict, BoundedList, BoundedSet
 from ._box import SharedBox, SupportsSharedBox, fields
-from ._call import (
-    Call,
-    CallError,
-    CallFuture,
-    CallServedError,
-    CallServer,
-    CallSupersededError,
-    ServerExitedError,
-)
 from ._events import BoxEvents, FieldFuture, FieldWatch
 from ._layout import Capacity, Field, call, field
 from ._native import (
@@ -33,6 +24,15 @@ from ._native import (
     WouldBlock,
 )
 from ._refs import BoxRef, BrokenReferenceError, UnknownBoxClassError
+from ._request import (
+    AlreadyServedError,
+    Call,
+    RequestError,
+    RequestFuture,
+    RequestServer,
+    RequestSupersededError,
+    ServerExitedError,
+)
 from ._status import SegmentStatus, segment_status
 from ._stream import (
     ReceiveEvents,
@@ -47,6 +47,7 @@ from ._timed import Timed
 from ._version import __version__
 
 __all__ = [
+    "AlreadyServedError",
     "BoundedDict",
     "BoundedList",
     "BoundedSet",
@@ -55,11 +56,6 @@ __all__ = [
     "BoxRef",
     "BrokenReferenceError",
     "Call",
-    "CallError",
-    "CallFuture",
-    "CallServedError",
-    "CallServer",
-    "CallSupersededError",
     "Capacity",
     "DType",
     "EndOfStream",
@@ -75,6 +71,10 @@ __all__ = [
     "ReaderReleased",
     "ReceiveEvents",
     "ReceiveStreamStatistics",
+    "RequestError",
+    "RequestFuture",
+    "RequestServer",
+    "RequestSupersededError",
     "SchemaMismatchError",
     "SegmentExistsError",
     "SegmentNotFoundError",

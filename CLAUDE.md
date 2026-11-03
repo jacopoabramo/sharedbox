@@ -30,7 +30,7 @@ sharedbox/
 |   |-- _types.py              annotation parsing into TypeSpec, the description table
 |   |-- _arrays.py             Shape, MaxShape, DType, SupportsDLPack, register_array_type
 |   |-- _timed.py              Timed: a value with its timestamp in ns, Timed.now and the mark a write replaces
-|   |-- _call.py               Call fields: Call, CallFuture, CallServer, the call errors, serving threads and tasks
+|   |-- _request.py            Call fields: Call, RequestFuture, RequestServer, the request errors, serving threads and tasks
 |   |-- _events.py             BoxEvents, FieldWatch, the watcher thread, which also completes call futures and kicks call servers
 |   |-- _follow.py             BoxEvents.follow and unfollow: forwarding the events of boxes that references reach
 |   |-- _stream.py             SharedStream, SharedSendStream, SharedReceiveStream, ReceiveEvents, the statistics classes, the worker threads

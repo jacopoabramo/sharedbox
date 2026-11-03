@@ -23,9 +23,15 @@ from typing import (
 
 from psygnal import Signal, SignalGroup
 
-from ._call import LIVENESS_DELAY, CallFuture, CallServedError, CallServer, Outcome
 from ._native import BoxClosedError, LockTimeoutError, WaiterSlotsFullError
 from ._refs import shown
+from ._request import (
+    LIVENESS_DELAY,
+    AlreadyServedError,
+    Outcome,
+    RequestFuture,
+    RequestServer,
+)
 
 if TYPE_CHECKING:
     from psygnal import SignalInstance
@@ -261,9 +267,9 @@ class Watcher:
         self._segment = segment
         self._types = types
         self._pending: list[FieldFuture[Any]] = []
-        self._calls: list[CallFuture[Any]] = []
+        self._calls: list[RequestFuture[Any]] = []
         # Each server, with the write count of its field when it was last kicked.
-        self._servers: dict[CallServer, int] = {}
+        self._servers: dict[RequestServer, int] = {}
         self._lock = threading.RLock()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
@@ -299,9 +305,11 @@ class Watcher:
             self._start_locked()
         return fut
 
-    def call_future(self, spec: FieldSpec, number: int, since: int) -> CallFuture[Any]:
+    def call_future(
+        self, spec: FieldSpec, number: int, since: int
+    ) -> RequestFuture[Any]:
         """Return the future of the answer to request `number`, sent when the field's write count was `since`."""
-        fut: CallFuture[Any] = CallFuture(self, spec, number, since)
+        fut: RequestFuture[Any] = RequestFuture(self, spec, number, since)
         with self._lock:
             if self._stop.is_set():
                 fut.cancel()
@@ -316,7 +324,7 @@ class Watcher:
                 self._segment.interrupt(slot)
         return fut
 
-    def serve(self, spec: FieldSpec, handler: Callable[..., Any]) -> CallServer:
+    def serve(self, spec: FieldSpec, handler: Callable[..., Any]) -> RequestServer:
         """Claim call field `spec` for this process and answer its requests with `handler`."""
         loop = None
         if inspect.iscoroutinefunction(handler):
@@ -335,8 +343,8 @@ class Watcher:
         for server in ended:
             server._halt(join=False)
         if not self._segment.serve_claim(spec.index):
-            raise CallServedError(f"{spec.label} is served already")
-        server = CallServer(self, spec, handler, loop)
+            raise AlreadyServedError(f"{spec.label} is served already")
+        server = RequestServer(self, spec, handler, loop)
         with self._lock:
             if self._stop.is_set():
                 server._halt(join=False)
@@ -351,7 +359,7 @@ class Watcher:
         """Return whether the calling thread is the watcher thread of some box."""
         return on_watcher_thread()
 
-    def forget(self, server: CallServer) -> None:
+    def forget(self, server: RequestServer) -> None:
         with self._lock:
             self._servers.pop(server, None)
 
@@ -453,9 +461,9 @@ class Watcher:
             except Exception:
                 logger.exception("forwarding a change of field %r failed", spec.name)
 
-    def discard(self, fut: FieldFuture[Any] | CallFuture[Any]) -> None:
+    def discard(self, fut: FieldFuture[Any] | RequestFuture[Any]) -> None:
         with self._lock, contextlib.suppress(ValueError):
-            if isinstance(fut, CallFuture):
+            if isinstance(fut, RequestFuture):
                 self._calls.remove(fut)
             else:
                 self._pending.remove(fut)
@@ -623,7 +631,7 @@ class Watcher:
         if not calls:
             return False
         versions = self._segment.versions()
-        outcomes: list[tuple[CallFuture[Any], int | None, Any]] = []
+        outcomes: list[tuple[RequestFuture[Any], int | None, Any]] = []
         for fut in calls:
             version = versions[fut._field.index]
             if version == fut._since and not check:

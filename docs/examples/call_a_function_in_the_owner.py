@@ -4,7 +4,7 @@
 import asyncio
 import threading
 
-from sharedbox import Call, CallError, CallSupersededError, SharedBox, call
+from sharedbox import Call, RequestError, RequestSupersededError, SharedBox, call
 
 
 class Scanner(SharedBox, name="example-scanner"):
@@ -43,7 +43,7 @@ asyncio.run(main())
 # --8<-- [start:error]
 try:
     scanner.move(250.0).result(timeout=5)
-except CallError as error:
+except RequestError as error:
     print(error)  # Scanner.move: ValueError: 250.0 is out of range
 # --8<-- [end:error]
 
@@ -69,7 +69,7 @@ release.set()
 print(first.result(timeout=5), third.result(timeout=5))  # 1.0 3.0
 try:
     second.result(timeout=5)
-except CallSupersededError:
+except RequestSupersededError:
     print("the second request was superseded")
 # --8<-- [end:supersede]
 

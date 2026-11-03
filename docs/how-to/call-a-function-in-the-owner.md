@@ -44,21 +44,21 @@ hold up what [`watch`][sharedbox.SharedBox.watch] and
 you call `serve`, and calling `serve` with one outside a running loop
 raises `RuntimeError`. Only one process serves a field at a time: a second
 `serve` while a live process serves it, this one included, raises
-[`CallServedError`][sharedbox.CallServedError].
+[`AlreadyServedError`][sharedbox.AlreadyServedError].
 
-[`CallServer.stop`][sharedbox.CallServer.stop] stops serving and frees the
+[`RequestServer.stop`][sharedbox.RequestServer.stop] stops serving and frees the
 field for another server. It waits for a running plain handler to finish
 and answer first, and it asks a running `async def` handler to cancel,
-whose caller then gets [`CallError`][sharedbox.CallError]. Closing the box
+whose caller then gets [`RequestError`][sharedbox.RequestError]. Closing the box
 stops every server it started, and so does garbage collection of the box
 or the end of the process, but these free the field at once: a request
-whose handler is still running fails with `CallError` saying the server
+whose handler is still running fails with `RequestError` saying the server
 stopped, and only then does the close wait for a plain handler's thread.
 
 ## 3. Call it
 
 Calling the field sends the request at once and returns a
-[`CallFuture`][sharedbox.CallFuture], which you wait on with `result` in
+[`RequestFuture`][sharedbox.RequestFuture], which you wait on with `result` in
 any thread or `await` in a running event loop:
 
 ```{.python}
@@ -75,7 +75,7 @@ field waits until a server starts.
 
 An exception the handler raises is logged to the `sharedbox` logger in the
 serving process, with its traceback, and reaches the caller as
-[`CallError`][sharedbox.CallError], with the exception's type and message
+[`RequestError`][sharedbox.RequestError], with the exception's type and message
 cut to 256 bytes:
 
 ```{.python}
@@ -92,7 +92,7 @@ can't come.
 
 The handler handles one request at a time. Of the requests sent while it
 runs, only the newest is handled next, and each one before it raises
-[`CallSupersededError`][sharedbox.CallSupersededError] in its caller. A
+[`RequestSupersededError`][sharedbox.RequestSupersededError] in its caller. A
 motor told to go to 2 and then to 3 while it is still moving goes to 3:
 
 ```{.python}
