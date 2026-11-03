@@ -7,8 +7,10 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <optional>
 #include <span>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 struct table_builder {
@@ -120,4 +122,46 @@ inline void timed_around(table_builder &t, std::uint8_t kind) {
         max_array(t);
     }
     t.patch(entry + 4, entry_of(kind, at));
+}
+
+// A call description (kind 76) of fixed-kind arguments and an optional result, each a kind and a capacity,
+// with the offsets and the size the layout gives. A test forges one by patching the bytes: the head size at
+// 4, the results byte at 10, entry i at 16 + 8 * i.
+inline table_builder call(std::vector<std::pair<std::uint8_t, std::uint32_t>> arguments,
+                          std::optional<std::pair<std::uint8_t, std::uint32_t>> result) {
+    using sharedbox::detail::kind_alignment;
+    using sharedbox::detail::prefixed;
+    using sharedbox::detail::round_up;
+    using member = std::pair<std::uint8_t, std::uint32_t>;
+    const auto size_of = [](const member &m) { return prefixed(m.first) ? 4u + m.second : m.second; };
+    const auto alignment_of = [](const member &m) -> std::uint64_t {
+        return prefixed(m.first) ? 4u : kind_alignment(m.first);
+    };
+    std::uint64_t end = 48, field_alignment = 8;
+    std::vector<std::uint32_t> offsets;
+    for (const member &argument : arguments) {
+        offsets.push_back(static_cast<std::uint32_t>(round_up(end, alignment_of(argument))));
+        end = offsets.back() + size_of(argument);
+        field_alignment = (std::max)(field_alignment, alignment_of(argument));
+    }
+    std::uint64_t result_alignment = 8, result_at = 272, result_size = 0;
+    if (result) {
+        result_alignment = (std::max<std::uint64_t>)(8, alignment_of(*result));
+        result_at = round_up(272, alignment_of(*result));
+        result_size = size_of(*result);
+    }
+    field_alignment = (std::max)(field_alignment, result_alignment);
+    const std::uint64_t answers = round_up(end, result_alignment);
+    const std::uint64_t stride = round_up(result_at + result_size, result_alignment);
+    table_builder t;
+    t.head(sharedbox::kind_call, static_cast<std::uint16_t>(arguments.size() + (result ? 1 : 0)),
+           static_cast<std::uint32_t>(round_up(answers + 4 * stride, field_alignment)));
+    t.put(static_cast<std::uint16_t>(arguments.size()));
+    t.put(static_cast<std::uint8_t>(result ? 1 : 0));
+    t.pad();
+    for (std::size_t i = 0; i < arguments.size(); ++i)
+        t.entry(offsets[i], arguments[i].first, arguments[i].second);
+    if (result)
+        t.entry(static_cast<std::uint32_t>(result_at), result->first, result->second);
+    return t;
 }
