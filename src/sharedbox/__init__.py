@@ -4,6 +4,15 @@ from . import _exit as _exit
 from ._arrays import DType, MaxShape, Shape, SupportsDLPack, register_array_type
 from ._bounded import BoundedDict, BoundedList, BoundedSet
 from ._box import SharedBox, SupportsSharedBox, fields
+from ._call import (
+    Call,
+    CallError,
+    CallFuture,
+    CallServedError,
+    CallServer,
+    CallSupersededError,
+    ServerExitedError,
+)
 from ._events import BoxEvents, FieldFuture, FieldWatch
 from ._layout import Capacity, Field, field
 from ._native import (
@@ -45,6 +54,12 @@ __all__ = [
     "BoxEvents",
     "BoxRef",
     "BrokenReferenceError",
+    "Call",
+    "CallError",
+    "CallFuture",
+    "CallServedError",
+    "CallServer",
+    "CallSupersededError",
     "Capacity",
     "DType",
     "EndOfStream",
@@ -65,6 +80,7 @@ __all__ = [
     "SegmentNotFoundError",
     "SegmentStatus",
     "SendSlot",
+    "ServerExitedError",
     "Shape",
     "SharedBox",
     "SharedReceiveStream",

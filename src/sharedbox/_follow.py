@@ -308,7 +308,7 @@ class Follower:
                 # Listening first, so the values below are the ones the watcher compares later changes with.
                 box._watcher.listen(
                     partial(relay, weakref.ref(follower), segment),
-                    cls.__layout__.fields,
+                    cls.__layout__.values,
                 )
                 children = follower.link_children(cls, box._watcher)
                 if follower.tree is not None:

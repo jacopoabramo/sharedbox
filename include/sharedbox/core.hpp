@@ -136,10 +136,28 @@ inline constexpr std::uint8_t kind_dict = 73;
 inline constexpr std::uint8_t kind_array = 74;
 // An array of a stream item that stores its own shape, up to the maximum its description gives.
 inline constexpr std::uint8_t kind_max_array = 75;
+// A request line, a server's identity and a ring of answers: a box field only.
+inline constexpr std::uint8_t kind_call = 76;
+// The answers a call field keeps, the bytes of an answer's error text, and where its arguments start.
+inline constexpr std::uint32_t call_answers = 4;
+inline constexpr std::uint32_t call_error_size = 256;
+inline constexpr std::uint32_t call_arguments_at = 48;
 // A value followed by an i64 timestamp in nanoseconds since the Unix epoch.
 inline constexpr std::uint8_t kind_timed = 78;
 // The timestamp that a write replaces with the time of the write.
 inline constexpr std::int64_t timed_mark = INT64_MIN;
+
+// What a caller learns about a request: still waiting, answered, failed with a text, replaced by a later
+// request before the server took it, answered but with its answer replaced by later ones, or taken by a
+// server that has exited.
+enum class call_outcome : std::uint8_t { pending, answered, failed, superseded, overwritten, server_exited };
+
+// length is the bytes copied into the caller's buffer: the result's size when answered, the text's when
+// failed, else 0.
+struct call_reply {
+    call_outcome outcome;
+    std::uint32_t length;
+};
 
 enum class status : int {
     ok = 0,
@@ -838,7 +856,8 @@ inline bool prefixed(std::uint32_t kind) noexcept {
 }
 
 inline bool kind_known(std::uint32_t kind) noexcept {
-    return kind <= kind_datetime64 || (kind >= kind_enum && kind <= kind_max_array) || kind == kind_timed;
+    return kind <= kind_datetime64 || (kind >= kind_enum && kind <= kind_max_array) || kind == kind_call ||
+           kind == kind_timed;
 }
 
 // Alignment of a fixed kind within the record; 1 for a kind this header does not know, whose alignment
@@ -938,8 +957,11 @@ struct type_node {
     std::uint32_t names = 0;
     std::uint32_t numbers = 0;
     std::uint32_t literals = 0;
+    // list, set, dict: the elements it holds; call: how many of its members are arguments.
     std::uint32_t capacity = 0;
+    // list, set, dict: where the first slot starts; call: where its answers start.
     std::uint32_t slots = 0;
+    // list, set, dict: the bytes of a slot; call: the bytes of an answer.
     std::uint32_t stride = 0;
     dl_dtype dtype{};
     std::uint8_t ndim = 0;
@@ -1207,9 +1229,9 @@ inline status type_parser::describe(std::uint8_t kind, std::uint32_t at, std::ui
     const std::byte *entries = nullptr;
     std::uint32_t entry_count = 0;
     bool members_take_arrays = false;
-    // Only a record's, tuple's or timed's members may be max_arrays, and only when it may be one itself.
+    // Only a record's, tuple's, call's or timed's members may be max_arrays, and only when it may be one itself.
     const bool members_take_max_arrays =
-        max_ok && (kind == kind_record || kind == kind_tuple || kind == kind_timed);
+        max_ok && (kind == kind_record || kind == kind_tuple || kind == kind_call || kind == kind_timed);
     bool ok = true;
     switch (kind) {
     case kind_enum:
@@ -1258,6 +1280,18 @@ inline status type_parser::describe(std::uint8_t kind, std::uint32_t at, std::ui
         c.skip(8);
         members_take_arrays = true;
         break;
+    case kind_call: {
+        node.capacity = c.take<std::uint16_t>();
+        const auto results = c.take<std::uint8_t>();
+        const std::string_view padding = c.text(5);
+        ok = top && c.ok && results <= 1 && head.count <= max_fields && node.capacity + results == head.count &&
+             std::all_of(padding.begin(), padding.end(), [](char x) { return x == '\0'; });
+        entries = c.at;
+        entry_count = head.count;
+        c.skip(std::size_t{head.count} * 8);
+        members_take_arrays = true;
+        break;
+    }
     case kind_list:
     case kind_set:
     case kind_dict:
@@ -1382,6 +1416,32 @@ inline status type_parser::place(std::uint8_t kind, const type_head &head, type_
         const std::uint32_t a = (std::max)(e.alignment, 8u);
         out.alignment = a;
         return m[0].offset == 0 && size == round_up(round_up(e.size, 8) + 8, a) ? status::ok : status::corrupt;
+    }
+    case kind_call: {
+        if (node.timed)
+            return status::corrupt;
+        const std::uint32_t arguments = node.capacity;
+        const bool has_result = node.count > arguments;
+        const type_ref *result = has_result ? &m[arguments].type : nullptr;
+        const std::uint64_t result_alignment = has_result ? (std::max)(8u, result->alignment) : 8;
+        std::uint64_t a = (std::max)(std::uint64_t{8}, result_alignment), end = call_arguments_at;
+        for (std::uint32_t i = 0; i < arguments; ++i) {
+            if (m[i].offset != round_up(end, m[i].type.alignment))
+                return status::corrupt;
+            end = std::uint64_t{m[i].offset} + m[i].type.size;
+            a = (std::max)(a, std::uint64_t{m[i].type.alignment});
+        }
+        const std::uint64_t answers = round_up(end, result_alignment);
+        const std::uint64_t result_at = has_result ? round_up(272, result->alignment) : 272;
+        if (has_result && m[arguments].offset != result_at)
+            return status::corrupt;
+        const std::uint64_t stride = round_up(result_at + (has_result ? result->size : 0), result_alignment);
+        if (answers > UINT32_MAX || stride > UINT32_MAX)
+            return status::corrupt;
+        node.slots = static_cast<std::uint32_t>(answers);
+        node.stride = static_cast<std::uint32_t>(stride);
+        out.alignment = static_cast<std::uint32_t>(a);
+        return size == round_up(answers + call_answers * stride, a) ? status::ok : status::corrupt;
     }
     case kind_list:
     case kind_set: {
@@ -2640,7 +2700,8 @@ public:
     std::uint32_t size() const noexcept { return ref_.size; }
     std::uint32_t alignment() const noexcept { return ref_.alignment; }
     bool described() const noexcept { return ref_.node != detail::no_node; }
-    // enum, flag, literal: values; optional, list, set, timed 1; union, record, tuple: members; dict 2; else 0.
+    // enum, flag, literal: values; optional, list, set, timed 1; union, record, tuple: members; dict 2; call:
+    // arguments plus the result; else 0.
     std::uint16_t count() const noexcept { return described() ? node().count : 0; }
     // str, bytes, decimal: bytes; list, set, dict: elements; else 0.
     std::uint32_t capacity() const noexcept {
@@ -2652,8 +2713,9 @@ public:
     std::uint32_t slots() const noexcept { return described() ? node().slots : 0; }
     std::uint32_t stride() const noexcept { return described() ? node().stride : 0; }
     // optional, union, record, tuple: i < count(); list and set: 0, the element; dict: 0 key, 1 value;
-    // timed: 0, the value, which the timestamp follows. Another kind or index gives an empty type_view and
-    // offset 0.
+    // timed: 0, the value, which the timestamp follows; call: the arguments, then the result if it has one,
+    // an argument's offset from the field's start and the result's from the start of an answer. Another kind
+    // or index gives an empty type_view and offset 0.
     type_view member(std::uint16_t i) const noexcept {
         return has_member(i) ? type_view{table_, table_->member(node().members + i).type} : type_view{};
     }
@@ -2691,7 +2753,7 @@ private:
     type_view(const detail::type_table *table, detail::type_ref ref) noexcept : table_(table), ref_(ref) {}
     const detail::type_node &node() const noexcept { return table_->node(ref_.node); }
     bool has_member(std::uint16_t i) const noexcept {
-        return has(i, kind_optional, kind_dict) || has(i, kind_timed, kind_timed);
+        return has(i, kind_optional, kind_dict) || has(i, kind_call, kind_call) || has(i, kind_timed, kind_timed);
     }
     // Whether the kind is in [first, last] and i is below count().
     bool has(std::uint16_t i, std::uint8_t first, std::uint8_t last) const noexcept {

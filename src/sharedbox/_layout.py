@@ -24,12 +24,14 @@ from typing import (
 )
 
 from ._arrays import Shape
+from ._call import Call
 from ._native import Types
 from ._types import (
     CODES,
     MAX_ARRAY_PLACES,
     Table,
     TypeSpec,
+    call_spec,
     is_box_class,
     misplaced_max_array,
     parse,
@@ -82,6 +84,7 @@ Kind = Literal[
     "dict",
     "array",
     "max_array",
+    "call",
     "timed",
 ]
 
@@ -293,10 +296,12 @@ class Layout:
     """
     by_name: Mapping[str, FieldSpec]
     """Each field's spec under its name."""
-    names: tuple[str, ...]
-    """Field names in declaration order."""
+    names: tuple[str | None, ...]
+    """Field names in declaration order; None for a call field, which holds no value."""
     refs: tuple[FieldSpec, ...]
     """The reference fields, in declaration order."""
+    values: tuple[FieldSpec, ...]
+    """The fields that hold a value, in declaration order: every field but a call field."""
     types: Types
     """The field types the native module converts values with."""
 
@@ -494,10 +499,16 @@ def build_layout(cls: type, identity: str | None = None) -> Layout:
             raise TypeError(f"{where}: field(shape=...) applies only to an array field")
         if ref is not None and capacity is not None:
             raise TypeError(f"{where}: Capacity does not apply to a reference")
-        spec = (
-            None
-            if ref is not None
-            else parse(
+        if hint is Call or get_origin(hint) is Call:
+            if shape is not None or capacity is not None:
+                raise TypeError(
+                    f"{where}: field(shape=...) and field(capacity=...) do not apply to a Call"
+                )
+            spec: TypeSpec | None = call_spec(hint, where, frozenset())
+        elif ref is not None:
+            spec = None
+        else:
+            spec = parse(
                 hint,
                 where,
                 capacity=capacity,
@@ -506,7 +517,6 @@ def build_layout(cls: type, identity: str | None = None) -> Layout:
                     default,
                 ),
             )
-        )
         if spec is not None and misplaced_max_array(spec):
             raise TypeError(f"{where}: {MAX_ARRAY_PLACES}")
         found.append((name, spec, ref))
@@ -588,7 +598,8 @@ def build_layout(cls: type, identity: str | None = None) -> Layout:
         record_size,
         schema_hash,
         {s.name: s for s in specs},
-        tuple(s.name for s in specs),
+        tuple(None if s.kind == "call" else s.name for s in specs),
         tuple(s for s in specs if s.target is not None),
+        tuple(s for s in specs if s.kind != "call"),
         types,
     )

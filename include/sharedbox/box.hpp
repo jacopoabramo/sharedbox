@@ -351,6 +351,37 @@ public:
     // metadata_ok accepts or is longer than a third of the ring. A refused add leaves the generation alone.
     [[nodiscard]] result<std::uint64_t> add_metadata(std::span<const std::byte> doc, seconds lock_timeout);
 
+    // The steps of a call field's protocol. Each takes the write lock and, when it changes the field, counts
+    // one write and wakes waiters; a step that changes nothing gives the lock back with the sequence number
+    // and the write count as they were. status::range for a field that is not a call or for a span of the
+    // wrong size. Requests are numbered from 1.
+    // Stores arguments, the bytes [call_arguments_at, answers) of the field, as the newest request and returns
+    // its number.
+    [[nodiscard]] result<std::uint64_t> call_send(std::uint16_t field, std::span<const std::byte> arguments,
+                                                  seconds lock_timeout);
+    // Copies the newest request's arguments into arguments and marks it taken; returns its number, or 0 and
+    // copies nothing when the newest request was taken already.
+    [[nodiscard]] result<std::uint64_t> call_take(std::uint16_t field, std::span<std::byte> arguments,
+                                                  seconds lock_timeout);
+    // Answers the request number, which must be the one taken last and not answered yet: with the result
+    // (exactly its size) when ok, else with an error text of at most call_error_size bytes. status::ended,
+    // writing nothing, for any other request.
+    [[nodiscard]] result<void> call_answer(std::uint16_t field, std::uint64_t number, bool ok,
+                                           std::span<const std::byte> bytes, seconds lock_timeout);
+    // What became of request number, from one moment, without the write lock. The result or the error text is
+    // copied into out, which must hold the larger of the result's size and call_error_size bytes. A request
+    // that was never sent, or number 0, is status::range. With check_server, a request still pending reads
+    // server_exited when the process that serves the field has ended.
+    [[nodiscard]] result<call_reply> call_answer_of(std::uint16_t field, std::uint64_t number,
+                                                    std::span<std::byte> out, bool check_server) const;
+    // Records this process as the field's server. status::busy while the recorded server's process runs, this
+    // one included. Over a server that has exited, answers the request it took and left unanswered with
+    // "the server exited".
+    [[nodiscard]] result<void> call_claim(std::uint16_t field, seconds lock_timeout);
+    // Clears the server if it is this process, answering the request it took and left unanswered with "the
+    // server stopped". Changes nothing for any other server.
+    [[nodiscard]] result<void> call_release(std::uint16_t field, seconds lock_timeout);
+
     // Takes over a handle made by another build, such as the one in a "sharedbox_box" capsule: checks
     // the segment at capsule->base as open does and, on success, clears capsule->release; destroying
     // the new handle calls the producer's release.
@@ -898,6 +929,16 @@ struct no_hooks {
     explicit no_hooks(const state &) noexcept {}
 };
 
+// Gives back the lock taken from the even seq locked, for a write that stored nothing: no write is counted
+// and seq is as it was. A force_unlock that has already released the lock leaves seq as another writer's,
+// and the swap then changes nothing.
+inline void unlock_unchanged(state &s, std::uint64_t locked) noexcept {
+    std::uint64_t held = locked + 1;
+    if (atomic(s.hdr->seq).load(std::memory_order_relaxed) == held)
+        atomic(s.hdr->writer_pid).store(0, std::memory_order_relaxed);
+    atomic(s.hdr->seq).compare_exchange_strong(held, locked, std::memory_order_release, std::memory_order_relaxed);
+}
+
 // read_used for one field; Large runs the wait hooks once around the copy and checks the sequence
 // number between chunks.
 template <bool Large>
@@ -1138,14 +1179,8 @@ result<std::uint64_t> handle::write_with_document(std::span<const value> values,
         s.metadata, s.metadata_first, detail::atomic(s.hdr->metadata_head), doc, (*locked >> 1) + 1,
         [](std::uint64_t) { return true; }, true);
     if (!added) {
-        // Only a forged area gets here, and no field is stored yet. Nothing was written, so the lock is given
-        // back without counting a write; a force_unlock that has already released it leaves seq as another
-        // writer's, and the swap then changes nothing.
-        std::uint64_t held = *locked + 1;
-        if (detail::atomic(s.hdr->seq).load(std::memory_order_relaxed) == held)
-            detail::atomic(s.hdr->writer_pid).store(0, std::memory_order_relaxed);
-        detail::atomic(s.hdr->seq)
-            .compare_exchange_strong(held, *locked, std::memory_order_release, std::memory_order_relaxed);
+        // Only a forged area gets here, and no field is stored yet.
+        detail::unlock_unchanged(s, *locked);
         return unexpected(added.error());
     }
     std::int64_t now = 0;
@@ -1166,6 +1201,256 @@ inline result<std::uint64_t> handle::write(std::span<const value> values, std::s
 
 inline result<std::uint64_t> handle::add_metadata(std::span<const std::byte> doc, seconds lock_timeout) {
     return write({}, doc, lock_timeout);
+}
+
+namespace detail {
+
+inline constexpr std::uint32_t call_sent_at = 0;
+inline constexpr std::uint32_t call_taken_at = 8;
+inline constexpr std::uint32_t call_answered_at = 16;
+inline constexpr std::uint32_t call_server_start_at = 24;
+inline constexpr std::uint32_t call_server_pidns_at = 32;
+inline constexpr std::uint32_t call_server_pid_at = 40;
+inline constexpr std::uint32_t answer_status_at = 8;
+inline constexpr std::uint32_t answer_length_at = 12;
+inline constexpr std::uint32_t answer_error_at = 16;
+inline constexpr std::uint32_t answer_ok = 1;
+inline constexpr std::uint32_t answer_failed = 2;
+
+template <class T> T call_get(const std::byte *at) noexcept {
+    T value;
+    std::memcpy(&value, at, sizeof value);
+    return value;
+}
+
+template <class T> void call_put(std::byte *at, T value) noexcept { std::memcpy(at, &value, sizeof value); }
+
+inline void call_copy(std::byte *to, std::span<const std::byte> bytes) noexcept {
+    if (!bytes.empty())
+        std::memcpy(to, bytes.data(), bytes.size());
+}
+
+inline std::span<const std::byte> text_bytes(std::string_view text) noexcept {
+    return std::as_bytes(std::span(text.data(), text.size()));
+}
+
+// Where the parts of one call field sit in the record.
+struct call_field {
+    std::byte *at;
+    std::uint32_t answers;
+    std::uint32_t stride;
+    std::uint32_t result_at;
+    std::uint32_t result_size;
+
+    std::byte *answer(std::uint64_t index) const noexcept {
+        return at + answers + (index % call_answers) * stride;
+    }
+};
+
+// Fills out from the field's checked type; false for a field that is not a call.
+inline bool call_field_of(const state &s, std::uint16_t field, call_field &out) noexcept {
+    if (field >= s.field_count || s.fields[field].kind != kind_call)
+        return false;
+    const type_node &node = s.types.node(s.types.field(field).node);
+    const bool has_result = node.count > node.capacity;
+    const type_member *result = has_result ? &s.types.member(node.members + node.capacity) : nullptr;
+    out = {s.record + s.fields[field].offset, node.slots, node.stride, result != nullptr ? result->offset : 272,
+           result != nullptr ? result->type.size : 0};
+    return true;
+}
+
+// Whether the ring holds an answer to request number.
+inline bool call_has_answer(const call_field &c, std::uint64_t number) noexcept {
+    for (std::uint32_t i = 0; i < call_answers; ++i)
+        if (call_get<std::uint64_t>(c.answer(i)) == number &&
+            call_get<std::uint32_t>(c.answer(i) + answer_status_at) != 0)
+            return true;
+    return false;
+}
+
+// Stores the answer to request number as the next one of the ring: bytes is the result when ok, else the text.
+inline void call_store_answer(const call_field &c, std::uint64_t number, bool ok,
+                              std::span<const std::byte> bytes) noexcept {
+    const auto answered = call_get<std::uint64_t>(c.at + call_answered_at);
+    std::byte *entry = c.answer(answered);
+    call_put<std::uint64_t>(entry, number);
+    call_put<std::uint32_t>(entry + answer_status_at, ok ? answer_ok : answer_failed);
+    call_put<std::uint32_t>(entry + answer_length_at, ok ? 0 : static_cast<std::uint32_t>(bytes.size()));
+    if (ok) {
+        call_copy(entry + c.result_at, bytes);
+    } else {
+        std::memset(entry + answer_error_at, 0, call_error_size);
+        call_copy(entry + answer_error_at, bytes);
+    }
+    call_put<std::uint64_t>(c.at + call_answered_at, answered + 1);
+}
+
+} // namespace detail
+
+inline result<std::uint64_t> handle::call_send(std::uint16_t field, std::span<const std::byte> arguments,
+                                               seconds lock_timeout) {
+    detail::state &s = *s_;
+    detail::call_field c;
+    if (!detail::call_field_of(s, field, c) || arguments.size() != c.answers - call_arguments_at)
+        return unexpected(status::range);
+    const result<std::uint64_t> locked = lock(lock_timeout);
+    if (!locked)
+        return unexpected(locked.error());
+    const std::uint64_t sent = detail::call_get<std::uint64_t>(c.at + detail::call_sent_at) + 1;
+    detail::call_put(c.at + detail::call_sent_at, sent);
+    detail::call_copy(c.at + call_arguments_at, arguments);
+    end_write({field, {}, *locked});
+    return sent;
+}
+
+inline result<std::uint64_t> handle::call_take(std::uint16_t field, std::span<std::byte> arguments,
+                                               seconds lock_timeout) {
+    detail::state &s = *s_;
+    detail::call_field c;
+    if (!detail::call_field_of(s, field, c) || arguments.size() != c.answers - call_arguments_at)
+        return unexpected(status::range);
+    const result<std::uint64_t> locked = lock(lock_timeout);
+    if (!locked)
+        return unexpected(locked.error());
+    const auto sent = detail::call_get<std::uint64_t>(c.at + detail::call_sent_at);
+    if (detail::call_get<std::uint64_t>(c.at + detail::call_taken_at) == sent) {
+        detail::unlock_unchanged(s, *locked);
+        return std::uint64_t{0};
+    }
+    if (!arguments.empty())
+        std::memcpy(arguments.data(), c.at + call_arguments_at, arguments.size());
+    detail::call_put(c.at + detail::call_taken_at, sent);
+    end_write({field, {}, *locked});
+    return sent;
+}
+
+inline result<void> handle::call_answer(std::uint16_t field, std::uint64_t number, bool ok,
+                                        std::span<const std::byte> bytes, seconds lock_timeout) {
+    detail::state &s = *s_;
+    detail::call_field c;
+    if (!detail::call_field_of(s, field, c) ||
+        (ok ? bytes.size() != c.result_size : bytes.size() > call_error_size))
+        return unexpected(status::range);
+    const result<std::uint64_t> locked = lock(lock_timeout);
+    if (!locked)
+        return unexpected(locked.error());
+    if (number == 0 || number != detail::call_get<std::uint64_t>(c.at + detail::call_taken_at) ||
+        detail::call_has_answer(c, number)) {
+        detail::unlock_unchanged(s, *locked);
+        return unexpected(status::ended);
+    }
+    detail::call_store_answer(c, number, ok, bytes);
+    end_write({field, {}, *locked});
+    return {};
+}
+
+inline result<call_reply> handle::call_answer_of(std::uint16_t field, std::uint64_t number,
+                                                 std::span<std::byte> out, bool check_server) const {
+    const detail::state &s = *s_;
+    detail::call_field c;
+    if (!detail::call_field_of(s, field, c) || out.size() < (std::max)(c.result_size, call_error_size))
+        return unexpected(status::range);
+    auto seq = detail::atomic(s.hdr->seq);
+    std::uint64_t sent = 0, taken = 0, start = 0, pidns = 0;
+    std::uint32_t pid = 0, length = 0;
+    std::uint64_t numbers[call_answers] = {};
+    std::uint32_t statuses[call_answers] = {};
+    std::uint32_t found = 0;
+    const bool done = detail::retry(s, s.lock_timeout, [&]() noexcept {
+        const std::uint64_t before = seq.load(std::memory_order_acquire);
+        if ((before & 1u) != 0)
+            return false;
+        sent = detail::call_get<std::uint64_t>(c.at + detail::call_sent_at);
+        taken = detail::call_get<std::uint64_t>(c.at + detail::call_taken_at);
+        start = detail::call_get<std::uint64_t>(c.at + detail::call_server_start_at);
+        pidns = detail::call_get<std::uint64_t>(c.at + detail::call_server_pidns_at);
+        pid = detail::call_get<std::uint32_t>(c.at + detail::call_server_pid_at);
+        found = 0;
+        for (std::uint32_t i = 0; i < call_answers; ++i) {
+            const std::byte *entry = c.answer(i);
+            numbers[i] = detail::call_get<std::uint64_t>(entry);
+            statuses[i] = detail::call_get<std::uint32_t>(entry + detail::answer_status_at);
+            if (found != 0 || numbers[i] != number ||
+                (statuses[i] != detail::answer_ok && statuses[i] != detail::answer_failed))
+                continue;
+            found = statuses[i];
+            if (found == detail::answer_ok) {
+                length = c.result_size;
+                std::memcpy(out.data(), entry + c.result_at, length);
+            } else {
+                length =
+                    (std::min)(detail::call_get<std::uint32_t>(entry + detail::answer_length_at), call_error_size);
+                std::memcpy(out.data(), entry + detail::answer_error_at, length);
+            }
+        }
+        std::atomic_thread_fence(std::memory_order_acquire);
+        return seq.load(std::memory_order_acquire) == before;
+    });
+    if (!done)
+        return unexpected(status::lock_timeout);
+    if (found != 0)
+        return call_reply{found == detail::answer_ok ? call_outcome::answered : call_outcome::failed, length};
+    if (number == 0 || number > sent)
+        return unexpected(status::range);
+    if (number >= taken) {
+        const bool exited = check_server && pid != 0 && detail::owner_exited(pid, start, pidns);
+        return call_reply{exited ? call_outcome::server_exited : call_outcome::pending, 0};
+    }
+    bool replaced = true;
+    for (std::uint32_t i = 0; i < call_answers; ++i)
+        replaced = replaced && statuses[i] != 0 && numbers[i] > number;
+    return call_reply{replaced ? call_outcome::overwritten : call_outcome::superseded, 0};
+}
+
+inline result<void> handle::call_claim(std::uint16_t field, seconds lock_timeout) {
+    detail::state &s = *s_;
+    detail::call_field c;
+    if (!detail::call_field_of(s, field, c))
+        return unexpected(status::range);
+    const result<std::uint64_t> locked = lock(lock_timeout);
+    if (!locked)
+        return unexpected(locked.error());
+    const auto pid = detail::call_get<std::uint32_t>(c.at + detail::call_server_pid_at);
+    if (pid != 0) {
+        const auto start = detail::call_get<std::uint64_t>(c.at + detail::call_server_start_at);
+        const auto pidns = detail::call_get<std::uint64_t>(c.at + detail::call_server_pidns_at);
+        if (!detail::owner_exited(pid, start, pidns)) {
+            detail::unlock_unchanged(s, *locked);
+            return unexpected(status::busy);
+        }
+        const auto taken = detail::call_get<std::uint64_t>(c.at + detail::call_taken_at);
+        if (taken != 0 && !detail::call_has_answer(c, taken))
+            detail::call_store_answer(c, taken, false, detail::text_bytes("the server exited"));
+    }
+    detail::call_put(c.at + detail::call_server_start_at, detail::current_start());
+    detail::call_put(c.at + detail::call_server_pidns_at, detail::current_pidns());
+    detail::call_put(c.at + detail::call_server_pid_at, detail::current_pid());
+    end_write({field, {}, *locked});
+    return {};
+}
+
+inline result<void> handle::call_release(std::uint16_t field, seconds lock_timeout) {
+    detail::state &s = *s_;
+    detail::call_field c;
+    if (!detail::call_field_of(s, field, c))
+        return unexpected(status::range);
+    const result<std::uint64_t> locked = lock(lock_timeout);
+    if (!locked)
+        return unexpected(locked.error());
+    if (detail::call_get<std::uint32_t>(c.at + detail::call_server_pid_at) != detail::current_pid() ||
+        detail::call_get<std::uint64_t>(c.at + detail::call_server_start_at) != detail::current_start() ||
+        detail::call_get<std::uint64_t>(c.at + detail::call_server_pidns_at) != detail::current_pidns()) {
+        detail::unlock_unchanged(s, *locked);
+        return {};
+    }
+    const auto taken = detail::call_get<std::uint64_t>(c.at + detail::call_taken_at);
+    if (taken != 0 && !detail::call_has_answer(c, taken))
+        detail::call_store_answer(c, taken, false, detail::text_bytes("the server stopped"));
+    detail::call_put<std::uint64_t>(c.at + detail::call_server_start_at, 0);
+    detail::call_put<std::uint64_t>(c.at + detail::call_server_pidns_at, 0);
+    detail::call_put<std::uint32_t>(c.at + detail::call_server_pid_at, 0);
+    end_write({field, {}, *locked});
+    return {};
 }
 
 inline std::uint64_t handle::generation() const noexcept {

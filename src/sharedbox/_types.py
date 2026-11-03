@@ -45,6 +45,7 @@ from ._arrays import (
     dtype_name,
     key,
 )
+from ._call import Call
 from ._native import NativeCollection, NativeDict, NativeSet
 from ._timed import Timed
 
@@ -95,6 +96,7 @@ CODES: Final[dict[str, int]] = {
     "dict": 73,
     "array": 74,
     "max_array": 75,
+    "call": 76,
     "timed": 78,
 }
 PREFIXED: Final[frozenset[str]] = frozenset({"str", "bytes", "decimal"})
@@ -105,8 +107,8 @@ SUPPORTED: Final[str] = (
     "date, time, datetime, timedelta, UUID, an Enum or Flag, a Literal, X | None, Timed[T], a union, "
     "a tuple, a NamedTuple, a dataclass, a TypedDict, an attrs class, a msgspec Struct, "
     "Annotated[list | set | frozenset | dict | tuple[T, ...], Capacity(n)] and their "
-    "collections.abc forms, Annotated[<array type>, Shape((...)), DType(...)], or a SharedBox "
-    "subclass, optionally with | None"
+    "collections.abc forms, Annotated[<array type>, Shape((...)), DType(...)], a SharedBox "
+    "subclass, optionally with | None, or, as a box field only, Call[[A, ...], R]"
 )
 
 
@@ -658,6 +660,10 @@ def dispatch(
         )
     if capacity is not None and not takes_capacity(hint, where, path):
         raise TypeError(f"{where}: Capacity does not apply to {hint!r}")
+    if hint is Call or get_origin(hint) is Call:
+        raise TypeError(
+            f"{where}: a Call is a box field of its own, not part of another type"
+        )
     if hint is Timed:
         raise TypeError(f"{where}: Timed needs its value type, as Timed[float]")
     if get_origin(hint) is Timed:
@@ -880,7 +886,7 @@ def misplaced_max_array(spec: TypeSpec) -> bool:
     match spec.kind:
         case "max_array":
             return False
-        case "record" | "tuple" | "timed":
+        case "record" | "tuple" | "timed" | "call":
             return any(misplaced_max_array(m.type) for m in spec.members)
         case _:
             return any(reaches_max_array(m.type) for m in spec.members)
@@ -1166,6 +1172,83 @@ def timed_spec(hint: Any, where: str, depth: int, path: frozenset[int]) -> TypeS
         exact=Timed,
         hashable=inner.hashable,
         reusable=inner.reusable,
+    )
+
+
+CALL_ARGUMENTS_AT: Final[int] = 48
+CALL_ANSWERS: Final[int] = 4
+CALL_ANSWER_HEAD: Final[int] = 272
+MAX_CALL_MEMBERS: Final[int] = 256
+
+
+def call_spec(hint: Any, where: str, path: frozenset[int]) -> TypeSpec:
+    """Return how a `Call[[A, ...], R]` is stored: a request line, a server's identity and a ring of answers.
+
+    Raises
+    ------
+    TypeError
+        If the arguments are not a list of types, or an argument or the
+        result is a reference or holds a `Timed`.
+    """
+    args = get_args(hint)
+    if len(args) != 2 or not isinstance(args[0], (tuple, list)):
+        raise TypeError(
+            f"{where}: Call takes a list of argument types, as Call[[float], float]"
+        )
+    arguments, result = args
+    below = deeper(1, where)
+    specs = [
+        parse(arg, f"{where}[{i}]", depth=below, path=path)
+        for i, arg in enumerate(arguments)
+    ]
+    has_result = result is not None and result is not NoneType
+    if has_result:
+        specs.append(parse(result, where, depth=below, path=path))
+    if len(specs) > MAX_CALL_MEMBERS:
+        raise TypeError(
+            f"{where}: a Call holds at most {MAX_CALL_MEMBERS} arguments and results, not {len(specs)}"
+        )
+    for spec in specs:
+        if reaches_timed(spec):
+            raise TypeError(
+                f"{where}: the arguments and result of a Call hold no Timed"
+            )
+    count = len(arguments)
+    result_spec = specs[count] if has_result else None
+    result_alignment = max(8, result_spec.alignment) if result_spec else 8
+    members: list[Member] = []
+    end = CALL_ARGUMENTS_AT
+    for spec in specs[:count]:
+        at = round_up(end, spec.alignment)
+        members.append(Member(at, spec))
+        end = at + spec.size
+    answers = round_up(end, result_alignment)
+    result_at = (
+        round_up(CALL_ANSWER_HEAD, result_spec.alignment)
+        if result_spec
+        else CALL_ANSWER_HEAD
+    )
+    stride = round_up(
+        result_at + (result_spec.size if result_spec else 0), result_alignment
+    )
+    if result_spec:
+        members.append(Member(result_at, result_spec))
+    alignment = max([8, result_alignment, *(spec.alignment for spec in specs[:count])])
+    size = round_up(answers + CALL_ANSWERS * stride, alignment)
+    if size >= 1 << 32:
+        raise TypeError(
+            f"{where}: the Call takes {size} bytes; a record holds less than 4 GiB"
+        )
+    return TypeSpec(
+        "call",
+        size,
+        alignment,
+        f"call({','.join(spec.text for spec in specs[:count])}->{result_spec.text if result_spec else 'None'})",
+        members=tuple(members),
+        count=len(members),
+        before=struct.pack("<HB5x", count, has_result),
+        hashable=False,
+        reusable=False,
     )
 
 
