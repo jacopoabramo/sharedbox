@@ -255,7 +255,7 @@ record (4096 - 2240 = 1856).
 | 75 | max_array | description offset | 64 + data size of the maximum shape, 64 |
 | 78 | timed | description offset | from the description |
 
-Codes 76 and 77 are reserved for kinds a later layout adds.
+Codes 76 and 77 are reserved for kinds a later version adds.
 
 A field of a kind the reader does not know is opened as opaque bytes: a
 kind below 64 is sized by its entry, one from 64 by its description's
@@ -379,7 +379,8 @@ A writer that wants the time of the write in a `timed` value stores the mark
 `-2**63` as its timestamp. A box write replaces every mark in the values it
 stores with the system clock in nanoseconds since the Unix epoch, read once
 after the write takes the lock, so all the marks of one write get one time
-and the stamps follow the order of the writes. Create stamps the initial
+and, unless the system clock is set back, the stamps follow the order of the
+writes. Create stamps the initial
 values the same way before it stores the magic, and a stream sender stamps
 an item before it publishes its slot. A C or C++ writer may store the mark
 or a time of its own. Since the mark is replaced, a timestamp of `-2**63`
@@ -1344,8 +1345,9 @@ inline constexpr std::uint64_t stream_magic = 0x4D5254535F584253;    // "SBX_STR
 // max_type_depth, max_mapping_size, first_described_kind, max_date_ordinal,
 // unix_epoch_ordinal, micros_per_day, max_offset_minutes, literal_none through
 // literal_enum, and the kind codes kind_bool, kind_int, kind_float, kind_str,
-// kind_bytes, kind_ref, kind_complex through kind_decimal and kind_enum through
-// kind_array; the structs common_header, header, stored_field, waiter_slot, box_ref and
+// kind_bytes, kind_ref, kind_complex through kind_decimal, kind_enum through
+// kind_max_array and kind_timed, and timed_mark, the timestamp a write replaces;
+// the structs common_header, header, stored_field, waiter_slot, box_ref and
 // type_head (see Layout); dl_dtype and literal_value, which type_view's dtype()
 // and literal() return (see the list below); error, result<T> and unexpected (see
 // Implementation language).

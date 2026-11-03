@@ -57,6 +57,7 @@ containers: "records, collections and arrays" {
   "set, frozenset, tuple[T, ...]": "as a list"
   "dict": "as a list, with a key and value in each slot"
   "array uint8, shape (2, 2)": "01 02 03 04, in C order"
+  "Timed[int] = Timed(5, t)": "05 00 00 00 00 00 00 00 | t, nanoseconds as an int"
   "SharedBox subclass": "create id | schema hash | name, 256 bytes"
 }
 ```

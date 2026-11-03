@@ -13,10 +13,11 @@ class Timed(NamedTuple, Generic[T]):
     """A value with a timestamp in nanoseconds since the Unix epoch.
 
     A box field or stream item annotated `Timed[T]` stores `value` as a `T`
-    followed by `timestamp_ns`. The timestamp `-2**63` is reserved: a write
-    replaces it with the system clock once the write holds the segment's
-    lock, so the stored timestamps follow the order of the writes. No read
-    returns it.
+    followed by `timestamp_ns`. The timestamp `-2**63` is reserved: a box
+    write replaces it with the system clock once it holds the box's lock, so
+    the stored timestamps follow the order of the writes unless the clock is
+    set back, and a stream send replaces it before it publishes the item. No
+    read returns it.
     """
 
     value: T

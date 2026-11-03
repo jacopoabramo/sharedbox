@@ -29,7 +29,8 @@ plain `21.5` raises `TypeError`.
 
 [`Timed.now`][sharedbox.Timed.now] asks the write for the time. The box reads
 the system clock once the write holds the box's lock, so the stamps of writes
-from any process follow the order in which the writes happened:
+from any process follow the order in which the writes happened, as long as
+nobody sets the system clock back:
 
 ```{.python}
 --8<-- "docs/examples/store_a_value_with_its_time.py:stamp"

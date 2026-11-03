@@ -1,4 +1,5 @@
 """The script of the guide "How to store a value with its time"."""
+# ruff: noqa: RUF012
 
 # --8<-- [start:declare]
 from typing import Annotated
