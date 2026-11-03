@@ -1431,7 +1431,8 @@ inline constexpr std::uint64_t stream_magic = 0x4D5254535F584253;    // "SBX_STR
 // literal_enum, and the kind codes kind_bool, kind_int, kind_float, kind_str,
 // kind_bytes, kind_ref, kind_complex through kind_decimal, kind_enum through
 // kind_max_array, kind_call and kind_timed, timed_mark, the timestamp a write
-// replaces, and request_answers, request_error_size and request_arguments_at (see Encodings);
+// replaces, and request_answers, request_error_size and request_arguments_at
+// (see Encodings);
 // the structs common_header, header, stored_field, waiter_slot, box_ref and
 // type_head (see Layout); dl_dtype and literal_value, which type_view's dtype()
 // and literal() return (see the list below); error, result<T> and unexpected (see
@@ -1516,12 +1517,12 @@ public:
     result<std::uint64_t> add_metadata(std::span<const std::byte> doc, seconds lock_timeout);
 
     result<std::uint64_t> request_send(std::uint16_t field, std::span<const std::byte> arguments,
-                                    seconds lock_timeout);
+                                       seconds lock_timeout);
     result<std::uint64_t> request_take(std::uint16_t field, std::span<std::byte> arguments, seconds lock_timeout);
     result<void> request_answer(std::uint16_t field, std::uint64_t number, bool ok,
-                             std::span<const std::byte> bytes, seconds lock_timeout);
+                                std::span<const std::byte> bytes, seconds lock_timeout);
     result<request_reply> request_answer_of(std::uint16_t field, std::uint64_t number, std::span<std::byte> out,
-                                      bool check_server) const;
+                                            bool check_server) const;
     result<void> serve_claim(std::uint16_t field, seconds lock_timeout);
     result<void> serve_release(std::uint16_t field, seconds lock_timeout);
 };
@@ -1643,11 +1644,11 @@ The header also declares these names:
   `call` field (see The call protocol). `request_send` takes the bytes from
   offset 48 to `answers`, and `request_take` copies them into a span of that
   size. `request_answer` takes the result at its exact size when `ok`,
-  otherwise the error text. `request_answer_of` copies the result or the error text into
-  `out`, which holds at least the larger of the result's size and 256
-  bytes, and `request_reply::length` gives how many bytes it copied. Each
-  gives `status::range` for a field that is not a `call` or for a span of
-  the wrong size, and the steps that take the lock give
+  otherwise the error text. `request_answer_of` copies the result or the
+  error text into `out`, which holds at least the larger of the result's
+  size and 256 bytes, and `request_reply::length` gives how many bytes it
+  copied. Each gives `status::range` for a field that is not a `call` or
+  for a span of the wrong size, and the steps that take the lock give
   `status::lock_timeout` as `write` does.
 - Thread safety: every member function may be called from several threads
   on one handle. Destroying or moving a handle must not overlap another

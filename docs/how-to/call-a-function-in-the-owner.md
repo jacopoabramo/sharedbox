@@ -23,10 +23,11 @@ and the result type after it, or `None` when the call returns nothing:
 A call field holds no value, so you give it [`call()`][sharedbox.call]
 and the box's constructor has no parameter for it. Without `call()`, type
 checkers count the field as a constructor parameter and flag `Scanner()` as
-missing an argument. Reading `scanner.move` gives the call itself, and assigning to it,
-`update`, `watch` and `events` refuse it with `TypeError`. The arguments and
-the result may be any type a record member may be, except a
-[`Timed`][sharedbox.Timed], another `Call` or a reference to a box.
+missing an argument. Reading `scanner.move` gives the call itself, and
+assigning to it, `update`, `watch` and `events` refuse it with
+`TypeError`. The arguments and the result may be any type a record member
+may be, except a [`Timed`][sharedbox.Timed], another `Call` or a
+reference to a box.
 
 ## 2. Serve it
 
@@ -46,20 +47,21 @@ raises `RuntimeError`. Only one process serves a field at a time: a second
 `serve` while a live process serves it, this one included, raises
 [`AlreadyServedError`][sharedbox.AlreadyServedError].
 
-[`RequestServer.stop`][sharedbox.RequestServer.stop] stops serving and frees the
-field for another server. It waits for a running plain handler to finish
-and answer first, and it asks a running `async def` handler to cancel,
-whose caller then gets [`RequestError`][sharedbox.RequestError]. Closing the box
-stops every server it started, and so does garbage collection of the box
-or the end of the process, but these free the field at once: a request
-whose handler is still running fails with `RequestError` saying the server
-stopped, and only then does the close wait for a plain handler's thread.
+[`RequestServer.stop`][sharedbox.RequestServer.stop] stops serving and
+frees the field for another server. It waits for a running plain handler
+to finish and answer first, and it asks a running `async def` handler to
+cancel, whose caller then gets [`RequestError`][sharedbox.RequestError].
+Closing the box stops every server it started, and so does garbage
+collection of the box or the end of the process, but these free the field
+at once: a request whose handler is still running fails with
+`RequestError` saying the server stopped, and only then does the close
+wait for a plain handler's thread.
 
 ## 3. Call it
 
 Calling the field sends the request at once and returns a
-[`RequestFuture`][sharedbox.RequestFuture], which you wait on with `result` in
-any thread or `await` in a running event loop:
+[`RequestFuture`][sharedbox.RequestFuture], which you wait on with
+`result` in any thread or `await` in a running event loop:
 
 ```{.python}
 --8<-- "docs/examples/call_a_function_in_the_owner.py:call"
@@ -75,8 +77,8 @@ field waits until a server starts.
 
 An exception the handler raises is logged to the `sharedbox` logger in the
 serving process, with its traceback, and reaches the caller as
-[`RequestError`][sharedbox.RequestError], with the exception's type and message
-cut to 256 bytes:
+[`RequestError`][sharedbox.RequestError], with the exception's type and
+message cut to 256 bytes:
 
 ```{.python}
 --8<-- "docs/examples/call_a_function_in_the_owner.py:error"

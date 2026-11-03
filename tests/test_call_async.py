@@ -86,7 +86,7 @@ def test_a_task_started_by_a_handler_outlives_it(names: Callable[[str], str]) ->
         on_loop(loop, task_finished())
 
 
-def test_cancelled_loop_tasks_give_the_caller_call_error(
+def test_cancelled_loop_tasks_give_the_caller_request_error(
     names: Callable[[str], str],
 ) -> None:
     """Fail a request whose handler the loop's shutdown cancelled, and free the field."""

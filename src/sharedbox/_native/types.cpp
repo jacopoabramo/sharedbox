@@ -484,7 +484,7 @@ std::uint32_t Types::request_result_size(std::uint32_t index) const {
     return node.count > node.capacity ? tree_.member(node.members + node.capacity).type.size : 0;
 }
 
-void Types::encode_call_arguments(std::uint32_t index, PyObject *arguments, std::span<std::byte> out) const {
+void Types::encode_request_arguments(std::uint32_t index, PyObject *arguments, std::span<std::byte> out) const {
     const detail::type_node &node = request_node(index);
     const std::string &label = labels_[index];
     if (!PyTuple_Check(arguments))
@@ -503,7 +503,7 @@ void Types::encode_call_arguments(std::uint32_t index, PyObject *arguments, std:
     }
 }
 
-nb::tuple Types::decode_call_arguments(std::uint32_t index, std::span<const std::byte> bytes) const {
+nb::tuple Types::decode_request_arguments(std::uint32_t index, std::span<const std::byte> bytes) const {
     const detail::type_ref &t = field(index);
     const detail::type_node &node = request_node(index);
     if (bytes.size() != request_arguments_size(index))
@@ -521,7 +521,7 @@ nb::tuple Types::decode_call_arguments(std::uint32_t index, std::span<const std:
     return nb::borrow<nb::tuple>(out);
 }
 
-void Types::encode_call_result(std::uint32_t index, PyObject *value, std::span<std::byte> out) const {
+void Types::encode_request_result(std::uint32_t index, PyObject *value, std::span<std::byte> out) const {
     const detail::type_node &node = request_node(index);
     if (node.count == node.capacity)
         return;
@@ -530,7 +530,7 @@ void Types::encode_call_result(std::uint32_t index, PyObject *value, std::span<s
     encode_into(tree_.member(node.members + node.capacity).type, value, out.data(), {labels_[index]});
 }
 
-nb::object Types::decode_call_result(std::uint32_t index, std::span<const std::byte> bytes) const {
+nb::object Types::decode_request_result(std::uint32_t index, std::span<const std::byte> bytes) const {
     const detail::type_ref &t = field(index);
     const detail::type_node &node = request_node(index);
     if (node.count == node.capacity)

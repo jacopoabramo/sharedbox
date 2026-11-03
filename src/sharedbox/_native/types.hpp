@@ -165,14 +165,14 @@ public:
     /// Writes the tuple arguments into out, request_arguments_size(index) bytes laid out as the field's, after
     /// zeroing it. Raises TypeError for another number of arguments, and as encode does for a value, naming
     /// label[i] for argument i.
-    void encode_call_arguments(std::uint32_t index, PyObject *arguments, std::span<std::byte> out) const;
+    void encode_request_arguments(std::uint32_t index, PyObject *arguments, std::span<std::byte> out) const;
     /// The tuple of arguments stored in bytes, request_arguments_size(index) bytes laid out as the field's.
-    nb::tuple decode_call_arguments(std::uint32_t index, std::span<const std::byte> bytes) const;
+    nb::tuple decode_request_arguments(std::uint32_t index, std::span<const std::byte> bytes) const;
     /// Writes value, the result of call field index, into out, request_result_size(index) bytes. A call with no
     /// result writes nothing and ignores value.
-    void encode_call_result(std::uint32_t index, PyObject *value, std::span<std::byte> out) const;
+    void encode_request_result(std::uint32_t index, PyObject *value, std::span<std::byte> out) const;
     /// The result stored in bytes, request_result_size(index) bytes; None for a call with no result.
-    nb::object decode_call_result(std::uint32_t index, std::span<const std::byte> bytes) const;
+    nb::object decode_request_result(std::uint32_t index, std::span<const std::byte> bytes) const;
 
     const detail::type_node &node_of(const detail::type_ref &t) const { return tree_.node(t.node); }
     /// The schema text of the elements of the list, set or dict node t.

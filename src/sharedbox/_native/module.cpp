@@ -1204,7 +1204,7 @@ NB_MODULE(_native, m) {
             [](Segment &s, std::uint32_t index, nb::tuple arguments, nb::handle types) {
                 const sharedbox::Types &t = sharedbox::need(types_of(types), index);
                 std::vector<std::byte> bytes(t.request_arguments_size(index));
-                t.encode_call_arguments(index, arguments.ptr(), bytes);
+                t.encode_request_arguments(index, arguments.ptr(), bytes);
                 return s.request_send(index, bytes);
             },
             "field"_a, "arguments"_a, "types"_a)
@@ -1216,7 +1216,7 @@ NB_MODULE(_native, m) {
                 const std::uint64_t number = s.request_take(index, bytes);
                 if (number == 0)
                     return nb::none();
-                return nb::make_tuple(number, t.decode_call_arguments(index, bytes));
+                return nb::make_tuple(number, t.decode_request_arguments(index, bytes));
             },
             "field"_a, "types"_a)
         .def(
@@ -1226,7 +1226,7 @@ NB_MODULE(_native, m) {
                 const sharedbox::Types &t = sharedbox::need(types_of(types), index);
                 if (ok) {
                     std::vector<std::byte> bytes(t.request_result_size(index));
-                    t.encode_call_result(index, value.ptr(), bytes);
+                    t.encode_request_result(index, value.ptr(), bytes);
                     return s.request_answer(index, number, true, bytes);
                 }
                 if (!PyUnicode_Check(value.ptr()))
@@ -1250,7 +1250,7 @@ NB_MODULE(_native, m) {
                 const auto outcome = static_cast<int>(reply.outcome);
                 switch (reply.outcome) {
                 case sharedbox::request_outcome::answered:
-                    return nb::make_tuple(outcome, t.decode_call_result(index, {bytes.data(), reply.length}));
+                    return nb::make_tuple(outcome, t.decode_request_result(index, {bytes.data(), reply.length}));
                 case sharedbox::request_outcome::failed: {
                     const nb::object text =
                         nb::steal(PyUnicode_DecodeUTF8(reinterpret_cast<const char *>(bytes.data()),
