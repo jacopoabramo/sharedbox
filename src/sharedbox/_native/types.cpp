@@ -468,45 +468,45 @@ void Types::prepare(std::uint32_t node, std::uint8_t kind, nb::object info) {
     }
 }
 
-const detail::type_node &Types::call_node(std::uint32_t index) const {
+const detail::type_node &Types::request_node(std::uint32_t index) const {
     const detail::type_ref &t = field(index);
     if (t.kind != kind_call)
         raise(PyExc_TypeError, labels_[index] + " is not a Call field");
     return tree_.node(t.node);
 }
 
-std::uint32_t Types::call_arguments_size(std::uint32_t index) const {
-    return call_node(index).slots - call_arguments_at;
+std::uint32_t Types::request_arguments_size(std::uint32_t index) const {
+    return request_node(index).slots - request_arguments_at;
 }
 
-std::uint32_t Types::call_result_size(std::uint32_t index) const {
-    const detail::type_node &node = call_node(index);
+std::uint32_t Types::request_result_size(std::uint32_t index) const {
+    const detail::type_node &node = request_node(index);
     return node.count > node.capacity ? tree_.member(node.members + node.capacity).type.size : 0;
 }
 
 void Types::encode_call_arguments(std::uint32_t index, PyObject *arguments, std::span<std::byte> out) const {
-    const detail::type_node &node = call_node(index);
+    const detail::type_node &node = request_node(index);
     const std::string &label = labels_[index];
     if (!PyTuple_Check(arguments))
         wrong(label, "a tuple of arguments", arguments);
     if (static_cast<std::uint32_t>(PyTuple_Size(arguments)) != node.capacity)
         raise(PyExc_TypeError, label + " takes " + std::to_string(node.capacity) + " arguments, got " +
                                    std::to_string(PyTuple_Size(arguments)));
-    if (out.size() != call_arguments_size(index))
+    if (out.size() != request_arguments_size(index))
         raise(PyExc_ValueError, label + ": the destination has the wrong size");
     std::memset(out.data(), 0, out.size());
     for (std::uint32_t i = 0; i < node.capacity; ++i) {
         const detail::type_member &m = tree_.member(node.members + i);
         const std::string name = label + "[" + std::to_string(i) + "]";
         encode_into(m.type, PyTuple_GetItem(arguments, static_cast<Py_ssize_t>(i)),
-                    out.data() + (m.offset - call_arguments_at), {name});
+                    out.data() + (m.offset - request_arguments_at), {name});
     }
 }
 
 nb::tuple Types::decode_call_arguments(std::uint32_t index, std::span<const std::byte> bytes) const {
     const detail::type_ref &t = field(index);
-    const detail::type_node &node = call_node(index);
-    if (bytes.size() != call_arguments_size(index))
+    const detail::type_node &node = request_node(index);
+    if (bytes.size() != request_arguments_size(index))
         raise(PyExc_ValueError, labels_[index] + ": the stored arguments have the wrong size");
     nb::object out = nb::steal(PyTuple_New(static_cast<Py_ssize_t>(node.capacity)));
     if (!out.is_valid())
@@ -514,27 +514,28 @@ nb::tuple Types::decode_call_arguments(std::uint32_t index, std::span<const std:
     for (std::uint32_t i = 0; i < node.capacity; ++i) {
         const detail::type_member &m = tree_.member(node.members + i);
         const std::string name = labels_[index] + "[" + std::to_string(i) + "]";
-        nb::object value = decode_from(m.type, bytes.data() + (m.offset - call_arguments_at), t.node, i, {name});
+        nb::object value =
+            decode_from(m.type, bytes.data() + (m.offset - request_arguments_at), t.node, i, {name});
         store_new_item(out.ptr(), false, i, value.release().ptr());
     }
     return nb::borrow<nb::tuple>(out);
 }
 
 void Types::encode_call_result(std::uint32_t index, PyObject *value, std::span<std::byte> out) const {
-    const detail::type_node &node = call_node(index);
+    const detail::type_node &node = request_node(index);
     if (node.count == node.capacity)
         return;
-    if (out.size() != call_result_size(index))
+    if (out.size() != request_result_size(index))
         raise(PyExc_ValueError, labels_[index] + ": the destination has the wrong size");
     encode_into(tree_.member(node.members + node.capacity).type, value, out.data(), {labels_[index]});
 }
 
 nb::object Types::decode_call_result(std::uint32_t index, std::span<const std::byte> bytes) const {
     const detail::type_ref &t = field(index);
-    const detail::type_node &node = call_node(index);
+    const detail::type_node &node = request_node(index);
     if (node.count == node.capacity)
         return nb::none();
-    if (bytes.size() != call_result_size(index))
+    if (bytes.size() != request_result_size(index))
         raise(PyExc_ValueError, labels_[index] + ": the stored result has the wrong size");
     return decode_from(tree_.member(node.members + node.capacity).type, bytes.data(), t.node, node.capacity,
                        {labels_[index]});

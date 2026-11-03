@@ -52,7 +52,7 @@ class CallServedError(RuntimeError):
 
 
 class Outcome(IntEnum):
-    """What became of a request, as `Segment.call_answer_of` reports it."""
+    """What became of a request, as `Segment.request_answer_of` reports it."""
 
     PENDING = 0
     ANSWERED = 1
@@ -113,7 +113,7 @@ class Call(Generic[P, R]):
         segment = self._box._segment
         index = self._spec.index
         since = segment.version(index)
-        number = segment.call_send(index, args, type(self._box).__layout__.types)
+        number = segment.request_send(index, args, type(self._box).__layout__.types)
         return self._box._watcher.call_future(self._spec, number, since)
 
     @overload
@@ -346,7 +346,7 @@ class CallServer:
 
     def _release(self) -> None:
         with contextlib.suppress(BoxClosedError):
-            self._watcher._segment.call_release(self._field.index)
+            self._watcher._segment.serve_release(self._field.index)
 
     def _after_fork(self) -> None:
         """Stop serving in a child created by `fork`, without releasing the parent's field."""
@@ -361,7 +361,7 @@ class CallServer:
                 return None
             self._taker = threading.get_ident()
             try:
-                request = self._watcher._segment.call_take(
+                request = self._watcher._segment.request_take(
                     self._field.index, self._watcher._types
                 )
             finally:
@@ -378,12 +378,12 @@ class CallServer:
         segment, types = self._watcher._segment, self._watcher._types
         if ok:
             try:
-                segment.call_answer(self._field.index, number, True, value, types)
+                segment.request_answer(self._field.index, number, True, value, types)
                 return
             except Exception as error:
                 logger.exception("the result of %s cannot be stored", self._field.label)
                 value = error_text(error)
-        segment.call_answer(self._field.index, number, False, value, types)
+        segment.request_answer(self._field.index, number, False, value, types)
 
     def _fail(self, number: int, error: BaseException) -> None:
         logger.exception("the handler of %s raised", self._field.label)

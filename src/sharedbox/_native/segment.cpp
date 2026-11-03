@@ -672,53 +672,55 @@ std::uint64_t Segment::write(std::span<const value> values, std::string_view doc
     impl_->fail(added.error());
 }
 
-std::uint64_t Segment::call_send(std::uint32_t index, std::span<const std::byte> arguments) {
+std::uint64_t Segment::request_send(std::uint32_t index, std::span<const std::byte> arguments) {
     auto guard = impl_->enter();
     check_index(index, impl_->fields.size());
     return impl_->check(
-        impl_->box.call_send(static_cast<std::uint16_t>(index), arguments, seconds(impl_->lock_timeout)));
+        impl_->box.request_send(static_cast<std::uint16_t>(index), arguments, seconds(impl_->lock_timeout)));
 }
 
-std::uint64_t Segment::call_take(std::uint32_t index, std::span<std::byte> arguments) {
+std::uint64_t Segment::request_take(std::uint32_t index, std::span<std::byte> arguments) {
     auto guard = impl_->enter();
     check_index(index, impl_->fields.size());
     return impl_->check(
-        impl_->box.call_take(static_cast<std::uint16_t>(index), arguments, seconds(impl_->lock_timeout)));
+        impl_->box.request_take(static_cast<std::uint16_t>(index), arguments, seconds(impl_->lock_timeout)));
 }
 
-bool Segment::call_answer(std::uint32_t index, std::uint64_t number, bool ok, std::span<const std::byte> bytes) {
+bool Segment::request_answer(std::uint32_t index, std::uint64_t number, bool ok,
+                             std::span<const std::byte> bytes) {
     auto guard = impl_->enter();
     check_index(index, impl_->fields.size());
-    const result<void> answered =
-        impl_->box.call_answer(static_cast<std::uint16_t>(index), number, ok, bytes, seconds(impl_->lock_timeout));
+    const result<void> answered = impl_->box.request_answer(static_cast<std::uint16_t>(index), number, ok, bytes,
+                                                            seconds(impl_->lock_timeout));
     if (!answered && answered.error().code == status::ended)
         return false;
     impl_->check(result<void>(answered));
     return true;
 }
 
-call_reply Segment::call_answer_of(std::uint32_t index, std::uint64_t number, std::span<std::byte> out,
-                                   bool check_server) const {
+request_reply Segment::request_answer_of(std::uint32_t index, std::uint64_t number, std::span<std::byte> out,
+                                         bool check_server) const {
     auto guard = impl_->enter();
     check_index(index, impl_->fields.size());
-    return impl_->check(impl_->box.call_answer_of(static_cast<std::uint16_t>(index), number, out, check_server));
+    return impl_->check(
+        impl_->box.request_answer_of(static_cast<std::uint16_t>(index), number, out, check_server));
 }
 
-bool Segment::call_claim(std::uint32_t index) {
+bool Segment::serve_claim(std::uint32_t index) {
     auto guard = impl_->enter();
     check_index(index, impl_->fields.size());
     const result<void> claimed =
-        impl_->box.call_claim(static_cast<std::uint16_t>(index), seconds(impl_->lock_timeout));
+        impl_->box.serve_claim(static_cast<std::uint16_t>(index), seconds(impl_->lock_timeout));
     if (!claimed && claimed.error().code == status::busy)
         return false;
     impl_->check(result<void>(claimed));
     return true;
 }
 
-void Segment::call_release(std::uint32_t index) {
+void Segment::serve_release(std::uint32_t index) {
     auto guard = impl_->enter();
     check_index(index, impl_->fields.size());
-    impl_->check(impl_->box.call_release(static_cast<std::uint16_t>(index), seconds(impl_->lock_timeout)));
+    impl_->check(impl_->box.serve_release(static_cast<std::uint16_t>(index), seconds(impl_->lock_timeout)));
 }
 
 sbx_handle *Segment::export_handle() const {

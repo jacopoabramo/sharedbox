@@ -334,7 +334,7 @@ class Watcher:
             ]
         for server in ended:
             server._halt(join=False)
-        if not self._segment.call_claim(spec.index):
+        if not self._segment.serve_claim(spec.index):
             raise CallServedError(f"{spec.label} is served already")
         server = CallServer(self, spec, handler, loop)
         with self._lock:
@@ -630,7 +630,7 @@ class Watcher:
                 continue
             outcome: int | None
             try:
-                outcome, value = self._segment.call_answer_of(
+                outcome, value = self._segment.request_answer_of(
                     fut._field.index, fut._number, check, self._types
                 )
             except (BoxClosedError, LockTimeoutError):

@@ -1200,34 +1200,34 @@ NB_MODULE(_native, m) {
             },
             "values"_a)
         .def(
-            "call_send",
+            "request_send",
             [](Segment &s, std::uint32_t index, nb::tuple arguments, nb::handle types) {
                 const sharedbox::Types &t = sharedbox::need(types_of(types), index);
-                std::vector<std::byte> bytes(t.call_arguments_size(index));
+                std::vector<std::byte> bytes(t.request_arguments_size(index));
                 t.encode_call_arguments(index, arguments.ptr(), bytes);
-                return s.call_send(index, bytes);
+                return s.request_send(index, bytes);
             },
             "field"_a, "arguments"_a, "types"_a)
         .def(
-            "call_take",
+            "request_take",
             [](Segment &s, std::uint32_t index, nb::handle types) -> nb::object {
                 const sharedbox::Types &t = sharedbox::need(types_of(types), index);
-                std::vector<std::byte> bytes(t.call_arguments_size(index));
-                const std::uint64_t number = s.call_take(index, bytes);
+                std::vector<std::byte> bytes(t.request_arguments_size(index));
+                const std::uint64_t number = s.request_take(index, bytes);
                 if (number == 0)
                     return nb::none();
                 return nb::make_tuple(number, t.decode_call_arguments(index, bytes));
             },
             "field"_a, "types"_a)
         .def(
-            "call_answer",
+            "request_answer",
             [](Segment &s, std::uint32_t index, std::uint64_t number, bool ok, nb::handle value,
                nb::handle types) {
                 const sharedbox::Types &t = sharedbox::need(types_of(types), index);
                 if (ok) {
-                    std::vector<std::byte> bytes(t.call_result_size(index));
+                    std::vector<std::byte> bytes(t.request_result_size(index));
                     t.encode_call_result(index, value.ptr(), bytes);
-                    return s.call_answer(index, number, true, bytes);
+                    return s.request_answer(index, number, true, bytes);
                 }
                 if (!PyUnicode_Check(value.ptr()))
                     throw nb::type_error("the error text of an answer must be a str");
@@ -1235,22 +1235,23 @@ NB_MODULE(_native, m) {
                 const char *text = PyUnicode_AsUTF8AndSize(value.ptr(), &length);
                 if (text == nullptr)
                     throw nb::python_error();
-                return s.call_answer(index, number, false,
-                                     std::as_bytes(std::span(text, static_cast<std::size_t>(length))));
+                return s.request_answer(index, number, false,
+                                        std::as_bytes(std::span(text, static_cast<std::size_t>(length))));
             },
             "field"_a, "number"_a, "ok"_a, "value"_a.none(), "types"_a)
         .def(
-            "call_answer_of",
+            "request_answer_of",
             [](const Segment &s, std::uint32_t index, std::uint64_t number, bool check_server,
                nb::handle types) -> nb::tuple {
                 const sharedbox::Types &t = sharedbox::need(types_of(types), index);
-                std::vector<std::byte> bytes((std::max)(t.call_result_size(index), sharedbox::call_error_size));
-                const sharedbox::call_reply reply = s.call_answer_of(index, number, bytes, check_server);
+                std::vector<std::byte> bytes(
+                    (std::max)(t.request_result_size(index), sharedbox::request_error_size));
+                const sharedbox::request_reply reply = s.request_answer_of(index, number, bytes, check_server);
                 const auto outcome = static_cast<int>(reply.outcome);
                 switch (reply.outcome) {
-                case sharedbox::call_outcome::answered:
+                case sharedbox::request_outcome::answered:
                     return nb::make_tuple(outcome, t.decode_call_result(index, {bytes.data(), reply.length}));
-                case sharedbox::call_outcome::failed: {
+                case sharedbox::request_outcome::failed: {
                     const nb::object text =
                         nb::steal(PyUnicode_DecodeUTF8(reinterpret_cast<const char *>(bytes.data()),
                                                        static_cast<Py_ssize_t>(reply.length), "replace"));
@@ -1263,8 +1264,8 @@ NB_MODULE(_native, m) {
                 }
             },
             "field"_a, "number"_a, "check_server"_a, "types"_a)
-        .def("call_claim", &Segment::call_claim, "field"_a)
-        .def("call_release", &Segment::call_release, "field"_a)
+        .def("serve_claim", &Segment::serve_claim, "field"_a)
+        .def("serve_release", &Segment::serve_release, "field"_a)
         .def("version", &Segment::version, "field"_a)
         .def("versions", &Segment::versions)
         .def("metadata_head", &Segment::metadata_head)
