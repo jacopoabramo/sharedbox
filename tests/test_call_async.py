@@ -136,3 +136,41 @@ def test_an_async_handler_needs_a_running_loop(names: Callable[[str], str]) -> N
         with pytest.raises(RuntimeError, match="running event loop"):
             box.move.serve(double)
         box.move.serve(lambda position: position)
+
+
+async def serve_idle(box: Scanner) -> None:
+    box.move.serve(double)
+
+
+def test_an_idle_async_server_frees_the_field_when_its_loop_ends(
+    names: Callable[[str], str],
+) -> None:
+    """Free the field of an async server whose event loop ended while it was idle."""
+    with Scanner.create(names("idle")) as box:
+        asyncio.run(serve_idle(box))
+        asyncio.run(serve_idle(box))
+        # A write wakes the watcher, which frees the field of a server whose loop closed.
+        box.position = 1.0
+        assert call_in_child(serve_once, box, "move") is True
+        box.move.serve(lambda position: position)
+        assert box.move(1.0).result(timeout=10) == 1.0
+
+
+def test_a_cancelled_error_from_the_handler_fails_only_that_call(
+    names: Callable[[str], str],
+) -> None:
+    """Fail a call whose handler raised CancelledError itself, and answer the next."""
+
+    async def handler(position: float) -> float:
+        if position < 0:
+            inner = asyncio.create_task(asyncio.sleep(60))
+            await asyncio.sleep(0)
+            inner.cancel()
+            await inner
+        return position
+
+    with running_loop() as loop, Scanner.create(names("inner")) as box:
+        on_loop(loop, serve(box.move, handler))
+        with pytest.raises(CallError, match="CancelledError"):
+            box.move(-1.0).result(timeout=10)
+        assert box.move(1.0).result(timeout=10) == 1.0

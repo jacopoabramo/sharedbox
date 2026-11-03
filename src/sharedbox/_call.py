@@ -64,7 +64,8 @@ class Outcome(IntEnum):
 
 def error_text(error: BaseException) -> str:
     """Return `error` as a failed answer's text: its type and message, cut to 256 bytes on a UTF-8 boundary."""
-    text = f"{type(error).__name__}: {error}".encode()[:ERROR_BYTES]
+    text = f"{type(error).__name__}: {error}".encode(errors="backslashreplace")
+    text = text[:ERROR_BYTES]
     return text.decode(errors="ignore")
 
 
@@ -101,6 +102,8 @@ class Call(Generic[P, R]):
             match the field's argument types.
         ValueError
             If an argument does not fit its type.
+        OverflowError
+            If a number is out of the range of its type.
         BoxClosedError
             If the box is closed.
         """
@@ -198,8 +201,34 @@ class CallFuture(Future[R]):
         self._watcher.discard(self)
         return True
 
+    def result(self, timeout: float | None = None) -> R:
+        """Block until the answer arrives and return the handler's result.
+
+        Raises
+        ------
+        TimeoutError
+            If no answer arrived within `timeout` seconds.
+        CallError
+            If the request failed; see its subclasses.
+        concurrent.futures.CancelledError
+            If the future was cancelled, or the box closed.
+        """
+        try:
+            return super().result(timeout)
+        except TimeoutError:
+            if self.done():
+                raise
+            raise TimeoutError(
+                f"{self._field.label}: no answer to request {self._number} "
+                f"within {timeout} s"
+            ) from None
+
     def __await__(self) -> Generator[Any, None, R]:
         return asyncio.wrap_future(self).__await__()
+
+    def _fail(self, error: BaseException) -> None:
+        with contextlib.suppress(InvalidStateError):
+            self.set_exception(error)
 
     def _complete(self, outcome: int, value: Any) -> None:
         label = self._field.label
@@ -221,10 +250,9 @@ class CallFuture(Future[R]):
                     f"{label}: four later answers overwrote the answer to "
                     f"request {self._number}"
                 )
-            case _:
+            case Outcome.SERVER_EXITED:
                 error = ServerExitedError(f"{label}: the server exited")
-        with contextlib.suppress(InvalidStateError):
-            self.set_exception(error)
+        self._fail(error)
 
 
 class CallServer:
@@ -260,11 +288,13 @@ class CallServer:
         """Stop answering and free the field for another server.
 
         A sync handler that is running is waited for, unless this is called
-        from the handler itself; an async one is cancelled. A request taken
-        and not answered yet fails with "the server stopped". Calling it
-        again does nothing.
+        from the handler itself or from a callback on the box's watcher
+        thread. For an async handler, cancelling its task is requested of
+        the event loop, which runs the cancellation after this returns. A
+        request taken and not answered yet fails with "the server stopped".
+        Calling it again does nothing.
         """
-        self._halt(join=True)
+        self._halt(join=not self._watcher.on_watcher_thread())
 
     def _start(self) -> None:
         """Start serving, answering a request sent before [`serve`][sharedbox.Call.serve] too."""
@@ -287,9 +317,8 @@ class CallServer:
     def _halt(self, join: bool, cancel: bool = True) -> None:
         """Stop serving and release the field; join a running sync thread only if `join`."""
         # A finalizer that garbage collection runs inside this thread's own _take
-        # must not wait for the lock that _take holds; _take releases instead.
-        inside_take = self._taker == threading.get_ident()
-        if inside_take:
+        # must not wait for the lock that _take holds; _take answers what it took.
+        if self._taker == threading.get_ident():
             self._stopped.set()
         else:
             with self._lock:
@@ -305,8 +334,7 @@ class CallServer:
             self._wake.set()
             if join:
                 self._join()
-        if not inside_take:
-            self._release()
+        self._release()
 
     def _join(self) -> None:
         """Wait for a sync server's thread to end, unless this is that thread."""
@@ -338,6 +366,9 @@ class CallServer:
             finally:
                 self._taker = None
             if self._stopped.is_set():
+                if request is not None:
+                    with contextlib.suppress(BoxClosedError):
+                        self._answer(request[0], False, "the server stopped")
                 self._release()
                 return None
             return request
@@ -353,7 +384,7 @@ class CallServer:
                 value = error_text(error)
         segment.call_answer(self._field.index, number, False, value, types)
 
-    def _fail(self, number: int, error: Exception) -> None:
+    def _fail(self, number: int, error: BaseException) -> None:
         logger.exception("the handler of %s raised", self._field.label)
         self._answer(number, False, error_text(error))
 
@@ -382,6 +413,10 @@ class CallServer:
                         result = self._handler(*arguments)
                     except Exception as error:
                         self._fail(number, error)
+                    except BaseException as error:
+                        self._fail(number, error)
+                        self._halt(join=False)
+                        raise
                     else:
                         self._answer(number, True, result)
                     number = None
@@ -397,17 +432,28 @@ class CallServer:
                 self._serve(), name=f"sharedbox-serve-{self._field.label}"
             )
 
+    def _loop_closed(self) -> bool:
+        """Return whether this is an async server whose event loop has closed."""
+        return self._loop is not None and self._loop.is_closed()
+
     def _cancel_task(self) -> None:
         if self._task is not None:
             self._task.cancel()
 
     async def _serve(self) -> None:
+        task = asyncio.current_task()
+        assert task is not None
         number: int | None = None
         try:
             while (request := self._take()) is not None:
                 number, arguments = request
                 try:
                     result = await self._handler(*arguments)
+                except asyncio.CancelledError as error:
+                    # Raised by the handler itself unless this task was cancelled.
+                    if task.cancelling():
+                        raise
+                    self._fail(number, error)
                 except Exception as error:
                     self._fail(number, error)
                 else:

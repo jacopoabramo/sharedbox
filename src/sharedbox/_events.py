@@ -326,6 +326,14 @@ class Watcher:
                 raise RuntimeError(
                     "serve() needs a running event loop for an async handler"
                 ) from None
+        with self._lock:
+            ended = [
+                server
+                for server in self._servers
+                if server._field.index == spec.index and server._loop_closed()
+            ]
+        for server in ended:
+            server._halt(join=False)
         if not self._segment.call_claim(spec.index):
             raise CallServedError(f"{spec.label} is served already")
         server = CallServer(self, spec, handler, loop)
@@ -338,6 +346,11 @@ class Watcher:
         server._start()
         return server
 
+    @staticmethod
+    def on_watcher_thread() -> bool:
+        """Return whether the calling thread is the watcher thread of some box."""
+        return on_watcher_thread()
+
     def forget(self, server: CallServer) -> None:
         with self._lock:
             self._servers.pop(server, None)
@@ -347,7 +360,7 @@ class Watcher:
         with self._lock:
             threads = [server._thread for server in self._servers]
             threads.append(self._thread)
-        return [thread for thread in threads if thread is not None]
+        return [t for t in threads if t is not None and t.ident is not None]
 
     def events(
         self, factory: Callable[[], BoxEvents], fields: tuple[FieldSpec, ...]
@@ -610,14 +623,21 @@ class Watcher:
         if not calls:
             return False
         versions = self._segment.versions()
-        outcomes: list[tuple[CallFuture[Any], int, Any]] = []
+        outcomes: list[tuple[CallFuture[Any], int | None, Any]] = []
         for fut in calls:
             version = versions[fut._field.index]
             if version == fut._since and not check:
                 continue
-            outcome, value = self._segment.call_answer_of(
-                fut._field.index, fut._number, check, self._types
-            )
+            outcome: int | None
+            try:
+                outcome, value = self._segment.call_answer_of(
+                    fut._field.index, fut._number, check, self._types
+                )
+            except BoxClosedError:
+                raise
+            except Exception as error:
+                # Decoding the result can run Python code, such as a record's __post_init__.
+                outcome, value = None, error
             if outcome == Outcome.PENDING:
                 fut._since = version
             else:
@@ -626,9 +646,13 @@ class Watcher:
             for fut, _, _ in outcomes:
                 with contextlib.suppress(ValueError):
                     self._calls.remove(fut)
+            pending = bool(self._calls)
         for fut, outcome, value in outcomes:
-            fut._complete(outcome, value)
-        return len(outcomes) < len(calls)
+            if outcome is None:
+                fut._fail(value)
+            else:
+                fut._complete(outcome, value)
+        return pending
 
     def _kick_servers(self) -> None:
         with self._lock:
@@ -637,6 +661,10 @@ class Watcher:
             return
         versions = self._segment.versions()
         for server, seen in servers:
+            # An async server whose loop ended while idle was never cancelled; free its field.
+            if server._loop_closed():
+                server._halt(join=False)
+                continue
             version = versions[server._field.index]
             if version == seen:
                 continue

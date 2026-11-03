@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import gc
 import logging
 import multiprocessing as mp
@@ -164,7 +165,7 @@ def test_a_handler_exception_reaches_the_caller(
             box.move(1.0).result(timeout=10)
         text = str(raised.value).removeprefix("Scanner.move: ")
         assert text.startswith("ValueError: é")
-        assert len(text.encode()) <= 256
+        assert len(text.encode()) == 256
     logged = [r for r in caplog.records if r.name == "sharedbox" and r.exc_info]
     assert len(logged) == 2
 
@@ -181,13 +182,20 @@ def test_a_call_refuses_keywords_and_wrong_arguments(
     names: Callable[[str], str],
 ) -> None:
     """Raise TypeError for keyword and mistyped arguments without sending a request."""
+    seen: list[float] = []
+
+    def record(position: float) -> float:
+        seen.append(position)
+        return position
+
     with Scanner.create(names("arguments")) as box:
-        box.move.serve(double)
+        box.move.serve(record)
         with pytest.raises(TypeError, match="positional arguments only"):
             box.move(position=1.0)  # type: ignore[call-arg]
         with pytest.raises(TypeError):
             box.move("x")  # type: ignore[arg-type]
-        assert box.move(1.0).result(timeout=10) == 2.0
+        assert box.move(1.0).result(timeout=10) == 1.0
+        assert seen == [1.0]
 
 
 def test_closing_the_box_cancels_pending_calls(names: Callable[[str], str]) -> None:
@@ -285,3 +293,136 @@ def test_a_server_stopped_inside_its_take_fails_the_request(
             box.move(target).result(timeout=10)
         box.move.serve(lambda target: target.position * 2)
         assert box.move(target).result(timeout=10) == 2.0
+
+
+def surrogate(position: float) -> float:
+    raise ValueError("\ud800")
+
+
+def leave(position: float) -> float:
+    raise SystemExit(3)
+
+
+def test_a_result_that_fails_to_decode_reaches_the_caller(
+    names: Callable[[str], str],
+) -> None:
+    """Give the caller the error its result's decoding raised, and answer later calls."""
+    refuse: list[bool] = []
+
+    @dataclass(frozen=True)
+    class Reading:
+        value: float
+
+        def __post_init__(self) -> None:
+            if refuse:
+                raise ValueError("refused")
+
+    class Probe(SharedBox):
+        read: Call[[], Reading] = field(init=False)
+
+    reading = Reading(1.0)
+    with Probe.create(names("decode")) as box:
+        box.read.serve(lambda: reading)
+        refuse.append(True)
+        with pytest.raises(ValueError, match="refused"):
+            box.read().result(timeout=5)
+        refuse.clear()
+        assert box.read().result(timeout=5) == reading
+
+
+def test_a_timeout_names_the_field_and_the_request(
+    names: Callable[[str], str],
+) -> None:
+    """Name the field and the request in the TimeoutError of a call nobody answers."""
+    with (
+        Scanner.create(names("timeout")) as box,
+        pytest.raises(
+            TimeoutError, match="Scanner.move: no answer to request 1 within 0.1 s"
+        ),
+    ):
+        box.move(1.0).result(timeout=0.1)
+
+
+def test_stopping_a_server_from_a_watcher_callback_does_not_wait(
+    names: Callable[[str], str],
+) -> None:
+    """Return from stop() in an event callback while the sync handler still runs."""
+    waiting = threading.Event()
+    stopped = threading.Event()
+    with Scanner.create(names("callback")) as box:
+
+        def home() -> None:
+            pending = box.move(0.0)
+            waiting.set()
+            with contextlib.suppress(CancelledError, TimeoutError):
+                pending.result(timeout=10)
+
+        server = box.home.serve(home)
+
+        def on_position(new: float, old: float) -> None:
+            server.stop()
+            stopped.set()
+
+        box.events.position.connect(on_position)
+        box.home()
+        assert waiting.wait(10)
+        box.position = 1.0
+        assert stopped.wait(5)
+
+
+def test_a_surrogate_in_a_handler_error_reaches_the_caller(
+    names: Callable[[str], str],
+) -> None:
+    """Escape a lone surrogate in the handler's error text."""
+    with Scanner.create(names("surrogate")) as box:
+        box.move.serve(surrogate)
+        with pytest.raises(CallError, match=r"ValueError: \\ud800"):
+            box.move(1.0).result(timeout=5)
+
+
+@pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")
+def test_a_handler_that_exits_fails_its_call_and_frees_the_field(
+    names: Callable[[str], str],
+) -> None:
+    """Fail the call of a sync handler raising SystemExit, and free the field."""
+    with Scanner.create(names("exits")) as box:
+        box.move.serve(leave)
+        with pytest.raises(CallError, match="SystemExit"):
+            box.move(1.0).result(timeout=5)
+        # Waited for, so pytest reports the thread's SystemExit within this test.
+        for thread in threading.enumerate():
+            if thread.name == "sharedbox-serve-Scanner.move":
+                thread.join(5)
+        box.move.serve(double)
+        assert box.move(1.0).result(timeout=5) == 2.0
+
+
+def test_closing_the_box_inside_a_take_frees_the_field(
+    names: Callable[[str], str],
+) -> None:
+    """Fail the taken request and free the field when the box closes inside its take."""
+    boxes: list[SharedBox] = []
+
+    @dataclass(frozen=True)
+    class Target:
+        position: float
+
+        def __post_init__(self) -> None:
+            # Closing here, inside the server's take, does what the box's finalizer does.
+            if boxes:
+                boxes.pop().close()
+
+    class Mover(SharedBox):
+        move: Call[[Target], float] = field(init=False)
+
+    name = names("closing")
+    target = Target(1.0)
+    with Mover.create(name) as other:
+        box = Mover.attach(name)
+        box.move.serve(lambda target: target.position)
+        boxes.append(box)
+        pending = other.move(target)
+        with pytest.raises(CallError, match="the server stopped"):
+            pending.result(timeout=5)
+        other.move.serve(lambda target: target.position * 2)
+        assert other.move(target).result(timeout=5) == 2.0
