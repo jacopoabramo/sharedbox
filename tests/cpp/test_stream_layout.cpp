@@ -6,6 +6,8 @@
 #include "table_builder.hpp"
 #include "unique.hpp"
 
+#include <cstdint>
+#include <cstring>
 #include <memory>
 #include <string>
 
@@ -48,7 +50,7 @@ status open_status(const std::string &name) {
 
 } // namespace
 
-TEST_CASE("a new stream is core 1.0, stream layout 1.4, and opens with the same shape") {
+TEST_CASE("a new stream is core 1.0, stream layout 1.5, and opens with the same shape") {
     const std::string name = unique("stream-new");
     auto made = stream::create(name, {}, entry_of(kind_int, 8), 4, 2, 0x5EED);
     REQUIRE(made);
@@ -56,7 +58,7 @@ TEST_CASE("a new stream is core 1.0, stream layout 1.4, and opens with the same 
     CHECK(h.common.magic == stream_magic);
     CHECK(h.common.core_major == core_major);
     CHECK(h.common.kind_major == stream_layout_major);
-    CHECK(h.common.kind_minor == 4);
+    CHECK(h.common.kind_minor == 5);
     CHECK(h.common.waiter_slots == 3);
     CHECK(h.readers == stream_header_size);
     CHECK(h.slots % 64 == 0);
@@ -204,5 +206,37 @@ TEST_CASE("a stream of a max_array item is created at the current layout and ope
     auto opened = stream::open(name, seconds(1.0));
     REQUIRE(opened);
     CHECK(opened->item_type().kind() == kind_max_array);
+    static_cast<void>(unlink(name));
+}
+
+TEST_CASE("a sent item's mark is stamped before it is published") {
+    const std::string name = unique("stream-timed");
+    const table_builder t = timed(kind_int, 8);
+    auto made = stream::create(name, t.span(), entry_of(kind_timed, 0), 4, 2, 0x5EED);
+    REQUIRE(made);
+    auto sender = made->sender();
+    REQUIRE(sender);
+    auto reader = made->reader(read_mode::lossless, start_at::oldest);
+    REQUIRE(reader);
+    const auto send = [&](std::int64_t stamp) {
+        std::byte item[16] = {};
+        std::memcpy(item + 8, &stamp, sizeof stamp);
+        REQUIRE(sender->send(item, seconds(1.0)));
+    };
+    const auto receive = [&] {
+        std::byte item[16] = {};
+        REQUIRE(reader->receive(item, seconds(1.0)));
+        std::int64_t stamp = 0;
+        std::memcpy(&stamp, item + 8, sizeof stamp);
+        return stamp;
+    };
+    const std::int64_t before = detail::wall_ns();
+    send(timed_mark);
+    send(77);
+    const std::int64_t first = receive();
+    const std::int64_t second = receive();
+    const std::int64_t after = detail::wall_ns();
+    CHECK((first >= before && first <= after));
+    CHECK(second == 77);
     static_cast<void>(unlink(name));
 }

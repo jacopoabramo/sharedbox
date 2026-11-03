@@ -15,7 +15,7 @@ sharedbox/
 |-- include/sharedbox/
 |   |-- core.hpp               what every segment kind uses: result and error, liveness, names, mappings, the open step, waiter slots, the type codec, the metadata area and its CBOR check
 |   |-- box.hpp                box layout 3.3 and its protocols: create, publish, open, lock, read, write, metadata, capsule handle
-|   |-- stream.hpp             stream layout 1.4: create, open, the sender, readers, the gate, dead ends, metadata
+|   |-- stream.hpp             stream layout 1.5: create, open, the sender, readers, the gate, dead ends, metadata
 |   |-- sharedbox.hpp          includes every kind; the header consumers include
 |   |-- sharedbox_c.h          minimal C interface: sbx_open, sbx_import, sbx_read, sbx_write, sbx_schema_hash, sbx_release, sbx_field_desc, typed sbx_read_* and sbx_write_*, sbx_metadata_head, sbx_read_metadata, sbx_add_metadata
 |   `-- sharedbox_c.cpp        its implementation, compiled by the consumer (CMake target sharedbox::c)
@@ -29,6 +29,7 @@ sharedbox/
 |   |-- _layout.py             Capacity, field() and Field, field offsets and kind codes, schema hash
 |   |-- _types.py              annotation parsing into TypeSpec, the description table
 |   |-- _arrays.py             Shape, MaxShape, DType, SupportsDLPack, register_array_type
+|   |-- _timed.py              Timed: a value with its timestamp in ns, Timed.now and the mark a write replaces
 |   |-- _events.py             BoxEvents, FieldWatch, the watcher thread
 |   |-- _follow.py             BoxEvents.follow and unfollow: forwarding the events of boxes that references reach
 |   |-- _stream.py             SharedStream, SharedSendStream, SharedReceiveStream, ReceiveEvents, the statistics classes, the worker threads
@@ -80,6 +81,7 @@ sharedbox/
 |   |-- test_stream_fetch.py   fetching an item by its position, in one process and across processes
 |   |-- test_stream_processes.py  streams across processes, dead senders and readers
 |   |-- test_stream_fork.py    stream ends inherited through fork
+|   |-- test_timed.py          Timed fields and stream items: stamps, given times, where a Timed may go
 |   |-- streamproc.py          helpers that run a stream end in another process
 |   |-- test_properties_*.py   Hypothesis property tests, streams included
 |   |-- stress/                stress tests, marker stress, deselected by default
@@ -99,7 +101,7 @@ sharedbox/
 |   |-- examples/              one script per how-to guide, included by the guide
 |   |-- javascripts/charts.js  draws each div of class sbx-chart from a plotly figure JSON file
 |   |-- assets/benchmarks/     the figure JSON files of the performance page, from benchbox plot
-|   `-- reference/segment-layout.md  core 1.0, box layout 3.3, stream layout 1.4, names and protocols
+|   `-- reference/segment-layout.md  core 1.0, box layout 3.3, stream layout 1.5, names and protocols
 |-- includes/abbreviations.md  acronym tooltips appended to every page
 |-- zensical.toml              site configuration and navigation
 |-- .github/workflows/ci.yaml  lint, docs check, C++ tests, cibuildwheel wheels, tests, stress,
@@ -164,9 +166,11 @@ version 1.0, box layout 3.3, from offset 0:
   `asleep_on`: the offset of the count the slot's current wait added 1 to,
   which freeing a dead owner's slot takes back), then the description
   table of `types_size` bytes. Kinds are 0 to 5, 6 to 12 (fixed-size
-  scalars), 13 to 23 (fixed-width numbers and `datetime64`) and 64 to 75
-  (described types; 75, an array up to a maximum shape, in a stream item
-  or a box field, written as its shape line and the elements in use).
+  scalars), 13 to 23 (fixed-width numbers and `datetime64`), and 64 to 75
+  and 78 (described types; 75, an array up to a maximum shape, in a stream
+  item or a box field, written as its shape line and the elements in use;
+  78, a value with an `i64` timestamp in ns, wherever a record may go, its
+  timestamp `-2**63` replaced by the time of the write).
 - The record, at a multiple of 64. `record + record_size <= 2**32 - 4096`.
 - The metadata area, when `metadata` is not 0, at the first multiple of 64
   after the record, `metadata + metadata_size <= 2**32 - 4096`: a 64-byte
@@ -190,7 +194,7 @@ A stream's segment starts with a 256-byte header: the common line, a line
 of geometry written once, the sender's line and the readers' line. Then
 come a 64-byte entry per reader, the waiter slots, `capacity` slots each
 holding a `seq` and one item, the description table, and the metadata
-area laid out as a box's. Stream layout 1.4 keeps `metadata_size` and
+area laid out as a box's. Stream layout 1.5 keeps `metadata_size` and
 `metadata` in the geometry line and `metadata_head` in the sender's line.
 Every offset is 64-bit. The full specification is in
 `docs/reference/segment-layout.md`.

@@ -82,6 +82,7 @@ Kind = Literal[
     "dict",
     "array",
     "max_array",
+    "timed",
 ]
 
 MAX_FIELDS: Final[int] = 256

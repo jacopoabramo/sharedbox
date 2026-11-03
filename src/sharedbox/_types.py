@@ -46,6 +46,7 @@ from ._arrays import (
     key,
 )
 from ._native import NativeCollection, NativeDict, NativeSet
+from ._timed import Timed
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -94,13 +95,14 @@ CODES: Final[dict[str, int]] = {
     "dict": 73,
     "array": 74,
     "max_array": 75,
+    "timed": 78,
 }
 PREFIXED: Final[frozenset[str]] = frozenset({"str", "bytes", "decimal"})
 SUPPORTED: Final[str] = (
     "bool, int, float, complex, a numpy scalar type: bool_, int8 to int64, uint8 to uint64, "
     "float16 to float64, complex64, complex128 or datetime64, "
     "Annotated[str | bytes | bytearray | Decimal, Capacity(n)], "
-    "date, time, datetime, timedelta, UUID, an Enum or Flag, a Literal, X | None, a union, "
+    "date, time, datetime, timedelta, UUID, an Enum or Flag, a Literal, X | None, Timed[T], a union, "
     "a tuple, a NamedTuple, a dataclass, a TypedDict, an attrs class, a msgspec Struct, "
     "Annotated[list | set | frozenset | dict | tuple[T, ...], Capacity(n)] and their "
     "collections.abc forms, Annotated[<array type>, Shape((...)), DType(...)], or a SharedBox "
@@ -656,6 +658,10 @@ def dispatch(
         )
     if capacity is not None and not takes_capacity(hint, where, path):
         raise TypeError(f"{where}: Capacity does not apply to {hint!r}")
+    if hint is Timed:
+        raise TypeError(f"{where}: Timed needs its value type, as Timed[float]")
+    if get_origin(hint) is Timed:
+        return timed_spec(hint, where, depth, path)
     if isinstance(hint, type) and hint in SCALARS:
         return SCALARS[hint]
     if (spec := numpy_spec(hint)) is not None:
@@ -870,18 +876,18 @@ def reaches_max_array(spec: TypeSpec) -> bool:
 
 
 def misplaced_max_array(spec: TypeSpec) -> bool:
-    """Return whether `spec` holds a `max_array` other than through records and tuples alone."""
+    """Return whether `spec` holds a `max_array` other than through records, tuples and `Timed` values alone."""
     match spec.kind:
         case "max_array":
             return False
-        case "record" | "tuple":
+        case "record" | "tuple" | "timed":
             return any(misplaced_max_array(m.type) for m in spec.members)
         case _:
             return any(reaches_max_array(m.type) for m in spec.members)
 
 
 MAX_ARRAY_PLACES: Final[str] = (
-    "MaxShape applies only to a stream item or a box field, and the records and tuples inside one"
+    "MaxShape applies only to a stream item or a box field, and the records, tuples and Timed values inside one"
 )
 
 
@@ -1143,6 +1149,26 @@ def record_members(
     return [(name, name, hints[name], None) for name in hint.__struct_fields__]  # type: ignore[attr-defined]
 
 
+def timed_spec(hint: Any, where: str, depth: int, path: frozenset[int]) -> TypeSpec:
+    """Return how a `Timed[T]` is stored: the bytes of `T`, then an int64 timestamp."""
+    (arg,) = get_args(hint)
+    inner = parse(arg, f"{where}.value", depth=deeper(depth, where), path=path)
+    alignment = max(inner.alignment, 8)
+    return TypeSpec(
+        "timed",
+        round_up(round_up(inner.size, 8) + 8, alignment),
+        alignment,
+        f"timed({inner.text})",
+        members=(Member(0, inner),),
+        count=1,
+        info=(Timed,),
+        match=(Timed,),
+        exact=Timed,
+        hashable=inner.hashable,
+        reusable=inner.reusable,
+    )
+
+
 def tuple_spec(hint: Any, where: str, depth: int, path: frozenset[int]) -> TypeSpec:
     """Return how a fixed-length `tuple[A, B, ...]` is stored."""
     args = get_args(hint)
@@ -1335,6 +1361,8 @@ def key_refusal(spec: TypeSpec, inside: str | None = None) -> str | None:
         return "a Decimal"
     if spec.kind == "set":
         return "a frozenset"
+    if spec.kind == "timed":
+        return "a Timed"
     if (departs := uncompared(spec)) is not None:
         return f"a {spec.info[1].__qualname__} whose equality {departs}"
     if inside is not None and spec.kind in INEXACT_KINDS:
@@ -1359,6 +1387,22 @@ def key_refusal(spec: TypeSpec, inside: str | None = None) -> str | None:
         (r for m in spec.members if (r := key_refusal(m.type, inside)) is not None),
         None,
     )
+
+
+def reaches_timed(spec: TypeSpec) -> bool:
+    """Return whether `spec` is a `Timed` or holds one among its members."""
+    return spec.kind == "timed" or any(reaches_timed(m.type) for m in spec.members)
+
+
+def collection_key_refusal(spec: TypeSpec, bounded: type | None) -> str | None:
+    """Return what a set element or dict key of `spec` cannot hold in a collection of the `bounded` class, or None.
+
+    A plain `set`, `frozenset` or `dict` refuses only a `Timed`, which a bounded class
+    checks like any other key.
+    """
+    if bounded is not None:
+        return key_refusal(spec)
+    return "a Timed" if reaches_timed(spec) else None
 
 
 def collection_spec(
@@ -1403,12 +1447,10 @@ def collection_spec(
             raise TypeError(
                 f"{where}: dict keys of {key.text} are not hashable when read back"
             )
-        if bounded is not None:
-            reason = key_refusal(key)
-            if reason is not None:
-                raise TypeError(
-                    f"{where}: {bounded.__name__} keys cannot hold {reason}"
-                )
+        if (reason := collection_key_refusal(key, bounded)) is not None:
+            raise TypeError(
+                f"{where}: {bounded.__name__ if bounded else read.__name__} keys cannot hold {reason}"
+            )
         element_text = f"{key.text},{value.text}"
         annotation: object = (args[0], args[1])
         pair = max(key.alignment, value.alignment)
@@ -1432,12 +1474,13 @@ def collection_spec(
             raise TypeError(
                 f"{where}: set elements of {element.text} are not hashable when read back"
             )
-        if bounded is not None and kind == "set":
-            reason = key_refusal(element)
-            if reason is not None:
-                raise TypeError(
-                    f"{where}: {bounded.__name__} keys cannot hold {reason}"
-                )
+        if (
+            kind == "set"
+            and (reason := collection_key_refusal(element, bounded)) is not None
+        ):
+            raise TypeError(
+                f"{where}: {bounded.__name__ if bounded else read.__name__} keys cannot hold {reason}"
+            )
         stride = round_up(element.size, element.alignment)
         a = max(4, element.alignment)
         members = (Member(round_up(4, a), element),)  # type: ignore[assignment]

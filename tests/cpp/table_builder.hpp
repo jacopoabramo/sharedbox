@@ -3,6 +3,7 @@
 
 #include <sharedbox/sharedbox.hpp>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
@@ -82,4 +83,41 @@ inline table_builder around_max_array(std::uint8_t kind) {
     max_array(t);
     t.patch(entry + 4, entry_of(sharedbox::kind_max_array, at));
     return t;
+}
+
+// A timed description (kind 78) around one member entry at member_offset. The head size is the one the
+// layout gives for a member of the stated size and alignment, unless size is not 0.
+inline table_builder timed(std::uint8_t member_kind, std::uint32_t member_low, std::uint32_t size = 0,
+                           std::uint16_t count = 1, std::uint32_t member_offset = 0) {
+    table_builder t;
+    const std::uint32_t alignment = (std::max)(sharedbox::detail::kind_alignment(member_kind), 8u);
+    const std::uint64_t exact =
+        sharedbox::detail::round_up(sharedbox::detail::round_up(member_low, 8) + 8, alignment);
+    t.head(sharedbox::kind_timed, count, size != 0 ? size : static_cast<std::uint32_t>(exact));
+    for (std::uint16_t i = 0; i < count; ++i)
+        t.entry(member_offset, member_kind, member_low);
+    return t;
+}
+
+// Appends a timed description around a described member: a record of one uint8 for kind_record, or a
+// max_array as max_array() builds it for kind_max_array.
+inline void timed_around(table_builder &t, std::uint8_t kind) {
+    const bool record = kind == sharedbox::kind_record;
+    const std::uint32_t member = record ? 1 : 64 + 2048 * 2048 * 2;
+    const std::uint32_t alignment = record ? 8 : 64;
+    t.head(sharedbox::kind_timed, 1,
+           static_cast<std::uint32_t>(
+               sharedbox::detail::round_up(sharedbox::detail::round_up(member, 8) + 8, alignment)));
+    const std::size_t entry = t.bytes.size();
+    t.entry(0, kind, 0);
+    const auto at = static_cast<std::uint32_t>(t.bytes.size());
+    if (record) {
+        t.head(sharedbox::kind_record, 1, member);
+        t.entry(0, sharedbox::kind_uint8, 1);
+        t.name("a");
+        t.pad();
+    } else {
+        max_array(t);
+    }
+    t.patch(entry + 4, entry_of(kind, at));
 }
