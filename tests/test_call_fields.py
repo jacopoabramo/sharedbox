@@ -64,7 +64,7 @@ def test_a_call_field_refuses_value_operations(names: Callable[[str], str]) -> N
 
 
 def test_call_is_refused_where_it_cannot_go() -> None:
-    """Raise TypeError for a call inside another type, an untyped call, and arguments that cannot be stored."""
+    """Raise TypeError for a call inside another type, an untyped call, arguments that cannot be stored, and sizing options."""
     with pytest.raises(TypeError):
 
         class InList(SharedBox):
@@ -107,6 +107,11 @@ def test_call_is_refused_where_it_cannot_go() -> None:
 
     with pytest.raises(TypeError):
         SharedStream.create(Call[[int], int], capacity=2)
+
+    with pytest.raises(TypeError, match="do not apply to a Call"):
+
+        class Sized(SharedBox):
+            move: Call[[int], int] = field(capacity=4, init=False)
 
 
 def test_a_bare_call_annotation_also_works(names: Callable[[str], str]) -> None:

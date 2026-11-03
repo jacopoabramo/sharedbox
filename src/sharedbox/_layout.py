@@ -500,6 +500,10 @@ def build_layout(cls: type, identity: str | None = None) -> Layout:
         if ref is not None and capacity is not None:
             raise TypeError(f"{where}: Capacity does not apply to a reference")
         if hint is Call or get_origin(hint) is Call:
+            if shape is not None or capacity is not None:
+                raise TypeError(
+                    f"{where}: field(shape=...) and field(capacity=...) do not apply to a Call"
+                )
             spec: TypeSpec | None = call_spec(hint, where, frozenset())
         elif ref is not None:
             spec = None
