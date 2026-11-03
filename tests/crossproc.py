@@ -1,12 +1,15 @@
 """Run a box or a stream end in another process: read and write a box from a spawned process, or fork."""
 
+import contextlib
 import multiprocessing as mp
 import sys
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Generator, Mapping
+from multiprocessing.connection import Connection
 from multiprocessing.process import BaseProcess
+from multiprocessing.synchronize import Event as EventType
 from typing import Any
 
-from sharedbox import SharedBox
+from sharedbox import CallServedError, SharedBox
 
 
 def snapshot(box: SharedBox, results: "mp.Queue[dict[str, Any]]") -> None:
@@ -59,6 +62,54 @@ def fork(target: Callable[..., object], *args: object) -> BaseProcess:
         process = mp.get_context("fork").Process(target=target, args=args, daemon=True)
         process.start()
         return process
+
+
+def serve(
+    box: SharedBox,
+    handlers: dict[str, Callable[..., Any]],
+    ready: EventType,
+    stop: Connection,
+) -> None:
+    for name, handler in handlers.items():
+        getattr(box, name).serve(handler)
+    ready.set()
+    # The parent closes its end to stop the child: an Event cannot be set once a waiter was killed.
+    with contextlib.suppress(EOFError):
+        stop.recv()
+    box.close()
+
+
+def serve_once(box: SharedBox, name: str) -> bool:
+    """Return whether `box` could serve its call field `name`, stopping at once if so."""
+    try:
+        getattr(box, name).serve(len)
+    except CallServedError:
+        return False
+    finally:
+        box.close()
+    return True
+
+
+@contextlib.contextmanager
+def serving_in_child(
+    box: SharedBox, **handlers: Callable[..., Any]
+) -> Generator[BaseProcess, None, None]:
+    """Serve each call field named in `handlers` in a spawned process until the block ends."""
+    context = mp.get_context("spawn")
+    ready = context.Event()
+    stop, stopping = context.Pipe(duplex=False)
+    child = context.Process(target=serve, args=(box, handlers, ready, stop))
+    child.start()
+    try:
+        while not ready.wait(0.1):
+            assert child.is_alive(), "the child exited before it served"
+        yield child
+    finally:
+        stopping.close()
+        child.join(10)
+        if child.is_alive():
+            child.kill()
+            child.join(10)
 
 
 def put_result(

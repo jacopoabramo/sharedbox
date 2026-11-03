@@ -31,7 +31,10 @@ def test_a_box_with_call_fields_is_created_without_values_for_them(
     names: Callable[[str], str],
 ) -> None:
     """Create a box with call fields from the values of its other fields alone."""
-    with Scanner.create(names("none")) as empty, Scanner.create(names("one"), 1.5) as box:
+    with (
+        Scanner.create(names("none")) as empty,
+        Scanner.create(names("one"), 1.5) as box,
+    ):
         assert empty.position == 0.0
         assert box.snapshot() == {"position": 1.5}
         assert next(f for f in fields(Scanner) if f.name == "move").init is False

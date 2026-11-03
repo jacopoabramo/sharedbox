@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import inspect
 import logging
 import threading
 import time
@@ -22,6 +23,7 @@ from typing import (
 
 from psygnal import Signal, SignalGroup
 
+from ._call import LIVENESS_DELAY, CallFuture, CallServedError, CallServer, Outcome
 from ._native import BoxClosedError, LockTimeoutError, WaiterSlotsFullError
 from ._refs import shown
 
@@ -61,15 +63,16 @@ def on_watcher_thread() -> bool:
 def stop_watchers() -> None:
     """Stop every watcher thread and wait for them to end, before the interpreter finalizes.
 
+    It stops the servers of call fields too, and waits for their threads.
     The wait lasts at most `EXIT_WAIT` seconds in all; a thread still running
-    a callback after that is logged and left running. On CPython before 3.14, a daemon thread that takes the GIL back during
+    a callback or a handler after that is logged and left running. On CPython before 3.14, a daemon thread that takes the GIL back during
     finalization is ended with `pthread_exit` on Linux. The unwinding that
     starts there aborts the process when it reaches the native call that
     released the GIL, such as a watcher's wait or a box's `close`.
     """
     # A copy, because watcher threads remove themselves from the set while this runs.
     watchers = RUNNING.copy()
-    threads = [watcher._thread for watcher in watchers]
+    threads = [thread for watcher in watchers for thread in watcher.threads()]
     for watcher in watchers:
         watcher.stop(wait=False)
     # Bounded, so a callback that never returns cannot keep the process from exiting.
@@ -236,6 +239,7 @@ class Watcher:
 
     __slots__ = (
         "__weakref__",
+        "_calls",
         "_fields",
         "_group",
         "_lock",
@@ -243,6 +247,7 @@ class Watcher:
         "_pending",
         "_seen",
         "_segment",
+        "_servers",
         "_sink",
         "_slot",
         "_slots_full",
@@ -256,6 +261,9 @@ class Watcher:
         self._segment = segment
         self._types = types
         self._pending: list[FieldFuture[Any]] = []
+        self._calls: list[CallFuture[Any]] = []
+        # Each server, with the write count of its field when it was last kicked.
+        self._servers: dict[CallServer, int] = {}
         self._lock = threading.RLock()
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
@@ -290,6 +298,56 @@ class Watcher:
             self._pending.append(fut)
             self._start_locked()
         return fut
+
+    def call_future(self, spec: FieldSpec, number: int, since: int) -> CallFuture[Any]:
+        """Return the future of the answer to request `number`, sent when the field's write count was `since`."""
+        fut: CallFuture[Any] = CallFuture(self, spec, number, since)
+        with self._lock:
+            if self._stop.is_set():
+                fut.cancel()
+                return fut
+            self._calls.append(fut)
+            first = len(self._calls) == 1
+            self._start_locked()
+        slot = self._slot
+        if first and slot is not None:
+            # Ends a wait of STEP, so the liveness checks start at once.
+            with contextlib.suppress(BoxClosedError):
+                self._segment.interrupt(slot)
+        return fut
+
+    def serve(self, spec: FieldSpec, handler: Callable[..., Any]) -> CallServer:
+        """Claim call field `spec` for this process and answer its requests with `handler`."""
+        loop = None
+        if inspect.iscoroutinefunction(handler):
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                raise RuntimeError(
+                    "serve() needs a running event loop for an async handler"
+                ) from None
+        if not self._segment.call_claim(spec.index):
+            raise CallServedError(f"{spec.label} is served already")
+        server = CallServer(self, spec, handler, loop)
+        with self._lock:
+            if self._stop.is_set():
+                server._halt(join=False)
+                raise BoxClosedError(f"box {self._segment.name!r} is closed")
+            self._servers[server] = self._segment.version(spec.index)
+            self._start_locked()
+        server._start()
+        return server
+
+    def forget(self, server: CallServer) -> None:
+        with self._lock:
+            self._servers.pop(server, None)
+
+    def threads(self) -> list[threading.Thread]:
+        """Return the watcher thread and the threads of sync servers, those that were started."""
+        with self._lock:
+            threads = [server._thread for server in self._servers]
+            threads.append(self._thread)
+        return [thread for thread in threads if thread is not None]
 
     def events(
         self, factory: Callable[[], BoxEvents], fields: tuple[FieldSpec, ...]
@@ -382,18 +440,22 @@ class Watcher:
             except Exception:
                 logger.exception("forwarding a change of field %r failed", spec.name)
 
-    def discard(self, fut: FieldFuture[Any]) -> None:
+    def discard(self, fut: FieldFuture[Any] | CallFuture[Any]) -> None:
         with self._lock, contextlib.suppress(ValueError):
-            self._pending.remove(fut)
+            if isinstance(fut, CallFuture):
+                self._calls.remove(fut)
+            else:
+                self._pending.remove(fut)
 
     def stop(self, wait: bool = True) -> None:
-        """Stop the thread and cancel every pending future.
+        """Stop the thread and every server, and cancel every pending future.
 
         Parameters
         ----------
         wait
-            If true, also wait for the thread to end and deliver the writes
-            it had not seen yet.
+            If true, also wait for the thread and the threads of sync
+            servers to end, and deliver the writes the watcher had not
+            seen yet.
         """
         self._stop.set()
         slot = self._slot
@@ -401,6 +463,10 @@ class Watcher:
             # Ends the watcher's wait now rather than at its next step.
             with contextlib.suppress(BoxClosedError):
                 self._segment.interrupt(slot)
+        with self._lock:
+            servers = list(self._servers)
+        for server in servers:
+            server._halt(join=wait)
         with self._lock:
             thread = self._thread
         if wait and thread is not None and thread is not threading.current_thread():
@@ -416,11 +482,12 @@ class Watcher:
                 )
         with self._lock:
             pending, self._pending = self._pending, []
-        for fut in pending:
+            calls, self._calls = self._calls, []
+        for fut in [*pending, *calls]:
             fut.cancel()
 
     def after_fork(self) -> None:
-        """Forget the parent's thread and futures in a child created by `fork`.
+        """Forget the parent's thread, futures and servers in a child created by `fork`.
 
         The thread starts again on the next
         [`future`][sharedbox._events.Watcher.future] or
@@ -434,6 +501,10 @@ class Watcher:
             self._stop.set()
         self._thread = None
         self._pending = []
+        self._calls = []
+        for server in self._servers:
+            server._after_fork()
+        self._servers = {}
         self._slot = None
         RUNNING.discard(self)
 
@@ -472,9 +543,17 @@ class Watcher:
             try:
                 generation = self._segment.generation()
                 timed_out = False
+                check_at = 0.0
+                calls = False
                 while not self._stop.is_set():
                     try:
                         self._resolve_ready()
+                        now = time.monotonic()
+                        check = now >= check_at
+                        if check:
+                            check_at = now + LIVENESS_DELAY
+                        calls = self._resolve_calls(check)
+                        self._kick_servers()
                         self._emit_changes()
                         timed_out = False
                     except LockTimeoutError as error:
@@ -485,11 +564,12 @@ class Watcher:
                     slot = self._claim()
                     if self._stop.is_set():
                         return
+                    step = LIVENESS_DELAY if calls else STEP
                     if slot is None:
-                        self._stop.wait(STEP)
+                        self._stop.wait(step)
                         continue
                     # The step bounds how long a freed slot or a missed wake-up goes unnoticed.
-                    generation = self._segment.wait(generation, STEP, slot)
+                    generation = self._segment.wait(generation, step, slot)
             finally:
                 RUNNING.discard(self)
                 if self._slot is not None:
@@ -515,6 +595,51 @@ class Watcher:
                     self._pending.remove(fut)
         for fut, value, version in values:
             fut._resolve(value, version)
+
+    def _resolve_calls(self, check: bool) -> bool:
+        """Complete the call futures whose answer arrived; with `check`, read every one and check its server.
+
+        Returns whether any is still pending.
+        """
+        with self._lock:
+            calls = list(self._calls)
+        if not calls:
+            return False
+        versions = self._segment.versions()
+        outcomes: list[tuple[CallFuture[Any], int, Any]] = []
+        for fut in calls:
+            version = versions[fut._field.index]
+            if version == fut._since and not check:
+                continue
+            outcome, value = self._segment.call_answer_of(
+                fut._field.index, fut._number, check, self._types
+            )
+            if outcome == Outcome.PENDING:
+                fut._since = version
+            else:
+                outcomes.append((fut, outcome, value))
+        with self._lock:
+            for fut, _, _ in outcomes:
+                with contextlib.suppress(ValueError):
+                    self._calls.remove(fut)
+        for fut, outcome, value in outcomes:
+            fut._complete(outcome, value)
+        return len(outcomes) < len(calls)
+
+    def _kick_servers(self) -> None:
+        with self._lock:
+            servers = list(self._servers.items())
+        if not servers:
+            return
+        versions = self._segment.versions()
+        for server, seen in servers:
+            version = versions[server._field.index]
+            if version == seen:
+                continue
+            with self._lock:
+                if server in self._servers:
+                    self._servers[server] = version
+            server._kick()
 
 
 class BoxEvents(SignalGroup):
