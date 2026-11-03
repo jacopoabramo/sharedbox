@@ -254,9 +254,7 @@ record (4096 - 2240 = 1856).
 | 74 | array | description offset | data size, 64 |
 | 75 | max_array | description offset | 64 + data size of the maximum shape, 64 |
 | 76 | call | description offset | from the description |
-| 78 | timed | description offset | from the description |
-
-Code 77 is reserved for a kind a later version adds.
+| 77 | timed | description offset | from the description |
 
 A field of a kind the reader does not know is opened as opaque bytes: a
 kind below 64 is sized by its entry, one from 64 by its description's
@@ -820,7 +818,7 @@ layout version of its kind, for the rest. Each has a major and a minor.
   `status::corrupt`. A reader of 3.1 or older opens a box whose `max_array`
   is a field, as a field of a kind it does not know, and refuses one inside
   a record or tuple. Every older reader opens a box of 3.3 that has none.
-- Box layout 3.3 also adds kind 78, `timed`, wherever a record may go. A
+- Box layout 3.3 also adds kind 77, `timed`, wherever a record may go. A
   reader of box layout 3.2 or older opens a box whose `timed` is a field, as
   a field of a kind it does not know: its C++ `handle` reads the bytes and
   refuses to write them with `status::range`, and its Python extension
@@ -831,7 +829,7 @@ layout version of its kind, for the rest. Each has a major and a minor.
   field of a kind it does not know: its C++ `handle` reads the bytes and
   refuses to write them with `status::range`, and its Python extension
   refuses the box with `SchemaMismatchError`.
-- Stream layout 1.5 allows kind 78 in a stream's item. A reader of stream
+- Stream layout 1.5 allows kind 77 in a stream's item. A reader of stream
   layout 1.4 or older refuses a stream whose item is or holds a `timed`
   with `status::corrupt`, and opens one whose item holds none.
 - A change to how existing bytes are read or written raises a major: the

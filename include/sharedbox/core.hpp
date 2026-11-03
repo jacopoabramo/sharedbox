@@ -143,7 +143,7 @@ inline constexpr std::uint32_t call_answers = 4;
 inline constexpr std::uint32_t call_error_size = 256;
 inline constexpr std::uint32_t call_arguments_at = 48;
 // A value followed by an i64 timestamp in nanoseconds since the Unix epoch.
-inline constexpr std::uint8_t kind_timed = 78;
+inline constexpr std::uint8_t kind_timed = 77;
 // The timestamp that a write replaces with the time of the write.
 inline constexpr std::int64_t timed_mark = INT64_MIN;
 

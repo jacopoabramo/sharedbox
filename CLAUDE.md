@@ -170,11 +170,11 @@ version 1.0, box layout 3.3, from offset 0:
   `asleep_on`: the offset of the count the slot's current wait added 1 to,
   which freeing a dead owner's slot takes back), then the description
   table of `types_size` bytes. Kinds are 0 to 5, 6 to 12 (fixed-size
-  scalars), 13 to 23 (fixed-width numbers and `datetime64`), and 64 to 76
-  and 78 (described types; 75, an array up to a maximum shape, in a stream
+  scalars), 13 to 23 (fixed-width numbers and `datetime64`), and 64 to 77
+  (described types; 75, an array up to a maximum shape, in a stream
   item or a box field, written as its shape line and the elements in use;
   76, a call, a box field only, holding the request line, the server's
-  identity, the arguments and a ring of 4 answers; 78, a value with an
+  identity, the arguments and a ring of 4 answers; 77, a value with an
   `i64` timestamp in ns, wherever a record may go, its timestamp `-2**63`
   replaced by the time of the write).
 - The record, at a multiple of 64. `record + record_size <= 2**32 - 4096`.
