@@ -886,6 +886,8 @@
       
         
       
+        
+      
     
     
     
@@ -1005,6 +1007,35 @@
     
   
   How to store records
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../how-to/store-a-value-with-its-time/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-wrench" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  How to store a value with its time
 
     
   </span>
@@ -2669,6 +2700,45 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#sharedbox.Timed" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-class"></code>&nbsp;Timed
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Timed">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#sharedbox.Timed.timestamp" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-attribute"></code>&nbsp;timestamp
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sharedbox.Timed.now" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;now
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#sharedbox.BoundedList" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -4221,6 +4291,45 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#sharedbox.Timed" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-class"></code>&nbsp;Timed
+      </span>
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Timed">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#sharedbox.Timed.timestamp" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-attribute"></code>&nbsp;timestamp
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sharedbox.Timed.now" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;now
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#sharedbox.BoundedList" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -4795,6 +4904,10 @@
 <tr>
 <td><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;BoundedDict&lt;/span&gt;" href="./#sharedbox.BoundedDict"><code>BoundedDict</code></a></td>
 <td>a dict value that keeps the stored form of a dict field, so reading and writing it copies bytes and a lookup compares the stored bytes of one key</td>
+</tr>
+<tr>
+<td><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;Timed&lt;/span&gt;" href="./#sharedbox.Timed"><code>Timed</code></a></td>
+<td>a value with its timestamp in nanoseconds, written in one go; <code>Timed.now</code> asks the write to stamp it</td>
 </tr>
 <tr>
 <td><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;Capacity&lt;/span&gt;
@@ -6990,6 +7103,108 @@ two are equal only if they are the same object, as with
 
 
 
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="sharedbox.Timed" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-class"></code>            <span class="doc doc-object-name doc-class-name">Timed</span>
+
+
+<a href="#sharedbox.Timed" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents first">
+            <p class="doc doc-class-bases">
+              Bases: <code><a class="autorefs autorefs-external" title="&lt;code&gt;typing.NamedTuple&lt;/code&gt;" href="https://docs.python.org/3/library/typing.html#typing.NamedTuple">NamedTuple</a></code>, <code><a class="autorefs autorefs-external" title="&lt;code&gt;typing.Generic&lt;/code&gt;" href="https://docs.python.org/3/library/typing.html#typing.Generic">Generic</a>[<span title="sharedbox._timed.T">T</span>]</code></p>
+
+
+
+        <p>A value with a timestamp in nanoseconds since the Unix epoch.</p>
+<p>A box field or stream item annotated <code>Timed[T]</code> stores <code>value</code> as a <code>T</code>
+followed by <code>timestamp_ns</code>. The timestamp <code>-2**63</code> is reserved: a box
+write replaces it with the system clock once it holds the box's lock, so
+the stored timestamps follow the order of the writes unless the clock is
+set back, and a stream send replaces it before it publishes the item. No
+read returns it.</p>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+<div class="doc doc-object doc-attribute">
+
+
+
+<h3 id="sharedbox.Timed.timestamp" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-attribute"></code>            <span class="doc doc-object-name doc-attribute-name">timestamp</span>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-property"><code>property</code></small>
+  </span>
+
+<a href="#sharedbox.Timed.timestamp" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">timestamp</span><span class="p">:</span> <span class="nb">float</span>
+</span></code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>The timestamp in seconds since the Unix epoch.</p>
+
+    </div>
+
+</div>
+
+
+
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="sharedbox.Timed.now" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <span class="doc doc-object-name doc-function-name">now</span>
+
+
+  <span class="doc doc-labels">
+      <small class="doc doc-label doc-label-classmethod"><code>classmethod</code></small>
+  </span>
+
+<a href="#sharedbox.Timed.now" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">now</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="n">T</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Timed</span><span class="p">[</span><span class="n">T</span><span class="p">]</span>
+</span></code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Return <code>value</code> with the mark that asks the write to stamp it with the clock.</p>
+
+
+    </div>
+
+</div>
 
 
 
