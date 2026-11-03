@@ -2640,7 +2640,7 @@ public:
     std::uint32_t size() const noexcept { return ref_.size; }
     std::uint32_t alignment() const noexcept { return ref_.alignment; }
     bool described() const noexcept { return ref_.node != detail::no_node; }
-    // enum, flag, literal: values; optional 1; union, record, tuple: members; list and set 1; dict 2; else 0.
+    // enum, flag, literal: values; optional 1; union, record, tuple: members; list, set and timed 1; dict 2; else 0.
     std::uint16_t count() const noexcept { return described() ? node().count : 0; }
     // str, bytes, decimal: bytes; list, set, dict: elements; else 0.
     std::uint32_t capacity() const noexcept {
@@ -2651,14 +2651,14 @@ public:
     // list, set, dict: where the first slot starts and how many bytes each takes.
     std::uint32_t slots() const noexcept { return described() ? node().slots : 0; }
     std::uint32_t stride() const noexcept { return described() ? node().stride : 0; }
-    // optional, union, record, tuple: i < count(); list and set: 0, the element; dict: 0 key, 1 value.
-    // Another kind or index gives an empty type_view and offset 0.
+    // optional, union, record, tuple: i < count(); list and set: 0, the element; dict: 0 key, 1 value;
+    // timed: 0, the value, which the timestamp follows. Another kind or index gives an empty type_view and
+    // offset 0.
     type_view member(std::uint16_t i) const noexcept {
-        return has(i, kind_optional, kind_dict) ? type_view{table_, table_->member(node().members + i).type}
-                                                : type_view{};
+        return has_member(i) ? type_view{table_, table_->member(node().members + i).type} : type_view{};
     }
     std::uint32_t member_offset(std::uint16_t i) const noexcept {
-        return has(i, kind_optional, kind_dict) ? table_->member(node().members + i).offset : 0;
+        return has_member(i) ? table_->member(node().members + i).offset : 0;
     }
     // enum, flag, record; another kind or index gives an empty name.
     std::string_view name(std::uint16_t i) const noexcept {
@@ -2690,6 +2690,9 @@ private:
     friend class stream;
     type_view(const detail::type_table *table, detail::type_ref ref) noexcept : table_(table), ref_(ref) {}
     const detail::type_node &node() const noexcept { return table_->node(ref_.node); }
+    bool has_member(std::uint16_t i) const noexcept {
+        return has(i, kind_optional, kind_dict) || has(i, kind_timed, kind_timed);
+    }
     // Whether the kind is in [first, last] and i is below count().
     bool has(std::uint16_t i, std::uint8_t first, std::uint8_t last) const noexcept {
         return described() && ref_.kind >= first && ref_.kind <= last && i < node().count;

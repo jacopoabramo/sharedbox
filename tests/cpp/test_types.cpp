@@ -468,3 +468,31 @@ TEST_CASE("a forged timed description is refused") {
         CHECK(parse(t, entry_of(kind_record, 0)) == status::corrupt);
     }
 }
+
+TEST_CASE("type_view shows the member of a timed, and the timestamp sits after the member") {
+    SUBCASE("an int") {
+        const table_builder t = timed(kind_int, 8);
+        const std::string name = unique("types-timed-view");
+        const field_spec fields[1] = {{0, 0, kind_timed}};
+        auto box = handle::create(name, fields, 16, 1, 4, {}, t.span());
+        REQUIRE(box.has_value());
+        const type_view view = box->field_type(0);
+        CHECK((view.count() == 1 && view.member(0).kind() == kind_int && view.member_offset(0) == 0));
+        CHECK(!view.member(1).described());
+        static_cast<void>(unlink(name));
+    }
+    SUBCASE("a max_array, which is aligned to 64") {
+        table_builder t;
+        timed_around(t, kind_max_array);
+        const std::uint32_t data = 64 + 2048 * 2048 * 2;
+        const std::string name = unique("types-timed-max-array");
+        const field_spec fields[1] = {{0, 0, kind_timed}};
+        auto box = handle::create(name, fields, data + 64, 1, 4, {}, t.span());
+        REQUIRE(box.has_value());
+        const type_view view = box->field_type(0);
+        CHECK((view.member(0).kind() == kind_max_array && view.member(0).size() == data));
+        CHECK((view.member_offset(0) == 0 && view.size() == data + 64));
+        CHECK(detail::round_up(view.member(0).size(), 8) == data);
+        static_cast<void>(unlink(name));
+    }
+}
