@@ -16,6 +16,9 @@ icon: lucide/code
 | [`Timed`][sharedbox.Timed] | a value with its timestamp in nanoseconds, written in one go; `Timed.now` asks the write to stamp it |
 | [`Call`][sharedbox.Call] | a field through which any process sends a typed request to the process that serves it |
 | [`call`][sharedbox.call] | declares a `Call` field, which the box's constructor takes no value for |
+| [`Attr`][sharedbox.Attr] | a field its owner publishes and every process reads: a value, and optionally a setpoint and a timestamp |
+| [`attr`][sharedbox.attr] | declares an `Attr` field, which the box's constructor takes no value for |
+| [`AttrValue`][sharedbox.AttrValue] | what `Attr.read` returns |
 | [`RequestFuture`][sharedbox.RequestFuture] | the answer to one request, waited on with `result` or `await` |
 | [`RequestServer`][sharedbox.RequestServer] | answers the requests of one call field; `Call.serve` returns it |
 | [`Capacity`][sharedbox.Capacity] | maximum size of a field: bytes for text and bytes, elements for a collection. See [capacity](../../explanation/glossary.md#capacity) |
@@ -47,6 +50,18 @@ icon: lucide/code
       show_root_heading: true
 
 ::: sharedbox.call
+    options:
+      show_root_heading: true
+
+::: sharedbox.Attr
+    options:
+      show_root_heading: true
+
+::: sharedbox.attr
+    options:
+      show_root_heading: true
+
+::: sharedbox.AttrValue
     options:
       show_root_heading: true
 

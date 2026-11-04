@@ -10,6 +10,7 @@
 #include <cstdint>
 #include <cstring>
 #include <future>
+#include <limits>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -279,6 +280,19 @@ TEST_CASE("attr_publish refuses a part the field lacks") {
         CHECK(box->version(0) == 0);
         static_cast<void>(unlink(name));
     }
+}
+
+TEST_CASE("attr_publish stamps a timestamp that is the timed mark") {
+    const std::string name = unique("attr-mark");
+    handle box = make(name, everything());
+    const std::int64_t before = detail::wall_ns();
+    REQUIRE(box.attr_publish(0, publish_value | publish_timestamp,
+                             parts(0, 5, std::numeric_limits<std::int64_t>::min(), 0), patience)
+                .has_value());
+    const std::int64_t after = detail::wall_ns();
+    const auto now = value_part(box);
+    CHECK((at(now, 2) >= before && at(now, 2) <= after));
+    static_cast<void>(unlink(name));
 }
 
 TEST_CASE("a request step leaves the value part") {

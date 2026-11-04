@@ -83,7 +83,7 @@ def forged_types(edits: list[tuple[int, int, int]]) -> None:
             with contextlib.suppress(ValueError, TypeError, ArithmeticError):
                 other.get(spec.index, LAYOUT.types)
         with contextlib.suppress(ValueError, TypeError, ArithmeticError):
-            other.get_dict(LAYOUT.names, LAYOUT.types)
+            other.get_dict(LAYOUT.snapshot_names, LAYOUT.types)
         other.close()
     finally:
         owner.close()

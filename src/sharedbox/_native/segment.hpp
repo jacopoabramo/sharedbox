@@ -193,6 +193,9 @@ public:
     request_reply request_answer_of(std::uint32_t field, std::uint64_t number, std::span<std::byte> out,
                                     bool check_server) const;
     bool serve_claim(std::uint32_t field);
+    /// handle::attr_publish for attr field: bytes holds the field from its value part on, and parts says which
+    /// of its parts to write. Throws std::invalid_argument for a part the field lacks or a wrong size.
+    void attr_publish(std::uint32_t field, std::uint8_t parts, std::span<const std::byte> bytes);
     void serve_release(std::uint32_t field);
     /// A heap handle with its own mapping of the segment, for a capsule. Call its release, then
     /// delete it.

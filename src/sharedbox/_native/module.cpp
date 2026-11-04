@@ -87,7 +87,12 @@ nb::object decode_payload(const sharedbox::Types *types, const sharedbox::FieldD
             return types->decode(index, data, nullptr);
         return decode_value(field, bytes);
     }
-    return sharedbox::need(types, index).decode(index, data, nullptr);
+    const sharedbox::Types &t = sharedbox::need(types, index);
+    if (static_cast<std::uint8_t>(field.kind) == sharedbox::kind_attr) {
+        const std::uint32_t at = t.attr_value_at(index);
+        return t.decode(index, data.subspan(at == sharedbox::detail::attr_absent ? data.size() : at), nullptr);
+    }
+    return t.decode(index, data, nullptr);
 }
 
 nb::object get(const Segment &s, std::uint32_t index, const sharedbox::Types *types) {
@@ -1199,6 +1204,29 @@ NB_MODULE(_native, m) {
                 s.write(converted);
             },
             "values"_a)
+        .def(
+            "attr_publish",
+            [](Segment &s, std::uint32_t index, std::uint8_t parts, nb::handle value, nb::handle setpoint,
+               std::int64_t timestamp_ns, nb::handle types) {
+                const sharedbox::Types &t = sharedbox::need(types_of(types), index);
+                const std::vector<std::byte> bytes =
+                    t.encode_attr_parts(index, parts, value.ptr(), setpoint.ptr(), timestamp_ns);
+                s.attr_publish(index, parts, bytes);
+            },
+            "field"_a, "parts"_a, "value"_a.none(), "setpoint"_a.none(), "timestamp_ns"_a, "types"_a)
+        .def(
+            "attr_published",
+            [](const Segment &s, std::uint32_t index) {
+                sharedbox::FieldRead read;
+                s.read(index, read);
+                if (static_cast<std::uint8_t>(read.field->kind) != sharedbox::kind_attr ||
+                    read.bytes.size() < sizeof(std::uint64_t))
+                    throw std::invalid_argument("field " + std::to_string(index) + " is not an Attr with a value");
+                std::uint64_t count = 0;
+                std::memcpy(&count, read.bytes.data(), sizeof count);
+                return count;
+            },
+            "field"_a)
         .def(
             "request_send",
             [](Segment &s, std::uint32_t index, nb::tuple arguments, nb::handle types) {

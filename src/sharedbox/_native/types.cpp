@@ -547,6 +547,62 @@ nb::object Types::decode_request_result(std::uint32_t index, std::span<const std
     return decode_from(tree_.member(node.members).type, bytes.data(), t.node, 0, {labels_[index]});
 }
 
+const detail::type_node &Types::attr_node(std::uint32_t index) const {
+    const detail::type_ref &t = field(index);
+    if (t.kind != kind_attr)
+        raise(PyExc_TypeError, labels_[index] + " is not an Attr field");
+    return tree_.node(t.node);
+}
+
+std::uint32_t Types::attr_value_at(std::uint32_t index) const { return attr_node(index).value_at; }
+
+std::vector<std::byte> Types::encode_attr_parts(std::uint32_t index, std::uint8_t parts, PyObject *value,
+                                                PyObject *setpoint, std::int64_t timestamp_ns) const {
+    const detail::type_node &node = attr_node(index);
+    if (node.value_at == detail::attr_absent)
+        return {};
+    std::vector<std::byte> out(field(index).size - node.value_at);
+    const detail::type_member &m = tree_.member(node.members);
+    const auto at = [&](std::uint32_t offset) { return out.data() + (offset - node.value_at); };
+    if ((parts & publish_value) != 0)
+        encode_into(m.type, value, at(m.offset), {labels_[index]});
+    if ((parts & publish_timestamp) != 0)
+        std::memcpy(at(m.offset + static_cast<std::uint32_t>(timestamp_at(m.type))), &timestamp_ns,
+                    sizeof timestamp_ns);
+    if ((parts & publish_setpoint) != 0 && node.setpoint_at != detail::attr_absent) {
+        const std::string name = labels_[index] + " setpoint";
+        encode_into(m.type, setpoint, at(node.setpoint_at), {name});
+    }
+    return out;
+}
+
+nb::object Types::decode_attr(std::uint32_t index, std::span<const std::byte> bytes) const {
+    const detail::type_ref &t = field(index);
+    const detail::type_node &node = tree_.node(t.node);
+    nb::dict out;
+    if (node.value_at == detail::attr_absent) {
+        if (!bytes.empty())
+            raise(PyExc_ValueError, labels_[index] + ": the stored attribute has the wrong size");
+        return out;
+    }
+    if (bytes.size() != t.size - node.value_at)
+        raise(PyExc_ValueError, labels_[index] + ": the stored attribute has the wrong size");
+    const detail::type_member &m = tree_.member(node.members);
+    const auto at = [&](std::uint32_t offset) { return bytes.data() + (offset - node.value_at); };
+    const Where where{labels_[index]};
+    out["value"] = decode_from(m.type, at(m.offset), t.node, 0, where);
+    if ((node.flags & attr_settable) != 0)
+        out["setpoint"] = decode_from(m.type, at(node.setpoint_at), t.node, 0, where);
+    if ((node.flags & attr_timed) != 0) {
+        const nb::object stamp = nb::steal(
+            PyLong_FromLongLong(load<long long>(at(m.offset + static_cast<std::uint32_t>(timestamp_at(m.type))))));
+        if (!stamp.is_valid())
+            throw nb::python_error();
+        out["timestamp_ns"] = stamp;
+    }
+    return out;
+}
+
 int Types::traverse(visitproc visit, void *arg) const {
     for (const NodeInfo &n : nodes_)
         Py_VISIT(n.info.ptr());
@@ -663,6 +719,8 @@ nb::object Types::decode(std::uint32_t index, std::span<const std::byte> bytes,
                          std::unique_ptr<std::byte[]> *owned) const {
     const detail::type_ref &t = field(index);
     const std::string &name = labels_[index];
+    if (t.kind == kind_attr)
+        return decode_attr(index, bytes);
     if (t.kind == kind_array || t.kind == kind_max_array) {
         if (bytes.size() != t.size)
             raise(PyExc_ValueError, name + ": the stored array has the wrong size");
@@ -885,6 +943,25 @@ void Types::encode_plain(const detail::type_ref &t, PyObject *value, std::byte *
         const detail::type_member &inner = tree_.member(tree_.node(t.node).members);
         encode_into(inner.type, PyTuple_GetItem(value, 0), out + inner.offset, where);
         encode_plain(timestamp_type, PyTuple_GetItem(value, 1), out + timestamp_at(inner.type), where);
+        return;
+    }
+    case kind_attr: {
+        if (!PyDict_Check(value))
+            wrong(where.name, "a dict of the attribute's parts", value);
+        const detail::type_node &node = tree_.node(t.node);
+        const detail::type_member &m = tree_.member(node.members);
+        PyObject *given = PyDict_GetItemString(value, "value");
+        PyObject *given_setpoint = PyDict_GetItemString(value, "setpoint");
+        if (PyDict_Size(value) != (given != nullptr) + (given_setpoint != nullptr) ||
+            (given != nullptr && node.value_at == detail::attr_absent) ||
+            (given_setpoint != nullptr && node.setpoint_at == detail::attr_absent))
+            raise(PyExc_TypeError, where.name + " takes only the parts the attribute has");
+        if (given != nullptr)
+            encode_into(m.type, given, out + m.offset, where);
+        if (given_setpoint != nullptr) {
+            const std::string name = where.name + " setpoint";
+            encode_into(m.type, given_setpoint, out + node.setpoint_at, {name});
+        }
         return;
     }
     case kind_list:

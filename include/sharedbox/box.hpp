@@ -386,14 +386,18 @@ public:
     // publish_timestamp and publish_setpoint each) under the write lock, adds one to its published count,
     // counts one write of the field and wakes waiters. bytes holds the whole value part, [value_at, size) of
     // the field, with each part at its own offset; the parts it does not name, and the published count in it,
-    // are ignored. A value named without a timestamp on a timed attr is stamped with the time after the lock
-    // is taken. status::range, writing nothing, for a field that is not an attr, a part the attr lacks, a
-    // timestamp named without the value, no part at all or a span of the wrong size.
+    // are ignored. A value named without a timestamp on a timed attr, or with the timestamp timed_mark, is
+    // stamped with the time after the lock is taken. status::range, writing nothing, for a field that is not an
+    // attr, a part the attr lacks, a timestamp named without the value, no part at all or a span of the wrong
+    // size.
     [[nodiscard]] result<void> attr_publish(std::uint16_t field, std::uint8_t parts,
                                             std::span<const std::byte> bytes, seconds lock_timeout);
     // Copies the value part, [value_at, size) of the field, into out from one moment, without the write lock.
     // status::range for a field that is not an attr or has no value part, or an out of another size.
     [[nodiscard]] result<void> attr_read(std::uint16_t field, std::span<std::byte> out) const;
+    // Where the value part of an attr field starts in the field, the size of the field minus the size of
+    // attr_read's out; detail::attr_absent for a field that is not an attr or has no value part.
+    [[nodiscard]] std::uint32_t attr_value_at(std::uint16_t field) const noexcept;
 
     // Takes over a handle made by another build, such as the one in a "sharedbox_box" capsule: checks
     // the segment at capsule->base as open does and, on success, clears capsule->release; destroying
@@ -1496,11 +1500,15 @@ inline result<void> handle::attr_publish(std::uint16_t field, std::uint8_t parts
     };
     if (names_value)
         copy(value.offset, value.type.size);
-    if (names_timestamp) {
+    if (names_timestamp)
         copy(timestamp_at, sizeof(std::int64_t));
-    } else if (names_value && timed) {
-        const std::int64_t now = detail::wall_ns();
-        std::memcpy(room + timestamp_at, &now, sizeof now);
+    if (names_value && timed) {
+        std::int64_t stamp = 0;
+        std::memcpy(&stamp, room + timestamp_at, sizeof stamp);
+        if (!names_timestamp || stamp == timed_mark) {
+            const std::int64_t now = detail::wall_ns();
+            std::memcpy(room + timestamp_at, &now, sizeof now);
+        }
     }
     if (names_setpoint)
         copy(node.setpoint_at, value.type.size);
@@ -1529,6 +1537,13 @@ inline result<void> handle::attr_read(std::uint16_t field, std::span<std::byte> 
     if (!done)
         return unexpected(status::lock_timeout);
     return {};
+}
+
+inline std::uint32_t handle::attr_value_at(std::uint16_t field) const noexcept {
+    const detail::state &s = *s_;
+    if (field >= s.field_count || s.fields[field].kind != kind_attr)
+        return detail::attr_absent;
+    return s.types.node(s.types.field(field).node).value_at;
 }
 
 inline std::uint64_t handle::generation() const noexcept {

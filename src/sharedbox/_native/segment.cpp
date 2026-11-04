@@ -324,10 +324,32 @@ struct Segment::Impl {
         return fields[index];
     }
 
+    // An attr field reads from its value part on, without its request part. The write count is read first, so
+    // a publish that lands between the two leaves a count older than the value, and a watcher then reads
+    // the field once more rather than miss the publish.
+    void read_attr(std::uint16_t f, FieldRead &out) const {
+        const std::uint32_t at = box.attr_value_at(f);
+        out.version = box.version(f);
+        if (at == detail::attr_absent) {
+            out.bytes = {};
+            return;
+        }
+        const std::size_t size = fields[f].capacity - at;
+        std::byte *buf = reinterpret_cast<std::byte *>(out.words);
+        if (size > sizeof out.words) {
+            out.large.reset(new std::byte[size]);
+            buf = out.large.get();
+        }
+        check(box.attr_read(f, {buf, size}));
+        out.bytes = {reinterpret_cast<const char *>(buf), size};
+    }
+
     // A described field: a list, set or dict copies its used slots, a large value runs the wait hooks
     // around its copy, anything else is read whole.
     void read_described(std::uint16_t f, FieldRead &out) const {
         const FieldDesc &field = fields[f];
+        if (static_cast<std::uint8_t>(field.kind) == kind_attr)
+            return read_attr(f, out);
         const std::size_t size = field.capacity;
         std::byte *buf = reinterpret_cast<std::byte *>(out.words);
         // A collection usually uses far less than its capacity, so it is read into words first and
@@ -704,6 +726,13 @@ request_reply Segment::request_answer_of(std::uint32_t index, std::uint64_t numb
     check_index(index, impl_->fields.size());
     return impl_->check(
         impl_->box.request_answer_of(static_cast<std::uint16_t>(index), number, out, check_server));
+}
+
+void Segment::attr_publish(std::uint32_t index, std::uint8_t parts, std::span<const std::byte> bytes) {
+    auto guard = impl_->enter();
+    check_index(index, impl_->fields.size());
+    impl_->check(
+        impl_->box.attr_publish(static_cast<std::uint16_t>(index), parts, bytes, seconds(impl_->lock_timeout)));
 }
 
 bool Segment::serve_claim(std::uint32_t index) {

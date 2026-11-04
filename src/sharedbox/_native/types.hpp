@@ -174,6 +174,15 @@ public:
     /// The result stored in bytes, request_result_size(index) bytes; None for a call with no result.
     nb::object decode_request_result(std::uint32_t index, std::span<const std::byte> bytes) const;
 
+    /// Where the value part of attr field index starts in the field; detail::attr_absent for an attr without one.
+    /// decode takes the bytes of an attr from there on.
+    std::uint32_t attr_value_at(std::uint32_t index) const;
+    /// The bytes of attr field index from its value part on, with the parts that parts names (the bits of
+    /// publish_value, publish_timestamp and publish_setpoint) encoded in place and the rest zero; empty for an
+    /// attr without a value part. Raises a Python exception naming the field for a part that does not encode.
+    std::vector<std::byte> encode_attr_parts(std::uint32_t index, std::uint8_t parts, PyObject *value,
+                                             PyObject *setpoint, std::int64_t timestamp_ns) const;
+
     const detail::type_node &node_of(const detail::type_ref &t) const { return tree_.node(t.node); }
     /// The schema text of the elements of the list, set or dict node t.
     const std::string &element_text(const detail::type_ref &t) const { return nodes_[t.node].element_text; }
@@ -258,6 +267,10 @@ private:
                           std::span<const std::size_t> shape = {}) const;
     /// The node of call field index; TypeError for a field of another kind.
     const detail::type_node &request_node(std::uint32_t index) const;
+    /// The node of attr field index; TypeError for a field of another kind.
+    const detail::type_node &attr_node(std::uint32_t index) const;
+    /// The dict of the parts of attr field index stored in bytes, which start at its value part.
+    nb::object decode_attr(std::uint32_t index, std::span<const std::byte> bytes) const;
     void prepare(std::uint32_t node, std::uint8_t kind, nb::object info);
     bool read_as_bytearray(std::uint32_t container, std::uint32_t member) const;
 

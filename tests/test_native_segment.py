@@ -10,10 +10,11 @@ import time
 from collections.abc import Callable, Generator
 from multiprocessing.shared_memory import SharedMemory
 from multiprocessing.synchronize import Event
-from typing import cast
+from typing import Any, cast
 
 import pytest
 from os_names import os_name
+from test_attr_fields import Camera
 from test_call_fields import Scanner
 
 from sharedbox import SharedBox
@@ -920,4 +921,28 @@ def test_call_steps_round_trip(unique_name: str) -> None:
         segment.request_send(move, ("x",), types)
     with pytest.raises(TypeError, match="takes 1 arguments"):
         segment.request_send(move, (1.0, 2.0), types)
+    box.close()
+
+
+def test_attr_publish_and_read_round_trip(unique_name: str) -> None:
+    """Publish parts of an attr field through the native steps and read them back."""
+    box = Camera.create(unique_name)
+    segment = box._segment
+    types = Camera.__layout__.types
+    exposure = Camera.__layout__.by_name["exposure"].index
+    segment.attr_publish(exposure, 1, 1.5, None, 0, types)
+    first = cast(dict[str, Any], segment.get(exposure, types))
+    assert first["value"] == 1.5
+    assert segment.attr_published(exposure) == 1
+    stamp = first["timestamp_ns"]
+    segment.attr_publish(exposure, 4, None, 0.5, 0, types)
+    assert segment.get(exposure, types) == {
+        "value": 1.5,
+        "setpoint": 0.5,
+        "timestamp_ns": stamp,
+    }
+    assert segment.attr_published(exposure) == 2
+    with pytest.raises(ValueError):
+        segment.attr_publish(exposure, 2, None, None, 1, types)
+    assert segment.attr_published(exposure) == 2
     box.close()

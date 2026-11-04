@@ -183,7 +183,8 @@ class Segment:
             [`publish`][sharedbox._native.Segment.publish].
         types
             Converts the values of kinds above 5, and gives the description
-            table the segment stores.
+            table the segment stores. The value of an attr field is a dict
+            with its `"value"` and, where it is settable, its `"setpoint"`.
         metadata
             The encoded document stored as metadata version 1.
         metadata_capacity
@@ -220,7 +221,10 @@ class Segment:
         """Remove the name, as `shm_unlink` does; a no-op on Windows."""
 
     def get(self, field: int, types: Types | None = None) -> object:
-        """Return the field's value; `(create_id, schema_hash, name)`, or None when empty, for a reference field."""
+        """Return the field's value; `(create_id, schema_hash, name)`, or None when empty, for a reference field.
+
+        An attr field gives a dict of its `value`, and its `setpoint` and `timestamp_ns` where it has them; the dict is empty for an attr without a value.
+        """
 
     def begin_write(
         self,
@@ -273,14 +277,17 @@ class Segment:
         """Return the field's version and value, read together."""
 
     def read_versioned(self, field: int) -> tuple[int, bytes]:
-        """Return the field's version and stored bytes, read together."""
+        """Return the field's version and stored bytes, read together.
+
+        For an attr field the bytes are those from its value part on.
+        """
 
     def get_dict(
         self, names: tuple[str | None, ...], types: Types | None = None
     ) -> dict[str, object]:
         """Return every field's value under its name in `names`, read at one point in time.
 
-        A field whose name is None, a call field, is left out.
+        A field whose name is None is left out.
         """
 
     def set(
@@ -304,13 +311,51 @@ class Segment:
         """
 
     def _read(self, field: int) -> bytes:
-        """Return the field's bytes, read consistently with concurrent writes; for tests."""
+        """Return the field's bytes, read consistently with concurrent writes; for tests.
+
+        For an attr field the bytes are those from its value part on.
+        """
 
     def _read_all(self) -> list[bytes]:
         """Return every field's bytes, read at one point in time; for tests."""
 
     def _write(self, values: Sequence[tuple[int, bytes]]) -> None:
         """Write several fields' bytes under one lock; for tests."""
+
+    def attr_publish(
+        self,
+        field: int,
+        parts: int,
+        value: object,
+        setpoint: object,
+        timestamp_ns: int,
+        types: Types,
+    ) -> None:
+        """Write the parts of attr field `field` that `parts` names in one write and count one publish.
+
+        `parts` is 1 for the value, 2 for the timestamp and 4 for the setpoint,
+        or-ed; the arguments of parts it does not name are ignored. Every named
+        part is encoded before the lock is taken. A value named without a
+        timestamp on a timed attr, or with the timestamp `-2**63`, is stamped
+        with the time of the write.
+
+        Raises
+        ------
+        TypeError
+            If a named value does not have the field's type.
+        ValueError
+            If a named value does not fit, or `parts` names no part, a part
+            the field lacks, or a timestamp without the value.
+        """
+
+    def attr_published(self, field: int) -> int:
+        """Return how many times attr field `field` was published.
+
+        Raises
+        ------
+        ValueError
+            If the field is not an attr with a value.
+        """
 
     def request_send(
         self, field: int, arguments: tuple[object, ...], types: Types

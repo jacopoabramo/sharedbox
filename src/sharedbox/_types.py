@@ -45,6 +45,7 @@ from ._arrays import (
     dtype_name,
     key,
 )
+from ._attr import Attr
 from ._native import NativeCollection, NativeDict, NativeSet
 from ._request import Call
 from ._timed import Timed
@@ -663,6 +664,10 @@ def dispatch(
         )
     if capacity is not None and not takes_capacity(hint, where, path):
         raise TypeError(f"{where}: Capacity does not apply to {hint!r}")
+    if hint is Attr or get_origin(hint) is Attr:
+        raise TypeError(
+            f"{where}: an Attr is a box field of its own, not part of another type"
+        )
     if hint is Call or get_origin(hint) is Call:
         raise TypeError(
             f"{where}: a Call is a box field of its own, not part of another type"
