@@ -8,12 +8,12 @@ from sharedbox import SharedBox, field, fields
 
 
 class Counter(SharedBox, name="example-counter"):
-    till: float = 0.0
+    count: int = 0
     opened: float = field(default_factory=time.time)
 
 
 with Counter() as counter:
-    print(counter.till, counter.opened > 0)  # 0.0 True
+    print(counter.count, counter.opened > 0)  # 0 True
 Counter.unlink()
 # --8<-- [end:defaults]
 
