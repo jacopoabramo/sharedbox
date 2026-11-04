@@ -435,15 +435,15 @@ cannot be stored, and no reader finds one in a value it reads.
 
 ### The request protocol
 
-An `attr` field with a request part carries requests from any process to
-the one process that serves the field, and carries the answers back. Each
-step that changes the field runs under the box's write lock, as a write
-does (see Sequence lock), so it moves the generation and the field's write
-count and wakes the waiters, and every existing wait notices it. A step that finds nothing to
-change gives the lock back with `seq` and the write count as they were and
-wakes nobody, because otherwise an idle server and the process watching it
-would wake each other forever. The steps, with the `handle` function of
-each:
+An `attr` field with a request part carries requests from any process to the
+one process that serves the field, and carries the answers back. Each step
+that changes the field runs under the box's write lock, as a write does (see
+Sequence lock), so it moves the generation and the field's write count and
+wakes the waiters, and every existing wait notices it. A step that finds
+nothing to change gives the lock back with `seq` and the write count as they
+were and wakes nobody, because otherwise an idle server and the process
+watching it would wake each other forever. The steps, with the `handle`
+function of each:
 
 1. Send (`request_send`) adds 1 to `sent`, stores the arguments and returns
    `sent` as the request's number. Numbers start at 1, and no two callers
@@ -1684,28 +1684,28 @@ The header also declares these names:
   takes the result at its exact size when `ok`, otherwise the error text.
   `request_answer_of` copies the result or the error text into `out`, which
   holds at least the larger of the result's size and 256 bytes, and
-  `request_reply::length` gives how many bytes it copied. Each gives `status::range` for a field that is not an `attr`
-  with a request part or for a span of the wrong size, and the steps that
-  take the lock give `status::lock_timeout` as `write` does.
+  `request_reply::length` gives how many bytes it copied. Each gives
+  `status::range` for a field that is not an `attr` with a request part or
+  for a span of the wrong size, and the steps that take the lock give
+  `status::lock_timeout` as `write` does.
 - `attr_publish` writes the parts of a field's value part that its `parts`
   argument names, a bit of `publish_value` (1), `publish_timestamp` (2) and
-  `publish_setpoint` (4) each, from `bytes`, which holds `[value_at, size)` of
-  the field with each part at its own offset. Under the write lock it copies
-  the named parts, stamps a value named without a timestamp, or with
+  `publish_setpoint` (4) each, from `bytes`, which holds `[value_at, size)`
+  of the field with each part at its own offset. Under the write lock it
+  copies the named parts, stamps a value named without a timestamp, or with
   `timed_mark` as its timestamp, on a timed `attr` with the system clock in
-  nanoseconds since the Unix epoch, adds 1 to
-  `published`, counts one write of the field and wakes the waiters. It gives
-  `status::range`, writing nothing, for a field that is not an `attr`, a part
-  the `attr` lacks, a timestamp named without the value, no part at all or
-  `bytes` of another size. `attr_read` copies the same `[value_at, size)`
-  range into `out` from one moment, without the lock, and gives
-  `status::range` for a field that is not an `attr` or has no value part, or
-  an `out` of another size. `attr_published` reads `published` alone the
-  same way, and gives `status::range` for the same fields. `attr_value_at`
-  gives the offset in the field where the value part starts, which is the
-  field's size minus the size of `attr_read`'s `out`, or
-  `detail::attr_absent` for a field that is not an `attr` or has no value
-  part.
+  nanoseconds since the Unix epoch, adds 1 to `published`, counts one write
+  of the field and wakes the waiters. It gives `status::range`, writing
+  nothing, for a field that is not an `attr`, a part the `attr` lacks, a
+  timestamp named without the value, no part at all or `bytes` of another
+  size. `attr_read` copies the same `[value_at, size)` range into `out` from
+  one moment, without the lock, and gives `status::range` for a field that
+  is not an `attr` or has no value part, or an `out` of another size.
+  `attr_published` reads `published` alone the same way, and gives
+  `status::range` for the same fields. `attr_value_at` gives the offset in
+  the field where the value part starts, which is the field's size minus the
+  size of `attr_read`'s `out`, or `detail::attr_absent` for a field that is
+  not an `attr` or has no value part.
 - Thread safety: every member function may be called from several threads
   on one handle. Destroying or moving a handle must not overlap another
   call on it.
