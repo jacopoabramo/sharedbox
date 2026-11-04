@@ -293,7 +293,7 @@ def test_a_numpy_type_with_no_kind_is_refused() -> None:
 
 
 class Delivery(SharedBox):
-    left_at: np.datetime64 = np.datetime64("NaT")
+    left_at: np.datetime64 = np.datetime64("NaT", "ns")
 
 
 def test_a_datetime64_field_stores_nanoseconds(unique_name: str) -> None:
