@@ -1580,7 +1580,10 @@ extension use.
 The header also declares these names:
 
 - `type_view` and `handle::field_type(index)`: a field's type, read from
-  its description. `handle::types_table()` returns the table's bytes.
+  its description. `handle::types_table()` returns the table's bytes. For
+  an `attr`, `attr_flags()` gives its flags byte, and `value_offset()`,
+  `timestamp_offset()` and `setpoint_offset()` give where each part starts
+  in the field, 0 for a part the `attr` lacks.
 - `time_value`, `datetime_value` and `timedelta_value`, with an
   `encode_*` and a `decode_*` function for each, and the same pair for
   `complex`, `date`, `uuid`, `flag` and enum and literal positions
@@ -1702,10 +1705,13 @@ The header also declares these names:
   one moment, without the lock, and gives `status::range` for a field that
   is not an `attr` or has no value part, or an `out` of another size.
   `attr_published` reads `published` alone the same way, and gives
-  `status::range` for the same fields. `attr_value_at` gives the offset in
-  the field where the value part starts, which is the field's size minus the
-  size of `attr_read`'s `out`, or `detail::attr_absent` for a field that is
-  not an `attr` or has no value part.
+  `status::range` for the same fields. When the bytes `attr_publish` or
+  `attr_read` copies are `large_copy` or more, it runs the wait hooks once
+  around the copy, as `write_large` and `read_large` do. `attr_value_at`
+  gives the offset in the field where the value part starts, which is the
+  field's size minus the size of `attr_read`'s `out`, or
+  `detail::attr_absent` for a field that is not an `attr` or has no value
+  part.
 - Thread safety: every member function may be called from several threads
   on one handle. Destroying or moving a handle must not overlap another
   call on it.
