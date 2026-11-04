@@ -21,13 +21,13 @@ the check and the copy, and make this process read or write outside the
 block. This mistake has a name, "time of check, time of use".[^toctou]
 
 To rule it out, a process that opens an existing block copies line 0 of the
-header and the field table once, checks those copies against the size of
-the mapping as the operating system reports it (`fstat` on Linux,
-`VirtualQuery` on Windows), and from then on uses only its own copies. The header's own `size` field must
-match the mapping size, but the mapping size comes from the OS, not from
-the block. The same idea applies to values arriving from Python: the
-native write checks the size of every value before it takes the write
-lock, so a bad value in a multi-field update changes nothing.
+header and the field table once, checks those copies against the size of the
+mapping as the operating system reports it (`fstat` on Linux, `VirtualQuery` on
+Windows), and from then on uses only its own copies. The header's own `size`
+field must match the mapping size, but the mapping size comes from the OS, not
+from the block. The same idea applies to values arriving from Python: the
+native write checks the size of every value before it takes the write lock, so
+a bad value in a multi-field update changes nothing.
 
 ## The write lock: a sequence counter
 

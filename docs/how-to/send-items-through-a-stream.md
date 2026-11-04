@@ -384,9 +384,10 @@ that way after a short delay.
 
 A child made by `fork` inherits the parent's ends, but they are closed in the
 child: using one raises [`StreamClosedError`][sharedbox.StreamClosedError].
-Open new ends in the child from the inherited stream instead. Do not connect callbacks to an inherited
-reader's events either: if the parent was delivering to callbacks when it
-forked, the child can block on the lock the parent's delivery thread held.
+Open new ends in the child from the inherited stream instead. Do not connect
+callbacks to an inherited reader's events either: if the parent was delivering
+to callbacks when it forked, the child can block on the lock the parent's
+delivery thread held.
 
 ??? example "The whole script"
 
