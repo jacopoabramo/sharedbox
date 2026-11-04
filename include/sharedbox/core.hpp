@@ -2811,6 +2811,19 @@ public:
     std::uint32_t member_offset(std::uint16_t i) const noexcept {
         return has_member(i) ? table_->member(node().members + i).offset : 0;
     }
+    // attr: the flags (attr_timed, attr_settable, attr_request); another kind gives 0.
+    std::uint8_t attr_flags() const noexcept { return is_attr() ? node().flags : 0; }
+    // attr: where the value starts, the timestamp of a timed attr and the setpoint of a settable one, each from
+    // the field's start; 0 for another kind or a part the attr lacks.
+    std::uint32_t value_offset() const noexcept { return has_value() ? member_offset(0) : 0; }
+    std::uint32_t timestamp_offset() const noexcept {
+        return has_value() && (node().flags & attr_timed) != 0
+                   ? detail::attr_timestamp_at(table_->member(node().members))
+                   : 0;
+    }
+    std::uint32_t setpoint_offset() const noexcept {
+        return is_attr() && node().setpoint_at != detail::attr_absent ? node().setpoint_at : 0;
+    }
     // enum, flag, record; another kind or index gives an empty name.
     std::string_view name(std::uint16_t i) const noexcept {
         const bool named = has(i, kind_enum, kind_flag) || has(i, kind_record, kind_record);
@@ -2841,6 +2854,8 @@ private:
     friend class stream;
     type_view(const detail::type_table *table, detail::type_ref ref) noexcept : table_(table), ref_(ref) {}
     const detail::type_node &node() const noexcept { return table_->node(ref_.node); }
+    bool is_attr() const noexcept { return described() && ref_.kind == kind_attr; }
+    bool has_value() const noexcept { return is_attr() && node().value_at != detail::attr_absent; }
     bool has_member(std::uint16_t i) const noexcept {
         return has(i, kind_optional, kind_dict) || has(i, kind_attr, kind_attr) || has(i, kind_timed, kind_timed);
     }

@@ -584,3 +584,38 @@ TEST_CASE("a small attr copy does not run the wait hooks") {
     CHECK((hooks_before == 0 && hooks_after == 0));
     static_cast<void>(unlink(name));
 }
+
+TEST_CASE("a type_view of an attr gives the flags and the offsets of its parts") {
+    struct shape {
+        table_builder table;
+        std::uint8_t flags;
+        std::uint32_t value, timestamp, setpoint;
+    };
+    const std::vector<shape> shapes = {
+        {attr({{kind_int, 8}}, {}, 0), 0, 8, 0, 0},
+        {attr({{kind_int, 8}}, {}, attr_timed), attr_timed, 8, 16, 0},
+        {int_request(), attr_request, 1184, 0, 0},
+        {attr({{kind_int, 8}}, {{kind_int, 8}}, attr_settable | attr_request), attr_settable | attr_request, 1184,
+         0, 1192},
+        {everything(), 7, 1184, 1192, 1200},
+        {attr(std::nullopt, {}, attr_request), attr_request, 0, 0, 0},
+    };
+    for (const shape &s : shapes) {
+        INFO("flags ", int{s.flags});
+        const std::string name = unique("attr-view");
+        handle box = make(name, s.table);
+        const type_view view = box.field_type(0);
+        CHECK((view.attr_flags() == s.flags && view.value_offset() == s.value &&
+               view.timestamp_offset() == s.timestamp && view.setpoint_offset() == s.setpoint));
+        static_cast<void>(unlink(name));
+    }
+
+    const std::string name = unique("attr-view-int");
+    const field_spec fields[1] = {{0, 8, kind_int}};
+    auto box = handle::create(name, fields, 8, 1, 4, {}, {});
+    REQUIRE(box.has_value());
+    const type_view view = box->field_type(0);
+    CHECK((view.attr_flags() == 0 && view.value_offset() == 0 && view.timestamp_offset() == 0 &&
+           view.setpoint_offset() == 0));
+    static_cast<void>(unlink(name));
+}
