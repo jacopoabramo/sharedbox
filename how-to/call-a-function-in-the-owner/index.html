@@ -3448,7 +3448,7 @@ and the result type after it, or <code>None</code> when the call returns nothing
 <div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">asyncio</span>
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">import</span><span class="w"> </span><span class="nn">threading</span>
 </span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
-</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sharedbox</span><span class="w"> </span><span class="kn">import</span> <span class="n">Call</span><span class="p">,</span> <span class="n">CallError</span><span class="p">,</span> <span class="n">CallSupersededError</span><span class="p">,</span> <span class="n">SharedBox</span><span class="p">,</span> <span class="n">call</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sharedbox</span><span class="w"> </span><span class="kn">import</span> <span class="n">Call</span><span class="p">,</span> <span class="n">RequestError</span><span class="p">,</span> <span class="n">RequestSupersededError</span><span class="p">,</span> <span class="n">SharedBox</span><span class="p">,</span> <span class="n">call</span>
 </span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>
 </span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>
 </span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="k">class</span><span class="w"> </span><span class="nc">Scanner</span><span class="p">(</span><span class="n">SharedBox</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">"example-scanner"</span><span class="p">):</span>
@@ -3459,10 +3459,11 @@ and the result type after it, or <code>None</code> when the call returns nothing
 <p>A call field holds no value, so you give it <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-function&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;call&lt;/span&gt;" href="../../reference/api/box/#sharedbox.call"><code>call()</code></a>
 and the box's constructor has no parameter for it. Without <code>call()</code>, type
 checkers count the field as a constructor parameter and flag <code>Scanner()</code> as
-missing an argument. Reading <code>scanner.move</code> gives the call itself, and assigning to it,
-<code>update</code>, <code>watch</code> and <code>events</code> refuse it with <code>TypeError</code>. The arguments and
-the result may be any type a record member may be, except a
-<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;Timed&lt;/span&gt;" href="../../reference/api/box/#sharedbox.Timed"><code>Timed</code></a>, another <code>Call</code> or a reference to a box.</p>
+missing an argument. Reading <code>scanner.move</code> gives the call itself, and
+assigning to it, <code>update</code>, <code>watch</code> and <code>events</code> refuse it with
+<code>TypeError</code>. The arguments and the result may be any type a record member
+may be, except a <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;Timed&lt;/span&gt;" href="../../reference/api/box/#sharedbox.Timed"><code>Timed</code></a>, another <code>Call</code> or a
+reference to a box.</p>
 <h2 id="2-serve-it">2. Serve it<a class="headerlink" href="#2-serve-it" title="Permanent link">&para;</a></h2>
 <p>The process that owns the device registers a handler with
 <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;serve&lt;/span&gt;" href="../../reference/api/box/#sharedbox.Call.serve"><code>serve</code></a>:</p>
@@ -3490,19 +3491,20 @@ hold up what <a class="autorefs autorefs-internal" title="&lt;code class=&quot;d
 you call <code>serve</code>, and calling <code>serve</code> with one outside a running loop
 raises <code>RuntimeError</code>. Only one process serves a field at a time: a second
 <code>serve</code> while a live process serves it, this one included, raises
-<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;CallServedError&lt;/span&gt;" href="../../reference/api/errors/#sharedbox.CallServedError"><code>CallServedError</code></a>.</p>
-<p><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;stop&lt;/span&gt;" href="../../reference/api/box/#sharedbox.CallServer.stop"><code>CallServer.stop</code></a> stops serving and frees the
-field for another server. It waits for a running plain handler to finish
-and answer first, and it asks a running <code>async def</code> handler to cancel,
-whose caller then gets <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;CallError&lt;/span&gt;" href="../../reference/api/errors/#sharedbox.CallError"><code>CallError</code></a>. Closing the box
-stops every server it started, and so does garbage collection of the box
-or the end of the process, but these free the field at once: a request
-whose handler is still running fails with <code>CallError</code> saying the server
-stopped, and only then does the close wait for a plain handler's thread.</p>
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;AlreadyServedError&lt;/span&gt;" href="../../reference/api/errors/#sharedbox.AlreadyServedError"><code>AlreadyServedError</code></a>.</p>
+<p><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;stop&lt;/span&gt;" href="../../reference/api/box/#sharedbox.RequestServer.stop"><code>RequestServer.stop</code></a> stops serving and
+frees the field for another server. It waits for a running plain handler
+to finish and answer first, and it asks a running <code>async def</code> handler to
+cancel, whose caller then gets <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;RequestError&lt;/span&gt;" href="../../reference/api/errors/#sharedbox.RequestError"><code>RequestError</code></a>.
+Closing the box stops every server it started, and so does garbage
+collection of the box or the end of the process, but these free the field
+at once: a request whose handler is still running fails with
+<code>RequestError</code> saying the server stopped, and only then does the close
+wait for a plain handler's thread.</p>
 <h2 id="3-call-it">3. Call it<a class="headerlink" href="#3-call-it" title="Permanent link">&para;</a></h2>
 <p>Calling the field sends the request at once and returns a
-<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;CallFuture&lt;/span&gt;" href="../../reference/api/box/#sharedbox.CallFuture"><code>CallFuture</code></a>, which you wait on with <code>result</code> in
-any thread or <code>await</code> in a running event loop:</p>
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;RequestFuture&lt;/span&gt;" href="../../reference/api/box/#sharedbox.RequestFuture"><code>RequestFuture</code></a>, which you wait on with
+<code>result</code> in any thread or <code>await</code> in a running event loop:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nb">print</span><span class="p">(</span><span class="n">scanner</span><span class="o">.</span><span class="n">move</span><span class="p">(</span><span class="mf">5.0</span><span class="p">)</span><span class="o">.</span><span class="n">result</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="mi">5</span><span class="p">))</span>  <span class="c1"># 5.0</span>
 </span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>
 </span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>
@@ -3520,11 +3522,11 @@ field waits until a server starts.</p>
 <h2 id="4-handle-a-failed-call">4. Handle a failed call<a class="headerlink" href="#4-handle-a-failed-call" title="Permanent link">&para;</a></h2>
 <p>An exception the handler raises is logged to the <code>sharedbox</code> logger in the
 serving process, with its traceback, and reaches the caller as
-<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;CallError&lt;/span&gt;" href="../../reference/api/errors/#sharedbox.CallError"><code>CallError</code></a>, with the exception's type and message
-cut to 256 bytes:</p>
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;RequestError&lt;/span&gt;" href="../../reference/api/errors/#sharedbox.RequestError"><code>RequestError</code></a>, with the exception's type and
+message cut to 256 bytes:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="k">try</span><span class="p">:</span>
 </span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>    <span class="n">scanner</span><span class="o">.</span><span class="n">move</span><span class="p">(</span><span class="mf">250.0</span><span class="p">)</span><span class="o">.</span><span class="n">result</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="mi">5</span><span class="p">)</span>
-</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="k">except</span> <span class="n">CallError</span> <span class="k">as</span> <span class="n">error</span><span class="p">:</span>
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="k">except</span> <span class="n">RequestError</span> <span class="k">as</span> <span class="n">error</span><span class="p">:</span>
 </span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">error</span><span class="p">)</span>  <span class="c1"># Scanner.move: ValueError: 250.0 is out of range</span>
 </span></code></pre></div>
 <p>A caller waiting on a server whose process ends gets
@@ -3535,7 +3537,7 @@ can't come.</p>
 <h2 id="5-expect-the-latest-request-to-win">5. Expect the latest request to win<a class="headerlink" href="#5-expect-the-latest-request-to-win" title="Permanent link">&para;</a></h2>
 <p>The handler handles one request at a time. Of the requests sent while it
 runs, only the newest is handled next, and each one before it raises
-<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;CallSupersededError&lt;/span&gt;" href="../../reference/api/errors/#sharedbox.CallSupersededError"><code>CallSupersededError</code></a> in its caller. A
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;RequestSupersededError&lt;/span&gt;" href="../../reference/api/errors/#sharedbox.RequestSupersededError"><code>RequestSupersededError</code></a> in its caller. A
 motor told to go to 2 and then to 3 while it is still moving goes to 3:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">started</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Event</span><span class="p">()</span>
 </span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="n">release</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Event</span><span class="p">()</span>
@@ -3556,7 +3558,7 @@ motor told to go to 2 and then to 3 while it is still moving goes to 3:</p>
 </span><span id="__span-4-17"><a id="__codelineno-4-17" name="__codelineno-4-17" href="#__codelineno-4-17"></a><span class="nb">print</span><span class="p">(</span><span class="n">first</span><span class="o">.</span><span class="n">result</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="mi">5</span><span class="p">),</span> <span class="n">third</span><span class="o">.</span><span class="n">result</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="mi">5</span><span class="p">))</span>  <span class="c1"># 1.0 3.0</span>
 </span><span id="__span-4-18"><a id="__codelineno-4-18" name="__codelineno-4-18" href="#__codelineno-4-18"></a><span class="k">try</span><span class="p">:</span>
 </span><span id="__span-4-19"><a id="__codelineno-4-19" name="__codelineno-4-19" href="#__codelineno-4-19"></a>    <span class="n">second</span><span class="o">.</span><span class="n">result</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="mi">5</span><span class="p">)</span>
-</span><span id="__span-4-20"><a id="__codelineno-4-20" name="__codelineno-4-20" href="#__codelineno-4-20"></a><span class="k">except</span> <span class="n">CallSupersededError</span><span class="p">:</span>
+</span><span id="__span-4-20"><a id="__codelineno-4-20" name="__codelineno-4-20" href="#__codelineno-4-20"></a><span class="k">except</span> <span class="n">RequestSupersededError</span><span class="p">:</span>
 </span><span id="__span-4-21"><a id="__codelineno-4-21" name="__codelineno-4-21" href="#__codelineno-4-21"></a>    <span class="nb">print</span><span class="p">(</span><span class="s2">"the second request was superseded"</span><span class="p">)</span>
 </span></code></pre></div>
 <p>If every request has to run, wait for each answer before sending the next.</p>
@@ -3567,7 +3569,7 @@ motor told to go to 2 and then to 3 while it is still moving goes to 3:</p>
 </span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="kn">import</span><span class="w"> </span><span class="nn">asyncio</span>
 </span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="kn">import</span><span class="w"> </span><span class="nn">threading</span>
 </span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>
-</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sharedbox</span><span class="w"> </span><span class="kn">import</span> <span class="n">Call</span><span class="p">,</span> <span class="n">CallError</span><span class="p">,</span> <span class="n">CallSupersededError</span><span class="p">,</span> <span class="n">SharedBox</span><span class="p">,</span> <span class="n">call</span>
+</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sharedbox</span><span class="w"> </span><span class="kn">import</span> <span class="n">Call</span><span class="p">,</span> <span class="n">RequestError</span><span class="p">,</span> <span class="n">RequestSupersededError</span><span class="p">,</span> <span class="n">SharedBox</span><span class="p">,</span> <span class="n">call</span>
 </span><span id="__span-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>
 </span><span id="__span-5-8"><a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>
 </span><span id="__span-5-9"><a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="k">class</span><span class="w"> </span><span class="nc">Scanner</span><span class="p">(</span><span class="n">SharedBox</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">"example-scanner"</span><span class="p">):</span>
@@ -3600,7 +3602,7 @@ motor told to go to 2 and then to 3 while it is still moving goes to 3:</p>
 </span><span id="__span-5-36"><a id="__codelineno-5-36" name="__codelineno-5-36" href="#__codelineno-5-36"></a>
 </span><span id="__span-5-37"><a id="__codelineno-5-37" name="__codelineno-5-37" href="#__codelineno-5-37"></a><span class="k">try</span><span class="p">:</span>
 </span><span id="__span-5-38"><a id="__codelineno-5-38" name="__codelineno-5-38" href="#__codelineno-5-38"></a>    <span class="n">scanner</span><span class="o">.</span><span class="n">move</span><span class="p">(</span><span class="mf">250.0</span><span class="p">)</span><span class="o">.</span><span class="n">result</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="mi">5</span><span class="p">)</span>
-</span><span id="__span-5-39"><a id="__codelineno-5-39" name="__codelineno-5-39" href="#__codelineno-5-39"></a><span class="k">except</span> <span class="n">CallError</span> <span class="k">as</span> <span class="n">error</span><span class="p">:</span>
+</span><span id="__span-5-39"><a id="__codelineno-5-39" name="__codelineno-5-39" href="#__codelineno-5-39"></a><span class="k">except</span> <span class="n">RequestError</span> <span class="k">as</span> <span class="n">error</span><span class="p">:</span>
 </span><span id="__span-5-40"><a id="__codelineno-5-40" name="__codelineno-5-40" href="#__codelineno-5-40"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">error</span><span class="p">)</span>  <span class="c1"># Scanner.move: ValueError: 250.0 is out of range</span>
 </span><span id="__span-5-41"><a id="__codelineno-5-41" name="__codelineno-5-41" href="#__codelineno-5-41"></a>
 </span><span id="__span-5-42"><a id="__codelineno-5-42" name="__codelineno-5-42" href="#__codelineno-5-42"></a><span class="n">server</span><span class="o">.</span><span class="n">stop</span><span class="p">()</span>
@@ -3624,7 +3626,7 @@ motor told to go to 2 and then to 3 while it is still moving goes to 3:</p>
 </span><span id="__span-5-60"><a id="__codelineno-5-60" name="__codelineno-5-60" href="#__codelineno-5-60"></a><span class="nb">print</span><span class="p">(</span><span class="n">first</span><span class="o">.</span><span class="n">result</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="mi">5</span><span class="p">),</span> <span class="n">third</span><span class="o">.</span><span class="n">result</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="mi">5</span><span class="p">))</span>  <span class="c1"># 1.0 3.0</span>
 </span><span id="__span-5-61"><a id="__codelineno-5-61" name="__codelineno-5-61" href="#__codelineno-5-61"></a><span class="k">try</span><span class="p">:</span>
 </span><span id="__span-5-62"><a id="__codelineno-5-62" name="__codelineno-5-62" href="#__codelineno-5-62"></a>    <span class="n">second</span><span class="o">.</span><span class="n">result</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="mi">5</span><span class="p">)</span>
-</span><span id="__span-5-63"><a id="__codelineno-5-63" name="__codelineno-5-63" href="#__codelineno-5-63"></a><span class="k">except</span> <span class="n">CallSupersededError</span><span class="p">:</span>
+</span><span id="__span-5-63"><a id="__codelineno-5-63" name="__codelineno-5-63" href="#__codelineno-5-63"></a><span class="k">except</span> <span class="n">RequestSupersededError</span><span class="p">:</span>
 </span><span id="__span-5-64"><a id="__codelineno-5-64" name="__codelineno-5-64" href="#__codelineno-5-64"></a>    <span class="nb">print</span><span class="p">(</span><span class="s2">"the second request was superseded"</span><span class="p">)</span>
 </span><span id="__span-5-65"><a id="__codelineno-5-65" name="__codelineno-5-65" href="#__codelineno-5-65"></a>
 </span><span id="__span-5-66"><a id="__codelineno-5-66" name="__codelineno-5-66" href="#__codelineno-5-66"></a><span class="n">server</span><span class="o">.</span><span class="n">stop</span><span class="p">()</span>
