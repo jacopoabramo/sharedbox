@@ -9,6 +9,63 @@ Dates are marked as `DD-MM-YYYY`
 
 <!-- towncrier release notes start -->
 
+## [0.9.0](https://github.com/jacopoabramo/sharedbox/releases/tag/v0.9.0) - 04-11-2026
+
+### Added
+
+- `segment_status`: `segment_status("lab:counts")` returns a `SegmentStatus`,
+  `missing` when no box or stream is published under the name, `running` while the
+  process that created it runs and `creator_exited` once it has ended.
+  `core.hpp` adds `segment_status` and `segment_state` for C++. ([#94](https://github.com/jacopoabramo/sharedbox/pull/94))
+- `SharedReceiveStream.fetch`, `fetch_into` and `fetch_future`: `reader.fetch(120)`
+  returns the item at position 120, waiting until the sender has sent it, and
+  leaves the reader's receive cursor and `missed` unchanged. `ItemGoneError`, a
+  `LookupError` whose `oldest` is the oldest position the ring held, is raised
+  once the ring no longer holds the item. `stream.hpp` adds
+  `stream_reader::fetch` and `fetch_with` for C++. ([#95](https://github.com/jacopoabramo/sharedbox/pull/95))
+- `MaxShape` on box fields: a box field declared as
+  `Annotated[npt.NDArray[np.uint16], MaxShape((2048, 2048))]` holds an array of
+  any shape up to that maximum, as kind 75 of box layout 3.3, and every read
+  returns an array of the stored shape. A write stores the shape and only the
+  elements in use. `SharedBox.writing` takes `shape`, so
+  `box.writing("image", shape=(480, 640))` sets the shape and yields a view of
+  it under one lock. `read_into` raises `TypeError` for a `MaxShape` field. ([#97](https://github.com/jacopoabramo/sharedbox/pull/97))
+- `BoundedList`, `BoundedSet` and `BoundedDict` take their element types as the
+  first arguments when the class fixes none: `BoundedList(int, [1, 2], capacity=4)`
+  equals `BoundedList[int]([1, 2], capacity=4)`, and
+  `BoundedDict(str, float, {"a": 1.0}, capacity=8)` takes the key and value types. ([#97](https://github.com/jacopoabramo/sharedbox/pull/97))
+- `Timed` and `Timed.now`: a box field, record member, collection element or
+  stream item declared as `Timed[float]` stores the value with a timestamp in
+  nanoseconds since the Unix epoch, and `box.temperature = Timed.now(21.5)` stamps
+  it with the system clock when the write holds the box's lock, or just before a
+  stream send publishes the item. A `Timed` with a timestamp of its own is stored as
+  given. Timed values are kind 77, and streams use stream layout 1.5. ([#99](https://github.com/jacopoabramo/sharedbox/pull/99))
+- `Attr`, `attr`, `AttrValue`, `RequestFuture` and `RequestServer`: a box
+  field declared as `exposure: Attr[float] = attr(timed=True, settable=True)`
+  holds a value its owner writes with
+  `box.exposure.publish(value=..., setpoint=...)` and any process reads with
+  `.value`, `.setpoint`, `.timestamp_ns` or `read()`, or watches with
+  `watch` and `events`. An attribute with arguments, such as
+  `move: Attr[float, [float]] = attr()`, or a settable one carries a typed
+  request to the one process that serves it: `box.move.serve(handler)`
+  answers with a sync or async handler, and `box.move(5.0)` or
+  `box.exposure.set(0.02)` returns a `RequestFuture` waited on with
+  `.result(timeout)` or `await`. Of the requests sent while the handler
+  runs, only the newest is handled next. `RequestError`,
+  `RequestSupersededError` and `ServerExitedError` report a failed, replaced
+  or abandoned request, and `AlreadyServedError` a second server. Attribute
+  fields are kind 76 of box layout 3.3, and `box.hpp` adds `attr_publish`,
+  `attr_read`, `attr_published`, `attr_value_at` and the request protocol
+  steps on `handle` for C++, and `type_view` gives an attribute's flags and
+  where its value, timestamp and setpoint start. ([#103](https://github.com/jacopoabramo/sharedbox/pull/103))
+
+### Fixed
+
+- On Windows, an operating system failure to create or open a box or stream raises
+  `OSError` with the Windows error code in `winerror`, such as `PermissionError`
+  for a segment the process may not open, instead of `RuntimeError`. ([#96](https://github.com/jacopoabramo/sharedbox/pull/96))
+
+
 ## [0.8.0](https://github.com/jacopoabramo/sharedbox/releases/tag/v0.8.0) - 30-10-2026
 
 ### Breaking
