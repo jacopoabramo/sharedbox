@@ -97,6 +97,7 @@ CODES: Final[dict[str, int]] = {
     "array": 74,
     "max_array": 75,
     "call": 76,
+    "attr": 76,
     "timed": 77,
 }
 PREFIXED: Final[frozenset[str]] = frozenset({"str", "bytes", "decimal"})
@@ -167,6 +168,8 @@ class TypeSpec:
     """Description bytes between the head and the entries."""
     after: bytes = b""
     """Description bytes after the entries."""
+    flags: int = 0
+    """The head's flags byte: for an `attr`, `ATTR_TIMED`, `ATTR_SETTABLE` and `ATTR_REQUEST` or-ed."""
     info: tuple[Any, ...] = ()
     """What the native module needs to convert values of a described type."""
     match: tuple[type, ...] = ()
@@ -886,7 +889,7 @@ def misplaced_max_array(spec: TypeSpec) -> bool:
     match spec.kind:
         case "max_array":
             return False
-        case "record" | "tuple" | "timed" | "call":
+        case "record" | "tuple" | "timed" | "attr" | "call":
             return any(misplaced_max_array(m.type) for m in spec.members)
         case _:
             return any(reaches_max_array(m.type) for m in spec.members)
@@ -1175,14 +1178,114 @@ def timed_spec(hint: Any, where: str, depth: int, path: frozenset[int]) -> TypeS
     )
 
 
-CALL_ARGUMENTS_AT: Final[int] = 48
-CALL_ANSWERS: Final[int] = 4
-CALL_ANSWER_HEAD: Final[int] = 272
-MAX_CALL_MEMBERS: Final[int] = 256
+ATTR_TIMED: Final[int] = 1
+ATTR_SETTABLE: Final[int] = 2
+ATTR_REQUEST: Final[int] = 4
+REQUEST_ARGUMENTS_AT: Final[int] = 48
+REQUEST_ANSWERS: Final[int] = 4
+REQUEST_ANSWER_HEAD: Final[int] = 272
+MAX_ATTR_MEMBERS: Final[int] = 256
+
+
+def attr_spec(
+    value: Any,
+    arguments: tuple[Any, ...],
+    where: str,
+    path: frozenset[int],
+    *,
+    timed: bool,
+    settable: bool,
+    request: bool,
+) -> TypeSpec:
+    """Return how an attribute is stored: a request part, a value part and a setpoint, as the flags say.
+
+    The members are the value type `T` when `value` is not `None`, then the
+    arguments. The request part holds a request line, a server's identity,
+    the arguments and a ring of answers; the value part a count of
+    publishes, `T` and a timestamp if `timed`; the setpoint a `T`.
+
+    Raises
+    ------
+    TypeError
+        If the value or an argument is a reference or holds a `Timed`, or
+        the field would take 4 GiB or more.
+    """
+    below = deeper(1, where)
+    argument_specs = [
+        parse(arg, f"{where}[{i}]", depth=below, path=path)
+        for i, arg in enumerate(arguments)
+    ]
+    has_value = value is not None and value is not NoneType
+    value_spec = parse(value, where, depth=below, path=path) if has_value else None
+    specs = [*argument_specs, *([value_spec] if value_spec else [])]
+    if len(specs) > MAX_ATTR_MEMBERS:
+        raise TypeError(
+            f"{where}: an attribute holds at most {MAX_ATTR_MEMBERS} arguments and values, not {len(specs)}"
+        )
+    for spec in specs:
+        if reaches_timed(spec):
+            raise TypeError(
+                f"{where}: the value and arguments of an attribute hold no Timed"
+            )
+    value_alignment = max(8, value_spec.alignment) if value_spec else 8
+    alignment = value_alignment
+    argument_members: list[Member] = []
+    end = REQUEST_ARGUMENTS_AT
+    for spec in argument_specs:
+        at = round_up(end, spec.alignment)
+        argument_members.append(Member(at, spec))
+        end = at + spec.size
+        if request:
+            alignment = max(alignment, spec.alignment)
+    request_end = 0
+    if request:
+        answers = round_up(end, value_alignment)
+        result_at = (
+            round_up(REQUEST_ANSWER_HEAD, value_spec.alignment)
+            if value_spec
+            else REQUEST_ANSWER_HEAD
+        )
+        stride = round_up(
+            result_at + (value_spec.size if value_spec else 0), value_alignment
+        )
+        request_end = answers + REQUEST_ANSWERS * stride
+    members: list[Member] = []
+    last_end = request_end
+    if value_spec:
+        value_at = round_up(request_end, value_alignment)
+        at = round_up(value_at + 8, value_spec.alignment)
+        members.append(Member(at, value_spec))
+        last_end = at + (round_up(value_spec.size, 8) + 8 if timed else value_spec.size)
+        if settable:
+            last_end = round_up(last_end, value_spec.alignment) + value_spec.size
+    members += argument_members
+    size = round_up(last_end, alignment)
+    if size >= 1 << 32:
+        raise TypeError(
+            f"{where}: the attribute takes {size} bytes; a record holds less than 4 GiB"
+        )
+    flags = ATTR_TIMED * timed | ATTR_SETTABLE * settable | ATTR_REQUEST * request
+    names = [
+        name
+        for name, on in (("timed", timed), ("settable", settable), ("request", request))
+        if on
+    ]
+    return TypeSpec(
+        "attr",
+        size,
+        alignment,
+        f"attr({','.join(names)};{value_spec.text if value_spec else 'none'};{','.join(spec.text for spec in argument_specs)})",
+        members=tuple(members),
+        count=len(members),
+        before=struct.pack("<H6x", len(arguments)),
+        flags=flags,
+        hashable=False,
+        reusable=False,
+    )
 
 
 def call_spec(hint: Any, where: str, path: frozenset[int]) -> TypeSpec:
-    """Return how a `Call[[A, ...], R]` is stored: a request line, a server's identity and a ring of answers.
+    """Return how a `Call[[A, ...], R]` is stored: an `attr` with a request part only.
 
     Raises
     ------
@@ -1196,59 +1299,22 @@ def call_spec(hint: Any, where: str, path: frozenset[int]) -> TypeSpec:
             f"{where}: Call takes a list of argument types, as Call[[float], float]"
         )
     arguments, result = args
-    below = deeper(1, where)
-    specs = [
-        parse(arg, f"{where}[{i}]", depth=below, path=path)
-        for i, arg in enumerate(arguments)
-    ]
+    spec = attr_spec(
+        result,
+        tuple(arguments),
+        where,
+        path,
+        timed=False,
+        settable=False,
+        request=True,
+    )
     has_result = result is not None and result is not NoneType
-    if has_result:
-        specs.append(parse(result, where, depth=below, path=path))
-    if len(specs) > MAX_CALL_MEMBERS:
-        raise TypeError(
-            f"{where}: a Call holds at most {MAX_CALL_MEMBERS} arguments and results, not {len(specs)}"
-        )
-    for spec in specs:
-        if reaches_timed(spec):
-            raise TypeError(
-                f"{where}: the arguments and result of a Call hold no Timed"
-            )
-    count = len(arguments)
-    result_spec = specs[count] if has_result else None
-    result_alignment = max(8, result_spec.alignment) if result_spec else 8
-    members: list[Member] = []
-    end = CALL_ARGUMENTS_AT
-    for spec in specs[:count]:
-        at = round_up(end, spec.alignment)
-        members.append(Member(at, spec))
-        end = at + spec.size
-    answers = round_up(end, result_alignment)
-    result_at = (
-        round_up(CALL_ANSWER_HEAD, result_spec.alignment)
-        if result_spec
-        else CALL_ANSWER_HEAD
+    result_text = spec.members[0].type.text if has_result else "None"
+    argument_texts = ",".join(
+        m.type.text for m in spec.members[1 if has_result else 0 :]
     )
-    stride = round_up(
-        result_at + (result_spec.size if result_spec else 0), result_alignment
-    )
-    if result_spec:
-        members.append(Member(result_at, result_spec))
-    alignment = max([8, result_alignment, *(spec.alignment for spec in specs[:count])])
-    size = round_up(answers + CALL_ANSWERS * stride, alignment)
-    if size >= 1 << 32:
-        raise TypeError(
-            f"{where}: the Call takes {size} bytes; a record holds less than 4 GiB"
-        )
-    return TypeSpec(
-        "call",
-        size,
-        alignment,
-        f"call({','.join(spec.text for spec in specs[:count])}->{result_spec.text if result_spec else 'None'})",
-        members=tuple(members),
-        count=len(members),
-        before=struct.pack("<HB5x", count, has_result),
-        hashable=False,
-        reusable=False,
+    return dataclasses.replace(
+        spec, kind="call", text=f"call({argument_texts}->{result_text})"
     )
 
 
@@ -1627,7 +1693,7 @@ class Table:
         entries = b"".join(self.entry(m.type, m.offset) for m in spec.members)
         body = b"".join(
             [
-                struct.pack("<BBHI", spec.code, 0, spec.count, spec.size),
+                struct.pack("<BBHI", spec.code, spec.flags, spec.count, spec.size),
                 spec.before,
                 entries,
                 spec.after,

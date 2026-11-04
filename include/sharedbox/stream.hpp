@@ -243,7 +243,7 @@ inline status bind_stream(stream_state &s, os_mapping &&map, const stream_header
     if (const status rc = s.types.parse({bytes + h.types, h.types_size}, {&entry, 1}, true); rc != status::ok)
         return rc;
     const type_ref &item = s.types.field(0);
-    if (!kind_known(item.kind) || item.kind == kind_call ||
+    if (!kind_known(item.kind) || item.kind == kind_attr ||
         round_up(item_start(item.alignment) + item.size, 64) != h.slot_size)
         return status::corrupt;
     metadata_line line{};
@@ -640,7 +640,7 @@ inline result<stream> stream::create(std::string_view name, std::span<const std:
     if (const status rc = parsed.parse(types, {&item_entry, 1}, true); rc != status::ok)
         return unexpected(rc == status::os ? status::os : status::range);
     const detail::type_ref &item = parsed.field(0);
-    if (!detail::kind_known(item.kind) || item.kind == kind_call)
+    if (!detail::kind_known(item.kind) || item.kind == kind_attr)
         return unexpected(status::range);
     const std::uint64_t slot_size = detail::round_up(detail::item_start(item.alignment) + item.size, 64);
     const auto types_size = static_cast<std::uint32_t>(types.size());
