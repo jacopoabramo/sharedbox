@@ -134,18 +134,17 @@ member.
 
 ## numpy numbers
 
-An `int`, `float`, `complex` or `bool` field also takes `numpy`'s scalars,
-and reads
-back the type it declares, so `numpy.uint16(7)` written to an `int` field
+An `int`, `float`, `complex` or `bool` field also takes `numpy`'s scalars, and
+reads back the type it declares, so `numpy.uint16(7)` written to an `int` field
 reads back as the `int` 7. A field can declare a `numpy` type too: the
-fixed-width integers from `int8` to `uint64`, `float16`, `float32`,
-`complex64` and `datetime64` each take the bytes of their width, and read
-back as that `numpy` type. `numpy.int64`, `numpy.float64`,
-`numpy.complex128` and `numpy.bool_` store the same bytes as `int`,
-`float`, `complex` and `bool`, so two classes with the same
-[identity](glossary.md#identity), one declaring `int` and the other
-`numpy.int64`, attach to the same box, and each reads its own type. [How to store numpy numbers](../how-to/store-numpy-numbers.md) shows
-each of them.
+fixed-width integers from `int8` to `uint64`, `float16`, `float32`, `complex64`
+and `datetime64` each take the bytes of their width, and read back as that
+`numpy` type. `numpy.int64`, `numpy.float64`, `numpy.complex128` and
+`numpy.bool_` store the same bytes as `int`, `float`, `complex` and `bool`, so
+two classes with the same [identity](glossary.md#identity), one declaring `int`
+and the other `numpy.int64`, attach to the same box, and each reads its own
+type. [How to store numpy numbers](../how-to/store-numpy-numbers.md) shows each
+of them.
 
 ## When a field counts as changed
 

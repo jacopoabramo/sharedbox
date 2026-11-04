@@ -78,10 +78,11 @@ the change as soon as the carrier makes it.
 ## Documentation
 
 The [documentation site](https://jacopoabramo.github.io/sharedbox) starts
-with three tutorials, then has how-to guides, among them
-[sending items through a stream](https://jacopoabramo.github.io/sharedbox/how-to/send-items-through-a-stream/),
-explanations of how a box works, and the API reference. C and C++ code can use a box too, either
-handed over from Python or opened by name; the
+with three tutorials, then has how-to guides for single tasks, such as
+[sending items through a stream](https://jacopoabramo.github.io/sharedbox/how-to/send-items-through-a-stream/).
+After them come explanations of how a box works and the API reference. C
+and C++ code can use a box too, either handed over from Python or opened by
+name; the
 [C and C++ guides](https://jacopoabramo.github.io/sharedbox/how-to/accept-a-box-in-cpp/)
 show how.
 

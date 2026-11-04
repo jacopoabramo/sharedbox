@@ -10,12 +10,12 @@ and write, which is a [box](glossary.md#box), and a flow of items that each
 reader receives once, which is a [stream](glossary.md#stream). Both work
 without a server and without pickling.
 
-Should you use a box, or would something simpler do? A box is made for
-sharing a record between processes, and that has a price: every write turns the value into bytes in shared memory,
-and a read turns the bytes back into a value unless the value can't be
-changed and an earlier read built it since the last write. That costs some
-tens to hundreds of nanoseconds, and a value you can change comes back as a
-copy.
+Should you use a box, or would something simpler do? A box is made for sharing
+a record between processes, and that has a price: every write turns the value
+into bytes in shared memory, and a read turns the bytes back into a value
+unless the value can't be changed and an earlier read built it since the last
+write. That costs some tens to hundreds of nanoseconds, and a value you can
+change comes back as a copy.
 
 If all your code runs in threads of one process, you don't need to pay
 that price: threads can share ordinary Python objects, which is several

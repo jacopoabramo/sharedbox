@@ -5,9 +5,10 @@ icon: lucide/play
 # Sharing a record between processes
 
 In this tutorial you build a small script in which two processes share one
-record, a mailbox: the first creates it, the second plays the mail carrier
-and changes a value in it, and the first reads the change. Such a record is a [box](../explanation/glossary.md#box), and on the way
-you meet the three calls you will use most: `create`, `attach` and `close`.
+record, a mailbox: the first creates it, the second plays the mail carrier and
+changes a value in it, and the first reads the change. Such a record is a
+[box](../explanation/glossary.md#box), and on the way you meet the three calls
+you will use most: `create`, `attach` and `close`.
 
 ## Before you start
 

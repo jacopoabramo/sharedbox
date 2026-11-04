@@ -178,11 +178,11 @@ static PyObject *run(PyObject *, PyObject *parcel) {
 }
 ```
 
-`from_capsule` checks the segment the handle points to, just as an attach
-does, including its kind and its layout version. If the check passes, `box` takes over the capsule's handle and
-releases it when `box` is destroyed. If it fails, the capsule keeps its
-handle and releases it when the capsule is garbage collected, so nothing
-leaks either way.
+`from_capsule` checks the segment the handle points to, just as an attach does,
+including its kind and its layout version. If the check passes, `box` takes
+over the capsule's handle and releases it when `box` is destroyed. If it fails,
+the capsule keeps its handle and releases it when the capsule is garbage
+collected, so nothing leaks either way.
 
 ## Next steps
 
