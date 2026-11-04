@@ -25,9 +25,9 @@ only carries out a command has a `T` of `None`:
 ```
 
 The options of `attr()` say what the attribute holds besides its value.
-With `timed=True` it stores the time of each publish, and with
-`settable=True` it holds a setpoint of the same type as the value, which
-other processes ask to change with [`set`][sharedbox.Attr.set]. An
+With `timed=True` it stores the time of each publish of the value, and
+with `settable=True` it holds a setpoint of the same type as the value,
+which other processes ask to change with [`set`][sharedbox.Attr.set]. An
 attribute starts at the zero of `T`, or at `default`, which also gives the
 starting setpoint. A `T` with no zero, such as a record without defaults,
 needs a `default`.
@@ -63,11 +63,13 @@ the write. Give `timestamp_ns` when the device reports its own time. A
 publish of the setpoint alone keeps the value and its time.
 
 [`watch`][sharedbox.SharedBox.watch] and
-[`events`][sharedbox.SharedBox.events] report each publish with the
-[`AttrValue`][sharedbox.AttrValue] that `read` returns, and
-[`snapshot`][sharedbox.SharedBox.snapshot] includes it too. A request is
-not an event, so it reaches neither. Nothing checks which process
-publishes, so keep `publish` in the owner's code.
+[`events`][sharedbox.SharedBox.events] report publishes with the
+[`AttrValue`][sharedbox.AttrValue] that `read` returns, as they report
+writes of any field: several publishes in quick succession may reach you
+as one change, with the parts of the last.
+[`snapshot`][sharedbox.SharedBox.snapshot] includes the `AttrValue` too. A
+request is not an event, so it reaches neither. Nothing checks which
+process publishes, so keep `publish` in the owner's code.
 
 ## 3. Serve it
 

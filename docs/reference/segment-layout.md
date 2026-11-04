@@ -436,10 +436,10 @@ cannot be stored, and no reader finds one in a value it reads.
 ### The request protocol
 
 An `attr` field with a request part carries requests from any process to
-the one process that serves the field, and carries the answers back. Each step that changes the
-field runs under the box's write lock, as a write does (see Sequence lock),
-so it moves the generation and the field's write count and wakes the
-waiters, and every existing wait notices it. A step that finds nothing to
+the one process that serves the field, and carries the answers back. Each
+step that changes the field runs under the box's write lock, as a write
+does (see Sequence lock), so it moves the generation and the field's write
+count and wakes the waiters, and every existing wait notices it. A step that finds nothing to
 change gives the lock back with `seq` and the write count as they were and
 wakes nobody, because otherwise an idle server and the process watching it
 would wake each other forever. The steps, with the `handle` function of
@@ -548,9 +548,6 @@ attacher agree on it and on the class's meaning.
       `settable` and `request` in that order, joined by `,`, `T` the
       value's text or `none`, and `A,...` the argument texts in order, as
       in `attr(timed,request;float:8;int:8)`.
-    - `call(T,...->R)` with the argument texts in order and `R` the
-      result's text, or `None` for no result, as in
-      `call(float:8,int:8->float:8)` and `call(->None)`.
 
 - `schema_hash`: the first 8 bytes of SHA-256 over that text, read as a
   little-endian `u64`.
@@ -1464,8 +1461,8 @@ inline constexpr std::uint64_t stream_magic = 0x4D5254535F584253;    // "SBX_STR
 // literal_enum, and the kind codes kind_bool, kind_int, kind_float, kind_str,
 // kind_bytes, kind_ref, kind_complex through kind_decimal, kind_enum through
 // kind_max_array, kind_attr and kind_timed, attr_timed, attr_settable and
-// attr_request, publish_value, publish_timestamp and publish_setpoint, timed_mark, the timestamp a write
-// replaces, and request_answers, request_error_size and request_arguments_at
+// attr_request, publish_value, publish_timestamp and publish_setpoint,
+// timed_mark, the timestamp a write replaces, and request_answers, request_error_size and request_arguments_at
 // (see Encodings);
 // the structs common_header, header, stored_field, waiter_slot, box_ref and
 // type_head (see Layout); dl_dtype and literal_value, which type_view's dtype()
@@ -1564,6 +1561,7 @@ public:
                               seconds lock_timeout);
     result<void> attr_read(std::uint16_t field, std::span<std::byte> out) const;
     result<std::uint64_t> attr_published(std::uint16_t field) const;
+    std::uint32_t attr_value_at(std::uint16_t field) const noexcept;
 };
 
 result<void> unlink(std::string_view name) noexcept;
@@ -1683,18 +1681,19 @@ The header also declares these names:
   an `attr` field with a request part (see The request protocol).
   `request_send` takes the bytes from offset 48 to `answers`, and
   `request_take` copies them into a span of that size. `request_answer`
-  takes the result at its exact size when `ok`, otherwise the error text. `request_answer_of` copies the result or the
-  error text into `out`, which holds at least the larger of the result's
-  size and 256 bytes, and `request_reply::length` gives how many bytes it
-  copied. Each gives `status::range` for a field that is not an `attr`
+  takes the result at its exact size when `ok`, otherwise the error text.
+  `request_answer_of` copies the result or the error text into `out`, which
+  holds at least the larger of the result's size and 256 bytes, and
+  `request_reply::length` gives how many bytes it copied. Each gives `status::range` for a field that is not an `attr`
   with a request part or for a span of the wrong size, and the steps that
   take the lock give `status::lock_timeout` as `write` does.
 - `attr_publish` writes the parts of a field's value part that its `parts`
   argument names, a bit of `publish_value` (1), `publish_timestamp` (2) and
   `publish_setpoint` (4) each, from `bytes`, which holds `[value_at, size)` of
   the field with each part at its own offset. Under the write lock it copies
-  the named parts, stamps a value named without a timestamp on a timed `attr`
-  with the system clock in nanoseconds since the Unix epoch, adds 1 to
+  the named parts, stamps a value named without a timestamp, or with
+  `timed_mark` as its timestamp, on a timed `attr` with the system clock in
+  nanoseconds since the Unix epoch, adds 1 to
   `published`, counts one write of the field and wakes the waiters. It gives
   `status::range`, writing nothing, for a field that is not an `attr`, a part
   the `attr` lacks, a timestamp named without the value, no part at all or
@@ -1702,7 +1701,11 @@ The header also declares these names:
   range into `out` from one moment, without the lock, and gives
   `status::range` for a field that is not an `attr` or has no value part, or
   an `out` of another size. `attr_published` reads `published` alone the
-  same way, and gives `status::range` for the same fields.
+  same way, and gives `status::range` for the same fields. `attr_value_at`
+  gives the offset in the field where the value part starts, which is the
+  field's size minus the size of `attr_read`'s `out`, or
+  `detail::attr_absent` for a field that is not an `attr` or has no value
+  part.
 - Thread safety: every member function may be called from several threads
   on one handle. Destroying or moving a handle must not overlap another
   call on it.

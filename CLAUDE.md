@@ -32,13 +32,13 @@ sharedbox/
 |   |-- _timed.py              Timed: a value with its timestamp in ns, Timed.now and the mark a write replaces
 |   |-- _attr.py               Attr and AttrValue: the handle of an attribute field, publish, read, requests and serve
 |   |-- _request.py            request fields: RequestFuture, RequestServer, the request errors, serving threads and tasks
-|   |-- _events.py             BoxEvents, FieldWatch, the watcher thread, which also completes call futures and kicks call servers
+|   |-- _events.py             BoxEvents, FieldWatch, the watcher thread, which also completes request futures and kicks request servers
 |   |-- _follow.py             BoxEvents.follow and unfollow: forwarding the events of boxes that references reach
 |   |-- _stream.py             SharedStream, SharedSendStream, SharedReceiveStream, ReceiveEvents, the statistics classes, the worker threads
 |   |-- _metadata.py           metadata documents: the type variable M, CBOR encoding, read-only decoding, the cache of decoded versions
 |   |-- _refs.py               reference fields: BoxRef, the class registry, BrokenReferenceError, UnknownBoxClassError
 |   |-- _status.py             segment_status and SegmentStatus: whether a name holds a segment and its creator runs
-|   |-- _exit.py               the exit handler: stops the watcher, call server and stream threads, closes boxes, streams and ends,
+|   |-- _exit.py               the exit handler: stops the watcher, request server and stream threads, closes boxes, streams and ends,
 |   |                          replaces the native objects of watchers and box classes
 |   |-- _native.pyi            hand-written stub for the extension
 |   |-- py.typed
@@ -219,7 +219,7 @@ capacity counts elements, 1 to 1048576.
 ### Lifecycle
 
 - `close()` interrupts and stops the watcher thread, stops the box's
-  call servers, releasing each field, and cancels its pending call
+  request servers, releasing each field, and cancels its pending request
   futures, stops forwarding started with `events.follow`, and detaches
   this box. Later reads and
   writes raise `BoxClosedError`. Garbage collection closes a box too, but
