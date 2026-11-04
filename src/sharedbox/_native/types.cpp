@@ -477,7 +477,7 @@ std::uint32_t request_first_argument(const detail::type_node &node) { return nod
 const detail::type_node &Types::request_node(std::uint32_t index) const {
     const detail::type_ref &t = field(index);
     if (t.kind != kind_attr || (tree_.node(t.node).flags & attr_request) == 0)
-        raise(PyExc_TypeError, labels_[index] + " is not a Call field");
+        raise(PyExc_TypeError, labels_[index] + " takes no requests");
     return tree_.node(t.node);
 }
 
