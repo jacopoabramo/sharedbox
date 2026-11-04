@@ -3975,18 +3975,17 @@ stored through the <code>int</code> member and reads back as <code>5</code>. If 
 hold the value, you get an <code>OverflowError</code>; the box doesn't try the next
 member.</p>
 <h2 id="numpy-numbers">numpy numbers<a class="headerlink" href="#numpy-numbers" title="Permanent link">&para;</a></h2>
-<p>An <code>int</code>, <code>float</code>, <code>complex</code> or <code>bool</code> field also takes <code>numpy</code>'s scalars,
-and reads
-back the type it declares, so <code>numpy.uint16(7)</code> written to an <code>int</code> field
+<p>An <code>int</code>, <code>float</code>, <code>complex</code> or <code>bool</code> field also takes <code>numpy</code>'s scalars, and
+reads back the type it declares, so <code>numpy.uint16(7)</code> written to an <code>int</code> field
 reads back as the <code>int</code> 7. A field can declare a <code>numpy</code> type too: the
-fixed-width integers from <code>int8</code> to <code>uint64</code>, <code>float16</code>, <code>float32</code>,
-<code>complex64</code> and <code>datetime64</code> each take the bytes of their width, and read
-back as that <code>numpy</code> type. <code>numpy.int64</code>, <code>numpy.float64</code>,
-<code>numpy.complex128</code> and <code>numpy.bool_</code> store the same bytes as <code>int</code>,
-<code>float</code>, <code>complex</code> and <code>bool</code>, so two classes with the same
-<a href="../glossary/#identity">identity</a>, one declaring <code>int</code> and the other
-<code>numpy.int64</code>, attach to the same box, and each reads its own type. <a href="../../how-to/store-numpy-numbers/">How to store numpy numbers</a> shows
-each of them.</p>
+fixed-width integers from <code>int8</code> to <code>uint64</code>, <code>float16</code>, <code>float32</code>, <code>complex64</code>
+and <code>datetime64</code> each take the bytes of their width, and read back as that
+<code>numpy</code> type. <code>numpy.int64</code>, <code>numpy.float64</code>, <code>numpy.complex128</code> and
+<code>numpy.bool_</code> store the same bytes as <code>int</code>, <code>float</code>, <code>complex</code> and <code>bool</code>, so
+two classes with the same <a href="../glossary/#identity">identity</a>, one declaring <code>int</code>
+and the other <code>numpy.int64</code>, attach to the same box, and each reads its own
+type. <a href="../../how-to/store-numpy-numbers/">How to store numpy numbers</a> shows each
+of them.</p>
 <h2 id="when-a-field-counts-as-changed">When a field counts as changed<a class="headerlink" href="#when-a-field-counts-as-changed" title="Permanent link">&para;</a></h2>
 <p><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-attribute&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-attribute-name&quot;&gt;events&lt;/span&gt;
 

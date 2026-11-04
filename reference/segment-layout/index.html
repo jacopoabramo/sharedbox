@@ -4358,17 +4358,17 @@ that writes and waits change (<code>seq</code>, <code>writer_pid</code>, <code>w
 written once at creation, bytes 88 to 119, and ends with <code>metadata_head</code>,
 which each added metadata version changes. Attach copies the common line
 and bytes 88 to 119, never the changing words, and uses only the copy.</p>
-<p>Box layout 3.2 uses the last spare bytes of line 1 for the metadata
-fields, so only the two bytes of <code>reserved1</code> are left. A reader accepts a
-mapping larger than its geometry needs (see Attach), which lets a later
-minor version add after the metadata area. There is one header per box,
-and readers and writers touch only line 1. The waiter slots, not the
-header, are the large part of the tail, and <code>max_waiters</code> sizes them. Worked example, a box with an <code>int</code>, a <code>float</code>
-and a <code>bool</code> and the default 64 waiter slots: header 128, field table 24,
-write counts 24, waiter slots 2048, padding 16, record 24 (the Python side
-rounds a record up to a multiple of 8): 2264 bytes used, one 4 KiB page. A
-box with three fields and 64 slots stays in one page up to about 1.8 KB of
-record (4096 - 2240 = 1856).</p>
+<p>Box layout 3.2 uses the last spare bytes of line 1 for the metadata fields, so
+only the two bytes of <code>reserved1</code> are left. A reader accepts a mapping larger
+than its geometry needs (see Attach), which lets a later minor version add
+after the metadata area. There is one header per box, and readers and writers
+touch only line 1. The waiter slots, not the header, are the large part of the
+tail, and <code>max_waiters</code> sizes them. Worked example, a box with an <code>int</code>, a
+<code>float</code> and a <code>bool</code> and the default 64 waiter slots: header 128, field table
+24, write counts 24, waiter slots 2048, padding 16, record 24 (the Python side
+rounds a record up to a multiple of 8): 2264 bytes used, one 4 KiB page. A box
+with three fields and 64 slots stays in one page up to about 1.8 KB of record
+(4096 - 2240 = 1856).</p>
 <ul>
 <li>Versions: bytes 8 to 11 are <code>01 00 00 00</code> (core 1.0: <code>core_major</code> 1,
   <code>core_minor</code> 0) and bytes 12 to 15 are <code>03 00 03 00</code> (box layout 3.3:
@@ -5670,32 +5670,33 @@ misses it however the reservation ends. A slot given up keeps its odd
 does not move, so the next send writes the same position again.</p>
 <p>Receive, for a reader whose next position is <code>r</code>:</p>
 <ol>
-<li>A lossless or lossy reader first loads the <code>seq</code> of slot <code>r % capacity</code>.
-   If it is <code>2r + 2</code> the reader copies the item as in step 3 without
-   reading <code>write_pos</code>, so it may take an item a moment before the sender
-   stores <code>write_pos</code> for it, and its position may be <code>write_pos + 1</code> until
-   the sender, or whoever claims a dead sender, stores <code>write_pos</code>. Otherwise it loads <code>write_pos</code> with acquire. If that is
-   at most <code>r</code> there is nothing to read. The reader gives <code>status::ended</code> if
-   <code>state</code> is ended (read before <code>write_pos</code>, since the sender stores
-   <code>state</code> after its last <code>write_pos</code>). Otherwise, with a timeout of 0 it
-   gives <code>status::timeout</code> at once. With a longer timeout it checks
-   <code>write_pos</code> up to 1000 times, then sleeps on <code>data_word</code> in steps of at
-   most 0.1 s, counting itself in <code>data_waiting</code> while it sleeps.</li>
+<li>A lossless or lossy reader first loads the <code>seq</code> of slot <code>r % capacity</code>. If
+   it is <code>2r + 2</code> the reader copies the item as in step 3 without reading
+   <code>write_pos</code>, so it may take an item a moment before the sender stores
+   <code>write_pos</code> for it, and its position may be <code>write_pos + 1</code> until the
+   sender, or whoever claims a dead sender, stores <code>write_pos</code>. Otherwise it
+   loads <code>write_pos</code> with acquire. If that is at most <code>r</code> there is nothing to
+   read. The reader gives <code>status::ended</code> if <code>state</code> is ended (read before
+   <code>write_pos</code>, since the sender stores <code>state</code> after its last <code>write_pos</code>).
+   Otherwise, with a timeout of 0 it gives <code>status::timeout</code> at once. With a
+   longer timeout it checks <code>write_pos</code> up to 1000 times, then sleeps on
+   <code>data_word</code> in steps of at most 0.1 s, counting itself in <code>data_waiting</code>
+   while it sleeps.</li>
 <li>A lossy reader with <code>write_pos - r &gt; capacity</code> moves to
    <code>write_pos - capacity</code>. A latest reader with <code>write_pos - r &gt; 1</code> moves to
    <code>write_pos - 1</code>. Both count the items they pass as missed.</li>
-<li>Load <code>seq</code>, which must be <code>2r + 2</code>, copy the item, issue an acquire
-   fence and load <code>seq</code> again. If it changed, the sender wrote a later
-   position over the slot. A lossy or latest reader counts the item as
-   missed and moves on. A lossless reader first issues an acquire fence and
-   loads <code>release_floor</code> with acquire. The sender stored the floor before
-   the release fence that comes before the odd <code>seq</code> the copy failed on, so
-   the reader sees it. If <code>r</code> is below the floor the reader was released: it
-   moves to <code>max(write_pos - 1, release_floor)</code>, counts the positions it
-   passes as missed, stores the new <code>position</code> with release, adds 1 to
-   <code>readers_epoch</code>, issues a sequentially consistent fence, wakes a waiting
-   sender as in step 4 and gives <code>status::released</code>. It then reads as if it had just joined at the newest
-   item. A lossless reader that is not below the floor moves on without
+<li>Load <code>seq</code>, which must be <code>2r + 2</code>, copy the item, issue an acquire fence
+   and load <code>seq</code> again. If it changed, the sender wrote a later position over
+   the slot. A lossy or latest reader counts the item as missed and moves on. A
+   lossless reader first issues an acquire fence and loads <code>release_floor</code> with
+   acquire. The sender stored the floor before the release fence that comes
+   before the odd <code>seq</code> the copy failed on, so the reader sees it. If <code>r</code> is
+   below the floor the reader was released: it moves to
+   <code>max(write_pos - 1, release_floor)</code>, counts the positions it passes as
+   missed, stores the new <code>position</code> with release, adds 1 to <code>readers_epoch</code>,
+   issues a sequentially consistent fence, wakes a waiting sender as in step 4
+   and gives <code>status::released</code>. It then reads as if it had just joined at the
+   newest item. A lossless reader that is not below the floor moves on without
    counting until it has received its first item; after that the gate rules
    this out, and it gets <code>status::corrupt</code>.</li>
 <li>Store <code>position = r + 1</code> in its entry with release. A lossless reader
@@ -6382,15 +6383,15 @@ crosses the capsule.</p>
 <ul>
 <li><code>private_data</code> belongs to the build that made the handle, and only that
   build's <code>release</code> reads it.</li>
-<li>A consumer never reads another build's <code>private_data</code>. It takes the
-  handle with <code>handle::from_capsule</code> (or <code>sbx_import</code>). It does not wait
-  for <code>magic</code>: it loads it once and returns <code>status::corrupt</code> if it is not
-  set or <code>size</code> is below 4096, then runs steps 3 and 4 of Attach on the
-  segment at <code>base</code>, which includes the kind and version checks. It keeps its own copy of the struct and of the field table, and
-  checks no schema: the consumer compares <code>schema_hash()</code>. On success it
-  clears the capsule struct's <code>release</code>, and destroying the new handle
-  calls the producer's <code>release</code>. The consumer's handle opens slot events
-  by <code>name</code> when it first waits.</li>
+<li>A consumer never reads another build's <code>private_data</code>. It takes the handle
+  with <code>handle::from_capsule</code> (or <code>sbx_import</code>). It does not wait for <code>magic</code>:
+  it loads it once and returns <code>status::corrupt</code> if it is not set or <code>size</code> is
+  below 4096, then runs steps 3 and 4 of Attach on the segment at <code>base</code>, which
+  includes the kind and version checks. It keeps its own copy of the struct and
+  of the field table, and checks no schema: the consumer compares
+  <code>schema_hash()</code>. On success it clears the capsule struct's <code>release</code>, and
+  destroying the new handle calls the producer's <code>release</code>. The consumer's
+  handle opens slot events by <code>name</code> when it first waits.</li>
 <li><code>to_capsule()</code> moves a handle to the heap and returns a new <code>sbx_handle</code>
   whose <code>release</code> destroys it; the caller deletes the struct afterwards.</li>
 <li>The Python extension's capsule destructor deletes the struct while the
@@ -6427,10 +6428,11 @@ layout.</p>
   <code>status::kind_mismatch</code> and <code>status::foreign</code>, and <code>SBX_E_BUSY</code> (-13),
   <code>SBX_E_ENDED</code> (-14) and <code>SBX_E_INTERRUPTED</code> (-15), the values of
   <code>status::busy</code>, <code>status::ended</code> and <code>status::interrupted</code>, and
-  <code>SBX_E_METADATA_FULL</code> (-17), the value of <code>status::metadata_full</code>.
-  Streams have no C functions. <code>sbx_open</code> and <code>sbx_import</code> return <code>SBX_E_KIND</code> for a segment of another kind and
-  <code>SBX_E_FOREIGN</code> for a magic they do not know (see Attach). A C caller
-  gets the code only, without the <code>error</code>'s <abbr title="Operating system.">OS</abbr> error and <code>found</code>.</li>
+  <code>SBX_E_METADATA_FULL</code> (-17), the value of <code>status::metadata_full</code>. Streams
+  have no C functions. <code>sbx_open</code> and <code>sbx_import</code> return <code>SBX_E_KIND</code> for a
+  segment of another kind and <code>SBX_E_FOREIGN</code> for a magic they do not know (see
+  Attach). A C caller gets the code only, without the <code>error</code>'s <abbr title="Operating system.">OS</abbr> error and
+  <code>found</code>.</li>
 <li><code>sbx_field_desc</code> returns a field's kind code and its description's
   bytes. <code>sbx_read_*</code> and <code>sbx_write_*</code> exist for <code>complex</code>, <code>float16</code>,
   <code>float32</code>, <code>date</code>, <code>time</code>, <code>datetime</code>, <code>timedelta</code>, <code>uuid</code>, enum and

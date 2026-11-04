@@ -3512,11 +3512,12 @@ to the field copies its bytes back in one step.</p>
 In <code>benchbox ops</code> on Windows with CPython 3.11, a write is about 6 times
 faster than a <code>list</code> field's at 16 elements and 30 to 40 times faster from
 1024. A read takes as long as a <code>list</code> field's at 16 elements, is about 35
-times faster at 1024 and about 65 times faster at 65536. Going through every element is slower, taking 1.2 to
-2.2 times as long as with a <code>list</code>, because each step decodes one element. So
-use it for a large list that you read or write whole and of which you touch
-only a few elements. A list you always convert to a <code>list</code> gains nothing,
-because the conversion decodes every element anyway.</p>
+times faster at 1024 and about 65 times faster at 65536. Going through every
+element is slower, taking 1.2 to 2.2 times as long as with a <code>list</code>, because
+each step decodes one element. So use it for a large list that you read or
+write whole and of which you touch only a few elements. A list you always
+convert to a <code>list</code> gains nothing, because the conversion decodes every element
+anyway.</p>
 <h2 id="1-declare-the-field-as-a-boundedlist">1. Declare the field as a BoundedList<a class="headerlink" href="#1-declare-the-field-as-a-boundedlist" title="Permanent link">&para;</a></h2>
 <p>A <code>BoundedList[T]</code> takes any element type a <code>list[T]</code> takes. You give the
 field's <a href="../../explanation/glossary/#capacity">capacity</a>, a number of

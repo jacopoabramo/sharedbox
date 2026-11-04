@@ -3578,11 +3578,11 @@ whatever its target settings.</p>
 </span><span id="__span-5-28"><a id="__codelineno-5-28" name="__codelineno-5-28" href="#__codelineno-5-28"></a><span class="w">    </span><span class="k">return</span><span class="w"> </span><span class="n">PyLong_FromLongLong</span><span class="p">(</span><span class="n">count</span><span class="p">);</span>
 </span><span id="__span-5-29"><a id="__codelineno-5-29" name="__codelineno-5-29" href="#__codelineno-5-29"></a><span class="p">}</span>
 </span></code></pre></div>
-<p><code>from_capsule</code> checks the segment the handle points to, just as an attach
-does, including its kind and its layout version. If the check passes, <code>box</code> takes over the capsule's handle and
-releases it when <code>box</code> is destroyed. If it fails, the capsule keeps its
-handle and releases it when the capsule is garbage collected, so nothing
-leaks either way.</p>
+<p><code>from_capsule</code> checks the segment the handle points to, just as an attach does,
+including its kind and its layout version. If the check passes, <code>box</code> takes
+over the capsule's handle and releases it when <code>box</code> is destroyed. If it fails,
+the capsule keeps its handle and releases it when the capsule is garbage
+collected, so nothing leaks either way.</p>
 <h2 id="next-steps">Next steps<a class="headerlink" href="#next-steps" title="Permanent link">&para;</a></h2>
 <ul>
 <li><a href="../../reference/cpp-and-c-api/">C and C++ interface</a>: which calls may

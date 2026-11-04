@@ -3221,12 +3221,12 @@ it meets two needs they have: one current value that many processes read
 and write, which is a <a href="../glossary/#box">box</a>, and a flow of items that each
 reader receives once, which is a <a href="../glossary/#stream">stream</a>. Both work
 without a server and without pickling.</p>
-<p>Should you use a box, or would something simpler do? A box is made for
-sharing a record between processes, and that has a price: every write turns the value into bytes in shared memory,
-and a read turns the bytes back into a value unless the value can't be
-changed and an earlier read built it since the last write. That costs some
-tens to hundreds of nanoseconds, and a value you can change comes back as a
-copy.</p>
+<p>Should you use a box, or would something simpler do? A box is made for sharing
+a record between processes, and that has a price: every write turns the value
+into bytes in shared memory, and a read turns the bytes back into a value
+unless the value can't be changed and an earlier read built it since the last
+write. That costs some tens to hundreds of nanoseconds, and a value you can
+change comes back as a copy.</p>
 <p>If all your code runs in threads of one process, you don't need to pay
 that price: threads can share ordinary Python objects, which is several
 times faster and works with any Python type. psygnal's <code>evented</code>
