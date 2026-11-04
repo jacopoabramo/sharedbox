@@ -137,20 +137,38 @@ def test_set_sends_the_value_as_its_argument(names: Callable[[str], str]) -> Non
 
 
 @pytest.mark.parametrize(
-    ("cls", "send"),
+    ("cls", "send", "message"),
     [
-        (Camera, lambda box: box.temperature()),
-        (Camera, lambda box: box.move.set(1.0)),
-        (Camera, lambda box: box.temperature.set(1.0)),
-        (Zero, lambda box: box.x()),
+        (Camera, lambda box: box.temperature(), "Camera.temperature takes no requests"),
+        (Camera, lambda box: box.move.set(1.0), "Camera.move is not settable"),
+        (
+            Camera,
+            lambda box: box.temperature.set(1.0),
+            "Camera.temperature is not settable",
+        ),
+        (Zero, lambda box: box.x(), "Zero.x takes no requests"),
+        (
+            Camera,
+            lambda box: box.exposure(1.0),
+            "Camera.exposure is settable; send its requests with set()",
+        ),
     ],
-    ids=["call without a request", "set on a request", "set on a value", "no arguments"],
+    ids=[
+        "call without a request",
+        "set on a request",
+        "set on a value",
+        "no arguments",
+        "call on a settable",
+    ],
 )
 def test_a_request_on_an_attr_without_one_is_refused(
-    names: Callable[[str], str], cls: type[SharedBox], send: Callable[[Any], Any]
+    names: Callable[[str], str],
+    cls: type[SharedBox],
+    send: Callable[[Any], Any],
+    message: str,
 ) -> None:
-    """Raise TypeError for a call or a set that the attribute has no request for."""
-    with cls.create(names("refused")) as box, pytest.raises(TypeError):
+    """Raise TypeError naming the field for a call or a set that the attribute has no request for."""
+    with cls.create(names("refused")) as box, pytest.raises(TypeError, match=message):
         send(box)
 
 

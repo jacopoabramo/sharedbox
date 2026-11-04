@@ -108,6 +108,15 @@ def test_publish_replaces_the_timed_mark_with_the_time_of_the_write(
         assert before <= box.temperature.timestamp_ns <= after
 
 
+def test_publish_takes_a_numpy_integer_as_the_timestamp(
+    names: Callable[[str], str],
+) -> None:
+    """Store a numpy int64 timestamp as its integer value."""
+    with Camera.create(names("numpy-stamp")) as box:
+        box.temperature.publish(value=1.5, timestamp_ns=np.int64(5))
+        assert box.temperature.timestamp_ns == 5
+
+
 def test_a_refused_publish_writes_nothing(names: Callable[[str], str]) -> None:
     """Leave the box as it was when a named part does not encode."""
     with Camera.create(names("refused")) as box:

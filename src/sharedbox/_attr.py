@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import operator
 import sys
 import weakref
 from collections.abc import Awaitable, Callable
@@ -12,6 +13,7 @@ from typing import (
     Generic,
     NoReturn,
     NotRequired,
+    SupportsIndex,
     TypeVar,
     cast,
     overload,
@@ -146,7 +148,7 @@ class Attr(Generic[T, P]):
         *,
         value: T = UNSET,
         setpoint: T = UNSET,
-        timestamp_ns: int = UNSET,
+        timestamp_ns: SupportsIndex = UNSET,
     ) -> None:
         """Write the parts given in one write, so a reader never sees parts of different publishes together.
 
@@ -176,6 +178,7 @@ class Attr(Generic[T, P]):
             if given is not UNSET:
                 parts |= part
         label = self._spec.label
+        stamp = 0
         if not parts:
             raise TypeError(f"{label}: publish() needs value, setpoint or timestamp_ns")
         if parts & PUBLISH_VALUE:
@@ -186,18 +189,22 @@ class Attr(Generic[T, P]):
             self._require("timestamp_ns")
             if not parts & PUBLISH_VALUE:
                 raise TypeError(f"{label}: timestamp_ns needs a value to go with it")
-            if not isinstance(timestamp_ns, int) or isinstance(timestamp_ns, bool):
+            try:
+                if isinstance(timestamp_ns, bool):
+                    raise TypeError
+                stamp = operator.index(timestamp_ns)
+            except TypeError:
                 raise TypeError(
                     f"{label}: timestamp_ns must be an int, not {type(timestamp_ns).__name__}"
-                )
-            if not INT64_MIN <= timestamp_ns <= INT64_MAX:
+                ) from None
+            if not INT64_MIN <= stamp <= INT64_MAX:
                 raise OverflowError(f"{label}: timestamp_ns does not fit 64 bits")
         box._segment.attr_publish(
             self._spec.index,
             parts,
             None if value is UNSET else value,
             None if setpoint is UNSET else setpoint,
-            0 if timestamp_ns is UNSET else timestamp_ns,
+            stamp,
             type(box).__layout__.types,
         )
 
@@ -210,8 +217,8 @@ class Attr(Generic[T, P]):
         Raises
         ------
         TypeError
-            If the attribute takes no requests, an argument is given by
-            keyword, or the arguments do not match its argument types.
+            If the attribute takes no requests or is settable, an argument
+            is given by keyword, or the arguments do not match its argument types.
         ValueError
             If an argument does not fit its type.
         OverflowError
@@ -219,7 +226,12 @@ class Attr(Generic[T, P]):
         BoxClosedError
             If the box is closed.
         """
-        if not self._info().request:
+        info = self._info()
+        if info.settable:
+            raise TypeError(
+                f"{self._spec.label} is settable; send its requests with set()"
+            )
+        if not info.request:
             raise TypeError(f"{self._spec.label} takes no requests")
         if kwargs:
             raise TypeError(f"{self._spec.label} takes positional arguments only")
@@ -248,6 +260,7 @@ class Attr(Generic[T, P]):
     def serve(self, handler: Callable[P, Awaitable[T]]) -> RequestServer: ...
     @overload
     def serve(self, handler: Callable[P, T]) -> RequestServer: ...
+    # shortcut: a non-settable Attr[T] also accepts a one-argument handler, as settable is not in the type; upgrade when Attr gets a type parameter for it
     @overload
     def serve(
         self: Attr[T, []], handler: Callable[[T], Awaitable[T]]
