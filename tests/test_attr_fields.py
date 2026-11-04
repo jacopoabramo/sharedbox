@@ -5,6 +5,7 @@ from dataclasses import MISSING, dataclass
 from typing import Annotated, Any, Optional
 
 import numpy as np
+import numpy.typing as npt
 import pytest
 
 from sharedbox import (
@@ -13,6 +14,7 @@ from sharedbox import (
     Capacity,
     DType,
     MaxShape,
+    Shape,
     SharedBox,
     SharedStream,
     Timed,
@@ -24,6 +26,7 @@ from sharedbox._native import Types
 from sharedbox._types import CODES, Table, attr_spec
 
 CLOCK_SLACK_NS = 20_000_000
+VECTOR = Annotated[npt.NDArray[np.float64], Shape((4,))]
 
 
 @dataclass(frozen=True)
@@ -343,7 +346,7 @@ def test_attr_is_refused_where_it_cannot_go() -> None:
 
 
 def test_the_python_layout_matches_the_native_parser() -> None:
-    """Build each shape of attr the native tests pin and check its size, which the native parser also checks."""
+    """Check the size of each attr shape, 64-aligned values too, against the native parser."""
     shapes = [
         (16, int, (), False, False, False),
         (24, int, (), True, False, False),
@@ -352,6 +355,8 @@ def test_the_python_layout_matches_the_native_parser() -> None:
         (1200, int, (int,), False, True, True),
         (1208, int, (int,), True, True, True),
         (1136, None, (), False, False, True),
+        (1792, VECTOR, (bool, VECTOR, np.int16), True, False, True),
+        (1856, VECTOR, (VECTOR,), True, True, True),
     ]
     for size, value, arguments, timed, settable, request in shapes:
         spec = attr_spec(
