@@ -348,10 +348,10 @@ Little-endian.
 ### Descriptions
 
 The description table follows the waiter slots. Each description is an
-8-byte head, `u8 kind`, `u8 flags` (zero, except for an `attr`), `u16 count`,
-`u32 size`, a body, and zero padding to a multiple of 8. An entry inside a body has the
-shape of a field table entry, with the offset counted from the start of
-the value. A name is a `u16` length, then UTF-8.
+8-byte head, `u8 kind`, `u8 flags` (zero, except for an `attr`),
+`u16 count`, `u32 size`, a body, and zero padding to a multiple of 8. An
+entry inside a body has the shape of a field table entry, with the offset
+counted from the start of the value. A name is a `u16` length, then UTF-8.
 
 | kind | count | body |
 | --- | --- | --- |
@@ -435,8 +435,8 @@ cannot be stored, and no reader finds one in a value it reads.
 
 ### The request protocol
 
-An `attr` field with a request part carries requests from any process to the one process that
-serves the field, and carries the answers back. Each step that changes the
+An `attr` field with a request part carries requests from any process to
+the one process that serves the field, and carries the answers back. Each step that changes the
 field runs under the box's write lock, as a write does (see Sequence lock),
 so it moves the generation and the field's write count and wakes the
 waiters, and every existing wait notices it. A step that finds nothing to
@@ -1682,8 +1682,8 @@ The header also declares these names:
   `serve_claim` and `serve_release` are the steps of the request protocol on
   an `attr` field with a request part (see The request protocol).
   `request_send` takes the bytes from offset 48 to `answers`, and
-  `request_take` copies them into a span of that size. `request_answer` takes the result at its exact size when `ok`,
-  otherwise the error text. `request_answer_of` copies the result or the
+  `request_take` copies them into a span of that size. `request_answer`
+  takes the result at its exact size when `ok`, otherwise the error text. `request_answer_of` copies the result or the
   error text into `out`, which holds at least the larger of the result's
   size and 256 bytes, and `request_reply::length` gives how many bytes it
   copied. Each gives `status::range` for a field that is not an `attr`

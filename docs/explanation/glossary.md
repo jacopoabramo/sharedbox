@@ -11,6 +11,12 @@ word you don't know, its link brings you to this page.
 Acronyms are explained in tooltips across the site: hover over a word with
 a dotted underline to read what it stands for.
 
+### Attribute
+
+An attribute is a [field](#field) declared with [`Attr`][sharedbox.Attr].
+It holds a value its owner publishes and, when it takes requests, a request
+part through which other processes ask the owner to act.
+
 ### Box
 
 A box is a record that several processes share. You describe it with a

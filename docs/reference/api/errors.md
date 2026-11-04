@@ -10,10 +10,10 @@ icon: lucide/code
 | [`SegmentNotFoundError`][sharedbox.SegmentNotFoundError] | `FileNotFoundError` | attaching to, or unlinking on Linux, a name with no [segment](../../explanation/glossary.md#segment), whether it holds a box or a stream; attaching to shared memory that does not become a box or a stream within 1 s |
 | [`SchemaMismatchError`][sharedbox.SchemaMismatchError] | `TypeError` | attaching, or unpickling a box, with a class whose [identity](../../explanation/glossary.md#identity) or [fields](../../explanation/glossary.md#field) differ from the creator's; a segment of another core or layout major version; a segment whose magic this version does not know, which another version of `sharedbox` made or which is not a `sharedbox` segment; a segment with a field of a kind this version cannot read; unpickling after the box was created again; attaching a stream with another item type than the creator's; a lossless reader finding that the sender overwrote an item it had not read |
 | [`KindMismatchError`][sharedbox.KindMismatchError] | `SchemaMismatchError` | attaching a box to a name that holds a stream, or a stream to a name that holds a box |
-| [`RequestError`][sharedbox.RequestError] | `Exception` | waiting on a call whose handler raised, whose server stopped while handling it, or whose answer four later answers replaced |
-| [`RequestSupersededError`][sharedbox.RequestSupersededError] | `RequestError` | waiting on a call that a later request replaced before the server took it |
-| [`ServerExitedError`][sharedbox.ServerExitedError] | `RequestError` | waiting on a call whose server's process ended |
-| [`AlreadyServedError`][sharedbox.AlreadyServedError] | `RuntimeError` | serving a call field that a live process serves already, this one included |
+| [`RequestError`][sharedbox.RequestError] | `Exception` | waiting on a request whose handler raised, whose server stopped while handling it, or whose answer four later answers replaced |
+| [`RequestSupersededError`][sharedbox.RequestSupersededError] | `RequestError` | waiting on a request that a later request replaced before the server took it |
+| [`ServerExitedError`][sharedbox.ServerExitedError] | `RequestError` | waiting on a request whose server's process ended |
+| [`AlreadyServedError`][sharedbox.AlreadyServedError] | `RuntimeError` | serving an [attribute](../../explanation/glossary.md#attribute) that a live process serves already, this one included |
 | [`BoxClosedError`][sharedbox.BoxClosedError] | `ValueError` | using a box after `close()` |
 | [`LockTimeoutError`][sharedbox.LockTimeoutError] | `TimeoutError` | a read or write waits for a write in progress for longer than `lock_timeout` |
 | [`BrokenReferenceError`][sharedbox.BrokenReferenceError] | `LookupError` | reading a [reference field](../../explanation/glossary.md#reference-field), or `snapshot(follow=True)`, when the box it refers to was removed or created again since it was assigned |

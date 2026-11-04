@@ -40,8 +40,9 @@ items through a [stream](../explanation/glossary.md#stream).
   write with `update` and read with `snapshot`
 - [How to send a box to another process](send-a-box-to-another-process.md):
   as an argument, by name, or to a pool
-- [How to call a function in the process that owns a box](call-a-function-in-the-owner.md):
-  a request the owner answers, and what happens when it fails
+- [How to request work from the process that owns a box](request-work-from-the-owner.md):
+  attributes the owner publishes, requests it answers, and what happens
+  when one fails
 - [How to clean up segments](clean-up-segments.md): close, unlink, and
   recover after a crash
 - [How to follow a whole reference graph](follow-a-whole-reference-graph.md):
