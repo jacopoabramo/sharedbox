@@ -12,7 +12,7 @@
         <meta name="author" content="Jacopo Abramo">
       
       
-        <link rel="canonical" href="https://jacopoabramo.github.io/sharedbox/how-to/call-a-function-in-the-owner/">
+        <link rel="canonical" href="https://jacopoabramo.github.io/sharedbox/how-to/request-work-from-the-owner/">
       
       
         <link rel="prev" href="../send-a-box-to-another-process/">
@@ -29,7 +29,7 @@
     
     
       
-        <title>How to call a function in the process that owns a box - sharedbox</title>
+        <title>How to request work from the process that owns a box - sharedbox</title>
       
     
     
@@ -85,7 +85,7 @@
     <div data-md-component="skip">
       
         
-        <a href="#how-to-call-a-function-in-the-process-that-owns-a-box" class="md-skip">
+        <a href="#how-to-request-work-from-the-process-that-owns-a-box" class="md-skip">
           Skip to content
         </a>
       
@@ -119,7 +119,7 @@
         <div class="md-header__topic" data-md-component="header-topic">
           <span class="md-ellipsis">
             
-              How to call a function in the process that owns a box
+              How to request work from the process that owns a box
             
           </span>
         </div>
@@ -1320,7 +1320,7 @@
   <span class="md-ellipsis">
     
   
-  How to call a function in the process that owns a box
+  How to request work from the process that owns a box
 
     
   </span>
@@ -1339,7 +1339,7 @@
   <span class="md-ellipsis">
     
   
-  How to call a function in the process that owns a box
+  How to request work from the process that owns a box
 
     
   </span>
@@ -1365,10 +1365,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#1-declare-a-call-field" class="md-nav__link">
+  <a href="#1-declare-an-attribute" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        1. Declare a call field
+        1. Declare an attribute
       </span>
     </span>
   </a>
@@ -1376,10 +1376,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#2-serve-it" class="md-nav__link">
+  <a href="#2-publish-its-value" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        2. Serve it
+        2. Publish its value
       </span>
     </span>
   </a>
@@ -1387,10 +1387,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#3-call-it" class="md-nav__link">
+  <a href="#3-serve-it" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        3. Call it
+        3. Serve it
       </span>
     </span>
   </a>
@@ -1398,10 +1398,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#4-handle-a-failed-call" class="md-nav__link">
+  <a href="#4-send-a-request" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        4. Handle a failed call
+        4. Send a request
       </span>
     </span>
   </a>
@@ -1409,10 +1409,21 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#5-expect-the-latest-request-to-win" class="md-nav__link">
+  <a href="#5-handle-a-failed-request" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        5. Expect the latest request to win
+        5. Handle a failed request
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-expect-the-latest-request-to-win" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        6. Expect the latest request to win
       </span>
     </span>
   </a>
@@ -3237,10 +3248,10 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
-  <a href="#1-declare-a-call-field" class="md-nav__link">
+  <a href="#1-declare-an-attribute" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        1. Declare a call field
+        1. Declare an attribute
       </span>
     </span>
   </a>
@@ -3248,10 +3259,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#2-serve-it" class="md-nav__link">
+  <a href="#2-publish-its-value" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        2. Serve it
+        2. Publish its value
       </span>
     </span>
   </a>
@@ -3259,10 +3270,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#3-call-it" class="md-nav__link">
+  <a href="#3-serve-it" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        3. Call it
+        3. Serve it
       </span>
     </span>
   </a>
@@ -3270,10 +3281,10 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#4-handle-a-failed-call" class="md-nav__link">
+  <a href="#4-send-a-request" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        4. Handle a failed call
+        4. Send a request
       </span>
     </span>
   </a>
@@ -3281,10 +3292,21 @@
 </li>
       
         <li class="md-nav__item">
-  <a href="#5-expect-the-latest-request-to-win" class="md-nav__link">
+  <a href="#5-handle-a-failed-request" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        5. Expect the latest request to win
+        5. Handle a failed request
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#6-expect-the-latest-request-to-win" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        6. Expect the latest request to win
       </span>
     </span>
   </a>
@@ -3435,62 +3457,109 @@
   
 
 
-<h1 id="how-to-call-a-function-in-the-process-that-owns-a-box">How to call a function in the process that owns a box<a class="headerlink" href="#how-to-call-a-function-in-the-process-that-owns-a-box" title="Permanent link">&para;</a></h1>
-<p>Some requests mean more than writing a value, such as moving a motor to a
-position. The process that drives the device has to act
-on them and say how it went. A <a href="../../explanation/glossary/#field">field</a> of
-type <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;Call&lt;/span&gt;" href="../../reference/api/box/#sharedbox.Call"><code>Call</code></a> carries such a request from any process to the
-one process that serves the field, and carries the answer back. This guide
-declares one, serves it, calls it and handles what can go wrong.</p>
-<h2 id="1-declare-a-call-field">1. Declare a call field<a class="headerlink" href="#1-declare-a-call-field" title="Permanent link">&para;</a></h2>
-<p>Annotate the field <code>Call[[A, ...], R]</code>, with the argument types in the list
-and the result type after it, or <code>None</code> when the call returns nothing:</p>
+<h1 id="how-to-request-work-from-the-process-that-owns-a-box">How to request work from the process that owns a box<a class="headerlink" href="#how-to-request-work-from-the-process-that-owns-a-box" title="Permanent link">&para;</a></h1>
+<p>Some state belongs to one process. The process that drives a camera knows
+its temperature, and it decides which exposure the camera uses, so other
+processes should read that state and ask for changes, not write it
+themselves. An <a href="../../explanation/glossary/#attribute">attribute</a> gives you
+both: its owner publishes a value that every process reads, and other
+processes send it requests that the owner acts on and answers. This guide
+declares attributes, publishes them, serves their requests and handles what
+can go wrong.</p>
+<h2 id="1-declare-an-attribute">1. Declare an attribute<a class="headerlink" href="#1-declare-an-attribute" title="Permanent link">&para;</a></h2>
+<p>Annotate the <a href="../../explanation/glossary/#field">field</a> <code>Attr[T]</code>, with <code>T</code>
+the type of its value, and declare it with <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-function&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;attr&lt;/span&gt;" href="../../reference/api/box/#sharedbox.attr"><code>attr()</code></a>. An
+attribute that takes arguments lists their types after <code>T</code>, and one that
+only carries out a command has a <code>T</code> of <code>None</code>:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">asyncio</span>
 </span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="kn">import</span><span class="w"> </span><span class="nn">threading</span>
 </span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>
-</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sharedbox</span><span class="w"> </span><span class="kn">import</span> <span class="n">Call</span><span class="p">,</span> <span class="n">RequestError</span><span class="p">,</span> <span class="n">RequestSupersededError</span><span class="p">,</span> <span class="n">SharedBox</span><span class="p">,</span> <span class="n">call</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sharedbox</span><span class="w"> </span><span class="kn">import</span> <span class="n">Attr</span><span class="p">,</span> <span class="n">RequestError</span><span class="p">,</span> <span class="n">RequestSupersededError</span><span class="p">,</span> <span class="n">SharedBox</span><span class="p">,</span> <span class="n">attr</span>
 </span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>
 </span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>
-</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="k">class</span><span class="w"> </span><span class="nc">Scanner</span><span class="p">(</span><span class="n">SharedBox</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">"example-scanner"</span><span class="p">):</span>
-</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>    <span class="n">position</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.0</span>
-</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>    <span class="n">move</span><span class="p">:</span> <span class="n">Call</span><span class="p">[[</span><span class="nb">float</span><span class="p">],</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="n">call</span><span class="p">()</span>
-</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>    <span class="n">home</span><span class="p">:</span> <span class="n">Call</span><span class="p">[[],</span> <span class="kc">None</span><span class="p">]</span> <span class="o">=</span> <span class="n">call</span><span class="p">()</span>
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a><span class="k">class</span><span class="w"> </span><span class="nc">Camera</span><span class="p">(</span><span class="n">SharedBox</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">"example-camera"</span><span class="p">):</span>
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a>    <span class="n">temperature</span><span class="p">:</span> <span class="n">Attr</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="n">attr</span><span class="p">(</span><span class="n">timed</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a>    <span class="n">exposure</span><span class="p">:</span> <span class="n">Attr</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="n">attr</span><span class="p">(</span><span class="n">timed</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">settable</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span>
+</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>    <span class="n">move</span><span class="p">:</span> <span class="n">Attr</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="p">[</span><span class="nb">float</span><span class="p">]]</span> <span class="o">=</span> <span class="n">attr</span><span class="p">()</span>
+</span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>    <span class="n">home</span><span class="p">:</span> <span class="n">Attr</span><span class="p">[</span><span class="kc">None</span><span class="p">]</span> <span class="o">=</span> <span class="n">attr</span><span class="p">()</span>
 </span></code></pre></div>
-<p>A call field holds no value, so you give it <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-function&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;call&lt;/span&gt;" href="../../reference/api/box/#sharedbox.call"><code>call()</code></a>
-and the box's constructor has no parameter for it. Without <code>call()</code>, type
-checkers count the field as a constructor parameter and flag <code>Scanner()</code> as
-missing an argument. Reading <code>scanner.move</code> gives the call itself, and
-assigning to it, <code>update</code>, <code>watch</code> and <code>events</code> refuse it with
-<code>TypeError</code>. The arguments and the result may be any type a record member
-may be, except a <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;Timed&lt;/span&gt;" href="../../reference/api/box/#sharedbox.Timed"><code>Timed</code></a>, another <code>Call</code> or a
-reference to a box.</p>
-<h2 id="2-serve-it">2. Serve it<a class="headerlink" href="#2-serve-it" title="Permanent link">&para;</a></h2>
-<p>The process that owns the device registers a handler with
-<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;serve&lt;/span&gt;" href="../../reference/api/box/#sharedbox.Call.serve"><code>serve</code></a>:</p>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">scanner</span> <span class="o">=</span> <span class="n">Scanner</span><span class="p">()</span>
-</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>
-</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a>
-</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="k">def</span><span class="w"> </span><span class="nf">move</span><span class="p">(</span><span class="n">target</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
-</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a>    <span class="k">if</span> <span class="n">target</span> <span class="o">&gt;</span> <span class="mf">100.0</span><span class="p">:</span>
-</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a>        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">target</span><span class="si">}</span><span class="s2"> is out of range"</span><span class="p">)</span>
-</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a>    <span class="n">scanner</span><span class="o">.</span><span class="n">position</span> <span class="o">=</span> <span class="n">target</span>
-</span><span id="__span-1-8"><a id="__codelineno-1-8" name="__codelineno-1-8" href="#__codelineno-1-8"></a>    <span class="k">return</span> <span class="n">target</span>
-</span><span id="__span-1-9"><a id="__codelineno-1-9" name="__codelineno-1-9" href="#__codelineno-1-9"></a>
-</span><span id="__span-1-10"><a id="__codelineno-1-10" name="__codelineno-1-10" href="#__codelineno-1-10"></a>
-</span><span id="__span-1-11"><a id="__codelineno-1-11" name="__codelineno-1-11" href="#__codelineno-1-11"></a><span class="n">server</span> <span class="o">=</span> <span class="n">scanner</span><span class="o">.</span><span class="n">move</span><span class="o">.</span><span class="n">serve</span><span class="p">(</span><span class="n">move</span><span class="p">)</span>
+<p>The options of <code>attr()</code> say what the attribute holds besides its value.
+With <code>timed=True</code> it stores the time of each publish of the value, and
+with <code>settable=True</code> it holds a setpoint of the same type as the value,
+which other processes ask to change with <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;set&lt;/span&gt;" href="../../reference/api/box/#sharedbox.Attr.set"><code>set</code></a>. An
+attribute starts at the zero of <code>T</code>, or at <code>default</code>, which also gives the
+starting setpoint. A <code>T</code> with no zero, such as a record without defaults,
+needs a <code>default</code>.</p>
+<p>The box's constructor has no parameter for an attribute, because only its
+owner writes it. Reading <code>camera.exposure</code> gives the
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;Attr&lt;/span&gt;" href="../../reference/api/box/#sharedbox.Attr"><code>Attr</code></a> bound to the box, the same object every time, and
+assigning to it or passing it to <code>update</code> raises <code>TypeError</code>. <code>T</code> and the
+argument types may be any type a record member may be, except a
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;Timed&lt;/span&gt;" href="../../reference/api/box/#sharedbox.Timed"><code>Timed</code></a>, another <code>Attr</code> or a reference to a box.</p>
+<p>An attribute takes requests when it has argument types, when its <code>T</code> is
+<code>None</code>, or when it is settable. In the <code>Camera</code> above, <code>move</code> and <code>home</code>
+take requests through a call, <code>exposure</code> through <code>set</code>, and <code>temperature</code>
+takes none. A settable attribute's request carries the new value as its one
+argument, so <code>settable=True</code> together with argument types raises
+<code>TypeError</code>.</p>
+<h2 id="2-publish-its-value">2. Publish its value<a class="headerlink" href="#2-publish-its-value" title="Permanent link">&para;</a></h2>
+<p>The owner writes an attribute with <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;publish&lt;/span&gt;" href="../../reference/api/box/#sharedbox.Attr.publish"><code>publish</code></a>,
+which takes the parts by keyword and writes all of them in one write, so a
+reader never sees a value next to a setpoint from a different publish. Any
+process reads the parts with <code>value</code>, <code>setpoint</code> and <code>timestamp_ns</code>, or all
+of them from one write with <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;read&lt;/span&gt;" href="../../reference/api/box/#sharedbox.Attr.read"><code>read</code></a>:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="n">camera</span> <span class="o">=</span> <span class="n">Camera</span><span class="p">()</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="n">camera</span><span class="o">.</span><span class="n">temperature</span><span class="o">.</span><span class="n">publish</span><span class="p">(</span><span class="n">value</span><span class="o">=</span><span class="mf">21.5</span><span class="p">)</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="nb">print</span><span class="p">(</span><span class="n">camera</span><span class="o">.</span><span class="n">temperature</span><span class="o">.</span><span class="n">value</span><span class="p">)</span>  <span class="c1"># 21.5</span>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="n">reading</span> <span class="o">=</span> <span class="n">camera</span><span class="o">.</span><span class="n">temperature</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="nb">print</span><span class="p">(</span><span class="n">reading</span><span class="p">[</span><span class="s2">"value"</span><span class="p">],</span> <span class="n">reading</span><span class="p">[</span><span class="s2">"timestamp_ns"</span><span class="p">]</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">)</span>  <span class="c1"># 21.5 True</span>
 </span></code></pre></div>
-<p>A plain function runs on a thread of its own, so a slow handler doesn't
-hold up what <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;watch&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.watch"><code>watch</code></a> and
+<p>A timed value published without <code>timestamp_ns</code> is stamped with the time of
+the write. Give <code>timestamp_ns</code> when the device reports its own time. A
+publish of the setpoint alone keeps the value and its time.</p>
+<p><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;watch&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.watch"><code>watch</code></a> and
 <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-attribute&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-attribute-name&quot;&gt;events&lt;/span&gt;
 
 
   &lt;span class=&quot;doc doc-labels&quot;&gt;
       &lt;small class=&quot;doc doc-label doc-label-property&quot;&gt;&lt;code&gt;property&lt;/code&gt;&lt;/small&gt;
-  &lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.events"><code>events</code></a> deliver. An
-<code>async def</code> handler runs as a task on the event loop that is running when
-you call <code>serve</code>, and calling <code>serve</code> with one outside a running loop
-raises <code>RuntimeError</code>. Only one process serves a field at a time: a second
-<code>serve</code> while a live process serves it, this one included, raises
+  &lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.events"><code>events</code></a> report publishes with the
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;AttrValue&lt;/span&gt;" href="../../reference/api/box/#sharedbox.AttrValue"><code>AttrValue</code></a> that <code>read</code> returns, as they report
+writes of any field: several publishes in quick succession may reach you
+as one change, with the parts of the last.
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;snapshot&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.snapshot"><code>snapshot</code></a> includes the <code>AttrValue</code> too. A
+request is not an event, so it reaches neither. Nothing checks which
+process publishes, so keep <code>publish</code> in the owner's code.</p>
+<h2 id="3-serve-it">3. Serve it<a class="headerlink" href="#3-serve-it" title="Permanent link">&para;</a></h2>
+<p>The process that owns the device registers a handler with
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;serve&lt;/span&gt;" href="../../reference/api/box/#sharedbox.Attr.serve"><code>serve</code></a>. A settable attribute's handler receives
+the value given to <code>set</code>:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="k">def</span><span class="w"> </span><span class="nf">set_exposure</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>    <span class="n">accepted</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="nb">max</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="mf">0.001</span><span class="p">),</span> <span class="mf">1.0</span><span class="p">)</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>    <span class="n">camera</span><span class="o">.</span><span class="n">exposure</span><span class="o">.</span><span class="n">publish</span><span class="p">(</span><span class="n">setpoint</span><span class="o">=</span><span class="n">accepted</span><span class="p">)</span>
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>    <span class="n">camera</span><span class="o">.</span><span class="n">exposure</span><span class="o">.</span><span class="n">publish</span><span class="p">(</span><span class="n">value</span><span class="o">=</span><span class="n">accepted</span><span class="p">)</span>
+</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>    <span class="k">return</span> <span class="n">accepted</span>
+</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>
+</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>
+</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="k">def</span><span class="w"> </span><span class="nf">move</span><span class="p">(</span><span class="n">target</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+</span><span id="__span-2-9"><a id="__codelineno-2-9" name="__codelineno-2-9" href="#__codelineno-2-9"></a>    <span class="k">if</span> <span class="n">target</span> <span class="o">&gt;</span> <span class="mf">100.0</span><span class="p">:</span>
+</span><span id="__span-2-10"><a id="__codelineno-2-10" name="__codelineno-2-10" href="#__codelineno-2-10"></a>        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">target</span><span class="si">}</span><span class="s2"> is out of range"</span><span class="p">)</span>
+</span><span id="__span-2-11"><a id="__codelineno-2-11" name="__codelineno-2-11" href="#__codelineno-2-11"></a>    <span class="k">return</span> <span class="n">target</span>
+</span><span id="__span-2-12"><a id="__codelineno-2-12" name="__codelineno-2-12" href="#__codelineno-2-12"></a>
+</span><span id="__span-2-13"><a id="__codelineno-2-13" name="__codelineno-2-13" href="#__codelineno-2-13"></a>
+</span><span id="__span-2-14"><a id="__codelineno-2-14" name="__codelineno-2-14" href="#__codelineno-2-14"></a><span class="n">exposure_server</span> <span class="o">=</span> <span class="n">camera</span><span class="o">.</span><span class="n">exposure</span><span class="o">.</span><span class="n">serve</span><span class="p">(</span><span class="n">set_exposure</span><span class="p">)</span>
+</span><span id="__span-2-15"><a id="__codelineno-2-15" name="__codelineno-2-15" href="#__codelineno-2-15"></a><span class="n">move_server</span> <span class="o">=</span> <span class="n">camera</span><span class="o">.</span><span class="n">move</span><span class="o">.</span><span class="n">serve</span><span class="p">(</span><span class="n">move</span><span class="p">)</span>
+</span></code></pre></div>
+<p>Answering a request publishes nothing, so the handler publishes what other
+processes should see. <code>set_exposure</code> publishes the setpoint it accepted and
+then the value, and a handler for a real camera would configure it between
+the two, so readers see the request accepted before the camera uses it.</p>
+<p>A plain function runs on a thread of its own, so a slow handler doesn't
+hold up what <code>watch</code> and <code>events</code> deliver. An <code>async def</code> handler runs as a
+task on the event loop that is running when you call <code>serve</code>, and calling
+<code>serve</code> with one outside a running loop raises <code>RuntimeError</code>. Only one
+process serves a field at a time: a second <code>serve</code> while a live process
+serves it, this one included, raises
 <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;AlreadyServedError&lt;/span&gt;" href="../../reference/api/errors/#sharedbox.AlreadyServedError"><code>AlreadyServedError</code></a>.</p>
 <p><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;stop&lt;/span&gt;" href="../../reference/api/box/#sharedbox.RequestServer.stop"><code>RequestServer.stop</code></a> stops serving and
 frees the field for another server. It waits for a running plain handler
@@ -3501,137 +3570,155 @@ collection of the box or the end of the process, but these free the field
 at once: a request whose handler is still running fails with
 <code>RequestError</code> saying the server stopped, and only then does the close
 wait for a plain handler's thread.</p>
-<h2 id="3-call-it">3. Call it<a class="headerlink" href="#3-call-it" title="Permanent link">&para;</a></h2>
-<p>Calling the field sends the request at once and returns a
-<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;RequestFuture&lt;/span&gt;" href="../../reference/api/box/#sharedbox.RequestFuture"><code>RequestFuture</code></a>, which you wait on with
-<code>result</code> in any thread or <code>await</code> in a running event loop:</p>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="nb">print</span><span class="p">(</span><span class="n">scanner</span><span class="o">.</span><span class="n">move</span><span class="p">(</span><span class="mf">5.0</span><span class="p">)</span><span class="o">.</span><span class="n">result</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="mi">5</span><span class="p">))</span>  <span class="c1"># 5.0</span>
-</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>
-</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>
-</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a>    <span class="nb">print</span><span class="p">(</span><span class="k">await</span> <span class="n">scanner</span><span class="o">.</span><span class="n">move</span><span class="p">(</span><span class="mf">7.5</span><span class="p">))</span>  <span class="c1"># 7.5</span>
-</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a>
-</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>
-</span><span id="__span-2-8"><a id="__codelineno-2-8" name="__codelineno-2-8" href="#__codelineno-2-8"></a><span class="n">asyncio</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">main</span><span class="p">())</span>
+<h2 id="4-send-a-request">4. Send a request<a class="headerlink" href="#4-send-a-request" title="Permanent link">&para;</a></h2>
+<p>Calling the attribute, or <code>set</code> on a settable one, sends the request at
+once and returns a <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;RequestFuture&lt;/span&gt;" href="../../reference/api/box/#sharedbox.RequestFuture"><code>RequestFuture</code></a>, which you
+wait on with <code>result</code> in any thread or <code>await</code> in a running event loop:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="nb">print</span><span class="p">(</span><span class="n">camera</span><span class="o">.</span><span class="n">exposure</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="mf">5.0</span><span class="p">)</span><span class="o">.</span><span class="n">result</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="mi">5</span><span class="p">))</span>  <span class="c1"># 1.0</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="nb">print</span><span class="p">(</span><span class="n">camera</span><span class="o">.</span><span class="n">exposure</span><span class="o">.</span><span class="n">setpoint</span><span class="p">)</span>  <span class="c1"># 1.0</span>
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="nb">print</span><span class="p">(</span><span class="n">camera</span><span class="o">.</span><span class="n">move</span><span class="p">(</span><span class="mf">5.0</span><span class="p">)</span><span class="o">.</span><span class="n">result</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="mi">5</span><span class="p">))</span>  <span class="c1"># 5.0</span>
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>
+</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a>
+</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+</span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a>    <span class="nb">print</span><span class="p">(</span><span class="k">await</span> <span class="n">camera</span><span class="o">.</span><span class="n">exposure</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="mf">0.02</span><span class="p">))</span>  <span class="c1"># 0.02</span>
+</span><span id="__span-3-8"><a id="__codelineno-3-8" name="__codelineno-3-8" href="#__codelineno-3-8"></a>
+</span><span id="__span-3-9"><a id="__codelineno-3-9" name="__codelineno-3-9" href="#__codelineno-3-9"></a>
+</span><span id="__span-3-10"><a id="__codelineno-3-10" name="__codelineno-3-10" href="#__codelineno-3-10"></a><span class="n">asyncio</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">main</span><span class="p">())</span>
 </span></code></pre></div>
 <p>The request is sent whether or not anyone waits for the future, and
-cancelling the future only stops the wait. A call takes positional
+cancelling the future only stops the wait. A request takes positional
 arguments only, so give a time limit to <code>result(timeout=...)</code>, or to
 <code>asyncio.wait_for</code> in async code. A request sent while nobody serves the
 field waits until a server starts.</p>
-<h2 id="4-handle-a-failed-call">4. Handle a failed call<a class="headerlink" href="#4-handle-a-failed-call" title="Permanent link">&para;</a></h2>
+<h2 id="5-handle-a-failed-request">5. Handle a failed request<a class="headerlink" href="#5-handle-a-failed-request" title="Permanent link">&para;</a></h2>
 <p>An exception the handler raises is logged to the <code>sharedbox</code> logger in the
 serving process, with its traceback, and reaches the caller as
 <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;RequestError&lt;/span&gt;" href="../../reference/api/errors/#sharedbox.RequestError"><code>RequestError</code></a>, with the exception's type and
 message cut to 256 bytes:</p>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="k">try</span><span class="p">:</span>
-</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a>    <span class="n">scanner</span><span class="o">.</span><span class="n">move</span><span class="p">(</span><span class="mf">250.0</span><span class="p">)</span><span class="o">.</span><span class="n">result</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="mi">5</span><span class="p">)</span>
-</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="k">except</span> <span class="n">RequestError</span> <span class="k">as</span> <span class="n">error</span><span class="p">:</span>
-</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">error</span><span class="p">)</span>  <span class="c1"># Scanner.move: ValueError: 250.0 is out of range</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="k">try</span><span class="p">:</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>    <span class="n">camera</span><span class="o">.</span><span class="n">move</span><span class="p">(</span><span class="mf">250.0</span><span class="p">)</span><span class="o">.</span><span class="n">result</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="mi">5</span><span class="p">)</span>
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="k">except</span> <span class="n">RequestError</span> <span class="k">as</span> <span class="n">error</span><span class="p">:</span>
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">error</span><span class="p">)</span>  <span class="c1"># Camera.move: ValueError: 250.0 is out of range</span>
 </span></code></pre></div>
 <p>A caller waiting on a server whose process ends gets
 <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;ServerExitedError&lt;/span&gt;" href="../../reference/api/errors/#sharedbox.ServerExitedError"><code>ServerExitedError</code></a> within about a tenth of
 a second. A server that stops while it handles a request answers that
-request, as section 2 describes, so no caller waits for an answer that
+request, as section 3 describes, so no caller waits for an answer that
 can't come.</p>
-<h2 id="5-expect-the-latest-request-to-win">5. Expect the latest request to win<a class="headerlink" href="#5-expect-the-latest-request-to-win" title="Permanent link">&para;</a></h2>
+<h2 id="6-expect-the-latest-request-to-win">6. Expect the latest request to win<a class="headerlink" href="#6-expect-the-latest-request-to-win" title="Permanent link">&para;</a></h2>
 <p>The handler handles one request at a time. Of the requests sent while it
 runs, only the newest is handled next, and each one before it raises
-<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;RequestSupersededError&lt;/span&gt;" href="../../reference/api/errors/#sharedbox.RequestSupersededError"><code>RequestSupersededError</code></a> in its caller. A
-motor told to go to 2 and then to 3 while it is still moving goes to 3:</p>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="n">started</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Event</span><span class="p">()</span>
-</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="n">release</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Event</span><span class="p">()</span>
-</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>
-</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>
-</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="k">def</span><span class="w"> </span><span class="nf">slow_move</span><span class="p">(</span><span class="n">target</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
-</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>    <span class="n">started</span><span class="o">.</span><span class="n">set</span><span class="p">()</span>
-</span><span id="__span-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>    <span class="n">release</span><span class="o">.</span><span class="n">wait</span><span class="p">()</span>
-</span><span id="__span-4-8"><a id="__codelineno-4-8" name="__codelineno-4-8" href="#__codelineno-4-8"></a>    <span class="k">return</span> <span class="n">target</span>
-</span><span id="__span-4-9"><a id="__codelineno-4-9" name="__codelineno-4-9" href="#__codelineno-4-9"></a>
-</span><span id="__span-4-10"><a id="__codelineno-4-10" name="__codelineno-4-10" href="#__codelineno-4-10"></a>
-</span><span id="__span-4-11"><a id="__codelineno-4-11" name="__codelineno-4-11" href="#__codelineno-4-11"></a><span class="n">server</span> <span class="o">=</span> <span class="n">scanner</span><span class="o">.</span><span class="n">move</span><span class="o">.</span><span class="n">serve</span><span class="p">(</span><span class="n">slow_move</span><span class="p">)</span>
-</span><span id="__span-4-12"><a id="__codelineno-4-12" name="__codelineno-4-12" href="#__codelineno-4-12"></a><span class="n">first</span> <span class="o">=</span> <span class="n">scanner</span><span class="o">.</span><span class="n">move</span><span class="p">(</span><span class="mf">1.0</span><span class="p">)</span>
-</span><span id="__span-4-13"><a id="__codelineno-4-13" name="__codelineno-4-13" href="#__codelineno-4-13"></a><span class="n">started</span><span class="o">.</span><span class="n">wait</span><span class="p">()</span>
-</span><span id="__span-4-14"><a id="__codelineno-4-14" name="__codelineno-4-14" href="#__codelineno-4-14"></a><span class="n">second</span> <span class="o">=</span> <span class="n">scanner</span><span class="o">.</span><span class="n">move</span><span class="p">(</span><span class="mf">2.0</span><span class="p">)</span>
-</span><span id="__span-4-15"><a id="__codelineno-4-15" name="__codelineno-4-15" href="#__codelineno-4-15"></a><span class="n">third</span> <span class="o">=</span> <span class="n">scanner</span><span class="o">.</span><span class="n">move</span><span class="p">(</span><span class="mf">3.0</span><span class="p">)</span>
-</span><span id="__span-4-16"><a id="__codelineno-4-16" name="__codelineno-4-16" href="#__codelineno-4-16"></a><span class="n">release</span><span class="o">.</span><span class="n">set</span><span class="p">()</span>
-</span><span id="__span-4-17"><a id="__codelineno-4-17" name="__codelineno-4-17" href="#__codelineno-4-17"></a><span class="nb">print</span><span class="p">(</span><span class="n">first</span><span class="o">.</span><span class="n">result</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="mi">5</span><span class="p">),</span> <span class="n">third</span><span class="o">.</span><span class="n">result</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="mi">5</span><span class="p">))</span>  <span class="c1"># 1.0 3.0</span>
-</span><span id="__span-4-18"><a id="__codelineno-4-18" name="__codelineno-4-18" href="#__codelineno-4-18"></a><span class="k">try</span><span class="p">:</span>
-</span><span id="__span-4-19"><a id="__codelineno-4-19" name="__codelineno-4-19" href="#__codelineno-4-19"></a>    <span class="n">second</span><span class="o">.</span><span class="n">result</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="mi">5</span><span class="p">)</span>
-</span><span id="__span-4-20"><a id="__codelineno-4-20" name="__codelineno-4-20" href="#__codelineno-4-20"></a><span class="k">except</span> <span class="n">RequestSupersededError</span><span class="p">:</span>
-</span><span id="__span-4-21"><a id="__codelineno-4-21" name="__codelineno-4-21" href="#__codelineno-4-21"></a>    <span class="nb">print</span><span class="p">(</span><span class="s2">"the second request was superseded"</span><span class="p">)</span>
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;RequestSupersededError&lt;/span&gt;" href="../../reference/api/errors/#sharedbox.RequestSupersededError"><code>RequestSupersededError</code></a> in its caller.
+A camera told to move to 2 and then to 3 while it is still moving goes to
+3:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">started</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Event</span><span class="p">()</span>
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="n">release</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Event</span><span class="p">()</span>
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>
+</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>
+</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="k">def</span><span class="w"> </span><span class="nf">slow_move</span><span class="p">(</span><span class="n">target</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a>    <span class="n">started</span><span class="o">.</span><span class="n">set</span><span class="p">()</span>
+</span><span id="__span-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>    <span class="n">release</span><span class="o">.</span><span class="n">wait</span><span class="p">()</span>
+</span><span id="__span-5-8"><a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>    <span class="k">return</span> <span class="n">target</span>
+</span><span id="__span-5-9"><a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a>
+</span><span id="__span-5-10"><a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a>
+</span><span id="__span-5-11"><a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a><span class="n">move_server</span> <span class="o">=</span> <span class="n">camera</span><span class="o">.</span><span class="n">move</span><span class="o">.</span><span class="n">serve</span><span class="p">(</span><span class="n">slow_move</span><span class="p">)</span>
+</span><span id="__span-5-12"><a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a><span class="n">first</span> <span class="o">=</span> <span class="n">camera</span><span class="o">.</span><span class="n">move</span><span class="p">(</span><span class="mf">1.0</span><span class="p">)</span>
+</span><span id="__span-5-13"><a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a><span class="n">started</span><span class="o">.</span><span class="n">wait</span><span class="p">()</span>
+</span><span id="__span-5-14"><a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a><span class="n">second</span> <span class="o">=</span> <span class="n">camera</span><span class="o">.</span><span class="n">move</span><span class="p">(</span><span class="mf">2.0</span><span class="p">)</span>
+</span><span id="__span-5-15"><a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a><span class="n">third</span> <span class="o">=</span> <span class="n">camera</span><span class="o">.</span><span class="n">move</span><span class="p">(</span><span class="mf">3.0</span><span class="p">)</span>
+</span><span id="__span-5-16"><a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a><span class="n">release</span><span class="o">.</span><span class="n">set</span><span class="p">()</span>
+</span><span id="__span-5-17"><a id="__codelineno-5-17" name="__codelineno-5-17" href="#__codelineno-5-17"></a><span class="nb">print</span><span class="p">(</span><span class="n">first</span><span class="o">.</span><span class="n">result</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="mi">5</span><span class="p">),</span> <span class="n">third</span><span class="o">.</span><span class="n">result</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="mi">5</span><span class="p">))</span>  <span class="c1"># 1.0 3.0</span>
+</span><span id="__span-5-18"><a id="__codelineno-5-18" name="__codelineno-5-18" href="#__codelineno-5-18"></a><span class="k">try</span><span class="p">:</span>
+</span><span id="__span-5-19"><a id="__codelineno-5-19" name="__codelineno-5-19" href="#__codelineno-5-19"></a>    <span class="n">second</span><span class="o">.</span><span class="n">result</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="mi">5</span><span class="p">)</span>
+</span><span id="__span-5-20"><a id="__codelineno-5-20" name="__codelineno-5-20" href="#__codelineno-5-20"></a><span class="k">except</span> <span class="n">RequestSupersededError</span><span class="p">:</span>
+</span><span id="__span-5-21"><a id="__codelineno-5-21" name="__codelineno-5-21" href="#__codelineno-5-21"></a>    <span class="nb">print</span><span class="p">(</span><span class="s2">"the second request was superseded"</span><span class="p">)</span>
 </span></code></pre></div>
 <p>If every request has to run, wait for each answer before sending the next.</p>
 <details class="example">
 <summary>The whole script</summary>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="sd">"""The script of the guide "How to call a function in the process that owns a box"."""</span>
-</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>
-</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a><span class="kn">import</span><span class="w"> </span><span class="nn">asyncio</span>
-</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a><span class="kn">import</span><span class="w"> </span><span class="nn">threading</span>
-</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a>
-</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sharedbox</span><span class="w"> </span><span class="kn">import</span> <span class="n">Call</span><span class="p">,</span> <span class="n">RequestError</span><span class="p">,</span> <span class="n">RequestSupersededError</span><span class="p">,</span> <span class="n">SharedBox</span><span class="p">,</span> <span class="n">call</span>
-</span><span id="__span-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>
-</span><span id="__span-5-8"><a id="__codelineno-5-8" name="__codelineno-5-8" href="#__codelineno-5-8"></a>
-</span><span id="__span-5-9"><a id="__codelineno-5-9" name="__codelineno-5-9" href="#__codelineno-5-9"></a><span class="k">class</span><span class="w"> </span><span class="nc">Scanner</span><span class="p">(</span><span class="n">SharedBox</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">"example-scanner"</span><span class="p">):</span>
-</span><span id="__span-5-10"><a id="__codelineno-5-10" name="__codelineno-5-10" href="#__codelineno-5-10"></a>    <span class="n">position</span><span class="p">:</span> <span class="nb">float</span> <span class="o">=</span> <span class="mf">0.0</span>
-</span><span id="__span-5-11"><a id="__codelineno-5-11" name="__codelineno-5-11" href="#__codelineno-5-11"></a>    <span class="n">move</span><span class="p">:</span> <span class="n">Call</span><span class="p">[[</span><span class="nb">float</span><span class="p">],</span> <span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="n">call</span><span class="p">()</span>
-</span><span id="__span-5-12"><a id="__codelineno-5-12" name="__codelineno-5-12" href="#__codelineno-5-12"></a>    <span class="n">home</span><span class="p">:</span> <span class="n">Call</span><span class="p">[[],</span> <span class="kc">None</span><span class="p">]</span> <span class="o">=</span> <span class="n">call</span><span class="p">()</span>
-</span><span id="__span-5-13"><a id="__codelineno-5-13" name="__codelineno-5-13" href="#__codelineno-5-13"></a>
-</span><span id="__span-5-14"><a id="__codelineno-5-14" name="__codelineno-5-14" href="#__codelineno-5-14"></a>
-</span><span id="__span-5-15"><a id="__codelineno-5-15" name="__codelineno-5-15" href="#__codelineno-5-15"></a>
-</span><span id="__span-5-16"><a id="__codelineno-5-16" name="__codelineno-5-16" href="#__codelineno-5-16"></a><span class="n">scanner</span> <span class="o">=</span> <span class="n">Scanner</span><span class="p">()</span>
-</span><span id="__span-5-17"><a id="__codelineno-5-17" name="__codelineno-5-17" href="#__codelineno-5-17"></a>
-</span><span id="__span-5-18"><a id="__codelineno-5-18" name="__codelineno-5-18" href="#__codelineno-5-18"></a>
-</span><span id="__span-5-19"><a id="__codelineno-5-19" name="__codelineno-5-19" href="#__codelineno-5-19"></a><span class="k">def</span><span class="w"> </span><span class="nf">move</span><span class="p">(</span><span class="n">target</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
-</span><span id="__span-5-20"><a id="__codelineno-5-20" name="__codelineno-5-20" href="#__codelineno-5-20"></a>    <span class="k">if</span> <span class="n">target</span> <span class="o">&gt;</span> <span class="mf">100.0</span><span class="p">:</span>
-</span><span id="__span-5-21"><a id="__codelineno-5-21" name="__codelineno-5-21" href="#__codelineno-5-21"></a>        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">target</span><span class="si">}</span><span class="s2"> is out of range"</span><span class="p">)</span>
-</span><span id="__span-5-22"><a id="__codelineno-5-22" name="__codelineno-5-22" href="#__codelineno-5-22"></a>    <span class="n">scanner</span><span class="o">.</span><span class="n">position</span> <span class="o">=</span> <span class="n">target</span>
-</span><span id="__span-5-23"><a id="__codelineno-5-23" name="__codelineno-5-23" href="#__codelineno-5-23"></a>    <span class="k">return</span> <span class="n">target</span>
-</span><span id="__span-5-24"><a id="__codelineno-5-24" name="__codelineno-5-24" href="#__codelineno-5-24"></a>
-</span><span id="__span-5-25"><a id="__codelineno-5-25" name="__codelineno-5-25" href="#__codelineno-5-25"></a>
-</span><span id="__span-5-26"><a id="__codelineno-5-26" name="__codelineno-5-26" href="#__codelineno-5-26"></a><span class="n">server</span> <span class="o">=</span> <span class="n">scanner</span><span class="o">.</span><span class="n">move</span><span class="o">.</span><span class="n">serve</span><span class="p">(</span><span class="n">move</span><span class="p">)</span>
-</span><span id="__span-5-27"><a id="__codelineno-5-27" name="__codelineno-5-27" href="#__codelineno-5-27"></a>
-</span><span id="__span-5-28"><a id="__codelineno-5-28" name="__codelineno-5-28" href="#__codelineno-5-28"></a><span class="nb">print</span><span class="p">(</span><span class="n">scanner</span><span class="o">.</span><span class="n">move</span><span class="p">(</span><span class="mf">5.0</span><span class="p">)</span><span class="o">.</span><span class="n">result</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="mi">5</span><span class="p">))</span>  <span class="c1"># 5.0</span>
-</span><span id="__span-5-29"><a id="__codelineno-5-29" name="__codelineno-5-29" href="#__codelineno-5-29"></a>
-</span><span id="__span-5-30"><a id="__codelineno-5-30" name="__codelineno-5-30" href="#__codelineno-5-30"></a>
-</span><span id="__span-5-31"><a id="__codelineno-5-31" name="__codelineno-5-31" href="#__codelineno-5-31"></a><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
-</span><span id="__span-5-32"><a id="__codelineno-5-32" name="__codelineno-5-32" href="#__codelineno-5-32"></a>    <span class="nb">print</span><span class="p">(</span><span class="k">await</span> <span class="n">scanner</span><span class="o">.</span><span class="n">move</span><span class="p">(</span><span class="mf">7.5</span><span class="p">))</span>  <span class="c1"># 7.5</span>
-</span><span id="__span-5-33"><a id="__codelineno-5-33" name="__codelineno-5-33" href="#__codelineno-5-33"></a>
-</span><span id="__span-5-34"><a id="__codelineno-5-34" name="__codelineno-5-34" href="#__codelineno-5-34"></a>
-</span><span id="__span-5-35"><a id="__codelineno-5-35" name="__codelineno-5-35" href="#__codelineno-5-35"></a><span class="n">asyncio</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">main</span><span class="p">())</span>
-</span><span id="__span-5-36"><a id="__codelineno-5-36" name="__codelineno-5-36" href="#__codelineno-5-36"></a>
-</span><span id="__span-5-37"><a id="__codelineno-5-37" name="__codelineno-5-37" href="#__codelineno-5-37"></a><span class="k">try</span><span class="p">:</span>
-</span><span id="__span-5-38"><a id="__codelineno-5-38" name="__codelineno-5-38" href="#__codelineno-5-38"></a>    <span class="n">scanner</span><span class="o">.</span><span class="n">move</span><span class="p">(</span><span class="mf">250.0</span><span class="p">)</span><span class="o">.</span><span class="n">result</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="mi">5</span><span class="p">)</span>
-</span><span id="__span-5-39"><a id="__codelineno-5-39" name="__codelineno-5-39" href="#__codelineno-5-39"></a><span class="k">except</span> <span class="n">RequestError</span> <span class="k">as</span> <span class="n">error</span><span class="p">:</span>
-</span><span id="__span-5-40"><a id="__codelineno-5-40" name="__codelineno-5-40" href="#__codelineno-5-40"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">error</span><span class="p">)</span>  <span class="c1"># Scanner.move: ValueError: 250.0 is out of range</span>
-</span><span id="__span-5-41"><a id="__codelineno-5-41" name="__codelineno-5-41" href="#__codelineno-5-41"></a>
-</span><span id="__span-5-42"><a id="__codelineno-5-42" name="__codelineno-5-42" href="#__codelineno-5-42"></a><span class="n">server</span><span class="o">.</span><span class="n">stop</span><span class="p">()</span>
-</span><span id="__span-5-43"><a id="__codelineno-5-43" name="__codelineno-5-43" href="#__codelineno-5-43"></a>
-</span><span id="__span-5-44"><a id="__codelineno-5-44" name="__codelineno-5-44" href="#__codelineno-5-44"></a><span class="n">started</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Event</span><span class="p">()</span>
-</span><span id="__span-5-45"><a id="__codelineno-5-45" name="__codelineno-5-45" href="#__codelineno-5-45"></a><span class="n">release</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Event</span><span class="p">()</span>
-</span><span id="__span-5-46"><a id="__codelineno-5-46" name="__codelineno-5-46" href="#__codelineno-5-46"></a>
-</span><span id="__span-5-47"><a id="__codelineno-5-47" name="__codelineno-5-47" href="#__codelineno-5-47"></a>
-</span><span id="__span-5-48"><a id="__codelineno-5-48" name="__codelineno-5-48" href="#__codelineno-5-48"></a><span class="k">def</span><span class="w"> </span><span class="nf">slow_move</span><span class="p">(</span><span class="n">target</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
-</span><span id="__span-5-49"><a id="__codelineno-5-49" name="__codelineno-5-49" href="#__codelineno-5-49"></a>    <span class="n">started</span><span class="o">.</span><span class="n">set</span><span class="p">()</span>
-</span><span id="__span-5-50"><a id="__codelineno-5-50" name="__codelineno-5-50" href="#__codelineno-5-50"></a>    <span class="n">release</span><span class="o">.</span><span class="n">wait</span><span class="p">()</span>
-</span><span id="__span-5-51"><a id="__codelineno-5-51" name="__codelineno-5-51" href="#__codelineno-5-51"></a>    <span class="k">return</span> <span class="n">target</span>
-</span><span id="__span-5-52"><a id="__codelineno-5-52" name="__codelineno-5-52" href="#__codelineno-5-52"></a>
-</span><span id="__span-5-53"><a id="__codelineno-5-53" name="__codelineno-5-53" href="#__codelineno-5-53"></a>
-</span><span id="__span-5-54"><a id="__codelineno-5-54" name="__codelineno-5-54" href="#__codelineno-5-54"></a><span class="n">server</span> <span class="o">=</span> <span class="n">scanner</span><span class="o">.</span><span class="n">move</span><span class="o">.</span><span class="n">serve</span><span class="p">(</span><span class="n">slow_move</span><span class="p">)</span>
-</span><span id="__span-5-55"><a id="__codelineno-5-55" name="__codelineno-5-55" href="#__codelineno-5-55"></a><span class="n">first</span> <span class="o">=</span> <span class="n">scanner</span><span class="o">.</span><span class="n">move</span><span class="p">(</span><span class="mf">1.0</span><span class="p">)</span>
-</span><span id="__span-5-56"><a id="__codelineno-5-56" name="__codelineno-5-56" href="#__codelineno-5-56"></a><span class="n">started</span><span class="o">.</span><span class="n">wait</span><span class="p">()</span>
-</span><span id="__span-5-57"><a id="__codelineno-5-57" name="__codelineno-5-57" href="#__codelineno-5-57"></a><span class="n">second</span> <span class="o">=</span> <span class="n">scanner</span><span class="o">.</span><span class="n">move</span><span class="p">(</span><span class="mf">2.0</span><span class="p">)</span>
-</span><span id="__span-5-58"><a id="__codelineno-5-58" name="__codelineno-5-58" href="#__codelineno-5-58"></a><span class="n">third</span> <span class="o">=</span> <span class="n">scanner</span><span class="o">.</span><span class="n">move</span><span class="p">(</span><span class="mf">3.0</span><span class="p">)</span>
-</span><span id="__span-5-59"><a id="__codelineno-5-59" name="__codelineno-5-59" href="#__codelineno-5-59"></a><span class="n">release</span><span class="o">.</span><span class="n">set</span><span class="p">()</span>
-</span><span id="__span-5-60"><a id="__codelineno-5-60" name="__codelineno-5-60" href="#__codelineno-5-60"></a><span class="nb">print</span><span class="p">(</span><span class="n">first</span><span class="o">.</span><span class="n">result</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="mi">5</span><span class="p">),</span> <span class="n">third</span><span class="o">.</span><span class="n">result</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="mi">5</span><span class="p">))</span>  <span class="c1"># 1.0 3.0</span>
-</span><span id="__span-5-61"><a id="__codelineno-5-61" name="__codelineno-5-61" href="#__codelineno-5-61"></a><span class="k">try</span><span class="p">:</span>
-</span><span id="__span-5-62"><a id="__codelineno-5-62" name="__codelineno-5-62" href="#__codelineno-5-62"></a>    <span class="n">second</span><span class="o">.</span><span class="n">result</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="mi">5</span><span class="p">)</span>
-</span><span id="__span-5-63"><a id="__codelineno-5-63" name="__codelineno-5-63" href="#__codelineno-5-63"></a><span class="k">except</span> <span class="n">RequestSupersededError</span><span class="p">:</span>
-</span><span id="__span-5-64"><a id="__codelineno-5-64" name="__codelineno-5-64" href="#__codelineno-5-64"></a>    <span class="nb">print</span><span class="p">(</span><span class="s2">"the second request was superseded"</span><span class="p">)</span>
-</span><span id="__span-5-65"><a id="__codelineno-5-65" name="__codelineno-5-65" href="#__codelineno-5-65"></a>
-</span><span id="__span-5-66"><a id="__codelineno-5-66" name="__codelineno-5-66" href="#__codelineno-5-66"></a><span class="n">server</span><span class="o">.</span><span class="n">stop</span><span class="p">()</span>
-</span><span id="__span-5-67"><a id="__codelineno-5-67" name="__codelineno-5-67" href="#__codelineno-5-67"></a><span class="n">scanner</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
-</span><span id="__span-5-68"><a id="__codelineno-5-68" name="__codelineno-5-68" href="#__codelineno-5-68"></a><span class="n">Scanner</span><span class="o">.</span><span class="n">unlink</span><span class="p">()</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="sd">"""The script of the guide "How to request work from the process that owns a box"."""</span>
+</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>
+</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="kn">import</span><span class="w"> </span><span class="nn">asyncio</span>
+</span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="kn">import</span><span class="w"> </span><span class="nn">threading</span>
+</span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>
+</span><span id="__span-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sharedbox</span><span class="w"> </span><span class="kn">import</span> <span class="n">Attr</span><span class="p">,</span> <span class="n">RequestError</span><span class="p">,</span> <span class="n">RequestSupersededError</span><span class="p">,</span> <span class="n">SharedBox</span><span class="p">,</span> <span class="n">attr</span>
+</span><span id="__span-6-7"><a id="__codelineno-6-7" name="__codelineno-6-7" href="#__codelineno-6-7"></a>
+</span><span id="__span-6-8"><a id="__codelineno-6-8" name="__codelineno-6-8" href="#__codelineno-6-8"></a>
+</span><span id="__span-6-9"><a id="__codelineno-6-9" name="__codelineno-6-9" href="#__codelineno-6-9"></a><span class="k">class</span><span class="w"> </span><span class="nc">Camera</span><span class="p">(</span><span class="n">SharedBox</span><span class="p">,</span> <span class="n">name</span><span class="o">=</span><span class="s2">"example-camera"</span><span class="p">):</span>
+</span><span id="__span-6-10"><a id="__codelineno-6-10" name="__codelineno-6-10" href="#__codelineno-6-10"></a>    <span class="n">temperature</span><span class="p">:</span> <span class="n">Attr</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="n">attr</span><span class="p">(</span><span class="n">timed</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</span><span id="__span-6-11"><a id="__codelineno-6-11" name="__codelineno-6-11" href="#__codelineno-6-11"></a>    <span class="n">exposure</span><span class="p">:</span> <span class="n">Attr</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="n">attr</span><span class="p">(</span><span class="n">timed</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">settable</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="mf">0.01</span><span class="p">)</span>
+</span><span id="__span-6-12"><a id="__codelineno-6-12" name="__codelineno-6-12" href="#__codelineno-6-12"></a>    <span class="n">move</span><span class="p">:</span> <span class="n">Attr</span><span class="p">[</span><span class="nb">float</span><span class="p">,</span> <span class="p">[</span><span class="nb">float</span><span class="p">]]</span> <span class="o">=</span> <span class="n">attr</span><span class="p">()</span>
+</span><span id="__span-6-13"><a id="__codelineno-6-13" name="__codelineno-6-13" href="#__codelineno-6-13"></a>    <span class="n">home</span><span class="p">:</span> <span class="n">Attr</span><span class="p">[</span><span class="kc">None</span><span class="p">]</span> <span class="o">=</span> <span class="n">attr</span><span class="p">()</span>
+</span><span id="__span-6-14"><a id="__codelineno-6-14" name="__codelineno-6-14" href="#__codelineno-6-14"></a>
+</span><span id="__span-6-15"><a id="__codelineno-6-15" name="__codelineno-6-15" href="#__codelineno-6-15"></a>
+</span><span id="__span-6-16"><a id="__codelineno-6-16" name="__codelineno-6-16" href="#__codelineno-6-16"></a>
+</span><span id="__span-6-17"><a id="__codelineno-6-17" name="__codelineno-6-17" href="#__codelineno-6-17"></a><span class="n">camera</span> <span class="o">=</span> <span class="n">Camera</span><span class="p">()</span>
+</span><span id="__span-6-18"><a id="__codelineno-6-18" name="__codelineno-6-18" href="#__codelineno-6-18"></a><span class="n">camera</span><span class="o">.</span><span class="n">temperature</span><span class="o">.</span><span class="n">publish</span><span class="p">(</span><span class="n">value</span><span class="o">=</span><span class="mf">21.5</span><span class="p">)</span>
+</span><span id="__span-6-19"><a id="__codelineno-6-19" name="__codelineno-6-19" href="#__codelineno-6-19"></a><span class="nb">print</span><span class="p">(</span><span class="n">camera</span><span class="o">.</span><span class="n">temperature</span><span class="o">.</span><span class="n">value</span><span class="p">)</span>  <span class="c1"># 21.5</span>
+</span><span id="__span-6-20"><a id="__codelineno-6-20" name="__codelineno-6-20" href="#__codelineno-6-20"></a><span class="n">reading</span> <span class="o">=</span> <span class="n">camera</span><span class="o">.</span><span class="n">temperature</span><span class="o">.</span><span class="n">read</span><span class="p">()</span>
+</span><span id="__span-6-21"><a id="__codelineno-6-21" name="__codelineno-6-21" href="#__codelineno-6-21"></a><span class="nb">print</span><span class="p">(</span><span class="n">reading</span><span class="p">[</span><span class="s2">"value"</span><span class="p">],</span> <span class="n">reading</span><span class="p">[</span><span class="s2">"timestamp_ns"</span><span class="p">]</span> <span class="o">&gt;</span> <span class="mi">0</span><span class="p">)</span>  <span class="c1"># 21.5 True</span>
+</span><span id="__span-6-22"><a id="__codelineno-6-22" name="__codelineno-6-22" href="#__codelineno-6-22"></a>
+</span><span id="__span-6-23"><a id="__codelineno-6-23" name="__codelineno-6-23" href="#__codelineno-6-23"></a>
+</span><span id="__span-6-24"><a id="__codelineno-6-24" name="__codelineno-6-24" href="#__codelineno-6-24"></a><span class="k">def</span><span class="w"> </span><span class="nf">set_exposure</span><span class="p">(</span><span class="n">value</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+</span><span id="__span-6-25"><a id="__codelineno-6-25" name="__codelineno-6-25" href="#__codelineno-6-25"></a>    <span class="n">accepted</span> <span class="o">=</span> <span class="nb">min</span><span class="p">(</span><span class="nb">max</span><span class="p">(</span><span class="n">value</span><span class="p">,</span> <span class="mf">0.001</span><span class="p">),</span> <span class="mf">1.0</span><span class="p">)</span>
+</span><span id="__span-6-26"><a id="__codelineno-6-26" name="__codelineno-6-26" href="#__codelineno-6-26"></a>    <span class="n">camera</span><span class="o">.</span><span class="n">exposure</span><span class="o">.</span><span class="n">publish</span><span class="p">(</span><span class="n">setpoint</span><span class="o">=</span><span class="n">accepted</span><span class="p">)</span>
+</span><span id="__span-6-27"><a id="__codelineno-6-27" name="__codelineno-6-27" href="#__codelineno-6-27"></a>    <span class="n">camera</span><span class="o">.</span><span class="n">exposure</span><span class="o">.</span><span class="n">publish</span><span class="p">(</span><span class="n">value</span><span class="o">=</span><span class="n">accepted</span><span class="p">)</span>
+</span><span id="__span-6-28"><a id="__codelineno-6-28" name="__codelineno-6-28" href="#__codelineno-6-28"></a>    <span class="k">return</span> <span class="n">accepted</span>
+</span><span id="__span-6-29"><a id="__codelineno-6-29" name="__codelineno-6-29" href="#__codelineno-6-29"></a>
+</span><span id="__span-6-30"><a id="__codelineno-6-30" name="__codelineno-6-30" href="#__codelineno-6-30"></a>
+</span><span id="__span-6-31"><a id="__codelineno-6-31" name="__codelineno-6-31" href="#__codelineno-6-31"></a><span class="k">def</span><span class="w"> </span><span class="nf">move</span><span class="p">(</span><span class="n">target</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+</span><span id="__span-6-32"><a id="__codelineno-6-32" name="__codelineno-6-32" href="#__codelineno-6-32"></a>    <span class="k">if</span> <span class="n">target</span> <span class="o">&gt;</span> <span class="mf">100.0</span><span class="p">:</span>
+</span><span id="__span-6-33"><a id="__codelineno-6-33" name="__codelineno-6-33" href="#__codelineno-6-33"></a>        <span class="k">raise</span> <span class="ne">ValueError</span><span class="p">(</span><span class="sa">f</span><span class="s2">"</span><span class="si">{</span><span class="n">target</span><span class="si">}</span><span class="s2"> is out of range"</span><span class="p">)</span>
+</span><span id="__span-6-34"><a id="__codelineno-6-34" name="__codelineno-6-34" href="#__codelineno-6-34"></a>    <span class="k">return</span> <span class="n">target</span>
+</span><span id="__span-6-35"><a id="__codelineno-6-35" name="__codelineno-6-35" href="#__codelineno-6-35"></a>
+</span><span id="__span-6-36"><a id="__codelineno-6-36" name="__codelineno-6-36" href="#__codelineno-6-36"></a>
+</span><span id="__span-6-37"><a id="__codelineno-6-37" name="__codelineno-6-37" href="#__codelineno-6-37"></a><span class="n">exposure_server</span> <span class="o">=</span> <span class="n">camera</span><span class="o">.</span><span class="n">exposure</span><span class="o">.</span><span class="n">serve</span><span class="p">(</span><span class="n">set_exposure</span><span class="p">)</span>
+</span><span id="__span-6-38"><a id="__codelineno-6-38" name="__codelineno-6-38" href="#__codelineno-6-38"></a><span class="n">move_server</span> <span class="o">=</span> <span class="n">camera</span><span class="o">.</span><span class="n">move</span><span class="o">.</span><span class="n">serve</span><span class="p">(</span><span class="n">move</span><span class="p">)</span>
+</span><span id="__span-6-39"><a id="__codelineno-6-39" name="__codelineno-6-39" href="#__codelineno-6-39"></a>
+</span><span id="__span-6-40"><a id="__codelineno-6-40" name="__codelineno-6-40" href="#__codelineno-6-40"></a><span class="nb">print</span><span class="p">(</span><span class="n">camera</span><span class="o">.</span><span class="n">exposure</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="mf">5.0</span><span class="p">)</span><span class="o">.</span><span class="n">result</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="mi">5</span><span class="p">))</span>  <span class="c1"># 1.0</span>
+</span><span id="__span-6-41"><a id="__codelineno-6-41" name="__codelineno-6-41" href="#__codelineno-6-41"></a><span class="nb">print</span><span class="p">(</span><span class="n">camera</span><span class="o">.</span><span class="n">exposure</span><span class="o">.</span><span class="n">setpoint</span><span class="p">)</span>  <span class="c1"># 1.0</span>
+</span><span id="__span-6-42"><a id="__codelineno-6-42" name="__codelineno-6-42" href="#__codelineno-6-42"></a><span class="nb">print</span><span class="p">(</span><span class="n">camera</span><span class="o">.</span><span class="n">move</span><span class="p">(</span><span class="mf">5.0</span><span class="p">)</span><span class="o">.</span><span class="n">result</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="mi">5</span><span class="p">))</span>  <span class="c1"># 5.0</span>
+</span><span id="__span-6-43"><a id="__codelineno-6-43" name="__codelineno-6-43" href="#__codelineno-6-43"></a>
+</span><span id="__span-6-44"><a id="__codelineno-6-44" name="__codelineno-6-44" href="#__codelineno-6-44"></a>
+</span><span id="__span-6-45"><a id="__codelineno-6-45" name="__codelineno-6-45" href="#__codelineno-6-45"></a><span class="k">async</span> <span class="k">def</span><span class="w"> </span><span class="nf">main</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
+</span><span id="__span-6-46"><a id="__codelineno-6-46" name="__codelineno-6-46" href="#__codelineno-6-46"></a>    <span class="nb">print</span><span class="p">(</span><span class="k">await</span> <span class="n">camera</span><span class="o">.</span><span class="n">exposure</span><span class="o">.</span><span class="n">set</span><span class="p">(</span><span class="mf">0.02</span><span class="p">))</span>  <span class="c1"># 0.02</span>
+</span><span id="__span-6-47"><a id="__codelineno-6-47" name="__codelineno-6-47" href="#__codelineno-6-47"></a>
+</span><span id="__span-6-48"><a id="__codelineno-6-48" name="__codelineno-6-48" href="#__codelineno-6-48"></a>
+</span><span id="__span-6-49"><a id="__codelineno-6-49" name="__codelineno-6-49" href="#__codelineno-6-49"></a><span class="n">asyncio</span><span class="o">.</span><span class="n">run</span><span class="p">(</span><span class="n">main</span><span class="p">())</span>
+</span><span id="__span-6-50"><a id="__codelineno-6-50" name="__codelineno-6-50" href="#__codelineno-6-50"></a>
+</span><span id="__span-6-51"><a id="__codelineno-6-51" name="__codelineno-6-51" href="#__codelineno-6-51"></a><span class="k">try</span><span class="p">:</span>
+</span><span id="__span-6-52"><a id="__codelineno-6-52" name="__codelineno-6-52" href="#__codelineno-6-52"></a>    <span class="n">camera</span><span class="o">.</span><span class="n">move</span><span class="p">(</span><span class="mf">250.0</span><span class="p">)</span><span class="o">.</span><span class="n">result</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="mi">5</span><span class="p">)</span>
+</span><span id="__span-6-53"><a id="__codelineno-6-53" name="__codelineno-6-53" href="#__codelineno-6-53"></a><span class="k">except</span> <span class="n">RequestError</span> <span class="k">as</span> <span class="n">error</span><span class="p">:</span>
+</span><span id="__span-6-54"><a id="__codelineno-6-54" name="__codelineno-6-54" href="#__codelineno-6-54"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">error</span><span class="p">)</span>  <span class="c1"># Camera.move: ValueError: 250.0 is out of range</span>
+</span><span id="__span-6-55"><a id="__codelineno-6-55" name="__codelineno-6-55" href="#__codelineno-6-55"></a>
+</span><span id="__span-6-56"><a id="__codelineno-6-56" name="__codelineno-6-56" href="#__codelineno-6-56"></a><span class="n">move_server</span><span class="o">.</span><span class="n">stop</span><span class="p">()</span>
+</span><span id="__span-6-57"><a id="__codelineno-6-57" name="__codelineno-6-57" href="#__codelineno-6-57"></a>
+</span><span id="__span-6-58"><a id="__codelineno-6-58" name="__codelineno-6-58" href="#__codelineno-6-58"></a><span class="n">started</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Event</span><span class="p">()</span>
+</span><span id="__span-6-59"><a id="__codelineno-6-59" name="__codelineno-6-59" href="#__codelineno-6-59"></a><span class="n">release</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Event</span><span class="p">()</span>
+</span><span id="__span-6-60"><a id="__codelineno-6-60" name="__codelineno-6-60" href="#__codelineno-6-60"></a>
+</span><span id="__span-6-61"><a id="__codelineno-6-61" name="__codelineno-6-61" href="#__codelineno-6-61"></a>
+</span><span id="__span-6-62"><a id="__codelineno-6-62" name="__codelineno-6-62" href="#__codelineno-6-62"></a><span class="k">def</span><span class="w"> </span><span class="nf">slow_move</span><span class="p">(</span><span class="n">target</span><span class="p">:</span> <span class="nb">float</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">float</span><span class="p">:</span>
+</span><span id="__span-6-63"><a id="__codelineno-6-63" name="__codelineno-6-63" href="#__codelineno-6-63"></a>    <span class="n">started</span><span class="o">.</span><span class="n">set</span><span class="p">()</span>
+</span><span id="__span-6-64"><a id="__codelineno-6-64" name="__codelineno-6-64" href="#__codelineno-6-64"></a>    <span class="n">release</span><span class="o">.</span><span class="n">wait</span><span class="p">()</span>
+</span><span id="__span-6-65"><a id="__codelineno-6-65" name="__codelineno-6-65" href="#__codelineno-6-65"></a>    <span class="k">return</span> <span class="n">target</span>
+</span><span id="__span-6-66"><a id="__codelineno-6-66" name="__codelineno-6-66" href="#__codelineno-6-66"></a>
+</span><span id="__span-6-67"><a id="__codelineno-6-67" name="__codelineno-6-67" href="#__codelineno-6-67"></a>
+</span><span id="__span-6-68"><a id="__codelineno-6-68" name="__codelineno-6-68" href="#__codelineno-6-68"></a><span class="n">move_server</span> <span class="o">=</span> <span class="n">camera</span><span class="o">.</span><span class="n">move</span><span class="o">.</span><span class="n">serve</span><span class="p">(</span><span class="n">slow_move</span><span class="p">)</span>
+</span><span id="__span-6-69"><a id="__codelineno-6-69" name="__codelineno-6-69" href="#__codelineno-6-69"></a><span class="n">first</span> <span class="o">=</span> <span class="n">camera</span><span class="o">.</span><span class="n">move</span><span class="p">(</span><span class="mf">1.0</span><span class="p">)</span>
+</span><span id="__span-6-70"><a id="__codelineno-6-70" name="__codelineno-6-70" href="#__codelineno-6-70"></a><span class="n">started</span><span class="o">.</span><span class="n">wait</span><span class="p">()</span>
+</span><span id="__span-6-71"><a id="__codelineno-6-71" name="__codelineno-6-71" href="#__codelineno-6-71"></a><span class="n">second</span> <span class="o">=</span> <span class="n">camera</span><span class="o">.</span><span class="n">move</span><span class="p">(</span><span class="mf">2.0</span><span class="p">)</span>
+</span><span id="__span-6-72"><a id="__codelineno-6-72" name="__codelineno-6-72" href="#__codelineno-6-72"></a><span class="n">third</span> <span class="o">=</span> <span class="n">camera</span><span class="o">.</span><span class="n">move</span><span class="p">(</span><span class="mf">3.0</span><span class="p">)</span>
+</span><span id="__span-6-73"><a id="__codelineno-6-73" name="__codelineno-6-73" href="#__codelineno-6-73"></a><span class="n">release</span><span class="o">.</span><span class="n">set</span><span class="p">()</span>
+</span><span id="__span-6-74"><a id="__codelineno-6-74" name="__codelineno-6-74" href="#__codelineno-6-74"></a><span class="nb">print</span><span class="p">(</span><span class="n">first</span><span class="o">.</span><span class="n">result</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="mi">5</span><span class="p">),</span> <span class="n">third</span><span class="o">.</span><span class="n">result</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="mi">5</span><span class="p">))</span>  <span class="c1"># 1.0 3.0</span>
+</span><span id="__span-6-75"><a id="__codelineno-6-75" name="__codelineno-6-75" href="#__codelineno-6-75"></a><span class="k">try</span><span class="p">:</span>
+</span><span id="__span-6-76"><a id="__codelineno-6-76" name="__codelineno-6-76" href="#__codelineno-6-76"></a>    <span class="n">second</span><span class="o">.</span><span class="n">result</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="mi">5</span><span class="p">)</span>
+</span><span id="__span-6-77"><a id="__codelineno-6-77" name="__codelineno-6-77" href="#__codelineno-6-77"></a><span class="k">except</span> <span class="n">RequestSupersededError</span><span class="p">:</span>
+</span><span id="__span-6-78"><a id="__codelineno-6-78" name="__codelineno-6-78" href="#__codelineno-6-78"></a>    <span class="nb">print</span><span class="p">(</span><span class="s2">"the second request was superseded"</span><span class="p">)</span>
+</span><span id="__span-6-79"><a id="__codelineno-6-79" name="__codelineno-6-79" href="#__codelineno-6-79"></a>
+</span><span id="__span-6-80"><a id="__codelineno-6-80" name="__codelineno-6-80" href="#__codelineno-6-80"></a><span class="n">move_server</span><span class="o">.</span><span class="n">stop</span><span class="p">()</span>
+</span><span id="__span-6-81"><a id="__codelineno-6-81" name="__codelineno-6-81" href="#__codelineno-6-81"></a><span class="n">exposure_server</span><span class="o">.</span><span class="n">stop</span><span class="p">()</span>
+</span><span id="__span-6-82"><a id="__codelineno-6-82" name="__codelineno-6-82" href="#__codelineno-6-82"></a><span class="n">camera</span><span class="o">.</span><span class="n">close</span><span class="p">()</span>
+</span><span id="__span-6-83"><a id="__codelineno-6-83" name="__codelineno-6-83" href="#__codelineno-6-83"></a><span class="n">Camera</span><span class="o">.</span><span class="n">unlink</span><span class="p">()</span>
 </span></code></pre></div>
 </details>
 

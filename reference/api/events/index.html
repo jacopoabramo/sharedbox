@@ -1289,7 +1289,7 @@
   
   
     <li class="md-nav__item">
-      <a href="../../../how-to/call-a-function-in-the-owner/" class="md-nav__link">
+      <a href="../../../how-to/request-work-from-the-owner/" class="md-nav__link">
         
   
   
@@ -1298,7 +1298,7 @@
   <span class="md-ellipsis">
     
   
-  How to call a function in the process that owns a box
+  How to request work from the process that owns a box
 
     
   </span>
@@ -3868,7 +3868,7 @@ stops all its forwarding.</p>
 
 
 <a href="#sharedbox.FieldFuture" class="headerlink" title="Permanent link">&para;</a></h2>
-<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">FieldFuture</span><span class="p">(</span><span class="n">watcher</span><span class="p">:</span> <span class="n">Watcher</span><span class="p">,</span> <span class="n">field</span><span class="p">:</span> <span class="n">FieldSpec</span><span class="p">,</span> <span class="n">since</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">FieldFuture</span><span class="p">(</span><span class="n">watcher</span><span class="p">:</span> <span class="n">Watcher</span><span class="p">,</span> <span class="n">field</span><span class="p">:</span> <span class="n">FieldSpec</span><span class="p">,</span> <span class="n">since</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">published</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span>
 </span></code></pre></div>
 
     <div class="doc doc-contents first">
@@ -3881,7 +3881,8 @@ stops all its forwarding.</p>
 <p>A <code>concurrent.futures.Future</code>, so <code>concurrent.futures.wait</code>,
 <code>concurrent.futures.as_completed</code> and <code>asyncio.wrap_future</code> take it, and
 it can be awaited directly in a running event loop. It resolves on the
-first write to the field after the version it was created at. Done
+first write to the field after the version it was created at; for an
+attr field, on the first publish, so a request leaves it pending. Done
 callbacks run on the box's watcher thread, or on the thread that closes
 the box; closing the box cancels the futures still pending.</p>
 <p><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;future&lt;/span&gt;" href="./#sharedbox.FieldWatch.future"><code>FieldWatch.future</code></a> returns one.</p>
@@ -3948,7 +3949,7 @@ the box; closing the box cancels the futures still pending.</p>
 
 
 <a href="#sharedbox.FieldWatch" class="headerlink" title="Permanent link">&para;</a></h2>
-<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">FieldWatch</span><span class="p">(</span><span class="n">watcher</span><span class="p">:</span> <span class="n">Watcher</span><span class="p">,</span> <span class="n">field</span><span class="p">:</span> <span class="n">FieldSpec</span><span class="p">,</span> <span class="n">since</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">FieldWatch</span><span class="p">(</span><span class="n">watcher</span><span class="p">:</span> <span class="n">Watcher</span><span class="p">,</span> <span class="n">field</span><span class="p">:</span> <span class="n">FieldSpec</span><span class="p">,</span> <span class="n">since</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">published</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span>
 </span></code></pre></div>
 
     <div class="doc doc-contents first">

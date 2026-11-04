@@ -61,9 +61,6 @@
         <loc>https://jacopoabramo.github.io/sharedbox/how-to/build-docs/</loc>
       </url>
       <url>
-        <loc>https://jacopoabramo.github.io/sharedbox/how-to/call-a-function-in-the-owner/</loc>
-      </url>
-      <url>
         <loc>https://jacopoabramo.github.io/sharedbox/how-to/change-several-fields-at-once/</loc>
       </url>
       <url>
@@ -92,6 +89,9 @@
       </url>
       <url>
         <loc>https://jacopoabramo.github.io/sharedbox/how-to/open-a-box-from-a-program/</loc>
+      </url>
+      <url>
+        <loc>https://jacopoabramo.github.io/sharedbox/how-to/request-work-from-the-owner/</loc>
       </url>
       <url>
         <loc>https://jacopoabramo.github.io/sharedbox/how-to/run-benchmarks/</loc>
