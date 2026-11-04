@@ -45,8 +45,8 @@ from ._arrays import (
     dtype_name,
     key,
 )
-from ._call import Call
 from ._native import NativeCollection, NativeDict, NativeSet
+from ._request import Call
 from ._timed import Timed
 
 if TYPE_CHECKING:
@@ -97,7 +97,7 @@ CODES: Final[dict[str, int]] = {
     "array": 74,
     "max_array": 75,
     "call": 76,
-    "timed": 78,
+    "timed": 77,
 }
 PREFIXED: Final[frozenset[str]] = frozenset({"str", "bytes", "decimal"})
 SUPPORTED: Final[str] = (

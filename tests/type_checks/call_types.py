@@ -1,6 +1,6 @@
 from typing import assert_type
 
-from sharedbox import Call, CallFuture, CallServer, SharedBox, call, field
+from sharedbox import Call, RequestFuture, RequestServer, SharedBox, call, field
 
 
 class Scanner(SharedBox):
@@ -22,10 +22,10 @@ def wrong_handler(x: str) -> float:
 
 
 def calls(box: Scanner) -> None:
-    assert_type(box.move(1.0), CallFuture[float])
-    assert_type(box.home(), CallFuture[None])
-    assert_type(box.move.serve(sync_handler), CallServer)
-    assert_type(box.move.serve(async_handler), CallServer)
+    assert_type(box.move(1.0), RequestFuture[float])
+    assert_type(box.home(), RequestFuture[None])
+    assert_type(box.move.serve(sync_handler), RequestServer)
+    assert_type(box.move.serve(async_handler), RequestServer)
     box.move("x")  # type: ignore[arg-type]
     box.move.serve(wrong_handler)  # type: ignore[arg-type]
     Scanner()

@@ -87,7 +87,7 @@ inline table_builder around_max_array(std::uint8_t kind) {
     return t;
 }
 
-// A timed description (kind 78) around one member entry at member_offset. The head size is the one the
+// A timed description (kind 77) around one member entry at member_offset. The head size is the one the
 // layout gives for a member of the stated size and alignment, unless size is not 0.
 inline table_builder timed(std::uint8_t member_kind, std::uint32_t member_low, std::uint32_t size = 0,
                            std::uint16_t count = 1, std::uint32_t member_offset = 0) {

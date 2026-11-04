@@ -17,12 +17,12 @@ import pytest
 from crossproc import call_in_child, fork, serve_once, serving_in_child
 
 from sharedbox import (
+    AlreadyServedError,
     BoxClosedError,
     Call,
-    CallError,
-    CallServedError,
-    CallServer,
-    CallSupersededError,
+    RequestError,
+    RequestServer,
+    RequestSupersededError,
     ServerExitedError,
     SharedBox,
     call,
@@ -99,7 +99,7 @@ def test_a_call_across_processes_is_answered_and_superseded(
             third = box.move(3.0)
             release.set()
             assert first.result(timeout=10) == 2.0
-            with pytest.raises(CallSupersededError):
+            with pytest.raises(RequestSupersededError):
                 second.result(timeout=10)
             assert third.result(timeout=10) == 6.0
 
@@ -125,10 +125,10 @@ def test_a_second_serve_is_refused(names: Callable[[str], str]) -> None:
     """Refuse a second serve in the same process and a serve while another process serves."""
     with Scanner.create(names("twice")) as box:
         server = box.move.serve(double)
-        with pytest.raises(CallServedError):
+        with pytest.raises(AlreadyServedError):
             box.move.serve(double)
         server.stop()
-        with serving_in_child(box, move=double), pytest.raises(CallServedError):
+        with serving_in_child(box, move=double), pytest.raises(AlreadyServedError):
             box.move.serve(double)
 
 
@@ -153,15 +153,15 @@ def test_closing_a_serving_box_lets_another_process_serve(
 def test_a_handler_exception_reaches_the_caller(
     names: Callable[[str], str], caplog: pytest.LogCaptureFixture
 ) -> None:
-    """Give the caller a CallError with the handler's error, cut to 256 bytes, and log it."""
+    """Give the caller a RequestError with the handler's error, cut to 256 bytes, and log it."""
     with Scanner.create(names("raises")) as box, caplog.at_level(logging.ERROR):
         server = box.move.serve(too_far)
-        with pytest.raises(CallError) as raised:
+        with pytest.raises(RequestError) as raised:
             box.move(1.0).result(timeout=10)
         assert str(raised.value).endswith("ValueError: too far")
         server.stop()
         box.move.serve(long_message)
-        with pytest.raises(CallError) as raised:
+        with pytest.raises(RequestError) as raised:
             box.move(1.0).result(timeout=10)
         text = str(raised.value).removeprefix("Scanner.move: ")
         assert text.startswith("ValueError: é")
@@ -239,7 +239,7 @@ def test_a_result_that_cannot_be_stored_fails_the_call(
     """Fail a call whose handler returns a value its result type cannot hold."""
     with Counter.create(names("overflow")) as box:
         box.bump.serve(too_large)
-        with pytest.raises(CallError, match="OverflowError"):
+        with pytest.raises(RequestError, match="OverflowError"):
             box.bump(1).result(timeout=10)
 
 
@@ -272,7 +272,7 @@ def test_a_server_stopped_inside_its_take_fails_the_request(
     names: Callable[[str], str],
 ) -> None:
     """Fail the request a server took while stopping it from inside its take."""
-    servers: list[CallServer] = []
+    servers: list[RequestServer] = []
 
     @dataclass(frozen=True)
     class Target:
@@ -289,7 +289,7 @@ def test_a_server_stopped_inside_its_take_fails_the_request(
     with Mover.create(names("inside")) as box:
         target = Target(1.0)
         servers.append(box.move.serve(lambda target: target.position))
-        with pytest.raises(CallError, match="the server stopped"):
+        with pytest.raises(RequestError, match="the server stopped"):
             box.move(target).result(timeout=10)
         box.move.serve(lambda target: target.position * 2)
         assert box.move(target).result(timeout=10) == 2.0
@@ -376,7 +376,7 @@ def test_a_surrogate_in_a_handler_error_reaches_the_caller(
     """Escape a lone surrogate in the handler's error text."""
     with Scanner.create(names("surrogate")) as box:
         box.move.serve(surrogate)
-        with pytest.raises(CallError, match=r"ValueError: \\ud800"):
+        with pytest.raises(RequestError, match=r"ValueError: \\ud800"):
             box.move(1.0).result(timeout=5)
 
 
@@ -387,7 +387,7 @@ def test_a_handler_that_exits_fails_its_call_and_frees_the_field(
     """Fail the call of a sync handler raising SystemExit, and free the field."""
     with Scanner.create(names("exits")) as box:
         box.move.serve(leave)
-        with pytest.raises(CallError, match="SystemExit"):
+        with pytest.raises(RequestError, match="SystemExit"):
             box.move(1.0).result(timeout=5)
         # Waited for, so pytest reports the thread's SystemExit within this test.
         for thread in threading.enumerate():
@@ -422,7 +422,7 @@ def test_closing_the_box_inside_a_take_frees_the_field(
         box.move.serve(lambda target: target.position)
         boxes.append(box)
         pending = other.move(target)
-        with pytest.raises(CallError, match="the server stopped"):
+        with pytest.raises(RequestError, match="the server stopped"):
             pending.result(timeout=5)
         other.move.serve(lambda target: target.position * 2)
         assert other.move(target).result(timeout=5) == 2.0

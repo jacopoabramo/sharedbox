@@ -24,8 +24,8 @@ from typing import (
 )
 
 from ._arrays import Shape
-from ._call import Call
 from ._native import Types
+from ._request import Call
 from ._types import (
     CODES,
     MAX_ARRAY_PLACES,

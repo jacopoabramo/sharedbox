@@ -26,7 +26,6 @@ from typing import (
     overload,
 )
 
-from ._call import CallAttribute
 from ._events import BoxEvents, FieldWatch, Watcher, events_class, on_watcher_thread
 from ._follow import box_events
 from ._layout import (
@@ -60,6 +59,7 @@ from ._refs import (
     stored,
     valid_name,
 )
+from ._request import CallAttribute
 
 if TYPE_CHECKING:
     if sys.version_info >= (3, 13):

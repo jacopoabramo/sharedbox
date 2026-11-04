@@ -7,7 +7,7 @@ from typing import Any, TypeVar
 import pytest
 from crossproc import call_in_child, serve_once
 
-from sharedbox import Call, CallError, CallServer, SharedBox, call
+from sharedbox import Call, RequestError, RequestServer, SharedBox, call
 
 T = TypeVar("T")
 
@@ -36,7 +36,7 @@ def on_loop(loop: asyncio.AbstractEventLoop, coroutine: Coroutine[Any, Any, T]) 
     return asyncio.run_coroutine_threadsafe(coroutine, loop).result(10)
 
 
-async def serve(call: Call[Any, Any], handler: Callable[..., Any]) -> CallServer:
+async def serve(call: Call[Any, Any], handler: Callable[..., Any]) -> RequestServer:
     return call.serve(handler)
 
 
@@ -86,7 +86,7 @@ def test_a_task_started_by_a_handler_outlives_it(names: Callable[[str], str]) ->
         on_loop(loop, task_finished())
 
 
-def test_cancelled_loop_tasks_give_the_caller_call_error(
+def test_cancelled_loop_tasks_give_the_caller_request_error(
     names: Callable[[str], str],
 ) -> None:
     """Fail a request whose handler the loop's shutdown cancelled, and free the field."""
@@ -111,7 +111,7 @@ def test_cancelled_loop_tasks_give_the_caller_call_error(
         assert serving.wait(10)
         pending = box.move(1.0)
         thread.join(10)
-        with pytest.raises(CallError, match="the handler was cancelled"):
+        with pytest.raises(RequestError, match="the handler was cancelled"):
             pending.result(timeout=10)
         assert call_in_child(serve_once, box, "move") is True
 
@@ -171,6 +171,6 @@ def test_a_cancelled_error_from_the_handler_fails_only_that_call(
 
     with running_loop() as loop, Scanner.create(names("inner")) as box:
         on_loop(loop, serve(box.move, handler))
-        with pytest.raises(CallError, match="CancelledError"):
+        with pytest.raises(RequestError, match="CancelledError"):
             box.move(-1.0).result(timeout=10)
         assert box.move(1.0).result(timeout=10) == 1.0

@@ -12,7 +12,7 @@ from sharedbox import SharedBox, Capacity, field
 
 | Page | Names |
 | --- | --- |
-| [Boxes](box.md) | `SharedBox`, `field`, `fields`, `Field`, `Timed`, `Call`, `CallFuture`, `CallServer`, `Capacity`, `segment_status`, `SegmentStatus` |
+| [Boxes](box.md) | `SharedBox`, `field`, `fields`, `Field`, `Timed`, `Call`, `RequestFuture`, `RequestServer`, `Capacity`, `segment_status`, `SegmentStatus` |
 | [Arrays](arrays.md) | `Shape`, `DType`, `SupportsDLPack`, `register_array_type` |
 | [Events](events.md) | `BoxEvents`, `FieldFuture`, `FieldWatch` |
 | [Streams](streams.md) | `SharedStream`, `SharedSendStream`, `SendSlot`, `SharedReceiveStream`, `ReceiveEvents`, `SharedStreamStatistics`, `ReceiveStreamStatistics` |

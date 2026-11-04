@@ -35,24 +35,24 @@ ERROR_BYTES: Final = 256
 logger = logging.getLogger("sharedbox")
 
 
-class CallError(Exception):
+class RequestError(Exception):
     """The request failed: the handler raised, the server stopped, or four later answers overwrote its answer."""
 
 
-class CallSupersededError(CallError):
+class RequestSupersededError(RequestError):
     """A later request replaced this one before the server took it."""
 
 
-class ServerExitedError(CallError):
+class ServerExitedError(RequestError):
     """The process serving the field ended while the request waited."""
 
 
-class CallServedError(RuntimeError):
+class AlreadyServedError(RuntimeError):
     """A live process serves the field already, this one included."""
 
 
 class Outcome(IntEnum):
-    """What became of a request, as `Segment.call_answer_of` reports it."""
+    """What became of a request, as `Segment.request_answer_of` reports it."""
 
     PENDING = 0
     ANSWERED = 1
@@ -80,7 +80,7 @@ class Call(Generic[P, R]):
     [`Timed`][sharedbox.Timed], a `Call` or a reference to a box.
 
     Calling it sends a request at once and returns a
-    [`CallFuture`][sharedbox.CallFuture] of the answer;
+    [`RequestFuture`][sharedbox.RequestFuture] of the answer;
     [`serve`][sharedbox.Call.serve] answers the requests.
     """
 
@@ -90,7 +90,7 @@ class Call(Generic[P, R]):
         self._box = box
         self._spec = spec
 
-    def __call__(self, *args: P.args, **kwargs: P.kwargs) -> CallFuture[R]:
+    def __call__(self, *args: P.args, **kwargs: P.kwargs) -> RequestFuture[R]:
         """Send a request with `args` and return the future of its answer.
 
         The request is sent whether or not anyone waits for the future, and
@@ -113,14 +113,14 @@ class Call(Generic[P, R]):
         segment = self._box._segment
         index = self._spec.index
         since = segment.version(index)
-        number = segment.call_send(index, args, type(self._box).__layout__.types)
+        number = segment.request_send(index, args, type(self._box).__layout__.types)
         return self._box._watcher.call_future(self._spec, number, since)
 
     @overload
-    def serve(self, handler: Callable[P, Awaitable[R]]) -> CallServer: ...
+    def serve(self, handler: Callable[P, Awaitable[R]]) -> RequestServer: ...
     @overload
-    def serve(self, handler: Callable[P, R]) -> CallServer: ...
-    def serve(self, handler: Callable[P, Any]) -> CallServer:
+    def serve(self, handler: Callable[P, R]) -> RequestServer: ...
+    def serve(self, handler: Callable[P, Any]) -> RequestServer:
         """Answer the field's requests with `handler` until the server is stopped or the box closed.
 
         A sync handler runs on a thread of its own; an async one runs as a
@@ -128,11 +128,11 @@ class Call(Generic[P, R]):
         one request at a time, and of the requests sent meanwhile only the
         newest is handled next. Its return value is the answer; an
         exception it raises is logged to the `sharedbox` logger and reaches
-        the caller as [`CallError`][sharedbox.CallError].
+        the caller as [`RequestError`][sharedbox.RequestError].
 
         Raises
         ------
-        CallServedError
+        AlreadyServedError
             If a live process serves the field already, this one included.
         RuntimeError
             If `handler` is async and no event loop is running.
@@ -169,7 +169,7 @@ class CallAttribute:
         self.refuse()
 
 
-class CallFuture(Future[R]):
+class RequestFuture(Future[R]):
     """The answer to one request sent through a [`Call`][sharedbox.Call] field.
 
     A `concurrent.futures.Future`, so `.result(timeout)` waits in any
@@ -209,7 +209,7 @@ class CallFuture(Future[R]):
         ------
         TimeoutError
             If no answer arrived within `timeout` seconds.
-        CallError
+        RequestError
             If the request failed; see its subclasses.
         concurrent.futures.CancelledError
             If the future was cancelled, or the box closed.
@@ -233,21 +233,21 @@ class CallFuture(Future[R]):
 
     def _complete(self, outcome: int, value: Any) -> None:
         label = self._field.label
-        error: CallError
+        error: RequestError
         match outcome:
             case Outcome.ANSWERED:
                 with contextlib.suppress(InvalidStateError):
                     self.set_result(value)
                 return
             case Outcome.FAILED:
-                error = CallError(f"{label}: {value}")
+                error = RequestError(f"{label}: {value}")
             case Outcome.SUPERSEDED:
-                error = CallSupersededError(
+                error = RequestSupersededError(
                     f"{label}: a later request replaced request {self._number} "
                     "before the server took it"
                 )
             case Outcome.OVERWRITTEN:
-                error = CallError(
+                error = RequestError(
                     f"{label}: four later answers overwrote the answer to "
                     f"request {self._number}"
                 )
@@ -256,7 +256,7 @@ class CallFuture(Future[R]):
         self._fail(error)
 
 
-class CallServer:
+class RequestServer:
     """Answers the requests of one call field; [`Call.serve`][sharedbox.Call.serve] returns it."""
 
     def __init__(
@@ -346,7 +346,7 @@ class CallServer:
 
     def _release(self) -> None:
         with contextlib.suppress(BoxClosedError):
-            self._watcher._segment.call_release(self._field.index)
+            self._watcher._segment.serve_release(self._field.index)
 
     def _after_fork(self) -> None:
         """Stop serving in a child created by `fork`, without releasing the parent's field."""
@@ -361,7 +361,7 @@ class CallServer:
                 return None
             self._taker = threading.get_ident()
             try:
-                request = self._watcher._segment.call_take(
+                request = self._watcher._segment.request_take(
                     self._field.index, self._watcher._types
                 )
             finally:
@@ -378,12 +378,12 @@ class CallServer:
         segment, types = self._watcher._segment, self._watcher._types
         if ok:
             try:
-                segment.call_answer(self._field.index, number, True, value, types)
+                segment.request_answer(self._field.index, number, True, value, types)
                 return
             except Exception as error:
                 logger.exception("the result of %s cannot be stored", self._field.label)
                 value = error_text(error)
-        segment.call_answer(self._field.index, number, False, value, types)
+        segment.request_answer(self._field.index, number, False, value, types)
 
     def _fail(self, number: int, error: BaseException) -> None:
         logger.exception("the handler of %s raised", self._field.label)

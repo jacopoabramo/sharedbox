@@ -312,7 +312,9 @@ class Segment:
     def _write(self, values: Sequence[tuple[int, bytes]]) -> None:
         """Write several fields' bytes under one lock; for tests."""
 
-    def call_send(self, field: int, arguments: tuple[object, ...], types: Types) -> int:
+    def request_send(
+        self, field: int, arguments: tuple[object, ...], types: Types
+    ) -> int:
         """Store `arguments` as the newest request of call field `field` and return its number.
 
         Raises
@@ -323,7 +325,7 @@ class Segment:
             If an argument does not fit its type.
         """
 
-    def call_take(
+    def request_take(
         self, field: int, types: Types
     ) -> tuple[int, tuple[object, ...]] | None:
         """Mark the newest request of call field `field` as taken and return its number and arguments.
@@ -331,7 +333,7 @@ class Segment:
         None when the newest request was taken already.
         """
 
-    def call_answer(
+    def request_answer(
         self, field: int, number: int, ok: bool, value: object, types: Types
     ) -> bool:
         """Answer request `number`, the one taken last, and return True.
@@ -341,7 +343,7 @@ class Segment:
         the request taken last or already has an answer.
         """
 
-    def call_answer_of(
+    def request_answer_of(
         self, field: int, number: int, check_server: bool, types: Types
     ) -> tuple[int, object]:
         """Return what became of request `number`: the outcome and the result, the error text or None.
@@ -357,10 +359,10 @@ class Segment:
             If no such request was ever sent.
         """
 
-    def call_claim(self, field: int) -> bool:
+    def serve_claim(self, field: int) -> bool:
         """Record this process as the server of call field `field`; False while another live process serves it."""
 
-    def call_release(self, field: int) -> None:
+    def serve_release(self, field: int) -> None:
         """Clear this process as the server of call field `field`, if it is one."""
 
     def version(self, field: int) -> int:

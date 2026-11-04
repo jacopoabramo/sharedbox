@@ -139,23 +139,23 @@ inline constexpr std::uint8_t kind_max_array = 75;
 // A request line, a server's identity and a ring of answers: a box field only.
 inline constexpr std::uint8_t kind_call = 76;
 // The answers a call field keeps, the bytes of an answer's error text, and where its arguments start.
-inline constexpr std::uint32_t call_answers = 4;
-inline constexpr std::uint32_t call_error_size = 256;
-inline constexpr std::uint32_t call_arguments_at = 48;
+inline constexpr std::uint32_t request_answers = 4;
+inline constexpr std::uint32_t request_error_size = 256;
+inline constexpr std::uint32_t request_arguments_at = 48;
 // A value followed by an i64 timestamp in nanoseconds since the Unix epoch.
-inline constexpr std::uint8_t kind_timed = 78;
+inline constexpr std::uint8_t kind_timed = 77;
 // The timestamp that a write replaces with the time of the write.
 inline constexpr std::int64_t timed_mark = INT64_MIN;
 
 // What a caller learns about a request: still waiting, answered, failed with a text, replaced by a later
 // request before the server took it, answered but with its answer replaced by later ones, or taken by a
 // server that has exited.
-enum class call_outcome : std::uint8_t { pending, answered, failed, superseded, overwritten, server_exited };
+enum class request_outcome : std::uint8_t { pending, answered, failed, superseded, overwritten, server_exited };
 
 // length is the bytes copied into the caller's buffer: the result's size when answered, the text's when
 // failed, else 0.
-struct call_reply {
-    call_outcome outcome;
+struct request_reply {
+    request_outcome outcome;
     std::uint32_t length;
 };
 
@@ -1424,7 +1424,7 @@ inline status type_parser::place(std::uint8_t kind, const type_head &head, type_
         const bool has_result = node.count > arguments;
         const type_ref *result = has_result ? &m[arguments].type : nullptr;
         const std::uint64_t result_alignment = has_result ? (std::max)(8u, result->alignment) : 8;
-        std::uint64_t a = (std::max)(std::uint64_t{8}, result_alignment), end = call_arguments_at;
+        std::uint64_t a = (std::max)(std::uint64_t{8}, result_alignment), end = request_arguments_at;
         for (std::uint32_t i = 0; i < arguments; ++i) {
             if (m[i].offset != round_up(end, m[i].type.alignment))
                 return status::corrupt;
@@ -1441,7 +1441,7 @@ inline status type_parser::place(std::uint8_t kind, const type_head &head, type_
         node.slots = static_cast<std::uint32_t>(answers);
         node.stride = static_cast<std::uint32_t>(stride);
         out.alignment = static_cast<std::uint32_t>(a);
-        return size == round_up(answers + call_answers * stride, a) ? status::ok : status::corrupt;
+        return size == round_up(answers + request_answers * stride, a) ? status::ok : status::corrupt;
     }
     case kind_list:
     case kind_set: {

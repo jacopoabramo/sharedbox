@@ -159,20 +159,20 @@ public:
     nb::object with_arrays(std::uint32_t index, PyObject *template_item, std::byte *data, nb::handle owner) const;
 
     /// The bytes of the arguments of call field index: those from the field's offset 48 to its answers.
-    std::uint32_t call_arguments_size(std::uint32_t index) const;
+    std::uint32_t request_arguments_size(std::uint32_t index) const;
     /// The bytes of the result of call field index, 0 for a call with no result.
-    std::uint32_t call_result_size(std::uint32_t index) const;
-    /// Writes the tuple arguments into out, call_arguments_size(index) bytes laid out as the field's, after
+    std::uint32_t request_result_size(std::uint32_t index) const;
+    /// Writes the tuple arguments into out, request_arguments_size(index) bytes laid out as the field's, after
     /// zeroing it. Raises TypeError for another number of arguments, and as encode does for a value, naming
     /// label[i] for argument i.
-    void encode_call_arguments(std::uint32_t index, PyObject *arguments, std::span<std::byte> out) const;
-    /// The tuple of arguments stored in bytes, call_arguments_size(index) bytes laid out as the field's.
-    nb::tuple decode_call_arguments(std::uint32_t index, std::span<const std::byte> bytes) const;
-    /// Writes value, the result of call field index, into out, call_result_size(index) bytes. A call with no
+    void encode_request_arguments(std::uint32_t index, PyObject *arguments, std::span<std::byte> out) const;
+    /// The tuple of arguments stored in bytes, request_arguments_size(index) bytes laid out as the field's.
+    nb::tuple decode_request_arguments(std::uint32_t index, std::span<const std::byte> bytes) const;
+    /// Writes value, the result of call field index, into out, request_result_size(index) bytes. A call with no
     /// result writes nothing and ignores value.
-    void encode_call_result(std::uint32_t index, PyObject *value, std::span<std::byte> out) const;
-    /// The result stored in bytes, call_result_size(index) bytes; None for a call with no result.
-    nb::object decode_call_result(std::uint32_t index, std::span<const std::byte> bytes) const;
+    void encode_request_result(std::uint32_t index, PyObject *value, std::span<std::byte> out) const;
+    /// The result stored in bytes, request_result_size(index) bytes; None for a call with no result.
+    nb::object decode_request_result(std::uint32_t index, std::span<const std::byte> bytes) const;
 
     const detail::type_node &node_of(const detail::type_ref &t) const { return tree_.node(t.node); }
     /// The schema text of the elements of the list, set or dict node t.
@@ -257,7 +257,7 @@ private:
     nb::object wrap_array(const detail::type_ref &t, std::byte *raw, nb::handle owner,
                           std::span<const std::size_t> shape = {}) const;
     /// The node of call field index; TypeError for a field of another kind.
-    const detail::type_node &call_node(std::uint32_t index) const;
+    const detail::type_node &request_node(std::uint32_t index) const;
     void prepare(std::uint32_t node, std::uint8_t kind, nb::object info);
     bool read_as_bytearray(std::uint32_t container, std::uint32_t member) const;
 

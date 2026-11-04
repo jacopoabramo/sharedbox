@@ -254,9 +254,7 @@ record (4096 - 2240 = 1856).
 | 74 | array | description offset | data size, 64 |
 | 75 | max_array | description offset | 64 + data size of the maximum shape, 64 |
 | 76 | call | description offset | from the description |
-| 78 | timed | description offset | from the description |
-
-Code 77 is reserved for a kind a later version adds.
+| 77 | timed | description offset | from the description |
 
 A field of a kind the reader does not know is opened as opaque bytes: a
 kind below 64 is sized by its entry, one from 64 by its description's
@@ -418,32 +416,32 @@ wakes nobody, because otherwise an idle server and the process watching it
 would wake each other forever. The steps, with the `handle` function of
 each:
 
-1. Send (`call_send`) adds 1 to `sent`, stores the arguments and returns
+1. Send (`request_send`) adds 1 to `sent`, stores the arguments and returns
    `sent` as the request's number. Numbers start at 1, and no two callers
    get the same one.
-2. Take (`call_take`) returns 0 when `taken` equals `sent`, since no
+2. Take (`request_take`) returns 0 when `taken` equals `sent`, since no
    request is waiting. Otherwise it copies the arguments, sets `taken` to
    `sent` and returns that number, which leaves every request below it that
    was never taken superseded.
-3. Answer (`call_answer`) runs after the server's handler, which runs
+3. Answer (`request_answer`) runs after the server's handler, which runs
    without the lock. It writes the answer to request `taken` into entry
    `answered % 4` and adds 1 to `answered`: status 1 with the result, or
    status 2 with an error text of at most 256 bytes. An answer to any other
    request, or to one already answered, writes nothing and gives
    `status::ended`, so a handler that finishes after its server left
    changes nothing.
-4. Claim (`call_claim`) records the serving process's `start`, `pidns` and
+4. Claim (`serve_claim`) records the serving process's `start`, `pidns` and
    `pid` (see Liveness). While the recorded process runs, a claim gives
    `status::busy`, including a second claim by that same process. When the
    recorded process has exited, the claim replaces it and first writes the
    failed answer "the server exited" to the request it took and never
    answered.
-5. Release (`call_release`) clears the identity when it names the releasing
+5. Release (`serve_release`) clears the identity when it names the releasing
    process, and writes the failed answer "the server stopped" to a request
    that process took and never answered. A release by any other process
    changes nothing.
 
-A caller learns what became of its request `n` through `call_answer_of`,
+A caller learns what became of its request `n` through `request_answer_of`,
 which reads without the lock: it copies the request line, the identity and
 the four entries and retries on `seq`, as a read does. It then decides in
 this order:
@@ -820,7 +818,7 @@ layout version of its kind, for the rest. Each has a major and a minor.
   `status::corrupt`. A reader of 3.1 or older opens a box whose `max_array`
   is a field, as a field of a kind it does not know, and refuses one inside
   a record or tuple. Every older reader opens a box of 3.3 that has none.
-- Box layout 3.3 also adds kind 78, `timed`, wherever a record may go. A
+- Box layout 3.3 also adds kind 77, `timed`, wherever a record may go. A
   reader of box layout 3.2 or older opens a box whose `timed` is a field, as
   a field of a kind it does not know: its C++ `handle` reads the bytes and
   refuses to write them with `status::range`, and its Python extension
@@ -831,7 +829,7 @@ layout version of its kind, for the rest. Each has a major and a minor.
   field of a kind it does not know: its C++ `handle` reads the bytes and
   refuses to write them with `status::range`, and its Python extension
   refuses the box with `SchemaMismatchError`.
-- Stream layout 1.5 allows kind 78 in a stream's item. A reader of stream
+- Stream layout 1.5 allows kind 77 in a stream's item. A reader of stream
   layout 1.4 or older refuses a stream whose item is or holds a `timed`
   with `status::corrupt`, and opens one whose item holds none.
 - A change to how existing bytes are read or written raises a major: the
@@ -1433,7 +1431,8 @@ inline constexpr std::uint64_t stream_magic = 0x4D5254535F584253;    // "SBX_STR
 // literal_enum, and the kind codes kind_bool, kind_int, kind_float, kind_str,
 // kind_bytes, kind_ref, kind_complex through kind_decimal, kind_enum through
 // kind_max_array, kind_call and kind_timed, timed_mark, the timestamp a write
-// replaces, and call_answers, call_error_size and call_arguments_at (see Encodings);
+// replaces, and request_answers, request_error_size and request_arguments_at
+// (see Encodings);
 // the structs common_header, header, stored_field, waiter_slot, box_ref and
 // type_head (see Layout); dl_dtype and literal_value, which type_view's dtype()
 // and literal() return (see the list below); error, result<T> and unexpected (see
@@ -1452,8 +1451,8 @@ struct read_value { std::size_t len; std::uint64_t version; };
 enum class wake { changed, interrupted };      // a timeout is status::timeout
 struct metadata_spec { std::span<const std::byte> initial; std::uint64_t capacity; std::uint32_t versions; };
 bool metadata_ok(std::span<const std::byte> doc) noexcept;
-enum class call_outcome : std::uint8_t { pending, answered, failed, superseded, overwritten, server_exited };
-struct call_reply { call_outcome outcome; std::uint32_t length; };
+enum class request_outcome : std::uint8_t { pending, answered, failed, superseded, overwritten, server_exited };
+struct request_reply { request_outcome outcome; std::uint32_t length; };
 
 class handle {                                  // move-only; the destructor releases it
 public:
@@ -1517,15 +1516,15 @@ public:
     result<std::uint32_t> read_metadata(std::uint64_t version, std::span<std::byte> out) const;
     result<std::uint64_t> add_metadata(std::span<const std::byte> doc, seconds lock_timeout);
 
-    result<std::uint64_t> call_send(std::uint16_t field, std::span<const std::byte> arguments,
-                                    seconds lock_timeout);
-    result<std::uint64_t> call_take(std::uint16_t field, std::span<std::byte> arguments, seconds lock_timeout);
-    result<void> call_answer(std::uint16_t field, std::uint64_t number, bool ok,
-                             std::span<const std::byte> bytes, seconds lock_timeout);
-    result<call_reply> call_answer_of(std::uint16_t field, std::uint64_t number, std::span<std::byte> out,
-                                      bool check_server) const;
-    result<void> call_claim(std::uint16_t field, seconds lock_timeout);
-    result<void> call_release(std::uint16_t field, seconds lock_timeout);
+    result<std::uint64_t> request_send(std::uint16_t field, std::span<const std::byte> arguments,
+                                       seconds lock_timeout);
+    result<std::uint64_t> request_take(std::uint16_t field, std::span<std::byte> arguments, seconds lock_timeout);
+    result<void> request_answer(std::uint16_t field, std::uint64_t number, bool ok,
+                                std::span<const std::byte> bytes, seconds lock_timeout);
+    result<request_reply> request_answer_of(std::uint16_t field, std::uint64_t number, std::span<std::byte> out,
+                                            bool check_server) const;
+    result<void> serve_claim(std::uint16_t field, seconds lock_timeout);
+    result<void> serve_release(std::uint16_t field, seconds lock_timeout);
 };
 
 result<void> unlink(std::string_view name) noexcept;
@@ -1640,16 +1639,16 @@ The header also declares these names:
   and gives the statuses of `write` and of `add_metadata`. A refused
   document writes no field. `write_large(values, doc, lock_timeout)` is the
   same write for large values, running the wait hooks once around it.
-- `call_send`, `call_take`, `call_answer`, `call_answer_of`, `call_claim`
-  and `call_release` are the steps of the call protocol on a `call` field
-  (see The call protocol). `call_send` takes the bytes from offset 48 to
-  `answers`, and `call_take` copies them into a span of that size.
-  `call_answer` takes the result at its exact size when `ok`, otherwise the
-  error text. `call_answer_of` copies the result or the error text into
-  `out`, which holds at least the larger of the result's size and 256
-  bytes, and `call_reply::length` gives how many bytes it copied. Each
-  gives `status::range` for a field that is not a `call` or for a span of
-  the wrong size, and the steps that take the lock give
+- `request_send`, `request_take`, `request_answer`, `request_answer_of`,
+  `serve_claim` and `serve_release` are the steps of the call protocol on a
+  `call` field (see The call protocol). `request_send` takes the bytes from
+  offset 48 to `answers`, and `request_take` copies them into a span of that
+  size. `request_answer` takes the result at its exact size when `ok`,
+  otherwise the error text. `request_answer_of` copies the result or the
+  error text into `out`, which holds at least the larger of the result's
+  size and 256 bytes, and `request_reply::length` gives how many bytes it
+  copied. Each gives `status::range` for a field that is not a `call` or
+  for a span of the wrong size, and the steps that take the lock give
   `status::lock_timeout` as `write` does.
 - Thread safety: every member function may be called from several threads
   on one handle. Destroying or moving a handle must not overlap another

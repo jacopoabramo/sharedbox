@@ -16,8 +16,8 @@ icon: lucide/code
 | [`Timed`][sharedbox.Timed] | a value with its timestamp in nanoseconds, written in one go; `Timed.now` asks the write to stamp it |
 | [`Call`][sharedbox.Call] | a field through which any process sends a typed request to the process that serves it |
 | [`call`][sharedbox.call] | declares a `Call` field, which the box's constructor takes no value for |
-| [`CallFuture`][sharedbox.CallFuture] | the answer to one request, waited on with `result` or `await` |
-| [`CallServer`][sharedbox.CallServer] | answers the requests of one call field; `Call.serve` returns it |
+| [`RequestFuture`][sharedbox.RequestFuture] | the answer to one request, waited on with `result` or `await` |
+| [`RequestServer`][sharedbox.RequestServer] | answers the requests of one call field; `Call.serve` returns it |
 | [`Capacity`][sharedbox.Capacity] | maximum size of a field: bytes for text and bytes, elements for a collection. See [capacity](../../explanation/glossary.md#capacity) |
 | [`segment_status`][sharedbox.segment_status] | says whether a box or stream exists under a name and whether its creator still runs |
 | [`SegmentStatus`][sharedbox.SegmentStatus] | what `segment_status` found: `missing`, `running` or `creator_exited` |
@@ -50,11 +50,11 @@ icon: lucide/code
     options:
       show_root_heading: true
 
-::: sharedbox.CallFuture
+::: sharedbox.RequestFuture
     options:
       show_root_heading: true
 
-::: sharedbox.CallServer
+::: sharedbox.RequestServer
     options:
       show_root_heading: true
 

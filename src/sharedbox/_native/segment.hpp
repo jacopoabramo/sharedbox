@@ -181,19 +181,19 @@ public:
     /// for a bad value or a document the area does not take.
     std::uint64_t write(std::span<const value> values, std::string_view doc);
     /// The steps of a call field's protocol, each under the write lock; arguments is the bytes of the field
-    /// from its offset 48 to its answers. call_send returns the request's number; call_take returns the number
-    /// of the newest request and copies its arguments, or returns 0 when it was taken already; call_answer is
-    /// false when the request is not the one taken last or has an answer; call_claim is false while another
-    /// server runs.
-    std::uint64_t call_send(std::uint32_t field, std::span<const std::byte> arguments);
-    std::uint64_t call_take(std::uint32_t field, std::span<std::byte> arguments);
-    bool call_answer(std::uint32_t field, std::uint64_t number, bool ok, std::span<const std::byte> bytes);
+    /// from its offset 48 to its answers. request_send returns the request's number; request_take returns the
+    /// number of the newest request and copies its arguments, or returns 0 when it was taken already;
+    /// request_answer is false when the request is not the one taken last or has an answer; serve_claim is false
+    /// while another server runs.
+    std::uint64_t request_send(std::uint32_t field, std::span<const std::byte> arguments);
+    std::uint64_t request_take(std::uint32_t field, std::span<std::byte> arguments);
+    bool request_answer(std::uint32_t field, std::uint64_t number, bool ok, std::span<const std::byte> bytes);
     /// What became of request number, without the write lock; the result or the error text goes to the start
     /// of out, which holds the larger of the result's size and 256 bytes.
-    call_reply call_answer_of(std::uint32_t field, std::uint64_t number, std::span<std::byte> out,
-                              bool check_server) const;
-    bool call_claim(std::uint32_t field);
-    void call_release(std::uint32_t field);
+    request_reply request_answer_of(std::uint32_t field, std::uint64_t number, std::span<std::byte> out,
+                                    bool check_server) const;
+    bool serve_claim(std::uint32_t field);
+    void serve_release(std::uint32_t field);
     /// A heap handle with its own mapping of the segment, for a capsule. Call its release, then
     /// delete it.
     sbx_handle *export_handle() const;

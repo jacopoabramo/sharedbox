@@ -123,19 +123,19 @@ TEST_CASE("a request is answered") {
     handle box = make(name, int_call());
     const std::uint64_t generation = box.generation();
 
-    const auto sent = box.call_send(0, eight(5), patience);
+    const auto sent = box.request_send(0, eight(5), patience);
     REQUIRE(sent.has_value());
     CHECK(*sent == 1);
     std::array<std::byte, 8> arguments{};
-    const auto taken = box.call_take(0, arguments, patience);
+    const auto taken = box.request_take(0, arguments, patience);
     REQUIRE(taken.has_value());
     CHECK((*taken == 1 && number_of(arguments) == 5));
-    CHECK(box.call_answer(0, 1, true, eight(7), patience).has_value());
+    CHECK(box.request_answer(0, 1, true, eight(7), patience).has_value());
 
     std::array<std::byte, 256> out{};
-    const auto reply = box.call_answer_of(0, 1, out, false);
+    const auto reply = box.request_answer_of(0, 1, out, false);
     REQUIRE(reply.has_value());
-    CHECK((reply->outcome == call_outcome::answered && reply->length == 8 && number_of(out) == 7));
+    CHECK((reply->outcome == request_outcome::answered && reply->length == 8 && number_of(out) == 7));
     CHECK((box.version(0) == 3 && box.generation() == generation + 3));
     static_cast<void>(unlink(name));
 }
@@ -146,14 +146,14 @@ TEST_CASE("a step that changes nothing leaves the sequence number and the write 
     std::array<std::byte, 8> arguments{};
     const std::uint64_t seq = seq_of(box);
 
-    const auto none = box.call_take(0, arguments, patience);
+    const auto none = box.request_take(0, arguments, patience);
     REQUIRE(none.has_value());
     CHECK(*none == 0);
     CHECK((seq_of(box) == seq && box.version(0) == 0));
 
-    REQUIRE(box.call_send(0, eight(1), patience).has_value());
+    REQUIRE(box.request_send(0, eight(1), patience).has_value());
     const std::uint64_t after_send = seq_of(box);
-    const auto early = box.call_answer(0, 1, true, eight(1), patience);
+    const auto early = box.request_answer(0, 1, true, eight(1), patience);
     CHECK((!early && early.error().code == status::ended));
     CHECK((seq_of(box) == after_send && box.version(0) == 1));
     static_cast<void>(unlink(name));
@@ -165,20 +165,20 @@ TEST_CASE("a later request supersedes one the server never took") {
     std::array<std::byte, 8> arguments{};
     std::array<std::byte, 256> out{};
 
-    REQUIRE(box.call_send(0, eight(1), patience).has_value());
-    CHECK(*box.call_take(0, arguments, patience) == 1);
-    REQUIRE(box.call_send(0, eight(2), patience).has_value());
-    REQUIRE(box.call_send(0, eight(3), patience).has_value());
-    CHECK(box.call_answer(0, 1, true, eight(10), patience).has_value());
-    const auto third = box.call_take(0, arguments, patience);
+    REQUIRE(box.request_send(0, eight(1), patience).has_value());
+    CHECK(*box.request_take(0, arguments, patience) == 1);
+    REQUIRE(box.request_send(0, eight(2), patience).has_value());
+    REQUIRE(box.request_send(0, eight(3), patience).has_value());
+    CHECK(box.request_answer(0, 1, true, eight(10), patience).has_value());
+    const auto third = box.request_take(0, arguments, patience);
     REQUIRE(third.has_value());
     CHECK((*third == 3 && number_of(arguments) == 3));
 
-    CHECK(box.call_answer_of(0, 2, out, false)->outcome == call_outcome::superseded);
-    CHECK(box.call_answer_of(0, 3, out, false)->outcome == call_outcome::pending);
-    CHECK(box.call_answer(0, 3, true, eight(30), patience).has_value());
-    const auto reply = box.call_answer_of(0, 3, out, false);
-    CHECK((reply->outcome == call_outcome::answered && number_of(out) == 30));
+    CHECK(box.request_answer_of(0, 2, out, false)->outcome == request_outcome::superseded);
+    CHECK(box.request_answer_of(0, 3, out, false)->outcome == request_outcome::pending);
+    CHECK(box.request_answer(0, 3, true, eight(30), patience).has_value());
+    const auto reply = box.request_answer_of(0, 3, out, false);
+    CHECK((reply->outcome == request_outcome::answered && number_of(out) == 30));
     static_cast<void>(unlink(name));
 }
 
@@ -189,13 +189,13 @@ TEST_CASE("an answer four later answers replaced is overwritten") {
     std::array<std::byte, 256> out{};
 
     for (std::int64_t n = 1; n <= 5; ++n) {
-        REQUIRE(box.call_send(0, eight(n), patience).has_value());
-        REQUIRE(box.call_take(0, arguments, patience).has_value());
-        REQUIRE(box.call_answer(0, static_cast<std::uint64_t>(n), true, eight(n * 10), patience).has_value());
+        REQUIRE(box.request_send(0, eight(n), patience).has_value());
+        REQUIRE(box.request_take(0, arguments, patience).has_value());
+        REQUIRE(box.request_answer(0, static_cast<std::uint64_t>(n), true, eight(n * 10), patience).has_value());
     }
-    CHECK(box.call_answer_of(0, 1, out, false)->outcome == call_outcome::overwritten);
-    const auto second = box.call_answer_of(0, 2, out, false);
-    CHECK((second->outcome == call_outcome::answered && number_of(out) == 20));
+    CHECK(box.request_answer_of(0, 1, out, false)->outcome == request_outcome::overwritten);
+    const auto second = box.request_answer_of(0, 2, out, false);
+    CHECK((second->outcome == request_outcome::answered && number_of(out) == 20));
     static_cast<void>(unlink(name));
 }
 
@@ -204,12 +204,12 @@ TEST_CASE("a request nobody serves stays pending") {
     handle box = make(name, int_call());
     std::array<std::byte, 256> out{};
 
-    REQUIRE(box.call_send(0, eight(1), patience).has_value());
-    CHECK(box.call_answer_of(0, 1, out, true)->outcome == call_outcome::pending);
-    CHECK(box.call_answer_of(0, 2, out, true).error().code == status::range);
-    CHECK(box.call_answer_of(0, 0, out, true).error().code == status::range);
+    REQUIRE(box.request_send(0, eight(1), patience).has_value());
+    CHECK(box.request_answer_of(0, 1, out, true)->outcome == request_outcome::pending);
+    CHECK(box.request_answer_of(0, 2, out, true).error().code == status::range);
+    CHECK(box.request_answer_of(0, 0, out, true).error().code == status::range);
     std::array<std::byte, 255> small{};
-    CHECK(box.call_answer_of(0, 1, small, true).error().code == status::range);
+    CHECK(box.request_answer_of(0, 1, small, true).error().code == status::range);
     static_cast<void>(unlink(name));
 }
 
@@ -221,14 +221,14 @@ TEST_CASE("a claim is refused while its server runs and allowed after it exited"
     std::array<std::byte, 8> arguments{};
     std::array<std::byte, 256> out{};
 
-    CHECK(box.call_claim(0, patience).has_value());
+    CHECK(box.serve_claim(0, patience).has_value());
     const std::uint64_t claimed = box.version(0);
-    const auto refused = other->call_claim(0, patience);
+    const auto refused = other->serve_claim(0, patience);
     CHECK((!refused && refused.error().code == status::busy));
     CHECK(box.version(0) == claimed);
 
-    REQUIRE(box.call_send(0, eight(1), patience).has_value());
-    REQUIRE(box.call_take(0, arguments, patience).has_value());
+    REQUIRE(box.request_send(0, eight(1), patience).has_value());
+    REQUIRE(box.request_take(0, arguments, patience).has_value());
     std::vector<std::byte> record(box.field(0).capacity);
     REQUIRE(box.read(0, record).has_value());
     const std::uint64_t other_start = detail::current_start() + 1;
@@ -236,11 +236,11 @@ TEST_CASE("a claim is refused while its server runs and allowed after it exited"
     const value forged[1] = {{0, record}};
     REQUIRE(box.write(forged, patience).has_value());
 
-    CHECK(box.call_answer_of(0, 1, out, true)->outcome == call_outcome::server_exited);
-    CHECK(other->call_claim(0, patience).has_value());
-    const auto reply = other->call_answer_of(0, 1, out, true);
+    CHECK(box.request_answer_of(0, 1, out, true)->outcome == request_outcome::server_exited);
+    CHECK(other->serve_claim(0, patience).has_value());
+    const auto reply = other->request_answer_of(0, 1, out, true);
     REQUIRE(reply.has_value());
-    CHECK(reply->outcome == call_outcome::failed);
+    CHECK(reply->outcome == request_outcome::failed);
     CHECK(text_of(out, reply->length) == "the server exited");
     static_cast<void>(unlink(name));
 }
@@ -251,21 +251,21 @@ TEST_CASE("release answers the request its server took") {
     std::array<std::byte, 8> arguments{};
     std::array<std::byte, 256> out{};
 
-    REQUIRE(box.call_claim(0, patience).has_value());
-    REQUIRE(box.call_send(0, eight(1), patience).has_value());
-    REQUIRE(box.call_take(0, arguments, patience).has_value());
-    CHECK(box.call_release(0, patience).has_value());
+    REQUIRE(box.serve_claim(0, patience).has_value());
+    REQUIRE(box.request_send(0, eight(1), patience).has_value());
+    REQUIRE(box.request_take(0, arguments, patience).has_value());
+    CHECK(box.serve_release(0, patience).has_value());
 
-    const auto reply = box.call_answer_of(0, 1, out, true);
+    const auto reply = box.request_answer_of(0, 1, out, true);
     REQUIRE(reply.has_value());
-    CHECK(reply->outcome == call_outcome::failed);
+    CHECK(reply->outcome == request_outcome::failed);
     CHECK(text_of(out, reply->length) == "the server stopped");
-    const auto late = box.call_answer(0, 1, true, eight(1), patience);
+    const auto late = box.request_answer(0, 1, true, eight(1), patience);
     CHECK((!late && late.error().code == status::ended));
 
     const std::uint64_t seq = seq_of(box);
     const std::uint64_t version = box.version(0);
-    CHECK(box.call_release(0, patience).has_value());
+    CHECK(box.serve_release(0, patience).has_value());
     CHECK((seq_of(box) == seq && box.version(0) == version));
     static_cast<void>(unlink(name));
 }
@@ -274,11 +274,11 @@ TEST_CASE("an answer for a request not taken is refused") {
     const std::string name = unique("call-not-taken");
     handle box = make(name, int_call());
 
-    REQUIRE(box.call_send(0, eight(1), patience).has_value());
-    const auto early = box.call_answer(0, 1, true, eight(1), patience);
+    REQUIRE(box.request_send(0, eight(1), patience).has_value());
+    const auto early = box.request_answer(0, 1, true, eight(1), patience);
     CHECK((!early && early.error().code == status::ended));
     const std::array<std::byte, 257> long_text{};
-    const auto long_error = box.call_answer(0, 1, false, long_text, patience);
+    const auto long_error = box.request_answer(0, 1, false, long_text, patience);
     CHECK((!long_error && long_error.error().code == status::range));
     static_cast<void>(unlink(name));
 }
