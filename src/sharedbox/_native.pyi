@@ -349,7 +349,7 @@ class Segment:
         """
 
     def attr_published(self, field: int) -> int:
-        """Return how many times attr field `field` was published.
+        """Return how many times attr field `field` was published, reading the count alone and not the value.
 
         Raises
         ------
@@ -360,7 +360,7 @@ class Segment:
     def request_send(
         self, field: int, arguments: tuple[object, ...], types: Types
     ) -> int:
-        """Store `arguments` as the newest request of call field `field` and return its number.
+        """Store `arguments` as the newest request of attr field `field` and return its number.
 
         Raises
         ------
@@ -373,7 +373,7 @@ class Segment:
     def request_take(
         self, field: int, types: Types
     ) -> tuple[int, tuple[object, ...]] | None:
-        """Mark the newest request of call field `field` as taken and return its number and arguments.
+        """Mark the newest request of attr field `field` as taken and return its number and arguments.
 
         None when the newest request was taken already.
         """
@@ -405,10 +405,10 @@ class Segment:
         """
 
     def serve_claim(self, field: int) -> bool:
-        """Record this process as the server of call field `field`; False while another live process serves it."""
+        """Record this process as the server of attr field `field`; False while another live process serves it."""
 
     def serve_release(self, field: int) -> None:
-        """Clear this process as the server of call field `field`, if it is one."""
+        """Clear this process as the server of attr field `field`, if it is one."""
 
     def version(self, field: int) -> int:
         """Return how many writes the field has had."""

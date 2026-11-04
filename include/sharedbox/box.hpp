@@ -395,6 +395,9 @@ public:
     // Copies the value part, [value_at, size) of the field, into out from one moment, without the write lock.
     // status::range for a field that is not an attr or has no value part, or an out of another size.
     [[nodiscard]] result<void> attr_read(std::uint16_t field, std::span<std::byte> out) const;
+    // The published count of an attr field, the first 8 bytes of its value part, read from one moment as
+    // attr_read reads. status::range for a field that is not an attr or has no value part.
+    [[nodiscard]] result<std::uint64_t> attr_published(std::uint16_t field) const;
     // Where the value part of an attr field starts in the field, the size of the field minus the size of
     // attr_read's out; detail::attr_absent for a field that is not an attr or has no value part.
     [[nodiscard]] std::uint32_t attr_value_at(std::uint16_t field) const noexcept;
@@ -1537,6 +1540,27 @@ inline result<void> handle::attr_read(std::uint16_t field, std::span<std::byte> 
     if (!done)
         return unexpected(status::lock_timeout);
     return {};
+}
+
+inline result<std::uint64_t> handle::attr_published(std::uint16_t field) const {
+    const detail::state &s = *s_;
+    const std::uint32_t at = attr_value_at(field);
+    if (at == detail::attr_absent)
+        return unexpected(status::range);
+    const std::byte *src = s.record + s.fields[field].offset + at;
+    auto seq = detail::atomic(s.hdr->seq);
+    std::uint64_t count = 0;
+    const bool done = detail::retry(s, s.lock_timeout, [&]() noexcept {
+        const std::uint64_t before = seq.load(std::memory_order_acquire);
+        if ((before & 1u) != 0)
+            return false;
+        count = detail::request_get<std::uint64_t>(src);
+        std::atomic_thread_fence(std::memory_order_acquire);
+        return seq.load(std::memory_order_acquire) == before;
+    });
+    if (!done)
+        return unexpected(status::lock_timeout);
+    return count;
 }
 
 inline std::uint32_t handle::attr_value_at(std::uint16_t field) const noexcept {

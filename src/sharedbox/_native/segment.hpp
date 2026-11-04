@@ -150,6 +150,9 @@ public:
     /// write() of a single value.
     void write_one(std::uint32_t field, std::span<const std::byte> bytes);
     std::uint64_t version(std::uint32_t field) const;
+    /// handle::attr_published for attr field; std::invalid_argument for a field that is not an attr or has no
+    /// value part.
+    std::uint64_t attr_published(std::uint32_t field) const;
     /// version() of every field, in field order.
     std::vector<std::uint64_t> versions() const;
     /// Lets other processes attach to a segment created without publish; throws std::invalid_argument

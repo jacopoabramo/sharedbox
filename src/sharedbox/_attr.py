@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import sys
 import weakref
+from collections.abc import Awaitable, Callable
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -13,6 +14,7 @@ from typing import (
     NotRequired,
     TypeVar,
     cast,
+    overload,
 )
 
 if sys.version_info >= (3, 13):
@@ -21,10 +23,11 @@ else:
     from typing_extensions import ParamSpec, TypedDict
 
 from ._native import BoxClosedError
+from ._request import RequestFuture, RequestServer
 
 if TYPE_CHECKING:
     from ._box import SharedBox
-    from ._layout import FieldSpec
+    from ._layout import AttrInfo, FieldSpec
 
 T = TypeVar("T")
 P = ParamSpec("P", default=[])
@@ -67,6 +70,11 @@ class Attr(Generic[T, P]):
     at its `default`, and with a timestamp of 0. `T` may be anything a
     record member may be, except a [`Timed`][sharedbox.Timed], an `Attr` or a
     reference to a box.
+
+    An attribute with argument types `P`, or with a `T` of `None`, takes
+    requests: calling it sends one, and [`serve`][sharedbox.Attr.serve]
+    answers them. A settable attribute takes its requests through
+    [`set`][sharedbox.Attr.set]. Answering a request publishes nothing.
     """
 
     __slots__ = ("_box_ref", "_spec")
@@ -193,6 +201,101 @@ class Attr(Generic[T, P]):
             type(box).__layout__.types,
         )
 
+    def __call__(self, *args: P.args, **kwargs: P.kwargs) -> RequestFuture[T]:
+        """Send a request with `args` and return the future of its answer.
+
+        The request is sent whether or not anyone waits for the future, and
+        replaces an earlier one the server has not taken yet.
+
+        Raises
+        ------
+        TypeError
+            If the attribute takes no requests, an argument is given by
+            keyword, or the arguments do not match its argument types.
+        ValueError
+            If an argument does not fit its type.
+        OverflowError
+            If a number is out of the range of its type.
+        BoxClosedError
+            If the box is closed.
+        """
+        if not self._info().request:
+            raise TypeError(f"{self._spec.label} takes no requests")
+        if kwargs:
+            raise TypeError(f"{self._spec.label} takes positional arguments only")
+        return self._send(args)
+
+    def set(self, value: T) -> RequestFuture[T]:
+        """Send `value` as the one argument of a request, and return the future of its answer.
+
+        The handler given to [`serve`][sharedbox.Attr.serve] receives
+        `value` and decides what to publish.
+
+        Raises
+        ------
+        TypeError
+            If the attribute is not settable, or `value` does not have its type.
+        ValueError
+            If `value` does not fit its type.
+        BoxClosedError
+            If the box is closed.
+        """
+        if not self._info().settable:
+            raise TypeError(f"{self._spec.label} is not settable")
+        return self._send((value,))
+
+    @overload
+    def serve(self, handler: Callable[P, Awaitable[T]]) -> RequestServer: ...
+    @overload
+    def serve(self, handler: Callable[P, T]) -> RequestServer: ...
+    @overload
+    def serve(
+        self: Attr[T, []], handler: Callable[[T], Awaitable[T]]
+    ) -> RequestServer: ...
+    @overload
+    def serve(self: Attr[T, []], handler: Callable[[T], T]) -> RequestServer: ...
+    def serve(self, handler: Callable[..., Any]) -> RequestServer:
+        """Answer the attribute's requests with `handler` until the server is stopped or the box closed.
+
+        A sync handler runs on a thread of its own; an async one runs as a
+        task on the event loop running at this call. The handler handles
+        one request at a time, and of the requests sent meanwhile only the
+        newest is handled next. Its return value is the answer; an
+        exception it raises is logged to the `sharedbox` logger and reaches
+        the caller as [`RequestError`][sharedbox.RequestError]. A settable
+        attribute's handler receives the value given to
+        [`set`][sharedbox.Attr.set].
+
+        Raises
+        ------
+        TypeError
+            If the attribute takes no requests.
+        AlreadyServedError
+            If a live process serves the field already, this one included.
+        RuntimeError
+            If `handler` is async and no event loop is running.
+        BoxClosedError
+            If the box is closed.
+        """
+        if not self._info().request:
+            raise TypeError(f"{self._spec.label} takes no requests")
+        return self._live()._watcher.serve(self._spec, handler)
+
+    def _send(self, args: tuple[Any, ...]) -> RequestFuture[T]:
+        box = self._live()
+        segment = box._segment
+        index = self._spec.index
+        since = segment.version(index)
+        number = segment.request_send(index, args, type(box).__layout__.types)
+        return box._watcher.call_future(self._spec, number, since)
+
+    def _info(self) -> AttrInfo:
+        """Return the parts of the attribute, or raise `BoxClosedError` once its box has been freed."""
+        self._live()
+        info = self._spec.attr
+        assert info is not None
+        return info
+
     def _live(self) -> SharedBox:
         """Return the box, or raise `BoxClosedError` once it has been freed."""
         box = self._box_ref()
@@ -202,9 +305,7 @@ class Attr(Generic[T, P]):
 
     def _require(self, part: str) -> None:
         """Raise `TypeError` unless the attribute has `part`."""
-        self._live()
-        info = self._spec.attr
-        assert info is not None
+        info = self._info()
         label = self._spec.label
         match part:
             case "value" if not info.has_value:

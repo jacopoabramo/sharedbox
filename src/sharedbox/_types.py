@@ -47,7 +47,6 @@ from ._arrays import (
 )
 from ._attr import Attr
 from ._native import NativeCollection, NativeDict, NativeSet
-from ._request import Call
 from ._timed import Timed
 
 if TYPE_CHECKING:
@@ -97,7 +96,6 @@ CODES: Final[dict[str, int]] = {
     "dict": 73,
     "array": 74,
     "max_array": 75,
-    "call": 76,
     "attr": 76,
     "timed": 77,
 }
@@ -110,7 +108,7 @@ SUPPORTED: Final[str] = (
     "a tuple, a NamedTuple, a dataclass, a TypedDict, an attrs class, a msgspec Struct, "
     "Annotated[list | set | frozenset | dict | tuple[T, ...], Capacity(n)] and their "
     "collections.abc forms, Annotated[<array type>, Shape((...)), DType(...)], a SharedBox "
-    "subclass, optionally with | None, or, as a box field only, Call[[A, ...], R]"
+    "subclass, optionally with | None, or, as a box field only, Attr[T, [A, ...]]"
 )
 
 
@@ -668,10 +666,6 @@ def dispatch(
         raise TypeError(
             f"{where}: an Attr is a box field of its own, not part of another type"
         )
-    if hint is Call or get_origin(hint) is Call:
-        raise TypeError(
-            f"{where}: a Call is a box field of its own, not part of another type"
-        )
     if hint is Timed:
         raise TypeError(f"{where}: Timed needs its value type, as Timed[float]")
     if get_origin(hint) is Timed:
@@ -894,7 +888,7 @@ def misplaced_max_array(spec: TypeSpec) -> bool:
     match spec.kind:
         case "max_array":
             return False
-        case "record" | "tuple" | "timed" | "attr" | "call":
+        case "record" | "tuple" | "timed" | "attr":
             return any(misplaced_max_array(m.type) for m in spec.members)
         case _:
             return any(reaches_max_array(m.type) for m in spec.members)
@@ -1286,40 +1280,6 @@ def attr_spec(
         flags=flags,
         hashable=False,
         reusable=False,
-    )
-
-
-def call_spec(hint: Any, where: str, path: frozenset[int]) -> TypeSpec:
-    """Return how a `Call[[A, ...], R]` is stored: an `attr` with a request part only.
-
-    Raises
-    ------
-    TypeError
-        If the arguments are not a list of types, or an argument or the
-        result is a reference or holds a `Timed`.
-    """
-    args = get_args(hint)
-    if len(args) != 2 or not isinstance(args[0], (tuple, list)):
-        raise TypeError(
-            f"{where}: Call takes a list of argument types, as Call[[float], float]"
-        )
-    arguments, result = args
-    spec = attr_spec(
-        result,
-        tuple(arguments),
-        where,
-        path,
-        timed=False,
-        settable=False,
-        request=True,
-    )
-    has_result = result is not None and result is not NoneType
-    result_text = spec.members[0].type.text if has_result else "None"
-    argument_texts = ",".join(
-        m.type.text for m in spec.members[1 if has_result else 0 :]
-    )
-    return dataclasses.replace(
-        spec, kind="call", text=f"call({argument_texts}->{result_text})"
     )
 
 

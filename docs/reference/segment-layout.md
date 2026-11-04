@@ -1563,6 +1563,7 @@ public:
     result<void> attr_publish(std::uint16_t field, std::uint8_t parts, std::span<const std::byte> bytes,
                               seconds lock_timeout);
     result<void> attr_read(std::uint16_t field, std::span<std::byte> out) const;
+    result<std::uint64_t> attr_published(std::uint16_t field) const;
 };
 
 result<void> unlink(std::string_view name) noexcept;
@@ -1700,7 +1701,8 @@ The header also declares these names:
   `bytes` of another size. `attr_read` copies the same `[value_at, size)`
   range into `out` from one moment, without the lock, and gives
   `status::range` for a field that is not an `attr` or has no value part, or
-  an `out` of another size.
+  an `out` of another size. `attr_published` reads `published` alone the
+  same way, and gives `status::range` for the same fields.
 - Thread safety: every member function may be called from several threads
   on one handle. Destroying or moving a handle must not overlap another
   call on it.

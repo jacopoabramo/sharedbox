@@ -6,7 +6,7 @@ from ._attr import Attr, AttrValue
 from ._bounded import BoundedDict, BoundedList, BoundedSet
 from ._box import SharedBox, SupportsSharedBox, fields
 from ._events import BoxEvents, FieldFuture, FieldWatch
-from ._layout import Capacity, Field, attr, call, field
+from ._layout import Capacity, Field, attr, field
 from ._native import (
     BoxClosedError,
     EndOfStream,
@@ -27,7 +27,6 @@ from ._native import (
 from ._refs import BoxRef, BrokenReferenceError, UnknownBoxClassError
 from ._request import (
     AlreadyServedError,
-    Call,
     RequestError,
     RequestFuture,
     RequestServer,
@@ -58,7 +57,6 @@ __all__ = [
     "BoxEvents",
     "BoxRef",
     "BrokenReferenceError",
-    "Call",
     "Capacity",
     "DType",
     "EndOfStream",
@@ -100,7 +98,6 @@ __all__ = [
     "WouldBlock",
     "__version__",
     "attr",
-    "call",
     "field",
     "fields",
     "get_include",

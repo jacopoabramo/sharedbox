@@ -80,7 +80,7 @@ def serve(
 
 
 def serve_once(box: SharedBox, name: str) -> bool:
-    """Return whether `box` could serve its call field `name`, stopping at once if so."""
+    """Return whether `box` could serve its attr field `name`, stopping at once if so."""
     try:
         getattr(box, name).serve(len)
     except AlreadyServedError:
@@ -94,7 +94,7 @@ def serve_once(box: SharedBox, name: str) -> bool:
 def serving_in_child(
     box: SharedBox, **handlers: Callable[..., Any]
 ) -> Generator[BaseProcess, None, None]:
-    """Serve each call field named in `handlers` in a spawned process until the block ends."""
+    """Serve each attr field named in `handlers` in a spawned process until the block ends."""
     context = mp.get_context("spawn")
     ready = context.Event()
     stop, stopping = context.Pipe(duplex=False)

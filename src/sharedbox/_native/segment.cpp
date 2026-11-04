@@ -565,6 +565,15 @@ void Segment::write_one(std::uint32_t index, std::span<const std::byte> bytes) {
     impl_->write({&one, 1});
 }
 
+std::uint64_t Segment::attr_published(std::uint32_t index) const {
+    auto guard = impl_->enter();
+    impl_->field(index);
+    auto got = impl_->box.attr_published(static_cast<std::uint16_t>(index));
+    if (!got && got.error().code == status::range)
+        throw std::invalid_argument("field " + std::to_string(index) + " is not an Attr with a value");
+    return impl_->check(std::move(got));
+}
+
 std::uint64_t Segment::version(std::uint32_t index) const {
     auto guard = impl_->enter();
     impl_->field(index);

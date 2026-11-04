@@ -4,13 +4,13 @@
 import asyncio
 import threading
 
-from sharedbox import Call, RequestError, RequestSupersededError, SharedBox, call
+from sharedbox import Attr, RequestError, RequestSupersededError, SharedBox, attr
 
 
 class Scanner(SharedBox, name="example-scanner"):
     position: float = 0.0
-    move: Call[[float], float] = call()
-    home: Call[[], None] = call()
+    move: Attr[float, [float]] = attr()
+    home: Attr[None] = attr()
 
 
 # --8<-- [end:declare]

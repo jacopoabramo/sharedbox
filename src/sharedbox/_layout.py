@@ -26,14 +26,12 @@ from typing import (
 from ._arrays import Shape
 from ._attr import Attr
 from ._native import Types
-from ._request import Call
 from ._types import (
     CODES,
     MAX_ARRAY_PLACES,
     Table,
     TypeSpec,
     attr_spec,
-    call_spec,
     is_box_class,
     misplaced_max_array,
     parse,
@@ -87,7 +85,6 @@ Kind = Literal[
     "array",
     "max_array",
     "attr",
-    "call",
     "timed",
 ]
 
@@ -238,28 +235,6 @@ def field(
     )
 
 
-def call(
-    *,
-    init: Literal[False] = False,
-    metadata: Mapping[Any, Any] | None = None,
-    doc: str | None = None,
-) -> Any:
-    """Declare a [`Call`][sharedbox.Call] field of a `SharedBox` class.
-
-    Write `move: Call[[float], float] = call()`. A call field holds no
-    value, so the box's constructor takes none for it, for type checkers
-    too.
-
-    Parameters
-    ----------
-    init
-        Leave it out. Type checkers read its default.
-    metadata, doc
-        As [`field`][sharedbox.field] takes them.
-    """
-    return field(init=init, metadata=metadata, doc=doc)
-
-
 def attr(
     *,
     init: Literal[False] = False,
@@ -397,13 +372,15 @@ class Layout:
     by_name: Mapping[str, FieldSpec]
     """Each field's spec under its name."""
     update_names: tuple[str | None, ...]
-    """Field names in declaration order; None for an attr or call field, which `update` does not write."""
+    """Field names in declaration order; None for an attr field, which `update` does not write."""
     snapshot_names: tuple[str | None, ...]
-    """Field names in declaration order; None for a call field and for an attr without a value, which a snapshot leaves out."""
+    """Field names in declaration order; None for an attr whose type is `None`, which a snapshot leaves out."""
     refs: tuple[FieldSpec, ...]
     """The reference fields, in declaration order."""
     values: tuple[FieldSpec, ...]
-    """The fields a new box is given a starting value for, in declaration order: every field but a call field, and an attr unless it has a default."""
+    """The fields a new box is given a starting value for, in declaration order: every field but an attr without a default."""
+    watched: tuple[FieldSpec, ...]
+    """The fields `watch` and `events` report, in declaration order: every field but an attr whose type is `None`."""
     types: Types
     """The field types the native module converts values with."""
 
@@ -716,12 +693,6 @@ def build_layout(cls: type, identity: str | None = None) -> Layout:
                 )
             spec: TypeSpec | None
             spec, info = attr_field(hint, where, option, default)
-        elif hint is Call or get_origin(hint) is Call:
-            if shape is not None or capacity is not None:
-                raise TypeError(
-                    f"{where}: field(shape=...) and field(capacity=...) do not apply to a Call"
-                )
-            spec = call_spec(hint, where, frozenset())
         elif ref is not None:
             spec = None
         else:
@@ -811,23 +782,19 @@ def build_layout(cls: type, identity: str | None = None) -> Layout:
         ],
         table.converts,
     )
+    watched = tuple(s for s in specs if s.attr is None or s.attr.has_value)
     return Layout(
         tuple(specs),
         record_size,
         schema_hash,
         {s.name: s for s in specs},
-        tuple(None if s.kind in ("attr", "call") else s.name for s in specs),
+        tuple(None if s.attr is not None else s.name for s in specs),
         tuple(
-            None
-            if s.kind == "call" or (s.attr is not None and not s.attr.has_value)
-            else s.name
+            None if s.attr is not None and not s.attr.has_value else s.name
             for s in specs
         ),
         tuple(s for s in specs if s.target is not None),
-        tuple(
-            s
-            for s in specs
-            if s.kind != "call" and (s.attr is None or s.attr.default is not MISSING)
-        ),
+        tuple(s for s in specs if s.attr is None or s.attr.default is not MISSING),
+        watched,
         types,
     )

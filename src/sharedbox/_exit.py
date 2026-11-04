@@ -139,7 +139,7 @@ def release_class(cls: type[SharedBox]) -> None:
 
 
 def release_each(release: Callable[[T], object], targets: list[T]) -> None:
-    """Call `release` on each of `targets`; one that raises is logged and does not keep the others from being released."""
+    """Run `release` on each of `targets`; one that raises is logged and does not keep the others from being released."""
     for target in targets:
         try:
             release(target)

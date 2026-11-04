@@ -3,36 +3,179 @@ import contextlib
 import gc
 import logging
 import multiprocessing as mp
+import queue
 import sys
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Coroutine, Generator
 from concurrent.futures import CancelledError
 from dataclasses import dataclass
 from functools import partial
+from multiprocessing.connection import Connection
 from multiprocessing.sharedctypes import Synchronized
 from multiprocessing.synchronize import Event as EventType
+from typing import Any, TypeVar
 
 import pytest
 from crossproc import call_in_child, fork, serve_once, serving_in_child
+from test_attr_fields import CLOCK_SLACK_NS, Camera
 
 from sharedbox import (
     AlreadyServedError,
+    Attr,
     BoxClosedError,
-    Call,
     RequestError,
     RequestServer,
     RequestSupersededError,
     ServerExitedError,
     SharedBox,
-    call,
+    attr,
 )
+
+T = TypeVar("T")
 
 
 class Scanner(SharedBox):
     position: float = 0.0
-    move: Call[[float], float] = call()
-    home: Call[[], None] = call()
+    move: Attr[float, [float]] = attr()
+    home: Attr[None] = attr()
+
+
+class Counter(SharedBox):
+    bump: Attr[int, [int]] = attr()
+
+
+class Guarded(SharedBox, lock_timeout=0.2):
+    move: Attr[float, [float]] = attr()
+
+
+class Zero(SharedBox):
+    x: Attr[float, []] = attr()
+
+
+def own_camera(name: str, ready: EventType, stop: Connection) -> None:
+    with Camera.create(name) as camera:
+
+        def set_exposure(value: float) -> float:
+            camera.exposure.publish(setpoint=value)
+            return value
+
+        def home() -> None:
+            camera.exposure.publish(value=camera.exposure.setpoint)
+
+        camera.exposure.serve(set_exposure)
+        camera.move.serve(lambda position, speed: position)
+        camera.home.serve(home)
+        ready.set()
+        with contextlib.suppress(EOFError):
+            stop.recv()
+
+
+@contextlib.contextmanager
+def camera_in_child(name: str) -> Generator[Camera, None, None]:
+    """Attach to a `Camera` that a spawned process creates and serves until the block ends."""
+    context = mp.get_context("spawn")
+    ready = context.Event()
+    stop, stopping = context.Pipe(duplex=False)
+    child = context.Process(target=own_camera, args=(name, ready, stop))
+    child.start()
+    try:
+        while not ready.wait(0.1):
+            assert child.is_alive(), "the child exited before it served"
+        with Camera.attach(name) as camera:
+            yield camera
+    finally:
+        stopping.close()
+        child.join(10)
+        if child.is_alive():
+            child.kill()
+            child.join(10)
+
+
+async def awaited(future: Any) -> Any:
+    return await future
+
+
+def test_an_attr_across_processes_publishes_and_answers_requests(
+    names: Callable[[str], str],
+) -> None:
+    """Answer set, a request with arguments and a command, and emit one event per publish only."""
+    exposures: queue.SimpleQueue[dict[str, Any]] = queue.SimpleQueue()
+    moves: queue.SimpleQueue[dict[str, Any]] = queue.SimpleQueue()
+    with camera_in_child(names("camera")) as camera:
+        camera.events.exposure.connect(lambda new, old: exposures.put(new))
+        camera.events.move.connect(lambda new, old: moves.put(new))
+        assert asyncio.run(awaited(camera.exposure.set(0.02))) == 0.02
+        assert exposures.get(timeout=5) == {
+            "value": 0.0,
+            "setpoint": 0.02,
+            "timestamp_ns": 0,
+        }
+        assert camera.move(1.0, "fast").result(timeout=5.0) == 1.0
+        before = time.time_ns()
+        assert asyncio.run(awaited(camera.home())) is None
+        after = time.time_ns() + CLOCK_SLACK_NS
+        homed = exposures.get(timeout=5)
+        assert homed["value"] == 0.02
+        assert before <= homed["timestamp_ns"] <= after
+        assert exposures.empty()
+        assert moves.empty()
+
+
+def test_set_sends_the_value_as_its_argument(names: Callable[[str], str]) -> None:
+    """Pass the value given to set to the handler as its one argument."""
+    seen: list[float] = []
+
+    def record(value: float) -> float:
+        seen.append(value)
+        return value
+
+    with Camera.create(names("set")) as box:
+        box.exposure.serve(record)
+        assert box.exposure.set(3.0).result(timeout=10) == 3.0
+        assert seen == [3.0]
+
+
+@pytest.mark.parametrize(
+    ("cls", "send"),
+    [
+        (Camera, lambda box: box.temperature()),
+        (Camera, lambda box: box.move.set(1.0)),
+        (Camera, lambda box: box.temperature.set(1.0)),
+        (Zero, lambda box: box.x()),
+    ],
+    ids=["call without a request", "set on a request", "set on a value", "no arguments"],
+)
+def test_a_request_on_an_attr_without_one_is_refused(
+    names: Callable[[str], str], cls: type[SharedBox], send: Callable[[Any], Any]
+) -> None:
+    """Raise TypeError for a call or a set that the attribute has no request for."""
+    with cls.create(names("refused")) as box, pytest.raises(TypeError):
+        send(box)
+
+
+def test_a_watch_resolves_on_a_publish_after_a_request(
+    names: Callable[[str], str],
+) -> None:
+    """Leave a watch pending through a request and resolve it on the next publish."""
+    with Camera.create(names("watch")) as box:
+        fut = box.watch("move").future()
+        box.move.serve(lambda position, speed: position)
+        assert box.move(1.0, "fast").result(timeout=5) == 1.0
+        assert not fut.done()
+        box.move.publish(value=2.0)
+        assert fut.result(timeout=5) == {"value": 2.0}
+
+
+def test_watch_and_events_refuse_an_attr_without_a_value(
+    names: Callable[[str], str],
+) -> None:
+    """Raise TypeError for a watch of or a signal on an Attr[None]."""
+    with Camera.create(names("none")) as box:
+        with pytest.raises(TypeError):
+            box.watch("home")
+        with pytest.raises(TypeError):
+            box.events.home  # noqa: B018
 
 
 def double(position: float) -> float:
@@ -78,10 +221,10 @@ async def ask(box: Scanner, position: float) -> float:
     return await box.move(position)
 
 
-def test_a_call_across_processes_is_answered_and_superseded(
+def test_a_request_across_processes_is_answered_and_superseded(
     names: Callable[[str], str],
 ) -> None:
-    """Answer awaited, blocking and kept calls, and supersede a request sent while another runs."""
+    """Answer awaited, blocking and kept requests, and supersede a request sent while another runs."""
     with Scanner.create(names("answered")) as box:
         with serving_in_child(box, move=double, home=stay):
             assert asyncio.run(ask(box, 2.0)) == 4.0
@@ -178,7 +321,7 @@ def test_a_request_sent_before_serve_is_answered(names: Callable[[str], str]) ->
         assert pending.result(timeout=10) == 3.0
 
 
-def test_a_call_refuses_keywords_and_wrong_arguments(
+def test_a_request_refuses_keywords_and_wrong_arguments(
     names: Callable[[str], str],
 ) -> None:
     """Raise TypeError for keyword and mistyped arguments without sending a request."""
@@ -198,22 +341,40 @@ def test_a_call_refuses_keywords_and_wrong_arguments(
         assert seen == [1.0]
 
 
-def test_closing_the_box_cancels_pending_calls(names: Callable[[str], str]) -> None:
-    """Cancel a pending call when the box closes, and refuse a call on a closed box."""
+def test_closing_the_box_cancels_pending_requests(names: Callable[[str], str]) -> None:
+    """Cancel a pending request when the box closes, and refuse a request on a closed box."""
     box = Scanner.create(names("cancel"))
     pending = box.move(1.0)
+    move = box.move
     box.close()
     with pytest.raises(CancelledError):
         pending.result(timeout=10)
     with pytest.raises(BoxClosedError):
         box.move(1.0)
+    with pytest.raises(BoxClosedError):
+        move(1.0)
+
+
+def test_a_request_through_the_handle_of_a_freed_box_raises(
+    names: Callable[[str], str],
+) -> None:
+    """Raise BoxClosedError for a request, a set and a serve once the box is gone."""
+    box = Camera.create(names("freed"))
+    move, exposure = box.move, box.exposure
+    del box
+    with pytest.raises(BoxClosedError):
+        move(1.0, "fast")
+    with pytest.raises(BoxClosedError):
+        exposure.set(1.0)
+    with pytest.raises(BoxClosedError):
+        move.serve(lambda position, speed: position)
 
 
 @pytest.mark.skipif(sys.platform == "win32", reason="Windows has no fork")
 def test_a_forked_child_serves_nothing_it_inherited(
     names: Callable[[str], str],
 ) -> None:
-    """Answer a forked child's call from the parent's server, never from the child."""
+    """Answer a forked child's request from the parent's server, never from the child."""
     count: Synchronized[int] = mp.get_context("fork").Value("i", 0)
     with Scanner.create(names("fork")) as box:
         box.move.serve(partial(counted_double, count))
@@ -225,28 +386,24 @@ def test_a_forked_child_serves_nothing_it_inherited(
         assert count.value == 2
 
 
-class Counter(SharedBox):
-    bump: Call[[int], int] = call()
-
-
 def too_large(count: int) -> int:
     return 2**64
 
 
-def test_a_result_that_cannot_be_stored_fails_the_call(
+def test_a_result_that_cannot_be_stored_fails_the_request(
     names: Callable[[str], str],
 ) -> None:
-    """Fail a call whose handler returns a value its result type cannot hold."""
+    """Fail a request whose handler returns a value its result type cannot hold."""
     with Counter.create(names("overflow")) as box:
         box.bump.serve(too_large)
         with pytest.raises(RequestError, match="OverflowError"):
             box.bump(1).result(timeout=10)
 
 
-def test_closing_cancels_a_call_a_handler_waits_on(
+def test_closing_cancels_a_request_a_handler_waits_on(
     names: Callable[[str], str],
 ) -> None:
-    """Cancel, on close, a call that a sync handler of the same box waits on."""
+    """Cancel, on close, a request that a sync handler of the same box waits on."""
     waiting = threading.Event()
     seen: list[str] = []
     box = Scanner.create(names("nested"))
@@ -284,7 +441,7 @@ def test_a_server_stopped_inside_its_take_fails_the_request(
                 servers.pop().stop()
 
     class Mover(SharedBox):
-        move: Call[[Target], float] = call()
+        move: Attr[float, [Target]] = attr()
 
     with Mover.create(names("inside")) as box:
         target = Target(1.0)
@@ -306,7 +463,7 @@ def leave(position: float) -> float:
 def test_a_result_that_fails_to_decode_reaches_the_caller(
     names: Callable[[str], str],
 ) -> None:
-    """Give the caller the error its result's decoding raised, and answer later calls."""
+    """Give the caller the error its result's decoding raised, and answer later requests."""
     refuse: list[bool] = []
 
     @dataclass(frozen=True)
@@ -318,22 +475,22 @@ def test_a_result_that_fails_to_decode_reaches_the_caller(
                 raise ValueError("refused")
 
     class Probe(SharedBox):
-        read: Call[[], Reading] = call()
+        sample: Attr[Reading, [int]] = attr(default=Reading(0.0))
 
     reading = Reading(1.0)
     with Probe.create(names("decode")) as box:
-        box.read.serve(lambda: reading)
+        box.sample.serve(lambda channel: reading)
         refuse.append(True)
         with pytest.raises(ValueError, match="refused"):
-            box.read().result(timeout=5)
+            box.sample(0).result(timeout=5)
         refuse.clear()
-        assert box.read().result(timeout=5) == reading
+        assert box.sample(0).result(timeout=5) == reading
 
 
 def test_a_timeout_names_the_field_and_the_request(
     names: Callable[[str], str],
 ) -> None:
-    """Name the field and the request in the TimeoutError of a call nobody answers."""
+    """Name the field and the request in the TimeoutError of a request nobody answers."""
     with (
         Scanner.create(names("timeout")) as box,
         pytest.raises(
@@ -381,10 +538,10 @@ def test_a_surrogate_in_a_handler_error_reaches_the_caller(
 
 
 @pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")
-def test_a_handler_that_exits_fails_its_call_and_frees_the_field(
+def test_a_handler_that_exits_fails_its_request_and_frees_the_field(
     names: Callable[[str], str],
 ) -> None:
-    """Fail the call of a sync handler raising SystemExit, and free the field."""
+    """Fail the request of a sync handler raising SystemExit, and free the field."""
     with Scanner.create(names("exits")) as box:
         box.move.serve(leave)
         with pytest.raises(RequestError, match="SystemExit"):
@@ -413,7 +570,7 @@ def test_closing_the_box_inside_a_take_frees_the_field(
                 boxes.pop().close()
 
     class Mover(SharedBox):
-        move: Call[[Target], float] = call()
+        move: Attr[float, [Target]] = attr()
 
     name = names("closing")
     target = Target(1.0)
@@ -428,14 +585,10 @@ def test_closing_the_box_inside_a_take_frees_the_field(
         assert other.move(target).result(timeout=5) == 2.0
 
 
-class Guarded(SharedBox, lock_timeout=0.2):
-    move: Call[[float], float] = call()
-
-
-def test_a_lock_timeout_keeps_a_call_pending(
+def test_a_lock_timeout_keeps_a_request_pending(
     names: Callable[[str], str], caplog: pytest.LogCaptureFixture
 ) -> None:
-    """Keep a call pending while the lock is held past its timeout, and deliver its answer after."""
+    """Keep a request pending while the lock is held past its timeout, and deliver its answer after."""
     with Guarded.create(names("locked")) as box, caplog.at_level(logging.WARNING):
         pending = box.move(1.0)
         box._segment._hold_write_lock()
@@ -449,3 +602,163 @@ def test_a_lock_timeout_keeps_a_call_pending(
         box.force_unlock()
         box.move.serve(double)
         assert pending.result(timeout=5) == 2.0
+
+
+@contextlib.contextmanager
+def running_loop() -> Generator[asyncio.AbstractEventLoop, None, None]:
+    """Run an event loop on a thread of its own for the duration of the block."""
+    loop = asyncio.new_event_loop()
+    thread = threading.Thread(target=loop.run_forever)
+    thread.start()
+    try:
+        yield loop
+    finally:
+        loop.call_soon_threadsafe(loop.stop)
+        thread.join(10)
+        loop.close()
+
+
+def on_loop(loop: asyncio.AbstractEventLoop, coroutine: Coroutine[Any, Any, T]) -> T:
+    return asyncio.run_coroutine_threadsafe(coroutine, loop).result(10)
+
+
+async def serve_on(
+    attribute: Attr[Any, ...], handler: Callable[..., Any]
+) -> RequestServer:
+    return attribute.serve(handler)
+
+
+async def double_later(position: float) -> float:
+    return position * 2
+
+
+def test_an_async_handler_can_gather_tasks(names: Callable[[str], str]) -> None:
+    """Answer with the sum of two tasks an async handler gathers."""
+
+    async def handler(position: float) -> float:
+        first = asyncio.create_task(double_later(position))
+        second = asyncio.create_task(double_later(position + 1))
+        return sum(await asyncio.gather(first, second))
+
+    with running_loop() as loop, Scanner.create(names("gather")) as box:
+        on_loop(loop, serve_on(box.move, handler))
+        assert box.move(1.0).result(timeout=10) == 6.0
+
+
+def test_a_task_started_by_a_handler_outlives_it(names: Callable[[str], str]) -> None:
+    """Keep running a task a handler started after the handler answered."""
+    release = asyncio.Event()
+    finished = asyncio.Event()
+    tasks: list[asyncio.Task[None]] = []
+
+    async def later() -> None:
+        await release.wait()
+        finished.set()
+
+    async def handler(position: float) -> float:
+        tasks.append(asyncio.create_task(later()))
+        return position
+
+    async def task_running() -> bool:
+        return not tasks[0].done()
+
+    async def task_finished() -> None:
+        await asyncio.wait_for(finished.wait(), 10)
+
+    with running_loop() as loop, Scanner.create(names("outlives")) as box:
+        on_loop(loop, serve_on(box.move, handler))
+        assert box.move(1.0).result(timeout=10) == 1.0
+        assert box.move(2.0).result(timeout=10) == 2.0
+        assert on_loop(loop, task_running())
+        loop.call_soon_threadsafe(release.set)
+        on_loop(loop, task_finished())
+
+
+def test_cancelled_loop_tasks_give_the_caller_request_error(
+    names: Callable[[str], str],
+) -> None:
+    """Fail a request whose handler the loop's shutdown cancelled, and free the field."""
+    serving = threading.Event()
+
+    with Scanner.create(names("cancelled")) as box:
+
+        async def main() -> None:
+            arrived = asyncio.Event()
+
+            async def handler(position: float) -> float:
+                arrived.set()
+                await asyncio.sleep(60)
+                return position
+
+            box.move.serve(handler)
+            serving.set()
+            await arrived.wait()
+
+        thread = threading.Thread(target=asyncio.run, args=(main(),))
+        thread.start()
+        assert serving.wait(10)
+        pending = box.move(1.0)
+        thread.join(10)
+        with pytest.raises(RequestError, match="the handler was cancelled"):
+            pending.result(timeout=10)
+        assert call_in_child(serve_once, box, "move") is True
+
+
+def test_a_handler_can_await_another_request_on_the_same_box(
+    names: Callable[[str], str],
+) -> None:
+    """Answer a handler that awaits a request to another field served on the same loop."""
+    with running_loop() as loop, Scanner.create(names("nested")) as box:
+
+        async def home() -> None:
+            assert await box.move(0.0) == 0.0
+
+        on_loop(loop, serve_on(box.move, double_later))
+        on_loop(loop, serve_on(box.home, home))
+        assert box.home().result(timeout=10) is None
+
+
+def test_an_async_handler_needs_a_running_loop(names: Callable[[str], str]) -> None:
+    """Refuse to serve an async handler outside a running event loop."""
+    with Scanner.create(names("noloop")) as box:
+        with pytest.raises(RuntimeError, match="running event loop"):
+            box.move.serve(double_later)
+        box.move.serve(lambda position: position)
+
+
+async def serve_idle(box: Scanner) -> None:
+    box.move.serve(double_later)
+
+
+def test_an_idle_async_server_frees_the_field_when_its_loop_ends(
+    names: Callable[[str], str],
+) -> None:
+    """Free the field of an async server whose event loop ended while it was idle."""
+    with Scanner.create(names("idle")) as box:
+        asyncio.run(serve_idle(box))
+        asyncio.run(serve_idle(box))
+        # A write wakes the watcher, which frees the field of a server whose loop closed.
+        box.position = 1.0
+        assert call_in_child(serve_once, box, "move") is True
+        box.move.serve(lambda position: position)
+        assert box.move(1.0).result(timeout=10) == 1.0
+
+
+def test_a_cancelled_error_from_the_handler_fails_only_that_request(
+    names: Callable[[str], str],
+) -> None:
+    """Fail a request whose handler raised CancelledError itself, and answer the next."""
+
+    async def handler(position: float) -> float:
+        if position < 0:
+            inner = asyncio.create_task(asyncio.sleep(60))
+            await asyncio.sleep(0)
+            inner.cancel()
+            await inner
+        return position
+
+    with running_loop() as loop, Scanner.create(names("inner")) as box:
+        on_loop(loop, serve_on(box.move, handler))
+        with pytest.raises(RequestError, match="CancelledError"):
+            box.move(-1.0).result(timeout=10)
+        assert box.move(1.0).result(timeout=10) == 1.0

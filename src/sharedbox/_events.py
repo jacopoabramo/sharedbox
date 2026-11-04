@@ -69,7 +69,7 @@ def on_watcher_thread() -> bool:
 def stop_watchers() -> None:
     """Stop every watcher thread and wait for them to end, before the interpreter finalizes.
 
-    It stops the servers of call fields too, and waits for their threads.
+    It stops the servers of attr fields too, and waits for their threads.
     The wait lasts at most `EXIT_WAIT` seconds in all; a thread still running
     a callback or a handler after that is logged and left running. On CPython before 3.14, a daemon thread that takes the GIL back during
     finalization is ended with `pthread_exit` on Linux. The unwinding that
@@ -107,19 +107,28 @@ class FieldFuture(Future[T]):
     A `concurrent.futures.Future`, so `concurrent.futures.wait`,
     `concurrent.futures.as_completed` and `asyncio.wrap_future` take it, and
     it can be awaited directly in a running event loop. It resolves on the
-    first write to the field after the version it was created at. Done
+    first write to the field after the version it was created at; for an
+    attr field, on the first publish, so a request leaves it pending. Done
     callbacks run on the box's watcher thread, or on the thread that closes
     the box; closing the box cancels the futures still pending.
 
     [`FieldWatch.future`][sharedbox.FieldWatch.future] returns one.
     """
 
-    def __init__(self, watcher: Watcher, field: FieldSpec, since: int) -> None:
+    def __init__(
+        self,
+        watcher: Watcher,
+        field: FieldSpec,
+        since: int,
+        published: int | None = None,
+    ) -> None:
         super().__init__()
         self._watcher = watcher
         self._field = field
         self._since = since
         self._version = since
+        # An attr field's publish count to compare with; None for every other kind.
+        self._published = published
         self._notified = False
 
     @property
@@ -161,10 +170,11 @@ class FieldFuture(Future[T]):
     def __await__(self) -> Generator[Any, None, T]:
         return asyncio.wrap_future(self).__await__()
 
-    def _resolve(self, value: T, version: int) -> None:
+    def _resolve(self, value: T, version: int, published: int | None = None) -> None:
         if self.done():
             return
         self._version = version
+        self._published = published
         with contextlib.suppress(InvalidStateError):
             self.set_result(value)
 
@@ -180,18 +190,27 @@ class FieldWatch(Generic[T]):
     Iteration ends when the box is closed.
     """
 
-    __slots__ = ("_field", "_since", "_watcher")
+    __slots__ = ("_field", "_published", "_since", "_watcher")
 
-    def __init__(self, watcher: Watcher, field: FieldSpec, since: int) -> None:
+    def __init__(
+        self,
+        watcher: Watcher,
+        field: FieldSpec,
+        since: int,
+        published: int | None = None,
+    ) -> None:
         self._watcher = watcher
         self._field = field
         self._since = since
+        self._published = published
 
     def __iter__(self) -> Iterator[T]:
-        since = self._since
+        since, published = self._since, self._published
         while True:
             try:
-                fut: FieldFuture[T] = self._watcher.future(self._field, since)
+                fut: FieldFuture[T] = self._watcher.future(
+                    self._field, since, published
+                )
             except BoxClosedError:
                 return
             try:
@@ -200,7 +219,7 @@ class FieldWatch(Generic[T]):
                 if self._watcher.stopped:
                     return
                 raise
-            since = fut.version
+            since, published = fut.version, fut._published
             yield value
 
     def __aiter__(self) -> AsyncIterator[T]:
@@ -220,13 +239,15 @@ class FieldWatch(Generic[T]):
         BoxClosedError
             If the box is closed.
         """
-        return self._watcher.future(self._field, self._since)
+        return self._watcher.future(self._field, self._since, self._published)
 
     async def _values(self) -> AsyncIterator[T]:
-        since = self._since
+        since, published = self._since, self._published
         while True:
             try:
-                fut: FieldFuture[T] = self._watcher.future(self._field, since)
+                fut: FieldFuture[T] = self._watcher.future(
+                    self._field, since, published
+                )
             except BoxClosedError:
                 return
             try:
@@ -236,7 +257,7 @@ class FieldWatch(Generic[T]):
                 if self._watcher.stopped and (task is None or not task.cancelling()):
                     return
                 raise
-            since = fut.version
+            since, published = fut.version, fut._published
             yield value
 
 
@@ -288,15 +309,34 @@ class Watcher:
     def stopped(self) -> bool:
         return self._stop.is_set()
 
-    def future(self, field: FieldSpec, since: int | None = None) -> FieldFuture[Any]:
-        """Return a future for the first write to `field` after version `since` (default: now)."""
-        current, value = self._segment.get_versioned(field.index, self._types)
-        fut: FieldFuture[Any] = FieldFuture(
-            self, field, current if since is None else since
-        )
-        if current != fut._since:
-            fut._resolve(shown(field, value), current)
-            return fut
+    def future(
+        self,
+        field: FieldSpec,
+        since: int | None = None,
+        published: int | None = None,
+    ) -> FieldFuture[Any]:
+        """Return a future for the first write to `field` after version `since` (default: now).
+
+        For an attr field it is the first publish after publish count
+        `published`, which comes with `since` (default: now).
+        """
+        fut: FieldFuture[Any]
+        if field.attr is None:
+            current, value = self._segment.get_versioned(field.index, self._types)
+            fut = FieldFuture(self, field, current if since is None else since)
+            if current != fut._since:
+                fut._resolve(shown(field, value), current)
+                return fut
+        else:
+            # The write count first, so a publish between the two reads counts as made before the future.
+            current = self._segment.version(field.index)
+            now = self._segment.attr_published(field.index)
+            if published is None:
+                published = now
+            fut = FieldFuture(self, field, current, published)
+            if now != published:
+                fut._resolve(*self._read_attr(field))
+                return fut
         with self._lock:
             if self._stop.is_set():
                 fut.cancel()
@@ -325,7 +365,7 @@ class Watcher:
         return fut
 
     def serve(self, spec: FieldSpec, handler: Callable[..., Any]) -> RequestServer:
-        """Claim call field `spec` for this process and answer its requests with `handler`."""
+        """Claim attr field `spec` for this process and answer its requests with `handler`."""
         loop = None
         if inspect.iscoroutinefunction(handler):
             try:
@@ -398,6 +438,13 @@ class Watcher:
     def last(self, spec: FieldSpec) -> Any:
         """Return the value of `spec` the watcher last saw, which it compares the next change with."""
         return self._seen[spec.index][2]
+
+    def _read_attr(self, spec: FieldSpec) -> tuple[Any, int, int]:
+        """Return the value of attr field `spec`, its write count and its publish count, from one read."""
+        version, raw = self._segment.read_versioned(spec.index)
+        # The value part starts with the publish count.
+        published = int.from_bytes(raw[:8], "little")
+        return self._types.decode(spec.index, raw), version, published
 
     def _read(self, spec: FieldSpec) -> tuple[int, bytes, Any]:
         """Return the field's write count, stored bytes and value, from one read."""
@@ -606,23 +653,40 @@ class Watcher:
         if not pending:
             return
         versions = self._segment.versions()
-        ready = [fut for fut in pending if versions[fut._field.index] != fut._since]
+        ready: list[FieldFuture[Any]] = []
+        for fut in pending:
+            index = fut._field.index
+            if versions[index] == fut._since:
+                continue
+            if (
+                fut._published is None
+                or self._segment.attr_published(index) != fut._published
+            ):
+                ready.append(fut)
+            else:
+                # A request moved the write count; skip the future until the next write.
+                fut._since = versions[index]
         if not ready:
             return
         # Read every value before removing any future, so a failed read leaves them all pending.
-        values: list[tuple[FieldFuture[Any], Any, int]] = []
+        values: list[tuple[FieldFuture[Any], tuple[Any, int, int | None]]] = []
         for fut in ready:
-            version, value = self._segment.get_versioned(fut._field.index, self._types)
-            values.append((fut, shown(fut._field, value), version))
+            if fut._published is None:
+                version, value = self._segment.get_versioned(
+                    fut._field.index, self._types
+                )
+                values.append((fut, (shown(fut._field, value), version, None)))
+            else:
+                values.append((fut, self._read_attr(fut._field)))
         with self._lock:
             for fut in ready:
                 with contextlib.suppress(ValueError):
                     self._pending.remove(fut)
-        for fut, value, version in values:
-            fut._resolve(value, version)
+        for fut, (value, version, published) in values:
+            fut._resolve(value, version, published)
 
     def _resolve_calls(self, check: bool) -> bool:
-        """Complete the call futures whose answer arrived; with `check`, read every one and check its server.
+        """Complete the request futures whose answer arrived; with `check`, read every one and check its server.
 
         Returns whether any is still pending.
         """
@@ -803,22 +867,23 @@ class BoxEvents(SignalGroup):
         self._sharedbox_follower.unfollow(field)
 
 
-def refuse_call_signal(label: str, group: object) -> NoReturn:
-    raise TypeError(f"{label} is a Call field, which holds no value and has no signal")
+def refuse_signal(label: str, group: object) -> NoReturn:
+    raise TypeError(f"{label} has no value, so it has no signal")
 
 
 def events_class(owner: type, layout: Layout) -> type[BoxEvents]:
     """Create a [`BoxEvents`][sharedbox.BoxEvents] subclass with one `(new, old)` signal per field of `owner`.
 
     It also gets the signal `metadata`, and a class with reference fields
-    the signal `nested`. A call field gets a property that raises `TypeError`.
+    the signal `nested`. An attr field whose type is `None` gets a property
+    that raises `TypeError`.
     """
     signals: dict[str, Any] = {
-        spec.name: Signal(object, object) for spec in layout.values
+        spec.name: Signal(object, object) for spec in layout.watched
     }
     for spec in layout.fields:
-        if spec.kind == "call":
-            signals[spec.name] = property(partial(refuse_call_signal, spec.label))
+        if spec.attr is not None and not spec.attr.has_value:
+            signals[spec.name] = property(partial(refuse_signal, spec.label))
     signals["metadata"] = Signal(int)
     if layout.refs:
         signals["nested"] = Signal(tuple, object, object)

@@ -310,6 +310,25 @@ TEST_CASE("a request step leaves the value part") {
     static_cast<void>(unlink(name));
 }
 
+TEST_CASE("attr_published counts publishes and not request steps") {
+    const std::string name = unique("attr-published");
+    handle box = make(name, everything());
+    CHECK(*box.attr_published(0) == 0);
+    REQUIRE(box.attr_publish(0, publish_value, parts(0, 5, 0, 0), patience).has_value());
+    REQUIRE(box.attr_publish(0, publish_setpoint, parts(0, 0, 0, 7), patience).has_value());
+    std::array<std::byte, 8> arguments{};
+    REQUIRE(box.request_send(0, eight(1), patience).has_value());
+    REQUIRE(box.request_take(0, arguments, patience).has_value());
+    CHECK((*box.attr_published(0) == 2 && box.version(0) == 4));
+    CHECK(box.attr_published(1).error().code == status::range);
+    static_cast<void>(unlink(name));
+
+    const std::string bare = unique("attr-published-bare");
+    handle request_only = make(bare, attr(std::nullopt, {}, attr_request));
+    CHECK(request_only.attr_published(0).error().code == status::range);
+    static_cast<void>(unlink(bare));
+}
+
 TEST_CASE("attr_read copies the value part only") {
     const std::string name = unique("attr-read");
     handle box = make(name, everything());

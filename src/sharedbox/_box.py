@@ -34,7 +34,6 @@ from ._layout import (
     FieldSpec,
     Layout,
     build_layout,
-    call,
     class_identity,
     declared,
     field,
@@ -63,7 +62,6 @@ from ._refs import (
     stored,
     valid_name,
 )
-from ._request import CallAttribute
 
 if TYPE_CHECKING:
     if sys.version_info >= (3, 13):
@@ -373,7 +371,7 @@ class SharedBoxMeta(type):
         return cls
 
 
-@dataclass_transform(eq_default=False, field_specifiers=(field, attr_specifier, call))
+@dataclass_transform(eq_default=False, field_specifiers=(field, attr_specifier))
 class SharedBox(Generic[M], metaclass=SharedBoxMeta):
     """A record whose annotated fields live in a named shared-memory segment.
 
@@ -700,7 +698,7 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
             if isinstance(value, Field):
                 options[attr] = value
             elif value is not MISSING and not isinstance(
-                value, (FieldDescriptor, Reference, CallAttribute, AttrAttribute)
+                value, (FieldDescriptor, Reference, AttrAttribute)
             ):
                 if attr not in own:
                     base = next(
@@ -727,14 +725,13 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
                 attr_kw_only = own[attr]
             else:
                 attr_kw_only = given.kw_only
-            is_call = attr in layout.by_name and layout.by_name[attr].kind == "call"
             is_attr = attr in layout.by_name and layout.by_name[attr].attr is not None
             param = dataclasses.replace(
                 given,
                 name=attr,
                 type=hint,
                 kw_only=attr_kw_only,
-                init=given.init and not is_call and not is_attr,
+                init=given.init and not is_attr,
             )
             if isinstance(hint, InitVar):
                 if param.shape is not None:
@@ -753,10 +750,6 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
                 setattr(cls, attr, InitVarAttribute(f"{cls.__qualname__}.{attr}"))
             else:
                 spec = layout.by_name[attr]
-                if is_call and has_default(param):
-                    raise TypeError(
-                        f"{cls.__qualname__}.{attr}: a Call field holds no value, so it takes no default"
-                    )
                 if param.default is not MISSING and spec.target is not None:
                     stored(spec, param.default)
                 elif spec.attr is not None:
@@ -764,21 +757,14 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
                         layout.check(spec, spec.attr.initial)
                 elif param.default is not MISSING:
                     layout.check(spec, param.default)
-                if (
-                    not param.init
-                    and not has_default(param)
-                    and not is_call
-                    and not is_attr
-                ):
+                if not param.init and not has_default(param) and not is_attr:
                     raise TypeError(
                         f"{cls.__qualname__}: field {attr!r} has init=False and no default"
                     )
                 setattr(
                     cls,
                     attr,
-                    CallAttribute(spec)
-                    if is_call
-                    else AttrAttribute(spec)
+                    AttrAttribute(spec)
                     if is_attr
                     else FieldDescriptor(spec, segment_slot, layout.types, values_slot)
                     if spec.target is None
@@ -1149,10 +1135,6 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
             self._check_names(values)
             raise
         for n in values:
-            if by_name[n].kind == "call":
-                raise TypeError(
-                    f"{by_name[n].label} is a Call field, which holds no value"
-                )
             if by_name[n].attr is not None:
                 raise TypeError(
                     f"{by_name[n].label} is an Attr field; publish to it instead of updating it"
@@ -1314,19 +1296,27 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
     def watch(self, field: str) -> FieldWatch[Any]:
         """Return a [`FieldWatch`][sharedbox.FieldWatch] over the values written to `field` from now on.
 
-        A reference field yields a [`BoxRef`][sharedbox.BoxRef] or None.
+        A reference field yields a [`BoxRef`][sharedbox.BoxRef] or None. An
+        attr field yields an [`AttrValue`][sharedbox.AttrValue] on each
+        publish, and nothing for a request.
 
         Raises
         ------
         ValueError
             If the class has no field `field`.
+        TypeError
+            If `field` is an attr field whose type is `None`.
         """
         spec = self._spec(field)
-        if spec.kind == "call":
-            raise TypeError(
-                f"{spec.label} is a Call field, which holds no value to watch"
-            )
-        return FieldWatch(self._watcher, spec, self._segment.version(spec.index))
+        if spec.attr is None:
+            return FieldWatch(self._watcher, spec, self._segment.version(spec.index))
+        if not spec.attr.has_value:
+            raise TypeError(f"{spec.label} has no value to watch")
+        # The write count first, so a publish between the two reads counts as made before the watch.
+        since = self._segment.version(spec.index)
+        return FieldWatch(
+            self._watcher, spec, since, self._segment.attr_published(spec.index)
+        )
 
     @property
     def events(self) -> BoxEvents:
@@ -1378,6 +1368,11 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
         by that box's own `events`, and by this group once
         [`follow`][sharedbox.BoxEvents.follow] forwards them.
 
+        An attr field's signal is emitted with an
+        [`AttrValue`][sharedbox.AttrValue] as `new` and `old` when its
+        owner publishes, never for a request. An attr whose type is `None`
+        has no signal: reading it raises `TypeError`.
+
         A child process created with `fork` while a callback is running
         inherits that signal's lock as held, and hangs the first time it
         connects to, disconnects from or emits that signal.
@@ -1385,7 +1380,7 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
         cls = type(self)
         return self._watcher.events(
             partial(box_events, cls, self._segment, self._watcher),
-            cls.__layout__.values,
+            cls.__layout__.watched,
         )
 
     def _spec(self, field: str) -> FieldSpec:

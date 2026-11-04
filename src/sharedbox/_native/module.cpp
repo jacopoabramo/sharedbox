@@ -1215,17 +1215,7 @@ NB_MODULE(_native, m) {
             },
             "field"_a, "parts"_a, "value"_a.none(), "setpoint"_a.none(), "timestamp_ns"_a, "types"_a)
         .def(
-            "attr_published",
-            [](const Segment &s, std::uint32_t index) {
-                sharedbox::FieldRead read;
-                s.read(index, read);
-                if (static_cast<std::uint8_t>(read.field->kind) != sharedbox::kind_attr ||
-                    read.bytes.size() < sizeof(std::uint64_t))
-                    throw std::invalid_argument("field " + std::to_string(index) + " is not an Attr with a value");
-                std::uint64_t count = 0;
-                std::memcpy(&count, read.bytes.data(), sizeof count);
-                return count;
-            },
+            "attr_published", [](const Segment &s, std::uint32_t index) { return s.attr_published(index); },
             "field"_a)
         .def(
             "request_send",

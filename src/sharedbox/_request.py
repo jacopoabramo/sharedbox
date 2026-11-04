@@ -1,4 +1,4 @@
-"""Call fields: a box field through which any process asks the process that serves it."""
+"""Requests: what any process sends through an attr field to the process that serves it, and its answer."""
 
 from __future__ import annotations
 
@@ -6,28 +6,17 @@ import asyncio
 import contextlib
 import logging
 import threading
-from collections.abc import Awaitable, Callable, Generator
+from collections.abc import Callable, Generator
 from concurrent.futures import Future, InvalidStateError
 from enum import IntEnum
-from typing import (
-    TYPE_CHECKING,
-    Any,
-    Final,
-    Generic,
-    NoReturn,
-    ParamSpec,
-    TypeVar,
-    overload,
-)
+from typing import TYPE_CHECKING, Any, Final, TypeVar
 
 from ._native import BoxClosedError
 
 if TYPE_CHECKING:
-    from ._box import SharedBox
     from ._events import Watcher
     from ._layout import FieldSpec
 
-P = ParamSpec("P")
 R = TypeVar("R")
 # Seconds between checks that the server of a pending request still runs, as a stream reader checks its sender.
 LIVENESS_DELAY: Final = 0.1
@@ -69,108 +58,8 @@ def error_text(error: BaseException) -> str:
     return text.decode(errors="ignore")
 
 
-class Call(Generic[P, R]):
-    """A box field through which a process sends a typed request to the process that serves it.
-
-    Annotate a field `Call[[A, ...], R]`, where the list holds the argument
-    types and `R` the result type, or `None` for no result, and declare it
-    with [`call`][sharedbox.call]. The field holds no value: reading it
-    from a box gives the `Call` bound to that box.
-    Arguments and result may be anything a record member may be, except a
-    [`Timed`][sharedbox.Timed], a `Call` or a reference to a box.
-
-    Calling it sends a request at once and returns a
-    [`RequestFuture`][sharedbox.RequestFuture] of the answer;
-    [`serve`][sharedbox.Call.serve] answers the requests.
-    """
-
-    __slots__ = ("_box", "_spec")
-
-    def __init__(self, box: SharedBox, spec: FieldSpec) -> None:
-        self._box = box
-        self._spec = spec
-
-    def __call__(self, *args: P.args, **kwargs: P.kwargs) -> RequestFuture[R]:
-        """Send a request with `args` and return the future of its answer.
-
-        The request is sent whether or not anyone waits for the future, and
-        replaces an earlier one the server has not taken yet.
-
-        Raises
-        ------
-        TypeError
-            If an argument is given by keyword, or the arguments do not
-            match the field's argument types.
-        ValueError
-            If an argument does not fit its type.
-        OverflowError
-            If a number is out of the range of its type.
-        BoxClosedError
-            If the box is closed.
-        """
-        if kwargs:
-            raise TypeError(f"{self._spec.label} takes positional arguments only")
-        segment = self._box._segment
-        index = self._spec.index
-        since = segment.version(index)
-        number = segment.request_send(index, args, type(self._box).__layout__.types)
-        return self._box._watcher.call_future(self._spec, number, since)
-
-    @overload
-    def serve(self, handler: Callable[P, Awaitable[R]]) -> RequestServer: ...
-    @overload
-    def serve(self, handler: Callable[P, R]) -> RequestServer: ...
-    def serve(self, handler: Callable[P, Any]) -> RequestServer:
-        """Answer the field's requests with `handler` until the server is stopped or the box closed.
-
-        A sync handler runs on a thread of its own; an async one runs as a
-        task on the event loop running at this call. The handler handles
-        one request at a time, and of the requests sent meanwhile only the
-        newest is handled next. Its return value is the answer; an
-        exception it raises is logged to the `sharedbox` logger and reaches
-        the caller as [`RequestError`][sharedbox.RequestError].
-
-        Raises
-        ------
-        AlreadyServedError
-            If a live process serves the field already, this one included.
-        RuntimeError
-            If `handler` is async and no event loop is running.
-        BoxClosedError
-            If the box is closed.
-        """
-        return self._box._watcher.serve(self._spec, handler)
-
-
-class CallAttribute:
-    """The descriptor of a call field: reading gives its [`Call`][sharedbox.Call], assigning or deleting raises."""
-
-    __slots__ = ("spec",)
-
-    def __init__(self, spec: FieldSpec) -> None:
-        self.spec = spec
-
-    def __get__(
-        self, box: SharedBox | None, owner: type | None = None
-    ) -> Call[..., Any] | CallAttribute:
-        if box is None:
-            return self
-        return Call(box, self.spec)
-
-    def refuse(self) -> NoReturn:
-        raise TypeError(
-            f"{self.spec.label} is a Call field; call it instead of assigning it"
-        )
-
-    def __set__(self, box: object, value: object) -> NoReturn:
-        self.refuse()
-
-    def __delete__(self, box: object) -> NoReturn:
-        self.refuse()
-
-
 class RequestFuture(Future[R]):
-    """The answer to one request sent through a [`Call`][sharedbox.Call] field.
+    """The answer to one request sent through an [`Attr`][sharedbox.Attr] field.
 
     A `concurrent.futures.Future`, so `.result(timeout)` waits in any
     thread, and it can be awaited in a running event loop. The box's
@@ -257,7 +146,7 @@ class RequestFuture(Future[R]):
 
 
 class RequestServer:
-    """Answers the requests of one call field; [`Call.serve`][sharedbox.Call.serve] returns it."""
+    """Answers the requests of one attr field; [`Attr.serve`][sharedbox.Attr.serve] returns it."""
 
     def __init__(
         self,
@@ -298,7 +187,7 @@ class RequestServer:
         self._halt(join=not self._watcher.on_watcher_thread())
 
     def _start(self) -> None:
-        """Start serving, answering a request sent before [`serve`][sharedbox.Call.serve] too."""
+        """Start serving, answering a request sent before [`serve`][sharedbox.Attr.serve] too."""
         if self._thread is None:
             self._kick()
         else:
