@@ -2,10 +2,11 @@ from pathlib import Path
 
 from . import _exit as _exit
 from ._arrays import DType, MaxShape, Shape, SupportsDLPack, register_array_type
+from ._attr import Attr, AttrValue
 from ._bounded import BoundedDict, BoundedList, BoundedSet
 from ._box import SharedBox, SupportsSharedBox, fields
 from ._events import BoxEvents, FieldFuture, FieldWatch
-from ._layout import Capacity, Field, call, field
+from ._layout import Capacity, Field, attr, field
 from ._native import (
     BoxClosedError,
     EndOfStream,
@@ -26,7 +27,6 @@ from ._native import (
 from ._refs import BoxRef, BrokenReferenceError, UnknownBoxClassError
 from ._request import (
     AlreadyServedError,
-    Call,
     RequestError,
     RequestFuture,
     RequestServer,
@@ -48,6 +48,8 @@ from ._version import __version__
 
 __all__ = [
     "AlreadyServedError",
+    "Attr",
+    "AttrValue",
     "BoundedDict",
     "BoundedList",
     "BoundedSet",
@@ -55,7 +57,6 @@ __all__ = [
     "BoxEvents",
     "BoxRef",
     "BrokenReferenceError",
-    "Call",
     "Capacity",
     "DType",
     "EndOfStream",
@@ -96,7 +97,7 @@ __all__ = [
     "WaiterSlotsFullError",
     "WouldBlock",
     "__version__",
-    "call",
+    "attr",
     "field",
     "fields",
     "get_include",

@@ -26,18 +26,19 @@ sharedbox/
 |-- src/sharedbox/
 |   |-- __init__.py            re-exports the public API, get_include()
 |   |-- _box.py                SharedBox: class keywords, fields, fields(), create/attach, __post_init__, update, snapshot, unlink, __sharedbox_box__
-|   |-- _layout.py             Capacity, field(), call() and Field, field offsets and kind codes, schema hash
+|   |-- _layout.py             Capacity, field(), attr() and Field, field offsets and kind codes, schema hash
 |   |-- _types.py              annotation parsing into TypeSpec, the description table
 |   |-- _arrays.py             Shape, MaxShape, DType, SupportsDLPack, register_array_type
 |   |-- _timed.py              Timed: a value with its timestamp in ns, Timed.now and the mark a write replaces
-|   |-- _request.py            Call fields: Call, RequestFuture, RequestServer, the request errors, serving threads and tasks
-|   |-- _events.py             BoxEvents, FieldWatch, the watcher thread, which also completes call futures and kicks call servers
+|   |-- _attr.py               Attr and AttrValue: the handle of an attribute field, publish, read, requests and serve
+|   |-- _request.py            request fields: RequestFuture, RequestServer, the request errors, serving threads and tasks
+|   |-- _events.py             BoxEvents, FieldWatch, the watcher thread, which also completes request futures and kicks request servers
 |   |-- _follow.py             BoxEvents.follow and unfollow: forwarding the events of boxes that references reach
 |   |-- _stream.py             SharedStream, SharedSendStream, SharedReceiveStream, ReceiveEvents, the statistics classes, the worker threads
 |   |-- _metadata.py           metadata documents: the type variable M, CBOR encoding, read-only decoding, the cache of decoded versions
 |   |-- _refs.py               reference fields: BoxRef, the class registry, BrokenReferenceError, UnknownBoxClassError
 |   |-- _status.py             segment_status and SegmentStatus: whether a name holds a segment and its creator runs
-|   |-- _exit.py               the exit handler: stops the watcher, call server and stream threads, closes boxes, streams and ends,
+|   |-- _exit.py               the exit handler: stops the watcher, request server and stream threads, closes boxes, streams and ends,
 |   |                          replaces the native objects of watchers and box classes
 |   |-- _native.pyi            hand-written stub for the extension
 |   |-- py.typed
@@ -83,9 +84,8 @@ sharedbox/
 |   |-- test_stream_processes.py  streams across processes, dead senders and readers
 |   |-- test_stream_fork.py    stream ends inherited through fork
 |   |-- test_timed.py          Timed fields and stream items: stamps, given times, where a Timed may go
-|   |-- test_call.py           Call fields across processes: answers, superseding, a killed server, close
-|   |-- test_call_async.py     async handlers: tasks, cancellation, a call from inside a handler
-|   |-- test_call_fields.py    Call in the layout: no value, refused operations, where a Call may go
+|   |-- test_attr.py           attribute requests across processes: answers, superseding, a killed server, close, async handlers
+|   |-- test_attr_fields.py    Attr in the layout: publish, read, watch, refused operations, where an Attr may go
 |   |-- streamproc.py          helpers that run a stream end in another process
 |   |-- test_properties_*.py   Hypothesis property tests, streams included
 |   |-- stress/                stress tests, marker stress, deselected by default
@@ -173,8 +173,8 @@ version 1.0, box layout 3.3, from offset 0:
   scalars), 13 to 23 (fixed-width numbers and `datetime64`), and 64 to 77
   (described types; 75, an array up to a maximum shape, in a stream
   item or a box field, written as its shape line and the elements in use;
-  76, a call, a box field only, holding the request line, the server's
-  identity, the arguments and a ring of 4 answers; 77, a value with an
+  76, an attribute, a box field only, holding the request part, the value
+  part with `published` and the setpoint; 77, a value with an
   `i64` timestamp in ns, wherever a record may go, its timestamp `-2**63`
   replaced by the time of the write).
 - The record, at a multiple of 64. `record + record_size <= 2**32 - 4096`.
@@ -219,7 +219,7 @@ capacity counts elements, 1 to 1048576.
 ### Lifecycle
 
 - `close()` interrupts and stops the watcher thread, stops the box's
-  call servers, releasing each field, and cancels its pending call
+  request servers, releasing each field, and cancels its pending request
   futures, stops forwarding started with `events.follow`, and detaches
   this box. Later reads and
   writes raise `BoxClosedError`. Garbage collection closes a box too, but
@@ -370,6 +370,9 @@ A read decodes the stored bytes; a value that cannot be changed (a
 `datetime`, or a frozen record, tuple or frozenset holding only such values)
 is reused until its field is written. `update(**values)` writes several
 fields at once; `watch(field)` and `events` report changes from any process.
+A field declared `Attr[T]` with `attr()` is published by its owner with
+`publish` and read by any process, and may take requests the owner serves;
+see `docs/how-to/request-work-from-the-owner.md`.
 C++ and C code take a box through `__sharedbox_box__` or open it by name; see
 `docs/how-to/accept-a-box-in-cpp.md`, `docs/how-to/accept-a-box-in-c.md` and
 `docs/how-to/open-a-box-from-a-program.md`.

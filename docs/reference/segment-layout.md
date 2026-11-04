@@ -253,7 +253,7 @@ record (4096 - 2240 = 1856).
 | 73 | dict | description offset | from the description |
 | 74 | array | description offset | data size, 64 |
 | 75 | max_array | description offset | 64 + data size of the maximum shape, 64 |
-| 76 | call | description offset | from the description |
+| 76 | attr | description offset | from the description |
 | 77 | timed | description offset | from the description |
 
 A field of a kind the reader does not know is opened as opaque bytes: a
@@ -313,28 +313,45 @@ Little-endian.
   `round_up(round_up(member size, 8) + 8, A)` with `A` the larger of the
   member's alignment and 8. The timestamp `-2**63` is the mark a write
   replaces (see "The timestamp of a timed value").
-- `call`: from offset 0, the request line `u64 sent`, `u64 taken` and
-  `u64 answered`, then the server's `u64 start`, `u64 pidns`, `u32 pid` and
-  4 zero bytes, all 0 when none serves. The arguments follow from offset
-  48 in order, each at a multiple of its own alignment, and then, at
-  `answers = round_up(end of the arguments, A_r)`, four answer entries of
-  `stride` bytes. An entry is `u64 number`, `u32 status` (0 empty, 1
-  answered, 2 failed), `u32 length` of the error text, the error text in
-  256 bytes of UTF-8, and the result at `result_at = round_up(272, result
-  alignment)`, or 272 with no result. `A_r` is the larger of 8 and the
-  result's alignment, `stride = round_up(result_at + result size, A_r)`,
-  the field's alignment `A` is the largest of 8, `A_r` and every argument's
-  alignment, and its size is `round_up(answers + 4 * stride, A)`: 1176
-  bytes for `Call[[int], int]` and 1136 for `Call[[], None]`. "The call
-  protocol" says how the steps use these bytes.
+- `attr`: up to three parts in this order, each present only when the
+  description's flags (see Descriptions) and value type `T` give it.
+  1. The request part, with flag `request` (4). From offset 0, the request
+     line `u64 sent`, `u64 taken` and `u64 answered`, then the server's
+     `u64 start`, `u64 pidns`, `u32 pid` and 4 zero bytes, all 0 when none
+     serves. The arguments follow from offset 48 in order, each at a
+     multiple of its own alignment, and then, at `answers = round_up(end of
+     the arguments, A_t)`, four answer entries of `stride` bytes. An entry
+     is `u64 number`, `u32 status` (0 empty, 1 answered, 2 failed), `u32
+     length` of the error text, the error text in 256 bytes of UTF-8, and
+     the result, a `T`, at `result_at = round_up(272, alignment of T)`, or
+     no result when `T` is absent. `A_t` is the larger of 8 and the
+     alignment of `T` (8 with no `T`), `stride = round_up(result_at + size
+     of T, A_t)`, and the part ends at `answers + 4 * stride`. "The
+     request protocol" says how the steps use these bytes.
+  2. The value part, when `T` is present, at `value_at = round_up(end of
+     the request part, A_t)`, which is 0 without a request part: a `u64
+     published`, the number of `attr_publish` steps since creation, which
+     starts at 0; then `T` at `round_up(value_at + 8, alignment of T)`;
+     then, with flag `timed` (1), an `i64` timestamp in nanoseconds since
+     1970-01-01T00:00 UTC at `round_up(size of T, 8)` after `T`.
+  3. The setpoint, with flag `settable` (2), a `T` at `setpoint_at =
+     round_up(end of the value part, alignment of T)`.
+
+  The field's alignment `A` is the largest of 8, `A_t` and, with a request
+  part, every argument's alignment, and its size is the end of the last
+  part rounded up to `A`. An `attr` with a value of `int` takes 16 bytes
+  with no other part, 24 when timed, 1192 with a request part taking one
+  `int`, and 1208 with all three parts; one with a request part only takes
+  1136 bytes. A step of the request protocol leaves the value part as it was;
+  `attr_publish` leaves the request part as it was.
 
 ### Descriptions
 
 The description table follows the waiter slots. Each description is an
-8-byte head, `u8 kind`, `u8 flags` (zero), `u16 count`, `u32 size`, a
-body, and zero padding to a multiple of 8. An entry inside a body has the
-shape of a field table entry, with the offset counted from the start of
-the value. A name is a `u16` length, then UTF-8.
+8-byte head, `u8 kind`, `u8 flags` (zero, except for an `attr`),
+`u16 count`, `u32 size`, a body, and zero padding to a multiple of 8. An
+entry inside a body has the shape of a field table entry, with the offset
+counted from the start of the value. A name is a `u16` length, then UTF-8.
 
 | kind | count | body |
 | --- | --- | --- |
@@ -350,7 +367,7 @@ the value. A name is a `u16` length, then UTF-8.
 | array | 0 | `u8` DLPack code, `u8` bits, `u16` lanes (1), `u8` ndim (1 to 8), 3 zero bytes, then `ndim` `u64` dimensions |
 | max_array | 0 | as `array`, the dimensions being the maximum ones |
 | timed | 1 | one entry, at offset 0 |
-| call | arguments + results, 0 to 256 | `u16` arguments, `u8` results (0 or 1), 5 zero bytes, then the arguments' entries, with offsets from the field's start, and the result's entry, with offset `result_at` from the start of an answer entry |
+| attr | value + arguments, 1 to 256 | `u16` argument count, 6 zero bytes, then the entry of `T` if there is one, then the arguments' entries, all with offsets from the field's start. The flags byte holds 1 for timed, 2 for settable and 4 for a request part. |
 
 Attach copies the table and checks it before using it: every description
 is 8-aligned, inside the table, read once, after its parent and apart from
@@ -364,10 +381,22 @@ member of an optional or a `timed`. A `max_array` may only be a box field
 or a stream's item, or the member of a record, tuple or `timed` reached
 from one through records, tuples and `timed` values alone; a `max_array`
 under any other kind is refused. A `timed` may go wherever a record may.
-A `call` may only be a box field, never a stream's item or a member, and
-its arguments and result may not be or hold a `timed`; a reader recomputes
-every offset and the size from the encoding above and refuses a
-description that differs.
+An `attr` may only be a box field, never a stream's item or a member, and
+its `T` and arguments may not be or hold a `timed`, an `attr` or a
+reference. A reader recomputes every offset and the size from the encoding
+above and refuses a description that differs, and refuses with
+`status::corrupt`:
+
+- a flag other than the three above;
+- settable without a request part, or settable with anything but one
+  argument whose type is `T`;
+- timed or settable when `T` is absent;
+- arguments without a request part;
+- an `attr` with neither a `T` nor a request part, or whose head count is
+  not the argument count plus 0 or 1;
+- a nonzero byte among the 6 after the argument count.
+
+A nonzero flags byte on any other kind is refused too.
 
 ### Decoding checks
 
@@ -404,17 +433,17 @@ an item before it publishes its slot. A C or C++ writer may store the mark
 or a time of its own. Since the mark is replaced, a timestamp of `-2**63`
 cannot be stored, and no reader finds one in a value it reads.
 
-### The call protocol
+### The request protocol
 
-A `call` field carries requests from any process to the one process that
-serves the field, and carries the answers back. Each step that changes the
-field runs under the box's write lock, as a write does (see Sequence lock),
-so it moves the generation and the field's write count and wakes the
-waiters, and every existing wait notices it. A step that finds nothing to
-change gives the lock back with `seq` and the write count as they were and
-wakes nobody, because otherwise an idle server and the process watching it
-would wake each other forever. The steps, with the `handle` function of
-each:
+An `attr` field with a request part carries requests from any process to the
+one process that serves the field, and carries the answers back. Each step
+that changes the field runs under the box's write lock, as a write does (see
+Sequence lock), so it moves the generation and the field's write count and
+wakes the waiters, and every existing wait notices it. A step that finds
+nothing to change gives the lock back with `seq` and the write count as they
+were and wakes nobody, because otherwise an idle server and the process
+watching it would wake each other forever. The steps, with the `handle`
+function of each:
 
 1. Send (`request_send`) adds 1 to `sent`, stores the arguments and returns
    `sent` as the request's number. Numbers start at 1, and no two callers
@@ -515,9 +544,10 @@ attacher agree on it and on the class's meaning.
     - `array(dtype,d1xd2x...)`, as in `array(float32,2x3)`.
     - `max_array(dtype,d1xd2x...)` with the maximum dimensions, as in
       `max_array(uint16,2048x2048)`.
-    - `call(T,...->R)` with the argument texts in order and `R` the
-      result's text, or `None` for no result, as in
-      `call(float:8,int:8->float:8)` and `call(->None)`.
+    - `attr(F;T;A,...)` with `F` the flags that are set, among `timed`,
+      `settable` and `request` in that order, joined by `,`, `T` the
+      value's text or `none`, and `A,...` the argument texts in order, as
+      in `attr(timed,request;float:8;int:8)`.
 
 - `schema_hash`: the first 8 bytes of SHA-256 over that text, read as a
   little-endian `u64`.
@@ -824,8 +854,8 @@ layout version of its kind, for the rest. Each has a major and a minor.
   refuses to write them with `status::range`, and its Python extension
   refuses the box with `SchemaMismatchError`. It refuses a box with a
   `timed` inside a described type with `status::corrupt`.
-- Box layout 3.3 also adds kind 76, `call`, as a box field. A reader of
-  box layout 3.2 or older opens a box with a `call` field as one with a
+- Box layout 3.3 also adds kind 76, `attr`, as a box field. A reader of
+  box layout 3.2 or older opens a box with an `attr` field as one with a
   field of a kind it does not know: its C++ `handle` reads the bytes and
   refuses to write them with `status::range`, and its Python extension
   refuses the box with `SchemaMismatchError`.
@@ -1430,8 +1460,9 @@ inline constexpr std::uint64_t stream_magic = 0x4D5254535F584253;    // "SBX_STR
 // unix_epoch_ordinal, micros_per_day, max_offset_minutes, literal_none through
 // literal_enum, and the kind codes kind_bool, kind_int, kind_float, kind_str,
 // kind_bytes, kind_ref, kind_complex through kind_decimal, kind_enum through
-// kind_max_array, kind_call and kind_timed, timed_mark, the timestamp a write
-// replaces, and request_answers, request_error_size and request_arguments_at
+// kind_max_array, kind_attr and kind_timed, attr_timed, attr_settable and
+// attr_request, publish_value, publish_timestamp and publish_setpoint,
+// timed_mark, the timestamp a write replaces, and request_answers, request_error_size and request_arguments_at
 // (see Encodings);
 // the structs common_header, header, stored_field, waiter_slot, box_ref and
 // type_head (see Layout); dl_dtype and literal_value, which type_view's dtype()
@@ -1525,6 +1556,12 @@ public:
                                             bool check_server) const;
     result<void> serve_claim(std::uint16_t field, seconds lock_timeout);
     result<void> serve_release(std::uint16_t field, seconds lock_timeout);
+
+    result<void> attr_publish(std::uint16_t field, std::uint8_t parts, std::span<const std::byte> bytes,
+                              seconds lock_timeout);
+    result<void> attr_read(std::uint16_t field, std::span<std::byte> out) const;
+    result<std::uint64_t> attr_published(std::uint16_t field) const;
+    std::uint32_t attr_value_at(std::uint16_t field) const noexcept;
 };
 
 result<void> unlink(std::string_view name) noexcept;
@@ -1543,7 +1580,10 @@ extension use.
 The header also declares these names:
 
 - `type_view` and `handle::field_type(index)`: a field's type, read from
-  its description. `handle::types_table()` returns the table's bytes.
+  its description. `handle::types_table()` returns the table's bytes. For
+  an `attr`, `attr_flags()` gives its flags byte, and `value_offset()`,
+  `timestamp_offset()` and `setpoint_offset()` give where each part starts
+  in the field, 0 for a part the `attr` lacks.
 - `time_value`, `datetime_value` and `timedelta_value`, with an
   `encode_*` and a `decode_*` function for each, and the same pair for
   `complex`, `date`, `uuid`, `flag` and enum and literal positions
@@ -1640,16 +1680,38 @@ The header also declares these names:
   document writes no field. `write_large(values, doc, lock_timeout)` is the
   same write for large values, running the wait hooks once around it.
 - `request_send`, `request_take`, `request_answer`, `request_answer_of`,
-  `serve_claim` and `serve_release` are the steps of the call protocol on a
-  `call` field (see The call protocol). `request_send` takes the bytes from
-  offset 48 to `answers`, and `request_take` copies them into a span of that
-  size. `request_answer` takes the result at its exact size when `ok`,
-  otherwise the error text. `request_answer_of` copies the result or the
-  error text into `out`, which holds at least the larger of the result's
-  size and 256 bytes, and `request_reply::length` gives how many bytes it
-  copied. Each gives `status::range` for a field that is not a `call` or
+  `serve_claim` and `serve_release` are the steps of the request protocol on
+  an `attr` field with a request part (see The request protocol).
+  `request_send` takes the bytes from offset 48 to `answers`, and
+  `request_take` copies them into a span of that size. `request_answer`
+  takes the result at its exact size when `ok`, otherwise the error text.
+  `request_answer_of` copies the result or the error text into `out`, which
+  holds at least the larger of the result's size and 256 bytes, and
+  `request_reply::length` gives how many bytes it copied. Each gives
+  `status::range` for a field that is not an `attr` with a request part or
   for a span of the wrong size, and the steps that take the lock give
   `status::lock_timeout` as `write` does.
+- `attr_publish` writes the parts of a field's value part that its `parts`
+  argument names, a bit of `publish_value` (1), `publish_timestamp` (2) and
+  `publish_setpoint` (4) each, from `bytes`, which holds `[value_at, size)`
+  of the field with each part at its own offset. Under the write lock it
+  copies the named parts, stamps a value named without a timestamp, or with
+  `timed_mark` as its timestamp, on a timed `attr` with the system clock in
+  nanoseconds since the Unix epoch, adds 1 to `published`, counts one write
+  of the field and wakes the waiters. It gives `status::range`, writing
+  nothing, for a field that is not an `attr`, a part the `attr` lacks, a
+  timestamp named without the value, no part at all or `bytes` of another
+  size. `attr_read` copies the same `[value_at, size)` range into `out` from
+  one moment, without the lock, and gives `status::range` for a field that
+  is not an `attr` or has no value part, or an `out` of another size.
+  `attr_published` reads `published` alone the same way, and gives
+  `status::range` for the same fields. When the bytes `attr_publish` or
+  `attr_read` copies are `large_copy` or more, it runs the wait hooks once
+  around the copy, as `write_large` and `read_large` do. `attr_value_at`
+  gives the offset in the field where the value part starts, which is the
+  field's size minus the size of `attr_read`'s `out`, or
+  `detail::attr_absent` for a field that is not an `attr` or has no value
+  part.
 - Thread safety: every member function may be called from several threads
   on one handle. Destroying or moving a handle must not overlap another
   call on it.
@@ -1935,9 +1997,9 @@ int      sbx_add_metadata(sbx_handle *h, const void *doc, size_t len, double loc
   by `sbx_open` or `sbx_import`; for any other, `sbx_read` and `sbx_write`
   return `SBX_E_RANGE` and `sbx_schema_hash` returns 0. `sbx_write` also
   returns `SBX_E_RANGE` for a field of a kind the header does not know, and
-  stores a `timed` value's mark as the time of the write. A `call` field's
-  bytes move as they are, at the field's full size, without the call
-  protocol. When the stored
+  stores a `timed` value's mark as the time of the write. An `attr` field's
+  bytes move as they are, at the field's full size, without the request
+  protocol or the publish step. When the stored
   value is longer than `cap`, `sbx_read` copies nothing, sets `*len` and
   returns `SBX_E_RANGE`. `sbx_release` releases any handle.
 - `sbx_metadata_head` returns the box's newest metadata version, 0 when it

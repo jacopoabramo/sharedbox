@@ -150,6 +150,9 @@ public:
     /// write() of a single value.
     void write_one(std::uint32_t field, std::span<const std::byte> bytes);
     std::uint64_t version(std::uint32_t field) const;
+    /// handle::attr_published for attr field; std::invalid_argument for a field that is not an attr or has no
+    /// value part.
+    std::uint64_t attr_published(std::uint32_t field) const;
     /// version() of every field, in field order.
     std::vector<std::uint64_t> versions() const;
     /// Lets other processes attach to a segment created without publish; throws std::invalid_argument
@@ -180,9 +183,9 @@ public:
     /// writes nothing and throws MetadataFull for a box without a metadata area, std::invalid_argument
     /// for a bad value or a document the area does not take.
     std::uint64_t write(std::span<const value> values, std::string_view doc);
-    /// The steps of a call field's protocol, each under the write lock; arguments is the bytes of the field
-    /// from its offset 48 to its answers. request_send returns the request's number; request_take returns the
-    /// number of the newest request and copies its arguments, or returns 0 when it was taken already;
+    /// The steps of an attribute field's request protocol, each under the write lock; arguments is the bytes of
+    /// the field from its offset 48 to its answers. request_send returns the request's number; request_take
+    /// returns the number of the newest request and copies its arguments, or returns 0 when it was taken already;
     /// request_answer is false when the request is not the one taken last or has an answer; serve_claim is false
     /// while another server runs.
     std::uint64_t request_send(std::uint32_t field, std::span<const std::byte> arguments);
@@ -193,6 +196,9 @@ public:
     request_reply request_answer_of(std::uint32_t field, std::uint64_t number, std::span<std::byte> out,
                                     bool check_server) const;
     bool serve_claim(std::uint32_t field);
+    /// handle::attr_publish for attr field: bytes holds the field from its value part on, and parts says which
+    /// of its parts to write. Throws std::invalid_argument for a part the field lacks or a wrong size.
+    void attr_publish(std::uint32_t field, std::uint8_t parts, std::span<const std::byte> bytes);
     void serve_release(std::uint32_t field);
     /// A heap handle with its own mapping of the segment, for a capsule. Call its release, then
     /// delete it.

@@ -7,7 +7,7 @@ import sys
 import types
 from collections.abc import Callable, Iterable, Mapping
 from dataclasses import KW_ONLY, MISSING, InitVar, dataclass
-from types import MappingProxyType
+from types import MappingProxyType, NoneType
 from typing import (
     TYPE_CHECKING,
     Any,
@@ -24,14 +24,14 @@ from typing import (
 )
 
 from ._arrays import Shape
+from ._attr import Attr
 from ._native import Types
-from ._request import Call
 from ._types import (
     CODES,
     MAX_ARRAY_PLACES,
     Table,
     TypeSpec,
-    call_spec,
+    attr_spec,
     is_box_class,
     misplaced_max_array,
     parse,
@@ -84,7 +84,7 @@ Kind = Literal[
     "dict",
     "array",
     "max_array",
-    "call",
+    "attr",
     "timed",
 ]
 
@@ -123,6 +123,12 @@ class Field:
     """The `shape` option given to `field`, or None; a field sized by a `Shape` or a default array has None."""
     capacity: int | None = None
     """The `capacity` option given to `field`, or None; a field sized by a `Capacity` in its annotation has None."""
+    is_attr: bool = False
+    """True for a field declared with [`attr`][sharedbox.attr]."""
+    timed: bool = False
+    """The `timed` option given to `attr`."""
+    settable: bool = False
+    """The `settable` option given to `attr`."""
 
 
 def field(
@@ -229,26 +235,49 @@ def field(
     )
 
 
-def call(
+def attr(
     *,
     init: Literal[False] = False,
+    timed: bool = False,
+    settable: bool = False,
+    default: Any = MISSING,
     metadata: Mapping[Any, Any] | None = None,
     doc: str | None = None,
 ) -> Any:
-    """Declare a [`Call`][sharedbox.Call] field of a `SharedBox` class.
+    """Declare an [`Attr`][sharedbox.Attr] field of a `SharedBox` class.
 
-    Write `move: Call[[float], float] = call()`. A call field holds no
-    value, so the box's constructor takes none for it, for type checkers
-    too.
+    Write `exposure: Attr[float] = attr(timed=True)`. An attribute is
+    published by its owner, so the box's constructor takes no value for it,
+    for type checkers too.
 
     Parameters
     ----------
     init
         Leave it out. Type checkers read its default.
+    timed
+        Store a timestamp with the value.
+    settable
+        Give the attribute a setpoint of the same type as the value.
+    default
+        The starting value, and the starting setpoint. Without it the
+        value starts at the zero of its type, which a record has none of.
     metadata, doc
         As [`field`][sharedbox.field] takes them.
     """
-    return field(init=init, metadata=metadata, doc=doc)
+    return Field(
+        name="",
+        type=None,
+        default=default,
+        default_factory=MISSING,
+        init=init,
+        repr=True,
+        kw_only=MISSING,
+        metadata=MappingProxyType(dict(metadata or {})),
+        doc=doc,
+        is_attr=True,
+        timed=bool(timed),
+        settable=bool(settable),
+    )
 
 
 class NativeField(NamedTuple):
@@ -260,6 +289,28 @@ class NativeField(NamedTuple):
     """Bytes reserved for the value, not counting a length prefix; for a described kind, the offset of its description."""
     kind: int
     """The kind code: 0 to 12 for fixed kinds, 64 and up for described ones."""
+
+
+@dataclass(frozen=True)
+class AttrInfo:
+    """The parts of an `Attr` field."""
+
+    has_value: bool
+    """False for an attribute whose type is `None`."""
+    timed: bool
+    settable: bool
+    request: bool
+    default: Any = MISSING
+    """`dataclasses.MISSING` when the value starts at zero."""
+
+    @property
+    def initial(self) -> dict[str, Any]:
+        """The starting parts the field is created with: its default as the value, and as the setpoint if settable."""
+        if self.default is MISSING:
+            return {}
+        if self.settable:
+            return {"value": self.default, "setpoint": self.default}
+        return {"value": self.default}
 
 
 @dataclass(frozen=True)
@@ -291,6 +342,8 @@ class FieldSpec:
     """How the value is stored; None for a reference field."""
     description: int = -1
     """Offset of the field's description in the class's table; -1 for a kind without one."""
+    attr: AttrInfo | None = None
+    """The parts of an `Attr` field; None for every other kind."""
 
     @property
     def native(self) -> NativeField:
@@ -318,12 +371,16 @@ class Layout:
     """
     by_name: Mapping[str, FieldSpec]
     """Each field's spec under its name."""
-    names: tuple[str | None, ...]
-    """Field names in declaration order; None for a call field, which holds no value."""
+    update_names: tuple[str | None, ...]
+    """Field names in declaration order; None for an attr field, which `update` does not write."""
+    snapshot_names: tuple[str | None, ...]
+    """Field names in declaration order; None for an attr whose type is `None`, which a snapshot leaves out."""
     refs: tuple[FieldSpec, ...]
     """The reference fields, in declaration order."""
     values: tuple[FieldSpec, ...]
-    """The fields that hold a value, in declaration order: every field but a call field."""
+    """The fields a new box is given a starting value for, in declaration order: every field but an attr without a default."""
+    watched: tuple[FieldSpec, ...]
+    """The fields `watch` and `events` report, in declaration order: every field but an attr whose type is `None`."""
     types: Types
     """The field types the native module converts values with."""
 
@@ -490,6 +547,102 @@ def sizing_options(
     return None, value, None
 
 
+def declared_option(cls: type, name: str) -> Field | None:
+    """Return the `Field` that `field` or `attr` gave `name` in `cls`, or the one it inherits; None for a plain default or none."""
+    if name in own_annotations(cls):
+        value = cls.__dict__.get(name, MISSING)
+        return value if isinstance(value, Field) else None
+    return next(
+        (
+            base.__dict__["__sharedbox_options__"][name]
+            for base in cls.__mro__[1:]
+            if name in base.__dict__.get("__sharedbox_options__", {})
+        ),
+        None,
+    )
+
+
+ZERO_KINDS: Final = frozenset(
+    {
+        "bool",
+        "int",
+        "float",
+        "complex",
+        "str",
+        "bytes",
+        "int8",
+        "int16",
+        "int32",
+        "uint8",
+        "uint16",
+        "uint32",
+        "uint64",
+        "float16",
+        "float32",
+        "complex64",
+        "datetime64",
+        "array",
+        "max_array",
+    }
+)
+
+
+def attr_field(
+    hint: object, where: str, option: Field | None, default: Any
+) -> tuple[TypeSpec, AttrInfo]:
+    """Return how an `Attr[T, P]` field declared with `option` is stored.
+
+    Raises
+    ------
+    TypeError
+        If the field is not declared with `attr()`, `T` or an argument cannot
+        be stored in an attribute, `timed` or `settable` is given for a type of
+        `None`, `settable` for arguments, or the value has no zero and no default.
+    """
+    if option is None or not option.is_attr:
+        raise TypeError(
+            f"{where}: an Attr field is declared with attr(), as in x: Attr[float] = attr()"
+        )
+    if option.init:
+        raise TypeError(
+            f"{where}: attr() takes init=False, since an Attr takes no constructor value"
+        )
+    args = get_args(hint)
+    if not args:
+        raise TypeError(f"{where}: Attr needs its value type, as Attr[float]")
+    value = args[0]
+    arguments = args[1] if len(args) > 1 else ()
+    if not isinstance(arguments, (tuple, list)):
+        raise TypeError(
+            f"{where}: Attr takes a list of argument types, as Attr[float, [float, str]]"
+        )
+    has_value = value is not None and value is not NoneType
+    if not has_value and (option.timed or option.settable):
+        raise TypeError(f"{where}: an Attr[None] has no value to be timed or settable")
+    if option.settable and arguments:
+        raise TypeError(
+            f"{where}: a settable Attr takes its value as the one argument of its request, so it has no argument types"
+        )
+    if not has_value and default is not MISSING:
+        raise TypeError(f"{where}: an Attr[None] has no value to give a default")
+    arguments = (value,) if option.settable else tuple(arguments)
+    request = bool(arguments) or not has_value
+    spec = attr_spec(
+        value,
+        arguments,
+        where,
+        frozenset(),
+        timed=option.timed,
+        settable=option.settable,
+        request=request,
+    )
+    if has_value and default is MISSING and spec.members[0].type.kind not in ZERO_KINDS:
+        raise TypeError(
+            f"{where}: {spec.members[0].type.kind} has no zero value, so the Attr needs attr(default=...)"
+        )
+    return spec, AttrInfo(has_value, option.timed, option.settable, request, default)
+
+
 def build_layout(cls: type, identity: str | None = None) -> Layout:
     """Lay out the public annotated fields of `cls`, base classes first.
 
@@ -510,23 +663,36 @@ def build_layout(cls: type, identity: str | None = None) -> Layout:
         If `cls` declares no fields, more than 256, a field with an
         unsupported annotation, or one naming a class that is not defined.
     """
-    found: list[tuple[str, TypeSpec | None, tuple[type[SharedBox], bool] | None]] = []
+    found: list[
+        tuple[
+            str,
+            TypeSpec | None,
+            tuple[type[SharedBox], bool] | None,
+            AttrInfo | None,
+        ]
+    ] = []
     for name, hint in declared(cls):
         if isinstance(hint, InitVar):
             continue
         ref = reference(hint)
         shape, default, capacity = sizing_options(cls, name)
         where = f"{cls.__qualname__}.{name}"
+        option = declared_option(cls, name)
+        is_attr_hint = hint is Attr or get_origin(hint) is Attr
+        info: AttrInfo | None = None
+        if option is not None and option.is_attr and not is_attr_hint:
+            raise TypeError(f"{where}: attr() applies only to a field annotated Attr")
         if ref is not None and shape is not None:
             raise TypeError(f"{where}: field(shape=...) applies only to an array field")
         if ref is not None and capacity is not None:
             raise TypeError(f"{where}: Capacity does not apply to a reference")
-        if hint is Call or get_origin(hint) is Call:
+        if is_attr_hint:
             if shape is not None or capacity is not None:
                 raise TypeError(
-                    f"{where}: field(shape=...) and field(capacity=...) do not apply to a Call"
+                    f"{where}: field(shape=...) and field(capacity=...) do not apply to an Attr"
                 )
-            spec: TypeSpec | None = call_spec(hint, where, frozenset())
+            spec: TypeSpec | None
+            spec, info = attr_field(hint, where, option, default)
         elif ref is not None:
             spec = None
         else:
@@ -541,15 +707,15 @@ def build_layout(cls: type, identity: str | None = None) -> Layout:
             )
         if spec is not None and misplaced_max_array(spec):
             raise TypeError(f"{where}: {MAX_ARRAY_PLACES}")
-        found.append((name, spec, ref))
+        found.append((name, spec, ref, info))
     if not found:
         raise TypeError(f"{cls.__qualname__} declares no fields")
     if len(found) > MAX_FIELDS:
         raise TypeError(
             f"{cls.__qualname__} declares {len(found)} fields; the limit is {MAX_FIELDS}"
         )
-    aligns = [8 if spec is None else spec.alignment for _, spec, _ in found]
-    sizes = [REF_SIZE if spec is None else spec.size for _, spec, _ in found]
+    aligns = [8 if spec is None else spec.alignment for _, spec, _, _ in found]
+    sizes = [REF_SIZE if spec is None else spec.size for _, spec, _, _ in found]
     offsets = [0] * len(found)
     offset = 0
     for i in sorted(range(len(found)), key=lambda i: -aligns[i]):
@@ -559,7 +725,7 @@ def build_layout(cls: type, identity: str | None = None) -> Layout:
     record_size = round_up(offset, max(ALIGN, *aligns))
     table = Table()
     specs: list[FieldSpec] = []
-    for i, (name, spec, ref) in enumerate(found):
+    for i, (name, spec, ref, info) in enumerate(found):
         if spec is None:
             assert ref is not None
             specs.append(
@@ -589,6 +755,7 @@ def build_layout(cls: type, identity: str | None = None) -> Layout:
                 f"{cls.__qualname__}.{name}",
                 type=spec,
                 description=description,
+                attr=info,
             )
         )
     text = "|".join(
@@ -615,13 +782,19 @@ def build_layout(cls: type, identity: str | None = None) -> Layout:
         ],
         table.converts,
     )
+    watched = tuple(s for s in specs if s.attr is None or s.attr.has_value)
     return Layout(
         tuple(specs),
         record_size,
         schema_hash,
         {s.name: s for s in specs},
-        tuple(None if s.kind == "call" else s.name for s in specs),
+        tuple(None if s.attr is not None else s.name for s in specs),
+        tuple(
+            None if s.attr is not None and not s.attr.has_value else s.name
+            for s in specs
+        ),
         tuple(s for s in specs if s.target is not None),
-        tuple(s for s in specs if s.kind != "call"),
+        tuple(s for s in specs if s.attr is None or s.attr.default is not MISSING),
+        watched,
         types,
     )

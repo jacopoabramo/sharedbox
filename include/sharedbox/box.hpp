@@ -351,10 +351,10 @@ public:
     // metadata_ok accepts or is longer than a third of the ring. A refused add leaves the generation alone.
     [[nodiscard]] result<std::uint64_t> add_metadata(std::span<const std::byte> doc, seconds lock_timeout);
 
-    // The steps of a call field's protocol. Each takes the write lock and, when it changes the field, counts
-    // one write and wakes waiters; a step that changes nothing gives the lock back with the sequence number
-    // and the write count as they were. status::range for a field that is not a call or for a span of the
-    // wrong size. Requests are numbered from 1.
+    // The steps of the request part of an attr field. Each takes the write lock and, when it changes the
+    // field, counts one write and wakes waiters; a step that changes nothing gives the lock back with the
+    // sequence number and the write count as they were. status::range for a field that is not an attr with a
+    // request part or for a span of the wrong size. Requests are numbered from 1.
     // Stores arguments, the bytes [request_arguments_at, answers) of the field, as the newest request and returns
     // its number.
     [[nodiscard]] result<std::uint64_t> request_send(std::uint16_t field, std::span<const std::byte> arguments,
@@ -381,6 +381,26 @@ public:
     // Clears the server if it is this process, answering the request it took and left unanswered with "the
     // server stopped". Changes nothing for any other server.
     [[nodiscard]] result<void> serve_release(std::uint16_t field, seconds lock_timeout);
+
+    // Writes the parts of an attr field's value part that parts names (a bit of publish_value,
+    // publish_timestamp and publish_setpoint each) under the write lock, adds one to its published count,
+    // counts one write of the field and wakes waiters. bytes holds the whole value part, [value_at, size) of
+    // the field, with each part at its own offset; the parts it does not name, and the published count in it,
+    // are ignored. A value named without a timestamp on a timed attr, or with the timestamp timed_mark, is
+    // stamped with the time after the lock is taken. status::range, writing nothing, for a field that is not an
+    // attr, a part the attr lacks, a timestamp named without the value, no part at all or a span of the wrong
+    // size.
+    [[nodiscard]] result<void> attr_publish(std::uint16_t field, std::uint8_t parts,
+                                            std::span<const std::byte> bytes, seconds lock_timeout);
+    // Copies the value part, [value_at, size) of the field, into out from one moment, without the write lock.
+    // status::range for a field that is not an attr or has no value part, or an out of another size.
+    [[nodiscard]] result<void> attr_read(std::uint16_t field, std::span<std::byte> out) const;
+    // The published count of an attr field, the first 8 bytes of its value part, read from one moment as
+    // attr_read reads. status::range for a field that is not an attr or has no value part.
+    [[nodiscard]] result<std::uint64_t> attr_published(std::uint16_t field) const;
+    // Where the value part of an attr field starts in the field, the size of the field minus the size of
+    // attr_read's out; detail::attr_absent for a field that is not an attr or has no value part.
+    [[nodiscard]] std::uint32_t attr_value_at(std::uint16_t field) const noexcept;
 
     // Takes over a handle made by another build, such as the one in a "sharedbox_box" capsule: checks
     // the segment at capsule->base as open does and, on success, clears capsule->release; destroying
@@ -1234,7 +1254,7 @@ inline std::span<const std::byte> text_bytes(std::string_view text) noexcept {
     return std::as_bytes(std::span(text.data(), text.size()));
 }
 
-// Where the parts of one call field sit in the record.
+// Where the parts of the request part of one attr field sit in the record.
 struct request_field {
     std::byte *at;
     std::uint32_t answers;
@@ -1247,15 +1267,17 @@ struct request_field {
     }
 };
 
-// Fills out from the field's checked type; false for a field that is not a call.
+// Fills out from the field's checked type; false for a field that is not an attr with a request part.
 inline bool request_field_of(const state &s, std::uint16_t field, request_field &out) noexcept {
-    if (field >= s.field_count || s.fields[field].kind != kind_call)
+    if (field >= s.field_count || s.fields[field].kind != kind_attr)
         return false;
     const type_node &node = s.types.node(s.types.field(field).node);
-    const bool has_result = node.count > node.capacity;
-    const type_member *result = has_result ? &s.types.member(node.members + node.capacity) : nullptr;
-    out = {s.record + s.fields[field].offset, node.slots, node.stride, result != nullptr ? result->offset : 272,
-           result != nullptr ? result->type.size : 0};
+    if ((node.flags & attr_request) == 0)
+        return false;
+    const type_ref *result = node.count > node.capacity ? &s.types.member(node.members).type : nullptr;
+    out = {s.record + s.fields[field].offset, node.slots, node.stride,
+           result != nullptr ? static_cast<std::uint32_t>(round_up(272, result->alignment)) : 272,
+           result != nullptr ? result->size : 0};
     return true;
 }
 
@@ -1452,6 +1474,115 @@ inline result<void> handle::serve_release(std::uint16_t field, seconds lock_time
     detail::request_put<std::uint32_t>(c.at + detail::request_server_pid_at, 0);
     end_write({field, {}, *locked});
     return {};
+}
+
+inline result<void> handle::attr_publish(std::uint16_t field, std::uint8_t parts, std::span<const std::byte> bytes,
+                                         seconds lock_timeout) {
+    detail::state &s = *s_;
+    if (field >= s.field_count || s.fields[field].kind != kind_attr)
+        return unexpected(status::range);
+    const detail::type_node &node = s.types.node(s.types.field(field).node);
+    const bool timed = (node.flags & attr_timed) != 0;
+    const bool names_value = (parts & publish_value) != 0;
+    const bool names_timestamp = (parts & publish_timestamp) != 0;
+    const bool names_setpoint = (parts & publish_setpoint) != 0;
+    if (parts == 0 || (parts & ~(publish_value | publish_timestamp | publish_setpoint)) != 0 ||
+        node.value_at == detail::attr_absent || (names_timestamp && (!timed || !names_value)) ||
+        (names_setpoint && node.setpoint_at == detail::attr_absent) ||
+        bytes.size() != s.fields[field].capacity - node.value_at)
+        return unexpected(status::range);
+    const detail::type_member &value = s.types.member(node.members);
+    const std::uint32_t timestamp_at = detail::attr_timestamp_at(value);
+    // A large copy runs the wait hooks around the lock and the copy, as write_large does.
+    const auto publish = [&](auto large) -> result<void> {
+        constexpr bool Large = decltype(large)::value;
+        const std::conditional_t<Large, detail::hooks_around, detail::no_hooks> hooks(s);
+        const result<std::uint64_t> locked = lock_with<!Large>(lock_timeout);
+        if (!locked)
+            return unexpected(locked.error());
+        std::byte *room = s.record + s.fields[field].offset;
+        const auto copy = [&](std::uint32_t at, std::size_t length) {
+            std::memcpy(room + at, bytes.data() + (at - node.value_at), length);
+        };
+        if (names_value)
+            copy(value.offset, value.type.size);
+        if (names_timestamp)
+            copy(timestamp_at, sizeof(std::int64_t));
+        if (names_value && timed) {
+            std::int64_t stamp = 0;
+            std::memcpy(&stamp, room + timestamp_at, sizeof stamp);
+            if (!names_timestamp || stamp == timed_mark) {
+                const std::int64_t now = detail::wall_ns();
+                std::memcpy(room + timestamp_at, &now, sizeof now);
+            }
+        }
+        if (names_setpoint)
+            copy(node.setpoint_at, value.type.size);
+        detail::request_put(room + node.value_at, detail::request_get<std::uint64_t>(room + node.value_at) + 1);
+        end_write({field, {}, *locked});
+        return {};
+    };
+    return bytes.size() >= detail::large_copy ? publish(std::true_type{}) : publish(std::false_type{});
+}
+
+inline result<void> handle::attr_read(std::uint16_t field, std::span<std::byte> out) const {
+    const detail::state &s = *s_;
+    if (field >= s.field_count || s.fields[field].kind != kind_attr)
+        return unexpected(status::range);
+    const detail::type_node &node = s.types.node(s.types.field(field).node);
+    if (node.value_at == detail::attr_absent || out.size() != s.fields[field].capacity - node.value_at)
+        return unexpected(status::range);
+    const std::byte *src = s.record + s.fields[field].offset + node.value_at;
+    auto seq = detail::atomic(s.hdr->seq);
+    const auto read = [&](auto large) -> result<void> {
+        constexpr bool Large = decltype(large)::value;
+        const std::conditional_t<Large, detail::hooks_around, detail::no_hooks> hooks(s);
+        const bool done = detail::retry<!Large>(s, s.lock_timeout, [&]() noexcept {
+            const std::uint64_t before = seq.load(std::memory_order_acquire);
+            if ((before & 1u) != 0)
+                return false;
+            if constexpr (Large) {
+                if (!detail::copy_checked(out.data(), src, out.size(), seq, before))
+                    return false;
+            } else {
+                std::memcpy(out.data(), src, out.size());
+            }
+            std::atomic_thread_fence(std::memory_order_acquire);
+            return seq.load(std::memory_order_acquire) == before;
+        });
+        if (!done)
+            return unexpected(status::lock_timeout);
+        return {};
+    };
+    return out.size() >= detail::large_copy ? read(std::true_type{}) : read(std::false_type{});
+}
+
+inline result<std::uint64_t> handle::attr_published(std::uint16_t field) const {
+    const detail::state &s = *s_;
+    const std::uint32_t at = attr_value_at(field);
+    if (at == detail::attr_absent)
+        return unexpected(status::range);
+    const std::byte *src = s.record + s.fields[field].offset + at;
+    auto seq = detail::atomic(s.hdr->seq);
+    std::uint64_t count = 0;
+    const bool done = detail::retry(s, s.lock_timeout, [&]() noexcept {
+        const std::uint64_t before = seq.load(std::memory_order_acquire);
+        if ((before & 1u) != 0)
+            return false;
+        count = detail::request_get<std::uint64_t>(src);
+        std::atomic_thread_fence(std::memory_order_acquire);
+        return seq.load(std::memory_order_acquire) == before;
+    });
+    if (!done)
+        return unexpected(status::lock_timeout);
+    return count;
+}
+
+inline std::uint32_t handle::attr_value_at(std::uint16_t field) const noexcept {
+    const detail::state &s = *s_;
+    if (field >= s.field_count || s.fields[field].kind != kind_attr)
+        return detail::attr_absent;
+    return s.types.node(s.types.field(field).node).value_at;
 }
 
 inline std::uint64_t handle::generation() const noexcept {

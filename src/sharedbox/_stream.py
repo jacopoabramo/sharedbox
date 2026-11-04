@@ -670,7 +670,7 @@ class CallFuture(Future[Any]):
         return False
 
 
-Call = Callable[[CallFuture], Any]
+WorkerCall = Callable[[CallFuture], Any]
 
 
 class Worker:
@@ -679,7 +679,7 @@ class Worker:
     def __init__(self, stream: str, role: str, after: Callable[[], None]) -> None:
         self._stream = stream
         self._after = after
-        self._calls: queue.SimpleQueue[tuple[CallFuture, Call] | None] = (
+        self._calls: queue.SimpleQueue[tuple[CallFuture, WorkerCall] | None] = (
             queue.SimpleQueue()
         )
         self._stopped = False
@@ -689,7 +689,7 @@ class Worker:
         self.thread.start()
         WORKER_THREADS.add(self.thread)
 
-    def submit(self, call: Call) -> CallFuture:
+    def submit(self, call: WorkerCall) -> CallFuture:
         future = CallFuture()
         self._calls.put((future, call))
         return future
@@ -704,7 +704,7 @@ class Worker:
         finally:
             WORKER_THREADS.discard(self.thread)
 
-    def _run_one(self, future: CallFuture, call: Call) -> None:
+    def _run_one(self, future: CallFuture, call: WorkerCall) -> None:
         """Run one call in its own frame, so nothing it refers to outlives it while the thread waits.
 
         A call still queued when its end closed raises `StreamClosedError`,
@@ -774,11 +774,11 @@ class End:
     def closed(self) -> bool:
         return self._shut
 
-    def _submit(self, call: Call) -> CallFuture:
+    def _submit(self, call: WorkerCall) -> CallFuture:
         with self._lock:
             return self._submit_locked(call)
 
-    def _submit_locked(self, call: Call) -> CallFuture:
+    def _submit_locked(self, call: WorkerCall) -> CallFuture:
         """Queue `call` on the worker; the caller holds `_lock`."""
         if self.closed:
             raise StreamClosedError(f"stream {self._stream.name!r}: this end is closed")
@@ -1629,7 +1629,7 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T, M]):
                 "to two consumers, so open a second reader"
             )
 
-    def _submit(self, call: Call) -> CallFuture:
+    def _submit(self, call: WorkerCall) -> CallFuture:
         self._check_consumer()
         return super()._submit(call)
 

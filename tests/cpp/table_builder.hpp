@@ -124,11 +124,12 @@ inline void timed_around(table_builder &t, std::uint8_t kind) {
     t.patch(entry + 4, entry_of(kind, at));
 }
 
-// A call description (kind 76) of fixed-kind arguments and an optional result, each a kind and a capacity,
-// with the offsets and the size the layout gives. A test forges one by patching the bytes: the head size at
-// 4, the results byte at 10, entry i at 16 + 8 * i.
-inline table_builder call(std::vector<std::pair<std::uint8_t, std::uint32_t>> arguments,
-                          std::optional<std::pair<std::uint8_t, std::uint32_t>> result) {
+// An attr description (kind 76) of an optional value type T and fixed-kind arguments, each a kind and a
+// capacity, with the offsets and the size the layout gives for the flags. A test forges one by patching the
+// bytes: the head size at 4, the argument count at 8, entry i at 16 + 8 * i, which is T first when there is
+// one and then the arguments.
+inline table_builder attr(std::optional<std::pair<std::uint8_t, std::uint32_t>> value,
+                          std::vector<std::pair<std::uint8_t, std::uint32_t>> arguments, std::uint8_t flags) {
     using sharedbox::detail::kind_alignment;
     using sharedbox::detail::prefixed;
     using sharedbox::detail::round_up;
@@ -137,31 +138,38 @@ inline table_builder call(std::vector<std::pair<std::uint8_t, std::uint32_t>> ar
     const auto alignment_of = [](const member &m) -> std::uint64_t {
         return prefixed(m.first) ? 4u : kind_alignment(m.first);
     };
-    std::uint64_t end = 48, field_alignment = 8;
+    const bool with_timestamp = (flags & sharedbox::attr_timed) != 0;
+    const bool settable = (flags & sharedbox::attr_settable) != 0;
+    const bool request = (flags & sharedbox::attr_request) != 0;
+    const std::uint64_t value_alignment = value ? (std::max<std::uint64_t>)(8, alignment_of(*value)) : 8;
+    std::uint64_t field_alignment = value_alignment, end = 48;
     std::vector<std::uint32_t> offsets;
     for (const member &argument : arguments) {
         offsets.push_back(static_cast<std::uint32_t>(round_up(end, alignment_of(argument))));
         end = offsets.back() + size_of(argument);
         field_alignment = (std::max)(field_alignment, alignment_of(argument));
     }
-    std::uint64_t result_alignment = 8, result_at = 272, result_size = 0;
-    if (result) {
-        result_alignment = (std::max<std::uint64_t>)(8, alignment_of(*result));
-        result_at = round_up(272, alignment_of(*result));
-        result_size = size_of(*result);
+    std::uint64_t request_end = 0;
+    if (request) {
+        const std::uint64_t result_at = value ? round_up(272, alignment_of(*value)) : 272;
+        request_end = round_up(end, value_alignment) +
+                      4 * round_up(result_at + (value ? size_of(*value) : 0), value_alignment);
     }
-    field_alignment = (std::max)(field_alignment, result_alignment);
-    const std::uint64_t answers = round_up(end, result_alignment);
-    const std::uint64_t stride = round_up(result_at + result_size, result_alignment);
+    std::uint64_t value_offset = 0, last_end = request_end;
+    if (value) {
+        value_offset = round_up(round_up(request_end, value_alignment) + 8, alignment_of(*value));
+        last_end = value_offset + (with_timestamp ? round_up(size_of(*value), 8) + 8 : size_of(*value));
+        if (settable)
+            last_end = round_up(last_end, alignment_of(*value)) + size_of(*value);
+    }
     table_builder t;
-    t.head(sharedbox::kind_call, static_cast<std::uint16_t>(arguments.size() + (result ? 1 : 0)),
-           static_cast<std::uint32_t>(round_up(answers + 4 * stride, field_alignment)));
+    t.head(sharedbox::kind_attr, static_cast<std::uint16_t>(arguments.size() + (value ? 1 : 0)),
+           static_cast<std::uint32_t>(round_up(last_end, field_alignment)), flags);
     t.put(static_cast<std::uint16_t>(arguments.size()));
-    t.put(static_cast<std::uint8_t>(result ? 1 : 0));
     t.pad();
+    if (value)
+        t.entry(static_cast<std::uint32_t>(value_offset), value->first, value->second);
     for (std::size_t i = 0; i < arguments.size(); ++i)
         t.entry(offsets[i], arguments[i].first, arguments[i].second);
-    if (result)
-        t.entry(static_cast<std::uint32_t>(result_at), result->first, result->second);
     return t;
 }

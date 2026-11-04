@@ -10,11 +10,11 @@ import time
 from collections.abc import Callable, Generator
 from multiprocessing.shared_memory import SharedMemory
 from multiprocessing.synchronize import Event
-from typing import cast
+from typing import Any, cast
 
 import pytest
 from os_names import os_name
-from test_call_fields import Scanner
+from test_attr_fields import Camera
 
 from sharedbox import SharedBox
 from sharedbox._layout import NativeField
@@ -896,20 +896,20 @@ def test_attaching_a_stream_name_as_a_box_raises_kind_mismatch(
     owner.close()
 
 
-def test_call_steps_round_trip(unique_name: str) -> None:
-    """Send, take, answer and read the answer of requests through the call steps."""
-    box = Scanner.create(unique_name)
+def test_request_steps_round_trip(unique_name: str) -> None:
+    """Send, take, answer and read the answer of requests through the request steps."""
+    box = Camera.create(unique_name)
     segment = box._segment
-    types = Scanner.__layout__.types
-    move = Scanner.__layout__.by_name["move"].index
+    types = Camera.__layout__.types
+    move = Camera.__layout__.by_name["move"].index
     assert segment.request_take(move, types) is None
-    assert segment.request_send(move, (5.0,), types) == 1
-    assert segment.request_take(move, types) == (1, (5.0,))
+    assert segment.request_send(move, (5.0, "fast"), types) == 1
+    assert segment.request_take(move, types) == (1, (5.0, "fast"))
     assert segment.request_answer(move, 1, True, 6.0, types) is True
     assert segment.request_answer(move, 1, True, 7.0, types) is False
     assert segment.request_answer_of(move, 1, False, types) == (1, 6.0)
-    assert segment.request_send(move, (8.0,), types) == 2
-    assert segment.request_take(move, types) == (2, (8.0,))
+    assert segment.request_send(move, (8.0, "slow"), types) == 2
+    assert segment.request_take(move, types) == (2, (8.0, "slow"))
     assert segment.request_answer(move, 2, False, "ValueError: x", types) is True
     assert segment.request_answer_of(move, 2, False, types) == (2, "ValueError: x")
     assert segment.serve_claim(move) is True
@@ -917,7 +917,31 @@ def test_call_steps_round_trip(unique_name: str) -> None:
     segment.serve_release(move)
     assert segment.serve_claim(move) is True
     with pytest.raises(TypeError):
-        segment.request_send(move, ("x",), types)
-    with pytest.raises(TypeError, match="takes 1 arguments"):
-        segment.request_send(move, (1.0, 2.0), types)
+        segment.request_send(move, ("x", "fast"), types)
+    with pytest.raises(TypeError, match="takes 2 arguments"):
+        segment.request_send(move, (1.0,), types)
+    box.close()
+
+
+def test_attr_publish_and_read_round_trip(unique_name: str) -> None:
+    """Publish parts of an attr field through the native steps and read them back."""
+    box = Camera.create(unique_name)
+    segment = box._segment
+    types = Camera.__layout__.types
+    exposure = Camera.__layout__.by_name["exposure"].index
+    segment.attr_publish(exposure, 1, 1.5, None, 0, types)
+    first = cast(dict[str, Any], segment.get(exposure, types))
+    assert first["value"] == 1.5
+    assert segment.attr_published(exposure) == 1
+    stamp = first["timestamp_ns"]
+    segment.attr_publish(exposure, 4, None, 0.5, 0, types)
+    assert segment.get(exposure, types) == {
+        "value": 1.5,
+        "setpoint": 0.5,
+        "timestamp_ns": stamp,
+    }
+    assert segment.attr_published(exposure) == 2
+    with pytest.raises(ValueError):
+        segment.attr_publish(exposure, 2, None, None, 1, types)
+    assert segment.attr_published(exposure) == 2
     box.close()
