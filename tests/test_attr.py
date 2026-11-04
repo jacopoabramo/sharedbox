@@ -470,6 +470,40 @@ def test_a_server_stopped_inside_its_take_fails_the_request(
         assert box.move(target).result(timeout=10) == 2.0
 
 
+def test_a_claim_made_inside_the_take_that_stopped_its_server_holds(
+    names: Callable[[str], str],
+) -> None:
+    """Keep a claim made inside the take that stopped the field's previous server."""
+    reclaims: list[Callable[[], RequestServer]] = []
+    servers: list[RequestServer] = []
+    taking: list[threading.Thread] = []
+
+    @dataclass(frozen=True)
+    class Target:
+        position: float
+
+        def __post_init__(self) -> None:
+            if servers:
+                taking.append(threading.current_thread())
+                servers.pop().stop()
+                reclaims.pop()()
+
+    class Mover(SharedBox):
+        move: Attr[float, [Target]] = attr()
+
+    with Mover.create(names("reclaim")) as box:
+        reclaims.append(lambda: box.move.serve(lambda target: target.position * 2))
+        target = Target(1.0)
+        servers.append(box.move.serve(lambda target: target.position))
+        with pytest.raises(RequestError, match="the server stopped"):
+            box.move(target).result(timeout=10)
+        # The stopped server's thread finishes its take after the caller has its answer.
+        taking[0].join(10)
+        with pytest.raises(AlreadyServedError):
+            box.move.serve(lambda target: target.position)
+        assert box.move(target).result(timeout=10) == 2.0
+
+
 def surrogate(position: float) -> float:
     raise ValueError("\ud800")
 
@@ -568,6 +602,59 @@ def test_a_handler_that_exits_fails_its_request_and_frees_the_field(
         for thread in threading.enumerate():
             if thread.name == "sharedbox-serve-Scanner.move":
                 thread.join(5)
+        box.move.serve(double)
+        assert box.move(1.0).result(timeout=5) == 2.0
+
+
+@pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")
+def test_a_handler_that_exits_frees_the_field_when_failing_its_request_raises(
+    names: Callable[[str], str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Stop serving and free the field after SystemExit even when failing the request raises."""
+
+    def refuse(self: RequestServer, number: int, error: BaseException) -> None:
+        raise RuntimeError("the answer cannot be written")
+
+    monkeypatch.setattr("sharedbox._request.RequestServer._fail", refuse)
+    with Scanner.create(names("exits-twice")) as box:
+        box.move.serve(leave)
+        with pytest.raises(RequestError, match="the server stopped"):
+            box.move(1.0).result(timeout=5)
+        for thread in threading.enumerate():
+            if thread.name == "sharedbox-serve-Scanner.move":
+                thread.join(5)
+                assert not thread.is_alive()
+        box.move.serve(double)
+        assert box.move(1.0).result(timeout=5) == 2.0
+
+
+def test_a_second_stop_waits_until_the_first_has_freed_the_field(
+    names: Callable[[str], str],
+) -> None:
+    """Return from a stop racing another stop only once the field is free to serve again."""
+    started = threading.Event()
+    release = threading.Event()
+
+    def slow(position: float) -> float:
+        started.set()
+        release.wait(10)
+        return position
+
+    with Scanner.create(names("two-stops")) as box:
+        server = box.move.serve(slow)
+        pending = box.move(1.0)
+        assert started.wait(10)
+        stoppers = [threading.Thread(target=server.stop) for _ in range(2)]
+        for stopper in stoppers:
+            stopper.start()
+        # One stop joins the running handler; the other must wait for it, not return.
+        for stopper in stoppers:
+            stopper.join(0.3)
+        assert all(stopper.is_alive() for stopper in stoppers)
+        release.set()
+        for stopper in stoppers:
+            stopper.join(10)
+        assert pending.result(timeout=5) == 1.0
         box.move.serve(double)
         assert box.move(1.0).result(timeout=5) == 2.0
 
