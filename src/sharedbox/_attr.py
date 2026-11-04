@@ -3,12 +3,24 @@
 from __future__ import annotations
 
 import sys
-from typing import TYPE_CHECKING, Any, Final, Generic, NoReturn, NotRequired, TypeVar, cast
+import weakref
+from typing import (
+    TYPE_CHECKING,
+    Any,
+    Final,
+    Generic,
+    NoReturn,
+    NotRequired,
+    TypeVar,
+    cast,
+)
 
 if sys.version_info >= (3, 13):
     from typing import ParamSpec, TypedDict
 else:
     from typing_extensions import ParamSpec, TypedDict
+
+from ._native import BoxClosedError
 
 if TYPE_CHECKING:
     from ._box import SharedBox
@@ -57,10 +69,10 @@ class Attr(Generic[T, P]):
     reference to a box.
     """
 
-    __slots__ = ("_box", "_spec")
+    __slots__ = ("_box_ref", "_spec")
 
     def __init__(self, box: SharedBox, spec: FieldSpec) -> None:
-        self._box = box
+        self._box_ref = weakref.ref(box)
         self._spec = spec
 
     @property
@@ -115,11 +127,10 @@ class Attr(Generic[T, P]):
             If the box is closed.
         """
         self._require("value")
+        box = self._live()
         return cast(
             "AttrValue[T]",
-            self._box._segment.get(
-                self._spec.index, type(self._box).__layout__.types
-            ),
+            box._segment.get(self._spec.index, type(box).__layout__.types),
         )
 
     def publish(
@@ -147,6 +158,7 @@ class Attr(Generic[T, P]):
         BoxClosedError
             If the box is closed.
         """
+        box = self._live()
         parts = 0
         for given, part in (
             (value, PUBLISH_VALUE),
@@ -157,9 +169,7 @@ class Attr(Generic[T, P]):
                 parts |= part
         label = self._spec.label
         if not parts:
-            raise TypeError(
-                f"{label}: publish() needs value, setpoint or timestamp_ns"
-            )
+            raise TypeError(f"{label}: publish() needs value, setpoint or timestamp_ns")
         if parts & PUBLISH_VALUE:
             self._require("value")
         if parts & PUBLISH_SETPOINT:
@@ -174,17 +184,25 @@ class Attr(Generic[T, P]):
                 )
             if not INT64_MIN <= timestamp_ns <= INT64_MAX:
                 raise OverflowError(f"{label}: timestamp_ns does not fit 64 bits")
-        self._box._segment.attr_publish(
+        box._segment.attr_publish(
             self._spec.index,
             parts,
             None if value is UNSET else value,
             None if setpoint is UNSET else setpoint,
             0 if timestamp_ns is UNSET else timestamp_ns,
-            type(self._box).__layout__.types,
+            type(box).__layout__.types,
         )
+
+    def _live(self) -> SharedBox:
+        """Return the box, or raise `BoxClosedError` once it has been freed."""
+        box = self._box_ref()
+        if box is None:
+            raise BoxClosedError(f"{self._spec.label}: its box is gone")
+        return box
 
     def _require(self, part: str) -> None:
         """Raise `TypeError` unless the attribute has `part`."""
+        self._live()
         info = self._spec.attr
         assert info is not None
         label = self._spec.label

@@ -1,4 +1,5 @@
 import time
+import weakref
 from collections.abc import Callable
 from dataclasses import MISSING, dataclass
 from typing import Annotated, Any, Optional
@@ -21,7 +22,6 @@ from sharedbox import (
 from sharedbox._layout import NativeField
 from sharedbox._native import Types
 from sharedbox._types import CODES, Table, attr_spec
-
 
 CLOCK_SLACK_NS = 20_000_000
 
@@ -87,7 +87,11 @@ def test_publish_writes_the_parts_it_is_given(names: Callable[[str], str]) -> No
 
         box.exposure.publish(value=1.0, timestamp_ns=5)
         box.exposure.publish(setpoint=0.02)
-        assert box.exposure.read() == {"value": 1.0, "setpoint": 0.02, "timestamp_ns": 5}
+        assert box.exposure.read() == {
+            "value": 1.0,
+            "setpoint": 0.02,
+            "timestamp_ns": 5,
+        }
         assert box.exposure.value == 1.0
         assert box.exposure.setpoint == 0.02
         assert box.exposure.timestamp_ns == 5
@@ -152,9 +156,11 @@ def test_publish_refuses_bad_parts(
     names: Callable[[str], str], publish: Callable[[Camera], object]
 ) -> None:
     """Raise TypeError naming the field for parts the attribute lacks or that cannot stand alone."""
-    with Camera.create(names("bad")) as box:
-        with pytest.raises(TypeError, match=r"Camera\.(temperature|move|home)"):
-            publish(box)
+    with (
+        Camera.create(names("bad")) as box,
+        pytest.raises(TypeError, match=r"Camera\.(temperature|move|home)"),
+    ):
+        publish(box)
 
 
 @pytest.mark.parametrize(
@@ -170,9 +176,11 @@ def test_the_handle_refuses_parts_the_attr_lacks(
     names: Callable[[str], str], read: Callable[[Camera], object]
 ) -> None:
     """Raise TypeError naming the field for a part the attribute does not have."""
-    with Camera.create(names("lacks")) as box:
-        with pytest.raises(TypeError, match=r"Camera\.(temperature|move|home)"):
-            read(box)
+    with (
+        Camera.create(names("lacks")) as box,
+        pytest.raises(TypeError, match=r"Camera\.(temperature|move|home)"),
+    ):
+        read(box)
 
 
 def assign(box: Camera) -> None:
@@ -197,9 +205,11 @@ def test_an_attr_refuses_value_operations(
     names: Callable[[str], str], operation: Callable[[Camera], None]
 ) -> None:
     """Raise TypeError naming the field for assigning, deleting, updating or writing in place."""
-    with Camera.create(names("operations")) as box:
-        with pytest.raises(TypeError, match=r"Camera\.exposure"):
-            operation(box)
+    with (
+        Camera.create(names("operations")) as box,
+        pytest.raises(TypeError, match=r"Camera\.exposure"),
+    ):
+        operation(box)
 
 
 def test_the_handle_is_the_same_object_on_every_access(
@@ -273,8 +283,11 @@ def define(annotation: Any, value: Any) -> type[SharedBox]:
         pytest.param(Attr[float], attr(default="x"), id="bad-default"),
         pytest.param(Attr[None], attr(default=1), id="default-without-value"),
         pytest.param(Attr[Point], attr(), id="no-zero"),
-        pytest.param(Attr[float], attr(init=True)  # type: ignore[arg-type]
-        , id="init"),
+        pytest.param(
+            Attr[float],
+            attr(init=True),  # type: ignore[arg-type]
+            id="init",
+        ),
     ],
 )
 def test_an_attr_declaration_is_refused(annotation: Any, value: Any) -> None:
@@ -339,3 +352,23 @@ def test_the_python_layout_matches_the_native_parser() -> None:
             [],
             table.converts,
         )
+
+
+def test_a_handle_does_not_keep_its_box_alive(names: Callable[[str], str]) -> None:
+    """Free a box that was read through a handle as soon as its last reference goes."""
+    box = Camera.create(names("weak"))
+    box.exposure.read()
+    ref = weakref.ref(box)
+    del box
+    assert ref() is None
+
+
+def test_a_handle_of_a_freed_box_raises(names: Callable[[str], str]) -> None:
+    """Raise BoxClosedError from a handle kept after its box was freed."""
+    box = Camera.create(names("freed"))
+    handle = box.exposure
+    del box
+    with pytest.raises(BoxClosedError):
+        handle.read()
+    with pytest.raises(BoxClosedError):
+        handle.publish(value=1.0)
