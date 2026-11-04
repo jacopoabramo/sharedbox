@@ -6,7 +6,9 @@
 #include "table_builder.hpp"
 #include "unique.hpp"
 
+#include <algorithm>
 #include <array>
+#include <chrono>
 #include <cstdint>
 #include <cstring>
 #include <future>
@@ -14,6 +16,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <thread>
 #include <vector>
 
 using namespace sharedbox;
@@ -66,6 +69,19 @@ table_builder int_request() { return attr({{kind_int, 8}}, {{kind_int, 8}}, attr
 table_builder everything() { return attr({{kind_int, 8}}, {{kind_int, 8}}, 7); }
 
 constexpr std::size_t everything_parts = 32;
+
+int hooks_before = 0;
+int hooks_after = 0;
+
+void count_hooks(handle &box) {
+    hooks_before = hooks_after = 0;
+    box.set_wait_hooks(
+        []() -> void * {
+            ++hooks_before;
+            return nullptr;
+        },
+        [](void *) { ++hooks_after; });
+}
 
 std::array<std::byte, everything_parts> parts(std::int64_t published, std::int64_t value, std::int64_t timestamp,
                                               std::int64_t setpoint) {
@@ -508,5 +524,63 @@ TEST_CASE("an answer for a request not taken is refused") {
     const std::array<std::byte, 257> long_text{};
     const auto long_error = box.request_answer(0, 1, false, long_text, patience);
     CHECK((!long_error && long_error.error().code == status::range));
+    static_cast<void>(unlink(name));
+}
+
+TEST_CASE("large attr copies run the wait hooks once around themselves") {
+    // bytes of 1 MiB: the value part is a little over the large copy size.
+    const std::string name = unique("attr-large");
+    handle box = make(name, attr({{kind_bytes, max_capacity}}, {}, attr_timed));
+    auto other = handle::open(name, patience);
+    REQUIRE(other.has_value());
+    count_hooks(box);
+    const std::size_t size = box.field(0).capacity;
+    const std::size_t value_end = 8 + 4 + max_capacity;
+    const std::size_t stamp_at = 8 + detail::round_up(4 + max_capacity, 8);
+    REQUIRE(size >= detail::large_copy);
+    std::vector<std::byte> bytes(size);
+    for (std::size_t i = 8; i < size; ++i)
+        bytes[i] = static_cast<std::byte>(i * 7 + 1);
+
+    const auto contended = [&](auto &&call) {
+        hooks_before = hooks_after = 0;
+        const auto locked = other->lock(patience);
+        REQUIRE(locked.has_value());
+        std::thread releaser([&] {
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            other->unlock(*locked);
+        });
+        call();
+        releaser.join();
+        CHECK((hooks_before == 1 && hooks_after == 1));
+    };
+
+    const std::uint64_t generation = box.generation();
+    contended(
+        [&] { REQUIRE(box.attr_publish(0, publish_value | publish_timestamp, bytes, seconds(5.0)).has_value()); });
+    CHECK((box.version(0) == 1 && box.generation() == generation + 2 && *box.attr_published(0) == 1));
+
+    std::vector<std::byte> got(size);
+    contended([&] { REQUIRE(box.attr_read(0, got).has_value()); });
+    CHECK(std::equal(bytes.begin() + 8, bytes.begin() + value_end, got.begin() + 8));
+    CHECK(std::equal(bytes.begin() + stamp_at, bytes.begin() + stamp_at + 8, got.begin() + stamp_at));
+    CHECK(number_of(got) == 1);
+
+    hooks_before = hooks_after = 0;
+    REQUIRE(box.attr_publish(0, publish_value, bytes, patience).has_value());
+    CHECK((hooks_before == 1 && hooks_after == 1));
+    hooks_before = hooks_after = 0;
+    REQUIRE(box.attr_read(0, got).has_value());
+    CHECK((hooks_before == 1 && hooks_after == 1 && number_of(got) == 2));
+    static_cast<void>(unlink(name));
+}
+
+TEST_CASE("a small attr copy does not run the wait hooks") {
+    const std::string name = unique("attr-small-hooks");
+    handle box = make(name, everything());
+    count_hooks(box);
+    REQUIRE(box.attr_publish(0, publish_value, parts(0, 5, 0, 0), patience).has_value());
+    static_cast<void>(value_part(box));
+    CHECK((hooks_before == 0 && hooks_after == 0));
     static_cast<void>(unlink(name));
 }

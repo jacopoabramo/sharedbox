@@ -53,6 +53,10 @@ class Frames(SharedBox):
     )
 
 
+class Megapixels(SharedBox):
+    image: Attr[Annotated[np.ndarray, MaxShape((1024, 1024)), DType(np.uint8)]] = attr()
+
+
 @dataclass
 class Holder:
     inner: Attr[float]
@@ -143,6 +147,16 @@ def test_a_max_shape_attr_keeps_the_shape_of_each_part(
         assert read["setpoint"].shape == (4, 1)
         np.testing.assert_array_equal(read["value"], value)
         np.testing.assert_array_equal(read["setpoint"], setpoint)
+
+
+def test_a_megabyte_attr_publishes_and_reads_back(names: Callable[[str], str]) -> None:
+    """Round-trip an array of a mebibyte through publish, read and a watch future."""
+    value = np.random.default_rng(0).integers(0, 256, (1024, 1024), dtype=np.uint8)
+    with Megapixels.create(names("megabyte")) as box:
+        fut = box.watch("image").future()
+        box.image.publish(value=value)
+        np.testing.assert_array_equal(box.image.read()["value"], value)
+        np.testing.assert_array_equal(fut.result(timeout=5)["value"], value)
 
 
 @pytest.mark.parametrize(

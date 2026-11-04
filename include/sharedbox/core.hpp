@@ -961,6 +961,11 @@ struct type_member {
     type_ref type;
 };
 
+// Where the timestamp of a timed attr starts, from the field's start: it follows the value, padded to 8.
+inline std::uint32_t attr_timestamp_at(const type_member &value) noexcept {
+    return value.offset + static_cast<std::uint32_t>(round_up(value.type.size, 8));
+}
+
 struct type_node {
     std::uint32_t at = 0;
     std::uint32_t length = 0;

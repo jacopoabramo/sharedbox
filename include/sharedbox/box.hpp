@@ -1492,32 +1492,37 @@ inline result<void> handle::attr_publish(std::uint16_t field, std::uint8_t parts
         bytes.size() != s.fields[field].capacity - node.value_at)
         return unexpected(status::range);
     const detail::type_member &value = s.types.member(node.members);
-    const std::uint32_t timestamp_at =
-        value.offset + static_cast<std::uint32_t>(detail::round_up(value.type.size, 8));
-    const result<std::uint64_t> locked = lock(lock_timeout);
-    if (!locked)
-        return unexpected(locked.error());
-    std::byte *room = s.record + s.fields[field].offset;
-    const auto copy = [&](std::uint32_t at, std::size_t length) {
-        std::memcpy(room + at, bytes.data() + (at - node.value_at), length);
-    };
-    if (names_value)
-        copy(value.offset, value.type.size);
-    if (names_timestamp)
-        copy(timestamp_at, sizeof(std::int64_t));
-    if (names_value && timed) {
-        std::int64_t stamp = 0;
-        std::memcpy(&stamp, room + timestamp_at, sizeof stamp);
-        if (!names_timestamp || stamp == timed_mark) {
-            const std::int64_t now = detail::wall_ns();
-            std::memcpy(room + timestamp_at, &now, sizeof now);
+    const std::uint32_t timestamp_at = detail::attr_timestamp_at(value);
+    // A large copy runs the wait hooks around the lock and the copy, as write_large does.
+    const auto publish = [&](auto large) -> result<void> {
+        constexpr bool Large = decltype(large)::value;
+        const std::conditional_t<Large, detail::hooks_around, detail::no_hooks> hooks(s);
+        const result<std::uint64_t> locked = lock_with<!Large>(lock_timeout);
+        if (!locked)
+            return unexpected(locked.error());
+        std::byte *room = s.record + s.fields[field].offset;
+        const auto copy = [&](std::uint32_t at, std::size_t length) {
+            std::memcpy(room + at, bytes.data() + (at - node.value_at), length);
+        };
+        if (names_value)
+            copy(value.offset, value.type.size);
+        if (names_timestamp)
+            copy(timestamp_at, sizeof(std::int64_t));
+        if (names_value && timed) {
+            std::int64_t stamp = 0;
+            std::memcpy(&stamp, room + timestamp_at, sizeof stamp);
+            if (!names_timestamp || stamp == timed_mark) {
+                const std::int64_t now = detail::wall_ns();
+                std::memcpy(room + timestamp_at, &now, sizeof now);
+            }
         }
-    }
-    if (names_setpoint)
-        copy(node.setpoint_at, value.type.size);
-    detail::request_put(room + node.value_at, detail::request_get<std::uint64_t>(room + node.value_at) + 1);
-    end_write({field, {}, *locked});
-    return {};
+        if (names_setpoint)
+            copy(node.setpoint_at, value.type.size);
+        detail::request_put(room + node.value_at, detail::request_get<std::uint64_t>(room + node.value_at) + 1);
+        end_write({field, {}, *locked});
+        return {};
+    };
+    return bytes.size() >= detail::large_copy ? publish(std::true_type{}) : publish(std::false_type{});
 }
 
 inline result<void> handle::attr_read(std::uint16_t field, std::span<std::byte> out) const {
@@ -1529,17 +1534,27 @@ inline result<void> handle::attr_read(std::uint16_t field, std::span<std::byte> 
         return unexpected(status::range);
     const std::byte *src = s.record + s.fields[field].offset + node.value_at;
     auto seq = detail::atomic(s.hdr->seq);
-    const bool done = detail::retry(s, s.lock_timeout, [&]() noexcept {
-        const std::uint64_t before = seq.load(std::memory_order_acquire);
-        if ((before & 1u) != 0)
-            return false;
-        std::memcpy(out.data(), src, out.size());
-        std::atomic_thread_fence(std::memory_order_acquire);
-        return seq.load(std::memory_order_acquire) == before;
-    });
-    if (!done)
-        return unexpected(status::lock_timeout);
-    return {};
+    const auto read = [&](auto large) -> result<void> {
+        constexpr bool Large = decltype(large)::value;
+        const std::conditional_t<Large, detail::hooks_around, detail::no_hooks> hooks(s);
+        const bool done = detail::retry<!Large>(s, s.lock_timeout, [&]() noexcept {
+            const std::uint64_t before = seq.load(std::memory_order_acquire);
+            if ((before & 1u) != 0)
+                return false;
+            if constexpr (Large) {
+                if (!detail::copy_checked(out.data(), src, out.size(), seq, before))
+                    return false;
+            } else {
+                std::memcpy(out.data(), src, out.size());
+            }
+            std::atomic_thread_fence(std::memory_order_acquire);
+            return seq.load(std::memory_order_acquire) == before;
+        });
+        if (!done)
+            return unexpected(status::lock_timeout);
+        return {};
+    };
+    return out.size() >= detail::large_copy ? read(std::true_type{}) : read(std::false_type{});
 }
 
 inline result<std::uint64_t> handle::attr_published(std::uint16_t field) const {
