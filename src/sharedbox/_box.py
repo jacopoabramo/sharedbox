@@ -1312,7 +1312,7 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
             return FieldWatch(self._watcher, spec, self._segment.version(spec.index))
         if not spec.attr.has_value:
             raise TypeError(f"{spec.label} has no value to watch")
-        # The write count first, so a publish between the two reads counts as made before the watch.
+        # A future of an attr field ignores the write count and starts from the publish count, so only that one decides which publishes the watch sees.
         since = self._segment.version(spec.index)
         return FieldWatch(
             self._watcher, spec, since, self._segment.attr_published(spec.index)

@@ -274,12 +274,18 @@ class Segment:
     def get_versioned(
         self, field: int, types: Types | None = None
     ) -> tuple[int, object]:
-        """Return the field's version and value, read together."""
+        """Return the field's version and value, read together.
+
+        For an attr field the version is read before the value, so a
+        publish in between makes the value newer than the version.
+        """
 
     def read_versioned(self, field: int) -> tuple[int, bytes]:
         """Return the field's version and stored bytes, read together.
 
-        For an attr field the bytes are those from its value part on.
+        For an attr field the bytes are those from its value part on, and
+        the version is read before them, so a publish in between makes the
+        bytes newer than the version.
         """
 
     def get_dict(

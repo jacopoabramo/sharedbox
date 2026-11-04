@@ -183,9 +183,9 @@ public:
     /// writes nothing and throws MetadataFull for a box without a metadata area, std::invalid_argument
     /// for a bad value or a document the area does not take.
     std::uint64_t write(std::span<const value> values, std::string_view doc);
-    /// The steps of a call field's protocol, each under the write lock; arguments is the bytes of the field
-    /// from its offset 48 to its answers. request_send returns the request's number; request_take returns the
-    /// number of the newest request and copies its arguments, or returns 0 when it was taken already;
+    /// The steps of an attribute field's request protocol, each under the write lock; arguments is the bytes of
+    /// the field from its offset 48 to its answers. request_send returns the request's number; request_take
+    /// returns the number of the newest request and copies its arguments, or returns 0 when it was taken already;
     /// request_answer is false when the request is not the one taken last or has an answer; serve_claim is false
     /// while another server runs.
     std::uint64_t request_send(std::uint32_t field, std::span<const std::byte> arguments);

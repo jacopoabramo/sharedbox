@@ -158,9 +158,9 @@ public:
     /// another type, and ValueError for one that leads to no array and holds a value that does not fit.
     nb::object with_arrays(std::uint32_t index, PyObject *template_item, std::byte *data, nb::handle owner) const;
 
-    /// The bytes of the arguments of call field index: those from the field's offset 48 to its answers.
+    /// The bytes of the arguments of attribute field index: those from the field's offset 48 to its answers.
     std::uint32_t request_arguments_size(std::uint32_t index) const;
-    /// The bytes of the result of call field index, 0 for a call with no result.
+    /// The bytes of the result of attribute field index, 0 for a request with no result.
     std::uint32_t request_result_size(std::uint32_t index) const;
     /// Writes the tuple arguments into out, request_arguments_size(index) bytes laid out as the field's, after
     /// zeroing it. Raises TypeError for another number of arguments, and as encode does for a value, naming
@@ -168,10 +168,10 @@ public:
     void encode_request_arguments(std::uint32_t index, PyObject *arguments, std::span<std::byte> out) const;
     /// The tuple of arguments stored in bytes, request_arguments_size(index) bytes laid out as the field's.
     nb::tuple decode_request_arguments(std::uint32_t index, std::span<const std::byte> bytes) const;
-    /// Writes value, the result of call field index, into out, request_result_size(index) bytes. A call with no
-    /// result writes nothing and ignores value.
+    /// Writes value, the result of attribute field index, into out, request_result_size(index) bytes. A request
+    /// with no result writes nothing and ignores value.
     void encode_request_result(std::uint32_t index, PyObject *value, std::span<std::byte> out) const;
-    /// The result stored in bytes, request_result_size(index) bytes; None for a call with no result.
+    /// The result stored in bytes, request_result_size(index) bytes; None for a request with no result.
     nb::object decode_request_result(std::uint32_t index, std::span<const std::byte> bytes) const;
 
     /// Where the value part of attr field index starts in the field; detail::attr_absent for an attr without one.
@@ -265,7 +265,7 @@ private:
     /// shape is empty, through the converter.
     nb::object wrap_array(const detail::type_ref &t, std::byte *raw, nb::handle owner,
                           std::span<const std::size_t> shape = {}) const;
-    /// The node of call field index; TypeError for a field of another kind.
+    /// The node of attribute field index; TypeError for a field of another kind.
     const detail::type_node &request_node(std::uint32_t index) const;
     /// The node of attr field index; TypeError for a field of another kind.
     const detail::type_node &attr_node(std::uint32_t index) const;
