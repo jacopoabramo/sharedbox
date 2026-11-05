@@ -156,6 +156,18 @@ TEST_CASE("a stream header that does not match its mapping is refused") {
     static_cast<void>(unlink(name));
 }
 
+TEST_CASE("a stream item of a kind this header does not know is refused with that kind") {
+    const std::string name = unique("stream-unsupported");
+    auto made = stream::create(name, {}, entry_of(kind_int, 8), 4, 2, 1);
+    REQUIRE(made);
+    header_of(*made).item_entry = entry_of(30, 8);
+    const auto opened = stream::open(name, seconds(0.2));
+    REQUIRE_FALSE(opened);
+    CHECK(opened.error().code == status::unsupported);
+    CHECK(opened.error().found == 30);
+    static_cast<void>(unlink(name));
+}
+
 TEST_CASE("create refuses a stream it cannot lay out") {
     const std::string name = unique("stream-refused");
     const auto refused = [&](std::uint32_t entry, std::uint64_t capacity, std::uint32_t readers,

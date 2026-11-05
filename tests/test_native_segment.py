@@ -427,6 +427,25 @@ def test_corrupt_header_is_refused(
     segment.close()
 
 
+class Pair(SharedBox):
+    pair: tuple[int, int] = (0, 0)
+
+
+def test_a_member_of_a_kind_this_version_does_not_know_is_named(
+    unique_name: str,
+) -> None:
+    """Check that attach names the kind of a member this sharedbox does not read."""
+    owner = Pair.create(unique_name)
+    with raw_bytes(unique_name) as view:
+        (slots,) = struct.unpack_from("<H", view, 52)
+        # The tuple's description opens the table; its first member's kind word follows the 8-byte head.
+        table = 128 + 16 + slots * 32
+        struct.pack_into("<I", view, table + 12, 8 | 30 << 24)
+    with pytest.raises(SchemaMismatchError, match="holds a value of kind 30, which"):
+        Pair.attach(unique_name)
+    owner.close()
+
+
 def test_another_major_version_is_refused(unique_name: str) -> None:
     """Check that attach raises SchemaMismatchError for a different major layout version."""
     segment = create(unique_name)

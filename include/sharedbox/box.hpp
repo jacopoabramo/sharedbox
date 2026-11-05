@@ -790,7 +790,7 @@ inline result<handle> handle::open(std::string_view name, seconds timeout) {
         return unexpected(status::os);
     s->record_size = h.record_size;
     if (const status rc = detail::copy_fields(*s, map->base(), h); rc != status::ok)
-        return unexpected(rc);
+        return unexpected(detail::types_error(rc, s->types));
     if (const status rc = detail::bind_metadata(*s, map->base(), h); rc != status::ok)
         return unexpected(rc);
     s->record_offset = h.record;
@@ -1700,7 +1700,7 @@ inline result<handle> handle::from_capsule(sbx_handle *capsule) {
         return unexpected(status::os);
     s->record_size = h.record_size;
     if (const status rc = detail::copy_fields(*s, hdr, h); rc != status::ok)
-        return unexpected(rc);
+        return unexpected(detail::types_error(rc, s->types));
     if (const status rc = detail::bind_metadata(*s, hdr, h); rc != status::ok)
         return unexpected(rc);
     s->record_offset = h.record;
