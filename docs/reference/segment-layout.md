@@ -259,8 +259,8 @@ with three fields and 64 slots stays in one page up to about 1.8 KB of record
 A field of a kind the reader does not know is opened as opaque bytes: a
 kind below 64 is sized by its entry, one from 64 by its description's
 head. A member entry inside a description records no size, so a reader
-refuses, with `status::corrupt`, a description that holds a kind below 64
-it does not know. Every described size is a multiple of its alignment.
+refuses, with `status::unsupported`, a description that holds a kind it
+does not know. Every described size is a multiple of its alignment.
 
 ### Encodings
 
@@ -702,7 +702,8 @@ struct reader_entry {               // sharedbox::reader_entry, 64 bytes
   `max_readers` 1 to 4095, `waiter_slots` `max_readers + 1`, `slot_size` a multiple of 64, and
   `types_size` a multiple of 8 and at most 16 MiB. A failed check is
   `status::corrupt`. Last, open parses the item type and requires that
-  `slot_size` is what the item needs.
+  `slot_size` is what the item needs. An item of a kind open does not
+  know, or holding one, is `status::unsupported`.
 
 ## Metadata
 
@@ -824,8 +825,9 @@ layout version of its kind, for the rest. Each has a major and a minor.
   74. Box layout 3.1 and stream layout 1.1 add the kinds 13 to 23. A minor
   version may add kinds: a reader of an older minor opens a top-level box
   field of a kind it does not know as opaque bytes, and refuses, with
-  `status::corrupt`, a segment that uses one inside a described type or as
-  a stream item. Box layout 3.1 and stream layout 1.1 also allow an array
+  `status::unsupported`, a segment that uses one inside a described type or
+  as a stream item. Readers from before `status::unsupported` existed
+  refuse it with `status::corrupt`. Box layout 3.1 and stream layout 1.1 also allow an array
   as the member of an optional, which a reader of box layout 3.0 or stream
   layout 1.0 refuses with `status::corrupt`. Stream layout 1.2 adds kind
   75, `max_array`, which a reader of stream layout 1.1 or 1.0 refuses with
@@ -939,11 +941,13 @@ Every shared word is a plain integer in the mapping, accessed through
        1 MiB, and the sizes of Kind codes for the fixed kinds, alignment
        for the known kinds, the field inside the record, no two fields
        overlapping), then the description table (Descriptions). A field
-       of an unknown kind is opaque (Versioning rules). A failed check is
+       of an unknown kind is opaque (Versioning rules), and a description
+       holding one is `status::unsupported`. Any other failed check is
        `status::corrupt`.
    For `foreign` and `kind_mismatch`, the error's `found` holds the magic
    that was read. For `layout` it holds both versions:
    `core_major << 48 | core_minor << 32 | kind_major << 16 | kind_minor`.
+   For `unsupported` it holds the kind.
 4. Copy the field table and use only the copy afterwards. If `metadata`
    is not 0, copy the metadata area's first line, check it (see Metadata)
    and use only that copy too.
@@ -1474,7 +1478,7 @@ enum class status : int { ok = 0, exists = -1, not_found = -2, layout = -3, sche
                           corrupt = -5, lock_timeout = -6, timeout = -7, no_slot = -8,
                           range = -9, os = -10, kind_mismatch = -11, foreign = -12,
                           busy = -13, ended = -14, interrupted = -15, released = -16,
-                          metadata_full = -17 };
+                          metadata_full = -17, unsupported = -18 };
 
 struct field_spec { std::uint32_t offset; std::uint32_t capacity; std::uint8_t kind; };
 struct value { std::uint16_t field; std::span<const std::byte> bytes; };
@@ -1627,6 +1631,9 @@ The header also declares these names:
   `interrupted`: a stream wait ended by `interrupt()`. `metadata_full`: an
   add to a segment without a metadata area, or to a stream whose ring
   still holds an item sent under a version the add would overwrite.
+  `unsupported`: the segment holds, inside a field or as a stream item, a
+  kind this version does not know, which the error's `found` names; a
+  newer version probably created it.
 - `create` and `write` take raw bytes in the record encoding, without the
   length prefix of `str`, `bytes` and `Decimal`; converting language values
   stays in each binding.
@@ -1968,7 +1975,8 @@ int      sbx_add_metadata(sbx_handle *h, const void *doc, size_t len, double loc
   `status::kind_mismatch` and `status::foreign`, and `SBX_E_BUSY` (-13),
   `SBX_E_ENDED` (-14) and `SBX_E_INTERRUPTED` (-15), the values of
   `status::busy`, `status::ended` and `status::interrupted`, and
-  `SBX_E_METADATA_FULL` (-17), the value of `status::metadata_full`. Streams
+  `SBX_E_METADATA_FULL` (-17) and `SBX_E_UNSUPPORTED` (-18), the values of
+  `status::metadata_full` and `status::unsupported`. Streams
   have no C functions. `sbx_open` and `sbx_import` return `SBX_E_KIND` for a
   segment of another kind and `SBX_E_FOREIGN` for a magic they do not know (see
   Attach). A C caller gets the code only, without the `error`'s OS error and
