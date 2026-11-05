@@ -40,6 +40,7 @@ extern "C" {
 #define SBX_E_ENDED (-14)
 #define SBX_E_INTERRUPTED (-15)
 #define SBX_E_METADATA_FULL (-17)
+#define SBX_E_UNSUPPORTED (-18)
 
 /* A handle on one box, as a "sharedbox_box" capsule carries it between builds. private_data belongs to
  * the build that made the handle, and only its release reads it. */
@@ -79,7 +80,8 @@ typedef struct sbx_timedelta {
     int32_t days, seconds, microseconds;
 } sbx_timedelta;
 
-/* Opens the box called name, waiting up to timeout seconds for a creator that has not finished. */
+/* Opens the box called name, waiting up to timeout seconds for a creator that has not finished.
+ * SBX_E_UNSUPPORTED for a box holding, inside a field, a kind this header does not know. */
 SBX_API int sbx_open(const char *name, double timeout, sbx_handle *out);
 
 /* Takes over the handle of a capsule made by another build: checks its segment as sbx_open does, and

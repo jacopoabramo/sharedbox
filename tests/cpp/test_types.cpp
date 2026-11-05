@@ -260,6 +260,45 @@ TEST_CASE("a described kind this header does not know opens as opaque bytes") {
     static_cast<void>(unlink(name));
 }
 
+TEST_CASE("a kind this header does not know inside a type is unsupported and named") {
+    table_builder t = record_with_list();
+    const auto refused = [&](std::uint8_t kind) {
+        type_table table;
+        const std::uint32_t entry = entry_of(kind_record, 0);
+        CHECK(table.parse(t.span(), {&entry, 1}) == status::unsupported);
+        CHECK(table.unknown_kind() == kind);
+    };
+    SUBCASE("a record member below 64") {
+        t.patch(12, entry_of(30, 8));
+        refused(30);
+    }
+    // The list's description starts at 32: its head, its capacity, then its element's entry.
+    SUBCASE("a described record member") {
+        t.patch(20, entry_of(80, 32));
+        t.bytes[32] = std::byte{80};
+        refused(80);
+    }
+    SUBCASE("a list element") {
+        t.patch(32 + 16, entry_of(30, 8));
+        refused(30);
+    }
+}
+
+TEST_CASE("a box holding a kind this header does not know inside a field is refused with that kind") {
+    const table_builder t = record_with_list();
+    const std::string name = unique("types-unsupported");
+    const field_spec fields[1] = {{0, 0, kind_record}};
+    auto owner = handle::create(name, fields, 40, 1, 4, {}, t.span());
+    REQUIRE(owner.has_value());
+    const std::uint32_t member = entry_of(30, 8);
+    std::memcpy(static_cast<std::byte *>(owner->base()) + detail::tail_end(1, 4) + 12, &member, sizeof member);
+    const auto opened = handle::open(name, seconds(1.0));
+    REQUIRE_FALSE(opened);
+    CHECK(opened.error().code == status::unsupported);
+    CHECK(opened.error().found == 30);
+    static_cast<void>(unlink(name));
+}
+
 TEST_CASE("create refuses a table that does not check") {
     table_builder t = colour();
     t.bytes[1] = std::byte{1};

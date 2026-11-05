@@ -35,8 +35,9 @@ listed in [`sharedbox.hpp`](segment-layout.md#sharedboxhpp).
   `sharedbox::error`, and `to_expected` and `from_expected` on C++23
 - [`sharedbox.hpp`](segment-layout.md#sharedboxhpp): what each
   `sharedbox::status` means, including `status::os`, `status::kind_mismatch`
-  (a segment of another kind) and `status::foreign` (a magic this version
-  does not know)
+  (a segment of another kind), `status::foreign` (a magic this version
+  does not know) and `status::unsupported` (a kind this version does not
+  know, inside a field or as a stream item)
 - [`sharedbox_c.h`](segment-layout.md#sharedbox_ch): the `SBX_OK` and
-  `SBX_E_*` codes the C functions return, including `SBX_E_KIND` (-11) and
-  `SBX_E_FOREIGN` (-12)
+  `SBX_E_*` codes the C functions return, including `SBX_E_KIND` (-11),
+  `SBX_E_FOREIGN` (-12) and `SBX_E_UNSUPPORTED` (-18)

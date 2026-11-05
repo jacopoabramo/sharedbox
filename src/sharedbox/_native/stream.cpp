@@ -111,6 +111,9 @@ const PyType_Slot gc_slots[] = {{Py_tp_traverse, reinterpret_cast<void *>(traver
                              " and stream layout " + std::to_string(stream_layout_major));
     case status::corrupt:
         throw SchemaMismatch("stream '" + name + "' has a corrupt header");
+    case status::unsupported:
+        throw SchemaMismatch("stream '" + name + "' holds a value of kind " + std::to_string(e.found) +
+                             ", which this sharedbox does not read; a newer sharedbox may have created it");
     case status::timeout:
         throw WouldBlock("stream '" + name + "': nothing to receive or no room to send");
     case status::ended:

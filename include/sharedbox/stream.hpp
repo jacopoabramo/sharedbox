@@ -235,16 +235,17 @@ inline std::unique_ptr<stream_state> make_stream_state(std::string_view name,
 }
 
 // Takes the mapping into s, checks the item type of h, which passed the geometry check, and points s
-// into the mapping. status::corrupt for an item of a kind this header does not know or a slot size
-// that does not fit the item.
+// into the mapping. status::unsupported for an item of a kind this header does not know, or holding one,
+// and status::corrupt for a slot size that does not fit the item.
 inline status bind_stream(stream_state &s, os_mapping &&map, const stream_header &h) noexcept {
     const auto *bytes = static_cast<const std::byte *>(map.base());
     const std::uint32_t entry = h.item_entry;
     if (const status rc = s.types.parse({bytes + h.types, h.types_size}, {&entry, 1}, true); rc != status::ok)
         return rc;
     const type_ref &item = s.types.field(0);
-    if (!kind_known(item.kind) || item.kind == kind_attr ||
-        round_up(item_start(item.alignment) + item.size, 64) != h.slot_size)
+    if (!kind_known(item.kind))
+        return status::unsupported;
+    if (item.kind == kind_attr || round_up(item_start(item.alignment) + item.size, 64) != h.slot_size)
         return status::corrupt;
     metadata_line line{};
     if (h.metadata != 0) {
@@ -734,7 +735,7 @@ inline result<stream> stream::open(std::string_view name, seconds timeout) {
     if (s == nullptr)
         return unexpected(status::os);
     if (const status rc = detail::bind_stream(*s, std::move(*map), *opened); rc != status::ok)
-        return unexpected(rc);
+        return unexpected(detail::types_error(rc, s->types));
     detail::free_dead_waiters(s->waiters);
     return stream(s.release());
 }

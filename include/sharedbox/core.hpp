@@ -188,6 +188,7 @@ enum class status : int {
     interrupted = -15,
     released = -16,
     metadata_full = -17,
+    unsupported = -18,
 };
 
 using seconds = std::chrono::duration<double>;
@@ -284,11 +285,12 @@ static_assert(SBX_E_OS == int(status::os) && SBX_E_KIND == int(status::kind_mism
 static_assert(SBX_E_FOREIGN == int(status::foreign));
 static_assert(SBX_E_BUSY == int(status::busy) && SBX_E_ENDED == int(status::ended) &&
               SBX_E_INTERRUPTED == int(status::interrupted));
-static_assert(SBX_E_METADATA_FULL == int(status::metadata_full));
+static_assert(SBX_E_METADATA_FULL == int(status::metadata_full) && SBX_E_UNSUPPORTED == int(status::unsupported));
 
 // Why a call failed: the status, the OS error (errno or GetLastError()) read where the OS call failed,
 // and what the call found when that is the reason: the magic for kind_mismatch and foreign, for layout
-// core_major << 48 | core_minor << 32 | kind_major << 16 | kind_minor of the segment's first line.
+// core_major << 48 | core_minor << 32 | kind_major << 16 | kind_minor of the segment's first line, for
+// unsupported the kind this header does not know.
 struct error {
     status code = status::ok;
     std::int32_t os = 0;
@@ -1049,9 +1051,13 @@ public:
     std::uint64_t number(std::uint32_t i) const noexcept { return numbers_[i]; }
     const std::uint64_t &numbers_view(std::uint32_t i) const noexcept { return numbers_[i]; }
     const literal_value &literal(std::uint32_t i) const noexcept { return literals_[i]; }
+    // The last kind this header does not know that parse met, kept as opaque bytes or refused with
+    // status::unsupported, even when parse failed; 0 for none.
+    std::uint8_t unknown_kind() const noexcept { return unknown_kind_; }
 
 private:
     friend class type_parser;
+    std::uint8_t unknown_kind_ = 0;
     std::unique_ptr<std::byte[]> bytes_;
     std::uint32_t size_ = 0;
     std::unique_ptr<std::uint32_t[]> entries_;
@@ -1075,6 +1081,7 @@ public:
         : table_(table), seen_(seen), out_(out), max_arrays_(max_arrays) {}
 
     type_counts counts;
+    std::uint8_t unknown_kind = 0;
 
     status field(std::uint32_t entry, type_ref &out) noexcept {
         const auto kind = static_cast<std::uint8_t>(entry >> kind_shift);
@@ -1117,9 +1124,12 @@ private:
 
     status fixed(std::uint8_t kind, std::uint32_t low, bool top, type_ref &out) noexcept {
         if (!kind_known(kind) || described(kind)) {
+            unknown_kind = kind;
             // A field of a kind this header does not know keeps its bytes; a member cannot, since nothing
             // says where the next one starts.
-            if (!top || low == 0 || low > max_capacity)
+            if (!top)
+                return status::unsupported;
+            if (low == 0 || low > max_capacity)
                 return status::corrupt;
             out = {kind, low, 1, no_node};
             return status::ok;
@@ -1236,7 +1246,10 @@ inline status type_parser::describe(std::uint8_t kind, std::uint32_t at, std::ui
     if (head.kind != kind || head.size == 0)
         return status::corrupt;
     if (!kind_known(kind)) {
-        if (!top || !mark(at, 8))
+        unknown_kind = kind;
+        if (!top)
+            return status::unsupported;
+        if (!mark(at, 8))
             return status::corrupt;
         out = {kind, head.size, 1, no_node};
         return status::ok;
@@ -1596,9 +1609,11 @@ inline status type_table::parse(std::span<const std::byte> table, std::span<cons
         type_ref ignored;
         if (const status rc = counter.field(entries[i], ignored); rc != status::ok) {
             *this = type_table{};
+            unknown_kind_ = counter.unknown_kind;
             return rc;
         }
     }
+    unknown_kind_ = counter.unknown_kind;
     const type_counts &n = counter.counts;
     nodes_.reset(new (std::nothrow) type_node[n.nodes + 1u]());
     members_.reset(new (std::nothrow) type_member[n.members + 1u]());
@@ -1616,9 +1631,16 @@ inline status type_table::parse(std::span<const std::byte> table, std::span<cons
     for (std::uint16_t i = 0; i < count; ++i)
         if (const status rc = filler.field(entries[i], fields_[i]); rc != status::ok) {
             *this = type_table{};
+            unknown_kind_ = filler.unknown_kind;
             return rc;
         }
     return status::ok;
+}
+
+// The error of a status that parsing types, or checking what they hold, gave: status::unsupported carries
+// the kind this header does not know in found.
+inline error types_error(status rc, const type_table &types) noexcept {
+    return {rc, 0, rc == status::unsupported ? types.unknown_kind() : 0u};
 }
 
 // The bytes of the elements a max_array value holds, from the stored shape in its first 64 bytes at line;

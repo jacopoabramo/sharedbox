@@ -165,6 +165,9 @@ std::string layout_message(const std::string &name, std::uint64_t found) {
         throw SegmentMissing("no segment named '" + name + "'");
     case status::corrupt:
         throw SchemaMismatch("segment '" + name + "' has a corrupt header");
+    case status::unsupported:
+        throw SchemaMismatch("segment '" + name + "' holds a value of kind " + std::to_string(e.found) +
+                             ", which this sharedbox does not read; a newer sharedbox may have created it");
     case status::kind_mismatch:
         throw KindMismatch("'" + name + "' is a " + std::string(detail::kind_name(e.found)) + ", not a box");
     case status::range:
