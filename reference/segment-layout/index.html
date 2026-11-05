@@ -4662,8 +4662,8 @@ with three fields and 64 slots stays in one page up to about 1.8 KB of record
 <p>A field of a kind the reader does not know is opened as opaque bytes: a
 kind below 64 is sized by its entry, one from 64 by its description's
 head. A member entry inside a description records no size, so a reader
-refuses, with <code>status::corrupt</code>, a description that holds a kind below 64
-it does not know. Every described size is a multiple of its alignment.</p>
+refuses, with <code>status::unsupported</code>, a description that holds a kind it
+does not know. Every described size is a multiple of its alignment.</p>
 <h3 id="encodings">Encodings<a class="headerlink" href="#encodings" title="Permanent link">&para;</a></h3>
 <p>Little-endian.</p>
 <ul>
@@ -5143,7 +5143,8 @@ below 2^46 bytes. The mapping holds, from offset 0:</p>
   <code>max_readers</code> 1 to 4095, <code>waiter_slots</code> <code>max_readers + 1</code>, <code>slot_size</code> a multiple of 64, and
   <code>types_size</code> a multiple of 8 and at most 16 MiB. A failed check is
   <code>status::corrupt</code>. Last, open parses the item type and requires that
-  <code>slot_size</code> is what the item needs.</li>
+  <code>slot_size</code> is what the item needs. An item of a kind open does not
+  know, or holding one, is <code>status::unsupported</code>.</li>
 </ul>
 <h2 id="metadata">Metadata<a class="headerlink" href="#metadata" title="Permanent link">&para;</a></h2>
 <p>A box or a stream may have a metadata area, which holds numbered versions
@@ -5310,8 +5311,9 @@ layout version of its kind, for the rest. Each has a major and a minor.</p>
 <li>Box layout 3.1 and stream layout 1.1 add the kinds 13 to 23. A minor
   version may add kinds: a reader of an older minor opens a top-level box
   field of a kind it does not know as opaque bytes, and refuses, with
-  <code>status::corrupt</code>, a segment that uses one inside a described type or as
-  a stream item. Box layout 3.1 and stream layout 1.1 also allow an array
+  <code>status::unsupported</code>, a segment that uses one inside a described type or
+  as a stream item. Readers from before <code>status::unsupported</code> existed
+  refuse it with <code>status::corrupt</code>. Box layout 3.1 and stream layout 1.1 also allow an array
   as the member of an optional, which a reader of box layout 3.0 or stream
   layout 1.0 refuses with <code>status::corrupt</code>. Stream layout 1.2 adds kind
   75, <code>max_array</code>, which a reader of stream layout 1.1 or 1.0 refuses with
@@ -5423,11 +5425,13 @@ layout version of its kind, for the rest. Each has a major and a minor.</p>
    1 MiB, and the sizes of Kind codes for the fixed kinds, alignment
    for the known kinds, the field inside the record, no two fields
    overlapping), then the description table (Descriptions). A field
-   of an unknown kind is opaque (Versioning rules). A failed check is
+   of an unknown kind is opaque (Versioning rules), and a description
+   holding one is <code>status::unsupported</code>. Any other failed check is
    <code>status::corrupt</code>.
    For <code>foreign</code> and <code>kind_mismatch</code>, the error's <code>found</code> holds the magic
    that was read. For <code>layout</code> it holds both versions:
-   <code>core_major &lt;&lt; 48 | core_minor &lt;&lt; 32 | kind_major &lt;&lt; 16 | kind_minor</code>.</li>
+   <code>core_major &lt;&lt; 48 | core_minor &lt;&lt; 32 | kind_major &lt;&lt; 16 | kind_minor</code>.
+   For <code>unsupported</code> it holds the kind.</li>
 </ol>
 </li>
 <li>Copy the field table and use only the copy afterwards. If <code>metadata</code>
@@ -5942,7 +5946,7 @@ Windows.</p>
 </span><span id="__span-9-25"><a id="__codelineno-9-25" name="__codelineno-9-25" href="#__codelineno-9-25"></a><span class="w">                          </span><span class="n">corrupt</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">-5</span><span class="p">,</span><span class="w"> </span><span class="n">lock_timeout</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">-6</span><span class="p">,</span><span class="w"> </span><span class="n">timeout</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">-7</span><span class="p">,</span><span class="w"> </span><span class="n">no_slot</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">-8</span><span class="p">,</span>
 </span><span id="__span-9-26"><a id="__codelineno-9-26" name="__codelineno-9-26" href="#__codelineno-9-26"></a><span class="w">                          </span><span class="n">range</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">-9</span><span class="p">,</span><span class="w"> </span><span class="n">os</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">-10</span><span class="p">,</span><span class="w"> </span><span class="n">kind_mismatch</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">-11</span><span class="p">,</span><span class="w"> </span><span class="n">foreign</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">-12</span><span class="p">,</span>
 </span><span id="__span-9-27"><a id="__codelineno-9-27" name="__codelineno-9-27" href="#__codelineno-9-27"></a><span class="w">                          </span><span class="n">busy</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">-13</span><span class="p">,</span><span class="w"> </span><span class="n">ended</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">-14</span><span class="p">,</span><span class="w"> </span><span class="n">interrupted</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">-15</span><span class="p">,</span><span class="w"> </span><span class="n">released</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">-16</span><span class="p">,</span>
-</span><span id="__span-9-28"><a id="__codelineno-9-28" name="__codelineno-9-28" href="#__codelineno-9-28"></a><span class="w">                          </span><span class="n">metadata_full</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">-17</span><span class="w"> </span><span class="p">};</span>
+</span><span id="__span-9-28"><a id="__codelineno-9-28" name="__codelineno-9-28" href="#__codelineno-9-28"></a><span class="w">                          </span><span class="n">metadata_full</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">-17</span><span class="p">,</span><span class="w"> </span><span class="n">unsupported</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="mi">-18</span><span class="w"> </span><span class="p">};</span>
 </span><span id="__span-9-29"><a id="__codelineno-9-29" name="__codelineno-9-29" href="#__codelineno-9-29"></a>
 </span><span id="__span-9-30"><a id="__codelineno-9-30" name="__codelineno-9-30" href="#__codelineno-9-30"></a><span class="k">struct</span><span class="w"> </span><span class="nc">field_spec</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">offset</span><span class="p">;</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">capacity</span><span class="p">;</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">uint8_t</span><span class="w"> </span><span class="n">kind</span><span class="p">;</span><span class="w"> </span><span class="p">};</span>
 </span><span id="__span-9-31"><a id="__codelineno-9-31" name="__codelineno-9-31" href="#__codelineno-9-31"></a><span class="k">struct</span><span class="w"> </span><span class="nc">value</span><span class="w"> </span><span class="p">{</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="w"> </span><span class="n">field</span><span class="p">;</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">span</span><span class="o">&lt;</span><span class="k">const</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">byte</span><span class="o">&gt;</span><span class="w"> </span><span class="n">bytes</span><span class="p">;</span><span class="w"> </span><span class="p">};</span>
@@ -6094,7 +6098,10 @@ extension use.</p>
   sender closed or died and every published item was received.
   <code>interrupted</code>: a stream wait ended by <code>interrupt()</code>. <code>metadata_full</code>: an
   add to a segment without a metadata area, or to a stream whose ring
-  still holds an item sent under a version the add would overwrite.</p>
+  still holds an item sent under a version the add would overwrite.
+  <code>unsupported</code>: the segment holds, inside a field or as a stream item, a
+  kind this version does not know, which the error's <code>found</code> names; a
+  newer version probably created it.</p>
 </li>
 <li><code>create</code> and <code>write</code> take raw bytes in the record encoding, without the
   length prefix of <code>str</code>, <code>bytes</code> and <code>Decimal</code>; converting language values
@@ -6428,7 +6435,8 @@ layout.</p>
   <code>status::kind_mismatch</code> and <code>status::foreign</code>, and <code>SBX_E_BUSY</code> (-13),
   <code>SBX_E_ENDED</code> (-14) and <code>SBX_E_INTERRUPTED</code> (-15), the values of
   <code>status::busy</code>, <code>status::ended</code> and <code>status::interrupted</code>, and
-  <code>SBX_E_METADATA_FULL</code> (-17), the value of <code>status::metadata_full</code>. Streams
+  <code>SBX_E_METADATA_FULL</code> (-17) and <code>SBX_E_UNSUPPORTED</code> (-18), the values of
+  <code>status::metadata_full</code> and <code>status::unsupported</code>. Streams
   have no C functions. <code>sbx_open</code> and <code>sbx_import</code> return <code>SBX_E_KIND</code> for a
   segment of another kind and <code>SBX_E_FOREIGN</code> for a magic they do not know (see
   Attach). A C caller gets the code only, without the <code>error</code>'s <abbr title="Operating system.">OS</abbr> error and
