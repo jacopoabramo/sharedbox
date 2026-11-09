@@ -42,6 +42,12 @@ struct field_write {
     std::uint64_t locked;
 };
 
+// The write lock held across several stores: the even seq begin_record_write locked from, which
+// end_record_write or abort_record_write releases.
+struct record_write {
+    std::uint64_t locked;
+};
+
 // A box's header: the common line 0, then line 1 with the words writes and waits change and the
 // geometry, written once, which only opening reads.
 struct header {
@@ -316,6 +322,19 @@ public:
     [[nodiscard]] result<field_write> begin_write(std::uint16_t field, seconds lock_timeout);
     // Adds one to the field's write count, releases the lock begin_write took and wakes waiters.
     void end_write(const field_write &w) noexcept;
+    // Takes the write lock for several stores. Readers in every process retry until end_record_write or
+    // abort_record_write.
+    [[nodiscard]] result<record_write> begin_record_write(seconds lock_timeout);
+    // The whole slot of a field in the record, the length prefix included: 4 + capacity bytes for a field
+    // with one, capacity otherwise. Empty for a field past field_count().
+    [[nodiscard]] std::span<std::byte> held_bytes(const record_write &w, std::uint16_t field) const;
+    // Stores the values while the lock is held, counting no write. status::range, with nothing stored, when a
+    // value does not fit its field.
+    [[nodiscard]] result<void> write_held(const record_write &w, std::span<const value> values);
+    // Adds one to the write count of each changed field, releases the lock and wakes waiters.
+    void end_record_write(const record_write &w, std::span<const std::uint16_t> changed) noexcept;
+    // Releases the lock with no write counted and seq as it was; the caller has restored every byte it changed.
+    void abort_record_write(const record_write &w) noexcept;
 
     // Claims a free waiter slot for this process, first freeing the slots of processes that have exited.
     [[nodiscard]] result<std::uint16_t> register_waiter();
@@ -1144,6 +1163,44 @@ inline void handle::end_write(const field_write &w) noexcept {
     unlock(w.locked);
     detail::wake_waiters(s);
 }
+
+inline result<record_write> handle::begin_record_write(seconds lock_timeout) {
+    const result<std::uint64_t> locked = lock(lock_timeout);
+    if (!locked)
+        return unexpected(locked.error());
+    return record_write{*locked};
+}
+
+inline std::span<std::byte> handle::held_bytes(const record_write &, std::uint16_t field) const {
+    const detail::state &s = *s_;
+    if (field >= s.field_count)
+        return {};
+    const field_spec &f = s.fields[field];
+    return {s.record + f.offset, detail::field_span(f)};
+}
+
+inline result<void> handle::write_held(const record_write &, std::span<const value> values) {
+    detail::state &s = *s_;
+    if (!detail::values_ok(s, values))
+        return unexpected(status::range);
+    std::int64_t now = 0;
+    for (const value &v : values)
+        detail::store(s, v, now);
+    return {};
+}
+
+inline void handle::end_record_write(const record_write &w, std::span<const std::uint16_t> changed) noexcept {
+    detail::state &s = *s_;
+    for (const std::uint16_t field : changed) {
+        // Only the lock holder changes a count, so a plain store of the sum is enough.
+        auto count = detail::atomic(s.counts[field]);
+        count.store(count.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
+    }
+    unlock(w.locked);
+    detail::wake_waiters(s);
+}
+
+inline void handle::abort_record_write(const record_write &w) noexcept { detail::unlock_unchanged(*s_, w.locked); }
 
 SHAREDBOX_HOT result<void> handle::write(std::span<const value> values, seconds lock_timeout) {
     detail::state &s = *s_;
