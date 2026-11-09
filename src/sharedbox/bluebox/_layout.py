@@ -23,6 +23,16 @@ class _Key(NamedTuple):
 
 
 _SCALARS = {"number": "float64", "integer": "int64", "boolean": "bool"}
+# The longest head CBOR writes before a list, a string or a number.
+_HEAD = 9
+# What a row of a CBOR key may take beyond its elements' heads and content: the
+# tag around a typed array, its dtype text and a shape of up to 8 dimensions.
+_ROW = 128
+
+
+def _strings_capacity(page_rows: int, string_capacity: int) -> int:
+    """Return the bytes of a CBOR list of `page_rows` strings of `string_capacity` bytes."""
+    return _HEAD + page_rows * (_HEAD + string_capacity)
 
 
 def _numeric_dtype(dtype_numpy: object) -> np.dtype | None:
@@ -85,8 +95,8 @@ class EventLayout:
         Parameters
         ----------
         string_capacity
-            Most bytes of UTF-8 in one string of an event, and the share of
-            a bytes field each row of a CBOR key takes.
+            Most bytes of UTF-8 in one string or uid of an event, and the
+            bytes each element of a CBOR key may take.
         page_rows
             Most rows one item holds.
 
@@ -97,7 +107,7 @@ class EventLayout:
             or `-1` in its shape, or a key whose field would be larger than
             a `sharedbox` field can be. The message names the key.
         """
-        list_capacity = page_rows * string_capacity
+        list_capacity = _strings_capacity(page_rows, string_capacity)
         fields: list[tuple[str, object]] = [
             ("seq", int),
             ("kind", int),
@@ -132,7 +142,7 @@ class EventLayout:
     def _key(
         name: str, data_key: Mapping[str, Any], string_capacity: int, page_rows: int
     ) -> tuple[_Key, object]:
-        list_capacity = page_rows * string_capacity
+        list_capacity = _strings_capacity(page_rows, string_capacity)
         external = data_key.get("external")
         shape = data_key.get("shape", [])
         try:
@@ -156,7 +166,8 @@ class EventLayout:
             if data_key.get("dtype") == "string":
                 hint = Annotated[bytes, Capacity(list_capacity)]
                 return _Key(name, "string", None, shape, list_capacity, False), hint
-            capacity = list_capacity * max(1, math.prod(shape))
+            elements = max(1, math.prod(shape))
+            capacity = _HEAD + page_rows * (_ROW + elements * (_HEAD + string_capacity))
             hint = Annotated[bytes, Capacity(capacity)]
             return _Key(name, "cbor", None, shape, capacity, False), hint
         except ValueError as error:
@@ -206,6 +217,7 @@ class EventLayout:
         else:
             raise ValueError(f"cannot pack a {name} document")
         kind = 0 if name == "event" else 1
+        self._check_strings("uid", page["uid"])
         seq_num = self._array("seq_num", page["seq_num"], np.dtype("int64"), (), rows)
         time = self._array("time", page["time"], np.dtype("float64"), (), rows)
         columns: list[Any] = []
@@ -234,7 +246,7 @@ class EventLayout:
                 )
             )
         parts = max(1, math.ceil(rows / self.page_rows))
-        list_capacity = self.page_rows * self.string_capacity
+        list_capacity = _strings_capacity(self.page_rows, self.string_capacity)
         items = []
         for part in range(parts):
             rows_of_part = slice(part * self.page_rows, (part + 1) * self.page_rows)
@@ -292,16 +304,19 @@ class EventLayout:
         if len(values) != rows:
             raise ValueError(f"{label}: {len(values)} rows, not {rows}")
         if key.kind == "string":
-            for value in values:
-                if not isinstance(value, str):
-                    raise ValueError(f"{label}: {value!r} is not a str")  # noqa: TRY004
-                size = len(value.encode())
-                if size > self.string_capacity:
-                    raise ValueError(
-                        f"{label}: a string of {size} bytes of UTF-8 is longer than "
-                        f"{self.string_capacity}"
-                    )
+            self._check_strings(label, values)
         return values
+
+    def _check_strings(self, label: str, values: Iterable[object]) -> None:
+        for value in values:
+            if not isinstance(value, str):
+                raise ValueError(f"{label}: {value!r} is not a str")  # noqa: TRY004
+            size = len(value.encode())
+            if size > self.string_capacity:
+                raise ValueError(
+                    f"{label}: a string of {size} bytes of UTF-8 is longer than "
+                    f"string_capacity {self.string_capacity}"
+                )
 
     def unpack(self, items: Sequence[Any]) -> tuple[str, dict[str, object]]:
         """Return the event or event page that the items of one document carry."""

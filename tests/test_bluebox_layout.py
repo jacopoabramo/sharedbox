@@ -164,17 +164,38 @@ def test_wrong_shape_event_is_refused() -> None:
         layout.pack("event", event_of(descriptor, frame=np.zeros(4, np.uint16)))
 
 
-def test_long_string_is_refused() -> None:
-    """Refuse a string longer than string_capacity in UTF-8, naming its key."""
+def test_page_of_strings_at_the_limit_passes() -> None:
+    """Carry a full page of strings each exactly string_capacity bytes of UTF-8."""
     descriptor = descriptor_of(label={"dtype": "string", "shape": []})
-    layout = EventLayout.from_descriptor(descriptor, string_capacity=8, page_rows=4)
+    rows = 4
+    page = {
+        "uid": [str(uuid.uuid4()) for _ in range(rows)],
+        "time": [1000.0 + row for row in range(rows)],
+        "seq_num": list(range(1, rows + 1)),
+        "data": {"label": ["é" * 20] * rows},
+        "timestamps": {"label": [2000.0] * rows},
+        "filled": {},
+        "descriptor": descriptor["uid"],
+    }
+    layout = EventLayout.from_descriptor(descriptor, string_capacity=40, page_rows=rows)
 
-    with pytest.raises(ValueError, match="'label'"):
-        layout.pack("event", event_of(descriptor, label="é" * 5))
+    items = layout.pack("event_page", page)
+
+    assert len(items) == 1
+    assert_documents_equal([("event_page", page)], [layout.unpack(items)])
+
+
+def test_long_string_is_refused() -> None:
+    """Refuse a string one byte longer than string_capacity in UTF-8, naming its key."""
+    descriptor = descriptor_of(label={"dtype": "string", "shape": []})
+    layout = EventLayout.from_descriptor(descriptor, string_capacity=40, page_rows=4)
+
+    with pytest.raises(ValueError, match="'label'.* longer than string_capacity 40"):
+        layout.pack("event", event_of(descriptor, label="é" * 20 + "a"))
 
 
 def test_item_size_is_exact() -> None:
-    """Size the array field to page_rows frames and no bytes field past its rows."""
+    """Size the array field to page_rows frames and the bytes fields to their rows."""
     descriptor = descriptor_of(
         frame={"dtype": "array", "dtype_numpy": "<u2", "shape": [512, 512]}
     )
@@ -194,7 +215,7 @@ def test_item_size_is_exact() -> None:
 
     assert np.prod(max_shape.dims) == 2 * 512 * 512
     assert capacities
-    assert max(capacities) <= 2 * 64
+    assert max(capacities) <= 9 + 2 * (9 + 64)
 
 
 def test_item_type_makes_a_stream(unique_name: str) -> None:
