@@ -1,6 +1,7 @@
 import enum
 
 import numpy as np
+import pydantic
 import pytest
 
 from sharedbox.bluebox._codec import decode_document, encode_document, split_parts
@@ -54,6 +55,29 @@ def test_enum_member_becomes_its_value() -> None:
 
     assert doc["kind"] == "text"
     assert type(doc["kind"]) is str
+
+
+class Table(pydantic.BaseModel):
+    model_config = pydantic.ConfigDict(arbitrary_types_allowed=True)
+
+    counts: np.ndarray
+    labels: list[str]
+    kind: Kind
+
+
+def test_model_becomes_a_dict_of_its_fields() -> None:
+    """Write a pydantic model as a dict of its fields, arrays and enum members as elsewhere."""
+    table = Table(counts=np.array([1, 2], dtype=np.int32), labels=["a", "b"], kind=Kind.TEXT)
+
+    _, doc = decode_document(encode_document("descriptor", {"table": table}))
+
+    result = doc["table"]
+    assert isinstance(result, dict)
+    assert result.keys() == {"counts", "labels", "kind"}
+    assert result["counts"].dtype == np.int32
+    np.testing.assert_array_equal(result["counts"], [1, 2])
+    assert result["labels"] == ["a", "b"]
+    assert result["kind"] == "text"
 
 
 def test_unknown_type_names_the_key() -> None:

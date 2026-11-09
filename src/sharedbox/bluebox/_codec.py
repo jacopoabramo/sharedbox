@@ -30,14 +30,15 @@ _OTHER_KINDS = "bcfiuUS"
 
 
 def encode_default(encoder: cbor2.CBOREncoder, value: object) -> None:
-    """Encode what `cbor2` does not: arrays, numpy scalars and enum members.
+    """Encode what `cbor2` does not: arrays, numpy scalars, enum members and pydantic models.
 
     An array or numpy scalar is written as a little-endian RFC 8746 typed
     array, inside a multi-dimensional array (tag 40) unless it has one
     dimension. Where RFC 8746 has no tag for the dtype (bool, complex, long
     double, fixed-width text) it is written under a private tag as its dtype,
     shape and bytes. A numpy `float64` is a `float` and is written as one. An
-    enum member is written as its value.
+    enum member is written as its value, and an object with a `model_dump`
+    method, such as a pydantic model, as the dict that method returns.
 
     Raises
     ------
@@ -68,6 +69,8 @@ def encode_default(encoder: cbor2.CBOREncoder, value: object) -> None:
             raise TypeError(f"cannot encode an array of dtype {array.dtype}")
     elif isinstance(value, enum.Enum):
         encoder.encode(value.value)
+    elif callable(model_dump := getattr(value, "model_dump", None)):
+        encoder.encode(model_dump())
     else:
         raise TypeError(f"cannot encode a {type(value).__name__}")
 
