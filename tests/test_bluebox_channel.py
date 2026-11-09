@@ -137,7 +137,7 @@ class Collector:
                     return
         except EndOfStream:
             self.ended_at = time.monotonic()
-        except Exception as error:  # noqa: BLE001
+        except Exception as error:
             self.error = error
             # A receiver left open would hold back a sender that waits for it.
             self.receiver.close()
@@ -283,47 +283,72 @@ def test_receiver_never_starts_mid_document(unique_name: str, held: str) -> None
 def test_stuck_receiver_is_released(unique_name: str) -> None:
     """Release a receiver that never reads, and let the run reach its stop."""
     documents = run_documents()
-    with DocumentSender.create(
-        unique_name, control_capacity=2, control_timeout=0.2
-    ) as sender:
-        with DocumentReceiver.attach(unique_name) as receiver:
-            send_all(sender, documents)
+    with (
+        DocumentSender.create(
+            unique_name, control_capacity=2, control_timeout=0.2
+        ) as sender,
+        DocumentReceiver.attach(unique_name) as receiver,
+    ):
+        send_all(sender, documents)
 
-            with pytest.raises(ReceiverReleasedError):
-                receiver.receive(timeout=5)
+        with pytest.raises(ReceiverReleasedError):
+            receiver.receive(timeout=5)
 
 
 def test_event_send_releases_a_slow_lossless_receiver(unique_name: str) -> None:
     """Release a lossless receiver that stops reading events, with on_full="release"."""
     documents = run_documents()
-    with DocumentSender.create(
-        unique_name, on_full="release", event_capacity=2, event_timeout=0.2
-    ) as sender:
-        with DocumentReceiver.attach(unique_name) as receiver:
-            send_all(sender, documents[:3])
-            for _ in range(3):
-                receiver.receive(timeout=5)
-            send_all(sender, documents[3:])
+    with (
+        DocumentSender.create(
+            unique_name, on_full="release", event_capacity=2, event_timeout=0.2
+        ) as sender,
+        DocumentReceiver.attach(unique_name) as receiver,
+    ):
+        send_all(sender, documents[:3])
+        for _ in range(3):
+            receiver.receive(timeout=5)
+        send_all(sender, documents[3:])
 
-            # The receiver delivers what it took before the release, then raises.
-            with pytest.raises(ReceiverReleasedError):
-                for _ in documents:
-                    receiver.receive(timeout=5)
+        # The receiver delivers what it took before the release, then raises.
+        with pytest.raises(ReceiverReleasedError):
+            for _ in documents:
+                receiver.receive(timeout=5)
 
 
 def test_event_send_times_out_on_a_slow_lossless_receiver(unique_name: str) -> None:
     """Raise TimeoutError from an event send a lossless receiver holds back, with on_full="wait"."""
     documents = run_documents()
-    with DocumentSender.create(
-        unique_name, on_full="wait", event_capacity=2, event_timeout=0.2
-    ) as sender:
-        with DocumentReceiver.attach(unique_name) as receiver:
-            send_all(sender, documents[:3])
-            for _ in range(3):
-                receiver.receive(timeout=5)
+    with (
+        DocumentSender.create(
+            unique_name, on_full="wait", event_capacity=2, event_timeout=0.2
+        ) as sender,
+        DocumentReceiver.attach(unique_name) as receiver,
+    ):
+        send_all(sender, documents[:3])
+        for _ in range(3):
+            receiver.receive(timeout=5)
 
-            with pytest.raises(TimeoutError):
-                send_all(sender, documents[3:13])
+        with pytest.raises(TimeoutError):
+            send_all(sender, documents[3:13])
+
+
+def test_lossy_receiver_does_not_hold_back_events(unique_name: str) -> None:
+    """Send a run at full speed past a lossy receiver that never reads, and lose nothing for a lossless one."""
+    documents = run_documents()
+    with (
+        DocumentSender.create(
+            unique_name, event_capacity=2, control_timeout=2
+        ) as sender,
+        DocumentReceiver.attach(unique_name, mode="lossy"),
+        DocumentReceiver.attach(unique_name) as receiver,
+    ):
+        collector = Collector(receiver)
+        began = time.monotonic()
+        send_all(sender, documents)
+        elapsed = time.monotonic() - began
+
+        assert_documents_equal(documents, collector.join())
+        assert elapsed < 1
 
 
 def test_closed_sender_ends_receivers(unique_name: str) -> None:

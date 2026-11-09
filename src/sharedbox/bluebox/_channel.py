@@ -329,20 +329,32 @@ class DocumentSender:
         events.sent += len(items)
 
     def _wait_for_readers(self, events: EventStream) -> None:
-        """Wait until each receiver has opened the event stream, at most `control_timeout`.
+        """Wait until each lossless receiver has opened the event stream, at most `control_timeout`.
 
         A receiver opens it only once it delivers the descriptor, so a
         lossless one would otherwise lose the events sent before that when
         the ring is overwritten or the stream closed at the stop.
         """
         deadline = time.monotonic() + self._control_timeout
-        while (
-            len(events.stream.statistics().readers)
-            < len(self._control.statistics().readers)
-            and time.monotonic() < deadline
-        ):
+        while self._lossless_readers_missing(events) and time.monotonic() < deadline:
             time.sleep(0.001)
         events.readers_checked = True
+
+    def _lossless_readers_missing(self, events: EventStream) -> bool:
+        """Return whether a lossless receiver has not opened the event stream yet.
+
+        Every receiver reads the control stream with a lossless reader, and a
+        lossy or latest one also holds a lossy reader there that it never
+        reads, so per process the lossless receivers are the lossless control
+        readers less the lossy ones.
+        """
+        missing: collections.Counter[int] = collections.Counter()
+        for reader in self._control.statistics().readers:
+            missing[reader.pid] += 1 if reader.mode == "lossless" else -1
+        for reader in events.stream.statistics().readers:
+            if reader.mode == "lossless":
+                missing[reader.pid] -= 1
+        return any(count > 0 for count in missing.values())
 
     def _send_with_state(self, item: ControlItem, state: dict[str, Any]) -> None:
         settings = (self._string_capacity, self._page_rows, item.seq, state)
@@ -406,6 +418,9 @@ class DocumentReceiver:
         self.name = name
         self.mode: Literal["lossless", "lossy", "latest"] = mode
         self._sources = [Source(control, control.reader("lossless", "newest"), None)]
+        # Never read: it tells the sender not to wait for this receiver's event
+        # readers. Closing the control stream closes it.
+        self._marker = None if mode == "lossless" else control.reader("lossy", "newest")
         self._prelude: collections.deque[tuple[str, dict[str, Any]]] = (
             collections.deque()
         )
