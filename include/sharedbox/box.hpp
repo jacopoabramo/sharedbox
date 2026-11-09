@@ -1193,6 +1193,8 @@ inline result<void> handle::write_held(const record_write &, std::span<const val
 inline void handle::end_record_write(const record_write &w, std::span<const std::uint16_t> changed) noexcept {
     detail::state &s = *s_;
     for (const std::uint16_t field : changed) {
+        if (field >= s.field_count)
+            continue;
         // Only the lock holder changes a count, so a plain store of the sum is enough.
         auto count = detail::atomic(s.counts[field]);
         count.store(count.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
