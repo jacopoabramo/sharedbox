@@ -146,6 +146,47 @@ class FieldWriter:
         """Count the write, release the lock and wake waiters; later calls do nothing."""
 
 @disjoint_base
+class RecordWriter:
+    """The write lock on the whole record, taken by [`Segment.begin_record_write`][sharedbox._native.Segment.begin_record_write].
+
+    While it is held, a read or write of the segment from the thread that
+    took it raises `RuntimeError` at once instead of waiting for the lock.
+    After [`end`][sharedbox._native.RecordWriter.end] or
+    [`abort`][sharedbox._native.RecordWriter.abort], every call but those
+    two and `ended` raises `RuntimeError`.
+    """
+
+    def get(self, field: int, types: Types | None = None) -> object:
+        """Return the field's value in the held record, with every value set so far."""
+
+    def get_dict(
+        self, names: tuple[str | None, ...], types: Types | None = None
+    ) -> dict[str, object]:
+        """Return every field's value in the held record under its name in `names`.
+
+        A field whose name is None is left out.
+        """
+
+    def set(
+        self, values: Sequence[tuple[int, object]], types: Types | None = None
+    ) -> None:
+        """Convert every value, then store them all in the held record.
+
+        Nothing is stored if any value is refused. Other processes see the
+        values once [`end`][sharedbox._native.RecordWriter.end] runs.
+        """
+
+    def end(self) -> None:
+        """Count one write of each field set, release the lock and wake waiters; later calls do nothing."""
+
+    def abort(self) -> None:
+        """Put back what each field set held before, release the lock with no write counted; later calls do nothing."""
+
+    @property
+    def ended(self) -> bool:
+        """Whether [`end`][sharedbox._native.RecordWriter.end] or [`abort`][sharedbox._native.RecordWriter.abort] ran."""
+
+@disjoint_base
 class Segment:
     """A named shared-memory segment holding one fixed-layout record."""
 
@@ -243,6 +284,17 @@ class Segment:
             If the field is not an array, or `shape` is given for a field with a fixed shape.
         ValueError
             If `shape` does not fit the field's maximum, or the stored shape is beyond it.
+        """
+
+    def begin_record_write(self) -> RecordWriter:
+        """Take the write lock on the whole record until the returned writer ends or aborts.
+
+        Raises
+        ------
+        RuntimeError
+            If this thread already holds a record write of this segment.
+        LockTimeoutError
+            If another writer holds the lock longer than the lock timeout.
         """
 
     def read_into(self, field: int, out: object, types: Types | None = None) -> None:

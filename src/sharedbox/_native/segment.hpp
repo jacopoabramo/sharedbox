@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <span>
 #include <stdexcept>
@@ -109,6 +110,46 @@ private:
     std::atomic<bool> ended_{false};
 };
 
+class Segment;
+
+/// The write lock on the whole record, taken by Segment::begin_record_write on the segment's second handle as
+/// FieldWriter's is, and kept across several set() calls. While it is held, the Segment's reads and writes in
+/// the thread that took it throw std::runtime_error instead of waiting for it. end() counts one write of each
+/// field set; abort() puts back the bytes each field held before its first set. After either, a second call of
+/// either does nothing and every other call throws std::runtime_error; the destructor aborts if neither ran.
+class RecordWriter {
+public:
+    RecordWriter(const Segment &segment, std::shared_ptr<handle> box, record_write write);
+    ~RecordWriter() { abort(); }
+    RecordWriter(const RecordWriter &) = delete;
+    RecordWriter &operator=(const RecordWriter &) = delete;
+
+    /// The Segment the write was taken from, which must outlive this object.
+    const Segment &segment() const { return segment_; }
+    /// Throws std::runtime_error once end() or abort() ran.
+    void check_live() const;
+    /// The record's first byte, for payload(); the record holds every value set so far.
+    const std::byte *record() const;
+    /// Stores values, every one checked before any is stored, and keeps the bytes of each field not set before.
+    void set(std::span<const value> values);
+    void end() noexcept;
+    void abort() noexcept;
+    bool ended() const noexcept { return ended_; }
+
+private:
+    void finish(bool count) noexcept;
+
+    const Segment &segment_;
+    std::shared_ptr<handle> box_;
+    record_write write_;
+    // set(), end() and abort() can race on the free-threaded build.
+    std::mutex lock_;
+    std::atomic<bool> ended_{false};
+    // The fields set so far, in the order of their first set, and the bytes each held before it, concatenated.
+    std::vector<std::uint16_t> changed_;
+    std::vector<std::byte> saved_;
+};
+
 /// A named shared-memory segment holding one fixed-layout record.
 class Segment {
 public:
@@ -138,6 +179,12 @@ public:
     /// Takes the write lock on the segment's second handle, made on the first call, and returns the array
     /// field's bytes to fill in place; the lock wait releases the GIL as other writes do.
     std::unique_ptr<FieldWriter> begin_write(std::uint32_t field) const;
+    /// Takes the write lock on the whole record, on the handle begin_write uses, until the RecordWriter ends;
+    /// the Segment must outlive it.
+    std::unique_ptr<RecordWriter> begin_record_write() const;
+    /// Throws std::runtime_error when this thread holds a RecordWriter of this segment, whose lock any
+    /// read or write here would wait for.
+    void check_not_held() const;
     /// Bytes of the record, the size of the buffer read_record fills.
     std::size_t record_size() const;
     /// Copies the whole record, every field from one moment, into out, which holds record_size() bytes;
@@ -230,6 +277,7 @@ public:
     static void unlink(const std::string &name);
 
 private:
+    friend class RecordWriter;
     struct Impl;
     explicit Segment(std::unique_ptr<Impl> impl);
     std::unique_ptr<Impl> impl_;

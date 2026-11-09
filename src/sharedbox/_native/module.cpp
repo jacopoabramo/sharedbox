@@ -168,6 +168,8 @@ private:
 // it was decoded at, else a new decode, which replaces it. Decoding runs Python code (a record's
 // __post_init__ may read this field), so no slot lock is held across it.
 nb::object get_reusable(const Segment &s, ValueCache &cache, std::uint32_t index, const sharedbox::Types *types) {
+    // version() is not checked, so without this a cached value would hide the held record write.
+    s.check_not_held();
     CachedValue &slot = cache.slot(index);
     const std::uint64_t now = s.version(index);
     {
@@ -1005,6 +1007,49 @@ NB_MODULE(_native, m) {
 
     nb::class_<sharedbox::FieldWriter>(m, "FieldWriter").def("end", &sharedbox::FieldWriter::end);
 
+    nb::class_<sharedbox::RecordWriter>(m, "RecordWriter")
+        .def(
+            "get",
+            [](const sharedbox::RecordWriter &w, std::uint32_t index, nb::handle types) {
+                const Segment &s = w.segment();
+                sharedbox::check_index(index, s.field_count());
+                return decode_payload(types_of(types), s.fields()[index], index, w.record());
+            },
+            "field"_a, "types"_a = nb::none())
+        .def(
+            "get_dict",
+            [](const sharedbox::RecordWriter &w, nb::tuple names, nb::handle types) -> nb::dict {
+                const Segment &s = w.segment();
+                if (names.size() != s.field_count())
+                    throw std::invalid_argument("got " + std::to_string(names.size()) + " field names for " +
+                                                std::to_string(s.field_count()) + " fields");
+                const sharedbox::Types *t = types_of(types);
+                const std::byte *record = w.record();
+                nb::dict out;
+                for (std::uint32_t i = 0; i < s.field_count(); ++i)
+                    if (!names[i].is_none())
+                        out[names[i]] = decode_payload(t, s.fields()[i], i, record);
+                return out;
+            },
+            "names"_a, "types"_a = nb::none())
+        .def(
+            "set",
+            [](sharedbox::RecordWriter &w, const Values &values, nb::handle types) {
+                w.check_live();
+                Scratch<sharedbox::Pending, 8> pending(values.size());
+                for (std::size_t i = 0; i < values.size(); ++i)
+                    pending[i] = {values[i].first, values[i].second.ptr()};
+                Scratch<sharedbox::EncodeBuffer, 8> buffers(values.size());
+                Scratch<sharedbox::value, 8> encoded(values.size());
+                sharedbox::encode_all(w.segment(), types_of(types), pending.span(), buffers.span(),
+                                      encoded.span());
+                w.set(encoded.span());
+            },
+            "values"_a, "types"_a = nb::none())
+        .def("end", &sharedbox::RecordWriter::end)
+        .def("abort", &sharedbox::RecordWriter::abort)
+        .def_prop_ro("ended", &sharedbox::RecordWriter::ended);
+
     nb::class_<Segment>(m, "Segment")
         .def_static(
             "create",
@@ -1087,6 +1132,7 @@ NB_MODULE(_native, m) {
                 return nb::make_tuple(nb::cast(std::move(writer)), view);
             },
             "field"_a, "types"_a = nb::none(), "shape"_a = nb::none())
+        .def("begin_record_write", &Segment::begin_record_write, nb::keep_alive<0, 1>())
         .def(
             "get_versioned",
             [](const Segment &s, std::uint32_t index, nb::handle types) {
