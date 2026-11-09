@@ -49,7 +49,7 @@ TEST_CASE("end_record_write counts each changed field once") {
     static_cast<void>(unlink(name));
 }
 
-TEST_CASE("abort_record_write leaves counts and generation") {
+TEST_CASE("abort_record_write leaves counts and moves the generation by one") {
     const std::string name = unique("record-write-abort");
     auto h = handle::create(name, fields, 16, 1, 1, {});
     REQUIRE(h.has_value());
@@ -70,7 +70,7 @@ TEST_CASE("abort_record_write leaves counts and generation") {
     std::memcpy(slot.data(), saved.data(), saved.size());
     h->abort_record_write(*w);
     CHECK((h->version(0) == 1 && h->version(1) == 0));
-    CHECK((h->generation() == generation && seq_of(*h) == seq));
+    CHECK((h->generation() == generation + 1 && seq_of(*h) == seq + 2));
     CHECK(int_of(*h, 0) == old_number);
     static_cast<void>(unlink(name));
 }

@@ -978,7 +978,9 @@ Every shared word is a plain integer in the mapping, accessed through
 - Record write (`begin_record_write`): the write's lock, held across any
   number of stores; each field it changed has its count incremented once,
   then unlock and wake. An aborted record write gives the lock back without
-  counting, so `seq` returns to `s` and the generation does not move.
+  counting and wakes nobody. `seq` still becomes `s + 2`, so the generation
+  moves by one and a reader that copied bytes during the write retries;
+  watchers compare write counts, so they report nothing.
 - Generation: there is no separate counter. Every write adds exactly 2 to
   `seq`, so the generation is `seq >> 1` (`generation()` returns it). A
   `force_unlock()` that stores `seq + 1` counts as one generation, since
@@ -1708,9 +1710,10 @@ The header also declares these names:
   for a value `write` refuses, storing nothing. `end_record_write` counts
   one write for each field in `changed`, which must hold distinct field
   indices below `field_count()`, then unlocks and wakes waiters.
-  `abort_record_write` unlocks without counting and wakes nobody, so the
-  generation does not move; a caller that wrote fields copies their saved
-  slots back first. Every record write ends with exactly one of the two.
+  `abort_record_write` unlocks without counting and wakes nobody. The
+  generation still moves by one, and watchers, which compare write counts,
+  report nothing. A caller that wrote fields copies their saved slots back
+  first. Every record write ends with exactly one of the two.
 - `request_send`, `request_take`, `request_answer`, `request_answer_of`,
   `serve_claim` and `serve_release` are the steps of the request protocol on
   an `attr` field with a request part (see The request protocol).

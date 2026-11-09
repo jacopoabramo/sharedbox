@@ -257,10 +257,11 @@ another process got there first. A block never has to retry, because nobody
 else can write while it runs.
 
 The block saves each field's bytes before it first writes it. If the block
-raises, it copies them back and releases the lock without counting a write,
-so the generation doesn't move and no watcher wakes; other processes never
-see the block. If it ends normally, it counts one write for each field it
-assigned and wakes watchers once.
+raises, it copies them back and releases the lock without counting a write.
+The generation still moves by one, so a process that read during the block
+reads again. Watchers compare write counts and report nothing, and other
+processes never see the block. If it ends normally, it counts one write for
+each field it assigned and wakes watchers once.
 
 The trade is the one `writing` makes: readers in every process wait while
 the block runs. A block that reads, decides and writes, such as

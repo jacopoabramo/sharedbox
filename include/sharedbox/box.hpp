@@ -333,7 +333,8 @@ public:
     [[nodiscard]] result<void> write_held(const record_write &w, std::span<const value> values);
     // Adds one to the write count of each changed field, releases the lock and wakes waiters.
     void end_record_write(const record_write &w, std::span<const std::uint16_t> changed) noexcept;
-    // Releases the lock with no write counted and seq as it was; the caller has restored every byte it changed.
+    // Releases the lock with no write counted and wakes nobody; the caller has restored every byte it changed.
+    // The generation still moves by one, so a reader that copied bytes during the block retries.
     void abort_record_write(const record_write &w) noexcept;
 
     // Claims a free waiter slot for this process, first freeing the slots of processes that have exited.
@@ -1200,7 +1201,7 @@ inline void handle::end_record_write(const record_write &w, std::span<const std:
     detail::wake_waiters(s);
 }
 
-inline void handle::abort_record_write(const record_write &w) noexcept { detail::unlock_unchanged(*s_, w.locked); }
+inline void handle::abort_record_write(const record_write &w) noexcept { unlock(w.locked); }
 
 SHAREDBOX_HOT result<void> handle::write(std::span<const value> values, seconds lock_timeout) {
     detail::state &s = *s_;
