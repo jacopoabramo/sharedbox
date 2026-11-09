@@ -67,7 +67,9 @@ class Table(pydantic.BaseModel):
 
 def test_model_becomes_a_dict_of_its_fields() -> None:
     """Write a pydantic model as a dict of its fields, arrays and enum members as elsewhere."""
-    table = Table(counts=np.array([1, 2], dtype=np.int32), labels=["a", "b"], kind=Kind.TEXT)
+    table = Table(
+        counts=np.array([1, 2], dtype=np.int32), labels=["a", "b"], kind=Kind.TEXT
+    )
 
     _, doc = decode_document(encode_document("descriptor", {"table": table}))
 

@@ -5,33 +5,18 @@ from typing import Any, get_args, get_type_hints
 
 import numpy as np
 import pytest
-from bluebox_compare import assert_documents_equal, load_documents
+from bluebox_compare import (
+    assert_documents_equal,
+    load_documents,
+    without_key,
+    without_ragged,
+)
 
 from sharedbox import Capacity, MaxShape, SharedStream
 from sharedbox.bluebox._layout import EventLayout
 
 DATA = Path(__file__).parent / "bluebox_data"
 Document = tuple[str, dict[str, Any]]
-
-
-def without_key(documents: list[Document], key: str) -> list[Document]:
-    """Return a copy of `documents` with `key` gone from descriptors and events."""
-    documents = copy.deepcopy(documents)
-    for _, doc in documents:
-        for part in ("data_keys", "data", "timestamps", "filled"):
-            if isinstance(doc.get(part), dict):
-                doc[part].pop(key, None)
-    return documents
-
-
-def without_ragged(documents: list[Document]) -> list[Document]:
-    """Return a copy of `documents` without the keys whose shape holds None."""
-    for name, doc in documents:
-        if name == "descriptor":
-            for key, data_key in doc["data_keys"].items():
-                if None in data_key["shape"]:
-                    return without_ragged(without_key(documents, key))
-    return documents
 
 
 def round_trip(documents: list[Document], **parameters: int) -> list[Document]:

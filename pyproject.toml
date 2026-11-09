@@ -94,6 +94,10 @@ files = ["src", "tests", "docs/tutorials", "docs/examples"]
 module = ["event_model", "pyperf", "plotly", "plotly.*", "torch"]
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+module = ["bluebox_devices", "blueboxproc", "test_bluebox_devices", "test_bluebox_pipeline"]
+disallow_untyped_calls = false
+
 [tool.tox]
 requires = ["tox>=4.64.1", "tox-uv-bare>=1.36"]
 env_list = ["py311", "py312", "py313", "py314", "py314t", "mypy", "lint", "docs"]

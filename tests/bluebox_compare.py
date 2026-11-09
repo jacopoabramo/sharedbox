@@ -1,5 +1,6 @@
 """Load bluesky document files and compare documents, arrays by their bytes."""
 
+import copy
 import json
 import math
 import re
@@ -12,6 +13,8 @@ import numpy as np
 
 _UUID = re.compile(r"\{\{\s*uuid\s*\}\}[\w-]*")
 _ROOT_PATH = re.compile(r"\{\{\s*root_path\s*\}\}")
+_IS_TIME = re.compile(r"\.timestamps\.|\.time(\[\d+\])?$")
+Document = tuple[str, dict[str, Any]]
 
 
 def load_documents(path: Path) -> list[tuple[str, dict[str, Any]]]:
@@ -40,7 +43,10 @@ def assert_documents_equal(
     Arrays are equal when their dtype, shape and bytes are. A list in
     `expected` equals an array in `actual` when it holds the same values in
     the same shape, but an array in `expected` equals only an array. A numpy
-    `float64` equals a `float` of the same value, and NaN equals NaN.
+    `float64` equals a `float` of the same value, NaN equals NaN, and a `str`
+    subclass such as an enum member equals a `str` of the same text, a
+    pydantic model equals the dict of its fields, and an `int` equals a
+    `float` of the same value in a `time` or `timestamps` entry.
     """
     assert len(actual) == len(expected), f"{len(actual)} documents, not {len(expected)}"
     for index, ((name, doc), (actual_name, actual_doc)) in enumerate(
@@ -48,6 +54,26 @@ def assert_documents_equal(
     ):
         assert actual_name == name, f"document {index}: {actual_name!r}, not {name!r}"
         _assert_equal(doc, actual_doc, f"document {index} ({name})")
+
+
+def without_key(documents: list[Document], key: str) -> list[Document]:
+    """Return a copy of `documents` with `key` gone from descriptors and events."""
+    documents = copy.deepcopy(documents)
+    for _, doc in documents:
+        for part in ("data_keys", "data", "timestamps", "filled"):
+            if isinstance(doc.get(part), dict):
+                doc[part].pop(key, None)
+    return documents
+
+
+def without_ragged(documents: list[Document]) -> list[Document]:
+    """Return a copy of `documents` without the keys whose shape holds None."""
+    for name, doc in documents:
+        if name == "descriptor":
+            for key, data_key in doc["data_keys"].items():
+                if None in data_key["shape"]:
+                    return without_ragged(without_key(documents, key))
+    return documents
 
 
 def _assert_equal(expected: object, actual: object, path: str) -> None:
@@ -85,6 +111,17 @@ def _assert_equal(expected: object, actual: object, path: str) -> None:
             assert actual == expected or (
                 math.isnan(actual) and math.isnan(expected)
             ), f"{path}: {actual!r}, not {expected!r}"
+        case _ if callable(model_dump := getattr(expected, "model_dump", None)):
+            _assert_equal(model_dump(), actual, path)
+        case int() if (
+            not isinstance(expected, bool)
+            and isinstance(actual, float)
+            and _IS_TIME.search(path)
+        ):
+            assert actual == expected, f"{path}: {actual!r}, not {expected!r}"
+        case str():
+            assert isinstance(actual, str), f"{path}: {actual!r} is not a string"
+            assert actual == expected, f"{path}: {actual!r}, not {expected!r}"
         case _:
             assert type(actual) is type(expected) and actual == expected, (
                 f"{path}: {actual!r}, not {expected!r}"
