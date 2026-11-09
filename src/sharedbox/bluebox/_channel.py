@@ -359,11 +359,17 @@ class DocumentSender:
         Every receiver reads the control stream with a lossless reader, and a
         lossy or latest one also holds a lossy reader there that it never
         reads, so per process the lossless receivers are the lossless control
-        readers less the lossy ones.
+        readers less the lossy ones. A lossless control reader more than a
+        full ring behind was released and is not waited for.
         """
         missing: collections.Counter[int] = collections.Counter()
+        capacity = self._control.capacity
         for reader in self._control.statistics().readers:
-            missing[reader.pid] += 1 if reader.mode == "lossless" else -1
+            if reader.mode != "lossless":
+                missing[reader.pid] -= 1
+            # Only a released reader falls more than a full ring behind.
+            elif reader.lag <= capacity:
+                missing[reader.pid] += 1
         for reader in events.stream.statistics().readers:
             if reader.mode == "lossless":
                 missing[reader.pid] -= 1

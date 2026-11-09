@@ -298,16 +298,21 @@ def test_late_lossless_receiver_is_released(unique_name: str) -> None:
 
 
 def test_stuck_receiver_is_released(unique_name: str) -> None:
-    """Release a receiver that never reads, and let the run reach its stop."""
+    """Release a receiver that never reads once, and let the run reach its stop without waiting for it again."""
     documents = run_documents()
     with (
         DocumentSender.create(
-            unique_name, control_capacity=2, control_timeout=0.2
+            unique_name, control_capacity=2, control_timeout=0.5
         ) as sender,
         DocumentReceiver.attach(unique_name) as receiver,
     ):
+        began = time.monotonic()
         send_all(sender, documents)
+        elapsed = time.monotonic() - began
 
+        # One control_timeout for the release; waiting for the released
+        # receiver at each of the two event streams would add two more.
+        assert elapsed < 1.0
         with pytest.raises(ReceiverReleasedError):
             receiver.receive(timeout=5)
 
