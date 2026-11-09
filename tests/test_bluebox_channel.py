@@ -190,9 +190,10 @@ def test_large_documents_pass_in_parts(unique_name: str) -> None:
         assert_documents_equal(documents, collector.join())
 
 
-def test_late_receiver_gets_start_first(unique_name: str) -> None:
+@pytest.mark.parametrize("note", [0, 600 * 1024], ids=["small", "large"])
+def test_late_receiver_gets_start_first(unique_name: str, note: int) -> None:
     """Give a receiver attached after five events the start and descriptors, then events from its attach point."""
-    documents = run_documents()
+    documents = run_documents(metadata={"note": "x" * note})
     with DocumentSender.create(unique_name) as sender:
         send_all(sender, documents[:8])
         with DocumentReceiver.attach(unique_name) as receiver:
@@ -205,9 +206,9 @@ def test_late_receiver_gets_start_first(unique_name: str) -> None:
 
 def test_state_too_large_refuses_late_join(unique_name: str) -> None:
     """Run to the stop with a start the state cannot hold, and refuse a receiver attaching mid-run."""
-    documents = run_documents(metadata={"note": "x" * (64 * 1024)})
+    documents = run_documents(metadata={"note": "x" * (1024 * 1024)})
     with (
-        DocumentSender.create(unique_name, state_capacity=4096) as sender,
+        DocumentSender.create(unique_name) as sender,
         DocumentReceiver.attach(unique_name) as receiver,
     ):
         collector = Collector(receiver)

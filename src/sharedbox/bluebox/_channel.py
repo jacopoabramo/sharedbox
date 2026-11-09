@@ -9,10 +9,12 @@ from collections.abc import Iterator, Mapping
 from concurrent.futures import Future
 from typing import Annotated, Any, Final, Literal, Self
 
+import cbor2
+
+from .._box import SharedBox
 from .._native import (
     EndOfStream,
     KindMismatchError,
-    MetadataFullError,
     ReaderReleased,
     SchemaMismatchError,
     SegmentNotFoundError,
@@ -25,6 +27,8 @@ from ._codec import decode_document, encode_document, split_parts
 from ._layout import EventLayout
 
 CONTROL_ITEM_SIZE: Final = 16 * 1024
+# The largest bytes field a box can hold.
+STATE_SIZE: Final = 1024 * 1024
 # How long a lossy or latest receiver waits for an item missing from the order.
 GAP_WAIT: Final = 0.01
 
@@ -37,6 +41,23 @@ class ControlItem:
     part: int
     parts: int
     data: Annotated[bytes, Capacity(CONTROL_ITEM_SIZE)]
+
+
+class ChannelState(SharedBox):
+    """The settings of a channel and the run under way on it, for receivers that attach mid-run.
+
+    `seq` is the number of the document that wrote the state, and
+    `event_streams` and `state` are CBOR: the names of the run's event
+    streams, and the run's start, descriptors and stream names. A state
+    larger than a field holds is left out, and `too_large` set.
+    """
+
+    seq: int
+    string_capacity: int
+    page_rows: int
+    too_large: bool
+    event_streams: Annotated[bytes, Capacity(STATE_SIZE)]
+    state: Annotated[bytes, Capacity(STATE_SIZE)]
 
 
 class ReceiverReleasedError(RuntimeError):
@@ -83,45 +104,21 @@ class Source:
 
 
 def remove_channel(name: str) -> None:
-    """Remove the names of the control stream of channel `name` and the event streams its state lists."""
-    control_name = f"{name}:control"
+    """Remove the names of channel `name`: its state, its control stream and the event streams the state lists."""
     try:
-        old = SharedStream.attach(ControlItem, control_name)
+        old = ChannelState.attach(f"{name}:state")
     except (SegmentNotFoundError, SchemaMismatchError, KindMismatchError):
-        names: tuple[str, ...] = ()
+        names: list[str] = []
     else:
         try:
-            names = tuple((old.metadata or {}).get("event_streams", ()))
+            names = cbor2.loads(old.event_streams)
         finally:
             old.close()
-    for each in (*names, control_name):
+    for each in [*names, f"{name}:control"]:
         with contextlib.suppress(SegmentNotFoundError):
             SharedStream.unlink(each)
-
-
-def channel_metadata(
-    string_capacity: int,
-    page_rows: int,
-    seq: int,
-    state: Mapping[str, Any],
-    too_large: bool = False,
-) -> dict[str, Any]:
-    """Return the control stream's metadata: the channel's settings and the run's state.
-
-    `seq` is the number of the document sent with it. With `too_large`, the
-    state is left out and `too_large` stands in its place.
-    """
-    metadata: dict[str, Any] = {
-        "string_capacity": string_capacity,
-        "page_rows": page_rows,
-        "seq": seq,
-        "event_streams": list(state.get("event_streams", ())),
-    }
-    if too_large:
-        metadata["too_large"] = True
-    else:
-        metadata["state"] = encode_document("state", state)
-    return metadata
+    with contextlib.suppress(SegmentNotFoundError):
+        ChannelState.unlink(f"{name}:state")
 
 
 class DocumentSender:
@@ -138,6 +135,7 @@ class DocumentSender:
         self,
         name: str,
         control: SharedStream[ControlItem, Any],
+        box: ChannelState,
         *,
         event_capacity: int,
         max_readers: int,
@@ -149,6 +147,7 @@ class DocumentSender:
     ) -> None:
         self.name = name
         self._control = control
+        self._box = box
         self._control_sender = control.sender(on_full="release")
         self._event_capacity = event_capacity
         self._max_readers = max_readers
@@ -172,14 +171,15 @@ class DocumentSender:
         control_capacity: int = 64,
         string_capacity: int = 256,
         page_rows: int = 16,
-        state_capacity: int = 1024 * 1024,
         control_timeout: float = 5.0,
         event_timeout: float | None = None,
         on_full: Literal["wait", "release"] = "wait",
     ) -> Self:
         """Create the channel `name`.
 
-        A channel whose creator has exited is removed first.
+        A channel whose creator has exited is removed first. The run's start
+        and descriptors are kept for receivers that attach mid-run while
+        their CBOR takes at most 1 MiB; a larger run refuses such receivers.
 
         Parameters
         ----------
@@ -193,9 +193,6 @@ class DocumentSender:
             Most bytes of UTF-8 in a string of an event.
         page_rows
             Most rows of an event page one item of an event stream holds.
-        state_capacity
-            Bytes of the control stream's metadata, which holds the run's
-            start and descriptors for receivers that attach mid-run.
         control_timeout
             Seconds a control document waits for a receiver that stopped
             reading before the sender releases it.
@@ -211,20 +208,36 @@ class DocumentSender:
         SegmentExistsError
             If the creator of a channel of that name still runs.
         """
-        if segment_status(f"{name}:control") is SegmentStatus.CREATOR_EXITED:
+        if any(
+            segment_status(f"{name}:{part}") is SegmentStatus.CREATOR_EXITED
+            for part in ("state", "control")
+        ):
             remove_channel(name)
-        control = SharedStream.create(
-            ControlItem,
-            f"{name}:control",
-            capacity=control_capacity,
-            max_readers=max_readers,
-            metadata=channel_metadata(string_capacity, page_rows, 0, {}),
-            metadata_capacity=state_capacity,
+        box = ChannelState.create(
+            f"{name}:state",
+            seq=0,
+            string_capacity=string_capacity,
+            page_rows=page_rows,
+            too_large=False,
+            event_streams=cbor2.dumps([]),
+            state=encode_document("state", {}),
         )
+        try:
+            control = SharedStream.create(
+                ControlItem,
+                f"{name}:control",
+                capacity=control_capacity,
+                max_readers=max_readers,
+            )
+        except BaseException:
+            box.close()
+            ChannelState.unlink(f"{name}:state")
+            raise
         try:
             return cls(
                 name,
                 control,
+                box,
                 event_capacity=event_capacity,
                 max_readers=max_readers,
                 string_capacity=string_capacity,
@@ -235,6 +248,7 @@ class DocumentSender:
             )
         except BaseException:
             control.close()
+            box.close()
             raise
 
     def __call__(self, name: str, doc: Mapping[str, Any]) -> None:
@@ -298,12 +312,9 @@ class DocumentSender:
             ControlItem(self._seq, index, len(parts), part)
             for index, part in enumerate(parts)
         ]
-        if state is None:
-            self._control_sender.send(items[0], self._control_timeout)
-        else:
-            self._send_with_state(items[0], state)
-            self._state = state
-        for item in items[1:]:
+        if state is not None:
+            self._write_state(state)
+        for item in items:
             self._control_sender.send(item, self._control_timeout)
         if name == "stop":
             self._close_events()
@@ -356,25 +367,17 @@ class DocumentSender:
                 missing[reader.pid] -= 1
         return any(count > 0 for count in missing.values())
 
-    def _send_with_state(self, item: ControlItem, state: dict[str, Any]) -> None:
-        settings = (self._string_capacity, self._page_rows, item.seq, state)
-        try:
-            self._control_sender.send(
-                item, self._control_timeout, metadata=channel_metadata(*settings)
-            )
-            return
-        except (ValueError, MetadataFullError):
-            pass
-        # shortcut: a metadata area full of versions that items in the ring still use
-        # refuses even the small document; the item then goes without a new state.
-        with contextlib.suppress(MetadataFullError):
-            self._control_sender.send(
-                item,
-                self._control_timeout,
-                metadata=channel_metadata(*settings, too_large=True),
-            )
-            return
-        self._control_sender.send(item, self._control_timeout)
+    def _write_state(self, state: dict[str, Any]) -> None:
+        """Write the run's state, before the document that changes it is sent."""
+        data = encode_document("state", state)
+        too_large = len(data) > STATE_SIZE
+        self._box.update(
+            seq=self._seq,
+            too_large=too_large,
+            event_streams=cbor2.dumps(list(state.get("event_streams", ()))),
+            state=b"" if too_large else data,
+        )
+        self._state = state
 
     def _close_events(self) -> None:
         for events in self._events.values():
@@ -390,8 +393,13 @@ class DocumentSender:
         self._closed = True
         self._close_events()
         self._control.close()
-        with contextlib.suppress(SegmentNotFoundError):
-            SharedStream.unlink(self._control.name)
+        self._box.close()
+        for unlink, each in (
+            (SharedStream.unlink, self._control.name),
+            (ChannelState.unlink, f"{self.name}:state"),
+        ):
+            with contextlib.suppress(SegmentNotFoundError):
+                unlink(each)
 
     def __enter__(self) -> Self:
         return self
@@ -425,20 +433,25 @@ class DocumentReceiver:
             collections.deque()
         )
         self._closed = False
-        metadata = control.metadata or {}
-        self._string_capacity: int = metadata["string_capacity"]
-        self._page_rows: int = metadata["page_rows"]
-        self._last: int = metadata["seq"]
-        self._metadata = metadata
+        self._string_capacity = 0
+        self._page_rows = 0
+        self._last = 0
 
-    def _join(self) -> None:
-        """Queue the run's start and descriptors from the state, and open their event streams."""
-        if self._metadata.get("too_large"):
+    def _join(self, box: Mapping[str, Any]) -> None:
+        """Take the settings from the channel's state box, queue the run's start and descriptors, and open their event streams.
+
+        Control items up to the box's `seq` are dropped, because the state
+        already holds what they carry.
+        """
+        self._string_capacity = box["string_capacity"]
+        self._page_rows = box["page_rows"]
+        self._last = box["seq"]
+        if box["too_large"]:
             raise LateJoinError(
                 f"channel {self.name!r}: the run under way has a state larger than "
                 "the channel stores; attach again after its stop"
             )
-        state: dict[str, Any] = decode_document(self._metadata["state"])[1]
+        state: dict[str, Any] = decode_document(box["state"])[1]
         if state.get("start") is None:
             return
         self._prelude.append(("start", state["start"]))
@@ -470,7 +483,11 @@ class DocumentReceiver:
             control.close()
             raise
         try:
-            receiver._join()
+            # The control reader opened first, so the state covers every item
+            # before the reader's start.
+            with ChannelState.attach(f"{name}:state") as box:
+                values = box.snapshot()
+            receiver._join(values)
         except BaseException:
             receiver.close()
             raise
