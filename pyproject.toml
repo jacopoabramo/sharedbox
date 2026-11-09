@@ -39,6 +39,9 @@ benchmarks = [
     "pyperf>=2.10.0",
     "typer>=0.27.2",
 ]
+bluebox = [
+    "numpy>=2.4.6",
+]
 
 [tool.scikit-build]
 sdist.include = ["src/sharedbox/_version.py"]
@@ -63,7 +66,12 @@ addopts = ["-m", "not stress"]
 [tool.cibuildwheel]
 build = ["cp311-*", "cp312-*", "cp314t-*"]
 skip = ["*-win32"]
+test-groups = ["bluebox"]
 build-verbosity = 1
+
+[[tool.cibuildwheel.overrides]]
+select = "*-cp314t-*"
+test-groups = []
 
 [tool.ruff]
 line-length = 88
@@ -97,7 +105,7 @@ env_list = ["py311", "py312", "py313", "py314", "py314t", "mypy", "lint", "docs"
 
 [tool.tox.env_run_base]
 runner = "uv-venv-lock-runner"
-dependency_groups = ["dev"]
+dependency_groups = ["dev", "bluebox"]
 commands = [["pytest", "-q", { replace = "posargs", extend = true }]]
 
 [tool.tox.env.py314t]
@@ -140,6 +148,13 @@ benchmarks = [
     "plotly>=7.1.0",
     "pyperf>=2.10.0",
     "typer>=0.27.2",
+]
+bluebox = [
+    "bluesky>=1.16.0",
+    "event-model>=1.24.0",
+    "h5py>=3.16.0",
+    "numpy>=2.4.6",
+    "ophyd-async>=0.21.3",
 ]
 dev = [
     "attrs>=26.1.0",

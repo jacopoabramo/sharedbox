@@ -3,6 +3,7 @@ import gc
 import json
 import os
 import sys
+import sysconfig
 import uuid
 from collections.abc import Callable, Iterator
 from importlib.util import find_spec
@@ -21,6 +22,12 @@ TEST_RUN = os.environ.setdefault("SHAREDBOX_TEST_RUN", uuid.uuid4().hex[:8])
 settings.register_profile("ci", max_examples=50, deadline=None, derandomize=False)
 settings.register_profile("thorough", max_examples=2000, deadline=None)
 settings.load_profile("ci")
+
+if sysconfig.get_config_var("Py_GIL_DISABLED") or any(
+    find_spec(name) is None
+    for name in ("ophyd_async", "bluesky", "event_model", "h5py")
+):
+    collect_ignore_glob = ["test_bluebox*.py", "bluebox*.py"]
 
 
 def pytest_ignore_collect(collection_path: Path, config: pytest.Config) -> bool | None:
