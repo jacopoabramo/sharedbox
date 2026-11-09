@@ -182,8 +182,9 @@ class EventLayout:
         ------
         ValueError
             If a value has another shape or dtype than its key, does not
-            convert, is a string longer than `string_capacity` bytes of
-            UTF-8, or its CBOR does not fit in its field. The message names
+            convert (to an integer or bool key: exactly; a float key rounds
+            it), is a string longer than `string_capacity` bytes of UTF-8,
+            or its CBOR does not fit in its field. The message names
             the key. No item is returned then.
         """
         data: Mapping[str, Any]
@@ -292,13 +293,14 @@ class EventLayout:
             raise ValueError(f"{label}: {error}") from None
         if array.shape != (rows, *shape):
             raise ValueError(f"{label}: shape {array.shape}, not {(rows, *shape)}")
-        if not isinstance(column, np.ndarray | np.generic):
-            given = np.asarray(column)
-            floats = array.dtype.kind in "fc" and given.dtype.kind in "fc"
-            if not np.array_equal(array, given, equal_nan=floats):
-                raise ValueError(
-                    f"{label}: a value does not convert to {dtype} exactly"
-                )
+        # Devices report the values of a float32 key as Python floats, so a
+        # float key rounds; an integer or bool key would change the value.
+        if (
+            dtype.kind in "biu"
+            and not isinstance(column, np.ndarray | np.generic)
+            and not np.array_equal(array, np.asarray(column))
+        ):
+            raise ValueError(f"{label}: a value does not convert to {dtype} exactly")
         return array
 
     def _values(

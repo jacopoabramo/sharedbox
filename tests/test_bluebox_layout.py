@@ -187,6 +187,18 @@ def test_integral_float_fits_an_integer_key() -> None:
     assert type(data["count"]) is int
 
 
+def test_float_fits_a_narrower_float_key() -> None:
+    """Accept 0.1 for a float32 key and return the float32 value."""
+    descriptor = descriptor_of(
+        gain={"dtype": "number", "dtype_numpy": "<f4", "shape": []}
+    )
+    layout = EventLayout.from_descriptor(descriptor, string_capacity=64, page_rows=4)
+
+    _, doc = layout.unpack(layout.pack("event", event_of(descriptor, gain=0.1)))
+
+    assert doc["data"] == {"gain": float(np.float32(0.1))}
+
+
 def test_page_of_strings_at_the_limit_passes() -> None:
     """Carry a full page of strings each exactly string_capacity bytes of UTF-8."""
     descriptor = descriptor_of(label={"dtype": "string", "shape": []})
