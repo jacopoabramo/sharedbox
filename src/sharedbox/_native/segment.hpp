@@ -142,8 +142,8 @@ private:
     const Segment &segment_;
     std::shared_ptr<handle> box_;
     record_write write_;
-    // The thread_token of the thread that took the write.
-    const void *owner_;
+    // The thread_number() of the thread that took the write.
+    std::uint64_t owner_;
     // set(), end() and abort() can race on the free-threaded build.
     std::mutex lock_;
     std::atomic<bool> ended_{false};
