@@ -321,7 +321,9 @@ def test_item_type_makes_a_stream(unique_name: str) -> None:
 
 def test_many_keys_make_a_stream(unique_name: str) -> None:
     """Send an event of 500 keys through a stream of the item type and unpack it."""
-    keys = {f"signal{index}": {"dtype": "number", "shape": []} for index in range(500)}
+    keys: dict[str, dict[str, object]] = {
+        f"signal{index}": {"dtype": "number", "shape": []} for index in range(500)
+    }
     descriptor = descriptor_of(**keys)
     event = event_of(descriptor, **{key: index / 2 for index, key in enumerate(keys)})
     layout = EventLayout.from_descriptor(descriptor, string_capacity=64, page_rows=4)
