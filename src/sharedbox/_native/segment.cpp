@@ -623,8 +623,10 @@ void RecordWriter::finish(bool count) noexcept {
     std::lock_guard hold(lock_);
     if (ended_.exchange(true))
         return;
-    // Cleared while the lock is still held, so it never clears the mark of the next writer.
-    segment_.impl_->holder.store(nullptr, std::memory_order_relaxed);
+    // Cleared only while it is still this writer's: after a force_unlock another writer can hold the lock
+    // and the mark before this one ends.
+    const void *own = owner_;
+    segment_.impl_->holder.compare_exchange_strong(own, nullptr, std::memory_order_relaxed);
     if (count && !changed_.empty()) {
         box_->end_record_write(write_, changed_);
     } else {
