@@ -64,6 +64,8 @@ from ._refs import (
 )
 
 if TYPE_CHECKING:
+    from ._native import RecordWriter, Types
+
     if sys.version_info >= (3, 13):
         from types import CapsuleType
     else:
@@ -79,6 +81,7 @@ RESERVED = frozenset(
         "snapshot",
         "read_into",
         "writing",
+        "locked",
         "watch",
         "events",
         "force_unlock",
@@ -305,6 +308,100 @@ def unpickle_box(
             f"{cls.__qualname__} was pickled from a different box named {name!r}"
         )
     return box
+
+
+def held(view: Any) -> RecordWriter:
+    """Return the record write of a locked() object, refusing a use after the block or from another thread."""
+    writer: RecordWriter = view._held_writer
+    if writer.ended:
+        raise RuntimeError("the locked() block has ended")
+    if threading.get_ident() != view._held_thread:
+        raise RuntimeError("the locked() block belongs to another thread")
+    return writer
+
+
+def refused(name: str) -> Callable[..., NoReturn]:
+    def refuse(*args: object, **kwargs: object) -> NoReturn:
+        raise TypeError(f"{name} is not available on the object of a locked() block")
+
+    return refuse
+
+
+def locked_property(spec: FieldSpec, types: Types) -> property:
+    index = spec.index
+    if spec.attr is not None:
+        return property(
+            refused(f"{spec.label}, an Attr field,"),
+            refused(f"{spec.label}, an Attr field,"),
+        )
+    if spec.target is None:
+
+        def get(self: Any) -> Any:
+            return held(self).get(index, types)
+
+        def put(self: Any, value: object) -> None:
+            held(self).set([(index, value)], types)
+
+    else:
+
+        def get(self: Any) -> Any:
+            return box_ref(held(self).get(index, types))
+
+        def put(self: Any, value: object) -> None:
+            held(self).set([(index, stored(spec, value))], types)
+
+    return property(get, put)
+
+
+def locked_update(self: Any, *, metadata: object = None, **values: Any) -> None:
+    if metadata is not None:
+        refused("update(metadata=...)")()
+    held(self).set(self._update_pairs(values), type(self).__layout__.types)
+
+
+def locked_snapshot(self: Any, *, follow: bool = False) -> dict[str, Any]:
+    if follow:
+        refused("snapshot(follow=True)")()
+    layout = type(self).__layout__
+    values = held(self).get_dict(layout.snapshot_names, layout.types)
+    for spec in layout.refs:
+        values[spec.name] = box_ref(values[spec.name])
+    return values
+
+
+def locked_class(cls: type[SharedBox]) -> type[SharedBox]:
+    """Build the class of the object `cls.locked()` yields, and keep it on `cls`.
+
+    It subclasses `cls`, so inherited methods work, and is not registered:
+    the metaclass registers only a class with a layout of its own.
+    """
+    layout = cls.__layout__
+    namespace: dict[str, Any] = {
+        "__slots__": ("_held_writer", "_held_thread"),
+        "__module__": cls.__module__,
+        "__qualname__": cls.__qualname__,
+        "update": locked_update,
+        "snapshot": locked_snapshot,
+        "events": property(refused("events")),
+        **{
+            name: refused(name)
+            for name in (
+                "close",
+                "unlink",
+                "read_into",
+                "writing",
+                "locked",
+                "watch",
+                "force_unlock",
+            )
+        },
+        **{spec.name: locked_property(spec, layout.types) for spec in layout.fields},
+    }
+    view: type[SharedBox] = cast(Any, type(cls))(
+        cls.__name__, (cls,), namespace, _locked_view=True
+    )
+    cls.__sharedbox_locked__ = view
+    return view
 
 
 class SupportsSharedBox(Protocol):
@@ -554,7 +651,7 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
         When the class is defined, for an annotation of another type, no
         fields or more than 256, a field or `InitVar` named like a
         `SharedBox` member (`name`, `closed`, `close`, `unlink`, `update`,
-        `snapshot`, `read_into`, `writing`, `watch`, `events`,
+        `snapshot`, `read_into`, `writing`, `locked`, `watch`, `events`,
         `force_unlock`, `create`, `attach`, `metadata`, `metadata_version`,
         `metadata_version_of`), a field named `follow`,
         `unfollow` or `nested`, a default of the wrong type, a
@@ -629,6 +726,7 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
     __sharedbox_name__: ClassVar[str]
     __sharedbox_identity__: ClassVar[str]
     __events_class__: ClassVar[type[BoxEvents]]
+    __sharedbox_locked__: ClassVar[type[SharedBox]]
 
     def __init_subclass__(
         cls,
@@ -640,8 +738,11 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
         identity: str | None = None,
         metadata_capacity: int | None = None,
         metadata_versions: int | None = None,
+        _locked_view: bool = False,
         **kwargs: Any,
     ) -> None:
+        if _locked_view:
+            return
         super().__init_subclass__(**kwargs)
         if identity is not None and (not isinstance(identity, str) or not identity):
             raise TypeError(f"{cls.__qualname__}: identity must be a non-empty string")
@@ -1127,6 +1228,14 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
             If the box is closed.
         """
         # A native method replaces this on every class that does not define or inherit its own update.
+        self._segment.set(
+            self._update_pairs(values),
+            type(self).__layout__.types,
+            None if metadata is None else encode(metadata),
+        )
+
+    def _update_pairs(self, values: dict[str, Any]) -> list[tuple[int, Any]]:
+        """Return `values` as (field index, stored value) pairs, refusing unknown names and Attr fields."""
         layout = type(self).__layout__
         by_name = layout.by_name
         try:
@@ -1145,9 +1254,7 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
                 (i, v if specs[i].target is None else stored(specs[i], v))
                 for i, v in pairs
             ]
-        self._segment.set(
-            pairs, layout.types, None if metadata is None else encode(metadata)
-        )
+        return pairs
 
     def snapshot(self, *, follow: bool = False) -> dict[str, Any]:
         """Return every field's value, with this box read at one point in time.
@@ -1271,6 +1378,58 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
             yield view
         finally:
             writer.end()
+
+    @contextlib.contextmanager
+    def locked(self) -> Generator[Self, None, None]:
+        """Hold the box's write lock and yield an object whose fields are read and written under it.
+
+        Use it for a write computed from the box's values, such as
+        `b.count += 1`, which plain assignment can lose between processes
+        that read the old value at the same time. See
+        [Change a field from several processes](../../how-to/change-a-field-from-several-processes.md).
+
+        The object has the box's fields, and `update` and `snapshot`
+        without their `metadata` and `follow` options. A read gives the
+        value the block last wrote to the field, or the field's value when
+        it wrote none. Leaving the block counts one write for each field it
+        wrote and wakes watchers, which see only the last value of each
+        field. If the block raises, including `KeyboardInterrupt`, every
+        field goes back to what it held before the block, nothing is
+        counted, and no watcher sees a value; the exception propagates.
+
+        While the block runs, reads and writes of the box in every other
+        process wait for the lock, so keep it short. In the thread that
+        holds it, the box itself refuses every read and write with
+        `RuntimeError`, and the object refuses the box's other methods
+        (`close`, `watch`, `events`, `writing`, `locked` and the rest) with
+        `TypeError`; so does an attr field. The object works in the thread
+        that entered the block, until the block ends. Its `metadata`,
+        `metadata_version`, `name` and `closed` read the box as the box does.
+
+        Raises
+        ------
+        RuntimeError
+            If the thread already holds a `locked()` block of this box; from
+            the object, if the block has ended or another thread uses it.
+        LockTimeoutError
+            If another writer holds the lock longer than the lock timeout.
+        BoxClosedError
+            If the box is closed.
+        """
+        cls = type(self)
+        view_class = cls.__dict__.get("__sharedbox_locked__") or locked_class(cls)
+        writer = self._segment.begin_record_write()
+        try:
+            view = view_class.__new__(view_class)
+            view._segment = self._segment
+            view._documents = self._documents
+            view._held_writer = writer
+            view._held_thread = threading.get_ident()
+            yield cast(Self, view)
+        except BaseException:
+            writer.abort()
+            raise
+        writer.end()
 
     def _follow(self, values: dict[str, Any]) -> None:
         """Replace the references in `values`, read from this box, with nested snapshots, depth first."""
