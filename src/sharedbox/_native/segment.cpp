@@ -63,9 +63,8 @@ field_spec to_spec(const FieldDesc &f) { return {f.offset, f.capacity, static_ca
 
 std::span<const std::byte> bytes_of(std::string_view s) { return std::as_bytes(std::span(s.data(), s.size())); }
 
-// The Segment::Impl of every RecordWriter this thread took and has not ended; reads and writes of those
-// segments here would wait for the lock it holds.
-thread_local std::vector<const void *> held_records;
+// Its address names the thread that runs, for as long as it runs.
+thread_local const char thread_token = 0;
 
 WaitHook before_wait = []() -> void * { return nullptr; };
 ResumeHook after_wait = [](void *) {};
@@ -254,6 +253,9 @@ struct Segment::Impl {
     mutable std::shared_mutex lifetime;
     // The even seq hold_write_lock took the lock from, for release_held_lock.
     std::uint64_t held = 0;
+    // The thread_token of the thread whose RecordWriter holds the lock, null when none holds it. Reads and
+    // writes in that thread would wait for the lock it holds.
+    std::atomic<const void *> holder{nullptr};
     // The handle writing locks on, made once by writer_handle(); the arrays it hands out keep a copy.
     mutable std::mutex writer_lock;
     mutable std::shared_ptr<handle> writer;
@@ -296,7 +298,7 @@ struct Segment::Impl {
     }
 
     void check_not_held() const {
-        if (std::find(held_records.begin(), held_records.end(), this) != held_records.end())
+        if (holder.load(std::memory_order_relaxed) == &thread_token) [[unlikely]]
             throw std::runtime_error("box '" + name +
                                      "' is locked by this thread in a locked() block; use the block's object");
     }
@@ -568,13 +570,15 @@ std::unique_ptr<RecordWriter> Segment::begin_record_write() const {
 void Segment::check_not_held() const { impl_->check_not_held(); }
 
 RecordWriter::RecordWriter(const Segment &segment, std::shared_ptr<handle> box, record_write write)
-    : segment_(segment), box_(std::move(box)), write_(write) {
-    held_records.push_back(segment_.impl_.get());
+    : segment_(segment), box_(std::move(box)), write_(write), owner_(&thread_token) {
+    segment_.impl_->holder.store(owner_, std::memory_order_relaxed);
 }
 
 void RecordWriter::check_live() const {
     if (ended_)
         throw std::runtime_error("the locked() block has ended");
+    if (owner_ != &thread_token)
+        throw std::runtime_error("the locked() block belongs to another thread");
 }
 
 const std::byte *RecordWriter::record() const {
@@ -619,6 +623,8 @@ void RecordWriter::finish(bool count) noexcept {
     std::lock_guard hold(lock_);
     if (ended_.exchange(true))
         return;
+    // Cleared while the lock is still held, so it never clears the mark of the next writer.
+    segment_.impl_->holder.store(nullptr, std::memory_order_relaxed);
     if (count && !changed_.empty()) {
         box_->end_record_write(write_, changed_);
     } else {
@@ -630,10 +636,6 @@ void RecordWriter::finish(bool count) noexcept {
         }
         box_->abort_record_write(write_);
     }
-    // Ended on another thread than the one that took it, the entry stays in that thread's list.
-    if (const auto it = std::find(held_records.begin(), held_records.end(), segment_.impl_.get());
-        it != held_records.end())
-        held_records.erase(it);
 }
 
 std::size_t Segment::record_size() const { return impl_->record_size; }

@@ -126,7 +126,7 @@ public:
 
     /// The Segment the write was taken from, which must outlive this object.
     const Segment &segment() const { return segment_; }
-    /// Throws std::runtime_error once end() or abort() ran.
+    /// Throws std::runtime_error once end() or abort() ran, or in another thread than the one that took the write.
     void check_live() const;
     /// The record's first byte, for payload(); the record holds every value set so far.
     const std::byte *record() const;
@@ -142,6 +142,8 @@ private:
     const Segment &segment_;
     std::shared_ptr<handle> box_;
     record_write write_;
+    // The thread_token of the thread that took the write.
+    const void *owner_;
     // set(), end() and abort() can race on the free-threaded build.
     std::mutex lock_;
     std::atomic<bool> ended_{false};

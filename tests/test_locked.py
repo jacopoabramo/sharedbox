@@ -3,7 +3,7 @@ import multiprocessing as mp
 import queue
 import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Generator
 from datetime import UTC, datetime
 from typing import Annotated
 
@@ -296,6 +296,25 @@ def test_box_in_holding_thread_raises(unique_name: str) -> None:
         with pytest.raises(RuntimeError, match="use the block's object"), box.locked():
             pass
         assert time.monotonic() - start < 1.0
+
+
+def test_block_closed_on_other_thread_frees_box(unique_name: str) -> None:
+    """Use the box normally in the thread that entered a block another thread closed."""
+
+    def hold(box: Tally) -> Generator[None, None, None]:
+        with box.locked() as b:
+            b.count = 5
+            yield
+
+    with Tally.create(unique_name) as box:
+        holding = hold(box)
+        next(holding)
+        closer = threading.Thread(target=holding.close)
+        closer.start()
+        closer.join(10)
+        assert box.count == 0
+        box.count = 1
+        assert box.count == 1
 
 
 @pytest.mark.parametrize(
