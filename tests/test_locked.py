@@ -11,7 +11,6 @@ import pytest
 
 from sharedbox import (
     Attr,
-    BoxRef,
     Capacity,
     LockTimeoutError,
     SharedBox,
@@ -336,7 +335,10 @@ def test_refused_on_b(
     """Raise TypeError naming what the block's object does not offer."""
     with Dial.create(unique_name) as box:
         with box.locked() as b:
-            with pytest.raises(TypeError, match=named):
+            with pytest.raises(
+                TypeError,
+                match=rf"{named}.*use it on the box outside the block",
+            ):
                 use(b)
             b.count = 1
         assert box.count == 1
@@ -382,12 +384,12 @@ def test_reference_field_in_block(
         with holder.locked() as b:
             assert b.tally is None
             b.tally = tally
-            shown: object = b.tally
-            assert shown == BoxRef(
-                tally.name, Tally.__layout__.schema_hash, tally._segment.create_id
-            )
-        assert holder.tally is not None
-        assert holder.tally.name == tally.name
+            tally.state = "outside"
+            inside = b.tally
+            assert isinstance(inside, Tally)
+            assert inside.name == tally.name
+            assert inside.state == "outside"
+        assert holder.tally is inside
 
 
 def test_subclass_gets_its_own_view(

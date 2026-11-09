@@ -322,7 +322,10 @@ def held(view: Any) -> RecordWriter:
 
 def refused(name: str) -> Callable[..., NoReturn]:
     def refuse(*args: object, **kwargs: object) -> NoReturn:
-        raise TypeError(f"{name} is not available on the object of a locked() block")
+        raise TypeError(
+            f"{name} is not available on the object of a locked() block; "
+            "use it on the box outside the block"
+        )
 
     return refuse
 
@@ -345,7 +348,8 @@ def locked_property(spec: FieldSpec, types: Types) -> property:
     else:
 
         def get(self: Any) -> Any:
-            return box_ref(held(self).get(index, types))
+            value: Any = held(self).get(index, types)
+            return None if value is None else self._held_box._inner(spec, *value)
 
         def put(self: Any, value: object) -> None:
             held(self).set([(index, stored(spec, value))], types)
@@ -377,7 +381,7 @@ def locked_class(cls: type[SharedBox]) -> type[SharedBox]:
     """
     layout = cls.__layout__
     namespace: dict[str, Any] = {
-        "__slots__": ("_held_writer", "_held_thread"),
+        "__slots__": ("_held_box", "_held_thread", "_held_writer"),
         "__module__": cls.__module__,
         "__qualname__": cls.__qualname__,
         "update": locked_update,
@@ -1423,6 +1427,7 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
             view = view_class.__new__(view_class)
             view._segment = self._segment
             view._documents = self._documents
+            view._held_box = self
             view._held_writer = writer
             view._held_thread = threading.get_ident()
             yield cast(Self, view)
