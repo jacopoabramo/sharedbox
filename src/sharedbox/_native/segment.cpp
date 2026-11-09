@@ -63,6 +63,14 @@ field_spec to_spec(const FieldDesc &f) { return {f.offset, f.capacity, static_ca
 
 std::span<const std::byte> bytes_of(std::string_view s) { return std::as_bytes(std::span(s.data(), s.size())); }
 
+std::atomic<std::uint64_t> threads_numbered{0};
+
+// A number above 0 for the calling thread, which no other thread of the process is ever given.
+std::uint64_t thread_number() noexcept {
+    thread_local const std::uint64_t number = threads_numbered.fetch_add(1, std::memory_order_relaxed) + 1;
+    return number;
+}
+
 WaitHook before_wait = []() -> void * { return nullptr; };
 ResumeHook after_wait = [](void *) {};
 
@@ -250,6 +258,9 @@ struct Segment::Impl {
     mutable std::shared_mutex lifetime;
     // The even seq hold_write_lock took the lock from, for release_held_lock.
     std::uint64_t held = 0;
+    // The thread_number() of the thread whose RecordWriter holds the lock, 0 when none holds it. Reads and
+    // writes in that thread would wait for the lock it holds.
+    std::atomic<std::uint64_t> holder{0};
     // The handle writing locks on, made once by writer_handle(); the arrays it hands out keep a copy.
     mutable std::mutex writer_lock;
     mutable std::shared_ptr<handle> writer;
@@ -289,6 +300,13 @@ struct Segment::Impl {
             fail(got.error());
         if constexpr (!std::is_void_v<T>)
             return *std::move(got);
+    }
+
+    void check_not_held() const {
+        if (const std::uint64_t h = holder.load(std::memory_order_relaxed); h != 0 && h == thread_number())
+            [[unlikely]]
+            throw std::runtime_error("box '" + name +
+                                     "' is locked by this thread in a locked() block; use the block's object");
     }
 
     void check_open() const {
@@ -511,6 +529,7 @@ std::unique_ptr<Segment> Segment::attach(const std::string &name, const std::vec
 
 void Segment::read(std::uint32_t index, FieldRead &out) const {
     auto guard = impl_->enter();
+    impl_->check_not_held();
     out.field = &impl_->field(index);
     const auto f = static_cast<std::uint16_t>(index);
     if (detail::described(static_cast<std::uint32_t>(out.field->kind))) [[unlikely]]
@@ -524,6 +543,7 @@ void Segment::read(std::uint32_t index, FieldRead &out) const {
 
 void Segment::read_into(std::uint32_t index, std::span<std::byte> out) const {
     auto guard = impl_->enter();
+    impl_->check_not_held();
     const FieldDesc &field = impl_->field(index);
     if (out.size() != field.capacity)
         throw std::invalid_argument("box '" + impl_->name + "': field " + std::to_string(index) + " holds " +
@@ -537,6 +557,7 @@ void Segment::read_into(std::uint32_t index, std::span<std::byte> out) const {
 
 std::unique_ptr<FieldWriter> Segment::begin_write(std::uint32_t index) const {
     auto guard = impl_->enter();
+    impl_->check_not_held();
     impl_->field(index);
     std::shared_ptr<handle> box = impl_->writer_handle();
     const field_write write =
@@ -544,10 +565,92 @@ std::unique_ptr<FieldWriter> Segment::begin_write(std::uint32_t index) const {
     return std::make_unique<FieldWriter>(std::move(box), write);
 }
 
+std::unique_ptr<RecordWriter> Segment::begin_record_write() const {
+    auto guard = impl_->enter();
+    impl_->check_not_held();
+    std::shared_ptr<handle> box = impl_->writer_handle();
+    const record_write write = impl_->check(box->begin_record_write(seconds(impl_->lock_timeout)));
+    return std::make_unique<RecordWriter>(*this, std::move(box), write);
+}
+
+void Segment::check_not_held() const { impl_->check_not_held(); }
+
+RecordWriter::RecordWriter(const Segment &segment, std::shared_ptr<handle> box, record_write write)
+    : segment_(segment), box_(std::move(box)), write_(write), owner_(thread_number()) {
+    segment_.impl_->holder.store(owner_, std::memory_order_relaxed);
+}
+
+void RecordWriter::check_live() const {
+    if (ended_)
+        throw std::runtime_error("the locked() block has ended");
+    if (owner_ != thread_number())
+        throw std::runtime_error("the locked() block belongs to another thread");
+}
+
+const std::byte *RecordWriter::record() const {
+    check_live();
+    return box_->held_bytes(write_, 0).data() - segment_.impl_->fields[0].offset;
+}
+
+void RecordWriter::set(std::span<const value> values) {
+    std::lock_guard hold(lock_);
+    check_live();
+    const std::size_t fields = changed_.size();
+    const std::size_t bytes = saved_.size();
+    try {
+        for (const value &v : values) {
+            if (std::find(changed_.begin(), changed_.end(), v.field) != changed_.end())
+                continue;
+            const std::span<const std::byte> held = box_->held_bytes(write_, v.field);
+            saved_.insert(saved_.end(), held.begin(), held.end());
+            changed_.push_back(v.field);
+        }
+        const result<void> written = box_->write_held(write_, values);
+        const Segment::Impl &impl = *segment_.impl_;
+        // write_held checks the values too; this finds which one, for the message.
+        if (!written && written.error().code == status::range) {
+            check_values(impl.fields, values);
+            check_max_arrays(impl.fields, values);
+        }
+        impl.check(result<void>(written));
+    } catch (...) {
+        // Nothing was stored, so a field first set here keeps no saved bytes and counts no write.
+        changed_.resize(fields);
+        saved_.resize(bytes);
+        throw;
+    }
+}
+
+void RecordWriter::end() noexcept { finish(true); }
+
+void RecordWriter::abort() noexcept { finish(false); }
+
+void RecordWriter::finish(bool count) noexcept {
+    std::lock_guard hold(lock_);
+    if (ended_.exchange(true))
+        return;
+    // Cleared only while it is still this writer's: after a force_unlock another writer can hold the lock
+    // and the mark before this one ends.
+    std::uint64_t own = owner_;
+    segment_.impl_->holder.compare_exchange_strong(own, 0, std::memory_order_relaxed);
+    if (count && !changed_.empty()) {
+        box_->end_record_write(write_, changed_);
+    } else {
+        std::size_t at = 0;
+        for (const std::uint16_t field : changed_) {
+            const std::span<std::byte> held = box_->held_bytes(write_, field);
+            std::memcpy(held.data(), saved_.data() + at, held.size());
+            at += held.size();
+        }
+        box_->abort_record_write(write_);
+    }
+}
+
 std::size_t Segment::record_size() const { return impl_->record_size; }
 
 void Segment::read_record(std::span<std::byte> out) const {
     auto guard = impl_->enter();
+    impl_->check_not_held();
     if (out.size() >= detail::large_copy)
         impl_->check(impl_->box.read_record_large(out));
     else
@@ -558,11 +661,13 @@ std::uint32_t Segment::field_count() const { return static_cast<std::uint32_t>(i
 
 void Segment::write(std::span<const value> values) {
     auto guard = impl_->enter();
+    impl_->check_not_held();
     impl_->write(values);
 }
 
 void Segment::write_one(std::uint32_t index, std::span<const std::byte> bytes) {
     auto guard = impl_->enter();
+    impl_->check_not_held();
     check_index(index, impl_->fields.size());
     const value one{static_cast<std::uint16_t>(index), bytes};
     impl_->write({&one, 1});
@@ -570,6 +675,7 @@ void Segment::write_one(std::uint32_t index, std::span<const std::byte> bytes) {
 
 std::uint64_t Segment::attr_published(std::uint32_t index) const {
     auto guard = impl_->enter();
+    impl_->check_not_held();
     impl_->field(index);
     auto got = impl_->box.attr_published(static_cast<std::uint16_t>(index));
     if (!got && got.error().code == status::range)
@@ -683,6 +789,7 @@ std::string Segment::read_metadata(std::uint64_t version) const {
 
 std::uint64_t Segment::write(std::span<const value> values, std::string_view doc) {
     auto guard = impl_->enter();
+    impl_->check_not_held();
     std::size_t total = doc.size();
     for (const value &v : values)
         total += v.bytes.size();
@@ -708,6 +815,7 @@ std::uint64_t Segment::write(std::span<const value> values, std::string_view doc
 
 std::uint64_t Segment::request_send(std::uint32_t index, std::span<const std::byte> arguments) {
     auto guard = impl_->enter();
+    impl_->check_not_held();
     check_index(index, impl_->fields.size());
     return impl_->check(
         impl_->box.request_send(static_cast<std::uint16_t>(index), arguments, seconds(impl_->lock_timeout)));
@@ -715,6 +823,7 @@ std::uint64_t Segment::request_send(std::uint32_t index, std::span<const std::by
 
 std::uint64_t Segment::request_take(std::uint32_t index, std::span<std::byte> arguments) {
     auto guard = impl_->enter();
+    impl_->check_not_held();
     check_index(index, impl_->fields.size());
     return impl_->check(
         impl_->box.request_take(static_cast<std::uint16_t>(index), arguments, seconds(impl_->lock_timeout)));
@@ -723,6 +832,7 @@ std::uint64_t Segment::request_take(std::uint32_t index, std::span<std::byte> ar
 bool Segment::request_answer(std::uint32_t index, std::uint64_t number, bool ok,
                              std::span<const std::byte> bytes) {
     auto guard = impl_->enter();
+    impl_->check_not_held();
     check_index(index, impl_->fields.size());
     const result<void> answered = impl_->box.request_answer(static_cast<std::uint16_t>(index), number, ok, bytes,
                                                             seconds(impl_->lock_timeout));
@@ -735,6 +845,7 @@ bool Segment::request_answer(std::uint32_t index, std::uint64_t number, bool ok,
 request_reply Segment::request_answer_of(std::uint32_t index, std::uint64_t number, std::span<std::byte> out,
                                          bool check_server) const {
     auto guard = impl_->enter();
+    impl_->check_not_held();
     check_index(index, impl_->fields.size());
     return impl_->check(
         impl_->box.request_answer_of(static_cast<std::uint16_t>(index), number, out, check_server));
@@ -742,6 +853,7 @@ request_reply Segment::request_answer_of(std::uint32_t index, std::uint64_t numb
 
 void Segment::attr_publish(std::uint32_t index, std::uint8_t parts, std::span<const std::byte> bytes) {
     auto guard = impl_->enter();
+    impl_->check_not_held();
     check_index(index, impl_->fields.size());
     impl_->check(
         impl_->box.attr_publish(static_cast<std::uint16_t>(index), parts, bytes, seconds(impl_->lock_timeout)));
@@ -749,6 +861,7 @@ void Segment::attr_publish(std::uint32_t index, std::uint8_t parts, std::span<co
 
 bool Segment::serve_claim(std::uint32_t index) {
     auto guard = impl_->enter();
+    impl_->check_not_held();
     check_index(index, impl_->fields.size());
     const result<void> claimed =
         impl_->box.serve_claim(static_cast<std::uint16_t>(index), seconds(impl_->lock_timeout));
@@ -760,6 +873,7 @@ bool Segment::serve_claim(std::uint32_t index) {
 
 void Segment::serve_release(std::uint32_t index) {
     auto guard = impl_->enter();
+    impl_->check_not_held();
     check_index(index, impl_->fields.size());
     impl_->check(impl_->box.serve_release(static_cast<std::uint16_t>(index), seconds(impl_->lock_timeout)));
 }
@@ -779,6 +893,7 @@ void Segment::force_unlock() {
 
 void Segment::hold_write_lock() {
     auto guard = impl_->enter();
+    impl_->check_not_held();
     impl_->held = impl_->check(impl_->box.lock(seconds(impl_->lock_timeout)));
 }
 

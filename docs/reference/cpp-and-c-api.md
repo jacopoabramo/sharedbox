@@ -16,6 +16,13 @@ instead.
 | [`sharedbox/sharedbox_c.h`](https://github.com/jacopoabramo/sharedbox/blob/main/include/sharedbox/sharedbox_c.h) | the `sbx_*` C functions, including `sbx_field_desc` and the typed reads and writes, and the status codes | [`sharedbox_c.h`](segment-layout.md#sharedbox_ch) |
 | both | `sbx_handle`, the struct a capsule holds | [Capsule handle](segment-layout.md#capsule-handle) |
 
+A C++ program that changes a field from what the box holds, such as an
+increment, holds the write lock across its read and its write with
+`handle::begin_record_write`, `held_bytes`, `write_held` and
+`end_record_write`, or `abort_record_write` to give the lock back unchanged;
+[`sharedbox.hpp`](segment-layout.md#sharedboxhpp) specifies them. The C
+functions have no counterpart.
+
 The Python side of the exchange, `__sharedbox_box__` and the capsule it
 returns, is specified in
 [The PyCapsule interface](segment-layout.md#the-pycapsule-interface). The

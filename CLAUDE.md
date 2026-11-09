@@ -14,7 +14,7 @@ the layout and the native module converts values.
 sharedbox/
 |-- include/sharedbox/
 |   |-- core.hpp               what every segment kind uses: result and error, liveness, names, mappings, the open step, waiter slots, the type codec, the metadata area and its CBOR check
-|   |-- box.hpp                box layout 3.3 and its protocols: create, publish, open, lock, read, write, metadata, capsule handle
+|   |-- box.hpp                box layout 3.3 and its protocols: create, publish, open, lock, read, write, record write, metadata, capsule handle
 |   |-- stream.hpp             stream layout 1.5: create, open, the sender, readers, the gate, dead ends, metadata
 |   |-- sharedbox.hpp          includes every kind; the header consumers include
 |   |-- sharedbox_c.h          minimal C interface: sbx_open, sbx_import, sbx_read, sbx_write, sbx_schema_hash, sbx_release, sbx_field_desc, typed sbx_read_* and sbx_write_*, sbx_metadata_head, sbx_read_metadata, sbx_add_metadata
@@ -25,7 +25,7 @@ sharedbox/
 |   `-- sharedbox-require-cxx.cmake  stops configure when sharedbox::c is linked without CXX
 |-- src/sharedbox/
 |   |-- __init__.py            re-exports the public API, get_include()
-|   |-- _box.py                SharedBox: class keywords, fields, fields(), create/attach, __post_init__, update, snapshot, unlink, __sharedbox_box__
+|   |-- _box.py                SharedBox: class keywords, fields, fields(), create/attach, __post_init__, update, snapshot, locked and its view class, unlink, __sharedbox_box__
 |   |-- _layout.py             Capacity, field(), attr() and Field, field offsets and kind codes, schema hash
 |   |-- _types.py              annotation parsing into TypeSpec, the description table
 |   |-- _arrays.py             Shape, MaxShape, DType, SupportsDLPack, register_array_type
@@ -61,7 +61,7 @@ sharedbox/
 |       |                      with_record reads the whole record at once
 |       |-- types.{hpp,cpp}    Types: conversions of kinds above 5, arrays
 |       |-- scalars.{hpp,cpp}  kinds 6 to 23, the datetime C API on full-API builds
-|       |-- segment.{hpp,cpp}  Segment: a sharedbox::handle plus error messages and the lifetime lock
+|       |-- segment.{hpp,cpp}  Segment: a sharedbox::handle plus error messages and the lifetime lock; RecordWriter and the same-thread check
 |       `-- stream.{hpp,cpp}   Stream, Sender and Reader: the Python binding of a stream and its errors
 |-- tests/                     pytest; many tests spawn processes
 |   |-- crossproc.py           helpers that run a box in another process
@@ -72,6 +72,7 @@ sharedbox/
 |   |-- test_doc_examples.py   runs each docs/examples/*.py script
 |   |-- test_doc_tutorials.py  runs docs/tutorials/mailbox.py and checks the output its pages show
 |   |-- test_follow.py         BoxEvents.follow, unfollow and nested
+|   |-- test_locked.py         SharedBox.locked and the native RecordWriter: counts, rollback, refusals, threads
 |   |-- test_native_waiters.py waiter slots, dead owners, interrupt
 |   |-- test_box_sync_async.py a sync and an async watch on one box in two threads
 |   |-- test_metadata.py       metadata of a box: documents, versions, events, typed access, reserved names
@@ -370,6 +371,10 @@ A read decodes the stored bytes; a value that cannot be changed (a
 `datetime`, or a frozen record, tuple or frozenset holding only such values)
 is reused until its field is written. `update(**values)` writes several
 fields at once; `watch(field)` and `events` report changes from any process.
+`with box.locked() as b:` holds the write lock for the block, so a write
+computed from the box's values, such as `b.count += 1`, loses no update; a
+block that raises puts every field back. See
+`docs/how-to/change-a-field-from-several-processes.md`.
 A field declared `Attr[T]` with `attr()` is published by its owner with
 `publish` and read by any process, and may take requests the owner serves;
 see `docs/how-to/request-work-from-the-owner.md`.

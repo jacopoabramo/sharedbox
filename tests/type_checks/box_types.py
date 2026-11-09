@@ -126,3 +126,10 @@ class Camera(SharedBox):
 
 def read_into(camera: Camera, out: npt.NDArray[np.float32]) -> None:
     assert_type(camera.read_into("image", out), npt.NDArray[np.float32])
+
+
+def locked_block(motor: Motor) -> None:
+    with motor.locked() as b:
+        assert_type(b, Motor)
+        assert_type(b.position, int)
+        b.position = "3"  # type: ignore[assignment]
