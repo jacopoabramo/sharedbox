@@ -4,19 +4,21 @@ import time
 from collections.abc import Sequence
 from typing import Any
 
+import cbor2
 import event_model
 import numpy as np
 import pytest
 from bluebox_compare import assert_documents_equal
 from blueboxproc import start_run_and_exit
 
-from sharedbox import EndOfStream, SegmentExistsError
+from sharedbox import EndOfStream, SegmentExistsError, SharedStream
 from sharedbox.bluebox import (
     DocumentReceiver,
     DocumentSender,
     LateJoinError,
     ReceiverReleasedError,
 )
+from sharedbox.bluebox._channel import ChannelState
 
 Document = tuple[str, dict[str, Any]]
 CONTEXT = mp.get_context("spawn")
@@ -421,6 +423,41 @@ def test_closed_sender_ends_receivers(unique_name: str) -> None:
         assert_documents_equal(documents, collector.join())
         assert collector.ended_at is not None
         assert collector.ended_at - closed_at < 1
+
+
+def test_event_streams_are_listed_while_they_exist(
+    unique_name: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """List each event stream in the channel's state from before it is created until it is removed."""
+    seen: list[tuple[str, list[str]]] = []
+    create = SharedStream.create
+    unlink = SharedStream.unlink
+
+    def listed() -> list[str]:
+        with ChannelState.attach(f"{unique_name}:state") as box:
+            names: list[str] = cbor2.loads(box.event_streams)
+            return names
+
+    def recording_create(item_type: Any, name: str, **options: Any) -> Any:
+        if name.startswith(f"{unique_name}:e"):
+            seen.append((name, listed()))
+        return create(item_type, name, **options)
+
+    def recording_unlink(name: str) -> None:
+        if name.startswith(f"{unique_name}:e"):
+            seen.append((name, listed()))
+        unlink(name)
+
+    # A sender killed between creating or removing a stream and updating the
+    # list would leave a stream the next sender of the channel cannot remove.
+    monkeypatch.setattr(SharedStream, "create", recording_create)
+    monkeypatch.setattr(SharedStream, "unlink", recording_unlink)
+    with DocumentSender.create(unique_name) as sender:
+        send_all(sender, run_documents())
+
+        assert listed() == []
+    assert len(seen) == 4
+    assert all(name in names for name, names in seen)
 
 
 def test_stale_name_is_taken_again(unique_name: str) -> None:

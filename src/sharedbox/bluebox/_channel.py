@@ -47,9 +47,10 @@ class ChannelState(SharedBox):
     """The settings of a channel and the run under way on it, for receivers that attach mid-run.
 
     `seq` is the number of the document that wrote the state, and
-    `event_streams` and `state` are CBOR: the names of the run's event
-    streams, and the run's start, descriptors and stream names. A state
-    larger than a field holds is left out, and `too_large` set.
+    `event_streams` and `state` are CBOR: the names of the event streams
+    that may exist, for a later sender to remove, and the run's start,
+    descriptors and stream names. A state larger than a field holds is left
+    out, and `too_large` set.
     """
 
     seq: int
@@ -293,9 +294,10 @@ class DocumentSender:
                 for events in self._events.values():
                     if not events.readers_checked:
                         self._wait_for_readers(events)
-        self._seq += 1
+        seq = self._seq + 1
         if layout is not None:
-            stream_name = f"{self.name}:e{self._seq}"
+            stream_name = f"{self.name}:e{seq}"
+            self._list_streams(stream_name)
             stream = SharedStream.create(
                 layout.item_type,
                 stream_name,
@@ -310,8 +312,9 @@ class DocumentSender:
                 "descriptors": [*self._state.get("descriptors", ()), doc],
                 "event_streams": [*self._state.get("event_streams", ()), stream_name],
             }
+        self._seq = seq
         items = [
-            ControlItem(self._seq, index, len(parts), part)
+            ControlItem(seq, index, len(parts), part)
             for index, part in enumerate(parts)
         ]
         if state is not None:
@@ -320,6 +323,7 @@ class DocumentSender:
             self._control_sender.send(item, self._control_timeout)
         if name == "stop":
             self._close_events()
+            self._list_streams()
 
     def _send_event(self, name: str, doc: Mapping[str, Any]) -> None:
         events = self._events.get(doc.get("descriptor", ""))
@@ -380,12 +384,17 @@ class DocumentSender:
         data = encode_document("state", state)
         too_large = len(data) > STATE_SIZE
         self._box.update(
-            seq=self._seq,
-            too_large=too_large,
-            event_streams=cbor2.dumps(list(state.get("event_streams", ()))),
-            state=b"" if too_large else data,
+            seq=self._seq, too_large=too_large, state=b"" if too_large else data
         )
         self._state = state
+
+    def _list_streams(self, *extra: str) -> None:
+        """Write the names of the event streams, and `extra`, to the state box for a later sender to remove.
+
+        A stream is listed before it is created and until it is removed.
+        """
+        names = [events.stream.name for events in self._events.values()]
+        self._box.update(event_streams=cbor2.dumps([*names, *extra]))
 
     def _close_events(self) -> None:
         for events in self._events.values():
