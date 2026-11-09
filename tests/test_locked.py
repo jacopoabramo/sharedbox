@@ -397,7 +397,7 @@ def test_close_during_block_releases_lock(unique_name: str) -> None:
 def test_reference_field_in_block(
     unique_name: str, names: Callable[[str], str]
 ) -> None:
-    """Read a reference field as a BoxRef and assign it a box inside the block."""
+    """Assign a box to a reference field inside the block and read it back as the attached box."""
     with (
         Tally.create(names("tally")) as tally,
         Holder.create(unique_name) as holder,
