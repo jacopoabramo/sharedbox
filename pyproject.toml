@@ -66,12 +66,7 @@ addopts = ["-m", "not stress"]
 [tool.cibuildwheel]
 build = ["cp311-*", "cp312-*", "cp314t-*"]
 skip = ["*-win32"]
-test-groups = ["bluebox"]
 build-verbosity = 1
-
-[[tool.cibuildwheel.overrides]]
-select = "*-cp314t-*"
-test-groups = []
 
 [tool.ruff]
 line-length = 88
@@ -121,7 +116,7 @@ commands = [["prek", "run", "--all-files", "--show-diff-on-failure"]]
 # The oldest Python the project supports, so mypy checks against it and the
 # stubtest allowlist matches the runtime whatever Python runs tox.
 base_python = ["3.11"]
-dependency_groups = ["dev", "benchmarks"]
+dependency_groups = ["dev", "benchmarks", "bluebox"]
 # The allowlist covers what stubtest cannot see in nanobind's compiled types
 # (its own metaclass, its own static-method wrapper); see stubtest-allowlist.txt.
 commands = [
