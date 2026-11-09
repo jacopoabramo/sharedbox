@@ -890,6 +890,8 @@
       
         
       
+        
+      
     
     
     
@@ -1241,6 +1243,35 @@
     
   
   How to change several fields at once
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../how-to/change-a-field-from-several-processes/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-wrench" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  How to change a field from several processes
 
     
   </span>
@@ -2526,6 +2557,17 @@
     <span class="md-ellipsis">
       <span class="md-typeset">
         <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;writing
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sharedbox.SharedBox.locked" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;locked
       </span>
     </span>
   </a>
@@ -4379,6 +4421,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#sharedbox.SharedBox.locked" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;locked
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#sharedbox.SharedBox.watch" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -5778,7 +5831,7 @@ keeps working after the fork.</p>
                 <p>When the class is defined, for an annotation of another type, no
 fields or more than 256, a field or <code>InitVar</code> named like a
 <code>SharedBox</code> member (<code>name</code>, <code>closed</code>, <code>close</code>, <code>unlink</code>, <code>update</code>,
-<code>snapshot</code>, <code>read_into</code>, <code>writing</code>, <code>watch</code>, <code>events</code>,
+<code>snapshot</code>, <code>read_into</code>, <code>writing</code>, <code>locked</code>, <code>watch</code>, <code>events</code>,
 <code>force_unlock</code>, <code>create</code>, <code>attach</code>, <code>metadata</code>, <code>metadata_version</code>,
 <code>metadata_version_of</code>), a field named <code>follow</code>,
 <code>unfollow</code> or <code>nested</code>, a default of the wrong type, a
@@ -6823,6 +6876,90 @@ field with a fixed <a class="autorefs autorefs-internal" title="&lt;code class=&
               <div class="doc-md-description">
                 <p>If the box has no such field, or <code>shape</code> has another number of
 dimensions than the field's <code>MaxShape</code> or a dimension beyond it.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;LockTimeoutError&lt;/span&gt; (&lt;code&gt;sharedbox._native.LockTimeoutError&lt;/code&gt;)" href="../errors/#sharedbox.LockTimeoutError">LockTimeoutError</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If another writer holds the lock longer than the lock timeout.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;BoxClosedError&lt;/span&gt; (&lt;code&gt;sharedbox._native.BoxClosedError&lt;/code&gt;)" href="../errors/#sharedbox.BoxClosedError">BoxClosedError</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If the box is closed.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="sharedbox.SharedBox.locked" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <span class="doc doc-object-name doc-function-name">locked</span>
+
+
+<a href="#sharedbox.SharedBox.locked" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">locked</span><span class="p">()</span> <span class="o">-&gt;</span> <span class="n">Generator</span><span class="p">[</span><span class="n">Self</span><span class="p">,</span> <span class="kc">None</span><span class="p">,</span> <span class="kc">None</span><span class="p">]</span>
+</span></code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Hold the box's write lock and yield an object whose fields are read and written under it.</p>
+<p>Use it for a write computed from the box's values, such as
+<code>b.count += 1</code>, which plain assignment can lose between processes
+that read the old value at the same time. See
+<a href="../../../how-to/change-a-field-from-several-processes/">Change a field from several processes</a>.</p>
+<p>The object has the box's fields, and <code>update</code> and <code>snapshot</code>
+without their <code>metadata</code> and <code>follow</code> options. A read gives the
+value the block last wrote to the field, or the field's value when
+it wrote none. Leaving the block counts one write for each field it
+wrote and wakes watchers, which see only the last value of each
+field. If the block raises, including <code>KeyboardInterrupt</code>, every
+field goes back to what it held before the block, nothing is
+counted, and no watcher sees a value; the exception propagates.</p>
+<p>While the block runs, reads and writes of the box in every other
+process wait for the lock, so keep it short. In the thread that
+holds it, the box itself refuses every read and write with
+<code>RuntimeError</code>, and the object refuses the box's other methods
+(<code>close</code>, <code>watch</code>, <code>events</code>, <code>writing</code>, <code>locked</code> and the rest) with
+<code>TypeError</code>; so does an attr field. The object works in the thread
+that entered the block, until the block ends. Its <code>metadata</code>,
+<code>metadata_version</code>, <code>name</code> and <code>closed</code> read the box as the box does.</p>
+
+
+<p><span class="doc-section-title">Raises:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-external" href="https://docs.python.org/3/builtins/exceptions.html#RuntimeError">RuntimeError</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If the thread already holds a <code>locked()</code> block of this box; from
+the object, if the block has ended or another thread uses it.</p>
               </div>
             </td>
           </tr>

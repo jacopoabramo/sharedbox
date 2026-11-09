@@ -890,6 +890,8 @@
       
         
       
+        
+      
     
     
     
@@ -1241,6 +1243,35 @@
     
   
   How to change several fields at once
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../how-to/change-a-field-from-several-processes/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-wrench" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  How to change a field from several processes
 
     
   </span>
@@ -1959,6 +1990,17 @@
     <span class="md-ellipsis">
       <span class="md-typeset">
         The write lock: a sequence counter
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#writes-that-depend-on-a-read" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Writes that depend on a read
       </span>
     </span>
   </a>
@@ -3227,6 +3269,17 @@
     <span class="md-ellipsis">
       <span class="md-typeset">
         The write lock: a sequence counter
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#writes-that-depend-on-a-read" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Writes that depend on a read
       </span>
     </span>
   </a>
@@ -5274,6 +5327,44 @@ the reader gives up with <a class="autorefs autorefs-internal" title="&lt;code c
 That trade is worth it for a large array a producer can fill in place,
 because it saves a full copy, but only while the block stays shorter than
 the readers' lock timeout.</p>
+<h2 id="writes-that-depend-on-a-read">Writes that depend on a read<a class="headerlink" href="#writes-that-depend-on-a-read" title="Permanent link">&para;</a></h2>
+<p>The lock makes each write whole, but it can't help a write that was
+computed from a value the process read earlier. <code>box.count += 1</code> reads
+<code>count</code>, adds 1 and writes the sum under the lock. Between the read and
+the write another process can write too, so two processes that both read
+5 both write 6, and one increment is lost. The
+same happens to any code that reads, decides and writes: two workers that
+both see a job as idle and both claim it, or two processes that both extend
+a list from the same copy.</p>
+<p>Writing the new value with
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;update&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.update"><code>update(count=box.count + 1)</code></a> races in the
+same way, because Python computes the argument before <code>update</code> takes the
+lock. A lock of your own, such as a <code>multiprocessing.Lock</code>, would work, but
+it reaches only the processes you hand it to when they start, every writer
+has to remember to take it, and a process that attaches to the box by name
+can't take it at all. The box already has a lock that every write takes, so
+the fix belongs there.</p>
+<p><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;locked&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.locked"><code>locked</code></a> holds that lock for a whole block, as
+<code>writing</code> does, and gives the block an object whose fields read and write
+the record directly while the lock is held. Nothing can write between the
+block's read and its write, and the block covers any read-then-write with
+ordinary Python on the fields the class declares. Narrower operations would
+each cover one case: an atomic add only counters, and a compare-and-set
+only a single field, and it leaves you to write the loop that retries when
+another process got there first. A block never has to retry, because nobody
+else can write while it runs.</p>
+<p>The block saves each field's bytes before it first writes it. If the block
+raises, it copies them back and releases the lock without counting a write.
+The generation still moves by one, so a process that read during the block
+reads again. Watchers compare write counts and report nothing, and other
+processes never see the block. If it ends normally, it counts one write for
+each field it assigned and wakes watchers once.</p>
+<p>The trade is the one <code>writing</code> makes: readers in every process wait while
+the block runs. A block that reads, decides and writes, such as
+<code>b.count += 1</code>, holds the lock for about 2 µs, so a reader waits about as
+long as for a large write. A block that does slow work holds it longer, and
+readers raise <code>LockTimeoutError</code>, so the work belongs before or after the
+block.</p>
 <h2 id="waiting-for-the-lock">Waiting for the lock<a class="headerlink" href="#waiting-for-the-lock" title="Permanent link">&para;</a></h2>
 <p>A writer that waits too long for the lock, or a reader that keeps losing
 to writers, gives up after <code>lock_timeout</code> seconds with

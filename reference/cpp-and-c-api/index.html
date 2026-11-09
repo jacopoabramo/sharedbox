@@ -890,6 +890,8 @@
       
         
       
+        
+      
     
     
     
@@ -1241,6 +1243,35 @@
     
   
   How to change several fields at once
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../how-to/change-a-field-from-several-processes/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-wrench" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  How to change a field from several processes
 
     
   </span>
@@ -3334,6 +3365,12 @@ instead.</p>
 </tr>
 </tbody>
 </table>
+<p>A C++ program that changes a field from what the box holds, such as an
+increment, holds the write lock across its read and its write with
+<code>handle::begin_record_write</code>, <code>held_bytes</code>, <code>write_held</code> and
+<code>end_record_write</code>, or <code>abort_record_write</code> to give the lock back unchanged;
+<a href="../segment-layout/#sharedboxhpp"><code>sharedbox.hpp</code></a> specifies them. The C
+functions have no counterpart.</p>
 <p>The Python side of the exchange, <code>__sharedbox_box__</code> and the capsule it
 returns, is specified in
 <a href="../segment-layout/#the-pycapsule-interface">The PyCapsule interface</a>. The
