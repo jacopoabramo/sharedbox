@@ -7,7 +7,7 @@ import dataclasses
 import time
 from collections.abc import Iterator, Mapping
 from concurrent.futures import Future
-from typing import Annotated, Any, Final, Literal, Self
+from typing import Annotated, Any, Final, Literal, NoReturn, Self
 
 import cbor2
 
@@ -91,6 +91,7 @@ class Source:
 
     `taken` is the position of the last item the receiver took from the
     reader, and `head` the next whole document, with its sequence number.
+    With `from_start`, the reader's first item must be the stream's first.
     """
 
     stream: SharedStream[Any, Any]
@@ -101,6 +102,7 @@ class Source:
     head: tuple[int, str, dict[str, Any]] | None = None
     taken: int | None = None
     ended: bool = False
+    from_start: bool = False
 
 
 def remove_channel(name: str) -> None:
@@ -502,12 +504,19 @@ class DocumentReceiver:
         layout = EventLayout.from_descriptor(
             descriptor, string_capacity=self._string_capacity, page_rows=self._page_rows
         )
+        # A lossless receiver that opens a stream at its descriptor must get
+        # every item; the sender stops waiting for it after control_timeout.
+        lossless = start == "oldest" and self.mode == "lossless"
         try:
             stream = SharedStream.attach(layout.item_type, stream_name)
         except SegmentNotFoundError:
+            if lossless:
+                self._release()
             # The run stopped and its streams were removed; the stop follows.
             return
-        self._sources.append(Source(stream, stream.reader(self.mode, start), layout))
+        self._sources.append(
+            Source(stream, stream.reader(self.mode, start), layout, from_start=lossless)
+        )
 
     def receive(self, timeout: float | None = None) -> tuple[str, dict[str, Any]]:
         """Return the next document's name and the document.
@@ -518,7 +527,8 @@ class DocumentReceiver:
             If the sender closed or died and every document it sent that
             this receiver holds was delivered.
         ReceiverReleasedError
-            If the sender released this receiver; it is closed then.
+            If the sender released this receiver, or a lossless receiver lost
+            events of a stream it opened too late; it is closed then.
         TimeoutError
             If `timeout` seconds pass first.
         StreamClosedError
@@ -586,13 +596,20 @@ class DocumentReceiver:
                 source.ended = True
                 continue
             except ReaderReleased:
-                self.close()
-                raise ReceiverReleasedError(
-                    f"channel {self.name!r}: the sender released this receiver, "
-                    "which lost documents; attach again"
-                ) from None
+                self._release()
             source.taken = source.reader.position
+            if source.from_start and source.taken != 0:
+                self._release()
+            source.from_start = False
             self._add(source, item)
+
+    def _release(self) -> NoReturn:
+        """Close the receiver, which lost documents, and raise `ReceiverReleasedError`."""
+        self.close()
+        raise ReceiverReleasedError(
+            f"channel {self.name!r}: the sender released this receiver, which lost "
+            "documents; attach again"
+        )
 
     def _add(self, source: Source, item: Any) -> None:
         """Add an item to the parts `source` holds, and make its head once a document is whole."""

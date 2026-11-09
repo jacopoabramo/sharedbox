@@ -281,6 +281,22 @@ def test_receiver_never_starts_mid_document(unique_name: str, held: str) -> None
     assert_documents_equal([documents[i] for i in expected_late], late_documents)
 
 
+def test_late_lossless_receiver_is_released(unique_name: str) -> None:
+    """Release a lossless receiver that opens an event stream after its events were overwritten."""
+    documents = run_documents()
+    with (
+        DocumentSender.create(
+            unique_name, event_capacity=2, control_timeout=0.2
+        ) as sender,
+        DocumentReceiver.attach(unique_name) as receiver,
+    ):
+        send_all(sender, documents)
+
+        with pytest.raises(ReceiverReleasedError):
+            for _ in documents:
+                receiver.receive(timeout=5)
+
+
 def test_stuck_receiver_is_released(unique_name: str) -> None:
     """Release a receiver that never reads, and let the run reach its stop."""
     documents = run_documents()
