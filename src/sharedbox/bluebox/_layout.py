@@ -28,6 +28,8 @@ HEAD = 9
 # What a row of a CBOR key may take beyond its elements' heads and content: the
 # tag around a typed array, its dtype text and a shape of up to 8 dimensions.
 ROW = 128
+# Most data keys in one nested record, which holds at most 256 fields.
+GROUP = 128
 
 
 def strings_capacity(page_rows: int, string_capacity: int) -> int:
@@ -63,8 +65,9 @@ def encode_cbor(label: str, value: object, capacity: int) -> bytes:
 class EventLayout:
     """The stream item of one descriptor, and the conversion of its events to items and back.
 
-    Each data key takes a field `k<i>` and a timestamp field `t<i>`, numbered
-    by its position in the descriptor. A key with a numeric `dtype_numpy`,
+    Each data key takes a field `k<i>`, numbered by its position in the
+    descriptor, inside the nested record `g<i // 128>`, and column `i` of the
+    `timestamps` array. A key with a numeric `dtype_numpy`,
     or a `number`, `integer` or `boolean` key without one, is an array with
     a leading dimension of `page_rows`. A `string` key, and a key whose data
     is stored elsewhere (`external` set), is a CBOR list of strings; a
@@ -77,12 +80,14 @@ class EventLayout:
         descriptor_uid: str,
         keys: list[Key],
         item_type: type[Any],
+        groups: list[type[Any]],
         string_capacity: int,
         page_rows: int,
     ) -> None:
         self.descriptor_uid = descriptor_uid
         self.keys = keys
         self.item_type = item_type
+        self.groups = groups
         self.string_capacity = string_capacity
         self.page_rows = page_rows
 
@@ -125,18 +130,32 @@ class EventLayout:
         except ValueError as error:
             raise ValueError(f"uids and filled: {error}") from None
         keys = []
+        hints: list[tuple[str, object]] = []
         for index, (name, data_key) in enumerate(descriptor["data_keys"].items()):
             key, hint = cls._key(name, data_key, string_capacity, page_rows)
             keys.append(key)
-            fields += [
-                (f"k{index}", hint),
-                (
-                    f"t{index}",
-                    Annotated[np.ndarray, MaxShape((page_rows,)), DType("float64")],
-                ),
-            ]
+            hints.append((f"k{index}", hint))
+        fields.append(
+            (
+                "timestamps",
+                Annotated[
+                    np.ndarray,
+                    MaxShape((page_rows, max(1, len(keys)))),
+                    DType("float64"),
+                ],
+            )
+        )
+        groups = [
+            dataclasses.make_dataclass(
+                f"KeyGroup{start // GROUP}", hints[start : start + GROUP], frozen=True
+            )
+            for start in range(0, len(hints), GROUP)
+        ]
+        fields += [(f"g{index}", group) for index, group in enumerate(groups)]
         item_type = dataclasses.make_dataclass("EventItem", fields, frozen=True)
-        return cls(descriptor["uid"], keys, item_type, string_capacity, page_rows)
+        return cls(
+            descriptor["uid"], keys, item_type, groups, string_capacity, page_rows
+        )
 
     @staticmethod
     def _key(
@@ -259,6 +278,9 @@ class EventLayout:
                     rows,
                 )
             )
+        timestamps_array = (
+            np.stack(stamps, axis=1) if stamps else np.zeros((rows, 0), np.float64)
+        )
         parts = max(1, math.ceil(rows / self.page_rows))
         list_capacity = strings_capacity(self.page_rows, self.string_capacity)
         items = []
@@ -277,16 +299,27 @@ class EventLayout:
                     "filled", page["filled"][rows_of_part], list_capacity
                 ),
             }
-            for index, (key, column, stamp) in enumerate(
-                zip(self.keys, columns, stamps, strict=True)
-            ):
+            columns_of_part: list[object] = []
+            for key, column in zip(self.keys, columns, strict=True):
                 if key.kind == "array":
-                    values[f"k{index}"] = column[rows_of_part]
+                    columns_of_part.append(column[rows_of_part])
                 else:
-                    values[f"k{index}"] = encode_cbor(
-                        f"data key {key.name!r}", column[rows_of_part], key.capacity
+                    columns_of_part.append(
+                        encode_cbor(
+                            f"data key {key.name!r}", column[rows_of_part], key.capacity
+                        )
                     )
-                values[f"t{index}"] = stamp[rows_of_part]
+            values["timestamps"] = timestamps_array[rows_of_part]
+            for index, group in enumerate(self.groups):
+                start = index * GROUP
+                values[f"g{index}"] = group(
+                    **{
+                        f"k{start + offset}": column
+                        for offset, column in enumerate(
+                            columns_of_part[start : start + GROUP]
+                        )
+                    }
+                )
             items.append(self.item_type(**values))
         return items
 
@@ -350,22 +383,20 @@ class EventLayout:
         time = np.concatenate([item.time for item in items])
         data: dict[str, Any] = {}
         timestamps: dict[str, np.ndarray] = {}
+        stamps = np.concatenate([item.timestamps for item in items])
         for index, key in enumerate(self.keys):
-            stamps = np.concatenate([getattr(item, f"t{index}") for item in items])
+            fields = [
+                getattr(getattr(item, f"g{index // GROUP}"), f"k{index}")
+                for item in items
+            ]
             if key.kind == "array":
-                column: Any = np.concatenate(
-                    [getattr(item, f"k{index}") for item in items]
-                )
+                column: Any = np.concatenate(fields)
             else:
-                column = [
-                    value
-                    for item in items
-                    for value in decode_cbor(getattr(item, f"k{index}"))
-                ]
+                column = [value for field in fields for value in decode_cbor(field)]
                 if key.may_be_absent and column and all(v is None for v in column):
                     continue
             data[key.name] = column
-            timestamps[key.name] = stamps
+            timestamps[key.name] = stamps[:, index]
         if items[0].kind == 0:
             return "event", {
                 "uid": uids[0],

@@ -275,8 +275,9 @@ def test_item_size_is_exact() -> None:
     layout = EventLayout.from_descriptor(descriptor, string_capacity=64, page_rows=2)
 
     hints = get_type_hints(layout.item_type, include_extras=True)
+    group = get_type_hints(hints["g0"], include_extras=True)
     (max_shape,) = [
-        extra for extra in get_args(hints["k0"])[1:] if isinstance(extra, MaxShape)
+        extra for extra in get_args(group["k0"])[1:] if isinstance(extra, MaxShape)
     ]
     capacities = [
         extra.size
@@ -304,6 +305,25 @@ def test_item_type_makes_a_stream(unique_name: str) -> None:
         label="cam",
         extra=["a", 1],
     )
+    layout = EventLayout.from_descriptor(descriptor, string_capacity=64, page_rows=4)
+
+    with SharedStream.create(layout.item_type, unique_name, capacity=2) as stream:
+        reader = stream.reader()
+        with stream.sender() as sender:
+            for item in layout.pack("event", event):
+                sender.send(item, timeout=5)
+        received = [reader.receive(timeout=5)]
+        reader.close()
+    SharedStream.unlink(unique_name)
+
+    assert_documents_equal([("event", event)], [layout.unpack(received)])
+
+
+def test_many_keys_make_a_stream(unique_name: str) -> None:
+    """Send an event of 500 keys through a stream of the item type and unpack it."""
+    keys = {f"signal{index}": {"dtype": "number", "shape": []} for index in range(500)}
+    descriptor = descriptor_of(**keys)
+    event = event_of(descriptor, **{key: index / 2 for index, key in enumerate(keys)})
     layout = EventLayout.from_descriptor(descriptor, string_capacity=64, page_rows=4)
 
     with SharedStream.create(layout.item_type, unique_name, capacity=2) as stream:
