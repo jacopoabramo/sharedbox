@@ -64,7 +64,7 @@ from ._refs import (
 )
 
 if TYPE_CHECKING:
-    from ._native import RecordWriter, Types
+    from ._native import RecordWriter
 
     if sys.version_info >= (3, 13):
         from types import CapsuleType
@@ -312,12 +312,19 @@ def unpickle_box(
 
 def held(view: Any) -> RecordWriter:
     """Return the record write of a locked() object, refusing a use after the block or from another thread."""
-    writer: RecordWriter = view._held_writer
-    if writer.ended:
+    writer: RecordWriter | None = view._held_writer
+    if writer is None or writer.ended:
         raise RuntimeError("the locked() block has ended")
     if threading.get_ident() != view._held_thread:
         raise RuntimeError("the locked() block belongs to another thread")
     return writer
+
+
+def held_segment(view: Any) -> Segment:
+    """Return the segment of the box a locked() object belongs to, refusing it as `held` does."""
+    held(view)
+    box: SharedBox = view._held_box
+    return box._segment
 
 
 def refused(name: str) -> Callable[..., NoReturn]:
@@ -330,7 +337,7 @@ def refused(name: str) -> Callable[..., NoReturn]:
     return refuse
 
 
-def locked_property(spec: FieldSpec, types: Types) -> property:
+def locked_property(spec: FieldSpec) -> property:
     index = spec.index
     if spec.attr is not None:
         return property(
@@ -340,19 +347,19 @@ def locked_property(spec: FieldSpec, types: Types) -> property:
     if spec.target is None:
 
         def get(self: Any) -> Any:
-            return held(self).get(index, types)
+            return held(self).get(index, type(self).__layout__.types)
 
         def put(self: Any, value: object) -> None:
-            held(self).set([(index, value)], types)
+            held(self).set([(index, value)], type(self).__layout__.types)
 
     else:
 
         def get(self: Any) -> Any:
-            value: Any = held(self).get(index, types)
+            value: Any = held(self).get(index, type(self).__layout__.types)
             return None if value is None else self._held_box._inner(spec, *value)
 
         def put(self: Any, value: object) -> None:
-            held(self).set([(index, stored(spec, value))], types)
+            held(self).set([(index, stored(spec, value))], type(self).__layout__.types)
 
     return property(get, put)
 
@@ -386,6 +393,7 @@ def locked_class(cls: type[SharedBox]) -> type[SharedBox]:
         "__qualname__": cls.__qualname__,
         "update": locked_update,
         "snapshot": locked_snapshot,
+        "_segment": property(held_segment),
         "events": property(refused("events")),
         **{
             name: refused(name)
@@ -399,7 +407,7 @@ def locked_class(cls: type[SharedBox]) -> type[SharedBox]:
                 "force_unlock",
             )
         },
-        **{spec.name: locked_property(spec, layout.types) for spec in layout.fields},
+        **{spec.name: locked_property(spec) for spec in layout.fields},
     }
     view: type[SharedBox] = cast(Any, type(cls))(
         cls.__name__, (cls,), namespace, _locked_view=True
@@ -1422,19 +1430,22 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
         """
         cls = type(self)
         view_class = cls.__dict__.get("__sharedbox_locked__") or locked_class(cls)
+        view = view_class.__new__(view_class)
+        view._documents = self._documents
+        view._held_box = self
+        view._held_thread = threading.get_ident()
         writer = self._segment.begin_record_write()
+        view._held_writer = writer
         try:
-            view = view_class.__new__(view_class)
-            view._segment = self._segment
-            view._documents = self._documents
-            view._held_box = self
-            view._held_writer = writer
-            view._held_thread = threading.get_ident()
             yield cast(Self, view)
         except BaseException:
             writer.abort()
             raise
-        writer.end()
+        else:
+            writer.end()
+        finally:
+            # An object kept after the block must not keep the native writer alive.
+            view._held_writer = None
 
     def _follow(self, values: dict[str, Any]) -> None:
         """Replace the references in `values`, read from this box, with nested snapshots, depth first."""

@@ -264,6 +264,8 @@ def test_b_after_block_raises(unique_name: str) -> None:
             b.update(count=2)
         with pytest.raises(RuntimeError, match="has ended"):
             b.snapshot()
+        with pytest.raises(RuntimeError, match="has ended"):
+            _ = b.name
         assert box.count == 1
 
 

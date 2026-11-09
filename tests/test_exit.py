@@ -44,6 +44,10 @@ match sys.argv[2]:
         kept = box.events
         box.close()
         del box
+    case "locked":
+        with box.locked() as b:
+            b.count += 1
+        box.close()
 ctypes.pythonapi.Py_IncRef(ctypes.py_object(kept))
 ctypes.pythonapi.Py_IncRef(ctypes.py_object(Kept))
 """
@@ -206,9 +210,9 @@ def test_a_process_exits_cleanly_while_a_callback_makes_native_calls(
     assert exitcodes == [0] * len(children), f"exit codes: {exitcodes}"
 
 
-@pytest.mark.parametrize("state", ["closed", "open", "watched", "events"])
+@pytest.mark.parametrize("state", ["closed", "open", "watched", "events", "locked"])
 def test_a_class_kept_past_exit_leaks_nothing(unique_name: str, state: str) -> None:
-    """Check that a box class kept alive past finalization, with an open box, a watch or an events group, leaks no native objects."""
+    """Check that a box class kept alive past finalization, with an open box, a watch, an events group or a locked() block, leaks no native objects."""
     done = run_child(KEPT_PAST_EXIT, unique_name, state)
     assert "nanobind: leaked" not in done.stderr
     assert done.returncode == 0, done.stderr
