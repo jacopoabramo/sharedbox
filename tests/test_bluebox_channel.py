@@ -368,6 +368,37 @@ def test_lossy_receiver_does_not_hold_back_events(unique_name: str) -> None:
         assert elapsed < 1
 
 
+def test_lossy_receiver_keeps_a_descriptor_behind_an_event(
+    unique_name: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Deliver a descriptor of many parts to a lossy receiver that sees a later event first."""
+    # Without a wait for gaps, only the rule that control documents are never
+    # skipped keeps the descriptor.
+    monkeypatch.setattr("sharedbox.bluebox._channel.GAP_WAIT", 0)
+    bundle = event_model.compose_run()
+    primary = bundle.compose_descriptor(name="primary", data_keys={"x": NUMBER})
+    big = bundle.compose_descriptor(
+        name="big",
+        data_keys={"y": {**NUMBER, "source": "y" * (2 * 1024 * 1024)}},
+    )
+    documents: list[Document] = [
+        ("start", dict(bundle.start_doc)),
+        ("descriptor", dict(primary.descriptor_doc)),
+        ("event", dict(primary.compose_event(data={"x": 1.0}, timestamps={"x": 1.0}))),
+        ("descriptor", dict(big.descriptor_doc)),
+        ("event", dict(primary.compose_event(data={"x": 2.0}, timestamps={"x": 2.0}))),
+        ("stop", dict(bundle.compose_stop())),
+    ]
+    with (
+        DocumentSender.create(unique_name) as sender,
+        DocumentReceiver.attach(unique_name, mode="lossy") as receiver,
+    ):
+        collector = Collector(receiver)
+        send_all(sender, documents)
+
+        assert_documents_equal(documents, collector.join())
+
+
 def test_closed_sender_ends_receivers(unique_name: str) -> None:
     """Deliver what the receiver holds when the sender closes, then raise EndOfStream within 1 s."""
     documents = run_documents()[:6]

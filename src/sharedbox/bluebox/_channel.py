@@ -556,15 +556,20 @@ class DocumentReceiver:
                 assert low.head is not None
                 if low.head[0] == self._last + 1:
                     return self._deliver(low)
-                if self.mode != "lossless":
+                pending = [source for source in waiting if self._pending(source)]
+                if not pending:
+                    return self._deliver(low)
+                # A control document is never skipped: its parts are already in
+                # the ring, so waiting for them holds back no sender.
+                if self.mode != "lossless" and all(
+                    source.layout is not None for source in pending
+                ):
                     now = time.monotonic()
                     gap_since = now if gap_since is None else gap_since
                     left = GAP_WAIT - (now - gap_since)
                     if left <= 0:
                         return self._deliver(low)
                     wait = left if wait is None else min(wait, left)
-                if not any(self._pending(source) for source in waiting):
-                    return self._deliver(low)
             for source in waiting:
                 if source.future is None:
                     source.future = source.reader.receive_future()
