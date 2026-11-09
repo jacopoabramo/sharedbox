@@ -230,9 +230,9 @@ the readers' lock timeout.
 
 The lock makes each write whole, but it can't help a write that was
 computed from a value the process read earlier. `box.count += 1` reads
-`count` under the lock, releases it, adds 1, and writes under the lock
-again. Between the two steps another process can write too, so two
-processes that both read 5 both write 6, and one increment is lost. The
+`count`, adds 1 and writes the sum under the lock. Between the read and
+the write another process can write too, so two processes that both read
+5 both write 6, and one increment is lost. The
 same happens to any code that reads, decides and writes: two workers that
 both see a job as idle and both claim it, or two processes that both extend
 a list from the same copy.
