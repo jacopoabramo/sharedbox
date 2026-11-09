@@ -13,7 +13,7 @@ from .._types import Capacity
 from ._codec import decode_tag_hook, encode_default
 
 
-class _Key(NamedTuple):
+class Key(NamedTuple):
     name: str
     kind: Literal["array", "string", "cbor"]
     dtype: np.dtype | None
@@ -22,20 +22,20 @@ class _Key(NamedTuple):
     may_be_absent: bool
 
 
-_SCALARS = {"number": "float64", "integer": "int64", "boolean": "bool"}
+SCALARS = {"number": "float64", "integer": "int64", "boolean": "bool"}
 # The longest head CBOR writes before a list, a string or a number.
-_HEAD = 9
+HEAD = 9
 # What a row of a CBOR key may take beyond its elements' heads and content: the
 # tag around a typed array, its dtype text and a shape of up to 8 dimensions.
-_ROW = 128
+ROW = 128
 
 
-def _strings_capacity(page_rows: int, string_capacity: int) -> int:
+def strings_capacity(page_rows: int, string_capacity: int) -> int:
     """Return the bytes of a CBOR list of `page_rows` strings of `string_capacity` bytes."""
-    return _HEAD + page_rows * (_HEAD + string_capacity)
+    return HEAD + page_rows * (HEAD + string_capacity)
 
 
-def _numeric_dtype(dtype_numpy: object) -> np.dtype | None:
+def numeric_dtype(dtype_numpy: object) -> np.dtype | None:
     """Return the dtype a `dtype_numpy` names when an array field can hold it."""
     if not isinstance(dtype_numpy, str):
         return None
@@ -50,7 +50,7 @@ def _numeric_dtype(dtype_numpy: object) -> np.dtype | None:
     return dtype if dtype.name in DType.__members__ else None
 
 
-def _cbor(label: str, value: object, capacity: int) -> bytes:
+def encode_cbor(label: str, value: object, capacity: int) -> bytes:
     try:
         data = cbor2.dumps(value, default=encode_default, canonical=True)
     except (TypeError, cbor2.CBORError) as error:
@@ -75,7 +75,7 @@ class EventLayout:
     def __init__(
         self,
         descriptor_uid: str,
-        keys: list[_Key],
+        keys: list[Key],
         item_type: type[Any],
         string_capacity: int,
         page_rows: int,
@@ -107,7 +107,7 @@ class EventLayout:
             or `-1` in its shape, or a key whose field would be larger than
             a `sharedbox` field can be. The message names the key.
         """
-        list_capacity = _strings_capacity(page_rows, string_capacity)
+        list_capacity = strings_capacity(page_rows, string_capacity)
         fields: list[tuple[str, object]] = [
             ("seq", int),
             ("kind", int),
@@ -141,35 +141,33 @@ class EventLayout:
     @staticmethod
     def _key(
         name: str, data_key: Mapping[str, Any], string_capacity: int, page_rows: int
-    ) -> tuple[_Key, object]:
-        list_capacity = _strings_capacity(page_rows, string_capacity)
+    ) -> tuple[Key, object]:
+        list_capacity = strings_capacity(page_rows, string_capacity)
         external = data_key.get("external")
         shape = data_key.get("shape", [])
         try:
             if external:
                 may_be_absent = external.startswith("STREAM:")
                 hint: object = Annotated[bytes, Capacity(list_capacity)]
-                return _Key(
-                    name, "string", None, (), list_capacity, may_be_absent
-                ), hint
+                return Key(name, "string", None, (), list_capacity, may_be_absent), hint
             if any(size is None or size == -1 for size in shape):
                 raise ValueError(f"shape {shape} has no fixed size")
             shape = tuple(shape)
-            dtype = _numeric_dtype(data_key.get("dtype_numpy"))
-            if dtype is None and data_key.get("dtype") in _SCALARS:
-                dtype = np.dtype(_SCALARS[data_key["dtype"]])
+            dtype = numeric_dtype(data_key.get("dtype_numpy"))
+            if dtype is None and data_key.get("dtype") in SCALARS:
+                dtype = np.dtype(SCALARS[data_key["dtype"]])
             if dtype is not None:
                 hint = Annotated[
                     np.ndarray, MaxShape((page_rows, *shape)), DType(dtype.name)
                 ]
-                return _Key(name, "array", dtype, shape, 0, False), hint
+                return Key(name, "array", dtype, shape, 0, False), hint
             if data_key.get("dtype") == "string":
                 hint = Annotated[bytes, Capacity(list_capacity)]
-                return _Key(name, "string", None, shape, list_capacity, False), hint
+                return Key(name, "string", None, shape, list_capacity, False), hint
             elements = max(1, math.prod(shape))
-            capacity = _HEAD + page_rows * (_ROW + elements * (_HEAD + string_capacity))
+            capacity = HEAD + page_rows * (ROW + elements * (HEAD + string_capacity))
             hint = Annotated[bytes, Capacity(capacity)]
-            return _Key(name, "cbor", None, shape, capacity, False), hint
+            return Key(name, "cbor", None, shape, capacity, False), hint
         except ValueError as error:
             raise ValueError(f"data key {name!r}: {error}") from None
 
@@ -198,7 +196,7 @@ class EventLayout:
                 "seq_num": [doc["seq_num"]],
                 "filled": [doc.get("filled", {})],
             }
-            data = {key: _event_column(value) for key, value in doc["data"].items()}
+            data = {key: event_column(value) for key, value in doc["data"].items()}
             timestamps = {key: [value] for key, value in doc["timestamps"].items()}
         elif name == "event_page":
             rows = len(doc["seq_num"])
@@ -246,7 +244,7 @@ class EventLayout:
                 )
             )
         parts = max(1, math.ceil(rows / self.page_rows))
-        list_capacity = _strings_capacity(self.page_rows, self.string_capacity)
+        list_capacity = strings_capacity(self.page_rows, self.string_capacity)
         items = []
         for part in range(parts):
             rows_of_part = slice(part * self.page_rows, (part + 1) * self.page_rows)
@@ -258,8 +256,10 @@ class EventLayout:
                 "rows": len(seq_num[rows_of_part]),
                 "seq_num": seq_num[rows_of_part],
                 "time": time[rows_of_part],
-                "uids": _cbor("uids", page["uid"][rows_of_part], list_capacity),
-                "filled": _cbor("filled", page["filled"][rows_of_part], list_capacity),
+                "uids": encode_cbor("uids", page["uid"][rows_of_part], list_capacity),
+                "filled": encode_cbor(
+                    "filled", page["filled"][rows_of_part], list_capacity
+                ),
             }
             for index, (key, column, stamp) in enumerate(
                 zip(self.keys, columns, stamps, strict=True)
@@ -267,7 +267,7 @@ class EventLayout:
                 if key.kind == "array":
                     values[f"k{index}"] = column[rows_of_part]
                 else:
-                    values[f"k{index}"] = _cbor(
+                    values[f"k{index}"] = encode_cbor(
                         f"data key {key.name!r}", column[rows_of_part], key.capacity
                     )
                 values[f"t{index}"] = stamp[rows_of_part]
@@ -302,7 +302,7 @@ class EventLayout:
         return array
 
     def _values(
-        self, label: str, key: _Key, column: Iterable[object], rows: int
+        self, label: str, key: Key, column: Iterable[object], rows: int
     ) -> list[object]:
         try:
             values = list(column)
@@ -327,8 +327,8 @@ class EventLayout:
 
     def unpack(self, items: Sequence[Any]) -> tuple[str, dict[str, object]]:
         """Return the event or event page that the items of one document carry."""
-        uids = [uid for item in items for uid in _loads(item.uids)]
-        filled = [row for item in items for row in _loads(item.filled)]
+        uids = [uid for item in items for uid in decode_cbor(item.uids)]
+        filled = [row for item in items for row in decode_cbor(item.filled)]
         seq_num = np.concatenate([item.seq_num for item in items])
         time = np.concatenate([item.time for item in items])
         data: dict[str, Any] = {}
@@ -343,7 +343,7 @@ class EventLayout:
                 column = [
                     value
                     for item in items
-                    for value in _loads(getattr(item, f"k{index}"))
+                    for value in decode_cbor(getattr(item, f"k{index}"))
                 ]
                 if key.may_be_absent and column and all(v is None for v in column):
                     continue
@@ -354,7 +354,7 @@ class EventLayout:
                 "uid": uids[0],
                 "time": time[0].item(),
                 "seq_num": seq_num[0].item(),
-                "data": {key: _first_row(value) for key, value in data.items()},
+                "data": {key: first_row(value) for key, value in data.items()},
                 "timestamps": {
                     key: value[0].item() for key, value in timestamps.items()
                 },
@@ -375,19 +375,19 @@ class EventLayout:
         }
 
 
-def _loads(data: bytes) -> list[Any]:
+def decode_cbor(data: bytes) -> list[Any]:
     values: list[Any] = cbor2.loads(data, tag_hook=decode_tag_hook)
     return values
 
 
-def _event_column(value: object) -> object:
+def event_column(value: object) -> object:
     """Return an event's value as a column of one row."""
     if isinstance(value, np.ndarray | np.generic):
         return np.expand_dims(value, 0)
     return [value]
 
 
-def _first_row(column: object) -> object:
+def first_row(column: object) -> object:
     if isinstance(column, np.ndarray):
         row = column[0]
         return row.item() if row.ndim == 0 else row
