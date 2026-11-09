@@ -38,6 +38,8 @@ items through a [stream](../explanation/glossary.md#stream).
   defaults, keyword-only fields and `__post_init__`
 - [How to change several fields at once](change-several-fields-at-once.md):
   write with `update` and read with `snapshot`
+- [How to change a field from several processes](change-a-field-from-several-processes.md):
+  read and write under one lock with `locked`, so no update is lost
 - [How to send a box to another process](send-a-box-to-another-process.md):
   as an argument, by name, or to a pool
 - [How to request work from the process that owns a box](request-work-from-the-owner.md):

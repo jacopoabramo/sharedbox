@@ -975,6 +975,10 @@ Every shared word is a plain integer in the mapping, accessed through
   between them leave the new writer's `writer_pid` at 0; the lock is not
   affected, and only a later `LockTimeoutError` names pid 0 instead of
   the holder.
+- Record write (`begin_record_write`): the write's lock, held across any
+  number of stores; each field it changed has its count incremented once,
+  then unlock and wake. An aborted record write gives the lock back without
+  counting, so `seq` returns to `s` and the generation does not move.
 - Generation: there is no separate counter. Every write adds exactly 2 to
   `seq`, so the generation is `seq >> 1` (`generation()` returns it). A
   `force_unlock()` that stores `seq + 1` counts as one generation, since
@@ -1539,6 +1543,12 @@ public:
     std::uint32_t writer_pid() const noexcept;
     result<void> force_unlock() noexcept;
 
+    result<record_write> begin_record_write(seconds lock_timeout);
+    std::span<std::byte> held_bytes(const record_write &w, std::uint16_t field) const;
+    result<void> write_held(const record_write &w, std::span<const value> values);
+    void end_record_write(const record_write &w, std::span<const std::uint16_t> changed) noexcept;
+    void abort_record_write(const record_write &w) noexcept;
+
     result<std::uint16_t> register_waiter();
     void release_waiter(std::uint16_t slot) noexcept;
     bool waiter_held(std::uint16_t slot) const noexcept;
@@ -1687,6 +1697,20 @@ The header also declares these names:
   and gives the statuses of `write` and of `add_metadata`. A refused
   document writes no field. `write_large(values, doc, lock_timeout)` is the
   same write for large values, running the wait hooks once around it.
+- `begin_record_write` takes the write lock, waiting at most
+  `lock_timeout`, and returns a `record_write` that holds it across any
+  number of stores, for a write computed from what the record holds.
+  `held_bytes` is a field's whole slot in the record, its 4-byte length
+  included for `str`, `bytes` and `Decimal`, and empty for a field past
+  `field_count()`; read it to see the field, or copy it to restore it
+  later. `write_held` checks and stores `values` as `write` does, `Timed`
+  stamps included, without locking or counting, and gives `status::range`
+  for a value `write` refuses, storing nothing. `end_record_write` counts
+  one write for each field in `changed`, which must hold distinct field
+  indices below `field_count()`, then unlocks and wakes waiters.
+  `abort_record_write` unlocks without counting and wakes nobody, so the
+  generation does not move; a caller that wrote fields copies their saved
+  slots back first. Every record write ends with exactly one of the two.
 - `request_send`, `request_take`, `request_answer`, `request_answer_of`,
   `serve_claim` and `serve_release` are the steps of the request protocol on
   an `attr` field with a request part (see The request protocol).

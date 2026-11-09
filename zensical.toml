@@ -34,6 +34,7 @@ nav = [
             "how-to/store-numpy-numbers.md",
             "how-to/set-defaults-and-check-values.md",
             "how-to/change-several-fields-at-once.md",
+            "how-to/change-a-field-from-several-processes.md",
             "how-to/send-a-box-to-another-process.md",
             "how-to/request-work-from-the-owner.md",
             "how-to/clean-up-segments.md",

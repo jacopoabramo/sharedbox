@@ -226,6 +226,49 @@ That trade is worth it for a large array a producer can fill in place,
 because it saves a full copy, but only while the block stays shorter than
 the readers' lock timeout.
 
+## Writes that depend on a read
+
+The lock makes each write whole, but it can't help a write that was
+computed from a value the process read earlier. `box.count += 1` reads
+`count` under the lock, releases it, adds 1, and writes under the lock
+again. Between the two steps another process can write too, so two
+processes that both read 5 both write 6, and one increment is lost. The
+same happens to any code that reads, decides and writes: two workers that
+both see a job as idle and both claim it, or two processes that both extend
+a list from the same copy.
+
+Writing the new value with
+[`update(count=box.count + 1)`][sharedbox.SharedBox.update] races in the
+same way, because Python computes the argument before `update` takes the
+lock. A lock of your own, such as a `multiprocessing.Lock`, would work, but
+it reaches only the processes you hand it to when they start, every writer
+has to remember to take it, and a process that attaches to the box by name
+can't take it at all. The box already has a lock that every write takes, so
+the fix belongs there.
+
+[`locked`][sharedbox.SharedBox.locked] holds that lock for a whole block, as
+`writing` does, and gives the block an object whose fields read and write
+the record directly while the lock is held. Nothing can write between the
+block's read and its write, and the block covers any read-then-write with
+ordinary Python on the fields the class declares. Narrower operations would
+each cover one case: an atomic add only counters, and a compare-and-set
+only a single field, and it leaves you to write the loop that retries when
+another process got there first. A block never has to retry, because nobody
+else can write while it runs.
+
+The block saves each field's bytes before it first writes it. If the block
+raises, it copies them back and releases the lock without counting a write,
+so the generation doesn't move and no watcher wakes; other processes never
+see the block. If it ends normally, it counts one write for each field it
+assigned and wakes watchers once.
+
+The trade is the one `writing` makes: readers in every process wait while
+the block runs. A block that reads, decides and writes, such as
+`b.count += 1`, holds the lock for about 2 µs, so a reader waits about as
+long as for a large write. A block that does slow work holds it longer, and
+readers raise `LockTimeoutError`, so the work belongs before or after the
+block.
+
 ## Waiting for the lock
 
 A writer that waits too long for the lock, or a reader that keeps losing
