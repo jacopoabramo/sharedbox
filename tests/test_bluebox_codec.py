@@ -64,10 +64,40 @@ def test_unknown_type_names_the_key() -> None:
     assert "a.b" in str(info.value)
 
 
-def test_unsupported_dtype_names_the_key() -> None:
-    """Raise a TypeError naming the key of an array with no typed array tag."""
+@pytest.mark.parametrize(
+    "value",
+    [
+        np.array([[True, False], [False, True]]),
+        np.array(["ab", "cdef", ""], dtype="<U6"),
+        np.array([b"ab", b"c"], dtype="S3"),
+        np.array([1 + 2j, 3 - 1j], dtype=np.complex64),
+        np.array([1.5], dtype=np.longdouble),
+    ],
+    ids=["bool", "U6", "S3", "complex64", "longdouble"],
+)
+def test_array_without_a_typed_array_tag_round_trips(value: np.ndarray) -> None:
+    """Return an array of the same dtype, shape and values."""
+    _, doc = decode_document(encode_document("event", {"v": value}))
+
+    result = doc["v"]
+    assert isinstance(result, np.ndarray)
+    assert result.dtype == value.dtype
+    assert result.shape == value.shape
+    np.testing.assert_array_equal(result, value)
+
+
+def test_bool_scalar_round_trips() -> None:
+    """Return a numpy bool scalar for a numpy bool scalar."""
+    _, doc = decode_document(encode_document("event", {"v": np.bool_(True)}))
+
+    assert type(doc["v"]) is np.bool_
+    assert doc["v"]
+
+
+def test_object_array_names_the_key() -> None:
+    """Raise a TypeError naming the key of an array that cannot be written."""
     with pytest.raises(TypeError, match="a.1") as info:
-        encode_document("start", {"a": [1, np.array([True])]})
+        encode_document("start", {"a": [1, np.array([object()])]})
 
     assert "start" in str(info.value)
 
