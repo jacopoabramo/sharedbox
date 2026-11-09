@@ -2,6 +2,7 @@
 
 # --8<-- [start:lost]
 import multiprocessing as mp
+from collections.abc import Callable
 from typing import Annotated
 
 from sharedbox import Capacity, SharedBox
@@ -46,7 +47,7 @@ def claim(job: Job, me: str) -> bool:
 # --8<-- [end:claim]
 
 
-def run_twice(job: Job, target: object) -> None:
+def run_twice(job: Job, target: Callable[[Job], object]) -> None:
     context = mp.get_context("spawn")
     workers = [context.Process(target=target, args=(job,)) for _ in range(2)]
     for worker in workers:
