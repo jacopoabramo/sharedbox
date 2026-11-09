@@ -164,6 +164,29 @@ def test_wrong_shape_event_is_refused() -> None:
         layout.pack("event", event_of(descriptor, frame=np.zeros(4, np.uint16)))
 
 
+@pytest.mark.parametrize("value", [2.5, 2**63, float("nan")], ids=repr)
+def test_inexact_integer_is_refused(value: float) -> None:
+    """Refuse a value an integer key cannot hold exactly, naming the key."""
+    descriptor = descriptor_of(count={"dtype": "integer", "shape": []})
+    layout = EventLayout.from_descriptor(descriptor, string_capacity=64, page_rows=4)
+
+    with pytest.raises(ValueError, match="'count'"):
+        layout.pack("event", event_of(descriptor, count=value))
+
+
+def test_integral_float_fits_an_integer_key() -> None:
+    """Accept 3.0 for an integer key and return it as the integer 3."""
+    descriptor = descriptor_of(count={"dtype": "integer", "shape": []})
+    layout = EventLayout.from_descriptor(descriptor, string_capacity=64, page_rows=4)
+
+    _, doc = layout.unpack(layout.pack("event", event_of(descriptor, count=3.0)))
+
+    data = doc["data"]
+    assert isinstance(data, dict)
+    assert data == {"count": 3}
+    assert type(data["count"]) is int
+
+
 def test_page_of_strings_at_the_limit_passes() -> None:
     """Carry a full page of strings each exactly string_capacity bytes of UTF-8."""
     descriptor = descriptor_of(label={"dtype": "string", "shape": []})

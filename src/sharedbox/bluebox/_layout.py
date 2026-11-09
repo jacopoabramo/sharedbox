@@ -292,6 +292,13 @@ class EventLayout:
             raise ValueError(f"{label}: {error}") from None
         if array.shape != (rows, *shape):
             raise ValueError(f"{label}: shape {array.shape}, not {(rows, *shape)}")
+        if not isinstance(column, np.ndarray | np.generic):
+            given = np.asarray(column)
+            floats = array.dtype.kind in "fc" and given.dtype.kind in "fc"
+            if not np.array_equal(array, given, equal_nan=floats):
+                raise ValueError(
+                    f"{label}: a value does not convert to {dtype} exactly"
+                )
         return array
 
     def _values(
