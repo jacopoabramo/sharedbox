@@ -181,12 +181,20 @@ class EventLayout:
         Raises
         ------
         ValueError
+            If `doc` lacks `uid`, `time`, `seq_num`, `data` or `timestamps`,
+            holds a data key the descriptor does not have, or is a page
+            whose `uid` or `time` has another number of rows than `seq_num`.
             If a value has another shape or dtype than its key, does not
             convert (to an integer or bool key: exactly; a float key rounds
             it), is a string longer than `string_capacity` bytes of UTF-8,
             or its CBOR does not fit in its field. The message names
             the key. No item is returned then.
         """
+        if name not in ("event", "event_page"):
+            raise ValueError(f"cannot pack a {name} document")
+        for field in ("uid", "time", "seq_num", "data", "timestamps"):
+            if field not in doc:
+                raise ValueError(f"{name} document: {field!r} is missing")
         data: Mapping[str, Any]
         timestamps: Mapping[str, Any]
         if name == "event":
@@ -199,8 +207,14 @@ class EventLayout:
             }
             data = {key: event_column(value) for key, value in doc["data"].items()}
             timestamps = {key: [value] for key, value in doc["timestamps"].items()}
-        elif name == "event_page":
+        else:
             rows = len(doc["seq_num"])
+            for field in ("uid", "time"):
+                if len(doc[field]) != rows:
+                    raise ValueError(
+                        f"event_page document: {field!r} has {len(doc[field])} rows, "
+                        f"seq_num {rows}"
+                    )
             filled = doc.get("filled", {})
             page = {
                 "uid": list(doc["uid"]),
@@ -213,8 +227,9 @@ class EventLayout:
             }
             data = doc["data"]
             timestamps = doc["timestamps"]
-        else:
-            raise ValueError(f"cannot pack a {name} document")
+        unknown = (data.keys() | timestamps.keys()) - {key.name for key in self.keys}
+        if unknown:
+            raise ValueError(f"data keys {sorted(unknown)} are not in the descriptor")
         kind = 0 if name == "event" else 1
         self._check_strings("uid", page["uid"])
         seq_num = self._array("seq_num", page["seq_num"], np.dtype("int64"), (), rows)

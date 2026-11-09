@@ -199,6 +199,44 @@ def test_float_fits_a_narrower_float_key() -> None:
     assert doc["data"] == {"gain": float(np.float32(0.1))}
 
 
+def test_unknown_data_key_is_refused() -> None:
+    """Refuse an event holding a data key its descriptor does not have, naming it."""
+    descriptor = descriptor_of(count={"dtype": "integer", "shape": []})
+    layout = EventLayout.from_descriptor(descriptor, string_capacity=64, page_rows=4)
+
+    with pytest.raises(ValueError, match="'stray'"):
+        layout.pack("event", event_of(descriptor, count=1, stray=2.0))
+
+
+def test_page_of_uneven_rows_is_refused() -> None:
+    """Refuse a page whose uid list is shorter than its rows."""
+    descriptor = descriptor_of(count={"dtype": "integer", "shape": []})
+    page = {
+        "uid": [str(uuid.uuid4()) for _ in range(2)],
+        "time": [1.0, 2.0, 3.0],
+        "seq_num": [1, 2, 3],
+        "data": {"count": [1, 2, 3]},
+        "timestamps": {"count": [1.0, 2.0, 3.0]},
+        "filled": {},
+        "descriptor": descriptor["uid"],
+    }
+    layout = EventLayout.from_descriptor(descriptor, string_capacity=64, page_rows=4)
+
+    with pytest.raises(ValueError, match="'uid'"):
+        layout.pack("event_page", page)
+
+
+def test_missing_field_is_refused() -> None:
+    """Refuse an event without its time, naming the field."""
+    descriptor = descriptor_of(count={"dtype": "integer", "shape": []})
+    event = event_of(descriptor, count=1)
+    del event["time"]
+    layout = EventLayout.from_descriptor(descriptor, string_capacity=64, page_rows=4)
+
+    with pytest.raises(ValueError, match="'time'"):
+        layout.pack("event", event)
+
+
 def test_page_of_strings_at_the_limit_passes() -> None:
     """Carry a full page of strings each exactly string_capacity bytes of UTF-8."""
     descriptor = descriptor_of(label={"dtype": "string", "shape": []})
