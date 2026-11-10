@@ -387,9 +387,10 @@ class DocumentSender:
         one would otherwise lose the events sent before that when the ring is
         overwritten or the stream removed at the stop. The call waits for a
         process until `control_timeout` passes without its furthest-behind
-        control reader moving on, and not for a process that has exited. A
-        receiver process that runs out of time is not waited for again in
-        the run.
+        control reader moving on, and not for a process that has exited, so
+        a stuck receiver also stops the wait for a slower one of the same
+        process. A receiver process that runs out of time is not waited for
+        again in the run.
         """
         deadlines: dict[int, float] = {}
         behind: dict[int, int] = {}
