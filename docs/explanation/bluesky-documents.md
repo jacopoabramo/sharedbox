@@ -62,8 +62,9 @@ descriptor at once. A lossless receiver must not miss the events sent before
 that moment, so the sender, when a descriptor's events start to fill their
 ring, waits for every lossless receiver to open the stream. Each such wait
 lasts at most `control_timeout`, and a receiver process that runs out of one
-is not waited for again in that run, so a receiver that is stuck or dead
-costs a run that much once, not once per descriptor. A lossy
+is not waited for again in that run, so a stuck receiver costs a run that
+much once, not once per descriptor, and the sender does not wait for a
+process that has exited. A lossy
 or latest receiver tells the sender not to wait for it, by holding a second
 reader on the control stream that it never reads. That reader is lossy, so
 it never holds the sender back and is never released.
@@ -83,10 +84,11 @@ A receiver that stops reading the control stream would hold every other
 receiver back with it, so the sender releases it after `control_timeout`.
 The released receiver has lost documents it cannot get back, and it reports
 that with `ReceiverReleasedError` instead of going on with a run that has
-holes. Because a receiver reads ahead at most a ring of control documents,
-one that delivers them more slowly than the run sends them holds the sender
-back too, whatever its mode, instead of falling further behind for the rest
-of the run.
+holes. A receiver reads ahead at most a ring of control documents, so one
+that delivers them more slowly than the run sends them fills the ring as
+well, whatever its mode. The sender then holds back for up to
+`control_timeout` and releases it, instead of letting it fall further
+behind for the rest of the run.
 
 ## Joining a run under way
 

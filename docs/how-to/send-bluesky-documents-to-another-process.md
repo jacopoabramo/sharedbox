@@ -125,7 +125,8 @@ The mode applies only to events and event pages. Every receiver gets every
 other document, the start, descriptors and stop included, whatever its
 mode, so a lossy receiver still knows which run and which stream an event
 belongs to. A receiver that reads those documents more slowly than the run
-sends them therefore holds the run back, whatever its mode. The events it
+sends them therefore holds the run back for up to `control_timeout` and is
+then released, whatever its mode. The events it
 does get arrive in the order they were sent.
 
 How many events the ring holds is `event_capacity`, 8 unless you pass it to
