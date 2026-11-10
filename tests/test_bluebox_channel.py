@@ -454,16 +454,46 @@ def test_receiver_delivering_ahead_of_a_descriptor_is_waited_for(
     documents[1:1] = notes
     with (
         DocumentSender.create(
-            unique_name, control_capacity=4, event_capacity=4, control_timeout=0.5
+            unique_name, control_capacity=4, event_capacity=4, control_timeout=1.0
         ) as sender,
         DocumentReceiver.attach(unique_name) as receiver,
     ):
         collector = Collector(
-            receiver, delay=lambda name, doc: 0.25 if name == "note" else 0.0
+            receiver, delay=lambda name, doc: 0.4 if name == "note" else 0.0
         )
         send_all(sender, documents)
 
         assert_documents_equal(documents, collector.join())
+
+
+def test_receivers_coming_and_going_do_not_hide_a_stuck_one(unique_name: str) -> None:
+    """Give up on a stuck lossless receiver while its process attaches and closes other receivers."""
+    documents = numbered_run(10)
+    stop = threading.Event()
+
+    def churn() -> None:
+        end = time.monotonic() + 3.0
+        while time.monotonic() < end and not stop.is_set():
+            with DocumentReceiver.attach(unique_name, mode="latest"):
+                time.sleep(0.2)
+            time.sleep(0.05)
+
+    with (
+        DocumentSender.create(
+            unique_name, event_capacity=4, control_timeout=0.5
+        ) as sender,
+        DocumentReceiver.attach(unique_name),
+    ):
+        thread = threading.Thread(target=churn)
+        thread.start()
+        started = time.monotonic()
+        send_all(sender, documents[:-1])
+        elapsed = time.monotonic() - started
+        stop.set()
+        thread.join()
+        sender(*documents[-1])
+
+    assert elapsed < 2.0
 
 
 def test_lossy_receiver_stays_near_the_control_documents(unique_name: str) -> None:

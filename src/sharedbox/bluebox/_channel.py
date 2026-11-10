@@ -386,12 +386,14 @@ class DocumentSender:
         A receiver opens a stream once it reads its descriptor, so a lossless
         one would otherwise lose the events sent before that when the ring is
         overwritten or the stream removed at the stop. The call waits for a
-        process until `control_timeout` passes without its control readers
-        moving on, and not for a process that has exited. A receiver process
-        that runs out of time is not waited for again in the run.
+        process until `control_timeout` passes without its furthest-behind
+        control reader moving on, and not for a process that has exited. A
+        receiver process that runs out of time is not waited for again in
+        the run.
         """
         deadlines: dict[int, float] = {}
-        progress: dict[int, int] = {}
+        behind: dict[int, int] = {}
+        capacity = self._control.capacity
         next_sweep = 0.0
         while streams:
             now = time.monotonic()
@@ -406,15 +408,21 @@ class DocumentSender:
             if not missing:
                 break
             for pid in missing:
-                # A receiver delivering the documents ahead of a descriptor
-                # reaches it in time, since nothing new is sent meanwhile.
-                position = sum(
-                    reader.position
-                    for reader in readers
-                    if reader.pid == pid and reader.mode == "lossless"
+                # Nothing is sent meanwhile, so the lag of the process's slowest
+                # live reader falls only as that receiver reads; readers that
+                # attach or close cannot lower it, and it cannot fall forever.
+                lag = max(
+                    (
+                        reader.lag
+                        for reader in readers
+                        if reader.pid == pid
+                        and reader.mode == "lossless"
+                        and reader.lag <= capacity
+                    ),
+                    default=0,
                 )
-                if progress.get(pid) != position:
-                    progress[pid] = position
+                if pid not in behind or lag < behind[pid]:
+                    behind[pid] = lag
                     deadlines[pid] = now + self._control_timeout
                 elif now >= deadlines[pid]:
                     self._given_up.add(pid)
