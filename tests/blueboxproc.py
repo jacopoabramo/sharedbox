@@ -19,18 +19,6 @@ CONTEXT = mp.get_context("spawn")
 Document = tuple[str, dict[str, Any]]
 
 
-def start_run_and_exit(name: str) -> None:
-    """Create the channel `name`, send a start and a descriptor, and exit without closing."""
-    sender = DocumentSender.create(name)
-    bundle = event_model.compose_run()
-    sender("start", bundle.start_doc)
-    descriptor = bundle.compose_descriptor(
-        name="primary", data_keys={"x": {"source": "x", "dtype": "number", "shape": []}}
-    )
-    sender("descriptor", descriptor.descriptor_doc)
-    os._exit(0)
-
-
 def collect(
     name: str,
     mode: Literal["lossless", "lossy", "latest"],
@@ -200,7 +188,6 @@ class Child:
     ) -> None:
         self.documents: list[Document] = []
         self.ending: str | None = None
-        self.reply: Connection | None = None
         self._ready = threading.Event()
         self._connection, child_end = CONTEXT.Pipe(duplex=duplex)
         self.process = CONTEXT.Process(

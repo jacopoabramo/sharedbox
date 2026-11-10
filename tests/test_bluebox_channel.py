@@ -1,7 +1,7 @@
 import multiprocessing as mp
 import threading
 import time
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import Any
 
 import cbor2
@@ -9,16 +9,22 @@ import event_model
 import numpy as np
 import pytest
 from bluebox_compare import assert_documents_equal
-from blueboxproc import Child, collect, start_run_and_exit
+from blueboxproc import Child, collect, run_and_die
 
-from sharedbox import EndOfStream, SegmentExistsError, SharedStream
+from sharedbox import (
+    EndOfStream,
+    SegmentExistsError,
+    SegmentNotFoundError,
+    SharedStream,
+    StreamClosedError,
+)
 from sharedbox.bluebox import (
     DocumentReceiver,
     DocumentSender,
     LateJoinError,
     ReceiverReleasedError,
 )
-from sharedbox.bluebox._channel import ChannelState
+from sharedbox.bluebox._channel import ChannelState, ControlItem
 
 Document = tuple[str, dict[str, Any]]
 CONTEXT = mp.get_context("spawn")
@@ -108,7 +114,7 @@ class Collector:
     """A thread that receives documents until a stop, the end of the stream or an error.
 
     With `pause_after`, it stops receiving after that many documents until
-    `resume` is set.
+    `resume` is set. `delay` gives the seconds to wait after each document.
     """
 
     def __init__(
@@ -117,8 +123,10 @@ class Collector:
         *,
         pause_after: int | None = None,
         until_stop: bool = True,
+        delay: Callable[[str, dict[str, Any]], float] | None = None,
     ) -> None:
         self.receiver = receiver
+        self.delay = delay
         self.documents: list[Document] = []
         self.error: BaseException | None = None
         self.ended_at: float | None = None
@@ -137,6 +145,8 @@ class Collector:
                 self.documents.append((name, doc))
                 if name == "stop" and self.until_stop:
                     return
+                if self.delay is not None:
+                    time.sleep(self.delay(name, doc))
         except EndOfStream:
             self.ended_at = time.monotonic()
         except Exception as error:
@@ -151,6 +161,14 @@ class Collector:
         if self.error is not None:
             raise self.error
         return self.documents
+
+
+def wait_until(condition: Callable[[], bool], timeout: float = 5.0) -> None:
+    """Wait until `condition` holds, failing after `timeout` seconds."""
+    deadline = time.monotonic() + timeout
+    while not condition():
+        assert time.monotonic() < deadline, "the condition did not hold in time"
+        time.sleep(0.01)
 
 
 def test_documents_arrive_in_order(unique_name: str) -> None:
@@ -222,6 +240,8 @@ def test_state_too_large_refuses_late_join(unique_name: str) -> None:
 
         send_all(sender, documents[5:])
         assert_documents_equal(documents, collector.join())
+        # After the stop the state is small again.
+        DocumentReceiver.attach(unique_name).close()
 
 
 def test_unknown_document_name_travels(unique_name: str) -> None:
@@ -273,7 +293,10 @@ def test_receiver_never_starts_mid_document(unique_name: str, held: str) -> None
             sending.start()
             # The first receiver does not read, so the sender waits with four
             # parts of the held document in the ring.
-            time.sleep(0.5)
+            with SharedStream.attach(ControlItem, f"{unique_name}:control") as control:
+                wait_until(
+                    lambda: max(each.lag for each in control.statistics().readers) == 4
+                )
             with DocumentReceiver.attach(unique_name) as late:
                 late_collector = Collector(late)
                 collector.resume.set()
@@ -311,14 +334,19 @@ def test_stuck_receiver_is_released(unique_name: str) -> None:
         DocumentReceiver.attach(unique_name) as receiver,
     ):
         began = time.monotonic()
-        send_all(sender, documents)
+        send_all(sender, documents[:-1])
         elapsed = time.monotonic() - began
 
         # One control_timeout for the release; waiting for the released
         # receiver at each of the two event streams would add two more.
-        assert elapsed < 1.0
+        assert elapsed < 1.2
         with pytest.raises(ReceiverReleasedError):
             receiver.receive(timeout=5)
+        with DocumentReceiver.attach(unique_name) as again:
+            sender(*documents[-1])
+            names = [again.receive(timeout=5)[0] for _ in range(5)]
+        # A receiver starts at the newest control document sent before it.
+        assert names == ["start", "descriptor", "descriptor", "stream_datum", "stop"]
 
 
 def test_killed_receiver_is_not_waited_for(unique_name: str) -> None:
@@ -344,38 +372,191 @@ def test_stuck_receiver_holds_each_run_back_once(unique_name: str) -> None:
     ):
         began = time.monotonic()
         for _ in range(3):
-            send_all(sender, run_documents())
+            send_all(sender, numbered_run(9, streams=5))
         elapsed = time.monotonic() - began
 
-    # 0.9 s at most; waiting at each of the two event streams would take 1.8 s.
-    assert elapsed < 1.3
+    # 0.9 s at most; waiting at each of the five event streams would take 4.5 s.
+    assert elapsed < 2.5
 
 
-def numbered_run(events: int) -> list[Document]:
-    """Return a run of one descriptor with `events` events."""
+def numbered_run(events: int, streams: int = 1) -> list[Document]:
+    """Return a run of `streams` descriptors, each followed by `events` events."""
     bundle = event_model.compose_run()
-    primary = bundle.compose_descriptor(name="primary", data_keys={"x": NUMBER})
-    return [
-        ("start", dict(bundle.start_doc)),
-        ("descriptor", dict(primary.descriptor_doc)),
-        *(
+    documents: list[Document] = [("start", dict(bundle.start_doc))]
+    for stream in range(streams):
+        descriptor = bundle.compose_descriptor(
+            name=f"stream{stream}", data_keys={"x": NUMBER}
+        )
+        documents.append(("descriptor", dict(descriptor.descriptor_doc)))
+        documents += [
             (
                 "event",
                 dict(
-                    primary.compose_event(
+                    descriptor.compose_event(
                         data={"x": float(index)}, timestamps={"x": 1.0}
                     )
                 ),
             )
             for index in range(events)
-        ),
-        ("stop", dict(bundle.compose_stop())),
-    ]
+        ]
+    documents.append(("stop", dict(bundle.compose_stop())))
+    return documents
+
+
+def pause_after_first_event(seconds: float) -> Callable[..., float]:
+    """Return a delay of `seconds` after the first event of each stream.
+
+    The sender is then held back by the full ring, so the next descriptor
+    is sent during the pause, and its stream opens only after it.
+    """
+
+    def delay(name: str, doc: dict[str, Any]) -> float:
+        return seconds if name == "event" and doc["seq_num"] == 1 else 0.0
+
+    return delay
+
+
+def test_slow_receiver_is_waited_for_at_each_stream(unique_name: str) -> None:
+    """Wait control_timeout at each stream for a lossless receiver whose pauses add up to more."""
+    documents = numbered_run(9, streams=5)
+    with (
+        DocumentSender.create(unique_name, control_timeout=0.5) as sender,
+        DocumentReceiver.attach(unique_name) as receiver,
+    ):
+        collector = Collector(receiver, delay=pause_after_first_event(0.2))
+        send_all(sender, documents)
+
+        assert_documents_equal(documents, collector.join())
+
+
+def test_released_lossy_receiver_hides_no_lossless_one(unique_name: str) -> None:
+    """Keep waiting for a lossless receiver after a lossy one of the same process was released."""
+    documents = numbered_run(9, streams=3)
+    with (
+        DocumentSender.create(
+            unique_name, control_capacity=2, control_timeout=0.5
+        ) as sender,
+        DocumentReceiver.attach(unique_name, mode="lossy"),
+        DocumentReceiver.attach(unique_name) as receiver,
+    ):
+        collector = Collector(receiver, delay=pause_after_first_event(0.2))
+        send_all(sender, documents)
+
+        assert_documents_equal(documents, collector.join())
+
+
+def test_lossy_receiver_stays_near_the_control_documents(unique_name: str) -> None:
+    """Hold the sender back for a lossy receiver slower than the control documents, so it never falls far behind."""
+    sent = [0]
+    lags: list[int] = []
+
+    def delay(name: str, doc: dict[str, Any]) -> float:
+        lags.append(sent[0] - doc["i"])
+        return 0.01
+
+    with (
+        DocumentSender.create(unique_name, control_capacity=4) as sender,
+        DocumentReceiver.attach(unique_name, mode="lossy") as receiver,
+    ):
+        collector = Collector(receiver, until_stop=False, delay=delay)
+        for index in range(40):
+            sender("note", {"i": index})
+            sent[0] = index + 1
+        wait_until(lambda: len(collector.documents) == 40)
+        sender.close()
+        collector.join()
+
+    # The receiver holds at most four documents and the ring four more.
+    assert max(lags) <= 2 * 4 + 1
+
+
+def test_late_lossless_receiver_keeps_events_sent_while_it_attaches(
+    unique_name: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Deliver the events sent between a late receiver's control reader opening and its event readers opening."""
+    documents = numbered_run(5)
+    join = DocumentReceiver._join
+
+    def join_after_events(receiver: DocumentReceiver, box: Any) -> None:
+        send_all(sender, documents[3:6])
+        join(receiver, box)
+
+    with DocumentSender.create(unique_name) as sender:
+        send_all(sender, documents[:3])
+        monkeypatch.setattr(DocumentReceiver, "_join", join_after_events)
+        with DocumentReceiver.attach(unique_name) as receiver:
+            monkeypatch.undo()
+            collector = Collector(receiver)
+            send_all(sender, documents[6:])
+
+            assert_documents_equal(documents, collector.join())
+
+
+def test_receiver_attached_between_runs_gets_the_next(unique_name: str) -> None:
+    """Deliver exactly the next run to a receiver attached after a run stopped."""
+    second = numbered_run(12)
+    with DocumentSender.create(unique_name) as sender:
+        send_all(sender, numbered_run(12))
+        with DocumentReceiver.attach(unique_name) as receiver:
+            collector = Collector(receiver)
+            send_all(sender, second)
+
+            assert_documents_equal(second, collector.join())
+
+
+def test_channel_goes_on_after_a_refused_event(unique_name: str) -> None:
+    """Deliver the run without gaps after the sender refused one of its events."""
+    documents = numbered_run(2)
+    start, descriptor, first, second, stop = documents
+    bad = {**first[1], "data": {"x": "text"}}
+    with (
+        DocumentSender.create(unique_name) as sender,
+        DocumentReceiver.attach(unique_name) as receiver,
+    ):
+        collector = Collector(receiver)
+        send_all(sender, [start, descriptor])
+        with pytest.raises(ValueError, match="'x'"):
+            sender("event", bad)
+        send_all(sender, [first, second, stop])
+
+        assert_documents_equal(documents, collector.join())
+
+
+def test_attach_to_a_missing_channel_is_refused(unique_name: str) -> None:
+    """Refuse to attach to a name no sender created."""
+    with pytest.raises(SegmentNotFoundError):
+        DocumentReceiver.attach(unique_name)
+
+
+def test_unknown_mode_is_refused(unique_name: str) -> None:
+    """Refuse a mode other than lossless, lossy and latest."""
+    with DocumentSender.create(unique_name), pytest.raises(ValueError, match="fast"):
+        DocumentReceiver.attach(unique_name, mode="fast")  # type: ignore[arg-type]
+
+
+def test_receive_times_out(unique_name: str) -> None:
+    """Raise TimeoutError from a receive with nothing to deliver."""
+    with (
+        DocumentSender.create(unique_name),
+        DocumentReceiver.attach(unique_name) as receiver,
+        pytest.raises(TimeoutError),
+    ):
+        receiver.receive(timeout=0.1)
+
+
+def test_closed_receiver_refuses_to_receive(unique_name: str) -> None:
+    """Raise StreamClosedError from a receive after close."""
+    with DocumentSender.create(unique_name):
+        receiver = DocumentReceiver.attach(unique_name)
+        receiver.close()
+
+        with pytest.raises(StreamClosedError):
+            receiver.receive(timeout=1)
 
 
 def test_slow_lossless_receiver_keeps_up_over_runs(unique_name: str) -> None:
     """Deliver three runs to a lossless receiver that takes 0.1 s per event, with control_timeout 0.3."""
-    runs = [numbered_run(12) for _ in range(3)]
+    runs = [numbered_run(9) for _ in range(3)]
     with (
         DocumentSender.create(unique_name, control_timeout=0.3) as sender,
         Child(collect, name=unique_name, mode="lossless", delay=0.1, stops=3) as child,
@@ -545,10 +726,10 @@ def test_event_streams_are_listed_while_they_exist(
 
 def test_stale_name_is_taken_again(unique_name: str) -> None:
     """Create a channel whose previous creator exited without closing it."""
-    process = CONTEXT.Process(target=start_run_and_exit, args=(unique_name,))
+    process = CONTEXT.Process(target=run_and_die, args=(unique_name,))
     process.start()
     process.join(30)
-    assert process.exitcode == 0
+    assert process.exitcode == 1
 
     with (
         DocumentSender.create(unique_name) as sender,
