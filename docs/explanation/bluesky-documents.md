@@ -55,14 +55,15 @@ until the gap before it is filled, so the order you receive is the order the
 `RunEngine` emitted.
 
 A receiver can open an event stream only once it has read the stream's
-descriptor, which gives the layout. At each `receive` it therefore reads
-every control document already sent, ahead of what it delivers, and opens
-the event stream of each new descriptor at once. A lossless receiver must
-not miss the events sent before that moment, so the sender,
-when a descriptor's events start to fill their ring, waits for every
-lossless receiver to open the stream. All these waits for one receiver
-process share a budget of `control_timeout` per run, so a receiver that is
-stuck or dead costs a run that much once, not once per descriptor. A lossy
+descriptor, which gives the layout. At each `receive` it therefore reads the
+control documents already sent, ahead of what it delivers and up to as many
+as the control stream's ring holds, and opens the event stream of each new
+descriptor at once. A lossless receiver must not miss the events sent before
+that moment, so the sender, when a descriptor's events start to fill their
+ring, waits for every lossless receiver to open the stream. Each such wait
+lasts at most `control_timeout`, and a receiver process that runs out of one
+is not waited for again in that run, so a receiver that is stuck or dead
+costs a run that much once, not once per descriptor. A lossy
 or latest receiver tells the sender not to wait for it, by holding a second
 reader on the control stream that it never reads. That reader is lossy, so
 it never holds the sender back and is never released.
@@ -82,7 +83,10 @@ A receiver that stops reading the control stream would hold every other
 receiver back with it, so the sender releases it after `control_timeout`.
 The released receiver has lost documents it cannot get back, and it reports
 that with `ReceiverReleasedError` instead of going on with a run that has
-holes.
+holes. Because a receiver reads ahead at most a ring of control documents,
+one that delivers them more slowly than the run sends them holds the sender
+back too, whatever its mode, instead of falling further behind for the rest
+of the run.
 
 ## Joining a run under way
 
@@ -94,6 +98,13 @@ The receiver opens its control reader first and reads the box second, so
 anything sent between the two is in the reader, and it drops the control
 items whose number is at or below the box's. It then delivers the start and
 descriptors from the box and goes on from there.
+
+The control reader starts at the last control item sent before it opened,
+so no other document lies between that item and the moment the receiver
+attached. The receiver opens the run's event streams at the oldest item they
+still hold and drops the events numbered at or below that control item. It
+therefore keeps every event sent while it was attaching, and every event it
+delivers comes after the control documents it missed.
 
 A field of a box holds at most 1 MiB, so a run whose start and descriptors
 need more cannot be joined. The sender sets a flag in the box instead, and

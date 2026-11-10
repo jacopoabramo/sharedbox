@@ -124,7 +124,9 @@ receiver = DocumentReceiver.attach("beamline", mode="lossy")
 The mode applies only to events and event pages. Every receiver gets every
 other document, the start, descriptors and stop included, whatever its
 mode, so a lossy receiver still knows which run and which stream an event
-belongs to. The events it does get arrive in the order they were sent.
+belongs to. A receiver that reads those documents more slowly than the run
+sends them therefore holds the run back, whatever its mode. The events it
+does get arrive in the order they were sent.
 
 How many events the ring holds is `event_capacity`, 8 unless you pass it to
 `create`, and `max_readers`, also 8, limits how many receivers may be
@@ -146,7 +148,9 @@ arrives whole.
 A receiver can attach at any time. When a run is under way, it first
 delivers that run's start and descriptors, then the documents sent from the
 moment it attached, so it can make sense of the events it receives without
-having seen the beginning. The events sent before it attached are gone.
+having seen the beginning. Of the events sent before it attached, it gets
+those sent after the last document of another kind, as far as their stream
+still holds them; the others are gone.
 
 The channel keeps the run's start and descriptors for late receivers, in at
 most 1 MiB.
@@ -189,15 +193,13 @@ sender = DocumentSender.create(
     A receiver starts reading a descriptor's events at its first call to
     `receive` after the descriptor was sent, even while it is still
     delivering earlier documents. Before those events fill their ring, the
-    sender waits for each lossless receiver to make that call, and then
-    sends on, whatever `on_full` says. These waits share one budget of
-    `control_timeout` per receiver per run, so in a run with several
-    descriptors the time a receiver spends away from `receive` adds up. A
-    lossless receiver that calls `receive` after the budget is spent finds
-    events gone, and its next `receive` raises `ReceiverReleasedError`
-    instead of delivering a run with holes. Give the sender a
-    `control_timeout` longer than the total time a lossless receiver spends
-    away from `receive` at the descriptors of one run.
+    sender waits up to `control_timeout` for each lossless receiver to make
+    that call, and then sends on, whatever `on_full` says. A lossless
+    receiver that calls `receive` later finds events gone, and its next
+    `receive` raises `ReceiverReleasedError` instead of delivering a run
+    with holes; the sender does not wait for it again in that run. Give the
+    sender a `control_timeout` longer than the time a lossless receiver
+    spends away from `receive`.
 
 ## Chain channels into a pipeline
 

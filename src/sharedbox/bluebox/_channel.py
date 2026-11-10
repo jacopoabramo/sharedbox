@@ -489,11 +489,13 @@ class DocumentReceiver:
 
     Make one with [`attach`][sharedbox.bluebox.DocumentReceiver.attach], not
     the constructor. The control stream is read without loss whatever the mode; the mode
-    applies to the event streams. Each `receive` reads every control
-    document waiting and opens the event stream of each descriptor among
-    them before it delivers the descriptor. A receiver attached mid-run
-    delivers the run's start and descriptors first, then the documents from
-    its attach point on.
+    applies to the event streams. Each `receive` reads the control
+    documents waiting, up to as many as the control stream's ring holds,
+    and opens the event stream of each descriptor among them before it
+    delivers the descriptor. A receiver attached mid-run delivers the run's
+    start and descriptors first, then the documents from its attach point
+    on, with the events sent since the last other document that their
+    streams still hold.
     """
 
     def __init__(
