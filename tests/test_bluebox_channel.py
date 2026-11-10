@@ -420,10 +420,10 @@ def test_slow_receiver_is_waited_for_at_each_stream(unique_name: str) -> None:
     """Wait control_timeout at each stream for a lossless receiver whose pauses add up to more."""
     documents = numbered_run(9, streams=5)
     with (
-        DocumentSender.create(unique_name, control_timeout=0.5) as sender,
+        DocumentSender.create(unique_name, control_timeout=2.0) as sender,
         DocumentReceiver.attach(unique_name) as receiver,
     ):
-        collector = Collector(receiver, delay=pause_after_first_event(0.2))
+        collector = Collector(receiver, delay=pause_after_first_event(0.5))
         send_all(sender, documents)
 
         assert_documents_equal(documents, collector.join())
@@ -434,12 +434,33 @@ def test_released_lossy_receiver_hides_no_lossless_one(unique_name: str) -> None
     documents = numbered_run(9, streams=3)
     with (
         DocumentSender.create(
-            unique_name, control_capacity=2, control_timeout=0.5
+            unique_name, control_capacity=2, control_timeout=2.0
         ) as sender,
         DocumentReceiver.attach(unique_name, mode="lossy"),
         DocumentReceiver.attach(unique_name) as receiver,
     ):
-        collector = Collector(receiver, delay=pause_after_first_event(0.2))
+        collector = Collector(receiver, delay=pause_after_first_event(0.5))
+        send_all(sender, documents)
+
+        assert_documents_equal(documents, collector.join())
+
+
+def test_receiver_delivering_ahead_of_a_descriptor_is_waited_for(
+    unique_name: str,
+) -> None:
+    """Keep waiting for a lossless receiver that is still delivering the control documents ahead of a descriptor."""
+    documents = numbered_run(10)
+    notes: list[Document] = [("note", {"i": index}) for index in range(6)]
+    documents[1:1] = notes
+    with (
+        DocumentSender.create(
+            unique_name, control_capacity=4, event_capacity=4, control_timeout=0.5
+        ) as sender,
+        DocumentReceiver.attach(unique_name) as receiver,
+    ):
+        collector = Collector(
+            receiver, delay=lambda name, doc: 0.25 if name == "note" else 0.0
+        )
         send_all(sender, documents)
 
         assert_documents_equal(documents, collector.join())
@@ -468,6 +489,34 @@ def test_lossy_receiver_stays_near_the_control_documents(unique_name: str) -> No
 
     # The receiver holds at most four documents and the ring four more.
     assert max(lags) <= 2 * 4 + 1
+
+
+def test_late_lossless_receiver_keeps_more_than_a_ring_sent_while_it_attaches(
+    unique_name: str, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Deliver every event sent while a late receiver attaches, even more than its stream's ring holds."""
+    documents = numbered_run(18)
+    join = DocumentReceiver._join
+
+    def join_after_events(receiver: DocumentReceiver, box: Any) -> None:
+        sending.start()
+        # The sender fills the ring and waits for the event reader opened
+        # before the control reader.
+        time.sleep(0.2)
+        join(receiver, box)
+
+    with DocumentSender.create(unique_name, event_capacity=4) as sender:
+        sending = threading.Thread(target=send_all, args=(sender, documents[8:20]))
+        send_all(sender, documents[:8])
+        monkeypatch.setattr(DocumentReceiver, "_join", join_after_events)
+        with DocumentReceiver.attach(unique_name) as receiver:
+            monkeypatch.undo()
+            collector = Collector(receiver)
+            sending.join()
+            send_all(sender, documents[20:])
+
+            # The ring still held the last four events sent before.
+            assert_documents_equal(documents[:2] + documents[4:], collector.join())
 
 
 def test_late_lossless_receiver_keeps_events_sent_while_it_attaches(
