@@ -186,7 +186,7 @@ def test_slow_last_stage(
         Child(collect, name=target, mode="lossless", delay=0.4) as last,
     ):
         engine.subscribe(sender)
-        documents: list[Document] = run(engine, bp.count([array], 8))
+        documents: list[Document] = run(engine, bp.count([array], 12))
         _, middle_ending = middle.result()
         received, _ = last.result()
 
