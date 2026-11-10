@@ -590,7 +590,7 @@ class DocumentReceiver:
         values = box.snapshot()
         self._last = values["seq"]
         state = self._settings(values)
-        listed: dict[str, Mapping[str, Any]] = {}
+        listed: dict[str, dict[str, Any]] = {}
         if state.get("start") is not None:
             listed = dict(
                 zip(state["event_streams"], state["descriptors"], strict=True)
@@ -603,8 +603,8 @@ class DocumentReceiver:
             return
         self._prelude.append(("start", state["start"]))
         # The control reader starts at the last item sent before it opened, so
-        # an event numbered below that item comes before a document the
-        # receiver never delivers, and one below the box's seq before a
+        # an event numbered at or below that item comes before a document the
+        # receiver never delivers, and one at or below the box's seq before a
         # descriptor the prelude delivers. Events up to the larger of the two
         # are dropped.
         floor = self._last
@@ -620,12 +620,12 @@ class DocumentReceiver:
         opened = {source.stream.name: source for source in self._sources[1:]}
         for stream_name, descriptor in listed.items():
             self._prelude.append(("descriptor", descriptor))
-            source = opened.get(stream_name)
-            if source is None:
+            kept = opened.get(stream_name)
+            if kept is None:
                 self._open(descriptor, stream_name, self._last, floor=floor)
             else:
-                source.seq = self._last
-                source.floor = floor
+                kept.seq = self._last
+                kept.floor = floor
 
     @classmethod
     def attach(
