@@ -246,7 +246,9 @@ def test_modes_keep_every_control_document(channel: str) -> None:
     assert (lossless_ending, lossy_ending, latest_ending) == ("done",) * 3
     assert_documents_equal(documents, everything)
     for received in (some, newest):
-        assert_documents_equal(control_documents(documents), control_documents(received))
+        assert_documents_equal(
+            control_documents(documents), control_documents(received)
+        )
         numbers = seq_nums(received)
         assert 0 < len(numbers) < 200
         assert numbers == sorted(set(numbers))

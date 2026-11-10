@@ -3,8 +3,8 @@
 from typing import Any
 
 import numpy as np
-from bluesky.run_engine import RunEngine
 from blueboxproc import Document
+from bluesky.run_engine import RunEngine
 from ophyd_async.core import (
     Array1D,
     AsyncStatus,

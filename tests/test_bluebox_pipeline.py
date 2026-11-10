@@ -35,7 +35,9 @@ def test_relay_forwards_unchanged(channels: tuple[str, str]) -> None:
     array = array_detector()
     with (
         DocumentSender.create(source) as sender,
-        Child(relay, src=source, dst=target, mode="lossless", transform="same") as middle,
+        Child(
+            relay, src=source, dst=target, mode="lossless", transform="same"
+        ) as middle,
         Child(collect, name=target, mode="lossless") as last,
     ):
         engine.subscribe(sender)
@@ -54,7 +56,9 @@ def test_relay_adds_a_reduced_stream(channels: tuple[str, str]) -> None:
     array = array_detector()
     with (
         DocumentSender.create(source) as sender,
-        Child(relay, src=source, dst=target, mode="lossless", transform="sum") as middle,
+        Child(
+            relay, src=source, dst=target, mode="lossless", transform="sum"
+        ) as middle,
         Child(collect, name=target, mode="lossless") as last,
     ):
         engine.subscribe(sender)
@@ -63,7 +67,9 @@ def test_relay_adds_a_reduced_stream(channels: tuple[str, str]) -> None:
         received, ending = last.result()
 
     assert ending == "done"
-    sums = [doc for name, doc in received if name == "descriptor" and doc["name"] == "sums"]
+    sums = [
+        doc for name, doc in received if name == "descriptor" and doc["name"] == "sums"
+    ]
     assert len(sums) == 1
     uid = sums[0]["uid"]
     original = [
@@ -95,7 +101,9 @@ def test_relay_feeds_two_receivers(channels: tuple[str, str]) -> None:
     array = array_detector()
     with (
         DocumentSender.create(source) as sender,
-        Child(relay, src=source, dst=target, mode="lossless", transform="same") as middle,
+        Child(
+            relay, src=source, dst=target, mode="lossless", transform="same"
+        ) as middle,
         Child(collect, name=target, mode="lossless") as lossless,
         Child(collect, name=target, mode="lossy", delay=0.02) as lossy,
     ):
@@ -125,7 +133,9 @@ def test_killed_relay_ends_the_last_stage(channels: tuple[str, str]) -> None:
     array = array_detector()
     with (
         DocumentSender.create(source) as sender,
-        Child(relay, src=source, dst=target, mode="lossless", transform="same") as middle,
+        Child(
+            relay, src=source, dst=target, mode="lossless", transform="same"
+        ) as middle,
         Child(collect, name=target, mode="lossless") as last,
     ):
         engine.subscribe(sender)

@@ -13,7 +13,7 @@ import numpy as np
 
 _UUID = re.compile(r"\{\{\s*uuid\s*\}\}[\w-]*")
 _ROOT_PATH = re.compile(r"\{\{\s*root_path\s*\}\}")
-_IS_TIME = re.compile(r"\.timestamps\.|\.time(\[\d+\])?$")
+_IS_TIME = re.compile(r"\((event|event_page)\)\.(time(\[\d+\])?$|timestamps\.)")
 Document = tuple[str, dict[str, Any]]
 
 
@@ -46,7 +46,8 @@ def assert_documents_equal(
     `float64` equals a `float` of the same value, NaN equals NaN, and a `str`
     subclass such as an enum member equals a `str` of the same text, a
     pydantic model equals the dict of its fields, and an `int` equals a
-    `float` of the same value in a `time` or `timestamps` entry.
+    `float` of the same value in the `time` or `timestamps` of an event or an
+    event page.
     """
     assert len(actual) == len(expected), f"{len(actual)} documents, not {len(expected)}"
     for index, ((name, doc), (actual_name, actual_doc)) in enumerate(
