@@ -172,7 +172,9 @@ class DocumentSender:
         self._state: dict[str, Any] = {}
         self._seq = 0
         # Seconds the run under way waited for each receiver process.
-        self._waited: collections.Counter[int] = collections.Counter()
+        self._waited: collections.defaultdict[int, float] = collections.defaultdict(
+            float
+        )
         self._closed = False
 
     @classmethod
