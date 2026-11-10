@@ -62,7 +62,8 @@ version_file = "src/sharedbox/_version.py"
 testpaths = ["tests"]
 markers = ["stress: long runs that measure timing, throughput and memory; run with -m stress"]
 addopts = ["-m", "not stress"]
-# A sender or receiver that hangs fails its test instead of the whole job.
+# Ends a hung sender or receiver after 120 s instead of at the job's limit.
+# On Windows the thread method stops the whole run, not only the test.
 timeout = 120
 
 [tool.cibuildwheel]
