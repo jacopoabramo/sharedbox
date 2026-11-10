@@ -90,6 +90,7 @@ class EventLayout:
         groups: list[type[Any]],
         string_capacity: int,
         page_rows: int,
+        filled_capacity: int,
     ) -> None:
         self.descriptor_uid = descriptor_uid
         self.keys = keys
@@ -97,6 +98,7 @@ class EventLayout:
         self.groups = groups
         self.string_capacity = string_capacity
         self.page_rows = page_rows
+        self.filled_capacity = filled_capacity
 
     @classmethod
     def from_descriptor(
@@ -138,17 +140,20 @@ class EventLayout:
             keys.append(key)
             hints.append((f"k{index}", hint))
         # A row of `filled` maps each key stored elsewhere to a bool or a datum id.
-        filled_row = HEAD + sum(
-            2 * HEAD + len(key.name.encode()) + string_capacity
-            for key, data_key in zip(
-                keys, descriptor["data_keys"].values(), strict=True
+        filled_capacity = HEAD + page_rows * (
+            HEAD
+            + sum(
+                2 * HEAD + len(key.name.encode()) + string_capacity
+                for key, data_key in zip(
+                    keys, descriptor["data_keys"].values(), strict=True
+                )
+                if data_key.get("external")
             )
-            if data_key.get("external")
         )
         try:
             fields += [
                 ("uids", Annotated[bytes, Capacity(list_capacity)]),
-                ("filled", Annotated[bytes, Capacity(HEAD + page_rows * filled_row)]),
+                ("filled", Annotated[bytes, Capacity(filled_capacity)]),
             ]
         except ValueError as error:
             raise ValueError(f"uids and filled: {error}") from None
@@ -171,7 +176,13 @@ class EventLayout:
         fields += [(f"g{index}", group) for index, group in enumerate(groups)]
         item_type = dataclasses.make_dataclass("EventItem", fields, frozen=True)
         return cls(
-            descriptor["uid"], keys, item_type, groups, string_capacity, page_rows
+            descriptor["uid"],
+            keys,
+            item_type,
+            groups,
+            string_capacity,
+            page_rows,
+            filled_capacity,
         )
 
     @staticmethod
@@ -326,7 +337,7 @@ class EventLayout:
                 "time": time[rows_of_part],
                 "uids": encode_cbor("uids", page["uid"][rows_of_part], list_capacity),
                 "filled": encode_cbor(
-                    "filled", page["filled"][rows_of_part], list_capacity
+                    "filled", page["filled"][rows_of_part], self.filled_capacity
                 ),
             }
             columns_of_part: list[object] = []
