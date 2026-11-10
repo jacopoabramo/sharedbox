@@ -64,8 +64,9 @@ of them, and a lossless receiver must not miss the events sent before that
 moment. The sender therefore waits for every lossless receiver to open the
 stream when a descriptor's events start to fill their ring. A receiver
 that keeps reading control documents reaches the descriptor, so the sender
-gives up on it only after `control_timeout` passes without it reading one. Giving up applies to the receiver's process, which is not
-waited for again in that run, so a stuck receiver costs a run that much
+gives up on it only after `control_timeout` passes without it reading one.
+Giving up applies to the receiver's process, which is not waited for again
+in that run, so a stuck receiver costs a run that much
 once, not once per descriptor, and the sender does not wait for a process
 that has exited. A lossy
 or latest receiver tells the sender not to wait for it, by holding a second
@@ -102,11 +103,10 @@ the event streams and the number of the last document that changed them.
 The receiver reads the box twice. From the first read it opens the run's
 event streams, at the oldest item each still holds, so from then on a
 lossless receiver holds their sender back and the stop cannot remove them.
-It then opens its control reader and reads the box again, so every control
-document numbered above the box's number is in the reader, and it drops
-the control items at or below that number. The start and descriptors it
-delivers come from the second read; it opens the streams that read adds and
-closes those it no longer lists.
+It then opens its control reader and reads the box again, and it drops the
+control items numbered at or below the box's number. The start and
+descriptors it delivers come from the second read; it opens the streams
+that read adds and closes those it no longer lists.
 
 The control reader starts at the last control item sent before it opened.
 An event numbered at or below that item comes before a document the
