@@ -45,6 +45,13 @@ second sender on the same name raises `SegmentExistsError` while the first
 one's process runs. Once that process has exited, `create` removes what it
 left behind and takes the name.
 
+!!! warning "On Windows an open receiver keeps the old channel"
+    Windows frees a segment only when every process has let go of it, so
+    while a receiver of the old channel is still open, even one that has
+    seen the end but not been closed or collected, `create` on the same
+    name raises `SegmentExistsError`. Close receivers when their loop ends,
+    as a `with` block does.
+
 ## Receive them in another process
 
 [`DocumentReceiver.attach`][sharedbox.bluebox.DocumentReceiver.attach]
@@ -109,6 +116,15 @@ How many events the ring holds is `event_capacity`, 8 unless you pass it to
 attached at once. A lossy or latest receiver takes two of those places,
 because it holds a second, lossy reader on the channel's control stream,
 which tells the sender not to wait for its events.
+
+Each event stream holds `event_capacity` items, and each item has room for
+an event page of `page_rows` rows, 16 unless you set it, so every array key
+takes `event_capacity` times `page_rows` times its own size in shared
+memory. A 1024 by 1024 `uint16` image takes 2 MiB per event, which comes to
+256 MiB for that stream with the defaults. When your events are large and
+your run sends single events rather than pages, pass `page_rows=1`; a page
+with more rows than `page_rows` is split over several items and still
+arrives whole.
 
 ## Attach while a run is under way
 
@@ -214,9 +230,10 @@ direct `receive` raises [`EndOfStream`][sharedbox.EndOfStream].
 
 When the sender's process dies, receivers end the same way, after the
 documents they already hold. When a receiver's process dies, the sender
-stops waiting for it. On Linux, a channel whose sender was killed leaves
-its segments in `/dev/shm` until the next `DocumentSender.create` on the
-same name removes them.
+stops waiting for it. On Linux, a channel whose sender exited without
+closing it, killed or not, leaves its segments in `/dev/shm` until the next
+`DocumentSender.create` on the same name removes them, so close the sender
+or use it in a `with` block.
 
 ??? example "The whole script"
 

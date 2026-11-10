@@ -48,8 +48,9 @@ The sender numbers every document it sends, whatever stream it goes to,
 and writes that number into the item. A receiver reads the control stream
 and every open event stream, and always delivers the item with the lowest
 number among those it holds. Because the streams are separate, an event can
-reach the receiver before the descriptor that announces it, when the
-descriptor is still arriving in parts. The receiver holds the event back
+be waiting in its stream while a document sent before it, such as a second
+descriptor or a `datum`, is still arriving in parts. The receiver holds the
+event back
 until the gap before it is filled, so the order you receive is the order the
 `RunEngine` emitted.
 
