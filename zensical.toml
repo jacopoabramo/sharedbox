@@ -41,6 +41,7 @@ nav = [
             "how-to/follow-a-whole-reference-graph.md",
             "how-to/send-items-through-a-stream.md",
             "how-to/attach-metadata.md",
+            "how-to/send-bluesky-documents-to-another-process.md",
         ]},
         { "C and C++" = [
             "how-to/accept-a-box-in-cpp.md",
@@ -59,6 +60,7 @@ nav = [
         "explanation/reading-and-writing.md",
         "explanation/waiting-for-changes.md",
         "explanation/references.md",
+        "explanation/bluesky-documents.md",
         "explanation/closing-and-lifetime.md",
         "explanation/checking-a-process-is-alive.md",
         "explanation/how-the-module-is-built.md",
@@ -75,6 +77,7 @@ nav = [
             "reference/api/events.md",
             "reference/api/streams.md",
             "reference/api/references.md",
+            "reference/api/bluebox.md",
             "reference/api/errors.md",
             "reference/api/library-authors.md",
         ]},
