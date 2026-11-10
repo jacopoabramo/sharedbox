@@ -190,17 +190,20 @@ sender = DocumentSender.create(
 )
 ```
 
-!!! warning "A lossless receiver that attaches late can be released"
-    A receiver starts reading a descriptor's events at its first call to
-    `receive` after the descriptor was sent, even while it is still
-    delivering earlier documents. Before those events fill their ring, the
-    sender waits up to `control_timeout` for each lossless receiver to make
-    that call, and then sends on, whatever `on_full` says. A lossless
-    receiver that calls `receive` later finds events gone, and its next
-    `receive` raises `ReceiverReleasedError` instead of delivering a run
-    with holes; the sender does not wait for it again in that run. Give the
-    sender a `control_timeout` longer than the time a lossless receiver
-    spends away from `receive`.
+!!! warning "A lossless receiver that reaches a descriptor late can be released"
+    A receiver starts reading a descriptor's events when a call to
+    `receive` reads the descriptor, which can be while it is still
+    delivering earlier documents. Each call reads the control documents
+    waiting, up to as many as the control stream's ring holds. Before a
+    descriptor's events fill their ring, the sender waits for each lossless
+    receiver to read the descriptor, and gives up on it once
+    `control_timeout` passes without it reading a control document,
+    whatever `on_full` says. Giving up applies to every receiver of that
+    process for the rest of the run. A lossless receiver that reads the
+    descriptor after that finds events gone, and its next `receive` raises
+    `ReceiverReleasedError` instead of delivering a run with holes. Give
+    the sender a `control_timeout` longer than the time a lossless
+    receiver spends away from `receive`.
 
 ## Chain channels into a pipeline
 
@@ -241,8 +244,11 @@ the sender.
 An event raises `ValueError` naming the key, and nothing of it is sent, when
 an array's shape or dtype differs from its descriptor, a value does not
 convert to its key's type, or a string is longer than `string_capacity`
-bytes of UTF-8, 256 unless you set it. A document holding a value the
-channel cannot encode, such as an arbitrary object, raises `TypeError`.
+bytes of UTF-8, 256 unless you set it. An array key with no `dtype_numpy`
+has room for numbers only, so an event whose array under such a key holds
+strings raises `ValueError` when they do not fit; give the key a
+`dtype_numpy`. A document holding a value the channel cannot encode, such
+as an arbitrary object, raises `TypeError`.
 
 ## Close the channel and handle exits
 

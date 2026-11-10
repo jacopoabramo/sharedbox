@@ -224,11 +224,14 @@ class DocumentSender:
             Most rows of an event page one item of an event stream holds.
         control_timeout
             Seconds a control document waits for a receiver that stopped
-            reading before the sender releases it. It also bounds the wait,
+            reading before the sender releases it. It also bounds the wait
             for the lossless receivers to open the event stream of a
-            descriptor: once a descriptor's events no longer fit in its
-            stream, and at the stop. A receiver process that misses that
-            limit once is not waited for again in the run.
+            descriptor, once a descriptor's events no longer fit in its
+            stream and at the stop: the sender waits for a receiver process
+            until that long passes without the process reading a control
+            document. The limit applies per process, so once one receiver
+            misses it, no receiver of that process is waited for again in
+            the run.
         event_timeout
             Seconds an event waits for a lossless receiver a full ring
             behind; None waits as long as it takes.

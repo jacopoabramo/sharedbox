@@ -58,13 +58,17 @@ A receiver can open an event stream only once it has read the stream's
 descriptor, which gives the layout. At each `receive` it therefore reads the
 control documents already sent, ahead of what it delivers and up to as many
 as the control stream's ring holds, and opens the event stream of each new
-descriptor at once. A lossless receiver must not miss the events sent before
-that moment, so the sender, when a descriptor's events start to fill their
-ring, waits for every lossless receiver to open the stream. Each such wait
-lasts at most `control_timeout`, and a receiver process that runs out of one
-is not waited for again in that run, so a stuck receiver costs a run that
-much once, not once per descriptor, and the sender does not wait for a
-process that has exited. A lossy
+descriptor as soon as it has read the descriptor. A receiver that holds a
+full ring of documents reaches a new descriptor only after delivering some
+of them, and a lossless receiver must not miss the events sent before that
+moment. The sender therefore waits for every lossless receiver to open the
+stream when a descriptor's events start to fill their ring. While a
+receiver goes on reading control documents it is still on its way, so the
+sender gives up on it only after `control_timeout` passes without it
+reading one. Giving up applies to the receiver's process, which is not
+waited for again in that run, so a stuck receiver costs a run that much
+once, not once per descriptor, and the sender does not wait for a process
+that has exited. A lossy
 or latest receiver tells the sender not to wait for it, by holding a second
 reader on the control stream that it never reads. That reader is lossy, so
 it never holds the sender back and is never released.
@@ -96,17 +100,22 @@ A receiver that attaches in the middle of a run has missed the start and
 the descriptors, without which the events that follow mean nothing. The
 sender keeps them in the box `N:state`, as CBOR, together with the names of
 the event streams and the number of the last document that changed them.
-The receiver opens its control reader first and reads the box second, so
-anything sent between the two is in the reader, and it drops the control
-items whose number is at or below the box's. It then delivers the start and
-descriptors from the box and goes on from there.
+The receiver reads the box twice. From the first read it opens the run's
+event streams, at the oldest item each still holds, so from then on a
+lossless receiver holds their sender back and the stop cannot remove them.
+It then opens its control reader and reads the box again, so anything sent
+after the second read is in the reader, and it drops the control items
+whose number is at or below the box's. The start and descriptors it
+delivers come from the second read; it opens the streams that read adds and
+closes those it no longer lists.
 
-The control reader starts at the last control item sent before it opened,
-so no other document lies between that item and the moment the receiver
-attached. The receiver opens the run's event streams at the oldest item they
-still hold and drops the events numbered at or below that control item. It
-therefore keeps every event sent while it was attaching, and every event it
-delivers comes after the control documents it missed.
+The control reader starts at the last control item sent before it opened.
+An event numbered at or below that item comes before a document the
+receiver never delivers, and one at or below the box's number comes before
+a descriptor it does deliver, so the receiver drops the events numbered at
+or below the larger of the two. It keeps every later event, those sent while
+it was attaching included, and every event it delivers comes after the
+control documents it missed.
 
 A field of a box holds at most 1 MiB, so a run whose start and descriptors
 need more cannot be joined. The sender sets a flag in the box instead, and
