@@ -7,7 +7,7 @@ from typing import Any
 import cbor2
 import numpy as np
 
-_TAGS = {
+TAGS = {
     "u1": 64,
     "u2": 69,
     "u4": 70,
@@ -20,13 +20,13 @@ _TAGS = {
     "f4": 85,
     "f8": 86,
 }
-_DTYPES = {tag: np.dtype("<" + code) for code, tag in _TAGS.items()}
-_MULTI_DIMENSIONAL = 40
+DTYPES = {tag: np.dtype("<" + code) for code, tag in TAGS.items()}
+MULTI_DIMENSIONAL = 40
 # RFC 8746 has no tag for bool, complex, long double or fixed-width text, so
 # these arrays use one tag from the first-come-first-served range of the CBOR
 # registry, carrying [dtype.str, shape, raw bytes].
-_OTHER_ARRAY = 0x424C5545
-_OTHER_KINDS = "bcfiuUS"
+OTHER_ARRAY = 0x424C5545
+OTHER_KINDS = "bcfiuUS"
 
 
 def encode_default(encoder: cbor2.CBOREncoder, value: object) -> None:
@@ -48,7 +48,7 @@ def encode_default(encoder: cbor2.CBOREncoder, value: object) -> None:
     """
     if isinstance(value, np.ndarray | np.generic):
         array = np.asarray(value)
-        tag = _TAGS.get(f"{array.dtype.kind}{array.dtype.itemsize}")
+        tag = TAGS.get(f"{array.dtype.kind}{array.dtype.itemsize}")
         if tag is not None:
             data = array.astype(array.dtype.newbyteorder("<"), copy=False).tobytes()
             typed = cbor2.CBORTag(tag, data)
@@ -56,12 +56,12 @@ def encode_default(encoder: cbor2.CBOREncoder, value: object) -> None:
                 encoder.encode(typed)
             else:
                 encoder.encode(
-                    cbor2.CBORTag(_MULTI_DIMENSIONAL, [list(array.shape), typed])
+                    cbor2.CBORTag(MULTI_DIMENSIONAL, [list(array.shape), typed])
                 )
-        elif array.dtype.kind in _OTHER_KINDS:
+        elif array.dtype.kind in OTHER_KINDS:
             encoder.encode(
                 cbor2.CBORTag(
-                    _OTHER_ARRAY,
+                    OTHER_ARRAY,
                     [array.dtype.str, list(array.shape), array.tobytes()],
                 )
             )
@@ -81,12 +81,12 @@ def decode_tag_hook(tag: cbor2.CBORTag, immutable: bool) -> Any:
     An array with no dimensions comes back as a numpy scalar of the array's
     dtype. Any other tag is returned unchanged.
     """
-    if tag.tag in _DTYPES:
-        return np.frombuffer(tag.value, _DTYPES[tag.tag]).copy()
-    if tag.tag == _MULTI_DIMENSIONAL:
+    if tag.tag in DTYPES:
+        return np.frombuffer(tag.value, DTYPES[tag.tag]).copy()
+    if tag.tag == MULTI_DIMENSIONAL:
         shape, array = tag.value
         array = array.reshape(shape)
-    elif tag.tag == _OTHER_ARRAY:
+    elif tag.tag == OTHER_ARRAY:
         dtype, shape, data = tag.value
         array = np.frombuffer(data, np.dtype(dtype)).reshape(shape).copy()
     else:
@@ -94,14 +94,14 @@ def decode_tag_hook(tag: cbor2.CBORTag, immutable: bool) -> Any:
     return array[()] if array.ndim == 0 else array
 
 
-def _unsupported(value: object, path: tuple[str, ...]) -> Iterator[tuple[str, object]]:
+def unsupported(value: object, path: tuple[str, ...]) -> Iterator[tuple[str, object]]:
     match value:
         case dict():
             for key, item in value.items():
-                yield from _unsupported(item, (*path, str(key)))
+                yield from unsupported(item, (*path, str(key)))
         case list() | tuple():
             for index, item in enumerate(value):
-                yield from _unsupported(item, (*path, str(index)))
+                yield from unsupported(item, (*path, str(index)))
         case _:
             try:
                 cbor2.dumps(value, default=encode_default)
@@ -121,7 +121,7 @@ def encode_document(name: str, doc: Mapping[str, object]) -> bytes:
     try:
         return cbor2.dumps([name, doc], default=encode_default)
     except (TypeError, cbor2.CBORError):
-        for path, value in _unsupported(dict(doc), ()):
+        for path, value in unsupported(dict(doc), ()):
             raise TypeError(
                 f"{name} document: key {path!r} holds a {type(value).__name__} "
                 "that cannot be encoded"
