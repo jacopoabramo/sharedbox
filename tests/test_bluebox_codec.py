@@ -117,8 +117,10 @@ def test_key_order_is_kept() -> None:
     data_keys = {"zeta": {"y": 1, "b": 2}, "alpha_long_name": {}, "b": {}}
     _, doc = decode_document(encode_document("descriptor", {"data_keys": data_keys}))
 
-    assert list(doc["data_keys"]) == ["zeta", "alpha_long_name", "b"]
-    assert list(doc["data_keys"]["zeta"]) == ["y", "b"]
+    result = doc["data_keys"]
+    assert isinstance(result, dict)
+    assert list(result) == ["zeta", "alpha_long_name", "b"]
+    assert list(result["zeta"]) == ["y", "b"]
 
 
 def test_bool_scalar_round_trips() -> None:
