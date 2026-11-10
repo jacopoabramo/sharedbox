@@ -203,11 +203,11 @@ class EventLayout:
             If `doc` lacks `uid`, `time`, `seq_num`, `data` or `timestamps`,
             holds a data key the descriptor does not have, or is a page
             whose `uid` or `time` has another number of rows than `seq_num`.
-            If a value has another shape or dtype than its key, does not
-            convert (to an integer or bool key: exactly; a float key rounds
-            it), is a string longer than `string_capacity` bytes of UTF-8,
-            or its CBOR does not fit in its field. The message names
-            the key. No item is returned then.
+            If a value has another shape or dtype than its key, is None or
+            a str in a numeric key, does not convert (to an integer or bool
+            key: exactly; a float key rounds it), is a string longer than
+            `string_capacity` bytes of UTF-8, or its CBOR does not fit in
+            its field. The message names the key. No item is returned then.
         """
         if name not in ("event", "event_page"):
             raise ValueError(f"cannot pack a {name} document")
@@ -336,6 +336,16 @@ class EventLayout:
         ):
             raise ValueError(f"{label}: dtype {column.dtype} is not {dtype}")
         try:
+            plain = (
+                None
+                if isinstance(column, np.ndarray | np.generic)
+                else np.asarray(column)
+            )
+            # The cast below would turn None into NaN and "1.5" into 1.5.
+            if plain is not None and plain.dtype.kind in "OSU":
+                for value in plain.flat:
+                    if value is None or isinstance(value, str | bytes):
+                        raise ValueError(f"{value!r} is not a number")
             array = np.asarray(column, dtype=dtype)
         except (TypeError, ValueError, OverflowError) as error:
             raise ValueError(f"{label}: {error}") from None
@@ -345,8 +355,8 @@ class EventLayout:
         # float key rounds; an integer or bool key would change the value.
         if (
             dtype.kind in "biu"
-            and not isinstance(column, np.ndarray | np.generic)
-            and not np.array_equal(array, np.asarray(column))
+            and plain is not None
+            and not np.array_equal(array, plain)
         ):
             raise ValueError(f"{label}: a value does not convert to {dtype} exactly")
         return array

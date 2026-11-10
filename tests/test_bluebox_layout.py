@@ -159,6 +159,17 @@ def test_inexact_integer_is_refused(value: float) -> None:
         layout.pack("event", event_of(descriptor, count=value))
 
 
+@pytest.mark.parametrize("dtype", ["number", "integer", "boolean"])
+@pytest.mark.parametrize("value", [None, "1.5", "1"], ids=repr)
+def test_value_that_is_not_a_number_is_refused(dtype: str, value: object) -> None:
+    """Refuse None or a str for a number, integer or boolean key, naming the key."""
+    descriptor = descriptor_of(reading={"dtype": dtype, "shape": []})
+    layout = EventLayout.from_descriptor(descriptor, string_capacity=64, page_rows=4)
+
+    with pytest.raises(ValueError, match="'reading'"):
+        layout.pack("event", event_of(descriptor, reading=value))
+
+
 def test_integral_float_fits_an_integer_key() -> None:
     """Accept 3.0 for an integer key and return it as the integer 3."""
     descriptor = descriptor_of(count={"dtype": "integer", "shape": []})
