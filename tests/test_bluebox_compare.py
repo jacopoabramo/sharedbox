@@ -25,7 +25,11 @@ def test_int_timestamp_of_an_event_equals_a_float() -> None:
         ("stop", {"time": 5}, {"time": 5.0}),
         ("descriptor", {"timestamps": {"x": 6}}, {"timestamps": {"x": 6.0}}),
         ("event", {"data": {"time": 5}}, {"data": {"time": 5.0}}),
-        ("event", {"data": {"timestamps": {"x": 6}}}, {"data": {"timestamps": {"x": 6.0}}}),
+        (
+            "event",
+            {"data": {"timestamps": {"x": 6}}},
+            {"data": {"timestamps": {"x": 6.0}}},
+        ),
     ],
     ids=["start", "stop", "descriptor", "data key time", "data key timestamps"],
 )
