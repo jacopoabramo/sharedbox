@@ -200,7 +200,10 @@ class DocumentSender:
         event_capacity
             Items each event stream holds.
         max_readers
-            Receivers that may be attached at once.
+            Readers the control stream and each event stream take. A
+            lossless receiver takes one place on the control stream, a lossy
+            or latest receiver two, so 8 lets 8 lossless or 4 lossy
+            receivers attach at once.
         control_capacity
             Parts of 16 KiB the control stream holds.
         string_capacity
@@ -209,7 +212,10 @@ class DocumentSender:
             Most rows of an event page one item of an event stream holds.
         control_timeout
             Seconds a control document waits for a receiver that stopped
-            reading before the sender releases it.
+            reading before the sender releases it. It also bounds the wait,
+            within one run, for each lossless receiver process to open the
+            event stream of a descriptor: once a descriptor's events no
+            longer fit in its stream, and at the stop.
         event_timeout
             Seconds an event waits for a lossless receiver a full ring
             behind; None waits as long as it takes.
