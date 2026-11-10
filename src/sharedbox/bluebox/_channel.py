@@ -20,6 +20,7 @@ from .._native import (
     SegmentNotFoundError,
     StreamClosedError,
     WaiterSlotsFullError,
+    WouldBlock,
 )
 from .._status import SegmentStatus, segment_status
 from .._stream import SharedReceiveStream, SharedSendStream, SharedStream
@@ -92,16 +93,22 @@ class Source:
     """A reader of one stream of a channel, and what the receiver holds from it.
 
     `taken` is the position of the last item the receiver took from the
-    reader, and `head` the next whole document, with its sequence number.
-    With `from_start`, the reader's first item must be the stream's first.
+    reader, and `docs` the whole documents not delivered yet, each with its
+    sequence number: any number from the control stream, which is read
+    ahead, and at most one from an event stream. `seq` is the sequence
+    number of an event stream's descriptor. With `from_start`, the reader's
+    first item must be the stream's first.
     """
 
     stream: SharedStream[Any, Any]
     reader: SharedReceiveStream[Any, Any]
     layout: EventLayout | None
+    seq: int = 0
     future: Future[Any] | None = None
     parts: list[Any] = dataclasses.field(default_factory=list)
-    head: tuple[int, str, dict[str, Any]] | None = None
+    docs: collections.deque[tuple[int, str, dict[str, Any]]] = dataclasses.field(
+        default_factory=collections.deque
+    )
     taken: int | None = None
     ended: bool = False
     from_start: bool = False
@@ -408,9 +415,7 @@ class DocumentSender:
                 for reader in events.stream.statistics().readers
                 if reader.mode == "lossless"
             )
-            missing |= {
-                pid for pid, count in receivers.items() if count > opened[pid]
-            }
+            missing |= {pid for pid, count in receivers.items() if count > opened[pid]}
         return missing
 
     def _write_state(self, state: dict[str, Any]) -> None:
@@ -464,9 +469,11 @@ class DocumentReceiver:
 
     Make one with [`attach`][sharedbox.bluebox.DocumentReceiver.attach], not
     the constructor. The control stream is read without loss whatever the mode; the mode
-    applies to the event streams. A receiver attached mid-run delivers the
-    run's start and descriptors first, then the documents from its attach
-    point on.
+    applies to the event streams. Each `receive` reads every control
+    document waiting and opens the event stream of each descriptor among
+    them before it delivers the descriptor. A receiver attached mid-run
+    delivers the run's start and descriptors first, then the documents from
+    its attach point on.
     """
 
     def __init__(
@@ -488,6 +495,8 @@ class DocumentReceiver:
         self._string_capacity = 0
         self._page_rows = 0
         self._last = 0
+        # Descriptors whose event stream a lossless receiver found removed.
+        self._missing: list[int] = []
 
     def _join(self, box: Mapping[str, Any]) -> None:
         """Take the settings from the channel's state box, queue the run's start and descriptors, and open their event streams.
@@ -511,7 +520,7 @@ class DocumentReceiver:
             state["descriptors"], state["event_streams"], strict=True
         ):
             self._prelude.append(("descriptor", descriptor))
-            self._open(descriptor, stream_name, "newest")
+            self._open(descriptor, stream_name, "newest", self._last)
 
     @classmethod
     def attach(
@@ -550,6 +559,7 @@ class DocumentReceiver:
         descriptor: Mapping[str, Any],
         stream_name: str,
         start: Literal["newest", "oldest"],
+        seq: int,
     ) -> None:
         layout = EventLayout.from_descriptor(
             descriptor, string_capacity=self._string_capacity, page_rows=self._page_rows
@@ -560,12 +570,19 @@ class DocumentReceiver:
         try:
             stream = SharedStream.attach(layout.item_type, stream_name)
         except SegmentNotFoundError:
-            if lossless:
-                self._release()
             # The run stopped and its streams were removed; the stop follows.
+            # Events the stream carried show as a gap before a later document.
+            if lossless:
+                self._missing.append(seq)
             return
         self._sources.append(
-            Source(stream, stream.reader(self.mode, start), layout, from_start=lossless)
+            Source(
+                stream,
+                stream.reader(self.mode, start),
+                layout,
+                seq=seq,
+                from_start=lossless,
+            )
         )
 
     def receive(self, timeout: float | None = None) -> tuple[str, dict[str, Any]]:
@@ -578,7 +595,8 @@ class DocumentReceiver:
             this receiver holds was delivered.
         ReceiverReleasedError
             If the sender released this receiver, or a lossless receiver lost
-            events of a stream it opened too late; it is closed then.
+            events of a stream it opened too late or found removed; it is
+            closed then.
         TimeoutError
             If `timeout` seconds pass first.
         StreamClosedError
@@ -591,20 +609,23 @@ class DocumentReceiver:
         deadline = None if timeout is None else time.monotonic() + timeout
         gap_since: float | None = None
         while True:
-            self._take_done()
-            heads = [source for source in self._sources if source.head is not None]
+            self._take_available()
+            heads = [source for source in self._sources if source.docs]
+            # The control stream is read ahead; an event stream one document
+            # at a time, so a lossless one holds its sender back.
             waiting = [
                 source
                 for source in self._sources
-                if source.head is None and not source.ended
+                if not source.ended and (source.layout is None or not source.docs)
             ]
             if not heads and not waiting:
+                if self._missing:
+                    self._release()
                 raise EndOfStream(f"channel {self.name!r} has ended")
             wait = None if deadline is None else max(0.0, deadline - time.monotonic())
             if heads:
-                low = min(heads, key=lambda source: source.head[0])  # type: ignore[index]
-                assert low.head is not None
-                if low.head[0] == self._last + 1:
+                low = min(heads, key=lambda source: source.docs[0][0])
+                if low.docs[0][0] == self._last + 1:
                     return self._deliver(low)
                 pending = [source for source in waiting if self._pending(source)]
                 if not pending:
@@ -640,23 +661,45 @@ class DocumentReceiver:
         sent = source.stream.statistics().sent
         return sent > (0 if source.taken is None else source.taken + 1)
 
-    def _take_done(self) -> None:
-        for source in self._sources:
-            if source.future is None or not source.future.done():
-                continue
-            future, source.future = source.future, None
-            try:
-                item = future.result()
-            except EndOfStream:
-                source.ended = True
-                continue
-            except ReaderReleased:
-                self._release()
-            source.taken = source.reader.position
-            if source.from_start and source.taken != 0:
-                self._release()
-            source.from_start = False
-            self._add(source, item)
+    def _take_available(self) -> None:
+        """Take the items of completed receives, then the items waiting in each ring.
+
+        The control stream is read to its end, an event stream up to its
+        next whole document.
+        """
+        for source in list(self._sources):
+            if source.future is not None and source.future.done():
+                future, source.future = source.future, None
+                try:
+                    item = future.result()
+                except EndOfStream:
+                    source.ended = True
+                except ReaderReleased:
+                    self._release()
+                else:
+                    self._take(source, item)
+            while (
+                source.future is None
+                and not source.ended
+                and (source.layout is None or not source.docs)
+            ):
+                try:
+                    item = source.reader.receive_nowait()
+                except WouldBlock:
+                    break
+                except EndOfStream:
+                    source.ended = True
+                except ReaderReleased:
+                    self._release()
+                else:
+                    self._take(source, item)
+
+    def _take(self, source: Source, item: Any) -> None:
+        source.taken = source.reader.position
+        if source.from_start and source.taken != 0:
+            self._release()
+        source.from_start = False
+        self._add(source, item)
 
     def _release(self) -> NoReturn:
         """Close the receiver, which lost documents, and raise `ReceiverReleasedError`."""
@@ -667,7 +710,10 @@ class DocumentReceiver:
         )
 
     def _add(self, source: Source, item: Any) -> None:
-        """Add an item to the parts `source` holds, and make its head once a document is whole."""
+        """Add an item to the parts `source` holds, and queue the document once it is whole.
+
+        A descriptor's event stream is opened when the descriptor is queued.
+        """
         if item.seq <= self._last:
             return
         if item.part == 0:
@@ -688,19 +734,23 @@ class DocumentReceiver:
             name, doc = decode_document(b"".join(part.data for part in parts))
         else:
             name, doc = source.layout.unpack(parts)
-        source.head = (item.seq, name, doc)
+        source.docs.append((item.seq, name, doc))
+        if name == "descriptor" and source.layout is None:
+            self._open(doc, f"{self.name}:e{item.seq}", "oldest", item.seq)
 
     def _deliver(self, source: Source) -> tuple[str, dict[str, Any]]:
-        assert source.head is not None
-        seq, name, doc = source.head
-        source.head = None
+        seq, name, doc = source.docs.popleft()
+        # Every other document reaches a lossless receiver, so a gap after a
+        # descriptor whose stream was removed holds its events.
+        if seq != self._last + 1 and any(d <= self._last for d in self._missing):
+            self._release()
         self._last = seq
-        if name == "descriptor":
-            self._open(doc, f"{self.name}:e{seq}", "oldest")
-        elif name == "stop":
-            for each in self._sources[1:]:
+        if name == "stop":
+            ended = [each for each in self._sources[1:] if each.seq < seq]
+            for each in ended:
                 each.stream.close()
-            del self._sources[1:]
+                self._sources.remove(each)
+            self._missing = [d for d in self._missing if d > seq]
         return name, doc
 
     def __iter__(self) -> Iterator[tuple[str, dict[str, Any]]]:

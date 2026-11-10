@@ -349,6 +349,57 @@ def test_stuck_receiver_holds_each_run_back_once(unique_name: str) -> None:
     assert elapsed < 1.3
 
 
+def numbered_run(events: int) -> list[Document]:
+    """Return a run of one descriptor with `events` events."""
+    bundle = event_model.compose_run()
+    primary = bundle.compose_descriptor(name="primary", data_keys={"x": NUMBER})
+    return [
+        ("start", dict(bundle.start_doc)),
+        ("descriptor", dict(primary.descriptor_doc)),
+        *(
+            (
+                "event",
+                dict(
+                    primary.compose_event(
+                        data={"x": float(index)}, timestamps={"x": 1.0}
+                    )
+                ),
+            )
+            for index in range(events)
+        ),
+        ("stop", dict(bundle.compose_stop())),
+    ]
+
+
+def test_slow_lossless_receiver_keeps_up_over_runs(unique_name: str) -> None:
+    """Deliver three runs to a lossless receiver that takes 0.1 s per event, with control_timeout 0.3."""
+    runs = [numbered_run(12) for _ in range(3)]
+    with (
+        DocumentSender.create(unique_name, control_timeout=0.3) as sender,
+        Child(collect, name=unique_name, mode="lossless", delay=0.1, stops=3) as child,
+    ):
+        for documents in runs:
+            send_all(sender, documents)
+        received, ending = child.result()
+
+    assert ending == "done"
+    assert_documents_equal([pair for run in runs for pair in run], received)
+
+
+def test_lossless_receiver_keeps_a_run_without_events(unique_name: str) -> None:
+    """Deliver a run whose descriptor had no events to a lossless receiver that reads after the stop."""
+    documents = numbered_run(0)
+    with (
+        DocumentSender.create(unique_name, control_timeout=0.2) as sender,
+        DocumentReceiver.attach(unique_name) as receiver,
+    ):
+        send_all(sender, documents)
+
+        assert_documents_equal(
+            documents, [receiver.receive(timeout=5) for _ in documents]
+        )
+
+
 def test_event_send_releases_a_slow_lossless_receiver(unique_name: str) -> None:
     """Release a lossless receiver that stops reading events, with on_full="release"."""
     documents = run_documents()
