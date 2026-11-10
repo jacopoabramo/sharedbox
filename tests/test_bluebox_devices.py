@@ -1,3 +1,4 @@
+import functools
 from collections.abc import Callable, Iterator
 from pathlib import Path, PurePath
 from typing import Any
@@ -100,35 +101,6 @@ def count_one_of_everything(tmp_path: Path) -> Any:
     return bp.count([everything], 2)
 
 
-@pytest.mark.parametrize(
-    "scenario",
-    [
-        count_both_detectors,
-        scan_a_motor,
-        fly_a_blob_detector,
-        count_an_array,
-        count_one_of_everything,
-    ],
-    ids=lambda scenario: scenario.__name__,
-)
-def test_ophyd_async_runs_arrive_unchanged(
-    channel: str, tmp_path: Path, scenario: Plan
-) -> None:
-    """Deliver the documents of a run of ophyd-async devices as the run engine emitted them."""
-    engine = new_engine()
-    plan = scenario(tmp_path)
-    with (
-        DocumentSender.create(channel) as sender,
-        Child(collect, name=channel, mode="lossless") as receiver,
-    ):
-        engine.subscribe(sender)
-        documents = run(engine, plan)
-        received, ending = receiver.result()
-
-    assert ending == "done"
-    assert_documents_equal(documents, received)
-
-
 def count_a_datum_detector() -> Any:
     return bp.count([DatumReadable(name="det")], 2)
 
@@ -169,33 +141,57 @@ def fly_with_stream_datum() -> Any:
     ]
 
 
-@pytest.mark.parametrize(
-    "scenario",
-    [
-        count_a_datum_detector,
-        count_a_stream_datum_detector,
-        collect_event_pages,
-        collect_old_style_datum,
-        fly_with_stream_datum,
-    ],
-    ids=lambda scenario: scenario.__name__,
-)
-def test_bluesky_paged_runs_arrive_unchanged(
-    channel: str, scenario: Callable[[], Any]
-) -> None:
-    """Deliver the event pages, resources and datums of bluesky's test devices unchanged."""
+def runs_of(documents: list[Document]) -> list[list[Document]]:
+    """Return `documents` split after each stop."""
+    runs: list[list[Document]] = [[]]
+    for pair in documents:
+        runs[-1].append(pair)
+        if pair[0] == "stop":
+            runs.append([])
+    return [each for each in runs if each]
+
+
+def test_runs_arrive_unchanged(channel: str, tmp_path: Path) -> None:
+    """Deliver the runs of ophyd-async devices and of bluesky's paging devices as the run engine emitted them."""
+    scenarios: dict[str, Callable[[], Any]] = {
+        **{
+            scenario.__name__: functools.partial(scenario, tmp_path)
+            for scenario in (
+                count_both_detectors,
+                scan_a_motor,
+                fly_a_blob_detector,
+                count_an_array,
+                count_one_of_everything,
+            )
+        },
+        **{
+            scenario.__name__: scenario
+            for scenario in (
+                count_a_datum_detector,
+                count_a_stream_datum_detector,
+                collect_event_pages,
+                collect_old_style_datum,
+                fly_with_stream_datum,
+            )
+        },
+    }
     engine = new_engine()
-    plan = scenario()
     with (
         DocumentSender.create(channel) as sender,
-        Child(collect, name=channel, mode="lossless") as receiver,
+        Child(collect, name=channel, mode="lossless", stops=len(scenarios)) as receiver,
     ):
         engine.subscribe(sender)
-        documents = run(engine, plan)
+        sent = [run(engine, scenario()) for scenario in scenarios.values()]
         received, ending = receiver.result()
 
     assert ending == "done"
-    assert_documents_equal(documents, received)
+    for name, documents, arrived in zip(
+        scenarios, sent, runs_of(received), strict=True
+    ):
+        try:
+            assert_documents_equal(documents, arrived)
+        except AssertionError as error:
+            raise AssertionError(f"{name}: {error}") from None
 
 
 def test_document_files_arrive_unchanged(channel: str) -> None:
@@ -227,18 +223,20 @@ def seq_nums(documents: list[Document]) -> list[int]:
 
 
 def test_modes_keep_every_control_document(channel: str) -> None:
-    """Give a lossless receiver every document and a lossy or latest one every control document."""
+    """Give a lossless receiver every document of two runs and a lossy or latest one every control document."""
     engine = new_engine()
     with init_devices():
         array = ArrayDetector()
+    # Recorded first, so the sender sends far faster than the slow receivers read.
+    documents = run(engine, bp.count([array], 100), bp.count([array], 100))
     with (
         DocumentSender.create(channel) as sender,
-        Child(collect, name=channel, mode="lossless") as lossless,
-        Child(collect, name=channel, mode="lossy", delay=0.02) as lossy,
-        Child(collect, name=channel, mode="latest", delay=0.02) as latest,
+        Child(collect, name=channel, mode="lossless", stops=2) as lossless,
+        Child(collect, name=channel, mode="lossy", delay=0.02, stops=2) as lossy,
+        Child(collect, name=channel, mode="latest", delay=0.02, stops=2) as latest,
     ):
-        engine.subscribe(sender)
-        documents = run(engine, bp.count([array], 200))
+        for name, doc in documents:
+            sender(name, doc)
         everything, lossless_ending = lossless.result()
         some, lossy_ending = lossy.result()
         newest, latest_ending = latest.result()
@@ -249,27 +247,9 @@ def test_modes_keep_every_control_document(channel: str) -> None:
         assert_documents_equal(
             control_documents(documents), control_documents(received)
         )
-        numbers = seq_nums(received)
-        assert 0 < len(numbers) < 200
-        assert numbers == sorted(set(numbers))
-
-
-def test_two_runs_with_a_lossy_receiver(channel: str) -> None:
-    """Give a slow lossy receiver both of two runs run back to back, whole in their control documents."""
-    engine = new_engine()
-    with init_devices():
-        array = ArrayDetector()
-    with (
-        DocumentSender.create(channel) as sender,
-        Child(collect, name=channel, mode="lossy", delay=0.02, stops=2) as lossy,
-    ):
-        engine.subscribe(sender)
-        documents = run(engine, bp.count([array], 100), bp.count([array], 100))
-        received, ending = lossy.result()
-
-    assert ending == "done"
-    assert_documents_equal(control_documents(documents), control_documents(received))
-    assert 0 < len(seq_nums(received)) <= 200
+        numbers = [seq_nums(each) for each in runs_of(received)]
+        assert 0 < sum(map(len, numbers)) < 200
+        assert all(each == sorted(set(each)) for each in numbers)
 
 
 def test_dead_sender_ends_receivers(channel: str) -> None:

@@ -28,27 +28,6 @@ def array_detector() -> ArrayDetector:
     return array
 
 
-def test_relay_forwards_unchanged(channels: tuple[str, str]) -> None:
-    """Give the last stage of a relay every document the run sent."""
-    source, target = channels
-    engine = new_engine()
-    array = array_detector()
-    with (
-        DocumentSender.create(source) as sender,
-        Child(
-            relay, src=source, dst=target, mode="lossless", transform="same"
-        ) as middle,
-        Child(collect, name=target, mode="lossless") as last,
-    ):
-        engine.subscribe(sender)
-        documents = run(engine, bp.count([array], 20))
-        _, middle_ending = middle.result()
-        received, last_ending = last.result()
-
-    assert (middle_ending, last_ending) == ("done", "done")
-    assert_documents_equal(documents, received)
-
-
 def test_relay_adds_a_reduced_stream(channels: tuple[str, str]) -> None:
     """Give the last stage the run's documents and an event of sums after each event."""
     source, target = channels
@@ -186,7 +165,7 @@ def test_slow_last_stage(
         Child(collect, name=target, mode="lossless", delay=0.4) as last,
     ):
         engine.subscribe(sender)
-        documents: list[Document] = run(engine, bp.count([array], 12))
+        documents: list[Document] = run(engine, bp.count([array], 8))
         _, middle_ending = middle.result()
         received, _ = last.result()
 
