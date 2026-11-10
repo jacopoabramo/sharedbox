@@ -54,7 +54,7 @@ def numeric_dtype(dtype_numpy: object) -> np.dtype | None:
 
 def encode_cbor(label: str, value: object, capacity: int) -> bytes:
     try:
-        data = cbor2.dumps(value, default=encode_default, canonical=True)
+        data = cbor2.dumps(value, default=encode_default)
     except (TypeError, cbor2.CBORError) as error:
         raise ValueError(f"{label}: {error}") from None
     if len(data) > capacity:

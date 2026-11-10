@@ -112,6 +112,15 @@ def test_array_without_a_typed_array_tag_round_trips(value: np.ndarray) -> None:
     np.testing.assert_array_equal(result, value)
 
 
+def test_key_order_is_kept() -> None:
+    """Return every dict with its keys in the order they were sent."""
+    data_keys = {"zeta": {"y": 1, "b": 2}, "alpha_long_name": {}, "b": {}}
+    _, doc = decode_document(encode_document("descriptor", {"data_keys": data_keys}))
+
+    assert list(doc["data_keys"]) == ["zeta", "alpha_long_name", "b"]
+    assert list(doc["data_keys"]["zeta"]) == ["y", "b"]
+
+
 def test_bool_scalar_round_trips() -> None:
     """Return a numpy bool scalar for a numpy bool scalar."""
     _, doc = decode_document(encode_document("event", {"v": np.bool_(True)}))

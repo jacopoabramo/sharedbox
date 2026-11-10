@@ -298,8 +298,8 @@ class DocumentSender:
                 state = {"start": doc, "descriptors": [], "event_streams": []}
                 self._waited.clear()
             case "descriptor":
-                # Receivers build the layout from the decoded descriptor, whose
-                # keys canonical CBOR has put in its own order.
+                # Receivers build the layout from the decoded descriptor, so
+                # the sender does too.
                 layout = EventLayout.from_descriptor(
                     decode_document(data)[1],
                     string_capacity=self._string_capacity,

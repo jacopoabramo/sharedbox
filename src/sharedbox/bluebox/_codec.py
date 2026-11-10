@@ -110,7 +110,7 @@ def _unsupported(value: object, path: tuple[str, ...]) -> Iterator[tuple[str, ob
 
 
 def encode_document(name: str, doc: Mapping[str, object]) -> bytes:
-    """Return the canonical CBOR of the pair `[name, doc]`.
+    """Return the CBOR of the pair `[name, doc]`, which keeps the order of every dict's keys.
 
     Raises
     ------
@@ -119,7 +119,7 @@ def encode_document(name: str, doc: Mapping[str, object]) -> bytes:
         message names the document and the dotted path of the key.
     """
     try:
-        return cbor2.dumps([name, doc], canonical=True, default=encode_default)
+        return cbor2.dumps([name, doc], default=encode_default)
     except (TypeError, cbor2.CBORError):
         for path, value in _unsupported(dict(doc), ()):
             raise TypeError(
