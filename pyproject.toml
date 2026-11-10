@@ -62,6 +62,8 @@ version_file = "src/sharedbox/_version.py"
 testpaths = ["tests"]
 markers = ["stress: long runs that measure timing, throughput and memory; run with -m stress"]
 addopts = ["-m", "not stress"]
+# A sender or receiver that hangs fails its test instead of the whole job.
+timeout = 120
 
 [tool.cibuildwheel]
 build = ["cp311-*", "cp312-*", "cp314t-*"]
@@ -172,6 +174,7 @@ dev = [
     "numpy>=2.4.6",
     "pytest>=9.1.1",
     "pytest-codspeed>=5.0.3",
+    "pytest-timeout>=2.4.0",
     "pytest-xdist>=3.8.0",
     "towncrier>=26.9.0",
     "tox>=4.64.1",
