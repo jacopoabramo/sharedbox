@@ -9,7 +9,7 @@ import event_model
 import numpy as np
 import pytest
 from bluebox_compare import assert_documents_equal
-from blueboxproc import start_run_and_exit
+from blueboxproc import Child, collect, start_run_and_exit
 
 from sharedbox import EndOfStream, SegmentExistsError, SharedStream
 from sharedbox.bluebox import (
@@ -317,6 +317,36 @@ def test_stuck_receiver_is_released(unique_name: str) -> None:
         assert elapsed < 1.0
         with pytest.raises(ReceiverReleasedError):
             receiver.receive(timeout=5)
+
+
+def test_killed_receiver_is_not_waited_for(unique_name: str) -> None:
+    """Send three runs at full speed after a lossless receiver's process was killed."""
+    with DocumentSender.create(unique_name, control_timeout=0.3) as sender:
+        with Child(collect, name=unique_name, mode="lossless") as child:
+            child.kill()
+            child.result()
+        began = time.monotonic()
+        for _ in range(3):
+            send_all(sender, run_documents())
+        elapsed = time.monotonic() - began
+
+    # Each run has two event streams; waiting at each would take 1.8 s.
+    assert elapsed < 0.5
+
+
+def test_stuck_receiver_holds_each_run_back_once(unique_name: str) -> None:
+    """Wait at most control_timeout per run for a lossless receiver that never reads."""
+    with (
+        DocumentSender.create(unique_name, control_timeout=0.3) as sender,
+        DocumentReceiver.attach(unique_name),
+    ):
+        began = time.monotonic()
+        for _ in range(3):
+            send_all(sender, run_documents())
+        elapsed = time.monotonic() - began
+
+    # 0.9 s at most; waiting at each of the two event streams would take 1.8 s.
+    assert elapsed < 1.3
 
 
 def test_event_send_releases_a_slow_lossless_receiver(unique_name: str) -> None:

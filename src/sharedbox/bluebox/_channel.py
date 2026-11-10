@@ -19,6 +19,7 @@ from .._native import (
     SchemaMismatchError,
     SegmentNotFoundError,
     StreamClosedError,
+    WaiterSlotsFullError,
 )
 from .._status import SegmentStatus, segment_status
 from .._stream import SharedReceiveStream, SharedSendStream, SharedStream
@@ -163,6 +164,8 @@ class DocumentSender:
         self._events: dict[str, EventStream] = {}
         self._state: dict[str, Any] = {}
         self._seq = 0
+        # Seconds the run under way waited for each receiver process.
+        self._waited: collections.Counter[int] = collections.Counter()
         self._closed = False
 
     @classmethod
@@ -280,6 +283,7 @@ class DocumentSender:
         match name:
             case "start":
                 state = {"start": doc, "descriptors": [], "event_streams": []}
+                self._waited.clear()
             case "descriptor":
                 # Receivers build the layout from the decoded descriptor, whose
                 # keys canonical CBOR has put in its own order.
@@ -290,11 +294,15 @@ class DocumentSender:
                 )
             case "stop":
                 state = {}
-                # Before the stop, since a receiver closes its readers once it
-                # delivers it.
-                for events in self._events.values():
-                    if not events.readers_checked:
-                        self._wait_for_readers(events)
+                # Before the stop, since the stop removes the streams. A stream
+                # without events has nothing for a receiver to lose.
+                self._wait_for_readers(
+                    [
+                        events
+                        for events in self._events.values()
+                        if not events.readers_checked and events.sent > 0
+                    ]
+                )
         seq = self._seq + 1
         if layout is not None:
             stream_name = f"{self.name}:e{seq}"
@@ -339,46 +347,71 @@ class DocumentSender:
             not events.readers_checked
             and events.sent + len(items) > self._event_capacity
         ):
-            self._wait_for_readers(events)
+            self._wait_for_readers([events])
         for item in items:
             events.sender.send(
                 dataclasses.replace(item, seq=self._seq), self._event_timeout
             )
         events.sent += len(items)
 
-    def _wait_for_readers(self, events: EventStream) -> None:
-        """Wait until each lossless receiver has opened the event stream, at most `control_timeout`.
+    def _wait_for_readers(self, streams: list[EventStream]) -> None:
+        """Wait until each lossless receiver has opened every stream of `streams`.
 
-        A receiver opens it only once it delivers the descriptor, so a
-        lossless one would otherwise lose the events sent before that when
-        the ring is overwritten or the stream closed at the stop.
+        A receiver opens a stream once it reads its descriptor, so a lossless
+        one would otherwise lose the events sent before that when the ring is
+        overwritten or the stream removed at the stop. The run waits for each
+        receiver process at most `control_timeout` in all, and not for a
+        process that has exited.
         """
-        deadline = time.monotonic() + self._control_timeout
-        while self._lossless_readers_missing(events) and time.monotonic() < deadline:
+        last = time.monotonic()
+        while streams:
+            missing = {
+                pid
+                for pid in self._lossless_readers_missing(streams)
+                if self._waited[pid] < self._control_timeout
+            }
+            if not missing:
+                break
             time.sleep(0.001)
-        events.readers_checked = True
+            now = time.monotonic()
+            for pid in missing:
+                self._waited[pid] += now - last
+            last = now
+        for events in streams:
+            events.readers_checked = True
 
-    def _lossless_readers_missing(self, events: EventStream) -> bool:
-        """Return whether a lossless receiver has not opened the event stream yet.
+    def _lossless_readers_missing(self, streams: list[EventStream]) -> set[int]:
+        """Return the processes holding a lossless receiver that has not opened one of `streams`.
 
         Every receiver reads the control stream with a lossless reader, and a
         lossy or latest one also holds a lossy reader there that it never
         reads, so per process the lossless receivers are the lossless control
         readers less the lossy ones. A lossless control reader more than a
-        full ring behind was released and is not waited for.
+        full ring behind was released and is not counted, nor is the reader
+        of a process that has exited.
         """
-        missing: collections.Counter[int] = collections.Counter()
+        # Opening a reader frees the places of readers whose process exited.
+        with contextlib.suppress(WaiterSlotsFullError):
+            self._control.reader("lossy").close()
+        receivers: collections.Counter[int] = collections.Counter()
         capacity = self._control.capacity
         for reader in self._control.statistics().readers:
             if reader.mode != "lossless":
-                missing[reader.pid] -= 1
+                receivers[reader.pid] -= 1
             # Only a released reader falls more than a full ring behind.
             elif reader.lag <= capacity:
-                missing[reader.pid] += 1
-        for reader in events.stream.statistics().readers:
-            if reader.mode == "lossless":
-                missing[reader.pid] -= 1
-        return any(count > 0 for count in missing.values())
+                receivers[reader.pid] += 1
+        missing = set()
+        for events in streams:
+            opened = collections.Counter(
+                reader.pid
+                for reader in events.stream.statistics().readers
+                if reader.mode == "lossless"
+            )
+            missing |= {
+                pid for pid, count in receivers.items() if count > opened[pid]
+            }
+        return missing
 
     def _write_state(self, state: dict[str, Any]) -> None:
         """Write the run's state, before the document that changes it is sent."""
