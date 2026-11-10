@@ -111,7 +111,7 @@ jobs:
         shell: bash
         run: |
           uv sync --group dev --group bluebox
-          uv run --no-sync pytest tests/test_bluebox* -q
+          uv run --no-sync pytest tests/test_bluebox* tests/test_doc_examples.py -k "bluebox or bluesky" -q
 
   build_wheels:
     name: Build wheel for ${{ matrix.python }}-${{ matrix.platform_id }}
