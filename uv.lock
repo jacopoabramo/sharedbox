@@ -2239,6 +2239,7 @@ bluebox = [
 ]
 dev = [
     { name = "attrs" },
+    { name = "event-model" },
     { name = "hypothesis" },
     { name = "ml-dtypes" },
     { name = "msgspec" },
@@ -2297,6 +2298,7 @@ bluebox = [
 ]
 dev = [
     { name = "attrs", specifier = ">=26.1.0" },
+    { name = "event-model", specifier = ">=1.24.0" },
     { name = "hypothesis", specifier = ">=6.168.3" },
     { name = "ml-dtypes", specifier = ">=0.6.0" },
     { name = "msgspec", specifier = ">=0.22.0" },

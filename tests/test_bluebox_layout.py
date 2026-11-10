@@ -1,7 +1,8 @@
 import copy
 import uuid
+from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, get_args, get_type_hints
+from typing import Any, cast, get_args, get_type_hints
 
 import numpy as np
 import pytest
@@ -11,6 +12,7 @@ from bluebox_compare import (
     without_key,
     without_ragged,
 )
+from event_model.documents import EventDescriptor
 
 from sharedbox import Capacity, MaxShape, SharedStream
 from sharedbox.bluebox._layout import EventLayout
@@ -25,7 +27,9 @@ def round_trip(documents: list[Document], **parameters: int) -> list[Document]:
     result = []
     for name, doc in documents:
         if name == "descriptor":
-            layouts[doc["uid"]] = EventLayout.from_descriptor(doc, **parameters)
+            layouts[doc["uid"]] = EventLayout.from_descriptor(
+                cast(EventDescriptor, doc), **parameters
+            )
         elif name == "event":
             layout = layouts[doc["descriptor"]]
             result.append(layout.unpack(layout.pack("event", doc)))
@@ -37,12 +41,15 @@ def events(documents: list[Document]) -> list[Document]:
     return [(name, doc) for name, doc in documents if name == "event"]
 
 
-def descriptor_of(**data_keys: dict[str, object]) -> dict[str, object]:
+def descriptor_of(**data_keys: dict[str, object]) -> EventDescriptor:
     """Return a descriptor of `data_keys` with a fresh uid."""
-    return {"uid": str(uuid.uuid4()), "name": "primary", "data_keys": data_keys}
+    return cast(
+        EventDescriptor,
+        {"uid": str(uuid.uuid4()), "name": "primary", "data_keys": data_keys},
+    )
 
 
-def event_of(descriptor: dict[str, object], **data: object) -> dict[str, object]:
+def event_of(descriptor: Mapping[str, object], **data: object) -> dict[str, object]:
     """Return an event of `descriptor` holding `data`."""
     return {
         "uid": str(uuid.uuid4()),
@@ -68,7 +75,10 @@ def test_round_trip_of_every_event(path: Path) -> None:
 def test_ragged_shape_is_refused() -> None:
     """Refuse a key with None in its shape, and carry the rest without it."""
     documents = load_documents(DATA / "internal_events.json")
-    descriptor = next(doc for name, doc in documents if name == "descriptor")
+    descriptor = cast(
+        EventDescriptor,
+        next(doc for name, doc in documents if name == "descriptor"),
+    )
 
     with pytest.raises(ValueError, match="'ragged'"):
         EventLayout.from_descriptor(descriptor, string_capacity=256, page_rows=4)
@@ -82,7 +92,10 @@ def test_ragged_shape_is_refused() -> None:
 def test_missing_filestore_key_is_refused() -> None:
     """Refuse an event without the datum id of a key stored outside the stream."""
     documents = load_documents(DATA / "external_assets_shared_resource.json")
-    descriptor = next(doc for name, doc in documents if name == "descriptor")
+    descriptor = cast(
+        EventDescriptor,
+        next(doc for name, doc in documents if name == "descriptor"),
+    )
     event = copy.deepcopy(next(doc for name, doc in documents if name == "event"))
     del event["data"]["det_image"]
     del event["timestamps"]["det_image"]

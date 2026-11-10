@@ -163,6 +163,7 @@ bluebox = [
 ]
 dev = [
     "attrs>=26.1.0",
+    "event-model>=1.24.0",
     "hypothesis>=6.168.3",
     "ml-dtypes>=0.6.0",
     "msgspec>=0.22.0",

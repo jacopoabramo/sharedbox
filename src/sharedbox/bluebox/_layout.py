@@ -1,9 +1,11 @@
 """The stream item that carries the events of one descriptor."""
 
+from __future__ import annotations
+
 import dataclasses
 import math
 from collections.abc import Iterable, Mapping, Sequence
-from typing import Annotated, Any, Literal, NamedTuple
+from typing import TYPE_CHECKING, Annotated, Any, Literal, NamedTuple
 
 import cbor2
 import numpy as np
@@ -11,6 +13,9 @@ import numpy as np
 from .._arrays import DType, MaxShape
 from .._types import Capacity
 from ._codec import decode_tag_hook, encode_default
+
+if TYPE_CHECKING:
+    from event_model.documents import DataKey, Dtype, EventDescriptor
 
 
 class Key(NamedTuple):
@@ -22,7 +27,7 @@ class Key(NamedTuple):
     may_be_absent: bool
 
 
-SCALARS = {"number": "float64", "integer": "int64", "boolean": "bool"}
+SCALARS: dict[Dtype, str] = {"number": "float64", "integer": "int64", "boolean": "bool"}
 # The longest head CBOR writes before a list, a string or a number.
 HEAD = 9
 # What a row of a CBOR key may take beyond its elements' heads and content: the
@@ -93,8 +98,8 @@ class EventLayout:
 
     @classmethod
     def from_descriptor(
-        cls, descriptor: Mapping[str, Any], *, string_capacity: int, page_rows: int
-    ) -> "EventLayout":
+        cls, descriptor: EventDescriptor, *, string_capacity: int, page_rows: int
+    ) -> EventLayout:
         """Return the layout of the events of `descriptor`.
 
         Parameters
@@ -159,19 +164,19 @@ class EventLayout:
 
     @staticmethod
     def _key(
-        name: str, data_key: Mapping[str, Any], string_capacity: int, page_rows: int
+        name: str, data_key: DataKey, string_capacity: int, page_rows: int
     ) -> tuple[Key, object]:
         list_capacity = strings_capacity(page_rows, string_capacity)
         external = data_key.get("external")
-        shape = data_key.get("shape", [])
+        sizes = data_key.get("shape", [])
         try:
             if external:
                 may_be_absent = external.startswith("STREAM:")
                 hint: object = Annotated[bytes, Capacity(list_capacity)]
                 return Key(name, "string", None, (), list_capacity, may_be_absent), hint
-            if any(size is None or size == -1 for size in shape):
-                raise ValueError(f"shape {shape} has no fixed size")
-            shape = tuple(shape)
+            shape = tuple(size for size in sizes if size is not None and size != -1)
+            if len(shape) != len(sizes):
+                raise ValueError(f"shape {sizes} has no fixed size")
             dtype = numeric_dtype(data_key.get("dtype_numpy"))
             if dtype is None and data_key.get("dtype") in SCALARS:
                 dtype = np.dtype(SCALARS[data_key["dtype"]])

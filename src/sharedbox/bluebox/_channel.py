@@ -7,7 +7,7 @@ import dataclasses
 import time
 from collections.abc import Iterator, Mapping
 from concurrent.futures import Future
-from typing import Annotated, Any, Final, Literal, NoReturn, Self
+from typing import TYPE_CHECKING, Annotated, Any, Final, Literal, NoReturn, Self, cast
 
 import cbor2
 
@@ -27,6 +27,9 @@ from .._stream import SharedReceiveStream, SharedSendStream, SharedStream
 from .._types import Capacity
 from ._codec import decode_document, encode_document, split_parts
 from ._layout import EventLayout
+
+if TYPE_CHECKING:
+    from event_model.documents import EventDescriptor
 
 CONTROL_ITEM_SIZE: Final = 16 * 1024
 # The largest bytes field a box can hold.
@@ -303,7 +306,7 @@ class DocumentSender:
                 # Receivers build the layout from the decoded descriptor, so
                 # the sender does too.
                 layout = EventLayout.from_descriptor(
-                    decode_document(data)[1],
+                    cast("EventDescriptor", decode_document(data)[1]),
                     string_capacity=self._string_capacity,
                     page_rows=self._page_rows,
                 )
@@ -570,7 +573,9 @@ class DocumentReceiver:
         seq: int,
     ) -> None:
         layout = EventLayout.from_descriptor(
-            descriptor, string_capacity=self._string_capacity, page_rows=self._page_rows
+            cast("EventDescriptor", descriptor),
+            string_capacity=self._string_capacity,
+            page_rows=self._page_rows,
         )
         # A lossless receiver that opens a stream at its descriptor must get
         # every item; the sender stops waiting for it after control_timeout.
