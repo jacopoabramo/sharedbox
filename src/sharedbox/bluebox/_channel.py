@@ -36,6 +36,8 @@ CONTROL_ITEM_SIZE: Final = 16 * 1024
 STATE_SIZE: Final = 1024 * 1024
 # How long a lossy or latest receiver waits for an item missing from the order.
 GAP_WAIT: Final = 0.01
+# How often a sender waiting for receivers frees the places of exited ones.
+SWEEP_INTERVAL: Final = 0.1
 
 
 @dataclasses.dataclass(frozen=True)
@@ -97,10 +99,11 @@ class Source:
 
     `taken` is the position of the last item the receiver took from the
     reader, and `docs` the whole documents not delivered yet, each with its
-    sequence number: any number from the control stream, which is read
-    ahead, and at most one from an event stream. `seq` is the sequence
-    number of an event stream's descriptor. With `from_start`, the reader's
-    first item must be the stream's first.
+    sequence number: up to the ring's capacity from the control stream,
+    which is read ahead, and at most one from an event stream. `seq` is the
+    sequence number of an event stream's descriptor. With `from_start`, the
+    reader's first item must be the stream's first. Items numbered `floor`
+    or less are dropped.
     """
 
     stream: SharedStream[Any, Any]
@@ -115,6 +118,7 @@ class Source:
     taken: int | None = None
     ended: bool = False
     from_start: bool = False
+    floor: int = 0
 
 
 def remove_channel(name: str) -> None:
@@ -174,10 +178,8 @@ class DocumentSender:
         self._events: dict[str, EventStream] = {}
         self._state: dict[str, Any] = {}
         self._seq = 0
-        # Seconds the run under way waited for each receiver process.
-        self._waited: collections.defaultdict[int, float] = collections.defaultdict(
-            float
-        )
+        # Receiver processes the run under way no longer waits for.
+        self._given_up: set[int] = set()
         self._closed = False
 
     @classmethod
@@ -218,9 +220,10 @@ class DocumentSender:
         control_timeout
             Seconds a control document waits for a receiver that stopped
             reading before the sender releases it. It also bounds the wait,
-            within one run, for each lossless receiver process to open the
-            event stream of a descriptor: once a descriptor's events no
-            longer fit in its stream, and at the stop.
+            for the lossless receivers to open the event stream of a
+            descriptor: once a descriptor's events no longer fit in its
+            stream, and at the stop. A receiver process that misses that
+            limit once is not waited for again in the run.
         event_timeout
             Seconds an event waits for a lossless receiver a full ring
             behind; None waits as long as it takes.
@@ -247,6 +250,7 @@ class DocumentSender:
             event_streams=cbor2.dumps([]),
             state=encode_document("state", {}),
         )
+        control: SharedStream[ControlItem, Any] | None = None
         try:
             control = SharedStream.create(
                 ControlItem,
@@ -254,11 +258,6 @@ class DocumentSender:
                 capacity=control_capacity,
                 max_readers=max_readers,
             )
-        except BaseException:
-            box.close()
-            ChannelState.unlink(f"{name}:state")
-            raise
-        try:
             return cls(
                 name,
                 control,
@@ -272,8 +271,12 @@ class DocumentSender:
                 on_full=on_full,
             )
         except BaseException:
-            control.close()
             box.close()
+            ChannelState.unlink(f"{name}:state")
+            if control is not None:
+                control.close()
+                with contextlib.suppress(SegmentNotFoundError):
+                    SharedStream.unlink(control.name)
             raise
 
     def __call__(self, name: str, doc: Mapping[str, Any]) -> None:
@@ -296,12 +299,12 @@ class DocumentSender:
             return
         data = encode_document(name, doc)
         parts = split_parts(data, CONTROL_ITEM_SIZE)
+        seq = self._seq + 1
         state: dict[str, Any] | None = None
-        layout = None
         match name:
             case "start":
                 state = {"start": doc, "descriptors": [], "event_streams": []}
-                self._waited.clear()
+                self._given_up.clear()
             case "descriptor":
                 # Receivers build the layout from the decoded descriptor, so
                 # the sender does too.
@@ -310,6 +313,25 @@ class DocumentSender:
                     string_capacity=self._string_capacity,
                     page_rows=self._page_rows,
                 )
+                stream_name = f"{self.name}:e{seq}"
+                self._list_streams(stream_name)
+                stream = SharedStream.create(
+                    layout.item_type,
+                    stream_name,
+                    capacity=self._event_capacity,
+                    max_readers=self._max_readers,
+                )
+                self._events[doc["uid"]] = EventStream(
+                    stream, stream.sender(self._on_full), layout
+                )
+                state = {
+                    "start": self._state.get("start"),
+                    "descriptors": [*self._state.get("descriptors", ()), doc],
+                    "event_streams": [
+                        *self._state.get("event_streams", ()),
+                        stream_name,
+                    ],
+                }
             case "stop":
                 state = {}
                 # Before the stop, since the stop removes the streams. A stream
@@ -321,33 +343,13 @@ class DocumentSender:
                         if not events.readers_checked and events.sent > 0
                     ]
                 )
-        seq = self._seq + 1
-        if layout is not None:
-            stream_name = f"{self.name}:e{seq}"
-            self._list_streams(stream_name)
-            stream = SharedStream.create(
-                layout.item_type,
-                stream_name,
-                capacity=self._event_capacity,
-                max_readers=self._max_readers,
-            )
-            self._events[doc["uid"]] = EventStream(
-                stream, stream.sender(self._on_full), layout
-            )
-            state = {
-                "start": self._state.get("start"),
-                "descriptors": [*self._state.get("descriptors", ()), doc],
-                "event_streams": [*self._state.get("event_streams", ()), stream_name],
-            }
         self._seq = seq
-        items = [
-            ControlItem(seq, index, len(parts), part)
-            for index, part in enumerate(parts)
-        ]
         if state is not None:
             self._write_state(state)
-        for item in items:
-            self._control_sender.send(item, self._control_timeout)
+        for index, part in enumerate(parts):
+            self._control_sender.send(
+                ControlItem(seq, index, len(parts), part), self._control_timeout
+            )
         if name == "stop":
             self._close_events()
             self._list_streams()
@@ -375,24 +377,27 @@ class DocumentSender:
 
         A receiver opens a stream once it reads its descriptor, so a lossless
         one would otherwise lose the events sent before that when the ring is
-        overwritten or the stream removed at the stop. The run waits for each
-        receiver process at most `control_timeout` in all, and not for a
-        process that has exited.
+        overwritten or the stream removed at the stop. The call waits at most
+        `control_timeout`, and not for a process that has exited. A receiver
+        process still missing then is not waited for again in the run.
         """
-        last = time.monotonic()
+        deadline = time.monotonic() + self._control_timeout
+        next_sweep = 0.0
         while streams:
-            missing = {
-                pid
-                for pid in self._lossless_readers_missing(streams)
-                if self._waited[pid] < self._control_timeout
-            }
+            now = time.monotonic()
+            if now >= next_sweep:
+                # Opening a reader frees the places of readers whose process
+                # exited. It checks every place, so not at every poll.
+                with contextlib.suppress(WaiterSlotsFullError):
+                    self._control.reader("lossy").close()
+                next_sweep = now + SWEEP_INTERVAL
+            missing = self._lossless_readers_missing(streams) - self._given_up
             if not missing:
                 break
+            if now >= deadline:
+                self._given_up |= missing
+                break
             time.sleep(0.001)
-            now = time.monotonic()
-            for pid in missing:
-                self._waited[pid] += now - last
-            last = now
         for events in streams:
             events.readers_checked = True
 
@@ -403,20 +408,26 @@ class DocumentSender:
         lossy or latest one also holds a lossy reader there that it never
         reads, so per process the lossless receivers are the lossless control
         readers less the lossy ones. A lossless control reader more than a
-        full ring behind was released and is not counted, nor is the reader
-        of a process that has exited.
+        full ring behind was released and is not counted. A lossy reader
+        stands first for a released receiver of its process, so a released
+        lossy receiver hides no lossless one.
         """
-        # Opening a reader frees the places of readers whose process exited.
-        with contextlib.suppress(WaiterSlotsFullError):
-            self._control.reader("lossy").close()
-        receivers: collections.Counter[int] = collections.Counter()
+        live: collections.Counter[int] = collections.Counter()
+        released: collections.Counter[int] = collections.Counter()
+        markers: collections.Counter[int] = collections.Counter()
         capacity = self._control.capacity
         for reader in self._control.statistics().readers:
             if reader.mode != "lossless":
-                receivers[reader.pid] -= 1
+                markers[reader.pid] += 1
             # Only a released reader falls more than a full ring behind.
             elif reader.lag <= capacity:
-                receivers[reader.pid] += 1
+                live[reader.pid] += 1
+            else:
+                released[reader.pid] += 1
+        receivers = {
+            pid: count - max(0, markers[pid] - released[pid])
+            for pid, count in live.items()
+        }
         missing = set()
         for events in streams:
             opened = collections.Counter(
@@ -525,11 +536,26 @@ class DocumentReceiver:
         if state.get("start") is None:
             return
         self._prelude.append(("start", state["start"]))
+        # The control reader starts at the last item sent before it opened, so
+        # no document lies between that item and the attach point. The run's
+        # event streams open at their oldest item, and events up to that item
+        # are dropped.
+        control = self._sources[0]
+        floor = self._last
+        try:
+            first = control.reader.receive_nowait()
+        except WouldBlock:
+            pass
+        except EndOfStream:
+            control.ended = True
+        else:
+            floor = max(floor, first.seq)
+            self._take(control, first)
         for descriptor, stream_name in zip(
             state["descriptors"], state["event_streams"], strict=True
         ):
             self._prelude.append(("descriptor", descriptor))
-            self._open(descriptor, stream_name, "newest", self._last)
+            self._open(descriptor, stream_name, self._last, floor=floor)
 
     @classmethod
     def attach(
@@ -567,9 +593,16 @@ class DocumentReceiver:
         self,
         descriptor: Mapping[str, Any],
         stream_name: str,
-        start: Literal["newest", "oldest"],
         seq: int,
+        *,
+        floor: int | None = None,
     ) -> None:
+        """Open the event stream of `descriptor` at its oldest item.
+
+        Without `floor` the stream is opened at its descriptor, and a lossless
+        receiver must get every item. With it, events numbered `floor` or
+        less are dropped.
+        """
         layout = EventLayout.from_descriptor(
             cast("EventDescriptor", descriptor),
             string_capacity=self._string_capacity,
@@ -577,7 +610,7 @@ class DocumentReceiver:
         )
         # A lossless receiver that opens a stream at its descriptor must get
         # every item; the sender stops waiting for it after control_timeout.
-        lossless = start == "oldest" and self.mode == "lossless"
+        lossless = floor is None and self.mode == "lossless"
         try:
             stream = SharedStream.attach(layout.item_type, stream_name)
         except SegmentNotFoundError:
@@ -589,10 +622,11 @@ class DocumentReceiver:
         self._sources.append(
             Source(
                 stream,
-                stream.reader(self.mode, start),
+                stream.reader(self.mode, "oldest"),
                 layout,
                 seq=seq,
                 from_start=lossless,
+                floor=floor or 0,
             )
         )
 
@@ -675,8 +709,10 @@ class DocumentReceiver:
     def _take_available(self) -> None:
         """Take the items of completed receives, then the items waiting in each ring.
 
-        The control stream is read to its end, an event stream up to its
-        next whole document.
+        The control stream is read until the receiver holds as many of its
+        documents as its ring holds items, so a receiver that falls behind
+        holds the sender back and is released; an event stream is read up to
+        its next whole document.
         """
         for source in list(self._sources):
             if source.future is not None and source.future.done():
@@ -692,7 +728,8 @@ class DocumentReceiver:
             while (
                 source.future is None
                 and not source.ended
-                and (source.layout is None or not source.docs)
+                and len(source.docs)
+                < (source.stream.capacity if source.layout is None else 1)
             ):
                 try:
                     item = source.reader.receive_nowait()
@@ -725,7 +762,7 @@ class DocumentReceiver:
 
         A descriptor's event stream is opened when the descriptor is queued.
         """
-        if item.seq <= self._last:
+        if item.seq <= max(self._last, source.floor):
             return
         if item.part == 0:
             source.parts = [item]
@@ -747,7 +784,7 @@ class DocumentReceiver:
             name, doc = source.layout.unpack(parts)
         source.docs.append((item.seq, name, doc))
         if name == "descriptor" and source.layout is None:
-            self._open(doc, f"{self.name}:e{item.seq}", "oldest", item.seq)
+            self._open(doc, f"{self.name}:e{item.seq}", item.seq)
 
     def _deliver(self, source: Source) -> tuple[str, dict[str, Any]]:
         seq, name, doc = source.docs.popleft()
@@ -775,6 +812,10 @@ class DocumentReceiver:
     def close(self) -> None:
         """Close the receiver's readers; calling it again does nothing."""
         self._closed = True
+        # Before the control reader, or for a moment it would hide another
+        # lossless receiver of this process from the sender.
+        if self._marker is not None:
+            self._marker.close()
         for source in self._sources:
             source.stream.close()
         self._sources.clear()

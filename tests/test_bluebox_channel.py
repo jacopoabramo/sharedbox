@@ -194,7 +194,7 @@ def test_large_documents_pass_in_parts(unique_name: str) -> None:
 
 @pytest.mark.parametrize("note", [0, 600 * 1024], ids=["small", "large"])
 def test_late_receiver_gets_start_first(unique_name: str, note: int) -> None:
-    """Give a receiver attached after five events the start and descriptors, then events from its attach point."""
+    """Give a receiver attached after five events the start and descriptors, then the events since the last descriptor."""
     documents = run_documents(metadata={"note": "x" * note})
     with DocumentSender.create(unique_name) as sender:
         send_all(sender, documents[:8])
@@ -202,8 +202,9 @@ def test_late_receiver_gets_start_first(unique_name: str, note: int) -> None:
             collector = Collector(receiver)
             send_all(sender, documents[8:])
 
-            # A reader opened at the newest item begins with the fifth event.
-            assert_documents_equal(documents[:3] + documents[7:], collector.join())
+            # No control document was sent after the five events, and their
+            # ring still holds them, so the receiver gets them too.
+            assert_documents_equal(documents, collector.join())
 
 
 def test_state_too_large_refuses_late_join(unique_name: str) -> None:
@@ -256,11 +257,12 @@ def test_receiver_never_starts_mid_document(unique_name: str, held: str) -> None
     else:
         documents = run_documents(resource_parameters={"note": big})
         sent_before = 14
-        # Both receivers attach after the page: each begins with the run's state
-        # and the tenth event, the newest whole item. The late one finds the
-        # stream resource half sent and drops its parts.
-        expected_first = [0, 1, 2, 12, 14, 15, 16]
-        expected_late = [0, 1, 2, 12, 15, 16]
+        # Both receivers attach after the page. The first begins with the run's
+        # state and the events its rings still hold, since no control document
+        # was sent after the descriptors. The late one starts at a part of the
+        # half-sent stream resource, so it drops that and every event before.
+        expected_first = [0, 1, 2, *range(5, 17)]
+        expected_late = [0, 1, 2, 15, 16]
     with DocumentSender.create(unique_name, control_capacity=4) as sender:
         send_all(sender, documents[:sent_before])
         with DocumentReceiver.attach(unique_name) as first:
