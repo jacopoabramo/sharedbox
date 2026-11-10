@@ -722,12 +722,13 @@ class DocumentReceiver:
         while True:
             self._take_available()
             heads = [source for source in self._sources if source.docs]
-            # The control stream is read ahead; an event stream one document
-            # at a time, so a lossless one holds its sender back.
+            # The control stream is read ahead up to its ring's capacity; an
+            # event stream one document at a time, so a lossless one holds its
+            # sender back.
             waiting = [
                 source
                 for source in self._sources
-                if not source.ended and (source.layout is None or not source.docs)
+                if not source.ended and len(source.docs) < self._read_ahead(source)
             ]
             if not heads and not waiting:
                 if self._missing:
@@ -772,6 +773,11 @@ class DocumentReceiver:
         sent = source.stream.statistics().sent
         return sent > (0 if source.taken is None else source.taken + 1)
 
+    @staticmethod
+    def _read_ahead(source: Source) -> int:
+        """Return how many whole documents the receiver holds from `source` at most."""
+        return source.stream.capacity if source.layout is None else 1
+
     def _take_available(self) -> None:
         """Take the items of completed receives, then the items waiting in each ring.
 
@@ -794,8 +800,7 @@ class DocumentReceiver:
             while (
                 source.future is None
                 and not source.ended
-                and len(source.docs)
-                < (source.stream.capacity if source.layout is None else 1)
+                and len(source.docs) < self._read_ahead(source)
             ):
                 try:
                     item = source.reader.receive_nowait()
