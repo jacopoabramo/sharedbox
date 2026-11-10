@@ -84,8 +84,9 @@ document at a time and takes a `timeout`, for a loop that has other work to
 do between documents.
 
 A receiver gets every kind of document the run emits, `resource`, `datum`,
-`stream_resource` and `stream_datum` included, with dict keys in the order
-they were sent. Some values come back in another type that compares equal
+`stream_resource` and `stream_datum` included. Dict keys keep the order they
+were sent in, except an event's `data` and `timestamps`, whose keys follow
+the descriptor's `data_keys`. Some values come back in another type that compares equal
 or holds the same numbers:
 
 - an enum member arrives as its value, and a `pydantic` model, such as the
@@ -96,8 +97,9 @@ or holds the same numbers:
   a `number` key as a float, a list in an `array` key as a `numpy` array,
   a numpy scalar as a Python one, and a float in a `float32` key rounded to
   that precision;
-- an event's `time` and timestamps arrive as floats, and an event page's
-  `time`, `seq_num` and timestamps as lists;
+- an event's `time` and timestamps arrive as floats; in an event page,
+  each numeric column of `data` arrives as a `numpy` array, and `time`,
+  `seq_num` and timestamps as lists;
 - an event or page without `filled` gets `filled: {}`, and fields of an
   event other than `uid`, `time`, `seq_num`, `data`, `timestamps`,
   `filled` and `descriptor` are dropped.
@@ -187,12 +189,15 @@ sender = DocumentSender.create(
     A receiver starts reading a descriptor's events at its first call to
     `receive` after the descriptor was sent, even while it is still
     delivering earlier documents. Before those events fill their ring, the
-    sender waits up to `control_timeout` for each lossless receiver to make
-    that call, and then sends on, whatever `on_full` says. A lossless
-    receiver that calls `receive` later finds events gone, and its
-    next `receive` raises `ReceiverReleasedError` instead of delivering a
-    run with holes. Give the sender a `control_timeout` longer than the
-    longest time a lossless receiver spends away from `receive`.
+    sender waits for each lossless receiver to make that call, and then
+    sends on, whatever `on_full` says. These waits share one budget of
+    `control_timeout` per receiver per run, so in a run with several
+    descriptors the time a receiver spends away from `receive` adds up. A
+    lossless receiver that calls `receive` after the budget is spent finds
+    events gone, and its next `receive` raises `ReceiverReleasedError`
+    instead of delivering a run with holes. Give the sender a
+    `control_timeout` longer than the total time a lossless receiver spends
+    away from `receive` at the descriptors of one run.
 
 ## Chain channels into a pipeline
 

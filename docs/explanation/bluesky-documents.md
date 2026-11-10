@@ -59,8 +59,10 @@ descriptor, which gives the layout. At each `receive` it therefore reads
 every control document already sent, ahead of what it delivers, and opens
 the event stream of each new descriptor at once. A lossless receiver must
 not miss the events sent before that moment, so the sender,
-when a descriptor's events start to fill their ring, waits up to
-`control_timeout` for every lossless receiver to open the stream. A lossy
+when a descriptor's events start to fill their ring, waits for every
+lossless receiver to open the stream. All these waits for one receiver
+process share a budget of `control_timeout` per run, so a receiver that is
+stuck or dead costs a run that much once, not once per descriptor. A lossy
 or latest receiver tells the sender not to wait for it, by holding a second
 reader on the control stream that it never reads. That reader is lossy, so
 it never holds the sender back and is never released.
