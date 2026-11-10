@@ -127,8 +127,9 @@ def remove_channel(name: str) -> None:
 class DocumentSender:
     """Sends bluesky documents on a channel that receivers in any process attach to.
 
-    Call it with each document's name and the document, as a `RunEngine`
-    callback is called. Events and event pages go to an event stream per
+    Make one with [`create`][sharedbox.bluebox.DocumentSender.create], not
+    the constructor. Call it with each document's name and the document, as
+    a `RunEngine` callback is called. Events and event pages go to an event stream per
     descriptor, every other document to the channel's control stream.
     Closing the sender ends the channel: receivers deliver what they hold,
     then raise `EndOfStream`.
@@ -428,7 +429,8 @@ class DocumentSender:
 class DocumentReceiver:
     """Receives the documents of a channel, in the order they were sent.
 
-    The control stream is read without loss whatever the mode; the mode
+    Make one with [`attach`][sharedbox.bluebox.DocumentReceiver.attach], not
+    the constructor. The control stream is read without loss whatever the mode; the mode
     applies to the event streams. A receiver attached mid-run delivers the
     run's start and descriptors first, then the documents from its attach
     point on.

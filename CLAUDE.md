@@ -42,6 +42,10 @@ sharedbox/
 |   |                          replaces the native objects of watchers and box classes
 |   |-- _native.pyi            hand-written stub for the extension
 |   |-- py.typed
+|   |-- bluebox/               bluesky documents between processes (extra: bluebox); imports nothing from bluesky at run time
+|   |   |-- _channel.py        DocumentSender, DocumentReceiver, the errors, ChannelState (the N:state box), remove_channel
+|   |   |-- _codec.py          CBOR of control documents, typed arrays, the private tag, 16 KiB parts
+|   |   `-- _layout.py         EventLayout: the record type of a descriptor's events, pack and unpack
 |   |-- benchmarks/            the benchbox command (extra: benchmarks)
 |   |   |-- cli.py             entry point; exits with an install hint without Typer
 |   |   |-- _app.py            Typer commands: ops, roundtrip, contention, stream, size, plot, all
@@ -88,6 +92,10 @@ sharedbox/
 |   |-- test_attr.py           attribute requests across processes: answers, superseding, a killed server, close, async handlers
 |   |-- test_attr_fields.py    Attr in the layout: publish, read, watch, refused operations, where an Attr may go
 |   |-- streamproc.py          helpers that run a stream end in another process
+|   |-- test_bluebox_*.py      sharedbox.bluebox: codec, layout, channel, real devices, pipelines; skipped on 3.14t
+|   |                          and without the bluebox group
+|   |-- bluebox_compare.py, bluebox_devices.py, blueboxproc.py  their helpers; bluebox_data/ holds document files
+|   |                          from bluesky-tiled-plugins
 |   |-- test_properties_*.py   Hypothesis property tests, streams included
 |   |-- stress/                stress tests, marker stress, deselected by default
 |   |-- cpp/                   C++ tests (doctest, CTest) and the C smoke test
@@ -389,6 +397,13 @@ One `SharedSendStream` fills it, and up to `max_readers` readers read it,
 each a `SharedReceiveStream` in mode `lossless`, `lossy` or `latest`;
 `receive_into` reads into arrays the caller allocated. See
 `docs/how-to/send-items-through-a-stream.md`.
+
+`sharedbox.bluebox.DocumentSender.create(name)` is a `RunEngine` callback
+that sends bluesky documents on a channel (`N:control`, one `N:e<seq>` per
+descriptor, the box `N:state`), and `DocumentReceiver.attach(name, mode=...)`
+receives them in order. Tests: `uv run --group bluebox pytest
+tests/test_bluebox*.py`. See
+`docs/how-to/send-bluesky-documents-to-another-process.md`.
 
 ## Docs
 

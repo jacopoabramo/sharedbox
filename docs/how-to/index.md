@@ -54,6 +54,8 @@ items through a [stream](../explanation/glossary.md#stream).
 - [How to attach metadata to a box or stream](attach-metadata.md): units or
   calibration that every process reads, and the version each item was sent
   under
+- [How to send bluesky documents to another process](send-bluesky-documents-to-another-process.md):
+  a `RunEngine` sends, other processes receive every event or only some
 
 ### C and C++
 

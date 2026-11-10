@@ -1,6 +1,7 @@
 import os
 import subprocess
 import sys
+import sysconfig
 from importlib.util import find_spec
 from pathlib import Path
 
@@ -19,6 +20,13 @@ def test_an_example_script_runs(script: Path, tmp_path: Path) -> None:
         and find_spec("numpy") is None
     ):
         pytest.skip("the guide needs numpy")
+    if script.stem == "send_bluesky_documents_to_another_process" and (
+        sysconfig.get_config_var("Py_GIL_DISABLED")
+        or any(find_spec(name) is None for name in ("ophyd_async", "bluesky"))
+    ):
+        pytest.skip(
+            "the guide needs the bluebox group, which has no free-threaded build"
+        )
     prefix = f"example-{os.environ['SHAREDBOX_TEST_RUN']}-{script.stem}-"
     copy = tmp_path / script.name
     copy.write_text(
