@@ -32,7 +32,7 @@ def round_trip(documents: list[Document], **parameters: int) -> list[Document]:
             )
         elif name == "event":
             layout = layouts[doc["descriptor"]]
-            result.append(layout.unpack(layout.pack("event", doc)))
+            result.append(layout.unpack(layout.pack("event", doc, 1)))
     return result
 
 
@@ -102,7 +102,7 @@ def test_missing_filestore_key_is_refused() -> None:
     layout = EventLayout.from_descriptor(descriptor, string_capacity=64, page_rows=4)
 
     with pytest.raises(ValueError, match="'det_image'"):
-        layout.pack("event", event)
+        layout.pack("event", event, 1)
 
 
 def test_page_is_split_and_joined() -> None:
@@ -131,7 +131,7 @@ def test_page_is_split_and_joined() -> None:
     }
     layout = EventLayout.from_descriptor(descriptor, string_capacity=64, page_rows=16)
 
-    items = layout.pack("event_page", page)
+    items = layout.pack("event_page", page, 1)
 
     assert [(item.part, item.parts, item.rows) for item in items] == [
         (0, 3, 16),
@@ -159,7 +159,7 @@ def test_wrong_shape_event_is_refused() -> None:
     layout = EventLayout.from_descriptor(descriptor, string_capacity=64, page_rows=4)
 
     with pytest.raises(ValueError, match="'frame'"):
-        layout.pack("event", event_of(descriptor, frame=np.zeros(4, np.uint16)))
+        layout.pack("event", event_of(descriptor, frame=np.zeros(4, np.uint16)), 1)
 
 
 @pytest.mark.parametrize("value", [2.5, 2**63, float("nan")], ids=repr)
@@ -169,7 +169,7 @@ def test_inexact_integer_is_refused(value: float) -> None:
     layout = EventLayout.from_descriptor(descriptor, string_capacity=64, page_rows=4)
 
     with pytest.raises(ValueError, match="'count'"):
-        layout.pack("event", event_of(descriptor, count=value))
+        layout.pack("event", event_of(descriptor, count=value), 1)
 
 
 @pytest.mark.parametrize("dtype", ["number", "integer", "boolean"])
@@ -180,7 +180,7 @@ def test_value_that_is_not_a_number_is_refused(dtype: str, value: object) -> Non
     layout = EventLayout.from_descriptor(descriptor, string_capacity=64, page_rows=4)
 
     with pytest.raises(ValueError, match="'reading'"):
-        layout.pack("event", event_of(descriptor, reading=value))
+        layout.pack("event", event_of(descriptor, reading=value), 1)
 
 
 def test_integral_float_fits_an_integer_key() -> None:
@@ -188,7 +188,7 @@ def test_integral_float_fits_an_integer_key() -> None:
     descriptor = descriptor_of(count={"dtype": "integer", "shape": []})
     layout = EventLayout.from_descriptor(descriptor, string_capacity=64, page_rows=4)
 
-    _, doc = layout.unpack(layout.pack("event", event_of(descriptor, count=3.0)))
+    _, doc = layout.unpack(layout.pack("event", event_of(descriptor, count=3.0), 1))
 
     data = doc["data"]
     assert isinstance(data, dict)
@@ -203,7 +203,7 @@ def test_float_fits_a_narrower_float_key() -> None:
     )
     layout = EventLayout.from_descriptor(descriptor, string_capacity=64, page_rows=4)
 
-    _, doc = layout.unpack(layout.pack("event", event_of(descriptor, gain=0.1)))
+    _, doc = layout.unpack(layout.pack("event", event_of(descriptor, gain=0.1), 1))
 
     assert doc["data"] == {"gain": float(np.float32(0.1))}
 
@@ -214,7 +214,7 @@ def test_unknown_data_key_is_refused() -> None:
     layout = EventLayout.from_descriptor(descriptor, string_capacity=64, page_rows=4)
 
     with pytest.raises(ValueError, match="'stray'"):
-        layout.pack("event", event_of(descriptor, count=1, stray=2.0))
+        layout.pack("event", event_of(descriptor, count=1, stray=2.0), 1)
 
 
 def test_page_of_uneven_rows_is_refused() -> None:
@@ -232,7 +232,7 @@ def test_page_of_uneven_rows_is_refused() -> None:
     layout = EventLayout.from_descriptor(descriptor, string_capacity=64, page_rows=4)
 
     with pytest.raises(ValueError, match="'uid'"):
-        layout.pack("event_page", page)
+        layout.pack("event_page", page, 1)
 
 
 def test_missing_field_is_refused() -> None:
@@ -243,7 +243,7 @@ def test_missing_field_is_refused() -> None:
     layout = EventLayout.from_descriptor(descriptor, string_capacity=64, page_rows=4)
 
     with pytest.raises(ValueError, match="'time'"):
-        layout.pack("event", event)
+        layout.pack("event", event, 1)
 
 
 def test_page_of_strings_at_the_limit_passes() -> None:
@@ -261,7 +261,7 @@ def test_page_of_strings_at_the_limit_passes() -> None:
     }
     layout = EventLayout.from_descriptor(descriptor, string_capacity=40, page_rows=rows)
 
-    items = layout.pack("event_page", page)
+    items = layout.pack("event_page", page, 1)
 
     assert len(items) == 1
     assert_documents_equal([("event_page", page)], [layout.unpack(items)])
@@ -273,7 +273,7 @@ def test_long_string_is_refused() -> None:
     layout = EventLayout.from_descriptor(descriptor, string_capacity=40, page_rows=4)
 
     with pytest.raises(ValueError, match="'label'.* longer than string_capacity 40"):
-        layout.pack("event", event_of(descriptor, label="é" * 20 + "a"))
+        layout.pack("event", event_of(descriptor, label="é" * 20 + "a"), 1)
 
 
 def test_item_size_is_exact() -> None:
@@ -319,7 +319,7 @@ def test_item_type_makes_a_stream(unique_name: str) -> None:
     with SharedStream.create(layout.item_type, unique_name, capacity=2) as stream:
         reader = stream.reader()
         with stream.sender() as sender:
-            for item in layout.pack("event", event):
+            for item in layout.pack("event", event, 1):
                 sender.send(item, timeout=5)
         received = [reader.receive(timeout=5)]
         reader.close()
@@ -340,7 +340,7 @@ def test_many_keys_make_a_stream(unique_name: str) -> None:
     with SharedStream.create(layout.item_type, unique_name, capacity=2) as stream:
         reader = stream.reader()
         with stream.sender() as sender:
-            for item in layout.pack("event", event):
+            for item in layout.pack("event", event, 1):
                 sender.send(item, timeout=5)
         received = [reader.receive(timeout=5)]
         reader.close()

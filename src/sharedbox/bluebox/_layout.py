@@ -35,6 +35,8 @@ HEAD = 9
 ROW = 128
 # Most data keys in one nested record, which holds at most 256 fields.
 GROUP = 128
+FLOAT64 = np.dtype("float64")
+INT64 = np.dtype("int64")
 
 
 def strings_capacity(page_rows: int, string_capacity: int) -> int:
@@ -106,7 +108,9 @@ class EventLayout:
         ----------
         string_capacity
             Most bytes of UTF-8 in one string or uid of an event, and the
-            bytes each element of a CBOR key may take.
+            bytes each element of a CBOR key with a `dtype_numpy` or no shape
+            may take. An element of an array key without `dtype_numpy` may
+            take the 9 bytes of a CBOR number.
         page_rows
             Most rows one item holds.
 
@@ -127,19 +131,27 @@ class EventLayout:
             ("seq_num", Annotated[np.ndarray, MaxShape((page_rows,)), DType("int64")]),
             ("time", Annotated[np.ndarray, MaxShape((page_rows,)), DType("float64")]),
         ]
-        try:
-            fields += [
-                ("uids", Annotated[bytes, Capacity(list_capacity)]),
-                ("filled", Annotated[bytes, Capacity(list_capacity)]),
-            ]
-        except ValueError as error:
-            raise ValueError(f"uids and filled: {error}") from None
         keys = []
         hints: list[tuple[str, object]] = []
         for index, (name, data_key) in enumerate(descriptor["data_keys"].items()):
             key, hint = cls._key(name, data_key, string_capacity, page_rows)
             keys.append(key)
             hints.append((f"k{index}", hint))
+        # A row of `filled` maps each key stored elsewhere to a bool or a datum id.
+        filled_row = HEAD + sum(
+            2 * HEAD + len(key.name.encode()) + string_capacity
+            for key, data_key in zip(
+                keys, descriptor["data_keys"].values(), strict=True
+            )
+            if data_key.get("external")
+        )
+        try:
+            fields += [
+                ("uids", Annotated[bytes, Capacity(list_capacity)]),
+                ("filled", Annotated[bytes, Capacity(HEAD + page_rows * filled_row)]),
+            ]
+        except ValueError as error:
+            raise ValueError(f"uids and filled: {error}") from None
         fields.append(
             (
                 "timestamps",
@@ -189,25 +201,32 @@ class EventLayout:
                 hint = Annotated[bytes, Capacity(list_capacity)]
                 return Key(name, "string", None, shape, list_capacity, False), hint
             elements = max(1, math.prod(shape))
-            capacity = HEAD + page_rows * (ROW + elements * (HEAD + string_capacity))
+            # Without a dtype_numpy the elements of an array are most likely
+            # numbers; a string among them is refused when an event is packed.
+            element = (
+                HEAD
+                if shape and not data_key.get("dtype_numpy")
+                else HEAD + string_capacity
+            )
+            capacity = HEAD + page_rows * (ROW + elements * element)
             hint = Annotated[bytes, Capacity(capacity)]
             return Key(name, "cbor", None, shape, capacity, False), hint
         except ValueError as error:
             raise ValueError(f"data key {name!r}: {error}") from None
 
-    def pack(self, name: str, doc: Mapping[str, Any]) -> list[Any]:
-        """Return the items that carry the event or event page `doc`.
+    def pack(self, name: str, doc: Mapping[str, Any], seq: int) -> list[Any]:
+        """Return the items that carry the event or event page `doc` as document `seq`.
 
         An event takes one item. A page takes one item per `page_rows` rows,
-        each with its `part` and the number of `parts`. Every item's `seq`
-        is 0.
+        each with its `part` and the number of `parts`.
 
         Raises
         ------
         ValueError
             If `doc` lacks `uid`, `time`, `seq_num`, `data` or `timestamps`,
             holds a data key the descriptor does not have, or is a page
-            whose `uid` or `time` has another number of rows than `seq_num`.
+            whose `uid`, `time` or a column of `filled` has another number of
+            rows than `seq_num`.
             If a value has another shape or dtype than its key, is None or
             a str in a numeric key, does not convert (to an integer or bool
             key: exactly; a float key rounds it), is a string longer than
@@ -240,6 +259,12 @@ class EventLayout:
                         f"seq_num {rows}"
                     )
             filled = doc.get("filled", {})
+            for key, column in filled.items():
+                if len(column) != rows:
+                    raise ValueError(
+                        f"event_page document: filled {key!r} has {len(column)} "
+                        f"rows, seq_num {rows}"
+                    )
             page = {
                 "uid": list(doc["uid"]),
                 "time": doc["time"],
@@ -256,8 +281,8 @@ class EventLayout:
             raise ValueError(f"data keys {sorted(unknown)} are not in the descriptor")
         kind = 0 if name == "event" else 1
         self._check_strings("uid", page["uid"])
-        seq_num = self._array("seq_num", page["seq_num"], np.dtype("int64"), (), rows)
-        time = self._array("time", page["time"], np.dtype("float64"), (), rows)
+        seq_num = self._array("seq_num", page["seq_num"], INT64, (), rows)
+        time = self._array("time", page["time"], FLOAT64, (), rows)
         columns: list[Any] = []
         stamps: list[np.ndarray] = []
         for key in self.keys:
@@ -278,7 +303,7 @@ class EventLayout:
                 self._array(
                     f"timestamp of {label}",
                     timestamps[key.name],
-                    np.dtype("float64"),
+                    FLOAT64,
                     (),
                     rows,
                 )
@@ -292,7 +317,7 @@ class EventLayout:
         for part in range(parts):
             rows_of_part = slice(part * self.page_rows, (part + 1) * self.page_rows)
             values: dict[str, object] = {
-                "seq": 0,
+                "seq": seq,
                 "kind": kind,
                 "part": part,
                 "parts": parts,
@@ -336,33 +361,28 @@ class EventLayout:
         shape: tuple[int, ...],
         rows: int,
     ) -> np.ndarray:
-        if isinstance(column, np.ndarray | np.generic) and not np.can_cast(
-            column.dtype, dtype, "safe"
+        # A float key takes any real number and rounds it; an integer or bool
+        # key takes a number that converts exactly, checked below.
+        if isinstance(column, np.ndarray | np.generic) and not (
+            np.can_cast(column.dtype, dtype, "same_kind")
+            if dtype.kind in "fc"
+            else column.dtype.kind in "biuf"
         ):
             raise ValueError(f"{label}: dtype {column.dtype} is not {dtype}")
         try:
-            plain = (
-                None
-                if isinstance(column, np.ndarray | np.generic)
-                else np.asarray(column)
-            )
+            plain = np.asarray(column)
             # The cast below would turn None into NaN and "1.5" into 1.5.
-            if plain is not None and plain.dtype.kind in "OSU":
+            if plain.dtype.kind in "OSU":
                 for value in plain.flat:
                     if value is None or isinstance(value, str | bytes):
                         raise ValueError(f"{value!r} is not a number")
-            array = np.asarray(column, dtype=dtype)
+            with np.errstate(invalid="ignore"):
+                array = np.asarray(column, dtype=dtype)
         except (TypeError, ValueError, OverflowError) as error:
             raise ValueError(f"{label}: {error}") from None
         if array.shape != (rows, *shape):
             raise ValueError(f"{label}: shape {array.shape}, not {(rows, *shape)}")
-        # Devices report the values of a float32 key as Python floats, so a
-        # float key rounds; an integer or bool key would change the value.
-        if (
-            dtype.kind in "biu"
-            and plain is not None
-            and not np.array_equal(array, plain)
-        ):
+        if dtype.kind in "biu" and not np.array_equal(array, plain):
             raise ValueError(f"{label}: a value does not convert to {dtype} exactly")
         return array
 
@@ -394,18 +414,18 @@ class EventLayout:
         """Return the event or event page that the items of one document carry."""
         uids = [uid for item in items for uid in decode_cbor(item.uids)]
         filled = [row for item in items for row in decode_cbor(item.filled)]
-        seq_num = np.concatenate([item.seq_num for item in items])
-        time = np.concatenate([item.time for item in items])
+        seq_num = join([item.seq_num for item in items])
+        time = join([item.time for item in items])
         data: dict[str, Any] = {}
         timestamps: dict[str, np.ndarray] = {}
-        stamps = np.concatenate([item.timestamps for item in items])
+        stamps = join([item.timestamps for item in items])
         for index, key in enumerate(self.keys):
             fields = [
                 getattr(getattr(item, f"g{index // GROUP}"), f"k{index}")
                 for item in items
             ]
             if key.kind == "array":
-                column: Any = np.concatenate(fields)
+                column: Any = join(fields)
             else:
                 column = [value for field in fields for value in decode_cbor(field)]
                 if key.may_be_absent and column and all(v is None for v in column):
@@ -436,6 +456,11 @@ class EventLayout:
             },
             "descriptor": self.descriptor_uid,
         }
+
+
+def join(arrays: list[np.ndarray]) -> np.ndarray:
+    """Return the rows of `arrays` in one array; one array is returned as it is."""
+    return arrays[0] if len(arrays) == 1 else np.concatenate(arrays)
 
 
 def decode_cbor(data: bytes) -> list[Any]:

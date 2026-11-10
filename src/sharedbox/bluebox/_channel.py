@@ -359,7 +359,7 @@ class DocumentSender:
                 f"{name} document: descriptor {doc.get('descriptor')!r} was not "
                 "sent on this channel"
             )
-        items = events.layout.pack(name, doc)
+        items = events.layout.pack(name, doc, self._seq + 1)
         self._seq += 1
         if (
             not events.readers_checked
@@ -367,9 +367,7 @@ class DocumentSender:
         ):
             self._wait_for_readers([events])
         for item in items:
-            events.sender.send(
-                dataclasses.replace(item, seq=self._seq), self._event_timeout
-            )
+            events.sender.send(item, self._event_timeout)
         events.sent += len(items)
 
     def _wait_for_readers(self, streams: list[EventStream]) -> None:
