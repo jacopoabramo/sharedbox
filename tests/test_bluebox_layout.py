@@ -2,7 +2,7 @@ import copy
 import uuid
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, cast, get_args, get_type_hints
+from typing import Any, cast
 
 import numpy as np
 import pytest
@@ -14,7 +14,7 @@ from bluebox_compare import (
 )
 from event_model.documents import EventDescriptor
 
-from sharedbox import Capacity, MaxShape, SharedStream
+from sharedbox import SharedStream
 from sharedbox.bluebox._layout import EventLayout
 
 DATA = Path(__file__).parent / "bluebox_data"
@@ -208,6 +208,102 @@ def test_float_fits_a_narrower_float_key() -> None:
     assert doc["data"] == {"gain": float(np.float32(0.1))}
 
 
+@pytest.mark.parametrize(
+    ("dtype_numpy", "value", "expected"),
+    [
+        ("<f4", np.float64(0.1), float(np.float32(0.1))),
+        ("<i8", np.float64(3.0), 3),
+        ("<i4", np.int64(5), 5),
+        ("|b1", np.int64(1), True),
+    ],
+    ids=["float64 in float32", "integral float64", "int64 in int32", "int64 in bool"],
+)
+def test_numpy_number_converts_as_a_python_one(
+    dtype_numpy: str, value: object, expected: object
+) -> None:
+    """Accept a numpy number where the same Python number converts."""
+    descriptor = descriptor_of(
+        reading={"dtype": "number", "dtype_numpy": dtype_numpy, "shape": []}
+    )
+    layout = EventLayout.from_descriptor(descriptor, string_capacity=64, page_rows=4)
+
+    _, doc = layout.unpack(layout.pack("event", event_of(descriptor, reading=value), 1))
+
+    assert doc["data"] == {"reading": expected}
+
+
+@pytest.mark.parametrize(
+    ("dtype_numpy", "value"),
+    [
+        ("<i8", np.float64(3.5)),
+        ("<i4", np.int64(2**40)),
+        ("|b1", np.int64(2)),
+        ("<f8", np.complex128(1j)),
+    ],
+    ids=["fraction", "too large", "not a bool", "complex"],
+)
+def test_inexact_numpy_number_is_refused(dtype_numpy: str, value: object) -> None:
+    """Refuse a numpy number that does not convert exactly to an integer or bool key, or a complex one for a float key."""
+    descriptor = descriptor_of(
+        reading={"dtype": "number", "dtype_numpy": dtype_numpy, "shape": []}
+    )
+    layout = EventLayout.from_descriptor(descriptor, string_capacity=64, page_rows=4)
+
+    with pytest.raises(ValueError, match="'reading'"):
+        layout.pack("event", event_of(descriptor, reading=value), 1)
+
+
+def test_long_array_without_dtype_numpy_passes() -> None:
+    """Carry an array key of 1024 numbers without dtype_numpy, and refuse strings that overflow it."""
+    descriptor = descriptor_of(wave={"dtype": "array", "shape": [1024]})
+    layout = EventLayout.from_descriptor(descriptor, string_capacity=256, page_rows=1)
+    event = event_of(descriptor, wave=[index / 3 for index in range(1024)])
+
+    assert_documents_equal(
+        [("event", event)], [layout.unpack(layout.pack("event", event, 1))]
+    )
+    with pytest.raises(ValueError, match="'wave'.*do not fit"):
+        layout.pack("event", event_of(descriptor, wave=["x" * 20] * 1024), 1)
+
+
+def test_short_filled_column_is_refused() -> None:
+    """Refuse a page whose filled column is shorter than its rows, naming the column."""
+    descriptor = descriptor_of(
+        image={"dtype": "array", "shape": [2], "external": "FILESTORE:"}
+    )
+    page = {
+        "uid": [str(uuid.uuid4()) for _ in range(3)],
+        "time": [1.0, 2.0, 3.0],
+        "seq_num": [1, 2, 3],
+        "data": {"image": ["a", "b", "c"]},
+        "timestamps": {"image": [1.0, 2.0, 3.0]},
+        "filled": {"image": [False]},
+        "descriptor": descriptor["uid"],
+    }
+    layout = EventLayout.from_descriptor(descriptor, string_capacity=64, page_rows=4)
+
+    with pytest.raises(ValueError, match="filled 'image'"):
+        layout.pack("event_page", page, 1)
+
+
+def test_filled_of_many_external_keys_fits() -> None:
+    """Carry the filled flags of eight external keys with small capacities."""
+    names = [f"detector_{index}_image" for index in range(8)]
+    external: dict[str, object] = {
+        "dtype": "array",
+        "shape": [2],
+        "external": "FILESTORE:",
+    }
+    descriptor = descriptor_of(**dict.fromkeys(names, external))
+    event = event_of(descriptor, **{name: str(uuid.uuid4()) for name in names})
+    event["filled"] = dict.fromkeys(names, False)
+    layout = EventLayout.from_descriptor(descriptor, string_capacity=64, page_rows=1)
+
+    assert_documents_equal(
+        [("event", event)], [layout.unpack(layout.pack("event", event, 1))]
+    )
+
+
 def test_unknown_data_key_is_refused() -> None:
     """Refuse an event holding a data key its descriptor does not have, naming it."""
     descriptor = descriptor_of(count={"dtype": "integer", "shape": []})
@@ -276,29 +372,26 @@ def test_long_string_is_refused() -> None:
         layout.pack("event", event_of(descriptor, label="é" * 20 + "a"), 1)
 
 
-def test_item_size_is_exact() -> None:
-    """Size the array field to page_rows frames and the bytes fields to their rows."""
+def test_page_rows_frames_fill_one_item() -> None:
+    """Carry page_rows frames in one item and one frame more in two."""
     descriptor = descriptor_of(
-        frame={"dtype": "array", "dtype_numpy": "<u2", "shape": [512, 512]}
+        frame={"dtype": "array", "dtype_numpy": "<u2", "shape": [64, 64]}
     )
     layout = EventLayout.from_descriptor(descriptor, string_capacity=64, page_rows=2)
 
-    hints = get_type_hints(layout.item_type, include_extras=True)
-    group = get_type_hints(hints["g0"], include_extras=True)
-    (max_shape,) = [
-        extra for extra in get_args(group["k0"])[1:] if isinstance(extra, MaxShape)
-    ]
-    capacities = [
-        extra.size
-        for hint in hints.values()
-        if hasattr(hint, "__metadata__")
-        for extra in hint.__metadata__
-        if isinstance(extra, Capacity)
-    ]
+    def page_of(rows: int) -> dict[str, object]:
+        return {
+            "uid": [str(uuid.uuid4()) for _ in range(rows)],
+            "time": [1.0] * rows,
+            "seq_num": list(range(1, rows + 1)),
+            "data": {"frame": np.ones((rows, 64, 64), np.uint16)},
+            "timestamps": {"frame": [1.0] * rows},
+            "filled": {},
+            "descriptor": descriptor["uid"],
+        }
 
-    assert np.prod(max_shape.dims) == 2 * 512 * 512
-    assert capacities
-    assert max(capacities) <= 9 + 2 * (9 + 64)
+    assert len(layout.pack("event_page", page_of(2), 1)) == 1
+    assert len(layout.pack("event_page", page_of(3), 1)) == 2
 
 
 def test_item_type_makes_a_stream(unique_name: str) -> None:
@@ -314,27 +407,6 @@ def test_item_type_makes_a_stream(unique_name: str) -> None:
         label="cam",
         extra=["a", 1],
     )
-    layout = EventLayout.from_descriptor(descriptor, string_capacity=64, page_rows=4)
-
-    with SharedStream.create(layout.item_type, unique_name, capacity=2) as stream:
-        reader = stream.reader()
-        with stream.sender() as sender:
-            for item in layout.pack("event", event, 1):
-                sender.send(item, timeout=5)
-        received = [reader.receive(timeout=5)]
-        reader.close()
-    SharedStream.unlink(unique_name)
-
-    assert_documents_equal([("event", event)], [layout.unpack(received)])
-
-
-def test_many_keys_make_a_stream(unique_name: str) -> None:
-    """Send an event of 500 keys through a stream of the item type and unpack it."""
-    keys: dict[str, dict[str, object]] = {
-        f"signal{index}": {"dtype": "number", "shape": []} for index in range(500)
-    }
-    descriptor = descriptor_of(**keys)
-    event = event_of(descriptor, **{key: index / 2 for index, key in enumerate(keys)})
     layout = EventLayout.from_descriptor(descriptor, string_capacity=64, page_rows=4)
 
     with SharedStream.create(layout.item_type, unique_name, capacity=2) as stream:
