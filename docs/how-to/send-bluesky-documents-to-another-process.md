@@ -84,10 +84,23 @@ document at a time and takes a `timeout`, for a loop that has other work to
 do between documents.
 
 A receiver gets every kind of document the run emits, `resource`, `datum`,
-`stream_resource` and `stream_datum` included. Two things come back in a
-different form: an enum member arrives as its value, and a `pydantic` model,
-such as the `Table` an `ophyd-async` device can put in its configuration,
-arrives as the dict of its fields.
+`stream_resource` and `stream_datum` included, with dict keys in the order
+they were sent. Some values come back in another type that compares equal
+or holds the same numbers:
+
+- an enum member arrives as its value, and a `pydantic` model, such as the
+  `Table` an `ophyd-async` device can put in its configuration, as the dict
+  of its fields;
+- a tuple arrives as a list;
+- in an event, a value arrives in the type its descriptor states: an int in
+  a `number` key as a float, a list in an `array` key as a `numpy` array,
+  a numpy scalar as a Python one, and a float in a `float32` key rounded to
+  that precision;
+- an event's `time` and timestamps arrive as floats, and an event page's
+  `time`, `seq_num` and timestamps as lists;
+- an event or page without `filled` gets `filled: {}`, and fields of an
+  event other than `uid`, `time`, `seq_num`, `data`, `timestamps`,
+  `filled` and `descriptor` are dropped.
 
 ## Choose what a slow receiver loses
 
@@ -171,11 +184,12 @@ sender = DocumentSender.create(
 ```
 
 !!! warning "A lossless receiver that attaches late can be released"
-    A receiver starts reading a descriptor's events only once it has
-    delivered the descriptor. Before those events fill their ring, the
-    sender waits up to `control_timeout` for each lossless receiver to get
-    that far, and then sends on, whatever `on_full` says. A lossless
-    receiver that reaches the descriptor later finds events gone, and its
+    A receiver starts reading a descriptor's events at its first call to
+    `receive` after the descriptor was sent, even while it is still
+    delivering earlier documents. Before those events fill their ring, the
+    sender waits up to `control_timeout` for each lossless receiver to make
+    that call, and then sends on, whatever `on_full` says. A lossless
+    receiver that calls `receive` later finds events gone, and its
     next `receive` raises `ReceiverReleasedError` instead of delivering a
     run with holes. Give the sender a `control_timeout` longer than the
     longest time a lossless receiver spends away from `receive`.
