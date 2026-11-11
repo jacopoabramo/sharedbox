@@ -1455,12 +1455,16 @@ nb::object Types::out_view(const detail::type_ref &t, PyObject *out, const std::
                            const std::string &name) const {
     if (t.kind != kind_max_array)
         return nb::borrow(out);
-    if (stored_bytes(t, data) == UINT64_MAX)
+    // The shape is checked and used from one copy of the line: data may be a live mapping, where a
+    // writer could change the line between a check and a second read.
+    std::byte line[64];
+    std::memcpy(line, data, sizeof line);
+    if (stored_bytes(t, line) == UINT64_MAX)
         corrupt(name);
     const detail::type_node &node = tree_.node(t.node);
     std::size_t shape[8];
     for (std::uint32_t i = 0; i < node.ndim; ++i)
-        shape[i] = static_cast<std::size_t>(load<std::uint64_t>(data + std::size_t{i} * 8));
+        shape[i] = static_cast<std::size_t>(load<std::uint64_t>(line + std::size_t{i} * 8));
     auto *raw = static_cast<std::byte *>(array_out_of(t, name, out).data());
     return wrap_array(t, raw, out, {shape, node.ndim});
 }
@@ -1506,13 +1510,16 @@ nb::object Types::decode_array(const detail::type_ref &t, const std::byte *data,
 
 nb::object Types::decode_max_array(const detail::type_ref &t, const std::byte *data,
                                    std::unique_ptr<std::byte[]> *owned, const std::string &name) const {
-    const std::uint64_t bytes = detail::max_array_bytes(tree_, t, data);
+    // One copy of the shape line for the check and for the shape, as in out_view.
+    std::byte line[64];
+    std::memcpy(line, data, sizeof line);
+    const std::uint64_t bytes = detail::max_array_bytes(tree_, t, line);
     if (bytes == UINT64_MAX)
         corrupt(name);
     const detail::type_node &node = tree_.node(t.node);
     std::size_t shape[8];
     for (std::uint32_t i = 0; i < node.ndim; ++i)
-        shape[i] = static_cast<std::size_t>(load<std::uint64_t>(data + std::size_t{i} * 8));
+        shape[i] = static_cast<std::size_t>(load<std::uint64_t>(line + std::size_t{i} * 8));
     std::unique_ptr<std::byte[]> buffer;
     std::byte *raw = nullptr;
     // A buffer mostly beyond the stored elements is not kept: its unused room would live as long as the array.
@@ -1563,10 +1570,13 @@ nb::object Types::array_over(std::uint32_t index, std::byte *data, nb::handle ow
     const detail::type_node &node = tree_.node(t.node);
     std::size_t stored[8];
     if (shape.empty()) {
-        if (detail::max_array_bytes(tree_, t, data) == UINT64_MAX)
+        // One copy of the shape line for the check and for the shape, as in out_view.
+        std::byte seen[64];
+        std::memcpy(seen, data, sizeof seen);
+        if (detail::max_array_bytes(tree_, t, seen) == UINT64_MAX)
             corrupt(labels_[index]);
         for (std::uint32_t i = 0; i < node.ndim; ++i)
-            stored[i] = static_cast<std::size_t>(load<std::uint64_t>(data + std::size_t{i} * 8));
+            stored[i] = static_cast<std::size_t>(load<std::uint64_t>(seen + std::size_t{i} * 8));
         shape = {stored, node.ndim};
     } else {
         std::uint64_t line[8] = {};
