@@ -66,6 +66,7 @@ sharedbox/
 |       |-- types.{hpp,cpp}    Types: conversions of kinds above 5, arrays
 |       |-- scalars.{hpp,cpp}  kinds 6 to 23, the datetime C API on full-API builds
 |       |-- segment.{hpp,cpp}  Segment: a sharedbox::handle plus error messages and the lifetime lock; RecordWriter and the same-thread check
+|       |-- gc_slots.hpp       tp_traverse and tp_clear of the bound classes, written once
 |       `-- stream.{hpp,cpp}   Stream, Sender and Reader: the Python binding of a stream and its errors
 |-- tests/                     pytest; many tests spawn processes
 |   |-- crossproc.py           helpers that run a box in another process

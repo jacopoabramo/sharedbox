@@ -27,6 +27,7 @@
 #include <vector>
 
 #include "codec.hpp"
+#include "gc_slots.hpp"
 #include "segment.hpp"
 #include "types.hpp"
 
@@ -68,24 +69,6 @@ struct StreamCore {
     stream s;
     std::string name;
 };
-
-template <class T> int traverse_slot(PyObject *self, visitproc visit, void *arg) {
-    Py_VISIT(Py_TYPE(self));
-    if (!nb::inst_ready(self))
-        return 0;
-    return nb::inst_ptr<T>(self)->traverse(visit, arg);
-}
-
-template <class T> int clear_slot(PyObject *self) {
-    if (nb::inst_ready(self))
-        nb::inst_ptr<T>(self)->clear();
-    return 0;
-}
-
-template <class T>
-const PyType_Slot gc_slots[] = {{Py_tp_traverse, reinterpret_cast<void *>(traverse_slot<T>)},
-                                {Py_tp_clear, reinterpret_cast<void *>(clear_slot<T>)},
-                                {0, nullptr}};
 
 [[noreturn]] void throw_stream(const error &e, const std::string &name) {
 #ifdef _WIN32

@@ -31,6 +31,7 @@
 #include "codec.hpp"
 #include "collection.hpp"
 #include "dict.hpp"
+#include "gc_slots.hpp"
 #include "scalars.hpp"
 #include "segment.hpp"
 #include "set.hpp"
@@ -702,54 +703,6 @@ void release_box_capsule(PyObject *capsule) {
     delete handle;
 }
 
-int types_traverse(PyObject *self, visitproc visit, void *arg) {
-    Py_VISIT(Py_TYPE(self));
-    if (!nb::inst_ready(self))
-        return 0;
-    return nb::inst_ptr<sharedbox::Types>(self)->traverse(visit, arg);
-}
-
-int types_clear(PyObject *self) {
-    if (nb::inst_ready(self))
-        nb::inst_ptr<sharedbox::Types>(self)->clear();
-    return 0;
-}
-
-int value_cache_traverse(PyObject *self, visitproc visit, void *arg) {
-    Py_VISIT(Py_TYPE(self));
-    if (!nb::inst_ready(self))
-        return 0;
-    return nb::inst_ptr<ValueCache>(self)->traverse(visit, arg);
-}
-
-int value_cache_clear(PyObject *self) {
-    if (nb::inst_ready(self))
-        nb::inst_ptr<ValueCache>(self)->clear();
-    return 0;
-}
-
-PyType_Slot value_cache_slots[] = {{Py_tp_traverse, reinterpret_cast<void *>(value_cache_traverse)},
-                                   {Py_tp_clear, reinterpret_cast<void *>(value_cache_clear)},
-                                   {0, nullptr}};
-
-template <typename Store> int store_traverse(PyObject *self, visitproc visit, void *arg) {
-    Py_VISIT(Py_TYPE(self));
-    if (!nb::inst_ready(self))
-        return 0;
-    return nb::inst_ptr<Store>(self)->traverse(visit, arg);
-}
-
-template <typename Store> int store_clear(PyObject *self) {
-    if (nb::inst_ready(self))
-        nb::inst_ptr<Store>(self)->clear();
-    return 0;
-}
-
-template <typename Store>
-PyType_Slot store_slots[] = {{Py_tp_traverse, reinterpret_cast<void *>(store_traverse<Store>)},
-                             {Py_tp_clear, reinterpret_cast<void *>(store_clear<Store>)},
-                             {0, nullptr}};
-
 /// The iterator of a NativeCollection, NativeSet or NativeDict: one element, or a dict's key, decoded per
 /// step, forward up to the length the value has then, or backward from the end, as list's reversed iterator.
 template <typename Store> struct StoreIterator {
@@ -909,17 +862,18 @@ void collection_releasebuffer(PyObject *self, Py_buffer *) {
 }
 
 PyType_Slot collection_slots[] = {
-    {Py_tp_traverse, reinterpret_cast<void *>(store_traverse<sharedbox::NativeCollection>)},
-    {Py_tp_clear, reinterpret_cast<void *>(store_clear<sharedbox::NativeCollection>)},
+    {Py_tp_traverse, reinterpret_cast<void *>(sharedbox::traverse_slot<sharedbox::NativeCollection>)},
+    {Py_tp_clear, reinterpret_cast<void *>(sharedbox::clear_slot<sharedbox::NativeCollection>)},
     {Py_bf_getbuffer, reinterpret_cast<void *>(collection_getbuffer)},
     {Py_bf_releasebuffer, reinterpret_cast<void *>(collection_releasebuffer)},
     {0, nullptr}};
 
-PyType_Slot dict_slots[] = {{Py_tp_traverse, reinterpret_cast<void *>(store_traverse<sharedbox::NativeDict>)},
-                            {Py_tp_clear, reinterpret_cast<void *>(store_clear<sharedbox::NativeDict>)},
-                            {Py_mp_subscript, reinterpret_cast<void *>(dict_subscript)},
-                            {Py_mp_ass_subscript, reinterpret_cast<void *>(dict_ass_subscript)},
-                            {0, nullptr}};
+PyType_Slot dict_slots[] = {
+    {Py_tp_traverse, reinterpret_cast<void *>(sharedbox::traverse_slot<sharedbox::NativeDict>)},
+    {Py_tp_clear, reinterpret_cast<void *>(sharedbox::clear_slot<sharedbox::NativeDict>)},
+    {Py_mp_subscript, reinterpret_cast<void *>(dict_subscript)},
+    {Py_mp_ass_subscript, reinterpret_cast<void *>(dict_ass_subscript)},
+    {0, nullptr}};
 
 /// Raises TypeError when given, the number of arguments passed to name, passes most, as dict's methods do.
 void at_most(const char *name, std::size_t most, std::size_t given) {
@@ -947,10 +901,6 @@ nb::object set_combine_in_place(nb::pointer_and_handle<sharedbox::NativeSet> sel
 template <int op> nb::object set_compare(sharedbox::NativeSet &self, nb::handle other) {
     return self.compare(other, op);
 }
-
-PyType_Slot types_slots[] = {{Py_tp_traverse, reinterpret_cast<void *>(types_traverse)},
-                             {Py_tp_clear, reinterpret_cast<void *>(types_clear)},
-                             {0, nullptr}};
 
 } // namespace
 
@@ -1407,13 +1357,13 @@ NB_MODULE(_native, m) {
             "spec"_a, "segment_slot"_a, "types"_a = nb::none(), "values_slot"_a = nb::none())
         .def_ro("spec", &Field::spec);
 
-    nb::class_<ValueCache>(m, "ValueCache", nb::type_slots(value_cache_slots))
+    nb::class_<ValueCache>(m, "ValueCache", nb::type_slots(sharedbox::gc_slots<ValueCache>))
         .def(nb::init<std::uint32_t>(), "fields"_a)
         .def("clear", &ValueCache::clear)
         .def("_after_fork", &ValueCache::after_fork);
     value_cache_type = reinterpret_cast<PyTypeObject *>(nb::type<ValueCache>().ptr());
 
-    nb::class_<sharedbox::Types>(m, "Types", nb::type_slots(types_slots))
+    nb::class_<sharedbox::Types>(m, "Types", nb::type_slots(sharedbox::gc_slots<sharedbox::Types>))
         .def(
             "__init__",
             [](sharedbox::Types *self,
@@ -1498,7 +1448,7 @@ NB_MODULE(_native, m) {
     nb::module_::import_("collections.abc").attr("MutableSequence").attr("register")(collection);
 
     nb::class_<sharedbox::NativeSet> set(m, "NativeSet", nb::is_generic(),
-                                         nb::type_slots(store_slots<sharedbox::NativeSet>));
+                                         nb::type_slots(sharedbox::gc_slots<sharedbox::NativeSet>));
     set.def("__len__", &sharedbox::NativeSet::size)
         .def("__iter__",
              [](nb::pointer_and_handle<sharedbox::NativeSet> self) {
