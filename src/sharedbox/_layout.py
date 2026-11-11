@@ -423,6 +423,23 @@ def forward_refs(hint: object) -> list[ForwardRef]:
     return [ref for arg in get_args(hint) for ref in forward_refs(arg)]
 
 
+def enclosing_locals() -> dict[str, Any]:
+    """Return the local names of the function whose class statement is being run, or {} at module level.
+
+    With string annotations a class defined in a function can only name
+    another class of that function through these.
+    """
+    package = __name__.partition(".")[0]
+    frame: types.FrameType | None = sys._getframe(1)
+    while frame is not None and (
+        frame.f_globals.get("__name__", "").partition(".")[0] == package
+    ):
+        frame = frame.f_back
+    if frame is None or frame.f_locals is frame.f_globals:
+        return {}
+    return dict(frame.f_locals)
+
+
 def type_hints(cls: type) -> dict[str, Any]:
     """Return the resolved annotations of `cls` and its bases, in which `cls` may name itself.
 
@@ -436,7 +453,7 @@ def type_hints(cls: type) -> dict[str, Any]:
     except NameError:
         pass
     # The class's own name is bound in its module only after __init_subclass__ returns.
-    localns = {cls.__name__: cls}
+    localns = {**enclosing_locals(), cls.__name__: cls}
     if sys.version_info >= (3, 14):
         hints = get_type_hints(
             cls, include_extras=True, localns=localns, format=Format.FORWARDREF
