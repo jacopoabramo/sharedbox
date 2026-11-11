@@ -625,45 +625,64 @@ private:
         }
         std::optional<result<received>> got;
         std::uint64_t released = 0;
-        {
+        const auto copy = [&](std::span<const std::byte> item) noexcept {
+            std::size_t at = 0;
+            for (const Types::ArrayTarget &target : targets) {
+                std::memcpy(scratch + at, item.data() + at, target.offset - at);
+                at = target.offset + target.size;
+                if (target.max == nullptr) {
+                    std::memcpy(target.view.data(), item.data() + target.offset, target.size);
+                    continue;
+                }
+                // The count comes from the scratch copy of the line, which no sender writes, so a
+                // line overwritten during the copy cannot make it run past the span.
+                std::memcpy(scratch + target.offset, item.data() + target.offset, 64);
+                std::uint64_t n = types.stored_bytes(*target.max, scratch + target.offset);
+                if (n == UINT64_MAX)
+                    n = 0;
+                std::byte *into = target.view.is_valid() ? static_cast<std::byte *>(target.view.data())
+                                                         : scratch + target.offset + 64;
+                std::memcpy(into, item.data() + target.offset + 64, n);
+            }
+            std::memcpy(scratch + at, item.data() + at, size - at);
+        };
+        // The caller holds calls_.
+        const auto take = [&](seconds within) {
+            if (position) {
+                got.emplace(end_.fetch_with(*position, copy, within));
+            } else {
+                const std::uint64_t before = end_.missed();
+                got.emplace(end_.receive_with(copy, within));
+                released = end_.missed() - before;
+                missed_total_.store(end_.missed(), std::memory_order_relaxed);
+            }
+        };
+        bool taken = false;
+        if (size < detail::large_copy) {
+            // The usual case, an item that waits and is not large, is copied without giving up the GIL, as
+            // Sender::reserve takes a free slot: a thread that gives the GIL up waits to get it back
+            // whenever another Python thread runs. A call that may not wait gives up while another call
+            // holds this end.
+            std::unique_lock lock(*calls_, std::try_to_lock);
+            if (lock && !closed_.load()) {
+                take(seconds(0));
+                taken = *got || got->error().code != status::timeout || wait <= seconds(0);
+                if (!taken)
+                    got.reset();
+            } else if (!lock && wait <= seconds(0)) {
+                got.emplace(unexpected(status::timeout));
+                taken = true;
+            }
+        }
+        if (!taken) {
             nb::gil_scoped_release unlocked;
-            // A call that may not wait gives up while another call holds this end, as Sender::reserve does.
             std::unique_lock lock(*calls_, std::defer_lock);
             if (wait > seconds(0))
                 lock.lock();
             else if (!lock.try_lock())
                 got.emplace(unexpected(status::timeout));
-            if (lock && !closed_.load()) {
-                const auto copy = [&](std::span<const std::byte> item) noexcept {
-                    std::size_t at = 0;
-                    for (const Types::ArrayTarget &target : targets) {
-                        std::memcpy(scratch + at, item.data() + at, target.offset - at);
-                        at = target.offset + target.size;
-                        if (target.max == nullptr) {
-                            std::memcpy(target.view.data(), item.data() + target.offset, target.size);
-                            continue;
-                        }
-                        // The count comes from the scratch copy of the line, which no sender writes, so a
-                        // line overwritten during the copy cannot make it run past the span.
-                        std::memcpy(scratch + target.offset, item.data() + target.offset, 64);
-                        std::uint64_t n = types.stored_bytes(*target.max, scratch + target.offset);
-                        if (n == UINT64_MAX)
-                            n = 0;
-                        std::byte *into = target.view.is_valid() ? static_cast<std::byte *>(target.view.data())
-                                                                 : scratch + target.offset + 64;
-                        std::memcpy(into, item.data() + target.offset + 64, n);
-                    }
-                    std::memcpy(scratch + at, item.data() + at, size - at);
-                };
-                if (position) {
-                    got.emplace(end_.fetch_with(*position, copy, wait));
-                } else {
-                    const std::uint64_t before = end_.missed();
-                    got.emplace(end_.receive_with(copy, wait));
-                    released = end_.missed() - before;
-                    missed_total_.store(end_.missed(), std::memory_order_relaxed);
-                }
-            }
+            if (lock && !closed_.load())
+                take(wait);
         }
         if (!got)
             check_open();
