@@ -391,6 +391,9 @@ def locked_class(cls: type[SharedBox]) -> type[SharedBox]:
         "__slots__": ("_held_box", "_held_thread", "_held_writer"),
         "__module__": cls.__module__,
         "__qualname__": cls.__qualname__,
+        # A mark in the namespace, not a class keyword: a keyword would also reach an
+        # __init_subclass__ the user's class defines, which need not accept it.
+        "__sharedbox_locked_view__": True,
         "update": locked_update,
         "snapshot": locked_snapshot,
         "_segment": property(held_segment),
@@ -409,9 +412,7 @@ def locked_class(cls: type[SharedBox]) -> type[SharedBox]:
         },
         **{spec.name: locked_property(spec) for spec in layout.fields},
     }
-    view: type[SharedBox] = cast(Any, type(cls))(
-        cls.__name__, (cls,), namespace, _locked_view=True
-    )
+    view: type[SharedBox] = cast(Any, type(cls))(cls.__name__, (cls,), namespace)
     cls.__sharedbox_locked__ = view
     return view
 
@@ -750,10 +751,9 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
         identity: str | None = None,
         metadata_capacity: int | None = None,
         metadata_versions: int | None = None,
-        _locked_view: bool = False,
         **kwargs: Any,
     ) -> None:
-        if _locked_view:
+        if cls.__dict__.get("__sharedbox_locked_view__", False):
             return
         super().__init_subclass__(**kwargs)
         if identity is not None and (not isinstance(identity, str) or not identity):
