@@ -15,7 +15,7 @@ import weakref
 from collections.abc import Callable
 from dataclasses import KW_ONLY, InitVar, dataclass
 from pathlib import Path
-from typing import Any, Optional, Union
+from typing import Annotated, Any, Optional, Union
 
 import pytest
 from refs_future import Link
@@ -960,3 +960,14 @@ def test_a_reference_holds_a_name_of_240_characters(unique_name: str) -> None:
         assert stage.motor.name == name
     Motor.unlink(name)
     Stage.unlink(f"{unique_name}-s")
+
+
+def test_a_reference_may_be_annotated(names: Callable[[str], str]) -> None:
+    """Accept a reference field whose annotation is wrapped in Annotated, optional or not."""
+
+    class Rig(SharedBox):
+        motor: Annotated[Motor, "the drive"]
+        spare: Annotated[Motor | None, "kept in the drawer"] = None
+
+    with Motor.create(names("m"), 3) as motor, Rig.create(names("r"), motor) as rig:
+        assert (rig.motor.position, rig.spare) == (3, None)

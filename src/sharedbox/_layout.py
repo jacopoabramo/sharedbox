@@ -10,6 +10,7 @@ from dataclasses import KW_ONLY, MISSING, InitVar, dataclass
 from types import MappingProxyType, NoneType
 from typing import (
     TYPE_CHECKING,
+    Annotated,
     Any,
     ClassVar,
     Final,
@@ -397,7 +398,12 @@ def class_identity(cls: type) -> str:
 
 
 def reference(hint: object) -> tuple[type[SharedBox], bool] | None:
-    """Return the box class of a reference field annotated `X` or `X | None`, and whether it may be None."""
+    """Return the box class of a reference field annotated `X` or `X | None`, and whether it may be None.
+
+    `Annotated` and `Final` around the annotation are looked through.
+    """
+    while get_origin(hint) in (Annotated, Final):
+        hint = get_args(hint)[0]
     if is_box_class(hint):
         return hint, False
     if get_origin(hint) in (Union, types.UnionType):
