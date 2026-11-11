@@ -4,9 +4,11 @@
 # sequence again and discards the copy if it moved. The copy is a data race by design, so the
 # functions that make it are listed here. Nothing else belongs in this file: a report from any
 # other function is a finding.
-race:sharedbox::detail::copy_checked
-race:sharedbox::detail::read_used_impl
-race:sharedbox::detail::read_metadata
-race:sharedbox::handle::read
-race:sharedbox::stream_reader::receive
-race:sharedbox::stream_reader::fetch
+# The names carry no namespace: the library's is versioned (sharedbox::v3), and a pattern matches any
+# part of a frame's function name.
+race:detail::copy_checked
+race:detail::read_used_impl
+race:detail::read_metadata
+race:handle::read
+race:stream_reader::receive
+race:stream_reader::fetch
