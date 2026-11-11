@@ -42,6 +42,8 @@ if TYPE_CHECKING:
 
 T = TypeVar("T")
 STEP: Final = 1.0
+# In place of a value the watcher has not decoded, because no callback would have received it.
+UNREAD: Final = object()
 # Seconds the exit handler waits for stopped watcher threads, together.
 EXIT_WAIT: Final = 2.0
 logger = logging.getLogger("sharedbox")
@@ -453,7 +455,21 @@ class Watcher:
 
     def last(self, spec: FieldSpec) -> Any:
         """Return the value of `spec` the watcher last saw, which it compares the next change with."""
-        return self._seen[spec.index][2]
+        version, raw, value = self._seen[spec.index]
+        if value is UNREAD:
+            value = self._types.decode(spec.index, raw)
+            self._seen[spec.index] = (version, raw, value)
+        return value
+
+    def _unheard(self, spec: FieldSpec, sink: Sink, group: BoxEvents | None) -> bool:
+        """Return whether a change of `spec` would reach no callback, so its value need not be decoded."""
+        return (
+            group is not None
+            and sink == self._to_group
+            and len(group[spec.name]) == 0
+            # A reference that moved changes what the follower forwards, callbacks or not.
+            and not (spec.target is not None and self.follower is not None)
+        )
 
     def _read_attr(self, spec: FieldSpec) -> tuple[Any, int, int]:
         """Return the value of attr field `spec`, its write count and its publish count, from one read."""
@@ -511,8 +527,15 @@ class Watcher:
             if raw == seen_raw:
                 self._seen[spec.index] = (version, raw, old)
                 continue
+            if self._unheard(spec, sink, group):
+                # The bytes are kept, and decoded only if a later change needs them as its old value:
+                # decoding a large field on every write costs more than the rest of the pass.
+                self._seen[spec.index] = (version, raw, UNREAD)
+                continue
             try:
                 new = self._types.decode(spec.index, raw)
+                if old is UNREAD:
+                    old = self._types.decode(spec.index, seen_raw)
             except Exception:
                 self._seen[spec.index] = (version, raw, old)
                 logger.exception("reading a change of field %r failed", spec.name)
