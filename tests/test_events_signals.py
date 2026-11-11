@@ -9,12 +9,16 @@ import time
 import psygnal
 import pytest
 
-from sharedbox import SharedBox
+from sharedbox import LockTimeoutError, SharedBox
 
 
 class Counter(SharedBox):
     value: int = 0
     other: int = 0
+
+
+class Guarded(SharedBox, lock_timeout=0.2):
+    value: int = 0
 
 
 class Colour(enum.Enum):
@@ -217,3 +221,16 @@ def test_callback_raising_system_exit_does_not_stop_delivery(unique_name: str) -
         assert raised.wait(5)
         box.value = 2
         assert seen.get(timeout=5) == 2
+
+
+def test_events_deliver_after_a_first_access_that_raised(unique_name: str) -> None:
+    """Deliver changes through events although the first access raised a lock timeout."""
+    seen: queue.Queue[int] = queue.Queue()
+    with Guarded.create(unique_name) as box:
+        box._segment._hold_write_lock()
+        with pytest.raises(LockTimeoutError):
+            box.events  # noqa: B018
+        box.force_unlock()
+        box.events.value.connect(seen.put)
+        box.value = 4
+        assert seen.get(timeout=5) == 4

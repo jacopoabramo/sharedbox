@@ -420,9 +420,12 @@ class Watcher:
         """Return the box's signal group, created on first use; the watcher emits into it while running."""
         with self._lock:
             if self._group is None:
-                self._group = factory()
+                group = factory()
                 self._metadata_head = self._segment.metadata_head()
                 self._listen_locked(self._to_group, fields)
+                # Stored last: a read above that raised must leave nothing behind, or the next
+                # access would return a group the watcher never emits into.
+                self._group = group
             self._start_locked()
             return self._group
 
