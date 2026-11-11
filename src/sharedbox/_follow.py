@@ -101,6 +101,10 @@ class Follower:
         group: BoxEvents | None = None
         try:
             with top.lock:
+                # Again, under the lock that close takes: a close since the check above has
+                # released the forwarding already, and nothing would stop what starts here.
+                if top.outer.closed:
+                    raise BoxClosedError(f"box {top.outer.name!r} is closed")
                 source = self.source()
                 starts: list[tuple[Follower, Any]] = []
                 try:
