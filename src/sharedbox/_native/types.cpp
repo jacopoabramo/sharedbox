@@ -665,7 +665,7 @@ std::span<const std::byte> Types::encode(std::uint32_t index, PyObject *value, E
         return {out, t.size};
     }
     if (detail::is_collection(t.kind)) {
-        std::byte *out = buffer.reserve(t.size);
+        std::byte *out = buffer.room(t.size);
         return {out, encode_collection(t, value, out, {name})};
     }
     std::byte *out = buffer.reserve(t.size);
@@ -803,11 +803,11 @@ std::size_t Types::encode_collection(const detail::type_ref &t, PyObject *value,
     if (length > static_cast<Py_ssize_t>(node.capacity))
         raise(PyExc_ValueError, where.name + " holds at most " + std::to_string(node.capacity) +
                                     " elements; the value has " + std::to_string(length));
+    // out may hold anything: an older value in a stream slot, or memory never written. So the bytes in use
+    // are zeroed first, and what an element leaves unwritten, such as padding, reads as zero. Set elements
+    // and dict keys are compared by their bytes, and the bytes of a list are compared to detect a change.
+    std::memset(out, 0, node.slots + static_cast<std::size_t>(length) * node.stride);
     put(out, static_cast<std::uint32_t>(length));
-    // Set elements and dict keys are compared by their bytes, and out may hold an older value, as a stream slot
-    // does, so the slots are zeroed first: the bytes a key leaves unwritten, such as padding, then read as zero.
-    if (t.kind != kind_list)
-        std::memset(out + node.slots, 0, static_cast<std::size_t>(length) * node.stride);
     const detail::type_member &first = tree_.member(node.members);
     for (Py_ssize_t i = 0; i < length; ++i) {
         std::byte *slot = out + node.slots + static_cast<std::size_t>(i) * node.stride;

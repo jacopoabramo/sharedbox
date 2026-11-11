@@ -85,13 +85,18 @@ struct EncodeBuffer {
 
     /// n zeroed bytes, in place when they fit, else on the heap.
     std::byte *reserve(std::size_t n) {
-        std::byte *out = small;
-        if (n > sizeof small) {
-            large.reset(new std::byte[n]);
-            out = large.get();
-        }
+        std::byte *out = room(n);
         std::memset(out, 0, n);
         return out;
+    }
+
+    /// n bytes left as they are, for a value whose encoder zeroes what it uses: zeroing the whole
+    /// capacity of a collection that holds a few elements would cost more than the write.
+    std::byte *room(std::size_t n) {
+        if (n <= sizeof small)
+            return small;
+        large.reset(new std::byte[n]);
+        return large.get();
     }
 
     alignas(std::uint64_t) std::byte small[sizeof(box_ref)];
