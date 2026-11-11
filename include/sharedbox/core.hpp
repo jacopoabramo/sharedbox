@@ -2621,6 +2621,8 @@ inline result<std::uint32_t> metadata_length(const std::byte *area, const metada
 
 // Copies version's document into out and returns its length. As metadata_length, and status::range for an
 // out shorter than the document; status::not_found also when the version is overwritten during the copy.
+// status::corrupt also for stored bytes that are not a metadata document, which only a writer that
+// bypassed add_metadata leaves: a reader then decodes nothing it did not check.
 inline result<std::uint32_t> read_metadata(const std::byte *area, const metadata_line &line, std::uint64_t version,
                                            std::span<std::byte> out) noexcept {
     if (version == 0)
@@ -2640,6 +2642,8 @@ inline result<std::uint32_t> read_metadata(const std::byte *area, const metadata
         std::memcpy(out.data(), ring + copy.offset, copy.length);
     if (!metadata_entry_kept(e, copy.seq))
         return unexpected(status::not_found);
+    if (!metadata_ok(std::span<const std::byte>(out.data(), copy.length)))
+        return unexpected(status::corrupt);
     return copy.length;
 }
 

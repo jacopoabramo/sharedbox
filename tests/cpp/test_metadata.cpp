@@ -353,6 +353,16 @@ TEST_CASE("a read during adds is never torn") {
     CHECK(reads > 0);
 }
 
+TEST_CASE("a read refuses stored bytes that are not a metadata document") {
+    area a(4, 192);
+    REQUIRE(a.add(byte_string(30, 1), 0));
+    // What a writer that bypasses add_metadata could leave: 0xff is no CBOR item on its own.
+    std::byte *ring = a.data() + sizeof(metadata_line) + std::size_t{a.line.entries} * sizeof(metadata_entry);
+    ring[a.entry(1).offset] = std::byte{0xff};
+    std::vector<std::byte> out(64);
+    CHECK(code(a.read_into(1, std::span<std::byte>(out))) == status::corrupt);
+}
+
 TEST_CASE("a forged area is refused") {
     const auto line = [](std::uint32_t entries, std::uint64_t ring_size) {
         metadata_line l{};
