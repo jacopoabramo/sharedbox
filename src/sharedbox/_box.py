@@ -37,6 +37,7 @@ from ._layout import (
     class_identity,
     declared,
     field,
+    mixin_value,
     own_annotations,
     own_kw_only,
 )
@@ -812,6 +813,13 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
         params: list[Field] = []
         for attr, hint in found:
             value = cls.__dict__.get(attr, MISSING)
+            if value is MISSING and attr not in own and attr not in options:
+                # A field a plain mixin declares: its value there is the default or the field().
+                mixed = mixin_value(cls, attr)
+                if isinstance(mixed, Field):
+                    options[attr] = mixed
+                elif mixed is not MISSING:
+                    options[attr] = field(default=mixed)
             if isinstance(value, Field):
                 options[attr] = value
             elif value is not MISSING and not isinstance(

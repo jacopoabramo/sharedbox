@@ -510,21 +510,14 @@ def declared(cls: type) -> list[tuple[str, Any]]:
     """Return `(name, annotation)` of every field and `InitVar` of `cls`, base classes first.
 
     `dataclasses.KW_ONLY` and `ClassVar` annotations and names starting
-    with `_` are left out, and so are the annotations of a base that is
-    not a box class, as `dataclasses` leaves out those of a base that is
-    not a dataclass.
+    with `_` are left out. A base that is not a box class gives its
+    annotated attributes as fields too, so a plain mixin can hold the
+    fields several box classes share.
     """
-    boxes = {
-        name
-        for base in cls.__mro__
-        if base is cls or is_box_class(base)
-        for name in own_annotations(base)
-    }
     return [
         (name, hint)
         for name, hint in type_hints(cls).items()
-        if name in boxes
-        and hint is not KW_ONLY
+        if hint is not KW_ONLY
         and not name.startswith("_")
         and hint is not ClassVar
         and get_origin(hint) is not ClassVar
@@ -556,6 +549,19 @@ def field_text(spec: FieldSpec) -> str:
     return f"{spec.name}:ref{optional}:{spec.target.__sharedbox_identity__}"
 
 
+def mixin_value(cls: type, name: str) -> Any:
+    """Return what a base of `cls` that is not a box class assigns to its annotated attribute `name`, or `MISSING`.
+
+    A box class records the options of its fields itself; a plain mixin
+    does not, so the default or the `field()` of a field it declares is
+    read from its class body.
+    """
+    for base in cls.__mro__[1:]:
+        if not is_box_class(base) and name in own_annotations(base):
+            return base.__dict__.get(name, MISSING)
+    return MISSING
+
+
 def sizing_options(
     cls: type, name: str
 ) -> tuple[tuple[int, ...] | None, Any, int | None]:
@@ -571,11 +577,14 @@ def sizing_options(
             ),
             None,
         )
-        if option is None:
+        if option is None and not own:
+            value = mixin_value(cls, name)
+        if option is None and value is MISSING:
             return None, MISSING, None
-        if own:
+        if option is not None and own:
             return None, option.default, None
-        return option.shape, option.default, option.capacity
+        if option is not None:
+            return option.shape, option.default, option.capacity
     if isinstance(value, Field):
         return value.shape, value.default, value.capacity
     return None, value, None
@@ -586,7 +595,7 @@ def declared_option(cls: type, name: str) -> Field | None:
     if name in own_annotations(cls):
         value = cls.__dict__.get(name, MISSING)
         return value if isinstance(value, Field) else None
-    return next(
+    option: Field | None = next(
         (
             base.__dict__["__sharedbox_options__"][name]
             for base in cls.__mro__[1:]
@@ -594,6 +603,10 @@ def declared_option(cls: type, name: str) -> Field | None:
         ),
         None,
     )
+    if option is None:
+        value = mixin_value(cls, name)
+        return value if isinstance(value, Field) else None
+    return option
 
 
 ZERO_KINDS: Final = frozenset(

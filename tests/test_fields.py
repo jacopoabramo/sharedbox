@@ -850,13 +850,30 @@ def test_field_capacity_is_checked_like_capacity() -> None:
         field(capacity=0)
 
 
-def test_an_annotated_attribute_of_a_plain_mixin_is_not_a_field() -> None:
-    """Leave the annotated attribute of a base that is not a box class out of the fields."""
+def test_a_field_from_a_plain_mixin_keeps_its_default(unique_name: str) -> None:
+    """Store the annotated attribute of a base that is not a box class as a field, with the default the mixin gives."""
 
-    class Mixin:
-        helper: int = 7
+    class Counted:
+        total: int = 7
 
-    class Mixed(Mixin, SharedBox):
-        x: int
+    class Sample(Counted, SharedBox):
+        count: int = 0
 
-    assert ([f.name for f in fields(Mixed)], Mixed.helper) == (["x"], 7)
+    with Sample.create(unique_name, count=1) as box:
+        assert ([f.name for f in fields(Sample)], box.total, box.count) == (
+            ["total", "count"],
+            7,
+            1,
+        )
+
+
+def test_a_required_field_after_a_defaulted_field_of_a_mixin_is_refused() -> None:
+    """Raise TypeError for a field without a default that follows a mixin's field with one."""
+
+    class Counted:
+        total: int = 7
+
+    with pytest.raises(TypeError, match="without a default follows"):
+
+        class Sample(Counted, SharedBox):
+            count: int
