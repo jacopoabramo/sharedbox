@@ -502,12 +502,21 @@ def declared(cls: type) -> list[tuple[str, Any]]:
     """Return `(name, annotation)` of every field and `InitVar` of `cls`, base classes first.
 
     `dataclasses.KW_ONLY` and `ClassVar` annotations and names starting
-    with `_` are left out.
+    with `_` are left out, and so are the annotations of a base that is
+    not a box class, as `dataclasses` leaves out those of a base that is
+    not a dataclass.
     """
+    boxes = {
+        name
+        for base in cls.__mro__
+        if base is cls or is_box_class(base)
+        for name in own_annotations(base)
+    }
     return [
         (name, hint)
         for name, hint in type_hints(cls).items()
-        if hint is not KW_ONLY
+        if name in boxes
+        and hint is not KW_ONLY
         and not name.startswith("_")
         and hint is not ClassVar
         and get_origin(hint) is not ClassVar

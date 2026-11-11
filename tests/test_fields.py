@@ -848,3 +848,15 @@ def test_field_capacity_is_checked_like_capacity() -> None:
     """Raise ValueError for a capacity of 0, as Capacity(0) does."""
     with pytest.raises(ValueError, match="capacity must be between"):
         field(capacity=0)
+
+
+def test_an_annotated_attribute_of_a_plain_mixin_is_not_a_field() -> None:
+    """Leave the annotated attribute of a base that is not a box class out of the fields."""
+
+    class Mixin:
+        helper: int = 7
+
+    class Mixed(Mixin, SharedBox):
+        x: int
+
+    assert ([f.name for f in fields(Mixed)], Mixed.helper) == (["x"], 7)
