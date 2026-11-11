@@ -1215,7 +1215,9 @@ Receive, for a reader whose next position is `r`:
    `data_word` in steps of at most 0.1 s, counting itself in `data_waiting`
    while it sleeps.
 2. A lossy reader with `write_pos - r > capacity` moves to
-   `write_pos - capacity`. A latest reader with `write_pos - r > 1` moves to
+   `write_pos - (capacity - capacity / 2)`, with integer division: the
+   middle of the ring, not its oldest item, whose slot the sender writes
+   next. A latest reader with `write_pos - r > 1` moves to
    `write_pos - 1`. Both count the items they pass as missed.
 3. Load `seq`, which must be `2r + 2`, copy the item, issue an acquire fence
    and load `seq` again. If it changed, the sender wrote a later position over

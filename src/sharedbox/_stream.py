@@ -563,7 +563,8 @@ class SharedStream(Generic[T, M]):
         mode
             `"lossless"` receives every item and holds the sender back when
             a full ring behind; `"lossy"` skips the items the sender
-            overwrote; `"latest"` always receives the newest item.
+            overwrote, and once a full ring behind goes on from the middle
+            of the ring; `"latest"` always receives the newest item.
         start
             `"newest"` begins at the newest item sent, `"oldest"` at the
             oldest the ring still holds.

@@ -109,14 +109,14 @@ def test_a_second_sender_is_busy(unique_name: str) -> None:
 
 
 def test_a_lossy_reader_counts_what_it_missed(unique_name: str) -> None:
-    """Skip to the oldest item the ring holds and count the overwritten ones."""
+    """Skip to the middle of the ring once a whole ring behind, and count the items passed."""
     stream = create(unique_name, int, capacity=2)
     reader = stream.reader(LOSSY, True)
     sender = stream.sender()
     for value in range(5):
         sender.send(value, 0.0)
-    assert reader.receive(0.0) == (3, 3)
-    assert reader.missed == 3
+    assert reader.receive(0.0) == (4, 4)
+    assert reader.missed == 4
 
 
 def test_more_readers_than_max_readers_are_refused(unique_name: str) -> None:

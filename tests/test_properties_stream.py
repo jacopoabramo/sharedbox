@@ -107,10 +107,16 @@ class StreamMachine(RuleBasedStateMachine):
             with pytest.raises(WouldBlock):
                 model.reader.receive_nowait()
             return
-        behind = {"lossless": 0, "lossy": n - CAPACITY, "latest": n - 1}[model.mode]
-        if model.position < behind:
-            model.missed += behind - model.position
-            model.position = behind
+        # A lossy reader more than a ring behind goes on from the middle of the ring.
+        lapped = model.position < n - CAPACITY
+        resume = {
+            "lossless": 0,
+            "lossy": n - (CAPACITY - CAPACITY // 2) if lapped else 0,
+            "latest": n - 1,
+        }[model.mode]
+        if model.position < resume:
+            model.missed += resume - model.position
+            model.position = resume
         assert model.reader.receive_nowait() == self.sent[model.position]
         assert model.reader.position == model.position
         model.position += 1

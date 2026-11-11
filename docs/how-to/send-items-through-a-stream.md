@@ -115,8 +115,11 @@ happens when it is slower than the sender:
   falls `capacity` items behind. Use it for a consumer that must see
   everything, such as the registered-mail desk, which logs every letter.
 - `"lossy"` skips the items the sender has already overwritten, and
-  [`missed`][sharedbox.SharedReceiveStream.missed] counts them. Use it for
-  a viewer that can drop items, such as a display board in the hall.
+  [`missed`][sharedbox.SharedReceiveStream.missed] counts them. A reader
+  that falls a whole ring behind is slower than the sender, so it goes on
+  from the middle of the ring and skips the older half as well, which
+  keeps the sender from overtaking it again at once. Use it for a viewer
+  that can drop items, such as a display board in the hall.
 - `"latest"` always receives the newest item. Use it for a display that
   shows only the current state.
 

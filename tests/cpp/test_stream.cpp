@@ -185,19 +185,21 @@ TEST_CASE("a lossy receive stops at its timeout while the sender overwrites ever
     REQUIRE((reader && sender));
     for (std::uint64_t i = 0; i < 6; ++i)
         REQUIRE(send(*sender, i));
-    // The copy runs the sender, so each copy is overwritten before it ends. The count is far more than
-    // 50 ms of copies, and bounded so that a receive that ignores its timeout still returns.
+    // The copy runs the sender for a whole ring, so each copy is overwritten before it ends, wherever the
+    // reader restarts. The count is far more than 50 ms of copies, and bounded so that a receive that
+    // ignores its timeout still returns.
     std::uint64_t copies = 0;
     const auto got = reader->receive_with(
         [&](std::span<const std::byte>) noexcept {
-            if (++copies <= 50'000'000)
-                static_cast<void>(send(*sender, copies, 0.0));
+            if (++copies <= 10'000'000)
+                for (int i = 0; i < 4; ++i)
+                    static_cast<void>(send(*sender, copies, 0.0));
         },
         seconds(0.05));
     CHECK((!got && got.error().code == status::timeout));
 }
 
-TEST_CASE("a lossy reader lapped several times resumes at the oldest item in the ring and counts the rest") {
+TEST_CASE("a lossy reader lapped several times resumes at the middle of the ring and counts the rest") {
     const std::string name = unique("stream-lapped-lossy");
     stream st = make(name, 4);
     auto reader = st.reader(read_mode::lossy, start_at::oldest);
@@ -205,13 +207,14 @@ TEST_CASE("a lossy reader lapped several times resumes at the oldest item in the
     REQUIRE((reader && sender));
     for (std::uint64_t i = 0; i < 10; ++i)
         REQUIRE(send(*sender, i));
-    for (std::uint64_t expected = 6; expected < 10; ++expected) {
+    // Positions 6 to 9 are in the ring; the reader gives up the older half, 6 and 7.
+    for (std::uint64_t expected = 8; expected < 10; ++expected) {
         const auto got = receive(*reader);
         REQUIRE(got);
         CHECK(got->position == expected);
-        CHECK(got->missed == (expected == 6 ? 6 : 0));
+        CHECK(got->missed == (expected == 8 ? 8 : 0));
     }
-    CHECK(reader->missed() == 6);
+    CHECK(reader->missed() == 8);
     const auto empty = receive(*reader, 0.0);
     CHECK((!empty && empty.error().code == status::timeout));
     REQUIRE(send(*sender, 10));
@@ -289,9 +292,10 @@ TEST_CASE("an item overwritten while it is copied is discarded and counted as mi
         },
         seconds(1.0));
     REQUIRE(got);
-    CHECK(got->position == 1);
-    CHECK(got->missed == 1);
-    CHECK(whole(it, 1));
+    // Two positions behind in a ring of 2: the reader keeps the newer half, position 2.
+    CHECK(got->position == 2);
+    CHECK(got->missed == 2);
+    CHECK(whole(it, 2));
     static_cast<void>(unlink(name));
 }
 

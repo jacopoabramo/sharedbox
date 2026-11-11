@@ -1181,8 +1181,12 @@ result<received> stream_reader::receive_with(F &&copy, seconds timeout) {
             continue;
         }
         if (mode_ == read_mode::lossy && w - r_ > s.capacity) {
-            missed_ += w - s.capacity - r_;
-            r_ = w - s.capacity;
+            // A lapped reader is slower than the sender. It restarts at the middle of the ring and gives up
+            // the older half: the oldest item is in the slot the sender writes next, so a restart there
+            // leaves one sender period for each copy, and the reader is lapped again at once.
+            const std::uint64_t kept = s.capacity - s.capacity / 2;
+            missed_ += w - kept - r_;
+            r_ = w - kept;
         } else if (mode_ == read_mode::latest && w - r_ > 1) {
             missed_ += w - 1 - r_;
             r_ = w - 1;
