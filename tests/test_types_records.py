@@ -15,6 +15,7 @@ from typing import (
     TypeVar,
 )
 
+import numpy as np
 import pytest
 from crossproc import snapshot_in_child, update_in_child
 
@@ -405,3 +406,29 @@ def test_a_metadata_shape_and_an_annotated_shape_that_disagree_are_refused() -> 
 
         class Box(SharedBox):
             s: Scanned
+
+
+Huge = Annotated[np.ndarray, Shape((3 << 30,)), DType("uint8")]
+
+
+def test_a_record_of_4_gib_is_refused_by_name() -> None:
+    """Raise TypeError saying the size for a record type whose members add up to 4 GiB or more."""
+
+    @dataclass
+    class Pair:
+        a: Huge
+        b: Huge
+
+    with pytest.raises(TypeError, match="less than 4 GiB"):
+
+        class Holder(SharedBox):
+            pair: Pair
+
+
+def test_fields_past_the_size_of_a_box_are_refused_at_definition() -> None:
+    """Raise TypeError when a class is defined whose fields add up to more than a box holds."""
+    with pytest.raises(TypeError, match="a box holds at most"):
+
+        class Wide(SharedBox):
+            a: Huge
+            b: Huge

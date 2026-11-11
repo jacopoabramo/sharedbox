@@ -956,10 +956,15 @@ def lay_out(
         offsets[i] = end
         end += items[i][1].size
     a = max(spec.alignment for _, spec in items)
+    size = round_up(end, a)
+    if size >= 1 << 32:
+        raise TypeError(
+            f"{where}: the {kind} takes {size} bytes; a record holds less than 4 GiB"
+        )
     members = tuple(
         Member(offsets[i], spec, name) for i, (name, spec) in enumerate(items)
     )
-    return members, round_up(end, a), a
+    return members, size, a
 
 
 def frozen(hint: type, form: int) -> bool:

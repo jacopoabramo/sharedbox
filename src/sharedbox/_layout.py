@@ -92,6 +92,8 @@ Kind = Literal[
 MAX_FIELDS: Final[int] = 256
 ALIGN: Final[int] = 8
 REF_SIZE: Final[int] = 256
+# The record ends within the first 2**32 - 4096 bytes of the segment.
+MAX_RECORD_SIZE: Final[int] = 2**32 - 4096
 
 
 @dataclass(frozen=True, eq=False)
@@ -755,6 +757,11 @@ def build_layout(cls: type, identity: str | None = None) -> Layout:
         offsets[i] = offset
         offset += sizes[i]
     record_size = round_up(offset, max(ALIGN, *aligns))
+    if record_size > MAX_RECORD_SIZE:
+        raise TypeError(
+            f"{cls.__qualname__}: the fields take {record_size} bytes; "
+            f"a box holds at most {MAX_RECORD_SIZE}"
+        )
     table = Table()
     specs: list[FieldSpec] = []
     for i, (name, spec, ref, info) in enumerate(found):
