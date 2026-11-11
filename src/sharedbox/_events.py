@@ -714,8 +714,8 @@ class Watcher:
                     self._pending.remove(fut)
         for fut, (value, version, published) in values:
             fut._resolve(value, version, published)
-        for fut, error in failed:
-            fut._fail(error)
+        for fut, reason in failed:
+            fut._fail(reason)
 
     def _resolve_calls(self, check: bool) -> bool:
         """Complete the request futures whose answer arrived; with `check`, read every one and check its server.

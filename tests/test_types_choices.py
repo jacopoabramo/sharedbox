@@ -165,7 +165,7 @@ class Open(enum.Enum):
     def _missing_(cls, value: object) -> "Open":
         made = object.__new__(cls)
         made._name_ = "OTHER"
-        made._value_ = value
+        made._value_ = -1
         return made
 
 
