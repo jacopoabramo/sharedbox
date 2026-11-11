@@ -69,7 +69,11 @@ def test_random_classes_lay_out_without_overlap(
     assert build_layout(plain_class(fields)).schema_hash == layout.schema_hash
 
 
-@given(fields=field_lists(), identity=st.text(min_size=1, max_size=40))
+@given(
+    fields=field_lists(),
+    # An identity may hold anything but the character that separates the parts of the schema text.
+    identity=st.text(min_size=1, max_size=40).filter(lambda text: "|" not in text),
+)
 def test_an_identity_names_the_box(
     fields: list[tuple[str, str, int]], identity: str
 ) -> None:
