@@ -1218,6 +1218,10 @@ result<received> stream_reader::receive_with(F &&copy, seconds timeout) {
             if (mode_ != read_mode::lossless)
                 ++missed_;
             ++r_;
+            // A sender that overwrites each item during its copy keeps this loop from reaching wait_for_data,
+            // the only other place that looks at the deadline.
+            if (mode_ != read_mode::lossless && detail::clock::now() >= deadline)
+                return unexpected(status::timeout);
             continue;
         }
         const received out{r_, missed_ - missed_before};

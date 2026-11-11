@@ -177,6 +177,26 @@ TEST_CASE("lossy and latest readers never return a torn item, and receive plus m
     }
 }
 
+TEST_CASE("a lossy receive stops at its timeout while the sender overwrites every item during its copy") {
+    const std::string name = unique("stream-chased-lossy");
+    stream st = make(name, 4);
+    auto reader = st.reader(read_mode::lossy, start_at::oldest);
+    auto sender = st.sender();
+    REQUIRE((reader && sender));
+    for (std::uint64_t i = 0; i < 6; ++i)
+        REQUIRE(send(*sender, i));
+    // The copy runs the sender, so each copy is overwritten before it ends. The count is far more than
+    // 50 ms of copies, and bounded so that a receive that ignores its timeout still returns.
+    std::uint64_t copies = 0;
+    const auto got = reader->receive_with(
+        [&](std::span<const std::byte>) noexcept {
+            if (++copies <= 50'000'000)
+                static_cast<void>(send(*sender, copies, 0.0));
+        },
+        seconds(0.05));
+    CHECK((!got && got.error().code == status::timeout));
+}
+
 TEST_CASE("a lossy reader lapped several times resumes at the oldest item in the ring and counts the rest") {
     const std::string name = unique("stream-lapped-lossy");
     stream st = make(name, 4);
