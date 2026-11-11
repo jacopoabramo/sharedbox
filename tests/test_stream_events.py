@@ -1,5 +1,6 @@
 import asyncio
 import gc
+import logging
 import multiprocessing as mp
 import sys
 import threading
@@ -538,3 +539,15 @@ def test_a_callback_raising_system_exit_does_not_stop_delivery(
                 sender.send(item)
         wait_until(lambda: len(seen) == 4)
         assert seen == [0, 1, 2, 3]
+
+
+def test_connecting_to_the_events_of_a_freed_reader_warns(
+    unique_name: str, caplog: pytest.LogCaptureFixture
+) -> None:
+    """Log a warning when a callback connects to the events of a reader nothing refers to any more."""
+    with SharedStream.create(int, unique_name, capacity=4) as stream:
+        events = stream.reader().events
+        gc.collect()
+        with caplog.at_level(logging.WARNING, logger="sharedbox"):
+            events.received.connect(print)
+        assert "no longer exists" in caplog.text

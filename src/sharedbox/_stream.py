@@ -1367,6 +1367,12 @@ class ReceiveEvents(SignalGroup):
         reader = None if self._reader is None else self._reader()
         if reader is not None:
             reader._reconcile()
+        elif self._reader is not None and len(self.received) > 0:
+            # stream.reader().events.received.connect(f) frees the reader before connect runs.
+            logger.warning(
+                "a callback was connected to the events of a stream reader that no "
+                "longer exists, so it receives nothing; keep the reader in a variable"
+            )
 
 
 class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T, M]):
