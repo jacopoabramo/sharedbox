@@ -737,6 +737,14 @@ def test_identity_must_be_a_non_empty_string(identity: object) -> None:
             value: int = 0
 
 
+def test_identity_must_not_hold_the_separator_of_the_schema_text() -> None:
+    """Raise ValueError for an identity containing the character that separates fields in the schema text."""
+    with pytest.raises(ValueError, match="identity"):
+
+        class Bad(SharedBox, identity="A|x:int:8"):
+            value: int = 0
+
+
 def test_update_names_every_unknown_field_and_writes_nothing(unique_name: str) -> None:
     """Check that update lists every unknown field in one TypeError and writes nothing."""
     with Point.create(unique_name) as box:

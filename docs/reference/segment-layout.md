@@ -551,7 +551,8 @@ attacher agree on it and on the class's meaning.
 
 - `schema_hash`: the first 8 bytes of SHA-256 over that text, read as a
   little-endian `u64`.
-- Identity: the `identity=` class keyword, a non-empty string; without it,
+- Identity: the `identity=` class keyword, a non-empty string without `|`,
+  the character that separates the parts of the schema text; without it,
   `module.qualname`. A subclass does not inherit its base's identity.
 - The default box name is 16 hex digits of SHA-256 over the identity, so a
   class that sets `identity=` is found by that identity from any package or

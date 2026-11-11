@@ -574,7 +574,7 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
       progress before it raises
       [`LockTimeoutError`][sharedbox.LockTimeoutError]; 5.0 by default,
       finite and in `(0, 86400]`.
-    - `identity`: a non-empty string, by default the class's
+    - `identity`: a non-empty string without `|`, by default the class's
       `module.qualname`, with `__mp_main__` read as `__main__`. It enters
       the schema hash, and names the box when `name` is not given. A
       subclass does not inherit it. Two classes with the same identity and
@@ -758,6 +758,10 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
         super().__init_subclass__(**kwargs)
         if identity is not None and (not isinstance(identity, str) or not identity):
             raise TypeError(f"{cls.__qualname__}: identity must be a non-empty string")
+        if identity is not None and "|" in identity:
+            # The schema text joins the identity and the fields with "|"; one inside the
+            # identity could make two different layouts hash alike.
+            raise ValueError(f"{cls.__qualname__}: identity must not contain '|'")
         cls.__sharedbox_identity__ = (
             class_identity(cls) if identity is None else identity
         )
