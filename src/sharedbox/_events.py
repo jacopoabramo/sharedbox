@@ -178,6 +178,10 @@ class FieldFuture(Future[T]):
         with contextlib.suppress(InvalidStateError):
             self.set_result(value)
 
+    def _fail(self, error: Exception) -> None:
+        with contextlib.suppress(InvalidStateError):
+            self.set_exception(error)
+
 
 class FieldWatch(Generic[T]):
     """New values of one field, for `for`, `async for` or `future()`.
@@ -461,7 +465,8 @@ class Watcher:
         assert group is not None
         try:
             group[spec.name].emit(shown(spec, new), shown(spec, old))
-        except Exception:
+        except BaseException:
+            # SystemExit included: it would end this thread and with it every later delivery.
             logger.exception("a callback for field %r raised", spec.name)
         # After the emission, so the reference signal's callbacks run before forwarding moves.
         if spec.target is not None and self.follower is not None:
@@ -633,6 +638,13 @@ class Watcher:
                         if not timed_out:
                             logger.warning("%s", error)
                         timed_out = True
+                    except BoxClosedError:
+                        raise
+                    except BaseException:
+                        # Anything else would end the thread, and the box would deliver nothing more.
+                        logger.exception(
+                            "checking box %r for changes failed", self._segment.name
+                        )
                     slot = self._claim()
                     if self._stop.is_set():
                         return
@@ -668,22 +680,31 @@ class Watcher:
                 fut._since = versions[index]
         if not ready:
             return
-        # Read every value before removing any future, so a failed read leaves them all pending.
+        # Read every value before removing any future, so a lock timeout leaves them all pending.
         values: list[tuple[FieldFuture[Any], tuple[Any, int, int | None]]] = []
+        failed: list[tuple[FieldFuture[Any], Exception]] = []
         for fut in ready:
-            if fut._published is None:
-                version, value = self._segment.get_versioned(
-                    fut._field.index, self._types
-                )
-                values.append((fut, (shown(fut._field, value), version, None)))
-            else:
-                values.append((fut, self._read_attr(fut._field)))
+            try:
+                if fut._published is None:
+                    version, value = self._segment.get_versioned(
+                        fut._field.index, self._types
+                    )
+                    values.append((fut, (shown(fut._field, value), version, None)))
+                else:
+                    values.append((fut, self._read_attr(fut._field)))
+            except (BoxClosedError, LockTimeoutError):
+                raise
+            except Exception as error:
+                # Decoding the value can run Python code, such as a record's __post_init__.
+                failed.append((fut, error))
         with self._lock:
             for fut in ready:
                 with contextlib.suppress(ValueError):
                     self._pending.remove(fut)
         for fut, (value, version, published) in values:
             fut._resolve(value, version, published)
+        for fut, error in failed:
+            fut._fail(error)
 
     def _resolve_calls(self, check: bool) -> bool:
         """Complete the request futures whose answer arrived; with `check`, read every one and check its server.

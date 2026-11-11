@@ -2,6 +2,7 @@ import enum
 import multiprocessing as mp
 import queue
 import struct
+import sys
 import threading
 import time
 
@@ -198,3 +199,21 @@ def test_a_change_that_does_not_decode_is_logged_and_skipped(
         assert failed in caplog.text
         box.colour = Colour.GREEN
         assert seen.get(timeout=5) == (Colour.GREEN, Colour.RED)
+
+
+def test_callback_raising_system_exit_does_not_stop_delivery(unique_name: str) -> None:
+    """Keep delivering changes after a callback raises SystemExit."""
+    raised = threading.Event()
+    seen: queue.Queue[int] = queue.Queue()
+
+    def leave(new: int) -> None:
+        raised.set()
+        sys.exit(0)
+
+    with Counter.create(unique_name) as box:
+        box.events.other.connect(leave)
+        box.events.value.connect(seen.put)
+        box.other = 1
+        assert raised.wait(5)
+        box.value = 2
+        assert seen.get(timeout=5) == 2
