@@ -1097,13 +1097,8 @@ class SharedSendStream(End, Generic[T, M]):
         future: CallFuture | None,
         *args: object,
     ) -> None:
-        if future is None:
-            # A free slot needs no wait; without one, the loop below waits as before.
-            try:
-                call(*args, 0.0)
-                return
-            except (WouldBlock, _Interrupted):
-                pass
+        # No try without a wait first: the first step returns at once when a slot is free, and a
+        # native call that finds none raises, which costs far more than the wait it would save.
         for step in steps(timeout):
             try:
                 call(*args, step)
@@ -2020,12 +2015,9 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T, M]):
         position: int | None = None,
     ) -> T:
         if future is None and delivering is None:
+            # No try without a wait first: the first step returns at once when an item waits, and
+            # a native call that finds none raises, which costs far more than the wait it would save.
             timeout = self._after_worker(timeout)
-            # A waiting item needs no wait; without one, the loop below waits as before.
-            try:
-                return self._take(targets, 0.0, None, position)
-            except (WouldBlock, _Interrupted):
-                pass
         for step in steps(timeout):
             try:
                 return self._take(targets, step, future, position)
