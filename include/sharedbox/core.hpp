@@ -668,16 +668,21 @@ inline std::uint32_t current_pid() noexcept {
 inline std::uint64_t process_start(std::uint32_t pid) noexcept {
 #ifdef _WIN32
     HANDLE process = OpenProcess(SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+    // Only ERROR_INVALID_PARAMETER says that no process has the pid. Any other failure, such as access
+    // denied or no memory for the handle, says nothing, and a live owner must not be judged gone.
     if (process == nullptr)
-        return GetLastError() == ERROR_ACCESS_DENIED ? start_unknown : 0;
+        return GetLastError() == ERROR_INVALID_PARAMETER ? 0 : start_unknown;
     std::uint64_t start = 0;
     // An exited process stays queryable while a handle to it is open, and its exit code may be any
     // value, STILL_ACTIVE included; only the handle's signal state is reliable.
-    if (WaitForSingleObject(process, 0) == WAIT_TIMEOUT) {
+    const DWORD state = WaitForSingleObject(process, 0);
+    if (state == WAIT_TIMEOUT) {
         FILETIME created, exited, kernel, user;
         start = GetProcessTimes(process, &created, &exited, &kernel, &user)
                     ? (std::uint64_t{created.dwHighDateTime} << 32) | created.dwLowDateTime
                     : start_unknown;
+    } else if (state != WAIT_OBJECT_0) {
+        start = start_unknown;
     }
     CloseHandle(process);
     return start;
