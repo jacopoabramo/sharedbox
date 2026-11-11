@@ -897,3 +897,22 @@ def test_close_cancels_futures_when_the_served_field_cannot_be_released(
         finally:
             holder._segment._release_held_lock()
         assert future.cancelled()
+
+
+def test_result_in_a_callback_of_the_same_box_raises_at_once(
+    names: Callable[[str], str],
+) -> None:
+    """Raise RuntimeError from result() of a pending request inside an events callback of its box."""
+    seen: queue.Queue[type[BaseException] | float] = queue.Queue()
+
+    def forward(new: float) -> None:
+        try:
+            seen.put(box.move(new).result(timeout=5))
+        except RuntimeError as error:
+            seen.put(type(error))
+
+    with Scanner.create(names("callback")) as box:
+        box.move.serve(lambda position: position)
+        box.events.position.connect(forward)
+        box.position = 2.0
+        assert seen.get(timeout=4) is RuntimeError

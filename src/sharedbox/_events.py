@@ -159,7 +159,16 @@ class FieldFuture(Future[T]):
             If the field did not change within `timeout` seconds.
         concurrent.futures.CancelledError
             If the future was cancelled.
+        RuntimeError
+            If the field has not changed and this is called from a callback
+            of the same box's events: that thread is the one that resolves
+            the future.
         """
+        if not self.done() and self._watcher._thread is threading.current_thread():
+            raise RuntimeError(
+                f"{self._field.name}: result() would wait on the thread that resolves "
+                "the future; use add_done_callback, or wait on another thread"
+            )
         try:
             return super().result(timeout)
         except TimeoutError:

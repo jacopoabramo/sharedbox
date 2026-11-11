@@ -102,7 +102,16 @@ class RequestFuture(Future[R]):
             If the request failed; see its subclasses.
         concurrent.futures.CancelledError
             If the future was cancelled, or the box closed.
+        RuntimeError
+            If the answer has not arrived and this is called from a
+            callback of the same box's events: that thread is the one that
+            delivers the answer.
         """
+        if not self.done() and self._watcher._thread is threading.current_thread():
+            raise RuntimeError(
+                f"{self._field.label}: result() would wait on the thread that delivers "
+                "the answer; use add_done_callback, or wait on another thread"
+            )
         try:
             return super().result(timeout)
         except TimeoutError:
