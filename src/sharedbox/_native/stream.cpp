@@ -267,9 +267,11 @@ public:
     void reserve(double timeout, bool release, std::span<const std::byte> doc = {}) {
         check_open();
         const seconds wait = wait_of(timeout);
+        bool busy = false;
         {
             // The usual case, no other reservation and room in the ring, takes the slot without giving up the GIL.
             std::unique_lock lock(*calls_, std::try_to_lock);
+            busy = !lock;
             if (lock && !reserved_ && !closed_.load()) {
                 if (!doc.empty())
                     if (const result<void> can = end_.can_add_metadata(doc); !can)
@@ -282,6 +284,12 @@ public:
                 if (got.error().code != status::timeout)
                     fail(got.error());
             }
+        }
+        // A call that may not wait gives up while another call holds this end: taking calls_ below would
+        // wait for that call, which may sleep for its whole timeout.
+        if (busy && wait <= seconds(0)) {
+            const result<void> none = unexpected(status::timeout);
+            fail(none.error());
         }
         std::optional<result<std::span<std::byte>>> got;
         std::optional<error> refused;
@@ -619,8 +627,13 @@ private:
         std::uint64_t released = 0;
         {
             nb::gil_scoped_release unlocked;
-            std::lock_guard lock(*calls_);
-            if (!closed_.load()) {
+            // A call that may not wait gives up while another call holds this end, as Sender::reserve does.
+            std::unique_lock lock(*calls_, std::defer_lock);
+            if (wait > seconds(0))
+                lock.lock();
+            else if (!lock.try_lock())
+                got.emplace(unexpected(status::timeout));
+            if (lock && !closed_.load()) {
                 const auto copy = [&](std::span<const std::byte> item) noexcept {
                     std::size_t at = 0;
                     for (const Types::ArrayTarget &target : targets) {

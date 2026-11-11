@@ -294,6 +294,36 @@ def test_nowait_calls_raise_would_block(unique_name: str) -> None:
             sender.send_nowait(3)
 
 
+def test_send_nowait_does_not_wait_for_a_send_blocked_in_another_thread(
+    unique_name: str,
+) -> None:
+    """Raise WouldBlock at once from send_nowait while another thread waits in send on the same sender."""
+    with SharedStream.create(int, unique_name, capacity=2) as stream:
+        reader = stream.reader()
+        sender = stream.sender()
+        sender.send(1)
+        sender.send(2)
+        errors: list[type[BaseException]] = []
+
+        def blocked() -> None:
+            try:
+                sender.send(3, timeout=2)
+            except TimeoutError as error:
+                errors.append(type(error))
+
+        thread = threading.Thread(target=blocked)
+        thread.start()
+        # Long enough for the thread to be inside its first native wait, which lasts 1 s.
+        time.sleep(0.2)
+        start = time.monotonic()
+        with pytest.raises(WouldBlock):
+            sender.send_nowait(4)
+        elapsed = time.monotonic() - start
+        thread.join()
+        reader.close()
+        assert (elapsed < 0.4, errors) == (True, [TimeoutError])
+
+
 def test_a_finite_timeout_raises_timeout_error(unique_name: str) -> None:
     """Raise TimeoutError once a receive's timeout passes."""
     with SharedStream.create(int, unique_name, capacity=2) as stream:
