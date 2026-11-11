@@ -301,8 +301,9 @@ ctest --test-dir build-cpp -C Release --output-on-failure
 against the installed wheel with CMake and skips when CMake is missing;
 `SHAREDBOX_REQUIRE_C_CONSUMER=1` makes that a failure. The `cpp_header` CI
 job runs the C++ tests on Linux and Windows, again on Linux with
-AddressSanitizer and UndefinedBehaviorSanitizer, then the C consumer with
-that variable set.
+AddressSanitizer and UndefinedBehaviorSanitizer, once more on Linux with
+ThreadSanitizer (`tests/cpp/tsan.supp` lists the sequence lock's reads,
+which race by design), then the C consumer with that variable set.
 
 Performance check for changes to the read or write path: the `Ops`
 workflow (`.github/workflows/ops.yaml`) runs on pull requests that touch
