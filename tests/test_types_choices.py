@@ -156,3 +156,27 @@ def test_types_the_layout_cannot_keep_are_refused(annotation: object) -> None:
     """Check that a flag of 65 members, a float or out-of-range literal, and an enum with no members raise TypeError."""
     with pytest.raises(TypeError):
         build_layout(make("T", annotation))
+
+
+class Open(enum.Enum):
+    RED = 1
+
+    @classmethod
+    def _missing_(cls, value: object) -> "Open":
+        made = object.__new__(cls)
+        made._name_ = "OTHER"
+        made._value_ = value
+        return made
+
+
+class Painted(SharedBox):
+    colour: Open = Open.RED
+
+
+def test_an_enum_value_outside_the_members_is_refused(unique_name: str) -> None:
+    """Raise ValueError naming the field for an enum value that is not one of its class's members."""
+    with (
+        Painted.create(unique_name) as box,
+        pytest.raises(ValueError, match="colour"),
+    ):
+        box.colour = Open(99)

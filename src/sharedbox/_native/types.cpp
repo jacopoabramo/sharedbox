@@ -873,7 +873,11 @@ void Types::encode_plain(const detail::type_ref &t, PyObject *value, std::byte *
     case kind_enum: {
         if (reinterpret_cast<PyObject *>(Py_TYPE(value)) != n.cls)
             wrong(where.name, "a " + type_name(n.cls) + " member", value);
-        put(out, n.positions.at(value));
+        // A class with _missing_ can build a value of its own type that is not one of its members.
+        const auto found = n.positions.find(value);
+        if (found == n.positions.end())
+            raise(PyExc_ValueError, where.name + ": the value is not one of the members of " + type_name(n.cls));
+        put(out, found->second);
         return;
     }
     case kind_flag: {
