@@ -1080,3 +1080,19 @@ def test_a_name_of_240_characters_works(unique_name: str) -> None:
         assert seen.get(timeout=10) == 1
         other.close()
     Point.unlink(name)
+
+
+class Switch(SharedBox):
+    on: bool = False
+    level: int = 0
+
+
+def test_a_stored_bool_byte_other_than_0_and_1_is_refused(unique_name: str) -> None:
+    """Raise ValueError naming the field for a bool field whose stored byte is neither 0 nor 1."""
+    with Switch.create(unique_name) as box:
+        index = {spec.name: spec.index for spec in Switch.__layout__.fields}["on"]
+        box._segment._write([(index, b"")])
+        with pytest.raises(ValueError, match="Switch.on: the stored value"):
+            box.on  # noqa: B018
+        with pytest.raises(ValueError, match="Switch.on: the stored value"):
+            box.snapshot()

@@ -52,10 +52,14 @@ sharedbox::FieldKind to_kind(std::uint32_t code) {
     return static_cast<sharedbox::FieldKind>(code);
 }
 
-nb::object decode_value(const sharedbox::FieldDesc &field, std::string_view bytes) {
+nb::object decode_value(const sharedbox::FieldDesc &field, std::string_view bytes, const sharedbox::Types *types,
+                        std::uint32_t index) {
     PyObject *value = sharedbox::decode(field, bytes.data(), bytes.size());
-    if (value == nullptr)
+    if (value == nullptr) {
+        if (PyErr_Occurred() == nullptr)
+            sharedbox::corrupt(types != nullptr ? types->label(index) : "field " + std::to_string(index));
         throw nb::python_error();
+    }
     return nb::steal(value);
 }
 
@@ -71,7 +75,7 @@ nb::object decode_read(const sharedbox::Types *types, std::uint32_t index, share
     if (static_cast<std::uint8_t>(read.field->kind) <= sharedbox::kind_ref) {
         if (types != nullptr && types->field_via_types(index)) [[unlikely]]
             return types->decode(index, {data, read.bytes.size()}, nullptr);
-        return decode_value(*read.field, read.bytes);
+        return decode_value(*read.field, read.bytes, types, index);
     }
     return sharedbox::need(types, index)
         .decode(index, {data, read.bytes.size()}, read.large ? &read.large : nullptr);
@@ -85,7 +89,7 @@ nb::object decode_payload(const sharedbox::Types *types, const sharedbox::FieldD
     if (static_cast<std::uint8_t>(field.kind) <= sharedbox::kind_ref) {
         if (types != nullptr && types->field_via_types(index)) [[unlikely]]
             return types->decode(index, data, nullptr);
-        return decode_value(field, bytes);
+        return decode_value(field, bytes, types, index);
     }
     const sharedbox::Types &t = sharedbox::need(types, index);
     if (static_cast<std::uint8_t>(field.kind) == sharedbox::kind_attr) {

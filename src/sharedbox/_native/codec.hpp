@@ -111,7 +111,9 @@ struct EncodeBuffer {
 std::span<const std::byte> encode(const FieldDesc &field, const std::string &name, PyObject *value,
                                   EncodeBuffer &buffer);
 
-/// A new reference to the value stored in data.
+/// A new reference to the value stored in data. nullptr with a Python error set when the conversion
+/// failed, and nullptr with none set when data holds bytes no value has; the caller knows the field's
+/// name and raises for it.
 PyObject *decode(const FieldDesc &field, const char *data, std::size_t size);
 
 /// One value to encode: the field index and the Python object, borrowed.
