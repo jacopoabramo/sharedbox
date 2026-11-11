@@ -843,6 +843,13 @@ public:
             cpu_relax();
         } else if (spins_ < 128) {
             std::this_thread::yield();
+#ifdef _WIN32
+        } else if (still_yielding()) {
+            // A Windows sleep ends on a timer tick, about 10 ms or more away, however short the sleep asked
+            // for. The spins and yields above take some tens of microseconds, so without this a wait that
+            // meets a large write or a short locked() block would sleep a whole tick for it.
+            std::this_thread::yield();
+#endif
         } else {
             std::this_thread::sleep_for(sleep_);
             // The parentheses stop a min macro, from windows.h included earlier without NOMINMAX.
@@ -851,6 +858,20 @@ public:
     }
 
 private:
+#ifdef _WIN32
+    // Whether the first millisecond of yielding, counted from the first call, is still running.
+    bool still_yielding() noexcept {
+        const clock::time_point now = clock::now();
+        if (!yielding_) {
+            yielding_ = true;
+            yield_until_ = now + std::chrono::milliseconds(1);
+        }
+        return now < yield_until_;
+    }
+
+    clock::time_point yield_until_{};
+    bool yielding_ = false;
+#endif
     double timeout_;
     clock::time_point deadline_{};
     std::chrono::microseconds sleep_{10};
