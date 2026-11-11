@@ -3728,8 +3728,12 @@ repository the way a project using CMake's <code>FetchContent</code> does:</p>
 </span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a>cmake<span class="w"> </span>--build<span class="w"> </span>build-cpp<span class="w"> </span>--config<span class="w"> </span>Release
 </span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>ctest<span class="w"> </span>--test-dir<span class="w"> </span>build-cpp<span class="w"> </span>-C<span class="w"> </span>Release<span class="w"> </span>--output-on-failure
 </span></code></pre></div>
-<p><abbr title="Continuous integration. The builds and tests GitHub runs on pushes and pull requests to the main branch.">CI</abbr> runs them on Linux and Windows, and again on Linux with
-AddressSanitizer and UndefinedBehaviorSanitizer.</p>
+<p><abbr title="Continuous integration. The builds and tests GitHub runs on pushes and pull requests to the main branch.">CI</abbr> runs them on Linux and Windows, again on Linux with AddressSanitizer
+and UndefinedBehaviorSanitizer, and once more on Linux with
+ThreadSanitizer. A reader copies bytes that a writer may be changing and
+discards the copy if the sequence moved, which ThreadSanitizer reports as
+a data race, so <code>tests/cpp/tsan.supp</code> lists the functions that make that
+copy. A report from any other function fails the job.</p>
 <h3 id="the-c-consumer">The C consumer<a class="headerlink" href="#the-c-consumer" title="Permanent link">&para;</a></h3>
 <p><code>tests/test_capsule.py</code> builds the C library in <code>tests/cpp/consumer/</code>
 against the installed wheel with CMake, then loads it and passes it a
