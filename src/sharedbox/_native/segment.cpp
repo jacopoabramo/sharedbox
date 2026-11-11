@@ -583,6 +583,8 @@ RecordWriter::RecordWriter(const Segment &segment, std::shared_ptr<handle> box, 
 void RecordWriter::check_live() const {
     if (ended_)
         throw std::runtime_error("the locked() block has ended");
+    if (pid_ != detail::current_pid())
+        throw std::runtime_error("the locked() block was entered before fork and belongs to the parent process");
     if (owner_ != thread_number())
         throw std::runtime_error("the locked() block belongs to another thread");
 }
@@ -633,6 +635,10 @@ void RecordWriter::finish(bool count) noexcept {
     // and the mark before this one ends.
     std::uint64_t own = owner_;
     segment_.impl_->holder.compare_exchange_strong(own, 0, std::memory_order_relaxed);
+    // In a child created by fork the write is the parent's: putting bytes back would undo what the parent
+    // wrote, and unlocking would release the lock the parent still holds.
+    if (pid_ != detail::current_pid())
+        return;
     if (count && !changed_.empty()) {
         box_->end_record_write(write_, changed_);
     } else {
@@ -907,6 +913,10 @@ void Segment::after_fork() {
     // the child, so the lock would never be released. The old one is overwritten, not destroyed,
     // because destroying a held mutex is undefined.
     new (&impl_->lifetime) std::shared_mutex();
+    // The same holds for the lock around making the writing handle.
+    new (&impl_->writer_lock) std::mutex();
+    // A locked() block open at the fork is the parent's; this process holds no lock.
+    impl_->holder.store(0, std::memory_order_relaxed);
 }
 
 void Segment::close() {

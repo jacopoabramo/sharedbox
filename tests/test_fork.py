@@ -393,3 +393,39 @@ def test_a_child_forked_inside_a_callback_is_not_on_a_watcher_thread(
         child = children.get(timeout=10)
         assert out.get(timeout=10) is False
         assert finish(child) == 0
+
+
+class ChildLeft(Exception):
+    """Raised in a forked child to leave the with block it was forked in."""
+
+
+def fork_here() -> int:
+    """Fork this process and return what `os.fork` returns."""
+    # As in crossproc.fork: the else form lets mypy, which also checks this as Windows code, skip os.fork.
+    if sys.platform == "win32":
+        raise NotImplementedError("Windows has no fork")
+    else:
+        return os.fork()
+
+
+def test_a_child_forked_inside_a_locked_block_leaves_the_parents_write_alone(
+    unique_name: str,
+) -> None:
+    """Check that a child forked inside a locked() block cannot write through it, and that its leaving the block undoes nothing."""
+    with Counter.create(unique_name) as box:
+        try:
+            with box.locked() as held:
+                held.value = 5
+                pid = fork_here()
+                if pid == 0:
+                    try:
+                        held.value = 6
+                    except RuntimeError:
+                        # Leaves the block in the child, which must neither put 0 back nor unlock.
+                        raise ChildLeft from None
+                    os._exit(1)
+                _, status = os.waitpid(pid, 0)
+                kept = held.value
+        except ChildLeft:
+            os._exit(0)
+        assert (os.waitstatus_to_exitcode(status), kept, box.value) == (0, 5, 5)
