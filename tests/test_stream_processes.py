@@ -1,6 +1,9 @@
 import asyncio
 import itertools
 import multiprocessing as mp
+import struct
+import subprocess
+import sys
 import threading
 import time
 from multiprocessing.queues import Queue
@@ -306,3 +309,39 @@ def test_a_slow_reader_in_another_process_is_released(unique_name: str) -> None:
         if isinstance(report, str):
             pytest.fail(report)
         assert report == ("ReaderReleased", 4, 4)
+
+
+def forge_a_sender_killed_while_claiming(name: str) -> None:
+    """Record as the stream's sender the pid of a process that has exited, without its namespace and start."""
+    gone = subprocess.Popen([sys.executable, "-c", "pass"])
+    gone.wait()
+    with open(f"/dev/shm/SBX:{name}", "r+b") as raw:
+        # sender_pid is at offset 152 of the header; sender_pidns and sender_start stay 0.
+        raw.seek(152)
+        raw.write(struct.pack("<I", gone.pid))
+
+
+only_linux = pytest.mark.skipif(
+    not sys.platform.startswith("linux"), reason="forges the segment through /dev/shm"
+)
+
+
+@only_linux
+def test_a_sender_killed_while_claiming_is_replaced(unique_name: str) -> None:
+    """Give a new sender when the recorded one is a bare pid whose process is gone."""
+    with SharedStream.create(int, unique_name, capacity=4) as stream:
+        forge_a_sender_killed_while_claiming(unique_name)
+        with stream.reader(start="oldest") as reader, stream.sender() as sender:
+            sender.send(7)
+            assert reader.receive(timeout=5) == 7
+
+
+@only_linux
+def test_a_sender_killed_while_claiming_ends_the_stream_for_readers(
+    unique_name: str,
+) -> None:
+    """Raise EndOfStream from receive when the recorded sender is a bare pid whose process is gone."""
+    with SharedStream.create(int, unique_name, capacity=4) as stream:
+        forge_a_sender_killed_while_claiming(unique_name)
+        with stream.reader() as reader, pytest.raises(EndOfStream):
+            reader.receive(timeout=5)

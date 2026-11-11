@@ -331,13 +331,34 @@ struct no_sender_pause {
 // is in progress or sender_pid is no longer seen.
 // Known limit: a process killed before it stores sender_start again leaves it at start_freeing, so every later
 // sender() is busy and readers time out instead of getting ended.
+// How long a recorded sender may stay a pid without namespace and start before it counts as dead.
+inline constexpr std::chrono::milliseconds claim_grace{100};
+
 template <class Pause = no_sender_pause>
 inline bool claim_dead_sender(stream_header &h, std::uint32_t seen, std::uint64_t &start,
                               Pause pause = {}) noexcept {
     start = atomic(h.sender_start).load(std::memory_order_acquire);
     const std::uint64_t pidns = atomic(h.sender_pidns).load(std::memory_order_acquire);
-    if (start == start_freeing || !owner_exited(seen, start, pidns))
+    if (start == start_freeing)
         return false;
+    if (!owner_exited(seen, start, pidns)) {
+#ifdef _WIN32
+        return false;
+#else
+        // A claimer stores its namespace and its start right after its pid. One killed between those stores
+        // leaves a pid with neither, which owner_exited cannot judge and so counts as alive for good. A live
+        // claimer finishes within microseconds, so a pid still bare after claim_grace belongs to a dead one.
+        // Only a process that can stamp its own claim applies this: where it cannot, every claim stays bare.
+        // Known limit: a claimer stopped by a debugger or SIGSTOP between those stores is replaced while alive.
+        if (pidns != 0 || start != 0 || current_pidns() == 0 || current_start() == 0)
+            return false;
+        std::this_thread::sleep_for(claim_grace);
+        if (atomic(h.sender_pid).load(std::memory_order_acquire) != seen ||
+            atomic(h.sender_pidns).load(std::memory_order_acquire) != 0 ||
+            atomic(h.sender_start).load(std::memory_order_acquire) != 0)
+            return false;
+#endif
+    }
     if (!atomic(h.sender_start)
              .compare_exchange_strong(start, start_freeing, std::memory_order_acq_rel, std::memory_order_relaxed))
         return false;
