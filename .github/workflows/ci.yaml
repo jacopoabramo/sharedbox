@@ -54,17 +54,26 @@ jobs:
         include:
           - { os: ubuntu-latest, build: Release, flags: "" }
           - { os: windows-latest, build: Release, flags: "" }
-          # No ThreadSanitizer: the sequence lock's reader copies the record while a writer may change it, by design.
           - os: ubuntu-latest
             build: RelWithDebInfo
             flags: -fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=all -DSHAREDBOX_TEST_ROUNDS=20000
+          # -Wno-tsan: GCC warns that it does not model atomic_thread_fence, which the sequence lock uses.
+          - os: ubuntu-latest
+            build: RelWithDebInfo
+            flags: -fsanitize=thread -fno-omit-frame-pointer -Wno-tsan -DSHAREDBOX_TEST_ROUNDS=5000
     env:
       ASAN_OPTIONS: detect_leaks=1
       UBSAN_OPTIONS: print_stacktrace=1
+      # The sequence lock's reader copies bytes a writer may be changing, by design: tsan.supp lists those functions.
+      TSAN_OPTIONS: suppressions=${{ github.workspace }}/tests/cpp/tsan.supp die_after_fork=0
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+
+      - name: Lower address randomization for ThreadSanitizer
+        if: contains(matrix.flags, '-fsanitize=thread')
+        run: sudo sysctl vm.mmap_rnd_bits=28
 
       - name: Build and run the C++ tests
         shell: bash
