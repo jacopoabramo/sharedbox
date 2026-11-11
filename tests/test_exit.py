@@ -259,3 +259,54 @@ def test_stream_metadata_used_after_release_raises(unique_name: str) -> None:
         0,
         ["{'units': 'mm'} {'units': 'mm'}", *["StreamClosedError"] * 3],
     ), done.stderr
+
+
+DAEMON_THREAD_AT_EXIT = """
+import sys
+import threading
+import time
+
+from sharedbox import SharedBox, SharedStream
+
+
+class Counter(SharedBox):
+    value: int = 0
+
+
+started = threading.Event()
+if sys.argv[2] == "receive":
+    stream = SharedStream.create(int, sys.argv[1], capacity=4)
+    reader = stream.reader()
+
+    def work() -> None:
+        started.set()
+        reader.receive(timeout=None)
+
+else:
+    box = Counter.create(sys.argv[1])
+
+    def work() -> None:
+        started.set()
+        while True:
+            box.value
+
+
+threading.Thread(target=work, daemon=True).start()
+started.wait()
+time.sleep(0.2)
+"""
+
+
+@pytest.mark.parametrize("inside", ["receive", "reads"])
+def test_a_daemon_thread_inside_a_call_does_not_break_the_exit(
+    unique_name: str, inside: str
+) -> None:
+    """Exit with code 0 and print nothing while a daemon thread waits in a receive or reads a box in a loop."""
+    done = subprocess.run(
+        [sys.executable, "-c", DAEMON_THREAD_AT_EXIT, unique_name, inside],
+        capture_output=True,
+        text=True,
+        timeout=60,
+        check=False,
+    )
+    assert (done.returncode, done.stderr) == (0, "")

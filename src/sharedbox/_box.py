@@ -1052,6 +1052,10 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
         self._finalizer = weakref.finalize(
             self, release, self._watcher, self._segment, False
         )
+        # At exit the exit handler closes every box. weakref would run the finalizers before it,
+        # and so before it has made threads that end on a closed box quiet. atexit is a documented
+        # writable property, which the type stubs list as a slot that cannot be assigned.
+        self._finalizer.atexit = False  # type: ignore[misc]
         LIVE.add(self)
 
     def _open(
