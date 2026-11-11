@@ -47,7 +47,7 @@ stored = scale.metadata_version_of(2)
 try:
     stored["offset"] = 0.5
 except TypeError as error:
-    print(error)  # 'mappingproxy' object does not support item assignment
+    print(error)  # metadata read from a box or a stream is read-only; ...
 scale.update(metadata={**stored, "offset": 0.5})
 # --8<-- [end:read-only]
 

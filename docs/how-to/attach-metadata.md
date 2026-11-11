@@ -163,10 +163,11 @@ right after the reader receives it.
 
 ## Change a value you read
 
-A value you read is a read-only view, because every read of a version
+A value you read cannot be changed, because every read of a version
 through the same box or stream shares one decoded copy. A mapping reads
-back as a `types.MappingProxyType` and a list as a tuple, nested the same
-way. A type checker still sees the metadata's type, though, so it accepts
+back as a `dict` that raises `TypeError` on every change and a list as a
+tuple, nested the same way. It still pickles, deep-copies and converts to
+JSON as a `dict` does, so it can go to another process or into a log. A type checker still sees the metadata's type, though, so it accepts
 a change that fails when it runs. To change a key, build a new value and
 add it as the next version:
 

@@ -1,5 +1,8 @@
+import copy
+import json
 import math
 import os
+import pickle
 import queue
 import subprocess
 import sys
@@ -7,7 +10,6 @@ import sysconfig
 import time
 from collections.abc import Callable, Mapping
 from dataclasses import InitVar
-from types import MappingProxyType
 from typing import Any
 
 import pytest
@@ -52,9 +54,26 @@ def expected(value: Any) -> Any:
 def test_documents_round_trip() -> None:
     """Decode what was encoded, with maps read-only and arrays as tuples."""
     decoded = decode(encode(DOCUMENT))
-    assert isinstance(decoded, MappingProxyType)
+    with pytest.raises(TypeError, match="read-only"):
+        decoded["list"] = ()
     assert isinstance(decoded["list"], tuple)
     assert thawed(decoded) == expected(DOCUMENT)
+
+
+def test_a_document_read_back_can_be_pickled_copied_and_dumped_as_json() -> None:
+    """Pickle, deep-copy and JSON-encode a decoded document with nested maps, keeping the copies read-only."""
+    decoded = decode(encode({"unit": "g", "axes": {"x": {"offset": 0.5}}}))
+    unpickled = pickle.loads(pickle.dumps(decoded))
+    copied = copy.deepcopy(decoded)
+    with pytest.raises(TypeError, match="read-only"):
+        unpickled["axes"]["x"]["offset"] = 1.0
+    with pytest.raises(TypeError, match="read-only"):
+        copied.update(unit="kg")
+    assert (unpickled, copied, json.loads(json.dumps(decoded))) == (
+        decoded,
+        decoded,
+        {"unit": "g", "axes": {"x": {"offset": 0.5}}},
+    )
 
 
 @pytest.mark.parametrize("number", [math.inf, -math.inf, math.nan, -0.0])
