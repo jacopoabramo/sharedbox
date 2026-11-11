@@ -54,7 +54,7 @@ def expected(value: Any) -> Any:
 def test_documents_round_trip() -> None:
     """Decode what was encoded, with maps read-only and arrays as tuples."""
     decoded = decode(encode(DOCUMENT))
-    with pytest.raises(TypeError, match="read-only"):
+    with pytest.raises(TypeError, match="frozendict"):
         decoded["list"] = ()
     assert isinstance(decoded["list"], tuple)
     assert thawed(decoded) == expected(DOCUMENT)
@@ -65,10 +65,10 @@ def test_a_document_read_back_can_be_pickled_copied_and_dumped_as_json() -> None
     decoded = decode(encode({"unit": "g", "axes": {"x": {"offset": 0.5}}}))
     unpickled = pickle.loads(pickle.dumps(decoded))
     copied = copy.deepcopy(decoded)
-    with pytest.raises(TypeError, match="read-only"):
+    with pytest.raises(TypeError, match="frozendict"):
         unpickled["axes"]["x"]["offset"] = 1.0
-    with pytest.raises(TypeError, match="read-only"):
-        copied.update(unit="kg")
+    with pytest.raises(TypeError, match="frozendict"):
+        copied["unit"] = "kg"
     assert (unpickled, copied, json.loads(json.dumps(decoded))) == (
         decoded,
         decoded,

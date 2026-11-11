@@ -1161,7 +1161,7 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
         [`update`][sharedbox.SharedBox.update] keeps the
         earlier ones until the box reclaims them for newer ones, and
         [`metadata_version_of`][sharedbox.SharedBox.metadata_version_of]
-        reads them until then. A mapping reads back as a read-only mapping
+        reads them until then. A mapping reads back as a `frozendict`
         and a list as a tuple, nested the same way. Each box object decodes
         a version once and keeps the 32 it used last.
 

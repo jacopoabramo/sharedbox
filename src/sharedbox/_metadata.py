@@ -4,7 +4,7 @@ import sys
 import threading
 from collections import OrderedDict
 from collections.abc import Callable, Mapping
-from typing import Any, Final, NoReturn
+from typing import Any, Final
 
 import cbor2
 
@@ -14,6 +14,9 @@ if sys.version_info >= (3, 13):
     from typing import TypeVar
 else:
     from typing_extensions import TypeVar
+
+if sys.version_info < (3, 15):
+    from frozendict import frozendict
 
 M = TypeVar("M", covariant=True, bound=Mapping[str, Any], default=Mapping[str, Any])  # noqa: PLC0105
 V = TypeVar("V")
@@ -72,40 +75,10 @@ def encode(value: object) -> bytes:
     return cbor2.dumps(_plain(value, 0), canonical=True)
 
 
-class ReadOnlyDict(dict[str, Any]):
-    """A map of a metadata document as it is read back: a `dict` that refuses every change.
-
-    Every read of one version shares one decoded copy, which is why it
-    cannot be changed. It pickles, deep-copies and converts to JSON as a
-    `dict` does, and a pickled or deep-copied one is read-only too.
-    `dict(value)` gives a copy of the top level that can be changed.
-    """
-
-    __slots__ = ()
-
-    def _refuse(self, *args: object, **kwargs: object) -> NoReturn:
-        raise TypeError(
-            "metadata read from a box or a stream is read-only; build a new "
-            "value and add it as the next version"
-        )
-
-    __setitem__ = _refuse
-    __delitem__ = _refuse
-    __ior__ = _refuse
-    clear = _refuse
-    pop = _refuse
-    popitem = _refuse
-    setdefault = _refuse
-    update = _refuse
-
-    def __reduce__(self) -> tuple[type[ReadOnlyDict], tuple[dict[str, Any]]]:
-        return type(self), (dict(self),)
-
-
 def _freeze(value: object) -> object:
     match value:
         case dict():
-            return ReadOnlyDict({key: _freeze(item) for key, item in value.items()})
+            return frozendict({key: _freeze(item) for key, item in value.items()})
         case list():
             return tuple(_freeze(item) for item in value)
         case _:
@@ -113,7 +86,13 @@ def _freeze(value: object) -> object:
 
 
 def decode(data: bytes) -> Any:
-    """Return the document stored in `data`, maps as read-only dicts and arrays as tuples."""
+    """Return the document stored in `data`, maps as `frozendict` and arrays as tuples.
+
+    Every read of one version shares one decoded copy, which is why it
+    cannot be changed. `frozendict` is the builtin from Python 3.15 and
+    the `frozendict` package before; both pickle, deep-copy and convert
+    to JSON.
+    """
     return _freeze(cbor2.loads(data))
 
 

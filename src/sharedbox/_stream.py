@@ -465,7 +465,7 @@ class SharedStream(Generic[T, M]):
         version of the item it returned last. The stream keeps the earlier
         versions until it reclaims them for newer ones, and
         [`metadata_version_of`][sharedbox.SharedStream.metadata_version_of]
-        reads them until then. A mapping reads back as a read-only mapping
+        reads them until then. A mapping reads back as a `frozendict`
         and a list as a tuple, nested the same way. Each stream object
         decodes a version once and keeps the 32 it used last.
 
@@ -1464,7 +1464,7 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T, M]):
     def metadata(self) -> M | None:
         """The value of [`metadata_version`][sharedbox.SharedReceiveStream.metadata_version], None while it is 0.
 
-        A mapping reads back as a read-only mapping and a list as a tuple,
+        A mapping reads back as a `frozendict` and a list as a tuple,
         nested the same way. Each reader decodes a version once and keeps
         the 32 it used last.
 

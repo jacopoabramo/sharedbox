@@ -792,7 +792,7 @@ and maps are outside the subset. `sharedbox::metadata_ok` checks that a
 document is well formed and inside the subset, not that it is canonical,
 so a C or C++ producer brings its own encoder. The Python side encodes
 canonically, so equal values give equal bytes, and decodes a map as a
-`dict` that refuses changes and an array as a tuple.
+`frozendict` and an array as a tuple.
 
 ## Versioning rules
 
