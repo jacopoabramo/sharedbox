@@ -123,6 +123,8 @@ class Capacity:
 
     Raises
     ------
+    TypeError
+        If `size` is not an `int`.
     ValueError
         If `size` is not between 1 and 1 Mi.
     """
@@ -131,6 +133,8 @@ class Capacity:
     """Bytes for text and bytes, not characters: a UTF-8 character can take up to 4 bytes; elements for a collection."""
 
     def __post_init__(self) -> None:
+        if isinstance(self.size, bool) or not isinstance(self.size, int):
+            raise TypeError(f"capacity must be an int, got {type(self.size).__name__}")
         if not 0 < self.size <= MAX_CAPACITY:
             raise ValueError(
                 f"capacity must be between 1 and {MAX_CAPACITY}, got {self.size}"
