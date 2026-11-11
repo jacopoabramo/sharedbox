@@ -32,6 +32,7 @@ from typing import (
     Generic,
     Literal,
     NoReturn,
+    Self,
     TypeVar,
     cast,
     overload,
@@ -848,6 +849,15 @@ class End:
         self._cancelled = None
         self._shut = True
 
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, *exc_info: object) -> None:
+        self.close()
+
+    async def __aenter__(self) -> Self:
+        return self
+
     async def __aexit__(self, *exc_info: object) -> None:
         self.close()
 
@@ -1287,15 +1297,6 @@ class SharedSendStream(End, Generic[T, M]):
         super().close()
         if self._stream._sender is self:
             self._stream._sender = None
-
-    def __enter__(self) -> SharedSendStream[T, M]:
-        return self
-
-    async def __aenter__(self) -> SharedSendStream[T, M]:
-        return self
-
-    def __exit__(self, *exc_info: object) -> None:
-        self.close()
 
     def __reduce__(self) -> NoReturn:
         raise TypeError(
@@ -2004,9 +2005,6 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T, M]):
         except EndOfStream:
             raise StopAsyncIteration from None
 
-    async def __aenter__(self) -> SharedReceiveStream[T, M]:
-        return self
-
     def _receive(
         self,
         targets: list[tuple[tuple[int, ...], Any]],
@@ -2036,12 +2034,6 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T, M]):
                     raise
                 continue
         raise TimeoutError(f"stream {self._stream.name!r}: no item within {timeout} s")
-
-    def __enter__(self) -> SharedReceiveStream[T, M]:
-        return self
-
-    def __exit__(self, *exc_info: object) -> None:
-        self.close()
 
     def __reduce__(self) -> NoReturn:
         raise TypeError(

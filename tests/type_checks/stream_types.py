@@ -56,3 +56,14 @@ def check_writing(sender: SharedSendStream[Shot]) -> None:
         assert_type(slot, SendSlot[Shot])
         assert_type(slot.item, Shot)
         assert_type(slot.item.image, np.ndarray)
+
+
+async def check_entered(
+    sender: SharedSendStream[Shot], reader: SharedReceiveStream[Item]
+) -> None:
+    with sender as entered_sender, reader as entered_reader:
+        assert_type(entered_sender, SharedSendStream[Shot])
+        assert_type(entered_reader, SharedReceiveStream[Item])
+    async with sender as awaited_sender, reader as awaited_reader:
+        assert_type(awaited_sender, SharedSendStream[Shot])
+        assert_type(awaited_reader, SharedReceiveStream[Item])
