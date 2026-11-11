@@ -163,6 +163,9 @@ class RequestServer:
         self._lock = threading.Lock()
         self._stopped = threading.Event()
         self._released = threading.Event()
+        # True while a thread is inside _halt; _settled is set when that halt ends, released or not.
+        self._halting = False
+        self._settled = threading.Event()
         # The ident of the thread inside _take, which a _halt on that same thread must not wait for.
         self._taker: int | None = None
         self._task: asyncio.Task[None] | None = None
@@ -183,7 +186,17 @@ class RequestServer:
         thread. For an async handler, cancelling its task is requested of
         the event loop, which runs the cancellation after this returns. A
         request taken and not answered yet fails with "the server stopped".
-        Calling it again does nothing.
+        Calling it again does nothing, unless the first call raised: then
+        the field is still claimed and this call frees it.
+
+        Raises
+        ------
+        RuntimeError
+            If called inside a `locked()` block of the box. The server has
+            stopped answering; call `stop` again after the block.
+        LockTimeoutError
+            If the box's write lock stayed held. Call `stop` again once it
+            is free.
         """
         self._halt(join=not self._watcher.on_watcher_thread())
 
@@ -213,31 +226,38 @@ class RequestServer:
             self._stopped.set()
         else:
             with self._lock:
-                halted = self._stopped.is_set()
+                # A halt whose release raised left the field claimed, so a later one tries again.
+                busy = self._halting or self._released.is_set()
                 self._stopped.set()
-            if halted:
+                if not busy:
+                    self._halting = True
+                    self._settled.clear()
+            if busy:
                 self._await_release()
                 return
-        self._watcher.forget(self)
-        if self._loop is not None:
-            if cancel:
-                with contextlib.suppress(RuntimeError):
-                    self._loop.call_soon_threadsafe(self._cancel_task)
-        else:
-            self._wake.set()
-            if join:
-                self._join()
-        self._release()
+        try:
+            if self._loop is not None:
+                if cancel:
+                    with contextlib.suppress(RuntimeError):
+                        self._loop.call_soon_threadsafe(self._cancel_task)
+            else:
+                self._wake.set()
+                if join:
+                    self._join()
+            self._release()
+        finally:
+            self._halting = False
+            self._settled.set()
 
     def _await_release(self) -> None:
-        """Wait for the release of the halt another thread started, so a claim after it succeeds."""
+        """Wait for the halt another thread started to end, so a claim after its release succeeds."""
         # That halt may be joining the server's thread, and the watcher thread
         # may be what the server's handler waits on, so neither of them waits.
         if (
             threading.current_thread() is not self._thread
             and not self._watcher.on_watcher_thread()
         ):
-            self._released.wait()
+            self._settled.wait()
 
     def _join(self) -> None:
         """Wait for a sync server's thread to end, unless this is that thread."""
@@ -247,11 +267,11 @@ class RequestServer:
                 thread.join()
 
     def _release(self) -> None:
-        try:
-            with contextlib.suppress(BoxClosedError):
-                self._watcher._segment.serve_release(self._field.index)
-        finally:
-            self._released.set()
+        with contextlib.suppress(BoxClosedError):
+            self._watcher._segment.serve_release(self._field.index)
+        self._released.set()
+        # Only now: until the field is free, closing the box must still find this server.
+        self._watcher.forget(self)
 
     def _after_fork(self) -> None:
         """Stop serving in a child created by `fork`, without releasing the parent's field."""
@@ -261,6 +281,9 @@ class RequestServer:
         self._stopped.set()
         self._released = threading.Event()
         self._released.set()
+        self._halting = False
+        self._settled = threading.Event()
+        self._settled.set()
 
     def _take(self) -> tuple[int, tuple[Any, ...]] | None:
         with self._lock:

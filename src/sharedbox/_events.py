@@ -539,7 +539,15 @@ class Watcher:
         with self._lock:
             servers = list(self._servers)
         for server in servers:
-            server._halt(join=False)
+            # A field that cannot be released must not keep the futures below from being cancelled.
+            try:
+                server._halt(join=False)
+            except LockTimeoutError as error:
+                logger.warning("%s; %s stays served", error, server._field.label)
+            except Exception:
+                logger.exception(
+                    "stopping the server of %s failed", server._field.label
+                )
         with self._lock:
             thread = self._thread
         if wait and thread is not None and thread is not threading.current_thread():

@@ -867,3 +867,33 @@ def test_a_cancelled_error_from_the_handler_fails_only_that_request(
         with pytest.raises(RequestError, match="CancelledError"):
             box.move(-1.0).result(timeout=10)
         assert box.move(1.0).result(timeout=10) == 1.0
+
+
+def test_stop_refused_in_a_locked_block_frees_the_field_when_repeated(
+    names: Callable[[str], str],
+) -> None:
+    """Free the field with a second stop after one inside a locked() block raised."""
+    with Scanner.create(names("stop")) as box:
+        server = box.move.serve(lambda position: position)
+        with box.locked(), pytest.raises(RuntimeError, match="locked"):
+            server.stop()
+        server.stop()
+        box.move.serve(lambda position: position * 2)
+        assert box.move(1.0).result(timeout=5) == 2.0
+
+
+def test_close_cancels_futures_when_the_served_field_cannot_be_released(
+    names: Callable[[str], str],
+) -> None:
+    """Cancel pending futures on close while a held lock keeps the served field from being released."""
+    name = names("stuck")
+    with Guarded.create(name) as holder:
+        box = Guarded.attach(name)
+        box.move.serve(double)
+        future = box.watch("move").future()
+        holder._segment._hold_write_lock()
+        try:
+            box.close()
+        finally:
+            holder._segment._release_held_lock()
+        assert future.cancelled()
