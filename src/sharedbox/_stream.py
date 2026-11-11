@@ -1391,6 +1391,7 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T, M]):
         "_events",
         "_generation",
         "_position",
+        "_stale",
     )
     _native: Reader
 
@@ -1404,6 +1405,8 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T, M]):
         self._events: ReceiveEvents | None = None
         self._delivering = False
         self._generation = 0
+        # Kept items a latest reader dropped for a newer one, which count as missed.
+        self._stale = 0
 
     @property
     def stream(self) -> SharedStream[T, M]:
@@ -1427,7 +1430,7 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T, M]):
     @property
     def missed(self) -> int:
         """Items a lossy or latest reader skipped, or a lossless reader lost to releases."""
-        return self._native.missed
+        return self._native.missed + self._stale
 
     @property
     def metadata_version(self) -> int:
@@ -1811,15 +1814,20 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T, M]):
                     f"stream {self._stream.name!r}: the reader was closed"
                 )
             # Items kept from cancelled receives belong to the receive cursor, which a fetch leaves alone.
-            if self._carry and position is None:
-                kept = self._carry.popleft()
-                if isinstance(kept, ReaderReleased):
-                    raise kept
-                item, position = kept
-                self._position = position
-                if future is not None:
-                    future.position = position
-                return cast(T, item)
+            kept = self._carry.popleft() if self._carry and position is None else None
+        if isinstance(kept, ReaderReleased):
+            raise kept
+        if kept is not None:
+            item, at = kept
+            if self._native.mode == MODES["latest"]:
+                # A latest reader promises the newest item, and the kept one may be old by now.
+                with contextlib.suppress(WouldBlock, EndOfStream, _Interrupted):
+                    item, at = self._native.receive(0.0, targets)
+                    self._stale += 1
+            self._position = at
+            if future is not None:
+                future.position = at
+            return cast(T, item)
         item, at = (
             self._native.receive(step, targets)
             if position is None
