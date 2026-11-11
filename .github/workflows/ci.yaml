@@ -90,6 +90,29 @@ jobs:
         run: |
           sudo unshare --mount sh -c 'mount -t tmpfs -o size=16m tmpfs /dev/shm && build-cpp/test_small_shm'
 
+  bluebox:
+    name: Bluebox tests on ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - uses: astral-sh/setup-uv@v7
+        with:
+          python-version: "3.12"
+
+      - name: Run the bluebox tests
+        shell: bash
+        run: |
+          uv sync --group dev --group bluebox
+          uv run --no-sync pytest tests/test_bluebox* tests/test_doc_examples.py -k "bluebox or bluesky" -q
+
   build_wheels:
     name: Build wheel for ${{ matrix.python }}-${{ matrix.platform_id }}
     runs-on: ${{ matrix.os }}
@@ -118,7 +141,7 @@ jobs:
         env:
           CIBW_BUILD: ${{ matrix.python }}-${{ matrix.platform_id }}
           CIBW_CONTAINER_ENGINE: "docker; create_args: --shm-size=1g"
-          CIBW_TEST_REQUIRES: pytest hypothesis numpy attrs
+          CIBW_TEST_REQUIRES: pytest pytest-timeout hypothesis numpy attrs
           CIBW_TEST_COMMAND: pytest {project}/tests
         with:
           package-dir: .
@@ -271,7 +294,7 @@ jobs:
 
   upload_pypi:
     name: Upload to PyPI
-    needs: [lint, docs, cpp_header, build_wheels, make_sdist]
+    needs: [lint, docs, cpp_header, bluebox, build_wheels, make_sdist]
     runs-on: ubuntu-latest
     environment:
       name: pypi

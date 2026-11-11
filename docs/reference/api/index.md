@@ -17,5 +17,6 @@ from sharedbox import SharedBox, Capacity, field
 | [Events](events.md) | `BoxEvents`, `FieldFuture`, `FieldWatch` |
 | [Streams](streams.md) | `SharedStream`, `SharedSendStream`, `SendSlot`, `SharedReceiveStream`, `ReceiveEvents`, `SharedStreamStatistics`, `ReceiveStreamStatistics` |
 | [References](references.md) | `BoxRef` |
+| [Bluesky documents](bluebox.md) | `DocumentSender`, `DocumentReceiver`, `ReceiverReleasedError`, `LateJoinError`, imported from `sharedbox.bluebox` |
 | [Errors](errors.md) | every exception `sharedbox` raises |
 | [Library authors](library-authors.md) | `SupportsSharedBox`, `get_include` |

@@ -36,6 +36,14 @@ elements. You set it with [`Capacity`][sharedbox.Capacity] inside
 `Annotated`. For text it counts bytes, not characters, and the field takes
 up all that room whatever it holds.
 
+### Channel
+
+A channel is the set of [streams](#stream) and the [box](#box) that
+`sharedbox.bluebox` uses to carry the [documents](#document) of `bluesky`
+runs from one process to others: a control stream for every document other
+than events, one stream per descriptor for its events, and a box holding
+the run under way. It has one sender and as many receivers as its `max_readers` allows. See [How bluebox carries documents](bluesky-documents.md).
+
 ### Create id
 
 A create id is a random number a [box](#box) gets when it is created, never
@@ -51,6 +59,14 @@ A description is the extra information a [segment](#segment) keeps for a
 type whose name alone doesn't say how its values are laid out: an enum's
 members, a record's members and their names, a list's capacity, or an
 array's shape and element type.
+
+### Document
+
+A document is one of the dicts a `bluesky` `RunEngine` emits to describe a
+run, each with a name such as `start`, `descriptor`, `event` or `stop`. A
+`start` opens a run, a `descriptor` says what the events of one stream
+hold, each `event` or `event_page` carries readings, and a `stop` closes the
+run.
 
 ### Field
 

@@ -32,6 +32,9 @@ reasons; the exact byte layout and steps are written down in
 - [Reference fields](references.md): what a
   [reference field](glossary.md#reference-field) stores and why it can
   break
+- [How bluebox carries documents](bluesky-documents.md): the streams of a
+  [channel](glossary.md#channel), how a receiver keeps the order, and when
+  the run waits
 - [Closing and lifetime](closing-and-lifetime.md): what closing a box
   does, and when its memory goes away
 - [Checking a process is alive](checking-a-process-is-alive.md): telling a

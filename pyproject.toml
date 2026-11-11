@@ -39,6 +39,9 @@ benchmarks = [
     "pyperf>=2.10.0",
     "typer>=0.27.2",
 ]
+bluebox = [
+    "numpy>=2.4.6",
+]
 
 [tool.scikit-build]
 sdist.include = ["src/sharedbox/_version.py"]
@@ -59,6 +62,9 @@ version_file = "src/sharedbox/_version.py"
 testpaths = ["tests"]
 markers = ["stress: long runs that measure timing, throughput and memory; run with -m stress"]
 addopts = ["-m", "not stress"]
+# Ends a hung sender or receiver after 120 s instead of at the job's limit.
+# On Windows the thread method stops the whole run, not only the test.
+timeout = 120
 
 [tool.cibuildwheel]
 build = ["cp311-*", "cp312-*", "cp314t-*"]
@@ -91,13 +97,23 @@ files = ["src", "tests", "docs/tutorials", "docs/examples"]
 module = ["event_model", "pyperf", "plotly", "plotly.*", "torch"]
 ignore_missing_imports = true
 
+[[tool.mypy.overrides]]
+module = [
+    "bluebox_devices",
+    "blueboxproc",
+    "send_bluesky_documents_to_another_process",
+    "test_bluebox_devices",
+    "test_bluebox_pipeline",
+]
+disallow_untyped_calls = false
+
 [tool.tox]
 requires = ["tox>=4.64.1", "tox-uv-bare>=1.36"]
 env_list = ["py311", "py312", "py313", "py314", "py314t", "mypy", "lint", "docs"]
 
 [tool.tox.env_run_base]
 runner = "uv-venv-lock-runner"
-dependency_groups = ["dev"]
+dependency_groups = ["dev", "bluebox"]
 commands = [["pytest", "-q", { replace = "posargs", extend = true }]]
 
 [tool.tox.env.py314t]
@@ -113,7 +129,7 @@ commands = [["prek", "run", "--all-files", "--show-diff-on-failure"]]
 # The oldest Python the project supports, so mypy checks against it and the
 # stubtest allowlist matches the runtime whatever Python runs tox.
 base_python = ["3.11"]
-dependency_groups = ["dev", "benchmarks"]
+dependency_groups = ["dev", "benchmarks", "bluebox"]
 # The allowlist covers what stubtest cannot see in nanobind's compiled types
 # (its own metaclass, its own static-method wrapper); see stubtest-allowlist.txt.
 commands = [
@@ -141,8 +157,16 @@ benchmarks = [
     "pyperf>=2.10.0",
     "typer>=0.27.2",
 ]
+bluebox = [
+    "bluesky>=1.16.0",
+    "event-model>=1.24.0",
+    "h5py>=3.16.0",
+    "numpy>=2.4.6",
+    "ophyd-async>=0.21.3",
+]
 dev = [
     "attrs>=26.1.0",
+    "event-model>=1.24.0",
     "hypothesis>=6.168.3",
     "ml-dtypes>=0.6.0",
     "msgspec>=0.22.0",
@@ -151,6 +175,7 @@ dev = [
     "numpy>=2.4.6",
     "pytest>=9.1.1",
     "pytest-codspeed>=5.0.3",
+    "pytest-timeout>=2.4.0",
     "pytest-xdist>=3.8.0",
     "towncrier>=26.9.0",
     "tox>=4.64.1",
