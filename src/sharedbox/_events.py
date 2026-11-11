@@ -86,14 +86,12 @@ def stop_watchers() -> None:
     # Bounded, so a callback that never returns cannot keep the process from exiting.
     deadline = time.monotonic() + EXIT_WAIT
     for thread in threads:
-        if thread is not None and thread is not threading.current_thread():
+        if thread is not threading.current_thread():
             thread.join(max(0.0, deadline - time.monotonic()))
     late = [
         thread.name
         for thread in threads
-        if thread is not None
-        and thread.is_alive()
-        and thread is not threading.current_thread()
+        if thread.is_alive() and thread is not threading.current_thread()
     ]
     if late:
         logger.warning(
