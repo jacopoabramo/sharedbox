@@ -477,9 +477,11 @@ this order:
 
 - an entry numbered `n` holds the answer, or its error text;
 - `n` of 0 or above `sent` is `status::range`;
-- `n` at or above `taken` is still pending, or, when the caller asks for
-  the server check, `server_exited` once a recorded server's process has
-  ended;
+- `n` above `taken` and below `sent` is superseded: a later send replaced
+  it and no server took it, so none ever will;
+- any other `n` at or above `taken` is still pending, or, when the caller
+  asks for the server check, `server_exited` once a recorded server's
+  process has ended;
 - when all four entries hold numbers above `n`, four later answers
   overwrote its answer;
 - otherwise a later request superseded it before the server took it.

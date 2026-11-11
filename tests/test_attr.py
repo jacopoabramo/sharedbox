@@ -916,3 +916,17 @@ def test_result_in_a_callback_of_the_same_box_raises_at_once(
         box.events.position.connect(forward)
         box.position = 2.0
         assert seen.get(timeout=4) is RuntimeError
+
+
+def test_requests_nobody_serves_are_superseded_by_the_next_one(
+    names: Callable[[str], str],
+) -> None:
+    """Fail each request a later one replaced while no server runs, and answer the newest once one starts."""
+    with Scanner.create(names("unserved")) as box:
+        first, second, newest = box.move(1.0), box.move(2.0), box.move(3.0)
+        with pytest.raises(RequestSupersededError):
+            first.result(timeout=5)
+        with pytest.raises(RequestSupersededError):
+            second.result(timeout=5)
+        box.move.serve(lambda position: position)
+        assert newest.result(timeout=5) == 3.0
