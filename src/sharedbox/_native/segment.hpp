@@ -269,7 +269,6 @@ public:
     std::uint16_t minor_version() const;
     bool closed() const;
     const std::string &name() const;
-    double lock_timeout() const;
     /// Every field, in index order; fixed once the segment is open.
     std::span<const FieldDesc> fields() const;
     /// The label of every field, in index order; fixed once the segment is open.

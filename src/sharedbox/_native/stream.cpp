@@ -881,8 +881,6 @@ void bind_stream(nb::module_ &m) {
         .def(
             "reserve", [](Sender &s, double timeout, bool release) { s.reserve(timeout, release); }, "timeout"_a,
             "release"_a = false)
-        .def(
-            "commit", [](Sender &s, nb::handle value) { return s.commit(value); }, "value"_a.none())
         .def("abandon", &Sender::abandon)
         .def("interrupt", &Sender::interrupt)
         .def("close", &Sender::close)
