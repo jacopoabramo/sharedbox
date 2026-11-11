@@ -1736,9 +1736,14 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
         )
 
     def __repr__(self) -> str:
-        if self.closed:
-            return f"<{type(self).__qualname__} {self.name!r} closed>"
-        values = self.snapshot()
+        try:
+            if self.closed:
+                return f"<{type(self).__qualname__} {self.name!r} closed>"
+            values = self.snapshot()
+        except RuntimeError:
+            # This thread holds the box in a locked() block, or this is the object of a block
+            # that ended. A repr that raises breaks debuggers and the display of a failed test.
+            return f"<{type(self).__qualname__} locked>"
         shown = ", ".join(
             f"{p.name}={values[p.name]!r}"
             for p in type(self).__sharedbox_init__

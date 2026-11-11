@@ -437,3 +437,11 @@ def test_field_named_locked_is_refused() -> None:
 
         class Clash(SharedBox):
             locked: int = 0  # type: ignore[assignment]
+
+
+def test_repr_does_not_raise_around_a_locked_block(unique_name: str) -> None:
+    """Return a short repr of a box inside its own locked() block and of the block's object after it."""
+    with Tally.create(unique_name) as box:
+        with box.locked() as held:
+            inside = repr(box)
+        assert (inside, repr(held)) == ("<Tally locked>", "<Tally locked>")
