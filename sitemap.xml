@@ -7,6 +7,9 @@
         <loc>https://jacopoabramo.github.io/sharedbox/explanation/</loc>
       </url>
       <url>
+        <loc>https://jacopoabramo.github.io/sharedbox/explanation/bluesky-documents/</loc>
+      </url>
+      <url>
         <loc>https://jacopoabramo.github.io/sharedbox/explanation/checking-a-process-is-alive/</loc>
       </url>
       <url>
@@ -109,6 +112,9 @@
         <loc>https://jacopoabramo.github.io/sharedbox/how-to/send-a-box-to-another-process/</loc>
       </url>
       <url>
+        <loc>https://jacopoabramo.github.io/sharedbox/how-to/send-bluesky-documents-to-another-process/</loc>
+      </url>
+      <url>
         <loc>https://jacopoabramo.github.io/sharedbox/how-to/send-items-through-a-stream/</loc>
       </url>
       <url>
@@ -152,6 +158,9 @@
       </url>
       <url>
         <loc>https://jacopoabramo.github.io/sharedbox/reference/api/arrays/</loc>
+      </url>
+      <url>
+        <loc>https://jacopoabramo.github.io/sharedbox/reference/api/bluebox/</loc>
       </url>
       <url>
         <loc>https://jacopoabramo.github.io/sharedbox/reference/api/box/</loc>
