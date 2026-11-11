@@ -517,3 +517,24 @@ def test_delivery_reports_a_release_and_goes_on(unique_name: str) -> None:
         reader.events.disconnect()
         assert got == [0, 5, 6]
         assert released == [4]
+
+
+def test_a_callback_raising_system_exit_does_not_stop_delivery(
+    unique_name: str,
+) -> None:
+    """Keep delivering items after a received callback raises SystemExit."""
+    seen: list[int] = []
+
+    def on_item(item: int) -> None:
+        seen.append(item)
+        if item == 1:
+            sys.exit(0)
+
+    with SharedStream.create(int, unique_name, capacity=8) as stream:
+        reader = stream.reader()
+        reader.events.received.connect(on_item)
+        with stream.sender() as sender:
+            for item in range(4):
+                sender.send(item)
+        wait_until(lambda: len(seen) == 4)
+        assert seen == [0, 1, 2, 3]

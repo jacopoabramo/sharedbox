@@ -1788,7 +1788,8 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T, M]):
     def _emit(self, signal: SignalInstance, *args: Any) -> None:
         try:
             signal.emit(*args)
-        except Exception:
+        except BaseException:
+            # SystemExit included: it would end delivery and leave the reader refusing every receive.
             logger.exception("a callback of stream %r raised", self._stream.name)
 
     def _take_nowait(self, targets: list[tuple[tuple[int, ...], Any]]) -> T:
