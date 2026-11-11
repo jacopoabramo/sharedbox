@@ -99,8 +99,12 @@ cmake --build build-cpp --config Release
 ctest --test-dir build-cpp -C Release --output-on-failure
 ```
 
-CI runs them on Linux and Windows, and again on Linux with
-AddressSanitizer and UndefinedBehaviorSanitizer.
+CI runs them on Linux and Windows, again on Linux with AddressSanitizer
+and UndefinedBehaviorSanitizer, and once more on Linux with
+ThreadSanitizer. A reader copies bytes that a writer may be changing and
+discards the copy if the sequence moved, which ThreadSanitizer reports as
+a data race, so `tests/cpp/tsan.supp` lists the functions that make that
+copy. A report from any other function fails the job.
 
 ### The C consumer
 
