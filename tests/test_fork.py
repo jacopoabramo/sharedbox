@@ -372,3 +372,24 @@ def test_forked_child_follows_a_box_whose_attach_failed_in_follow_after_a_move(
         finally:
             code = finish(child)
         assert code == 0
+
+
+def report_watcher_thread(out: "Queue[bool]") -> None:
+    out.put(Watcher.on_watcher_thread())
+
+
+def test_a_child_forked_inside_a_callback_is_not_on_a_watcher_thread(
+    unique_name: str,
+) -> None:
+    """Check that the main thread of a child forked inside an events callback is not taken for a watcher thread."""
+    ctx = mp.get_context("fork")
+    out: Queue[bool] = ctx.Queue()
+    children: queue.Queue[BaseProcess] = queue.Queue()
+    with busy_box(unique_name) as box:
+        box.events.value.connect(
+            lambda new: children.put(fork(report_watcher_thread, out))
+        )
+        box.value = 5
+        child = children.get(timeout=10)
+        assert out.get(timeout=10) is False
+        assert finish(child) == 0

@@ -27,7 +27,14 @@ from typing import (
 )
 
 from ._attr import Attr, AttrAttribute
-from ._events import BoxEvents, FieldWatch, Watcher, events_class, on_watcher_thread
+from ._events import (
+    WATCHER_THREAD,
+    BoxEvents,
+    FieldWatch,
+    Watcher,
+    events_class,
+    on_watcher_thread,
+)
 from ._follow import box_events
 from ._layout import (
     Field,
@@ -139,6 +146,9 @@ def release(watcher: Watcher, segment: Segment, wait: bool = True) -> None:
 
 def reset_after_fork() -> None:
     """Make every box inherited through `fork` usable in the child."""
+    # A child forked inside a callback runs on a copy of a watcher thread, but it is no
+    # watcher thread: left set, the mark would make every close in the child skip its wait.
+    WATCHER_THREAD.active = False
     for box in list(LIVE):
         box._segment._after_fork()
         box._values._after_fork()
