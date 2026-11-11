@@ -9,21 +9,7 @@
 
 namespace sharedbox {
 
-nb::object NativeDict::copy(nb::pointer_and_handle<NativeDict> self) {
-    const NativeDict &d = *self.p;
-    std::vector<std::byte> stored;
-    bool checked = false;
-    {
-        nb::ft_lock_guard guard(d.mutex_);
-        const std::span<const std::byte> used = d.used();
-        stored.assign(used.begin(), used.end());
-        checked = d.checked_;
-    }
-    nb::object out = like(self, stored);
-    // Copied from checked keys, so the copy's keys need no check either; no other thread has it yet.
-    nb::inst_ptr<NativeDict>(out)->checked_ = checked;
-    return out;
-}
+nb::object NativeDict::copy(nb::pointer_and_handle<NativeDict> self) { return copy_keyed(self); }
 
 nb::object NativeDict::find_value(nb::handle key) {
     const Types &types = codec();
@@ -63,13 +49,7 @@ bool NativeDict::contains(nb::handle key) {
     return lookup(encoded.data()) != no_slot;
 }
 
-void NativeDict::refuse_unbuilt(nb::handle value) const {
-    if (nb::isinstance<NativeDict>(value) && !nb::inst_ready(value))
-        raise(PyExc_TypeError,
-              label_ + " got a " +
-                  nb::borrow<nb::str>(nb::handle(Py_TYPE(value.ptr())).attr("__qualname__")).c_str() +
-                  " that was never built");
-}
+void NativeDict::refuse_unbuilt(nb::handle value) const { refuse_unbuilt_as<NativeDict>(value); }
 
 nb::object NativeDict::equals(nb::handle other) {
     refuse_unbuilt(other);
