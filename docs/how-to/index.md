@@ -14,6 +14,8 @@ you're trying to do; if `sharedbox` is new to you, the
   platforms and the `benchmarks` extra
 - [How to migrate from 0.7](migrate-from-0.7.md): the changes code written
   for 0.7 needs
+- [How to migrate from 0.9](migrate-from-0.9.md): the changes code written
+  for 0.9 needs
 
 ### Use a box or a stream
 
