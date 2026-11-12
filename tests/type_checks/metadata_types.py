@@ -48,10 +48,10 @@ def check_send_metadata(stream: SharedStream[Item, Info]) -> None:
 
 
 def check_slot_metadata(sender: SharedSendStream[Item, Info]) -> None:
-    with sender.writing() as slot:
+    with sender.reserve() as slot:
         assert_type(slot, SendSlot[Item, Info])
         slot.send(Item(1), metadata={"unit": "mm"})
-    with sender.writing() as slot:
+    with sender.reserve() as slot:
         slot.send(Item(1), metadata={"unit": 1})  # type: ignore[arg-type]
 
 

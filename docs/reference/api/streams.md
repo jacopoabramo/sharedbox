@@ -8,7 +8,7 @@ icon: lucide/code
 | --- | --- |
 | [`SharedStream`][sharedbox.SharedStream] | a named ring of typed items in shared memory, sent by one process and received by up to `max_readers` readers |
 | [`SharedSendStream`][sharedbox.SharedSendStream] | the one [sender](../../explanation/glossary.md#sender) of a [stream](../../explanation/glossary.md#stream), with blocking, non-blocking and asyncio sends |
-| [`SendSlot`][sharedbox.SendSlot] | a slot reserved by `writing`: its item, whose arrays are filled in place, and `send` |
+| [`SendSlot`][sharedbox.SendSlot] | a slot reserved by `reserve`: its item, whose arrays are filled in place, and `send` |
 | [`SharedReceiveStream`][sharedbox.SharedReceiveStream] | a [reader](../../explanation/glossary.md#reader) of a stream, in mode [lossless](../../explanation/glossary.md#lossless), [lossy](../../explanation/glossary.md#lossy) or [latest](../../explanation/glossary.md#latest) |
 | [`ReceiveEvents`][sharedbox.ReceiveEvents] | the psygnal signal group of a reader: `received` for each item and `ended` once |
 | [`SharedStreamStatistics`][sharedbox.SharedStreamStatistics] | a stream's state at one moment: what was sent, what the ring holds and who reads it |

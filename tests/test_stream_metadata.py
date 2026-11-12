@@ -173,7 +173,7 @@ def test_a_send_that_waited_for_a_slot_holder_is_refused_without_release(
         reader = stream.reader("lossless")
         sender = stream.sender(on_full="release")
         sender.send(0)
-        with sender.writing(0) as slot:
+        with sender.reserve(0) as slot:
             thread = threading.Thread(target=send_with_metadata)
             thread.start()
             time.sleep(0.2)
@@ -190,13 +190,13 @@ def test_a_send_that_waited_for_a_slot_holder_is_refused_without_release(
 
 
 def test_a_slot_send_with_metadata(unique_name: str) -> None:
-    """Add the version with the item sent from a writing block, and keep the slot usable after a refused document."""
+    """Add the version with the item sent from a reserve block, and keep the slot usable after a refused document."""
     with SharedStream.create(
         int, unique_name, capacity=4, metadata={"step": 1}
     ) as stream:
         reader = stream.reader("lossless")
         sender = stream.sender()
-        with sender.writing(0) as slot:
+        with sender.reserve(0) as slot:
             with pytest.raises(TypeError):
                 slot.send(5, metadata={"a": object()})
             slot.send(5, metadata={"step": 2})
@@ -209,7 +209,7 @@ def test_a_refused_slot_send_leaves_the_slot_to_send_again(unique_name: str) -> 
     """Refuse slot.send with metadata on a stream without a metadata area, and publish on a later slot.send."""
     with SharedStream.create(int, unique_name, capacity=4) as stream:
         reader = stream.reader("lossless")
-        with stream.sender().writing(0) as slot:
+        with stream.sender().reserve(0) as slot:
             with pytest.raises(MetadataFullError):
                 slot.send(5, metadata={})
             slot.send(5)

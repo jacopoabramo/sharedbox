@@ -4,10 +4,11 @@ icon: lucide/arrow-up-circle
 
 # How to migrate from 0.9
 
-Code written for `sharedbox` 0.9 may need four changes before it runs on
+Code written for `sharedbox` 0.9 may need five changes before it runs on
 the next release. The size of a field now goes in its annotation only, a
-stream call takes its `timeout` by keyword, `metadata_version_of` has a new
-name, and [metadata](../explanation/glossary.md#metadata) reads back as a
+stream call takes its `timeout` by keyword, a sender's `writing` and
+`metadata_version_of` have new names, and
+[metadata](../explanation/glossary.md#metadata) reads back as a
 `frozendict`. Each section below shows the old form and the new one.
 
 ## Give sizes in the annotation
@@ -69,6 +70,26 @@ letter = reader.receive(5)
 sender.send(letter, timeout=5)
 letter = reader.receive(timeout=5)
 ```
+
+## Call `reserve` in place of a sender's `writing`
+
+The block that reserves a slot of a stream, fills its arrays in place and
+sends it is now [`reserve`][sharedbox.SharedSendStream.reserve], and its
+asyncio form is `areserve`. Both take the arguments that `writing` and
+`awriting` took and yield the same [`SendSlot`][sharedbox.SendSlot]:
+
+```python
+# 0.9
+with sender.writing(blank) as slot:
+    slot.send(fill(slot.item))
+
+# 0.10
+with sender.reserve(blank) as slot:
+    slot.send(fill(slot.item))
+```
+
+[`SharedBox.writing`][sharedbox.SharedBox.writing], which fills an array
+field of a box in place, keeps its name.
 
 ## Call `metadata_at` in place of `metadata_version_of`
 

@@ -92,7 +92,7 @@ def test_slot_item_is_an_item_over_the_slot(
     """Build an item of the item type from the template, its other members kept and its arrays writable views of the declared shape."""
     with (
         SharedStream.create(hint, unique_name, capacity=2) as stream,
-        stream.sender().writing(template) as slot,
+        stream.sender().reserve(template) as slot,
     ):
         assert isinstance(slot.item, kind)
         assert members(slot.item) == expected
@@ -111,7 +111,7 @@ def test_writing_refuses_a_missing_or_wrong_template(
     with SharedStream.create(Frame, unique_name, capacity=2) as stream:
         reader = stream.reader()
         sender = stream.sender()
-        with pytest.raises(TypeError), sender.writing(template):
+        with pytest.raises(TypeError), sender.reserve(template):
             pass
         sender.send(frame(1), timeout=5)
         assert reader.receive(timeout=5).index == 1
@@ -130,7 +130,7 @@ def test_writing_refuses_a_template_of_another_type_without_arrays(
     with SharedStream.create(hint, unique_name, capacity=2) as stream:
         reader = stream.reader()
         sender = stream.sender()
-        with pytest.raises(TypeError), sender.writing(template, timeout=5):
+        with pytest.raises(TypeError), sender.reserve(template, timeout=5):
             pass
         sender.send(item, timeout=5)
         assert reader.receive(timeout=5) == item
@@ -148,7 +148,7 @@ def test_an_item_arrives_whole_whichever_array_it_holds(
     """Receive the values of the array the item holds: the slot's own, a reversed view of it, or another array."""
     with SharedStream.create(Outer, unique_name, capacity=2) as stream:
         reader = stream.reader()
-        with stream.sender().writing(Outer(0, Inner(EMPTY, 2))) as slot:
+        with stream.sender().reserve(Outer(0, Inner(EMPTY, 2))) as slot:
             image = slot.item.inner.image
             image[:] = np.arange(16, dtype=np.uint16).reshape(4, 4)
             chosen = pick(image)
@@ -174,7 +174,7 @@ def test_an_item_arrives_whole_whichever_slot_places_its_arrays_view(
     """Receive the values each array held at send when its source is another member's place in the slot."""
     with SharedStream.create(Pair, unique_name, capacity=2) as stream:
         reader = stream.reader()
-        with stream.sender().writing(Pair(EMPTY, EMPTY)) as slot:
+        with stream.sender().reserve(Pair(EMPTY, EMPTY)) as slot:
             slot.item.a[:] = 1
             slot.item.b[:] = 2
             a, b = pick(slot.item.a, slot.item.b, np.full((4, 4), 3, np.uint16))
@@ -190,9 +190,9 @@ def test_a_block_left_without_send_publishes_nothing(unique_name: str) -> None:
     with SharedStream.create(Frame, unique_name, capacity=2) as stream:
         reader = stream.reader()
         sender = stream.sender()
-        with sender.writing(BLANK, timeout=5):
+        with sender.reserve(BLANK, timeout=5):
             pass
-        with pytest.raises(KeyError), sender.writing(BLANK, timeout=5):
+        with pytest.raises(KeyError), sender.reserve(BLANK, timeout=5):
             raise KeyError("stop")
         assert stream.statistics().sent == 0
         sender.send(frame(5), timeout=5)
@@ -204,39 +204,39 @@ def test_a_slot_sends_once(unique_name: str) -> None:
     """Raise RuntimeError from a send after one that failed to encode, after abandon, and after one that succeeded."""
     with SharedStream.create(Frame, unique_name, capacity=2) as stream:
         sender = stream.sender()
-        with sender.writing(BLANK, timeout=5) as slot:
+        with sender.reserve(BLANK, timeout=5) as slot:
             with pytest.raises(ValueError, match="Shape"):
                 slot.send(Frame(0, np.zeros((2, 2), np.uint16)))
             with pytest.raises(RuntimeError):
                 slot.send(frame(1))
-        with sender.writing(BLANK, timeout=5) as slot:
+        with sender.reserve(BLANK, timeout=5) as slot:
             slot.abandon()
             with pytest.raises(RuntimeError):
                 slot.send(frame(1))
         assert stream.statistics().sent == 0
-        with sender.writing(BLANK, timeout=5) as slot:
+        with sender.reserve(BLANK, timeout=5) as slot:
             slot.send(frame(2))
             with pytest.raises(RuntimeError):
                 slot.send(frame(3))
         assert stream.statistics().sent == 1
 
 
-@pytest.mark.parametrize("call", ["send", "send_nowait", "writing"])
+@pytest.mark.parametrize("call", ["send", "send_nowait", "reserve"])
 def test_a_send_inside_the_block_raises_runtime_error(
     unique_name: str, call: str
 ) -> None:
-    """Raise RuntimeError, not wait, for a send or writing on the thread that holds the slot."""
+    """Raise RuntimeError, not wait, for a send or reserve on the thread that holds the slot."""
     with SharedStream.create(Frame, unique_name, capacity=2) as stream:
         sender = stream.sender()
-        with sender.writing(BLANK, timeout=5) as slot:
+        with sender.reserve(BLANK, timeout=5) as slot:
             with pytest.raises(RuntimeError):
                 match call:
                     case "send":
                         sender.send(frame(1), timeout=5)
                     case "send_nowait":
                         sender.send_nowait(frame(1))
-                    case "writing":
-                        with sender.writing(BLANK, timeout=5):
+                    case "reserve":
+                        with sender.reserve(BLANK, timeout=5):
                             pass
             slot.send(frame(0))
         assert stream.statistics().sent == 1
@@ -255,7 +255,7 @@ def test_a_send_from_another_thread_waits_for_the_block(unique_name: str) -> Non
             except BaseException as error:
                 errors.append(error)
 
-        with sender.writing(BLANK, timeout=5) as slot:
+        with sender.reserve(BLANK, timeout=5) as slot:
             thread = threading.Thread(target=other)
             thread.start()
             thread.join(0.2)
@@ -278,7 +278,7 @@ def test_closing_the_sender_ends_a_send_waiting_for_the_block(unique_name: str) 
             except BaseException as error:
                 errors.append(error)
 
-        with sender.writing(BLANK, timeout=5):
+        with sender.reserve(BLANK, timeout=5):
             thread = threading.Thread(target=other)
             thread.start()
             thread.join(0.2)
@@ -295,7 +295,7 @@ def test_closing_during_the_block_makes_send_raise(
     """Raise StreamClosedError from slot.send after a close during the block, and keep the item's arrays usable."""
     with SharedStream.create(Frame, unique_name, capacity=2) as stream:
         sender = stream.sender()
-        with sender.writing(BLANK, timeout=5) as slot:
+        with sender.reserve(BLANK, timeout=5) as slot:
             (sender if closing == "sender" else stream).close()
             slot.item.image.fill(3)
             assert int(slot.item.image[0, 0]) == 3
@@ -304,13 +304,13 @@ def test_closing_during_the_block_makes_send_raise(
 
 
 def test_writing_raises_timeout_error_while_the_ring_is_full(unique_name: str) -> None:
-    """Raise TimeoutError from writing when a lossless reader keeps the ring full past the timeout."""
+    """Raise TimeoutError from reserve when a lossless reader keeps the ring full past the timeout."""
     with SharedStream.create(int, unique_name, capacity=2) as stream:
         reader = stream.reader(start="oldest")
         sender = stream.sender()
         sender.send(0)
         sender.send(1)
-        with pytest.raises(TimeoutError), sender.writing(0, timeout=0.1):
+        with pytest.raises(TimeoutError), sender.reserve(0, timeout=0.1):
             pass
         assert stream.statistics().sent == 2
         assert reader.receive(timeout=5) == 0
@@ -328,7 +328,7 @@ def test_a_send_inside_a_block_is_refused_after_another_block_ended(
 
         def first() -> None:
             try:
-                with sender.writing(BLANK, timeout=5) as slot:
+                with sender.reserve(BLANK, timeout=5) as slot:
                     slot.send(frame(1))
                     a_sent.set()
                     assert b_entered.wait(5)
@@ -340,7 +340,7 @@ def test_a_send_inside_a_block_is_refused_after_another_block_ended(
         thread = threading.Thread(target=first)
         thread.start()
         assert a_sent.wait(5)
-        with sender.writing(BLANK, timeout=5) as slot:
+        with sender.reserve(BLANK, timeout=5) as slot:
             b_entered.set()
             thread.join(10)
             assert not thread.is_alive()

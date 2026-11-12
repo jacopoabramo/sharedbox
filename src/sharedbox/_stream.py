@@ -979,13 +979,13 @@ class SharedSendStream(End, Generic[T, M]):
         TimeoutError
             If `timeout` seconds pass first; the item is not sent. With
             `on_full="release"`, only if another thread or task holds the
-            slot from `writing`, or a reader from sharedbox 0.7.0 or earlier
+            slot from `reserve`, or a reader from sharedbox 0.7.0 or earlier
             holds the sender back.
         StreamClosedError
             If this sender is closed, before or during the wait.
         RuntimeError
             If called inside a block of this sender's
-            [`writing`][sharedbox.SharedSendStream.writing].
+            [`reserve`][sharedbox.SharedSendStream.reserve].
         TypeError
             If `metadata` holds another type, or a mapping key is not a
             `str`.
@@ -1034,7 +1034,7 @@ class SharedSendStream(End, Generic[T, M]):
         StreamClosedError
             If this sender is closed, before or during the wait.
         RuntimeError
-            If called inside a block of this sender's `writing`.
+            If called inside a block of this sender's `reserve`.
         TypeError
             If `metadata` holds a value `send` refuses.
         ValueError
@@ -1073,8 +1073,8 @@ class SharedSendStream(End, Generic[T, M]):
 
         It would wait while a lossless reader is a full ring behind, or while
         another thread or task holds the slot from
-        [`writing`][sharedbox.SharedSendStream.writing] or
-        [`awriting`][sharedbox.SharedSendStream.awriting].
+        [`reserve`][sharedbox.SharedSendStream.reserve] or
+        [`areserve`][sharedbox.SharedSendStream.areserve].
 
         With `on_full="release"`, a lossless reader that is a full ring
         behind is released at once and the item is sent. The call still
@@ -1088,7 +1088,7 @@ class SharedSendStream(End, Generic[T, M]):
         Raises
         ------
         RuntimeError
-            If called inside a block of this sender's `writing`.
+            If called inside a block of this sender's `reserve`.
         TypeError
             If `metadata` holds a value `send` refuses.
         ValueError
@@ -1120,11 +1120,11 @@ class SharedSendStream(End, Generic[T, M]):
             ) from None
 
     def _refuse_nested(self) -> None:
-        """Raise RuntimeError when called inside a `writing` block of this sender, whose slot a send would wait for."""
+        """Raise RuntimeError when called inside a `reserve` block of this sender, whose slot a send would wait for."""
         if self._holders and holder() in self._holders:
             raise RuntimeError(
                 f"stream {self._stream.name!r}: a send inside this sender's "
-                "writing block is refused"
+                "reserve block is refused"
             )
 
     def _retry(
@@ -1187,7 +1187,7 @@ class SharedSendStream(End, Generic[T, M]):
         self._retry(self._native.reserve, timeout, future)
 
     @contextlib.contextmanager
-    def writing(
+    def reserve(
         self, template: T | None = None, *, timeout: float | None = None
     ) -> Generator[SendSlot[T, M], None, None]:
         """Reserve the next slot and yield it, to fill the item's arrays in place and send it.
@@ -1203,7 +1203,7 @@ class SharedSendStream(End, Generic[T, M]):
 
         ```python
         blank = Letter(0, "", np.empty((0, 0), np.uint8))
-        with sender.writing(blank) as slot:
+        with sender.reserve(blank) as slot:
             scanner.read_into(slot.item.scan)
             slot.send(replace(slot.item, index=n))
         ```
@@ -1213,7 +1213,7 @@ class SharedSendStream(End, Generic[T, M]):
         without `send`, or by an exception, gives the slot up: nothing is
         published, and the next send takes its position. Until the slot is
         sent or the block ends, readers see nothing new, and a send or
-        `writing` on this sender from another thread or task waits. That
+        `reserve` on this sender from another thread or task waits. That
         includes a task started inside the block by `asyncio.wait_for` or
         `create_task`.
 
@@ -1232,11 +1232,11 @@ class SharedSendStream(End, Generic[T, M]):
         TimeoutError
             If `timeout` seconds pass while a lossless reader is a full ring
             behind and the sender does not release it, or while another
-            thread or task holds the slot from `writing` or `awriting`.
+            thread or task holds the slot from `reserve` or `areserve`.
         StreamClosedError
             If this sender is closed, before or during the wait.
         RuntimeError
-            If called inside a block of this sender's `writing`.
+            If called inside a block of this sender's `reserve`.
 
         Notes
         -----
@@ -1250,12 +1250,12 @@ class SharedSendStream(End, Generic[T, M]):
             yield slot
 
     @contextlib.asynccontextmanager
-    async def awriting(
+    async def areserve(
         self, template: T | None = None, *, timeout: float | None = None
     ) -> AsyncGenerator[SendSlot[T, M], None]:
-        """Reserve the next slot, as [`writing`][sharedbox.SharedSendStream.writing] does, without blocking the event loop.
+        """Reserve the next slot, as [`reserve`][sharedbox.SharedSendStream.reserve] does, without blocking the event loop.
 
-        `timeout` has the meaning it has in `writing`. An `awriting` cancelled
+        `timeout` has the meaning it has in `reserve`. An `areserve` cancelled
         before its `timeout` passes reserves nothing and releases no reader.
 
         Raises
@@ -1268,7 +1268,7 @@ class SharedSendStream(End, Generic[T, M]):
         StreamClosedError
             If this sender is closed, before or during the wait.
         RuntimeError
-            If called inside a block of this sender's `writing`.
+            If called inside a block of this sender's `reserve`.
         """
         self._refuse_nested()
         await self._yield()
@@ -1292,7 +1292,7 @@ class SharedSendStream(End, Generic[T, M]):
         return True
 
     def _abandon_reserved(self, future: Future[Any]) -> None:
-        """Give up the slot that a cancelled `awriting` reserved after all."""
+        """Give up the slot that a cancelled `areserve` reserved after all."""
         if not future.cancelled() and future.exception() is None:
             self._native.abandon()
 
@@ -1332,10 +1332,10 @@ class SharedSendStream(End, Generic[T, M]):
 
 
 class SendSlot(Slot[T, M]):
-    """A slot of a stream that [`SharedSendStream.writing`][sharedbox.SharedSendStream.writing] reserved for one item.
+    """A slot of a stream that [`SharedSendStream.reserve`][sharedbox.SharedSendStream.reserve] reserved for one item.
 
-    [`writing`][sharedbox.SharedSendStream.writing] and
-    [`awriting`][sharedbox.SharedSendStream.awriting] make it. Its
+    [`reserve`][sharedbox.SharedSendStream.reserve] and
+    [`areserve`][sharedbox.SharedSendStream.areserve] make it. Its
     [`item`][sharedbox.SendSlot.item] holds arrays over the slot, which
     the block fills, and [`send`][sharedbox.SendSlot.send] publishes an
     item.

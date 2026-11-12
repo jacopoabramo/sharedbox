@@ -187,7 +187,7 @@ def write_frames(name: str, count: int) -> None:
     blank = Frame(0, np.empty((0, 0), np.uint16))
     with stream.sender() as sender:
         for i in range(count):
-            with sender.writing(blank, timeout=60) as slot:
+            with sender.reserve(blank, timeout=60) as slot:
                 slot.item.image.fill(i % 65536)
                 slot.send(replace(slot.item, index=i))
 
@@ -196,7 +196,7 @@ def reserve_then_die(name: str, ready: Event) -> None:
     """Send one frame, reserve the next slot, and exit inside the block without closing anything."""
     sender = SharedStream.attach(Frame, name).sender()
     sender.send(frame(0))
-    with sender.writing(Frame(0, np.empty((0, 0), np.uint16))) as slot:
+    with sender.reserve(Frame(0, np.empty((0, 0), np.uint16))) as slot:
         slot.item.image.fill(7)
         ready.set()
         os._exit(0)

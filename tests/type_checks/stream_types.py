@@ -56,7 +56,7 @@ class Shot:
 
 
 def check_writing(sender: SharedSendStream[Shot]) -> None:
-    with sender.writing(Shot(0, np.empty(0))) as slot:
+    with sender.reserve(Shot(0, np.empty(0))) as slot:
         assert_type(slot, SendSlot[Shot])
         assert_type(slot.item, Shot)
         assert_type(slot.item.image, np.ndarray)

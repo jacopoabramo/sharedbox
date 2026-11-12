@@ -101,7 +101,7 @@ A stream takes its first version as `metadata` in
 one with the `metadata` of [`send`][sharedbox.SharedSendStream.send].
 [`asend`][sharedbox.SharedSendStream.asend],
 [`send_nowait`][sharedbox.SharedSendStream.send_nowait] and the `send` of
-the slot that [`writing`][sharedbox.SharedSendStream.writing] gives take
+the slot that [`reserve`][sharedbox.SharedSendStream.reserve] gives take
 the keyword too. A version applies from the item sent with it, and a
 reader's [`metadata`][sharedbox.SharedReceiveStream.metadata] and
 [`metadata_version`][sharedbox.SharedReceiveStream.metadata_version]
@@ -135,7 +135,7 @@ under, and keeps version 1 while an item sent before it is in the ring,
 so that a reader can tell such an item from one whose version is gone. A
 send with `metadata` that would let such a version go raises
 `MetadataFullError` before it waits for room in the ring, so it sends
-nothing and releases no reader; the slot's `send` in a `writing` block
+nothing and releases no reader; the slot's `send` in a `reserve` block
 raises it the same way and leaves the slot reserved. The same send
 succeeds once the sender has sent enough further items that none of
 those items is left in the ring.

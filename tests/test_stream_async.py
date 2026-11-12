@@ -491,7 +491,7 @@ def test_an_inherited_end_is_closed_in_the_child_and_works_in_the_parent(
 
 
 def test_an_awriting_cancelled_at_the_gate_reserves_nothing(unique_name: str) -> None:
-    """Leave no slot reserved after an awriting cancelled while a lossless reader kept the ring full."""
+    """Leave no slot reserved after an areserve cancelled while a lossless reader kept the ring full."""
 
     async def run() -> list[int]:
         with SharedStream.create(int, unique_name, capacity=2) as stream:
@@ -501,7 +501,7 @@ def test_an_awriting_cancelled_at_the_gate_reserves_nothing(unique_name: str) ->
             sender.send(1)
 
             async def fill() -> None:
-                async with sender.awriting(0) as slot:
+                async with sender.areserve(0) as slot:
                     slot.send(2)
 
             task = asyncio.create_task(fill())
@@ -518,12 +518,12 @@ def test_an_awriting_cancelled_at_the_gate_reserves_nothing(unique_name: str) ->
 
 
 def test_an_asend_inside_awriting_raises_runtime_error(unique_name: str) -> None:
-    """Raise RuntimeError from an asend in the task that holds an awriting slot instead of waiting for itself."""
+    """Raise RuntimeError from an asend in the task that holds an areserve slot instead of waiting for itself."""
 
     async def run() -> int:
         with SharedStream.create(int, unique_name, capacity=2) as stream:
             sender = stream.sender()
-            async with sender.awriting(0) as slot:
+            async with sender.areserve(0) as slot:
                 with pytest.raises(RuntimeError):
                     async with asyncio.timeout(5):
                         await sender.asend(1)
