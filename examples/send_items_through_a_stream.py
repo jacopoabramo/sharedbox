@@ -105,7 +105,7 @@ async def print_from_any(readers: list[SharedReceiveStream[Letter]]) -> None:
 def send_filled(sender: SharedSendStream[Letter], count: int) -> None:
     blank = Letter(0, "Ada", np.empty((0, 0), np.uint8))
     for i in range(count):
-        with sender.writing(blank) as slot:
+        with sender.reserve(blank) as slot:
             slot.item.scan.fill(i)
             slot.send(replace(slot.item, index=i))
 
@@ -123,7 +123,7 @@ class Sack:
 def send_sacks(sender: SharedSendStream[Sack]) -> None:
     sender.send(Sack(0, np.array([1.5, 0.25, 4.0], np.float32)))
     template = Sack(1, np.empty(64, np.float32))
-    with sender.writing(template) as slot:
+    with sender.reserve(template) as slot:
         weights = slot.item.weights
         weights[:5] = 2.5
         slot.send(replace(slot.item, weights=weights[:5]))

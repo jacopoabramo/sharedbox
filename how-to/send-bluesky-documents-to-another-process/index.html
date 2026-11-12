@@ -3841,9 +3841,7 @@ than an event, such as the stop, waits <code>control_timeout</code> for it. Set 
 <code>event_timeout</code> raises <code>TimeoutError</code> in the <code>RunEngine</code>. With
 <code>on_full="release"</code>, the sender releases the receiver instead, and the run
 goes on:</p>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="n">sender</span> <span class="o">=</span> <span class="n">DocumentSender</span><span class="o">.</span><span class="n">create</span><span class="p">(</span>
-</span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a>    <span class="s2">"beamline"</span><span class="p">,</span> <span class="n">event_timeout</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">on_full</span><span class="o">=</span><span class="s2">"release"</span>
-</span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a><span class="p">)</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="n">sender</span> <span class="o">=</span> <span class="n">DocumentSender</span><span class="o">.</span><span class="n">create</span><span class="p">(</span><span class="s2">"beamline"</span><span class="p">,</span> <span class="n">event_timeout</span><span class="o">=</span><span class="mf">1.0</span><span class="p">,</span> <span class="n">on_full</span><span class="o">=</span><span class="s2">"release"</span><span class="p">)</span>
 </span></code></pre></div>
 <div class="admonition warning">
 <p class="admonition-title">A lossless receiver that reaches a descriptor late can be released</p>

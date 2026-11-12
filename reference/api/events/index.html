@@ -4027,8 +4027,7 @@ stops all its forwarding.</p>
 
 
 <a href="#sharedbox.FieldFuture" class="headerlink" title="Permanent link">&para;</a></h2>
-<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">FieldFuture</span><span class="p">(</span><span class="n">watcher</span><span class="p">:</span> <span class="n">Watcher</span><span class="p">,</span> <span class="n">field</span><span class="p">:</span> <span class="n">FieldSpec</span><span class="p">,</span> <span class="n">since</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">published</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span>
-</span></code></pre></div>
+
 
     <div class="doc doc-contents first">
             <p class="doc doc-class-bases">
@@ -4037,6 +4036,7 @@ stops all its forwarding.</p>
 
 
         <p>The next value written to one field of a box.</p>
+<p><code>box.watch(field).future()</code> returns it; it is not built directly.</p>
 <p>A <code>concurrent.futures.Future</code>, so <code>concurrent.futures.wait</code>,
 <code>concurrent.futures.as_completed</code> and <code>asyncio.wrap_future</code> take it, and
 it can be awaited directly in a running event loop. It resolves on the

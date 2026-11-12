@@ -3789,11 +3789,8 @@ scan of its envelope as an array:</p>
 </span><span id="__span-0-25"><a id="__codelineno-0-25" name="__codelineno-0-25" href="#__codelineno-0-25"></a>    <span class="n">recipient</span><span class="p">:</span> <span class="n">Annotated</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Capacity</span><span class="p">(</span><span class="mi">32</span><span class="p">)]</span>
 </span><span id="__span-0-26"><a id="__codelineno-0-26" name="__codelineno-0-26" href="#__codelineno-0-26"></a>    <span class="n">scan</span><span class="p">:</span> <span class="n">Annotated</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">ndarray</span><span class="p">,</span> <span class="n">Shape</span><span class="p">((</span><span class="mi">32</span><span class="p">,</span> <span class="mi">32</span><span class="p">)),</span> <span class="n">DType</span><span class="p">(</span><span class="s2">"uint8"</span><span class="p">)]</span>
 </span></code></pre></div>
-<p>The scan takes its sizes from the <code>Shape</code> in its annotation. Because
-<code>Letter</code> is a dataclass, the sizes could go in the field's metadata instead,
-as in <code>scan: npt.NDArray[np.uint8] = field(metadata={"shape": (32, 32)})</code>,
-which works for an <code>attrs</code> class too. A <code>NamedTuple</code> or a <code>msgspec</code>
-<code>Struct</code> has no field metadata and keeps the <code>Shape</code>.</p>
+<p>The scan takes its sizes from the <code>Shape</code> in its annotation, as an array
+field of a box does.</p>
 <p>The creating process calls <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;create&lt;/span&gt;
 
 
@@ -3857,7 +3854,7 @@ stream, a later <code>sender()</code> raises <a class="autorefs autorefs-interna
 <p>When your code can write an item's arrays itself, such as a device library
 that fills a buffer it is given, it can write them straight into the stream
 and leave <code>send</code> no array bytes to copy. Each item lives in a slot of the
-stream's ring. <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;writing&lt;/span&gt;" href="../../reference/api/streams/#sharedbox.SharedSendStream.writing"><code>writing</code></a> reserves
+stream's ring. <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;reserve&lt;/span&gt;" href="../../reference/api/streams/#sharedbox.SharedSendStream.reserve"><code>reserve</code></a> reserves
 the next slot and yields a <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;SendSlot&lt;/span&gt;" href="../../reference/api/streams/#sharedbox.SendSlot"><code>SendSlot</code></a>, whose
 <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-attribute&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-attribute-name&quot;&gt;item&lt;/span&gt;
 
@@ -3872,7 +3869,7 @@ already in place and does not copy them:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="k">def</span><span class="w"> </span><span class="nf">send_filled</span><span class="p">(</span><span class="n">sender</span><span class="p">:</span> <span class="n">SharedSendStream</span><span class="p">[</span><span class="n">Letter</span><span class="p">],</span> <span class="n">count</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 </span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a>    <span class="n">blank</span> <span class="o">=</span> <span class="n">Letter</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="s2">"Ada"</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">uint8</span><span class="p">))</span>
 </span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">count</span><span class="p">):</span>
-</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>        <span class="k">with</span> <span class="n">sender</span><span class="o">.</span><span class="n">writing</span><span class="p">(</span><span class="n">blank</span><span class="p">)</span> <span class="k">as</span> <span class="n">slot</span><span class="p">:</span>
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>        <span class="k">with</span> <span class="n">sender</span><span class="o">.</span><span class="n">reserve</span><span class="p">(</span><span class="n">blank</span><span class="p">)</span> <span class="k">as</span> <span class="n">slot</span><span class="p">:</span>
 </span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a>            <span class="n">slot</span><span class="o">.</span><span class="n">item</span><span class="o">.</span><span class="n">scan</span><span class="o">.</span><span class="n">fill</span><span class="p">(</span><span class="n">i</span><span class="p">)</span>
 </span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a>            <span class="n">slot</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">replace</span><span class="p">(</span><span class="n">slot</span><span class="o">.</span><span class="n">item</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="n">i</span><span class="p">))</span>
 </span></code></pre></div>
@@ -3881,12 +3878,12 @@ already in place and does not copy them:</p>
 the next send, so the block can also drop an item it finds bad. While the
 slot is reserved, a send from another thread or task waits for it. In
 asyncio code, use
-<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;awriting&lt;/span&gt;
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;areserve&lt;/span&gt;
 
 
   &lt;span class=&quot;doc doc-labels&quot;&gt;
       &lt;small class=&quot;doc doc-label doc-label-async&quot;&gt;&lt;code&gt;async&lt;/code&gt;&lt;/small&gt;
-  &lt;/span&gt;" href="../../reference/api/streams/#sharedbox.SharedSendStream.awriting"><code>awriting</code></a> with <code>async with</code>.</p>
+  &lt;/span&gt;" href="../../reference/api/streams/#sharedbox.SharedSendStream.areserve"><code>areserve</code></a> with <code>async with</code>.</p>
 <div class="admonition warning">
 <p class="admonition-title">Write the item's arrays only inside the block</p>
 <p>The arrays stay usable after the block, but they still view the slot.
@@ -4026,7 +4023,7 @@ choose the smallest maximum your data allows:</p>
 </span><span id="__span-8-7"><a id="__codelineno-8-7" name="__codelineno-8-7" href="#__codelineno-8-7"></a><span class="k">def</span><span class="w"> </span><span class="nf">send_sacks</span><span class="p">(</span><span class="n">sender</span><span class="p">:</span> <span class="n">SharedSendStream</span><span class="p">[</span><span class="n">Sack</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 </span><span id="__span-8-8"><a id="__codelineno-8-8" name="__codelineno-8-8" href="#__codelineno-8-8"></a>    <span class="n">sender</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">Sack</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">1.5</span><span class="p">,</span> <span class="mf">0.25</span><span class="p">,</span> <span class="mf">4.0</span><span class="p">],</span> <span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)))</span>
 </span><span id="__span-8-9"><a id="__codelineno-8-9" name="__codelineno-8-9" href="#__codelineno-8-9"></a>    <span class="n">template</span> <span class="o">=</span> <span class="n">Sack</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span><span class="mi">64</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">))</span>
-</span><span id="__span-8-10"><a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a>    <span class="k">with</span> <span class="n">sender</span><span class="o">.</span><span class="n">writing</span><span class="p">(</span><span class="n">template</span><span class="p">)</span> <span class="k">as</span> <span class="n">slot</span><span class="p">:</span>
+</span><span id="__span-8-10"><a id="__codelineno-8-10" name="__codelineno-8-10" href="#__codelineno-8-10"></a>    <span class="k">with</span> <span class="n">sender</span><span class="o">.</span><span class="n">reserve</span><span class="p">(</span><span class="n">template</span><span class="p">)</span> <span class="k">as</span> <span class="n">slot</span><span class="p">:</span>
 </span><span id="__span-8-11"><a id="__codelineno-8-11" name="__codelineno-8-11" href="#__codelineno-8-11"></a>        <span class="n">weights</span> <span class="o">=</span> <span class="n">slot</span><span class="o">.</span><span class="n">item</span><span class="o">.</span><span class="n">weights</span>
 </span><span id="__span-8-12"><a id="__codelineno-8-12" name="__codelineno-8-12" href="#__codelineno-8-12"></a>        <span class="n">weights</span><span class="p">[:</span><span class="mi">5</span><span class="p">]</span> <span class="o">=</span> <span class="mf">2.5</span>
 </span><span id="__span-8-13"><a id="__codelineno-8-13" name="__codelineno-8-13" href="#__codelineno-8-13"></a>        <span class="n">slot</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">replace</span><span class="p">(</span><span class="n">slot</span><span class="o">.</span><span class="n">item</span><span class="p">,</span> <span class="n">weights</span><span class="o">=</span><span class="n">weights</span><span class="p">[:</span><span class="mi">5</span><span class="p">]))</span>
@@ -4037,7 +4034,7 @@ choose the smallest maximum your data allows:</p>
 </span><span id="__span-8-18"><a id="__codelineno-8-18" name="__codelineno-8-18" href="#__codelineno-8-18"></a>    <span class="k">for</span> <span class="n">sack</span> <span class="ow">in</span> <span class="n">reader</span><span class="o">.</span><span class="n">iter_into</span><span class="p">({</span><span class="s2">"weights"</span><span class="p">:</span> <span class="n">weights</span><span class="p">}):</span>
 </span><span id="__span-8-19"><a id="__codelineno-8-19" name="__codelineno-8-19" href="#__codelineno-8-19"></a>        <span class="nb">print</span><span class="p">(</span><span class="n">sack</span><span class="o">.</span><span class="n">index</span><span class="p">,</span> <span class="n">sack</span><span class="o">.</span><span class="n">weights</span><span class="o">.</span><span class="n">shape</span><span class="p">)</span>
 </span></code></pre></div>
-<p><code>send</code> takes an array of any shape that fits the maximum. With <code>writing</code>,
+<p><code>send</code> takes an array of any shape that fits the maximum. With <code>reserve</code>,
 the template's array gives the shape of the array over the slot, and its
 values are still never read, so <code>np.empty</code> will do. When you know the count
 only after filling the slot, send the first <code>n</code> rows of the slot's array, as
@@ -4134,12 +4131,12 @@ releases at once. <a class="autorefs autorefs-internal" title="&lt;code class=&q
   &lt;span class=&quot;doc doc-labels&quot;&gt;
       &lt;small class=&quot;doc doc-label doc-label-async&quot;&gt;&lt;code&gt;async&lt;/code&gt;&lt;/small&gt;
   &lt;/span&gt;" href="../../reference/api/streams/#sharedbox.SharedSendStream.asend"><code>asend</code></a> and
-<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;awriting&lt;/span&gt;
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;areserve&lt;/span&gt;
 
 
   &lt;span class=&quot;doc doc-labels&quot;&gt;
       &lt;small class=&quot;doc doc-label doc-label-async&quot;&gt;&lt;code&gt;async&lt;/code&gt;&lt;/small&gt;
-  &lt;/span&gt;" href="../../reference/api/streams/#sharedbox.SharedSendStream.awriting"><code>awriting</code></a> take a <code>timeout</code> for the
+  &lt;/span&gt;" href="../../reference/api/streams/#sharedbox.SharedSendStream.areserve"><code>areserve</code></a> take a <code>timeout</code> for the
 same reason, because a wait that <code>asyncio.wait_for</code> cancels releases
 nothing. A reader opened by sharedbox 0.7.0 or earlier cannot be released,
 so a send it holds back still raises <code>TimeoutError</code>.</p>
@@ -4156,9 +4153,30 @@ so a send it holds back still raises <code>TimeoutError</code>.</p>
 </span><span id="__span-11-3"><a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a>
 </span><span id="__span-11-4"><a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="k">await</span> <span class="n">sender</span><span class="o">.</span><span class="n">asend</span><span class="p">(</span><span class="n">letter</span><span class="p">)</span>
 </span></code></pre></div>
-<p>To give up after a while, put <code>asyncio.timeout()</code> around the receive:</p>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="k">async</span> <span class="k">with</span> <span class="n">asyncio</span><span class="o">.</span><span class="n">timeout</span><span class="p">(</span><span class="mi">5</span><span class="p">):</span>
-</span><span id="__span-12-2"><a id="__codelineno-12-2" name="__codelineno-12-2" href="#__codelineno-12-2"></a>    <span class="n">letter</span> <span class="o">=</span> <span class="k">await</span> <span class="n">anext</span><span class="p">(</span><span class="n">reader</span><span class="p">)</span>
+<p>For one item outside a loop, a reader has
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;areceive&lt;/span&gt;
+
+
+  &lt;span class=&quot;doc doc-labels&quot;&gt;
+      &lt;small class=&quot;doc doc-label doc-label-async&quot;&gt;&lt;code&gt;async&lt;/code&gt;&lt;/small&gt;
+  &lt;/span&gt;" href="../../reference/api/streams/#sharedbox.SharedReceiveStream.areceive"><code>areceive</code></a>,
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;areceive_into&lt;/span&gt;
+
+
+  &lt;span class=&quot;doc doc-labels&quot;&gt;
+      &lt;small class=&quot;doc doc-label doc-label-async&quot;&gt;&lt;code&gt;async&lt;/code&gt;&lt;/small&gt;
+  &lt;/span&gt;" href="../../reference/api/streams/#sharedbox.SharedReceiveStream.areceive_into"><code>areceive_into</code></a> and
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;afetch&lt;/span&gt;
+
+
+  &lt;span class=&quot;doc doc-labels&quot;&gt;
+      &lt;small class=&quot;doc doc-label doc-label-async&quot;&gt;&lt;code&gt;async&lt;/code&gt;&lt;/small&gt;
+  &lt;/span&gt;" href="../../reference/api/streams/#sharedbox.SharedReceiveStream.afetch"><code>afetch</code></a>, which take what
+<code>receive</code>, <code>receive_into</code> and <code>fetch</code> take. They raise
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;EndOfStream&lt;/span&gt;" href="../../reference/api/errors/#sharedbox.EndOfStream"><code>EndOfStream</code></a> once the stream has ended, where
+<code>anext</code> raises <code>StopAsyncIteration</code>. To give up after a while, pass a
+<code>timeout</code>:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-12-1"><a id="__codelineno-12-1" name="__codelineno-12-1" href="#__codelineno-12-1"></a><span class="n">letter</span> <span class="o">=</span> <span class="k">await</span> <span class="n">reader</span><span class="o">.</span><span class="n">areceive</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="mi">5</span><span class="p">)</span>
 </span></code></pre></div>
 <div class="admonition warning">
 <p class="admonition-title">A cancelled receive keeps its item for the next one</p>
@@ -4340,7 +4358,7 @@ delivery thread held.</p>
 </span><span id="__span-15-94"><a id="__codelineno-15-94" name="__codelineno-15-94" href="#__codelineno-15-94"></a><span class="k">def</span><span class="w"> </span><span class="nf">send_filled</span><span class="p">(</span><span class="n">sender</span><span class="p">:</span> <span class="n">SharedSendStream</span><span class="p">[</span><span class="n">Letter</span><span class="p">],</span> <span class="n">count</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 </span><span id="__span-15-95"><a id="__codelineno-15-95" name="__codelineno-15-95" href="#__codelineno-15-95"></a>    <span class="n">blank</span> <span class="o">=</span> <span class="n">Letter</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="s2">"Ada"</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">((</span><span class="mi">0</span><span class="p">,</span> <span class="mi">0</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">uint8</span><span class="p">))</span>
 </span><span id="__span-15-96"><a id="__codelineno-15-96" name="__codelineno-15-96" href="#__codelineno-15-96"></a>    <span class="k">for</span> <span class="n">i</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">count</span><span class="p">):</span>
-</span><span id="__span-15-97"><a id="__codelineno-15-97" name="__codelineno-15-97" href="#__codelineno-15-97"></a>        <span class="k">with</span> <span class="n">sender</span><span class="o">.</span><span class="n">writing</span><span class="p">(</span><span class="n">blank</span><span class="p">)</span> <span class="k">as</span> <span class="n">slot</span><span class="p">:</span>
+</span><span id="__span-15-97"><a id="__codelineno-15-97" name="__codelineno-15-97" href="#__codelineno-15-97"></a>        <span class="k">with</span> <span class="n">sender</span><span class="o">.</span><span class="n">reserve</span><span class="p">(</span><span class="n">blank</span><span class="p">)</span> <span class="k">as</span> <span class="n">slot</span><span class="p">:</span>
 </span><span id="__span-15-98"><a id="__codelineno-15-98" name="__codelineno-15-98" href="#__codelineno-15-98"></a>            <span class="n">slot</span><span class="o">.</span><span class="n">item</span><span class="o">.</span><span class="n">scan</span><span class="o">.</span><span class="n">fill</span><span class="p">(</span><span class="n">i</span><span class="p">)</span>
 </span><span id="__span-15-99"><a id="__codelineno-15-99" name="__codelineno-15-99" href="#__codelineno-15-99"></a>            <span class="n">slot</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">replace</span><span class="p">(</span><span class="n">slot</span><span class="o">.</span><span class="n">item</span><span class="p">,</span> <span class="n">index</span><span class="o">=</span><span class="n">i</span><span class="p">))</span>
 </span><span id="__span-15-100"><a id="__codelineno-15-100" name="__codelineno-15-100" href="#__codelineno-15-100"></a>
@@ -4356,7 +4374,7 @@ delivery thread held.</p>
 </span><span id="__span-15-110"><a id="__codelineno-15-110" name="__codelineno-15-110" href="#__codelineno-15-110"></a><span class="k">def</span><span class="w"> </span><span class="nf">send_sacks</span><span class="p">(</span><span class="n">sender</span><span class="p">:</span> <span class="n">SharedSendStream</span><span class="p">[</span><span class="n">Sack</span><span class="p">])</span> <span class="o">-&gt;</span> <span class="kc">None</span><span class="p">:</span>
 </span><span id="__span-15-111"><a id="__codelineno-15-111" name="__codelineno-15-111" href="#__codelineno-15-111"></a>    <span class="n">sender</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">Sack</span><span class="p">(</span><span class="mi">0</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">([</span><span class="mf">1.5</span><span class="p">,</span> <span class="mf">0.25</span><span class="p">,</span> <span class="mf">4.0</span><span class="p">],</span> <span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">)))</span>
 </span><span id="__span-15-112"><a id="__codelineno-15-112" name="__codelineno-15-112" href="#__codelineno-15-112"></a>    <span class="n">template</span> <span class="o">=</span> <span class="n">Sack</span><span class="p">(</span><span class="mi">1</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">empty</span><span class="p">(</span><span class="mi">64</span><span class="p">,</span> <span class="n">np</span><span class="o">.</span><span class="n">float32</span><span class="p">))</span>
-</span><span id="__span-15-113"><a id="__codelineno-15-113" name="__codelineno-15-113" href="#__codelineno-15-113"></a>    <span class="k">with</span> <span class="n">sender</span><span class="o">.</span><span class="n">writing</span><span class="p">(</span><span class="n">template</span><span class="p">)</span> <span class="k">as</span> <span class="n">slot</span><span class="p">:</span>
+</span><span id="__span-15-113"><a id="__codelineno-15-113" name="__codelineno-15-113" href="#__codelineno-15-113"></a>    <span class="k">with</span> <span class="n">sender</span><span class="o">.</span><span class="n">reserve</span><span class="p">(</span><span class="n">template</span><span class="p">)</span> <span class="k">as</span> <span class="n">slot</span><span class="p">:</span>
 </span><span id="__span-15-114"><a id="__codelineno-15-114" name="__codelineno-15-114" href="#__codelineno-15-114"></a>        <span class="n">weights</span> <span class="o">=</span> <span class="n">slot</span><span class="o">.</span><span class="n">item</span><span class="o">.</span><span class="n">weights</span>
 </span><span id="__span-15-115"><a id="__codelineno-15-115" name="__codelineno-15-115" href="#__codelineno-15-115"></a>        <span class="n">weights</span><span class="p">[:</span><span class="mi">5</span><span class="p">]</span> <span class="o">=</span> <span class="mf">2.5</span>
 </span><span id="__span-15-116"><a id="__codelineno-15-116" name="__codelineno-15-116" href="#__codelineno-15-116"></a>        <span class="n">slot</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">replace</span><span class="p">(</span><span class="n">slot</span><span class="o">.</span><span class="n">item</span><span class="p">,</span> <span class="n">weights</span><span class="o">=</span><span class="n">weights</span><span class="p">[:</span><span class="mi">5</span><span class="p">]))</span>

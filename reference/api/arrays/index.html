@@ -3587,7 +3587,7 @@
   &lt;span class=&quot;doc doc-labels&quot;&gt;
       &lt;small class=&quot;doc doc-label doc-label-dataclass&quot;&gt;&lt;code&gt;dataclass&lt;/code&gt;&lt;/small&gt;
   &lt;/span&gt;" href="./#sharedbox.Shape"><code>Shape</code></a></td>
-<td>the dimensions of an array field; a box field can take them from <code>field(shape=...)</code> or its default array instead</td>
+<td>the dimensions of an array field, a record member or a stream item, given in the annotation</td>
 </tr>
 <tr>
 <td><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;MaxShape&lt;/span&gt;
@@ -3636,11 +3636,10 @@
 
         <p>Dimensions of an array field, fixed when the class is defined.</p>
 <p>It goes in the annotation, as in
-<code>Annotated[numpy.ndarray, Shape((480, 640)), DType("uint8")]</code>. A field of a
-box also takes its sizes from <code>field(shape=...)</code> or from a plain default
-array, and they must agree with a <code>Shape</code>. An array inside a record or a
-stream item takes its sizes from a <code>Shape</code> only. When the annotation
-names a number of dimensions, as in
+<code>Annotated[numpy.ndarray, Shape((480, 640)), DType("uint8")]</code>, for a
+box field, a record member and a stream item alike. A default array of
+a box field must have that shape. When the annotation names a number of
+dimensions, as in
 <code>numpy.ndarray[tuple[int, int], numpy.dtype[numpy.uint8]]</code>, the sizes
 must have as many.</p>
 

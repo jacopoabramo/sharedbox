@@ -2606,10 +2606,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#sharedbox.SharedBox.metadata_version_of" class="md-nav__link">
+  <a href="#sharedbox.SharedBox.metadata_at" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;metadata_version_of
+        <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;metadata_at
       </span>
     </span>
   </a>
@@ -2836,28 +2836,6 @@
     <span class="md-ellipsis">
       <span class="md-typeset">
         <code class="doc-symbol doc-symbol-toc doc-symbol-attribute"></code>&nbsp;doc
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#sharedbox.Field.shape" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        <code class="doc-symbol doc-symbol-toc doc-symbol-attribute"></code>&nbsp;shape
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#sharedbox.Field.capacity" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        <code class="doc-symbol doc-symbol-toc doc-symbol-attribute"></code>&nbsp;capacity
       </span>
     </span>
   </a>
@@ -4492,10 +4470,10 @@
 </li>
         
           <li class="md-nav__item">
-  <a href="#sharedbox.SharedBox.metadata_version_of" class="md-nav__link">
+  <a href="#sharedbox.SharedBox.metadata_at" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
-        <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;metadata_version_of
+        <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;metadata_at
       </span>
     </span>
   </a>
@@ -4722,28 +4700,6 @@
     <span class="md-ellipsis">
       <span class="md-typeset">
         <code class="doc-symbol doc-symbol-toc doc-symbol-attribute"></code>&nbsp;doc
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#sharedbox.Field.shape" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        <code class="doc-symbol doc-symbol-toc doc-symbol-attribute"></code>&nbsp;shape
-      </span>
-    </span>
-  </a>
-  
-</li>
-        
-          <li class="md-nav__item">
-  <a href="#sharedbox.Field.capacity" class="md-nav__link">
-    <span class="md-ellipsis">
-      <span class="md-typeset">
-        <code class="doc-symbol doc-symbol-toc doc-symbol-attribute"></code>&nbsp;capacity
       </span>
     </span>
   </a>
@@ -5961,7 +5917,7 @@ fields or more than 256, a field or <code>InitVar</code> named like a
 <code>SharedBox</code> member (<code>name</code>, <code>closed</code>, <code>close</code>, <code>unlink</code>, <code>update</code>,
 <code>snapshot</code>, <code>read_into</code>, <code>writing</code>, <code>locked</code>, <code>watch</code>, <code>events</code>,
 <code>force_unlock</code>, <code>create</code>, <code>attach</code>, <code>metadata</code>, <code>metadata_version</code>,
-<code>metadata_version_of</code>), a field named <code>follow</code>,
+<code>metadata_at</code>), a field named <code>follow</code>,
 <code>unfollow</code> or <code>nested</code>, a default of the wrong type, a
 positional field without a default after one with a default, an
 <code>InitVar</code> in a class without <code>__post_init__</code>, a reference to a
@@ -6150,7 +6106,7 @@ can still attach it.</p>
 or calibration the values were taken with. Adding a version with
 <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;update&lt;/span&gt;" href="./#sharedbox.SharedBox.update"><code>update</code></a> keeps the
 earlier ones until the box reclaims them for newer ones, and
-<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;metadata_version_of&lt;/span&gt;" href="./#sharedbox.SharedBox.metadata_version_of"><code>metadata_version_of</code></a>
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;metadata_at&lt;/span&gt;" href="./#sharedbox.SharedBox.metadata_at"><code>metadata_at</code></a>
 reads them until then. A mapping reads back as a <code>frozendict</code>
 and a list as a tuple, nested the same way. Each box object decodes
 a version once and keeps the 32 it used last.</p>
@@ -6527,12 +6483,12 @@ most 240 characters.</p>
 <div class="doc doc-object doc-function">
 
 
-<h3 id="sharedbox.SharedBox.metadata_version_of" class="doc doc-heading">
-<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <span class="doc doc-object-name doc-function-name">metadata_version_of</span>
+<h3 id="sharedbox.SharedBox.metadata_at" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <span class="doc doc-object-name doc-function-name">metadata_at</span>
 
 
-<a href="#sharedbox.SharedBox.metadata_version_of" class="headerlink" title="Permanent link">&para;</a></h3>
-<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">metadata_version_of</span><span class="p">(</span><span class="n">version</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">M</span>
+<a href="#sharedbox.SharedBox.metadata_at" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">metadata_at</span><span class="p">(</span><span class="n">version</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">M</span>
 </span></code></pre></div>
 
     <div class="doc doc-contents ">
@@ -7377,7 +7333,7 @@ collected too, which happens only when the cycle collector runs.</p>
 
 
 <a href="#sharedbox.field" class="headerlink" title="Permanent link">&para;</a></h2>
-<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">field</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">default</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="n">MISSING</span><span class="p">,</span> <span class="n">default_factory</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[],</span> <span class="n">Any</span><span class="p">]</span> <span class="o">|</span> <span class="n">Any</span> <span class="o">=</span> <span class="n">MISSING</span><span class="p">,</span> <span class="n">init</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span> <span class="nb">repr</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span> <span class="n">kw_only</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">|</span> <span class="n">Any</span> <span class="o">=</span> <span class="n">MISSING</span><span class="p">,</span> <span class="n">metadata</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="n">Any</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">doc</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">shape</span><span class="p">:</span> <span class="n">Iterable</span><span class="p">[</span><span class="nb">int</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">capacity</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">field</span><span class="p">(</span><span class="o">*</span><span class="p">,</span> <span class="n">default</span><span class="p">:</span> <span class="n">Any</span> <span class="o">=</span> <span class="n">MISSING</span><span class="p">,</span> <span class="n">default_factory</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[[],</span> <span class="n">Any</span><span class="p">]</span> <span class="o">|</span> <span class="n">Any</span> <span class="o">=</span> <span class="n">MISSING</span><span class="p">,</span> <span class="n">init</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span> <span class="nb">repr</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">True</span><span class="p">,</span> <span class="n">kw_only</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">|</span> <span class="n">Any</span> <span class="o">=</span> <span class="n">MISSING</span><span class="p">,</span> <span class="n">metadata</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="n">Any</span><span class="p">,</span> <span class="n">Any</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">doc</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">Any</span>
 </span></code></pre></div>
 
     <div class="doc doc-contents first">
@@ -7389,7 +7345,7 @@ same object. A field with neither <code>default</code> nor <code>default_factory
 required. A default is checked against the field's type and capacity
 when the class is defined, and a factory's result when a box is
 created; both raise what assigning the value raises, except that an array
-default of another shape than the field's sizes raises <code>TypeError</code> when
+default of another shape than the field's <code>Shape</code> raises <code>TypeError</code> when
 the class is defined. Values are copied
 into the segment, and only the stored types exist: no lists, dicts or
 other objects.</p>
@@ -7522,49 +7478,6 @@ segment.</p>
                   <code>None</code>
             </td>
           </tr>
-          <tr class="doc-section-item">
-            <td>
-                <code>shape</code>
-            </td>
-            <td>
-                  <code><a class="autorefs autorefs-external" title="&lt;code&gt;collections.abc.Iterable&lt;/code&gt;" href="https://docs.python.org/3/library/collections.abc.html#collections.abc.Iterable">Iterable</a>[<a class="autorefs autorefs-external" href="https://docs.python.org/3/builtins/functions.html#int">int</a>] | None</code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Sizes of an array field, as <code>Shape</code> takes them. It must agree with
-a <code>Shape</code> in the annotation and with the shape of a plain
-<code>default</code> array. A subclass that declares the field again without
-<code>field(shape=...)</code> does not inherit it.</p>
-              </div>
-            </td>
-            <td>
-                  <code>None</code>
-            </td>
-          </tr>
-          <tr class="doc-section-item">
-            <td>
-                <code>capacity</code>
-            </td>
-            <td>
-                  <code><a class="autorefs autorefs-external" href="https://docs.python.org/3/builtins/functions.html#int">int</a> | None</code>
-            </td>
-            <td>
-              <div class="doc-md-description">
-                <p>Capacity of a field of text, bytes, <code>bytearray</code>, <code>Decimal</code> or a
-collection, as <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;Capacity&lt;/span&gt;
-
-
-  &lt;span class=&quot;doc doc-labels&quot;&gt;
-      &lt;small class=&quot;doc doc-label doc-label-dataclass&quot;&gt;&lt;code&gt;dataclass&lt;/code&gt;&lt;/small&gt;
-  &lt;/span&gt;" href="./#sharedbox.Capacity"><code>Capacity</code></a> takes it, in place
-of a <code>Capacity</code> in the annotation. A subclass that declares the
-field again without <code>field(capacity=...)</code> does not inherit it.</p>
-              </div>
-            </td>
-            <td>
-                  <code>None</code>
-            </td>
-          </tr>
       </tbody>
     </table>
 
@@ -7584,8 +7497,7 @@ field again without <code>field(capacity=...)</code> does not inherit it.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>If both <code>default</code> and <code>default_factory</code> are given, <code>shape</code> is
-not 1 to 8 sizes of at least 1, or <code>capacity</code> is not 1 to 1 Mi.</p>
+                <p>If both <code>default</code> and <code>default_factory</code> are given.</p>
               </div>
             </td>
           </tr>
@@ -7595,9 +7507,7 @@ not 1 to 8 sizes of at least 1, or <code>capacity</code> is not 1 to 1 Mi.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>When the class is defined, for <code>shape</code> on a field that is not an
-array, <code>capacity</code> on a field that takes none or beside a
-<code>Capacity</code> in the annotation, for <code>field()</code> on a name that is not a
+                <p>When the class is defined, for <code>field()</code> on a name that is not a
 field (a name starting with <code>_</code>, a <code>ClassVar</code>), <code>field()</code> without
 an annotation, <code>init=False</code> without a default, or a subclass that
 sets a plain class attribute, without an annotation, on the name
@@ -7677,17 +7587,17 @@ and <code>doc</code> are read.</p>
   </span>
 
 <a href="#sharedbox.Field" class="headerlink" title="Permanent link">&para;</a></h2>
-<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">Field</span><span class="p">(</span><span class="n">name</span><span class="p">:</span> <span class="nb">str</span><span class="p">,</span> <span class="nb">type</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">default</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">default_factory</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">init</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span> <span class="nb">repr</span><span class="p">:</span> <span class="nb">bool</span><span class="p">,</span> <span class="n">kw_only</span><span class="p">:</span> <span class="n">Any</span><span class="p">,</span> <span class="n">metadata</span><span class="p">:</span> <span class="n">Mapping</span><span class="p">[</span><span class="n">Any</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="n">doc</span><span class="p">:</span> <span class="nb">str</span> <span class="o">|</span> <span class="kc">None</span><span class="p">,</span> <span class="n">shape</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">capacity</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="n">is_attr</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span> <span class="n">timed</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">,</span> <span class="n">settable</span><span class="p">:</span> <span class="nb">bool</span> <span class="o">=</span> <span class="kc">False</span><span class="p">)</span>
-</span></code></pre></div>
+
 
     <div class="doc doc-contents first">
 
 
 
         <p>Options of one field of a <code>SharedBox</code> class, as <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-function&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;field&lt;/span&gt;" href="./#sharedbox.field"><code>field</code></a> takes them.</p>
-<p><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-function&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;fields&lt;/span&gt;" href="./#sharedbox.fields"><code>fields</code></a> returns them. A <code>Field</code> is read-only, and
-two are equal only if they are the same object, as with
-<code>dataclasses.Field</code>.</p>
+<p><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-function&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;field&lt;/span&gt;" href="./#sharedbox.field"><code>field</code></a> and <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-function&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;attr&lt;/span&gt;" href="./#sharedbox.attr"><code>attr</code></a> make one and
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-function&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;fields&lt;/span&gt;" href="./#sharedbox.fields"><code>fields</code></a> returns them; a <code>Field</code> is not built
+directly. It is read-only, and two are equal only if they are the same
+object, as with <code>dataclasses.Field</code>.</p>
 
 
 
@@ -7903,56 +7813,6 @@ two are equal only if they are the same object, as with
 
 
 
-<h3 id="sharedbox.Field.shape" class="doc doc-heading">
-<code class="doc-symbol doc-symbol-heading doc-symbol-attribute"></code>            <span class="doc doc-object-name doc-attribute-name">shape</span>
-
-
-  <span class="doc doc-labels">
-      <small class="doc doc-label doc-label-class-attribute"><code>class-attribute</code></small>
-      <small class="doc doc-label doc-label-instance-attribute"><code>instance-attribute</code></small>
-  </span>
-
-<a href="#sharedbox.Field.shape" class="headerlink" title="Permanent link">&para;</a></h3>
-<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">shape</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="o">...</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
-</span></code></pre></div>
-
-    <div class="doc doc-contents ">
-
-        <p>The <code>shape</code> option given to <code>field</code>, or None; a field sized by a <code>Shape</code> or a default array has None.</p>
-
-    </div>
-
-</div>
-
-<div class="doc doc-object doc-attribute">
-
-
-
-<h3 id="sharedbox.Field.capacity" class="doc doc-heading">
-<code class="doc-symbol doc-symbol-heading doc-symbol-attribute"></code>            <span class="doc doc-object-name doc-attribute-name">capacity</span>
-
-
-  <span class="doc doc-labels">
-      <small class="doc doc-label doc-label-class-attribute"><code>class-attribute</code></small>
-      <small class="doc doc-label doc-label-instance-attribute"><code>instance-attribute</code></small>
-  </span>
-
-<a href="#sharedbox.Field.capacity" class="headerlink" title="Permanent link">&para;</a></h3>
-<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="n">capacity</span><span class="p">:</span> <span class="nb">int</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span>
-</span></code></pre></div>
-
-    <div class="doc doc-contents ">
-
-        <p>The <code>capacity</code> option given to <code>field</code>, or None; a field sized by a <code>Capacity</code> in its annotation has None.</p>
-
-    </div>
-
-</div>
-
-<div class="doc doc-object doc-attribute">
-
-
-
 <h3 id="sharedbox.Field.is_attr" class="doc doc-heading">
 <code class="doc-symbol doc-symbol-heading doc-symbol-attribute"></code>            <span class="doc doc-object-name doc-attribute-name">is_attr</span>
 
@@ -8146,8 +8006,7 @@ read returns it.</p>
 
 
 <a href="#sharedbox.Attr" class="headerlink" title="Permanent link">&para;</a></h2>
-<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">Attr</span><span class="p">(</span><span class="n">box</span><span class="p">:</span> <span class="n">SharedBox</span><span class="p">,</span> <span class="n">spec</span><span class="p">:</span> <span class="n">FieldSpec</span><span class="p">)</span>
-</span></code></pre></div>
+
 
     <div class="doc doc-contents first">
             <p class="doc doc-class-bases">
@@ -8159,7 +8018,8 @@ read returns it.</p>
 <p>Annotate a field <code>Attr[T]</code> and declare it with <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-function&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;attr&lt;/span&gt;" href="./#sharedbox.attr"><code>attr</code></a>.
 <code>T</code> is the type of its value, or <code>None</code> for an attribute without one.
 The field holds no value that a process assigns: reading it from a box
-gives the <code>Attr</code> bound to that box, the same object every time.</p>
+gives the <code>Attr</code> bound to that box, the same object every time, so an
+<code>Attr</code> is not built directly.</p>
 <p>An attribute starts with its value and setpoint at the zero of <code>T</code>, or
 at its <code>default</code>, and with a timestamp of 0. <code>T</code> may be anything a
 record member may be, except a <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;Timed&lt;/span&gt;" href="./#sharedbox.Timed"><code>Timed</code></a>, an <code>Attr</code> or a
@@ -8967,8 +8827,7 @@ value starts at the zero of its type, which a record has none of.</p>
 
 
 <a href="#sharedbox.RequestFuture" class="headerlink" title="Permanent link">&para;</a></h2>
-<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">RequestFuture</span><span class="p">(</span><span class="n">watcher</span><span class="p">:</span> <span class="n">Watcher</span><span class="p">,</span> <span class="n">field</span><span class="p">:</span> <span class="n">FieldSpec</span><span class="p">,</span> <span class="n">number</span><span class="p">:</span> <span class="nb">int</span><span class="p">,</span> <span class="n">since</span><span class="p">:</span> <span class="nb">int</span><span class="p">)</span>
-</span></code></pre></div>
+
 
     <div class="doc doc-contents first">
             <p class="doc doc-class-bases">
@@ -8977,6 +8836,8 @@ value starts at the zero of its type, which a record has none of.</p>
 
 
         <p>The answer to one request sent through an <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;Attr&lt;/span&gt;" href="./#sharedbox.Attr"><code>Attr</code></a> field.</p>
+<p>Calling the attribute, or its <code>set</code>, returns it; it is not built
+directly.</p>
 <p>A <code>concurrent.futures.Future</code>, so <code>.result(timeout)</code> waits in any
 thread, and it can be awaited in a running event loop. The box's
 watcher thread completes it, and closing the box cancels it.
@@ -9115,14 +8976,15 @@ delivers the answer.</p>
 
 
 <a href="#sharedbox.RequestServer" class="headerlink" title="Permanent link">&para;</a></h2>
-<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">RequestServer</span><span class="p">(</span><span class="n">watcher</span><span class="p">:</span> <span class="n">Watcher</span><span class="p">,</span> <span class="n">field</span><span class="p">:</span> <span class="n">FieldSpec</span><span class="p">,</span> <span class="n">handler</span><span class="p">:</span> <span class="n">Callable</span><span class="p">[</span><span class="o">...</span><span class="p">,</span> <span class="n">Any</span><span class="p">],</span> <span class="n">loop</span><span class="p">:</span> <span class="n">AbstractEventLoop</span> <span class="o">|</span> <span class="kc">None</span><span class="p">)</span>
-</span></code></pre></div>
+
 
     <div class="doc doc-contents first">
 
 
 
-        <p>Answers the requests of one attr field; <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;serve&lt;/span&gt;" href="./#sharedbox.Attr.serve"><code>Attr.serve</code></a> returns it.</p>
+        <p>Answers the requests of one attr field.</p>
+<p><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;serve&lt;/span&gt;" href="./#sharedbox.Attr.serve"><code>Attr.serve</code></a> returns it; it is not built
+directly.</p>
 
 
 
@@ -9239,9 +9101,8 @@ is free.</p>
 
 
         <p>A list of at most a field's capacity of elements, held as the field stores them.</p>
-<p>Declared as <code>Annotated[BoundedList[T], Capacity(n)]</code> or with
-<code>field(capacity=n)</code>, it is stored as <code>list[T]</code> is, and a read returns
-one. Indexing decodes or encodes one element, and setting an element
+<p>Declared as <code>Annotated[BoundedList[T], Capacity(n)]</code>, it is stored as
+<code>list[T]</code> is, and a read returns one. Indexing decodes or encodes one element, and setting an element
 checks the value as a write to the field would. A change that would
 leave more elements than the capacity raises <code>ValueError</code> and leaves
 the value as it was.</p>
@@ -9758,9 +9619,8 @@ elements than its capacity.</p>
 
 
         <p>A set of at most a field's capacity of elements, held as the field stores them.</p>
-<p>Declared as <code>Annotated[BoundedSet[T], Capacity(n)]</code> or with
-<code>field(capacity=n)</code>, it is stored as <code>set[T]</code> is, and a read returns
-one. It iterates in the order its elements are stored, which may
+<p>Declared as <code>Annotated[BoundedSet[T], Capacity(n)]</code>, it is stored as
+<code>set[T]</code> is, and a read returns one. It iterates in the order its elements are stored, which may
 differ from a builtin <code>set</code>'s.</p>
 <p>Elements are compared by their stored bytes, all of them but the fold
 of a naive <code>datetime</code> or <code>time</code>, so a declaration refuses an element
@@ -10194,9 +10054,8 @@ the capacity.</p>
 
 
         <p>A dict of at most a field's capacity of items, held as the field stores them.</p>
-<p>Declared as <code>Annotated[BoundedDict[K, V], Capacity(n)]</code> or with
-<code>field(capacity=n)</code>, it is stored as <code>dict[K, V]</code> is, and a read
-returns one. It keeps its items in insertion order, as a <code>dict</code> does.
+<p>Declared as <code>Annotated[BoundedDict[K, V], Capacity(n)]</code>, it is stored
+as <code>dict[K, V]</code> is, and a read returns one. It keeps its items in insertion order, as a <code>dict</code> does.
 A change that would leave more keys than the capacity raises
 <code>ValueError</code> and leaves the value as it was. <code>|</code> takes any mapping on
 either side and returns a value of this class and capacity.</p>
@@ -10401,9 +10260,7 @@ types.</p>
 
         <p>Maximum size of a field: bytes for <code>str</code>, <code>bytes</code>, <code>bytearray</code> and <code>Decimal</code>, elements for a collection.</p>
 <p>It goes in the annotation, as in <code>Annotated[str, Capacity(32)]</code> or
-<code>Annotated[list[int], Capacity(16)]</code>, and allows 1 to 1048576 (1 Mi).
-A box field can take the same number from <code>field(capacity=...)</code>
-instead.</p>
+<code>Annotated[list[int], Capacity(16)]</code>, and allows 1 to 1048576 (1 Mi).</p>
 
 
 <p><span class="doc-section-title">Raises:</span></p>

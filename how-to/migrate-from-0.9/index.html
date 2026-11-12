@@ -922,6 +922,50 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#give-sizes-in-the-annotation" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Give sizes in the annotation
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pass-timeout-by-keyword" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Pass <code>timeout</code> by keyword
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#call-reserve-in-place-of-a-senders-writing" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Call <code>reserve</code> in place of a sender's <code>writing</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#call-metadata_at-in-place-of-metadata_version_of" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Call <code>metadata_at</code> in place of <code>metadata_version_of</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#check-metadata-against-mapping-not-mappingproxytype" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -3350,6 +3394,50 @@
     <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
       
         <li class="md-nav__item">
+  <a href="#give-sizes-in-the-annotation" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Give sizes in the annotation
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#pass-timeout-by-keyword" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Pass <code>timeout</code> by keyword
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#call-reserve-in-place-of-a-senders-writing" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Call <code>reserve</code> in place of a sender's <code>writing</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#call-metadata_at-in-place-of-metadata_version_of" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Call <code>metadata_at</code> in place of <code>metadata_version_of</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#check-metadata-against-mapping-not-mappingproxytype" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -3477,10 +3565,100 @@
 
 
 <h1 id="how-to-migrate-from-09">How to migrate from 0.9<a class="headerlink" href="#how-to-migrate-from-09" title="Permanent link">&para;</a></h1>
-<p>Code written for <code>sharedbox</code> 0.9 needs one change before it runs on the
-next release: <a href="../../explanation/glossary/#metadata">metadata</a> reads back as
-a <code>frozendict</code> where 0.9 gave a <code>types.MappingProxyType</code>, so a test for
-the old type no longer holds. This guide shows the old and the new form.</p>
+<p>Code written for <code>sharedbox</code> 0.9 may need five changes before it runs on
+the next release. The size of a field now goes in its annotation only, a
+stream call takes its <code>timeout</code> by keyword, a sender's <code>writing</code> and
+<code>metadata_version_of</code> have new names, and
+<a href="../../explanation/glossary/#metadata">metadata</a> reads back as a
+<code>frozendict</code>. Each section below shows the old form and the new one.</p>
+<h2 id="give-sizes-in-the-annotation">Give sizes in the annotation<a class="headerlink" href="#give-sizes-in-the-annotation" title="Permanent link">&para;</a></h2>
+<p>A capacity or a shape used to have several spellings: <code>field(capacity=...)</code>
+and <code>field(shape=...)</code> on a box field, the <code>"shape"</code> entry of a record
+member's field metadata, and the shape of a default array. Each of them is
+gone, and the annotation is the one place a size is given, with
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;Capacity&lt;/span&gt;
+
+
+  &lt;span class=&quot;doc doc-labels&quot;&gt;
+      &lt;small class=&quot;doc doc-label doc-label-dataclass&quot;&gt;&lt;code&gt;dataclass&lt;/code&gt;&lt;/small&gt;
+  &lt;/span&gt;" href="../../reference/api/box/#sharedbox.Capacity"><code>Capacity</code></a> and <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;Shape&lt;/span&gt;
+
+
+  &lt;span class=&quot;doc doc-labels&quot;&gt;
+      &lt;small class=&quot;doc doc-label doc-label-dataclass&quot;&gt;&lt;code&gt;dataclass&lt;/code&gt;&lt;/small&gt;
+  &lt;/span&gt;" href="../../reference/api/arrays/#sharedbox.Shape"><code>Shape</code></a> in
+<code>Annotated</code>. That form already worked in 0.9 and gives the same layout, so
+a class moved to it still attaches to a box created by the old one:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># 0.9</span>
+</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="k">class</span><span class="w"> </span><span class="nc">Scanner</span><span class="p">(</span><span class="n">SharedBox</span><span class="p">):</span>
+</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    <span class="n">owner</span><span class="p">:</span> <span class="nb">str</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">capacity</span><span class="o">=</span><span class="mi">32</span><span class="p">,</span> <span class="n">default</span><span class="o">=</span><span class="s2">""</span><span class="p">)</span>
+</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>    <span class="n">gain</span><span class="p">:</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">]</span> <span class="o">=</span> <span class="n">field</span><span class="p">(</span><span class="n">shape</span><span class="o">=</span><span class="p">(</span><span class="mi">2</span><span class="p">,))</span>
+</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a>    <span class="n">scan</span><span class="p">:</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">uint8</span><span class="p">]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">4</span><span class="p">,</span> <span class="mi">6</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">uint8</span><span class="p">)</span>
+</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a>
+</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>
+</span><span id="__span-0-8"><a id="__codelineno-0-8" name="__codelineno-0-8" href="#__codelineno-0-8"></a><span class="nd">@dataclass</span>
+</span><span id="__span-0-9"><a id="__codelineno-0-9" name="__codelineno-0-9" href="#__codelineno-0-9"></a><span class="k">class</span><span class="w"> </span><span class="nc">Page</span><span class="p">:</span>
+</span><span id="__span-0-10"><a id="__codelineno-0-10" name="__codelineno-0-10" href="#__codelineno-0-10"></a>    <span class="n">scan</span><span class="p">:</span> <span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">uint8</span><span class="p">]</span> <span class="o">=</span> <span class="n">dataclasses</span><span class="o">.</span><span class="n">field</span><span class="p">(</span><span class="n">metadata</span><span class="o">=</span><span class="p">{</span><span class="s2">"shape"</span><span class="p">:</span> <span class="p">(</span><span class="mi">4</span><span class="p">,</span> <span class="mi">6</span><span class="p">)})</span>
+</span><span id="__span-0-11"><a id="__codelineno-0-11" name="__codelineno-0-11" href="#__codelineno-0-11"></a>
+</span><span id="__span-0-12"><a id="__codelineno-0-12" name="__codelineno-0-12" href="#__codelineno-0-12"></a>
+</span><span id="__span-0-13"><a id="__codelineno-0-13" name="__codelineno-0-13" href="#__codelineno-0-13"></a><span class="c1"># 0.10</span>
+</span><span id="__span-0-14"><a id="__codelineno-0-14" name="__codelineno-0-14" href="#__codelineno-0-14"></a><span class="k">class</span><span class="w"> </span><span class="nc">Scanner</span><span class="p">(</span><span class="n">SharedBox</span><span class="p">):</span>
+</span><span id="__span-0-15"><a id="__codelineno-0-15" name="__codelineno-0-15" href="#__codelineno-0-15"></a>    <span class="n">owner</span><span class="p">:</span> <span class="n">Annotated</span><span class="p">[</span><span class="nb">str</span><span class="p">,</span> <span class="n">Capacity</span><span class="p">(</span><span class="mi">32</span><span class="p">)]</span> <span class="o">=</span> <span class="s2">""</span>
+</span><span id="__span-0-16"><a id="__codelineno-0-16" name="__codelineno-0-16" href="#__codelineno-0-16"></a>    <span class="n">gain</span><span class="p">:</span> <span class="n">Annotated</span><span class="p">[</span><span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">float64</span><span class="p">],</span> <span class="n">Shape</span><span class="p">((</span><span class="mi">2</span><span class="p">,))]</span>
+</span><span id="__span-0-17"><a id="__codelineno-0-17" name="__codelineno-0-17" href="#__codelineno-0-17"></a>    <span class="n">scan</span><span class="p">:</span> <span class="n">Annotated</span><span class="p">[</span><span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">uint8</span><span class="p">],</span> <span class="n">Shape</span><span class="p">((</span><span class="mi">4</span><span class="p">,</span> <span class="mi">6</span><span class="p">))]</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">zeros</span><span class="p">((</span><span class="mi">4</span><span class="p">,</span> <span class="mi">6</span><span class="p">),</span> <span class="n">np</span><span class="o">.</span><span class="n">uint8</span><span class="p">)</span>
+</span><span id="__span-0-18"><a id="__codelineno-0-18" name="__codelineno-0-18" href="#__codelineno-0-18"></a>
+</span><span id="__span-0-19"><a id="__codelineno-0-19" name="__codelineno-0-19" href="#__codelineno-0-19"></a>
+</span><span id="__span-0-20"><a id="__codelineno-0-20" name="__codelineno-0-20" href="#__codelineno-0-20"></a><span class="nd">@dataclass</span>
+</span><span id="__span-0-21"><a id="__codelineno-0-21" name="__codelineno-0-21" href="#__codelineno-0-21"></a><span class="k">class</span><span class="w"> </span><span class="nc">Page</span><span class="p">:</span>
+</span><span id="__span-0-22"><a id="__codelineno-0-22" name="__codelineno-0-22" href="#__codelineno-0-22"></a>    <span class="n">scan</span><span class="p">:</span> <span class="n">Annotated</span><span class="p">[</span><span class="n">npt</span><span class="o">.</span><span class="n">NDArray</span><span class="p">[</span><span class="n">np</span><span class="o">.</span><span class="n">uint8</span><span class="p">],</span> <span class="n">Shape</span><span class="p">((</span><span class="mi">4</span><span class="p">,</span> <span class="mi">6</span><span class="p">))]</span>
+</span></code></pre></div>
+<p><code>field()</code> keeps the options <code>dataclasses.field</code> has, so <code>field(capacity=...)</code>
+and <code>field(shape=...)</code> raise <code>TypeError</code> for the unknown keyword. An array
+field without a <code>Shape</code> raises <code>TypeError</code> when its class is defined, also
+when it has a default array, and so does a record member with <code>"shape"</code> in
+its metadata. A default array still gives the field its first value, and it
+must have the shape the <code>Shape</code> names.</p>
+<h2 id="pass-timeout-by-keyword">Pass <code>timeout</code> by keyword<a class="headerlink" href="#pass-timeout-by-keyword" title="Permanent link">&para;</a></h2>
+<p><code>timeout</code> used to be the second positional parameter of some stream calls
+and keyword-only in others. It is keyword-only in all of them now:
+<code>send</code>, <code>asend</code>, <code>reserve</code> and <code>areserve</code> of a sender, <code>receive</code> and
+<code>fetch</code> of a reader, and <code>receive</code> of a <code>sharedbox.bluebox</code>
+<code>DocumentReceiver</code>. A call that passed it by position raises <code>TypeError</code>:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="c1"># 0.9</span>
+</span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a><span class="n">sender</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">letter</span><span class="p">,</span> <span class="mi">5</span><span class="p">)</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="n">letter</span> <span class="o">=</span> <span class="n">reader</span><span class="o">.</span><span class="n">receive</span><span class="p">(</span><span class="mi">5</span><span class="p">)</span>
+</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a>
+</span><span id="__span-1-5"><a id="__codelineno-1-5" name="__codelineno-1-5" href="#__codelineno-1-5"></a><span class="c1"># 0.10</span>
+</span><span id="__span-1-6"><a id="__codelineno-1-6" name="__codelineno-1-6" href="#__codelineno-1-6"></a><span class="n">sender</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">letter</span><span class="p">,</span> <span class="n">timeout</span><span class="o">=</span><span class="mi">5</span><span class="p">)</span>
+</span><span id="__span-1-7"><a id="__codelineno-1-7" name="__codelineno-1-7" href="#__codelineno-1-7"></a><span class="n">letter</span> <span class="o">=</span> <span class="n">reader</span><span class="o">.</span><span class="n">receive</span><span class="p">(</span><span class="n">timeout</span><span class="o">=</span><span class="mi">5</span><span class="p">)</span>
+</span></code></pre></div>
+<h2 id="call-reserve-in-place-of-a-senders-writing">Call <code>reserve</code> in place of a sender's <code>writing</code><a class="headerlink" href="#call-reserve-in-place-of-a-senders-writing" title="Permanent link">&para;</a></h2>
+<p>The block that reserves a slot of a stream, fills its arrays in place and
+sends it is now <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;reserve&lt;/span&gt;" href="../../reference/api/streams/#sharedbox.SharedSendStream.reserve"><code>reserve</code></a>, and its
+asyncio form is <code>areserve</code>. Both take the arguments that <code>writing</code> and
+<code>awriting</code> took and yield the same <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;SendSlot&lt;/span&gt;" href="../../reference/api/streams/#sharedbox.SendSlot"><code>SendSlot</code></a>:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="c1"># 0.9</span>
+</span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a><span class="k">with</span> <span class="n">sender</span><span class="o">.</span><span class="n">writing</span><span class="p">(</span><span class="n">blank</span><span class="p">)</span> <span class="k">as</span> <span class="n">slot</span><span class="p">:</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a>    <span class="n">slot</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">fill</span><span class="p">(</span><span class="n">slot</span><span class="o">.</span><span class="n">item</span><span class="p">))</span>
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>
+</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="c1"># 0.10</span>
+</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="k">with</span> <span class="n">sender</span><span class="o">.</span><span class="n">reserve</span><span class="p">(</span><span class="n">blank</span><span class="p">)</span> <span class="k">as</span> <span class="n">slot</span><span class="p">:</span>
+</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a>    <span class="n">slot</span><span class="o">.</span><span class="n">send</span><span class="p">(</span><span class="n">fill</span><span class="p">(</span><span class="n">slot</span><span class="o">.</span><span class="n">item</span><span class="p">))</span>
+</span></code></pre></div>
+<p><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;writing&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.writing"><code>SharedBox.writing</code></a>, which fills an array
+field of a box in place, keeps its name.</p>
+<h2 id="call-metadata_at-in-place-of-metadata_version_of">Call <code>metadata_at</code> in place of <code>metadata_version_of</code><a class="headerlink" href="#call-metadata_at-in-place-of-metadata_version_of" title="Permanent link">&para;</a></h2>
+<p>The method that returns the metadata stored under a version number is now
+<code>metadata_at</code>, on a box and on a stream. It takes the same argument and
+returns the same value:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># 0.9</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="n">calibration</span> <span class="o">=</span> <span class="n">box</span><span class="o">.</span><span class="n">metadata_version_of</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="c1"># 0.10</span>
+</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="n">calibration</span> <span class="o">=</span> <span class="n">box</span><span class="o">.</span><span class="n">metadata_at</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
+</span></code></pre></div>
+<p>Because <code>metadata_at</code> is a member of every box, a field or an <code>InitVar</code>
+can no longer have that name, while <code>metadata_version_of</code> is free again.</p>
 <h2 id="check-metadata-against-mapping-not-mappingproxytype">Check metadata against <code>Mapping</code>, not <code>MappingProxyType</code><a class="headerlink" href="#check-metadata-against-mapping-not-mappingproxytype" title="Permanent link">&para;</a></h2>
 <p>A map in a box's or a stream's metadata used to read back as a
 <code>types.MappingProxyType</code>, which cannot be pickled, deep-copied or
@@ -3488,13 +3666,13 @@ converted to JSON. It now reads back as a <code>frozendict</code>: the builtin t
 from Python 3.15 on, and the type of the <code>frozendict</code> package, which
 <code>sharedbox</code> installs, on earlier versions. Code that tested for the old
 type tests for <code>collections.abc.Mapping</code>, which holds on every version:</p>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="c1"># 0.9</span>
-</span><span id="__span-0-2"><a id="__codelineno-0-2" name="__codelineno-0-2" href="#__codelineno-0-2"></a><span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">box</span><span class="o">.</span><span class="n">metadata</span><span class="p">,</span> <span class="n">types</span><span class="o">.</span><span class="n">MappingProxyType</span><span class="p">):</span>
-</span><span id="__span-0-3"><a id="__codelineno-0-3" name="__codelineno-0-3" href="#__codelineno-0-3"></a>    <span class="o">...</span>
-</span><span id="__span-0-4"><a id="__codelineno-0-4" name="__codelineno-0-4" href="#__codelineno-0-4"></a>
-</span><span id="__span-0-5"><a id="__codelineno-0-5" name="__codelineno-0-5" href="#__codelineno-0-5"></a><span class="c1"># 0.10</span>
-</span><span id="__span-0-6"><a id="__codelineno-0-6" name="__codelineno-0-6" href="#__codelineno-0-6"></a><span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">box</span><span class="o">.</span><span class="n">metadata</span><span class="p">,</span> <span class="n">Mapping</span><span class="p">):</span>
-</span><span id="__span-0-7"><a id="__codelineno-0-7" name="__codelineno-0-7" href="#__codelineno-0-7"></a>    <span class="o">...</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1"># 0.9</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">box</span><span class="o">.</span><span class="n">metadata</span><span class="p">,</span> <span class="n">types</span><span class="o">.</span><span class="n">MappingProxyType</span><span class="p">):</span>
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>    <span class="o">...</span>
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>
+</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="c1"># 0.10</span>
+</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">box</span><span class="o">.</span><span class="n">metadata</span><span class="p">,</span> <span class="n">Mapping</span><span class="p">):</span>
+</span><span id="__span-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>    <span class="o">...</span>
 </span></code></pre></div>
 <p>A <code>frozendict</code> still raises on every change, so code that only reads the
 metadata, or builds a new value from it as in
