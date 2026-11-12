@@ -67,3 +67,11 @@ async def check_entered(
     async with sender as awaited_sender, reader as awaited_reader:
         assert_type(awaited_sender, SharedSendStream[Shot])
         assert_type(awaited_reader, SharedReceiveStream[Item])
+
+
+async def check_anext(reader: SharedReceiveStream[Item], out: Item) -> None:
+    assert_type(await anext(reader), Item)
+    assert_type(await reader.__anext__(), Item)
+    assert_type(await anext(reader.iter_into(out)), Item)
+    async for item in reader:
+        assert_type(item, Item)

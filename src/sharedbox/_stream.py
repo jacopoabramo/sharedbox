@@ -20,6 +20,7 @@ from collections.abc import (
     AsyncGenerator,
     AsyncIterator,
     Callable,
+    Coroutine,
     Generator,
     Iterator,
     Mapping,
@@ -1014,33 +1015,29 @@ class SharedSendStream(End, Generic[T, M]):
             now, as in `send`; the item is not sent.
         """
         self._refuse_nested()
-        if metadata is not None:
-            await self._asend_metadata(item, timeout, encode(metadata))
-            return
+        doc = None if metadata is None else encode(metadata)
         await self._yield()
         if self._fast():
             try:
-                self._send_nowait(item, False)
+                if doc is None:
+                    self._send_nowait(item, False)
+                else:
+                    self._send_nowait_metadata(doc, item, False)
                 return
             except WouldBlock:
                 pass
-        await self._wait(self._submit(lambda future: self._send(item, timeout, future)))
-
-    async def _asend_metadata(self, item: T, timeout: float | None, doc: bytes) -> None:
-        await self._yield()
-        if self._fast():
-            try:
-                self._send_nowait_metadata(doc, item, False)
-                return
-            except WouldBlock:
-                pass
-        await self._wait(
-            self._submit(
-                lambda future: self._retry(
-                    self._native.send_metadata, timeout, future, doc, item
+        if doc is None:
+            await self._wait(
+                self._submit(lambda future: self._send(item, timeout, future))
+            )
+        else:
+            await self._wait(
+                self._submit(
+                    lambda future: self._retry(
+                        self._native.send_metadata, timeout, future, doc, item
+                    )
                 )
             )
-        )
 
     def send_nowait(self, item: T, *, metadata: M | None = None) -> None:
         """Send `item`, or raise [`WouldBlock`][sharedbox.WouldBlock] if that needs a wait.
@@ -1992,16 +1989,20 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T, M]):
     def __aiter__(self) -> SharedReceiveStream[T, M]:
         return self
 
-    async def __anext__(self) -> T:
+    def __anext__(self) -> Coroutine[Any, Any, T]:
+        return self._anext([])
+
+    async def _anext(self, targets: list[tuple[tuple[int, ...], Any]]) -> T:
+        """Receive the next item for `async for`, into `targets` when given; the body of both `__anext__`."""
         self._check_consumer()
         try:
             await self._yield()
             if self._fast():
                 try:
-                    return self._take_nowait([])
+                    return self._take_nowait(targets)
                 except WouldBlock:
                     pass
-            return cast(T, await self._wait(self._receive_future([])))
+            return cast(T, await self._wait(self._receive_future(targets)))
         except EndOfStream:
             raise StopAsyncIteration from None
 
@@ -2069,19 +2070,8 @@ class IterInto(Iterator[T], AsyncIterator[T], Generic[T]):
     def __aiter__(self) -> IterInto[T]:
         return self
 
-    async def __anext__(self) -> T:
-        reader = self._reader
-        reader._check_consumer()
-        try:
-            await reader._yield()
-            if reader._fast():
-                try:
-                    return reader._take_nowait(self._targets)
-                except WouldBlock:
-                    pass
-            return cast(T, await reader._wait(reader._receive_future(self._targets)))
-        except EndOfStream:
-            raise StopAsyncIteration from None
+    def __anext__(self) -> Coroutine[Any, Any, T]:
+        return self._reader._anext(self._targets)
 
     def __next__(self) -> T:
         try:
