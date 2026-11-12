@@ -23,6 +23,7 @@ icon: lucide/code
 ::: sharedbox.SharedSendStream
     options:
       show_root_heading: true
+      merge_init_into_class: false
 
 ::: sharedbox.SendSlot
     options:
@@ -32,6 +33,7 @@ icon: lucide/code
 ::: sharedbox.SharedReceiveStream
     options:
       show_root_heading: true
+      merge_init_into_class: false
 
 ::: sharedbox.ReceiveEvents
     options:
@@ -48,6 +50,7 @@ icon: lucide/code
 ::: sharedbox.IterInto
     options:
       show_root_heading: true
+      merge_init_into_class: false
 
 ::: sharedbox.Mode
     options:

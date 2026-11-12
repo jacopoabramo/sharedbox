@@ -99,9 +99,10 @@ MAX_RECORD_SIZE: Final[int] = 2**32 - 4096
 class Field:
     """Options of one field of a `SharedBox` class, as [`field`][sharedbox.field] takes them.
 
-    [`fields`][sharedbox.fields] returns them. A `Field` is read-only, and
-    two are equal only if they are the same object, as with
-    `dataclasses.Field`.
+    [`field`][sharedbox.field] and [`attr`][sharedbox.attr] make one and
+    [`fields`][sharedbox.fields] returns them; a `Field` is not built
+    directly. It is read-only, and two are equal only if they are the same
+    object, as with `dataclasses.Field`.
     """
 
     name: str

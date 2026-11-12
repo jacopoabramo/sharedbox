@@ -921,9 +921,10 @@ def holder() -> object:
 class SharedSendStream(End, Generic[T, M]):
     """The sender of a stream: one per stream, in the process that holds it.
 
-    [`SharedStream.sender`][sharedbox.SharedStream.sender] returns it. The
-    stream keeps it open until `close()`, or until the stream is closed or
-    the process dies; dropping the object does not close it.
+    [`SharedStream.sender`][sharedbox.SharedStream.sender] returns it; it
+    is not built directly. The stream keeps it open until `close()`, or
+    until the stream is closed or the process dies; dropping the object
+    does not close it.
     Closing it ends the stream: readers receive what is buffered, then
     [`EndOfStream`][sharedbox.EndOfStream].
     """
@@ -1401,7 +1402,8 @@ class ReceiveEvents(SignalGroup):
 class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T, M]):
     """A reader of a stream, in the process that opened it.
 
-    [`SharedStream.reader`][sharedbox.SharedStream.reader] returns it.
+    [`SharedStream.reader`][sharedbox.SharedStream.reader] returns it; it
+    is not built directly.
     `for item in reader` and `async for item in reader` receive until the
     stream ends.
 
@@ -2141,6 +2143,9 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T, M]):
 
 class IterInto(Iterator[T], AsyncIterator[T], Generic[T]):
     """Items of one reader read into the same arrays, for `for` loops.
+
+    [`iter_into`][sharedbox.SharedReceiveStream.iter_into] returns it; it
+    is not built directly.
 
     Notes
     -----

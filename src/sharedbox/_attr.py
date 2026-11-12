@@ -66,7 +66,8 @@ class Attr(Generic[T, P]):
     Annotate a field `Attr[T]` and declare it with [`attr`][sharedbox.attr].
     `T` is the type of its value, or `None` for an attribute without one.
     The field holds no value that a process assigns: reading it from a box
-    gives the `Attr` bound to that box, the same object every time.
+    gives the `Attr` bound to that box, the same object every time, so an
+    `Attr` is not built directly.
 
     An attribute starts with its value and setpoint at the zero of `T`, or
     at its `default`, and with a timestamp of 0. `T` may be anything a

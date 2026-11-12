@@ -57,7 +57,7 @@ must have the shape the `Shape` names.
 
 `timeout` used to be the second positional parameter of some stream calls
 and keyword-only in others. It is keyword-only in all of them now:
-`send`, `asend`, `writing` and `awriting` of a sender, `receive` and
+`send`, `asend`, `reserve` and `areserve` of a sender, `receive` and
 `fetch` of a reader, and `receive` of a `sharedbox.bluebox`
 `DocumentReceiver`. A call that passed it by position raises `TypeError`:
 

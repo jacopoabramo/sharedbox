@@ -77,6 +77,9 @@ def error_text(error: BaseException) -> str:
 class RequestFuture(Future[R]):
     """The answer to one request sent through an [`Attr`][sharedbox.Attr] field.
 
+    Calling the attribute, or its `set`, returns it; it is not built
+    directly.
+
     A `concurrent.futures.Future`, so `.result(timeout)` waits in any
     thread, and it can be awaited in a running event loop. The box's
     watcher thread completes it, and closing the box cancels it.
@@ -171,7 +174,11 @@ class RequestFuture(Future[R]):
 
 
 class RequestServer:
-    """Answers the requests of one attr field; [`Attr.serve`][sharedbox.Attr.serve] returns it."""
+    """Answers the requests of one attr field.
+
+    [`Attr.serve`][sharedbox.Attr.serve] returns it; it is not built
+    directly.
+    """
 
     def __init__(
         self,

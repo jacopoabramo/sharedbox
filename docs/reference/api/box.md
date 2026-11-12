@@ -38,6 +38,7 @@ icon: lucide/code
 ::: sharedbox.Field
     options:
       show_root_heading: true
+      merge_init_into_class: false
 
 ::: sharedbox.Timed
     options:
@@ -46,6 +47,7 @@ icon: lucide/code
 ::: sharedbox.Attr
     options:
       show_root_heading: true
+      merge_init_into_class: false
 
 ::: sharedbox.attr
     options:
@@ -58,10 +60,12 @@ icon: lucide/code
 ::: sharedbox.RequestFuture
     options:
       show_root_heading: true
+      merge_init_into_class: false
 
 ::: sharedbox.RequestServer
     options:
       show_root_heading: true
+      merge_init_into_class: false
 
 ::: sharedbox.BoundedList
     options:
