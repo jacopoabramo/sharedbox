@@ -1476,6 +1476,10 @@ inline result<request_reply> handle::request_answer_of(std::uint16_t field, std:
     if (number == 0 || number > sent)
         return unexpected(status::range);
     if (number >= taken) {
+        // The field holds one request, so one that a later send replaced before any server took it can only
+        // end superseded. Saying so at once ends its caller's wait even when no server ever comes.
+        if (number > taken && number < sent)
+            return request_reply{request_outcome::superseded, 0};
         const bool exited = check_server && pid != 0 && detail::owner_exited(pid, start, pidns);
         return request_reply{exited ? request_outcome::server_exited : request_outcome::pending, 0};
     }

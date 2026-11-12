@@ -88,7 +88,7 @@ struct FieldRead {
 
 /// The write lock on one array field, taken on a second handle of the segment with its own mapping, so the
 /// field's bytes stay valid after the box is closed. end() releases the lock once; the destructor calls it if
-/// nothing did.
+/// nothing did. In a child created by fork, end() releases nothing: the lock is the parent's.
 class FieldWriter {
 public:
     FieldWriter(std::shared_ptr<handle> box, field_write write) : box_(std::move(box)), write_(write) {}
@@ -100,7 +100,7 @@ public:
     /// The handle the lock was taken on; the array over bytes() keeps a copy of it.
     const std::shared_ptr<handle> &box() const { return box_; }
     void end() noexcept {
-        if (!ended_.exchange(true))
+        if (!ended_.exchange(true) && pid_ == detail::current_pid())
             box_->end_write(write_);
     }
 
@@ -108,6 +108,8 @@ private:
     std::shared_ptr<handle> box_;
     field_write write_;
     std::atomic<bool> ended_{false};
+    // The process that took the lock.
+    std::uint32_t pid_ = detail::current_pid();
 };
 
 class Segment;
@@ -117,6 +119,8 @@ class Segment;
 /// the thread that took it throw std::runtime_error instead of waiting for it. end() counts one write of each
 /// field set; abort() puts back the bytes each field held before its first set. After either, a second call of
 /// either does nothing and every other call throws std::runtime_error; the destructor aborts if neither ran.
+/// A copy in a child created by fork holds nothing: every call but end() and abort() throws there, and those
+/// two neither put bytes back nor unlock, since the write and the lock are the parent's.
 class RecordWriter {
 public:
     RecordWriter(const Segment &segment, std::shared_ptr<handle> box, record_write write);
@@ -142,8 +146,9 @@ private:
     const Segment &segment_;
     std::shared_ptr<handle> box_;
     record_write write_;
-    // The thread_number() of the thread that took the write.
+    // The thread_number() of the thread that took the write, and its process.
     std::uint64_t owner_;
+    std::uint32_t pid_ = detail::current_pid();
     // set(), end() and abort() can race on the free-threaded build.
     std::mutex lock_;
     std::atomic<bool> ended_{false};
@@ -269,7 +274,6 @@ public:
     std::uint16_t minor_version() const;
     bool closed() const;
     const std::string &name() const;
-    double lock_timeout() const;
     /// Every field, in index order; fixed once the segment is open.
     std::span<const FieldDesc> fields() const;
     /// The label of every field, in index order; fixed once the segment is open.

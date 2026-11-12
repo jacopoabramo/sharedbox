@@ -185,7 +185,10 @@ wrong_type:
 PyObject *decode(const FieldDesc &field, const char *data, std::size_t size) {
     switch (field.kind) {
     case FieldKind::Bool:
-        return PyBool_FromLong(data[0] != 0);
+        // Only 0 and 1 are ever stored, so another byte is damage, as it is for a bool inside a record.
+        if (static_cast<unsigned char>(data[0]) > 1)
+            return nullptr;
+        return PyBool_FromLong(data[0]);
     case FieldKind::Int: {
         long long number;
         std::memcpy(&number, data, 8);

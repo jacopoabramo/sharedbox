@@ -6,6 +6,7 @@ import atexit
 import contextlib
 import dataclasses
 import logging
+import threading
 from collections.abc import Callable
 from typing import Any, Final, NoReturn, TypeVar, cast
 
@@ -15,6 +16,7 @@ from ._events import WATCHERS, Watcher, stop_watchers
 from ._native import (
     BoxClosedError,
     BoxMethod,
+    LockTimeoutError,
     Segment,
     Stream,
     StreamClosedError,
@@ -154,6 +156,38 @@ def release_each(release: Callable[[T], object], targets: list[T]) -> None:
             )
 
 
+def quiet_hook(
+    previous: Callable[[threading.ExceptHookArgs], Any], state: dict[str, bool]
+) -> Callable[[threading.ExceptHookArgs], Any]:
+    """Return a `threading.excepthook` that passes on to `previous`, except the errors of a closed box or stream once `state` says the interpreter exits."""
+
+    # Everything the hook reads is bound here, since it may run after module globals are cleared.
+    def hook(
+        args: threading.ExceptHookArgs,
+        # A wait for the lock that the release cuts short reports a lock timeout.
+        closed: tuple[type[Exception], ...] = (
+            BoxClosedError,
+            StreamClosedError,
+            LockTimeoutError,
+        ),
+        is_instance: Callable[[object, Any], bool] = isinstance,
+    ) -> None:
+        if state["exiting"] and is_instance(args.exc_value, closed):
+            return
+        previous(args)
+
+    return hook
+
+
+# The release at exit wakes every thread that waits inside a box or a stream with BoxClosedError,
+# StreamClosedError or, from a wait for the lock, LockTimeoutError. A daemon thread that does not catch it prints a traceback while the interpreter
+# finalizes, and an interpreter that cannot take the lock of stderr from such a thread aborts the
+# process. A thread falls back on the hook that was installed when it was created, because the
+# module's own is gone by then, so the hook goes in at import and stays silent until the exit.
+EXIT_STATE: Final[dict[str, bool]] = {"exiting": False}
+threading.excepthook = quiet_hook(threading.excepthook, EXIT_STATE)
+
+
 def release_native() -> None:
     """Close every box, stream and stream end, and release the native objects of watchers and box classes.
 
@@ -166,8 +200,15 @@ def release_native() -> None:
     [`BoxClosedError`][sharedbox.BoxClosedError], and using a stream or
     one of its ends raises
     [`StreamClosedError`][sharedbox.StreamClosedError]; `close` does
-    nothing. Calling it again does nothing more.
+    nothing. Calling it again does nothing more. A thread that ends on
+    one of those two errors from then on, or on the
+    [`LockTimeoutError`][sharedbox.LockTimeoutError] of a lock wait the
+    release cut short, prints no traceback.
     """
+    if not EXIT_STATE["exiting"]:
+        EXIT_STATE["exiting"] = True
+        # Again, around a hook installed since the import, for the threads still running now.
+        threading.excepthook = quiet_hook(threading.excepthook, EXIT_STATE)
     for stop in (stop_watchers, stop_stream_workers):
         try:
             stop()

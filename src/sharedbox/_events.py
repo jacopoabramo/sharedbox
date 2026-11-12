@@ -42,6 +42,8 @@ if TYPE_CHECKING:
 
 T = TypeVar("T")
 STEP: Final = 1.0
+# In place of a value the watcher has not decoded, because no callback would have received it.
+UNREAD: Final = object()
 # Seconds the exit handler waits for stopped watcher threads, together.
 EXIT_WAIT: Final = 2.0
 logger = logging.getLogger("sharedbox")
@@ -84,14 +86,12 @@ def stop_watchers() -> None:
     # Bounded, so a callback that never returns cannot keep the process from exiting.
     deadline = time.monotonic() + EXIT_WAIT
     for thread in threads:
-        if thread is not None and thread is not threading.current_thread():
+        if thread is not threading.current_thread():
             thread.join(max(0.0, deadline - time.monotonic()))
     late = [
         thread.name
         for thread in threads
-        if thread is not None
-        and thread.is_alive()
-        and thread is not threading.current_thread()
+        if thread.is_alive() and thread is not threading.current_thread()
     ]
     if late:
         logger.warning(
@@ -159,7 +159,16 @@ class FieldFuture(Future[T]):
             If the field did not change within `timeout` seconds.
         concurrent.futures.CancelledError
             If the future was cancelled.
+        RuntimeError
+            If the field has not changed and this is called from a callback
+            of the same box's events: that thread is the one that resolves
+            the future.
         """
+        if not self.done() and self._watcher._thread is threading.current_thread():
+            raise RuntimeError(
+                f"{self._field.name}: result() would wait on the thread that resolves "
+                "the future; use add_done_callback, or wait on another thread"
+            )
         try:
             return super().result(timeout)
         except TimeoutError:
@@ -177,6 +186,10 @@ class FieldFuture(Future[T]):
         self._published = published
         with contextlib.suppress(InvalidStateError):
             self.set_result(value)
+
+    def _fail(self, error: Exception) -> None:
+        with contextlib.suppress(InvalidStateError):
+            self.set_exception(error)
 
 
 class FieldWatch(Generic[T]):
@@ -416,9 +429,12 @@ class Watcher:
         """Return the box's signal group, created on first use; the watcher emits into it while running."""
         with self._lock:
             if self._group is None:
-                self._group = factory()
+                group = factory()
                 self._metadata_head = self._segment.metadata_head()
                 self._listen_locked(self._to_group, fields)
+                # Stored last: a read above that raised must leave nothing behind, or the next
+                # access would return a group the watcher never emits into.
+                self._group = group
             self._start_locked()
             return self._group
 
@@ -437,7 +453,21 @@ class Watcher:
 
     def last(self, spec: FieldSpec) -> Any:
         """Return the value of `spec` the watcher last saw, which it compares the next change with."""
-        return self._seen[spec.index][2]
+        version, raw, value = self._seen[spec.index]
+        if value is UNREAD:
+            value = self._types.decode(spec.index, raw)
+            self._seen[spec.index] = (version, raw, value)
+        return value
+
+    def _unheard(self, spec: FieldSpec, sink: Sink, group: BoxEvents | None) -> bool:
+        """Return whether a change of `spec` would reach no callback, so its value need not be decoded."""
+        return (
+            group is not None
+            and sink == self._to_group
+            and len(group[spec.name]) == 0
+            # A reference that moved changes what the follower forwards, callbacks or not.
+            and not (spec.target is not None and self.follower is not None)
+        )
 
     def _read_attr(self, spec: FieldSpec) -> tuple[Any, int, int]:
         """Return the value of attr field `spec`, its write count and its publish count, from one read."""
@@ -461,7 +491,8 @@ class Watcher:
         assert group is not None
         try:
             group[spec.name].emit(shown(spec, new), shown(spec, old))
-        except Exception:
+        except BaseException:
+            # SystemExit included: it would end this thread and with it every later delivery.
             logger.exception("a callback for field %r raised", spec.name)
         # After the emission, so the reference signal's callbacks run before forwarding moves.
         if spec.target is not None and self.follower is not None:
@@ -494,8 +525,15 @@ class Watcher:
             if raw == seen_raw:
                 self._seen[spec.index] = (version, raw, old)
                 continue
+            if self._unheard(spec, sink, group):
+                # The bytes are kept, and decoded only if a later change needs them as its old value:
+                # decoding a large field on every write costs more than the rest of the pass.
+                self._seen[spec.index] = (version, raw, UNREAD)
+                continue
             try:
                 new = self._types.decode(spec.index, raw)
+                if old is UNREAD:
+                    old = self._types.decode(spec.index, seen_raw)
             except Exception:
                 self._seen[spec.index] = (version, raw, old)
                 logger.exception("reading a change of field %r failed", spec.name)
@@ -534,7 +572,15 @@ class Watcher:
         with self._lock:
             servers = list(self._servers)
         for server in servers:
-            server._halt(join=False)
+            # A field that cannot be released must not keep the futures below from being cancelled.
+            try:
+                server._halt(join=False)
+            except LockTimeoutError as error:
+                logger.warning("%s; %s stays served", error, server._field.label)
+            except Exception:
+                logger.exception(
+                    "stopping the server of %s failed", server._field.label
+                )
         with self._lock:
             thread = self._thread
         if wait and thread is not None and thread is not threading.current_thread():
@@ -633,6 +679,13 @@ class Watcher:
                         if not timed_out:
                             logger.warning("%s", error)
                         timed_out = True
+                    except BoxClosedError:
+                        raise
+                    except BaseException:
+                        # Anything else would end the thread, and the box would deliver nothing more.
+                        logger.exception(
+                            "checking box %r for changes failed", self._segment.name
+                        )
                     slot = self._claim()
                     if self._stop.is_set():
                         return
@@ -668,22 +721,31 @@ class Watcher:
                 fut._since = versions[index]
         if not ready:
             return
-        # Read every value before removing any future, so a failed read leaves them all pending.
+        # Read every value before removing any future, so a lock timeout leaves them all pending.
         values: list[tuple[FieldFuture[Any], tuple[Any, int, int | None]]] = []
+        failed: list[tuple[FieldFuture[Any], Exception]] = []
         for fut in ready:
-            if fut._published is None:
-                version, value = self._segment.get_versioned(
-                    fut._field.index, self._types
-                )
-                values.append((fut, (shown(fut._field, value), version, None)))
-            else:
-                values.append((fut, self._read_attr(fut._field)))
+            try:
+                if fut._published is None:
+                    version, value = self._segment.get_versioned(
+                        fut._field.index, self._types
+                    )
+                    values.append((fut, (shown(fut._field, value), version, None)))
+                else:
+                    values.append((fut, self._read_attr(fut._field)))
+            except (BoxClosedError, LockTimeoutError):
+                raise
+            except Exception as error:
+                # Decoding the value can run Python code, such as a record's __post_init__.
+                failed.append((fut, error))
         with self._lock:
             for fut in ready:
                 with contextlib.suppress(ValueError):
                     self._pending.remove(fut)
         for fut, (value, version, published) in values:
             fut._resolve(value, version, published)
+        for fut, reason in failed:
+            fut._fail(reason)
 
     def _resolve_calls(self, check: bool) -> bool:
         """Complete the request futures whose answer arrived; with `check`, read every one and check its server.

@@ -20,6 +20,7 @@ from collections.abc import (
     AsyncGenerator,
     AsyncIterator,
     Callable,
+    Coroutine,
     Generator,
     Iterator,
     Mapping,
@@ -32,6 +33,7 @@ from typing import (
     Generic,
     Literal,
     NoReturn,
+    Self,
     TypeVar,
     cast,
     overload,
@@ -465,7 +467,7 @@ class SharedStream(Generic[T, M]):
         version of the item it returned last. The stream keeps the earlier
         versions until it reclaims them for newer ones, and
         [`metadata_version_of`][sharedbox.SharedStream.metadata_version_of]
-        reads them until then. A mapping reads back as a read-only mapping
+        reads them until then. A mapping reads back as a `frozendict`
         and a list as a tuple, nested the same way. Each stream object
         decodes a version once and keeps the 32 it used last.
 
@@ -563,7 +565,8 @@ class SharedStream(Generic[T, M]):
         mode
             `"lossless"` receives every item and holds the sender back when
             a full ring behind; `"lossy"` skips the items the sender
-            overwrote; `"latest"` always receives the newest item.
+            overwrote, and once a full ring behind goes on from the middle
+            of the ring; `"latest"` always receives the newest item.
         start
             `"newest"` begins at the newest item sent, `"oldest"` at the
             oldest the ring still holds.
@@ -847,6 +850,15 @@ class End:
         self._cancelled = None
         self._shut = True
 
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, *exc_info: object) -> None:
+        self.close()
+
+    async def __aenter__(self) -> Self:
+        return self
+
     async def __aexit__(self, *exc_info: object) -> None:
         self.close()
 
@@ -1003,33 +1015,29 @@ class SharedSendStream(End, Generic[T, M]):
             now, as in `send`; the item is not sent.
         """
         self._refuse_nested()
-        if metadata is not None:
-            await self._asend_metadata(item, timeout, encode(metadata))
-            return
+        doc = None if metadata is None else encode(metadata)
         await self._yield()
         if self._fast():
             try:
-                self._send_nowait(item, False)
+                if doc is None:
+                    self._send_nowait(item, False)
+                else:
+                    self._send_nowait_metadata(doc, item, False)
                 return
             except WouldBlock:
                 pass
-        await self._wait(self._submit(lambda future: self._send(item, timeout, future)))
-
-    async def _asend_metadata(self, item: T, timeout: float | None, doc: bytes) -> None:
-        await self._yield()
-        if self._fast():
-            try:
-                self._send_nowait_metadata(doc, item, False)
-                return
-            except WouldBlock:
-                pass
-        await self._wait(
-            self._submit(
-                lambda future: self._retry(
-                    self._native.send_metadata, timeout, future, doc, item
+        if doc is None:
+            await self._wait(
+                self._submit(lambda future: self._send(item, timeout, future))
+            )
+        else:
+            await self._wait(
+                self._submit(
+                    lambda future: self._retry(
+                        self._native.send_metadata, timeout, future, doc, item
+                    )
                 )
             )
-        )
 
     def send_nowait(self, item: T, *, metadata: M | None = None) -> None:
         """Send `item`, or raise [`WouldBlock`][sharedbox.WouldBlock] if that needs a wait.
@@ -1097,13 +1105,8 @@ class SharedSendStream(End, Generic[T, M]):
         future: CallFuture | None,
         *args: object,
     ) -> None:
-        if future is None:
-            # A free slot needs no wait; without one, the loop below waits as before.
-            try:
-                call(*args, 0.0)
-                return
-            except (WouldBlock, _Interrupted):
-                pass
+        # No try without a wait first: the first step returns at once when a slot is free, and a
+        # native call that finds none raises, which costs far more than the wait it would save.
         for step in steps(timeout):
             try:
                 call(*args, step)
@@ -1292,15 +1295,6 @@ class SharedSendStream(End, Generic[T, M]):
         if self._stream._sender is self:
             self._stream._sender = None
 
-    def __enter__(self) -> SharedSendStream[T, M]:
-        return self
-
-    async def __aenter__(self) -> SharedSendStream[T, M]:
-        return self
-
-    def __exit__(self, *exc_info: object) -> None:
-        self.close()
-
     def __reduce__(self) -> NoReturn:
         raise TypeError(
             "a SharedSendStream cannot be pickled; "
@@ -1367,6 +1361,12 @@ class ReceiveEvents(SignalGroup):
         reader = None if self._reader is None else self._reader()
         if reader is not None:
             reader._reconcile()
+        elif self._reader is not None and len(self.received) > 0:
+            # stream.reader().events.received.connect(f) frees the reader before connect runs.
+            logger.warning(
+                "a callback was connected to the events of a stream reader that no "
+                "longer exists, so it receives nothing; keep the reader in a variable"
+            )
 
 
 class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T, M]):
@@ -1391,6 +1391,7 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T, M]):
         "_events",
         "_generation",
         "_position",
+        "_stale",
     )
     _native: Reader
 
@@ -1404,6 +1405,8 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T, M]):
         self._events: ReceiveEvents | None = None
         self._delivering = False
         self._generation = 0
+        # Kept items a latest reader dropped for a newer one, which count as missed.
+        self._stale = 0
 
     @property
     def stream(self) -> SharedStream[T, M]:
@@ -1427,7 +1430,7 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T, M]):
     @property
     def missed(self) -> int:
         """Items a lossy or latest reader skipped, or a lossless reader lost to releases."""
-        return self._native.missed
+        return self._native.missed + self._stale
 
     @property
     def metadata_version(self) -> int:
@@ -1459,7 +1462,7 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T, M]):
     def metadata(self) -> M | None:
         """The value of [`metadata_version`][sharedbox.SharedReceiveStream.metadata_version], None while it is 0.
 
-        A mapping reads back as a read-only mapping and a list as a tuple,
+        A mapping reads back as a `frozendict` and a list as a tuple,
         nested the same way. Each reader decodes a version once and keeps
         the 32 it used last.
 
@@ -1785,7 +1788,8 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T, M]):
     def _emit(self, signal: SignalInstance, *args: Any) -> None:
         try:
             signal.emit(*args)
-        except Exception:
+        except BaseException:
+            # SystemExit included: it would end delivery and leave the reader refusing every receive.
             logger.exception("a callback of stream %r raised", self._stream.name)
 
     def _take_nowait(self, targets: list[tuple[tuple[int, ...], Any]]) -> T:
@@ -1811,15 +1815,20 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T, M]):
                     f"stream {self._stream.name!r}: the reader was closed"
                 )
             # Items kept from cancelled receives belong to the receive cursor, which a fetch leaves alone.
-            if self._carry and position is None:
-                kept = self._carry.popleft()
-                if isinstance(kept, ReaderReleased):
-                    raise kept
-                item, position = kept
-                self._position = position
-                if future is not None:
-                    future.position = position
-                return cast(T, item)
+            kept = self._carry.popleft() if self._carry and position is None else None
+        if isinstance(kept, ReaderReleased):
+            raise kept
+        if kept is not None:
+            item, at = kept
+            if self._native.mode == MODES["latest"]:
+                # A latest reader promises the newest item, and the kept one may be old by now.
+                with contextlib.suppress(WouldBlock, EndOfStream, _Interrupted):
+                    item, at = self._native.receive(0.0, targets)
+                    self._stale += 1
+            self._position = at
+            if future is not None:
+                future.position = at
+            return cast(T, item)
         item, at = (
             self._native.receive(step, targets)
             if position is None
@@ -1980,21 +1989,22 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T, M]):
     def __aiter__(self) -> SharedReceiveStream[T, M]:
         return self
 
-    async def __anext__(self) -> T:
+    def __anext__(self) -> Coroutine[Any, Any, T]:
+        return self._anext([])
+
+    async def _anext(self, targets: list[tuple[tuple[int, ...], Any]]) -> T:
+        """Receive the next item for `async for`, into `targets` when given; the body of both `__anext__`."""
         self._check_consumer()
         try:
             await self._yield()
             if self._fast():
                 try:
-                    return self._take_nowait([])
+                    return self._take_nowait(targets)
                 except WouldBlock:
                     pass
-            return cast(T, await self._wait(self._receive_future([])))
+            return cast(T, await self._wait(self._receive_future(targets)))
         except EndOfStream:
             raise StopAsyncIteration from None
-
-    async def __aenter__(self) -> SharedReceiveStream[T, M]:
-        return self
 
     def _receive(
         self,
@@ -2005,12 +2015,9 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T, M]):
         position: int | None = None,
     ) -> T:
         if future is None and delivering is None:
+            # No try without a wait first: the first step returns at once when an item waits, and
+            # a native call that finds none raises, which costs far more than the wait it would save.
             timeout = self._after_worker(timeout)
-            # A waiting item needs no wait; without one, the loop below waits as before.
-            try:
-                return self._take(targets, 0.0, None, position)
-            except (WouldBlock, _Interrupted):
-                pass
         for step in steps(timeout):
             try:
                 return self._take(targets, step, future, position)
@@ -2028,12 +2035,6 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T, M]):
                     raise
                 continue
         raise TimeoutError(f"stream {self._stream.name!r}: no item within {timeout} s")
-
-    def __enter__(self) -> SharedReceiveStream[T, M]:
-        return self
-
-    def __exit__(self, *exc_info: object) -> None:
-        self.close()
 
     def __reduce__(self) -> NoReturn:
         raise TypeError(
@@ -2069,19 +2070,8 @@ class IterInto(Iterator[T], AsyncIterator[T], Generic[T]):
     def __aiter__(self) -> IterInto[T]:
         return self
 
-    async def __anext__(self) -> T:
-        reader = self._reader
-        reader._check_consumer()
-        try:
-            await reader._yield()
-            if reader._fast():
-                try:
-                    return reader._take_nowait(self._targets)
-                except WouldBlock:
-                    pass
-            return cast(T, await reader._wait(reader._receive_future(self._targets)))
-        except EndOfStream:
-            raise StopAsyncIteration from None
+    def __anext__(self) -> Coroutine[Any, Any, T]:
+        return self._reader._anext(self._targets)
 
     def __next__(self) -> T:
         try:

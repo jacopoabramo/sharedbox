@@ -477,9 +477,11 @@ this order:
 
 - an entry numbered `n` holds the answer, or its error text;
 - `n` of 0 or above `sent` is `status::range`;
-- `n` at or above `taken` is still pending, or, when the caller asks for
-  the server check, `server_exited` once a recorded server's process has
-  ended;
+- `n` above `taken` and below `sent` is superseded: a later send replaced
+  it and no server took it, so none ever will;
+- any other `n` at or above `taken` is still pending, or, when the caller
+  asks for the server check, `server_exited` once a recorded server's
+  process has ended;
 - when all four entries hold numbers above `n`, four later answers
   overwrote its answer;
 - otherwise a later request superseded it before the server took it.
@@ -551,7 +553,8 @@ attacher agree on it and on the class's meaning.
 
 - `schema_hash`: the first 8 bytes of SHA-256 over that text, read as a
   little-endian `u64`.
-- Identity: the `identity=` class keyword, a non-empty string; without it,
+- Identity: the `identity=` class keyword, a non-empty string without `|`,
+  the character that separates the parts of the schema text; without it,
   `module.qualname`. A subclass does not inherit its base's identity.
 - The default box name is 16 hex digits of SHA-256 over the identity, so a
   class that sets `identity=` is found by that identity from any package or
@@ -791,7 +794,7 @@ and maps are outside the subset. `sharedbox::metadata_ok` checks that a
 document is well formed and inside the subset, not that it is canonical,
 so a C or C++ producer brings its own encoder. The Python side encodes
 canonically, so equal values give equal bytes, and decodes a map as a
-`types.MappingProxyType` and an array as a tuple.
+`frozendict` and an array as a tuple.
 
 ## Versioning rules
 
@@ -1214,7 +1217,9 @@ Receive, for a reader whose next position is `r`:
    `data_word` in steps of at most 0.1 s, counting itself in `data_waiting`
    while it sleeps.
 2. A lossy reader with `write_pos - r > capacity` moves to
-   `write_pos - capacity`. A latest reader with `write_pos - r > 1` moves to
+   `write_pos - (capacity - capacity / 2)`, with integer division: the
+   middle of the ring, not its oldest item, whose slot the sender writes
+   next. A latest reader with `write_pos - r > 1` moves to
    `write_pos - 1`. Both count the items they pass as missed.
 3. Load `seq`, which must be `2r + 2`, copy the item, issue an acquire fence
    and load `seq` again. If it changed, the sender wrote a later position over

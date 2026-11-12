@@ -15,6 +15,7 @@ from psygnal import EmissionInfo
 
 from sharedbox import BoxClosedError, BoxRef, SharedBox
 from sharedbox._events import Watcher
+from sharedbox._follow import Follower
 from sharedbox._refs import attach_reference
 
 
@@ -1180,3 +1181,22 @@ def test_every_attach_that_fails_in_one_follow_is_reported(
         assert [str(r.exc_info[1]) for r in caplog.records if r.exc_info] == [
             f"cannot attach {b.name}"
         ]
+
+
+def test_follow_refuses_a_box_closed_after_its_first_check(
+    names: Callable[[str], str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Raise BoxClosedError from follow when the box is closed between its check and its lock."""
+    with Motor.create(names("motor")) as motor:
+        stage = Stage.create(names("stage"), 0, motor)
+        events = stage.events
+        original = Follower.ref_spec
+
+        def close_first(follower: Follower, field: str) -> Any:
+            # Runs after follow checked for a closed box and before it takes its lock.
+            stage.close()
+            return original(follower, field)
+
+        monkeypatch.setattr("sharedbox._follow.Follower.ref_spec", close_first)
+        with pytest.raises(BoxClosedError):
+            events.follow("motor")

@@ -737,6 +737,14 @@ def test_identity_must_be_a_non_empty_string(identity: object) -> None:
             value: int = 0
 
 
+def test_identity_must_not_hold_the_separator_of_the_schema_text() -> None:
+    """Raise ValueError for an identity containing the character that separates fields in the schema text."""
+    with pytest.raises(ValueError, match="identity"):
+
+        class Bad(SharedBox, identity="A|x:int:8"):
+            value: int = 0
+
+
 def test_update_names_every_unknown_field_and_writes_nothing(unique_name: str) -> None:
     """Check that update lists every unknown field in one TypeError and writes nothing."""
     with Point.create(unique_name) as box:
@@ -1072,3 +1080,19 @@ def test_a_name_of_240_characters_works(unique_name: str) -> None:
         assert seen.get(timeout=10) == 1
         other.close()
     Point.unlink(name)
+
+
+class Switch(SharedBox):
+    on: bool = False
+    level: int = 0
+
+
+def test_a_stored_bool_byte_other_than_0_and_1_is_refused(unique_name: str) -> None:
+    """Raise ValueError naming the field for a bool field whose stored byte is neither 0 nor 1."""
+    with Switch.create(unique_name) as box:
+        index = {spec.name: spec.index for spec in Switch.__layout__.fields}["on"]
+        box._segment._write([(index, b"")])
+        with pytest.raises(ValueError, match="Switch.on: the stored value"):
+            box.on  # noqa: B018
+        with pytest.raises(ValueError, match="Switch.on: the stored value"):
+            box.snapshot()

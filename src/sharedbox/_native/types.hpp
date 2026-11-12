@@ -77,7 +77,6 @@ public:
           const std::vector<std::uint32_t> &reusable = {}, const std::vector<Convert> &converts = {});
 
     const std::string &table() const { return table_; }
-    std::size_t field_count() const { return labels_.size(); }
     const detail::type_ref &field(std::uint32_t index) const;
     const std::string &label(std::uint32_t index) const;
 

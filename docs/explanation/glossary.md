@@ -107,7 +107,8 @@ a lossless reader waits for it. See [`reader`][sharedbox.SharedStream.reader].
 
 Lossy is a [reader](#reader) mode in which the reader skips the items the
 [sender](#sender) overwrote while it was busy, and counts them in
-[`missed`][sharedbox.SharedReceiveStream.missed]. See
+[`missed`][sharedbox.SharedReceiveStream.missed]. Once it is a whole ring
+behind it goes on from the middle of the ring. See
 [`reader`][sharedbox.SharedStream.reader].
 
 ### Metadata

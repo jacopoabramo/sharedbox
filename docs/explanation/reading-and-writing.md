@@ -279,9 +279,13 @@ process stored in `writer_pid` as the lock's holder. That process may have
 died while holding the lock, and `force_unlock` releases it.
 
 The wait for the lock spins, then yields, then sleeps for a doubling
-interval of at most 1 ms. On Windows a sleep ends on a timer tick, so a
-wait lasts at least one tick; the Notes of [`SharedBox`][sharedbox.SharedBox]
-give its length. In the stress tests on GitHub Actions runners (CI runs
+interval of at most 1 ms. On Windows a sleep ends on a timer tick however
+short it is, so there the wait goes on yielding for its first millisecond
+and sleeps only after that. A large write or a short `locked()` block ends
+within that millisecond, and a wait that does sleep lasts at least one
+tick; the Notes of [`SharedBox`][sharedbox.SharedBox] give its length. The
+figures that follow were measured before the wait yielded for that first
+millisecond. In the stress tests on GitHub Actions runners (CI runs
 36440952244 and 36443594984), a 1 ms `lock_timeout` ended after 15.7 and
 15.8 ms on Windows (median of 200 waits), against 1.18 and 1.16 ms on
 Linux. A lock holder that is descheduled for one timer tick can also make

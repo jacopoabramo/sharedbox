@@ -437,3 +437,28 @@ def test_field_named_locked_is_refused() -> None:
 
         class Clash(SharedBox):
             locked: int = 0  # type: ignore[assignment]
+
+
+def test_repr_does_not_raise_around_a_locked_block(unique_name: str) -> None:
+    """Return a short repr of a box inside its own locked() block and of the block's object after it."""
+    with Tally.create(unique_name) as box:
+        with box.locked() as held:
+            inside = repr(box)
+        assert (inside, repr(held)) == ("<Tally locked>", "<Tally locked>")
+
+
+class Strict(SharedBox):
+    count: int = 0
+
+    def __init_subclass__(cls) -> None:
+        super().__init_subclass__()
+
+
+def test_locked_works_for_a_class_whose_init_subclass_takes_no_keywords(
+    unique_name: str,
+) -> None:
+    """Write through locked() on a box class whose __init_subclass__ accepts no keyword."""
+    with Strict.create(unique_name) as box:
+        with box.locked() as held:
+            held.count += 1
+        assert box.count == 1

@@ -331,13 +331,34 @@ struct no_sender_pause {
 // is in progress or sender_pid is no longer seen.
 // Known limit: a process killed before it stores sender_start again leaves it at start_freeing, so every later
 // sender() is busy and readers time out instead of getting ended.
+// How long a recorded sender may stay a pid without namespace and start before it counts as dead.
+inline constexpr std::chrono::milliseconds claim_grace{100};
+
 template <class Pause = no_sender_pause>
 inline bool claim_dead_sender(stream_header &h, std::uint32_t seen, std::uint64_t &start,
                               Pause pause = {}) noexcept {
     start = atomic(h.sender_start).load(std::memory_order_acquire);
     const std::uint64_t pidns = atomic(h.sender_pidns).load(std::memory_order_acquire);
-    if (start == start_freeing || !owner_exited(seen, start, pidns))
+    if (start == start_freeing)
         return false;
+    if (!owner_exited(seen, start, pidns)) {
+#ifdef _WIN32
+        return false;
+#else
+        // A claimer stores its namespace and its start right after its pid. One killed between those stores
+        // leaves a pid with neither, which owner_exited cannot judge and so counts as alive for good. A live
+        // claimer finishes within microseconds, so a pid still bare after claim_grace belongs to a dead one.
+        // Only a process that can stamp its own claim applies this: where it cannot, every claim stays bare.
+        // Known limit: a claimer stopped by a debugger or SIGSTOP between those stores is replaced while alive.
+        if (pidns != 0 || start != 0 || current_pidns() == 0 || current_start() == 0)
+            return false;
+        std::this_thread::sleep_for(claim_grace);
+        if (atomic(h.sender_pid).load(std::memory_order_acquire) != seen ||
+            atomic(h.sender_pidns).load(std::memory_order_acquire) != 0 ||
+            atomic(h.sender_start).load(std::memory_order_acquire) != 0)
+            return false;
+#endif
+    }
     if (!atomic(h.sender_start)
              .compare_exchange_strong(start, start_freeing, std::memory_order_acq_rel, std::memory_order_relaxed))
         return false;
@@ -1181,8 +1202,12 @@ result<received> stream_reader::receive_with(F &&copy, seconds timeout) {
             continue;
         }
         if (mode_ == read_mode::lossy && w - r_ > s.capacity) {
-            missed_ += w - s.capacity - r_;
-            r_ = w - s.capacity;
+            // A lapped reader is slower than the sender. It restarts at the middle of the ring and gives up
+            // the older half: the oldest item is in the slot the sender writes next, so a restart there
+            // leaves one sender period for each copy, and the reader is lapped again at once.
+            const std::uint64_t kept = s.capacity - s.capacity / 2;
+            missed_ += w - kept - r_;
+            r_ = w - kept;
         } else if (mode_ == read_mode::latest && w - r_ > 1) {
             missed_ += w - 1 - r_;
             r_ = w - 1;
@@ -1218,6 +1243,10 @@ result<received> stream_reader::receive_with(F &&copy, seconds timeout) {
             if (mode_ != read_mode::lossless)
                 ++missed_;
             ++r_;
+            // A sender that overwrites each item during its copy keeps this loop from reaching wait_for_data,
+            // the only other place that looks at the deadline.
+            if (mode_ != read_mode::lossless && detail::clock::now() >= deadline)
+                return unexpected(status::timeout);
             continue;
         }
         const received out{r_, missed_ - missed_before};

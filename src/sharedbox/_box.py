@@ -27,7 +27,14 @@ from typing import (
 )
 
 from ._attr import Attr, AttrAttribute
-from ._events import BoxEvents, FieldWatch, Watcher, events_class, on_watcher_thread
+from ._events import (
+    WATCHER_THREAD,
+    BoxEvents,
+    FieldWatch,
+    Watcher,
+    events_class,
+    on_watcher_thread,
+)
 from ._follow import box_events
 from ._layout import (
     Field,
@@ -37,6 +44,7 @@ from ._layout import (
     class_identity,
     declared,
     field,
+    mixin_value,
     own_annotations,
     own_kw_only,
 )
@@ -138,6 +146,9 @@ def release(watcher: Watcher, segment: Segment, wait: bool = True) -> None:
 
 def reset_after_fork() -> None:
     """Make every box inherited through `fork` usable in the child."""
+    # A child forked inside a callback runs on a copy of a watcher thread, but it is no
+    # watcher thread: left set, the mark would make every close in the child skip its wait.
+    WATCHER_THREAD.active = False
     for box in list(LIVE):
         box._segment._after_fork()
         box._values._after_fork()
@@ -391,6 +402,9 @@ def locked_class(cls: type[SharedBox]) -> type[SharedBox]:
         "__slots__": ("_held_box", "_held_thread", "_held_writer"),
         "__module__": cls.__module__,
         "__qualname__": cls.__qualname__,
+        # A mark in the namespace, not a class keyword: a keyword would also reach an
+        # __init_subclass__ the user's class defines, which need not accept it.
+        "__sharedbox_locked_view__": True,
         "update": locked_update,
         "snapshot": locked_snapshot,
         "_segment": property(held_segment),
@@ -409,9 +423,7 @@ def locked_class(cls: type[SharedBox]) -> type[SharedBox]:
         },
         **{spec.name: locked_property(spec) for spec in layout.fields},
     }
-    view: type[SharedBox] = cast(Any, type(cls))(
-        cls.__name__, (cls,), namespace, _locked_view=True
-    )
+    view: type[SharedBox] = cast(Any, type(cls))(cls.__name__, (cls,), namespace)
     cls.__sharedbox_locked__ = view
     return view
 
@@ -573,7 +585,7 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
       progress before it raises
       [`LockTimeoutError`][sharedbox.LockTimeoutError]; 5.0 by default,
       finite and in `(0, 86400]`.
-    - `identity`: a non-empty string, by default the class's
+    - `identity`: a non-empty string without `|`, by default the class's
       `module.qualname`, with `__mp_main__` read as `__main__`. It enters
       the schema hash, and names the box when `name` is not given. A
       subclass does not inherit it. Two classes with the same identity and
@@ -750,14 +762,17 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
         identity: str | None = None,
         metadata_capacity: int | None = None,
         metadata_versions: int | None = None,
-        _locked_view: bool = False,
         **kwargs: Any,
     ) -> None:
-        if _locked_view:
+        if cls.__dict__.get("__sharedbox_locked_view__", False):
             return
         super().__init_subclass__(**kwargs)
         if identity is not None and (not isinstance(identity, str) or not identity):
             raise TypeError(f"{cls.__qualname__}: identity must be a non-empty string")
+        if identity is not None and "|" in identity:
+            # The schema text joins the identity and the fields with "|"; one inside the
+            # identity could make two different layouts hash alike.
+            raise ValueError(f"{cls.__qualname__}: identity must not contain '|'")
         cls.__sharedbox_identity__ = (
             class_identity(cls) if identity is None else identity
         )
@@ -808,6 +823,13 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
         params: list[Field] = []
         for attr, hint in found:
             value = cls.__dict__.get(attr, MISSING)
+            if value is MISSING and attr not in own and attr not in options:
+                # A field a plain mixin declares: its value there is the default or the field().
+                mixed = mixin_value(cls, attr)
+                if isinstance(mixed, Field):
+                    options[attr] = mixed
+                elif mixed is not MISSING:
+                    options[attr] = field(default=mixed)
             if isinstance(value, Field):
                 options[attr] = value
             elif value is not MISSING and not isinstance(
@@ -1030,6 +1052,10 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
         self._finalizer = weakref.finalize(
             self, release, self._watcher, self._segment, False
         )
+        # At exit the exit handler closes every box. weakref would run the finalizers before it,
+        # and so before it has made threads that end on a closed box quiet. atexit is a documented
+        # writable property, which the type stubs list as a slot that cannot be assigned.
+        self._finalizer.atexit = False  # type: ignore[misc]
         LIVE.add(self)
 
     def _open(
@@ -1157,7 +1183,7 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
         [`update`][sharedbox.SharedBox.update] keeps the
         earlier ones until the box reclaims them for newer ones, and
         [`metadata_version_of`][sharedbox.SharedBox.metadata_version_of]
-        reads them until then. A mapping reads back as a read-only mapping
+        reads them until then. A mapping reads back as a `frozendict`
         and a list as a tuple, nested the same way. Each box object decodes
         a version once and keeps the 32 it used last.
 
@@ -1686,6 +1712,13 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
         not wait for the watcher threads of the boxes it closes, and drops
         the writes those threads had not seen yet.
 
+        While another thread of this process waits for the box's lock,
+        `close` waits with it: it returns once that wait ends, which takes
+        at most the class's `lock_timeout`. The waiting thread is not
+        interrupted, and raises
+        [`LockTimeoutError`][sharedbox.LockTimeoutError] as it would
+        without the close.
+
         A box that is garbage collected is closed. Forwarding it started
         keeps running until its events group and every group
         [`follow`][sharedbox.BoxEvents.follow] returned are garbage
@@ -1736,9 +1769,14 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
         )
 
     def __repr__(self) -> str:
-        if self.closed:
-            return f"<{type(self).__qualname__} {self.name!r} closed>"
-        values = self.snapshot()
+        try:
+            if self.closed:
+                return f"<{type(self).__qualname__} {self.name!r} closed>"
+            values = self.snapshot()
+        except RuntimeError:
+            # This thread holds the box in a locked() block, or this is the object of a block
+            # that ended. A repr that raises breaks debuggers and the display of a failed test.
+            return f"<{type(self).__qualname__} locked>"
         shown = ", ".join(
             f"{p.name}={values[p.name]!r}"
             for p in type(self).__sharedbox_init__

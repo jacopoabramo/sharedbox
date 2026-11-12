@@ -4,7 +4,6 @@ import sys
 import threading
 from collections import OrderedDict
 from collections.abc import Callable, Mapping
-from types import MappingProxyType
 from typing import Any, Final
 
 import cbor2
@@ -15,6 +14,9 @@ if sys.version_info >= (3, 13):
     from typing import TypeVar
 else:
     from typing_extensions import TypeVar
+
+if sys.version_info < (3, 15):
+    from frozendict import frozendict
 
 M = TypeVar("M", covariant=True, bound=Mapping[str, Any], default=Mapping[str, Any])  # noqa: PLC0105
 V = TypeVar("V")
@@ -76,7 +78,7 @@ def encode(value: object) -> bytes:
 def _freeze(value: object) -> object:
     match value:
         case dict():
-            return MappingProxyType({key: _freeze(item) for key, item in value.items()})
+            return frozendict({key: _freeze(item) for key, item in value.items()})
         case list():
             return tuple(_freeze(item) for item in value)
         case _:
@@ -84,7 +86,13 @@ def _freeze(value: object) -> object:
 
 
 def decode(data: bytes) -> Any:
-    """Return the document stored in `data`, maps as read-only mappings and arrays as tuples."""
+    """Return the document stored in `data`, maps as `frozendict` and arrays as tuples.
+
+    Every read of one version shares one decoded copy, which is why it
+    cannot be changed. `frozendict` is the builtin from Python 3.15 and
+    the `frozendict` package before; both pickle, deep-copy and convert
+    to JSON.
+    """
     return _freeze(cbor2.loads(data))
 
 

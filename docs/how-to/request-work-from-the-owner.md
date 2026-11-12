@@ -142,6 +142,9 @@ can't come.
 The handler handles one request at a time. Of the requests sent while it
 runs, only the newest is handled next, and each one before it raises
 [`RequestSupersededError`][sharedbox.RequestSupersededError] in its caller.
+The same holds while no server runs: the field keeps one request, so a
+request that a later one replaces raises that error at once, and only the
+newest waits for the server to start.
 A camera told to move to 2 and then to 3 while it is still moving goes to
 3:
 

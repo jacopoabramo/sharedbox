@@ -31,6 +31,7 @@
 #include "codec.hpp"
 #include "collection.hpp"
 #include "dict.hpp"
+#include "gc_slots.hpp"
 #include "scalars.hpp"
 #include "segment.hpp"
 #include "set.hpp"
@@ -52,10 +53,14 @@ sharedbox::FieldKind to_kind(std::uint32_t code) {
     return static_cast<sharedbox::FieldKind>(code);
 }
 
-nb::object decode_value(const sharedbox::FieldDesc &field, std::string_view bytes) {
+nb::object decode_value(const sharedbox::FieldDesc &field, std::string_view bytes, const sharedbox::Types *types,
+                        std::uint32_t index) {
     PyObject *value = sharedbox::decode(field, bytes.data(), bytes.size());
-    if (value == nullptr)
+    if (value == nullptr) {
+        if (PyErr_Occurred() == nullptr)
+            sharedbox::corrupt(types != nullptr ? types->label(index) : "field " + std::to_string(index));
         throw nb::python_error();
+    }
     return nb::steal(value);
 }
 
@@ -71,7 +76,7 @@ nb::object decode_read(const sharedbox::Types *types, std::uint32_t index, share
     if (static_cast<std::uint8_t>(read.field->kind) <= sharedbox::kind_ref) {
         if (types != nullptr && types->field_via_types(index)) [[unlikely]]
             return types->decode(index, {data, read.bytes.size()}, nullptr);
-        return decode_value(*read.field, read.bytes);
+        return decode_value(*read.field, read.bytes, types, index);
     }
     return sharedbox::need(types, index)
         .decode(index, {data, read.bytes.size()}, read.large ? &read.large : nullptr);
@@ -85,7 +90,7 @@ nb::object decode_payload(const sharedbox::Types *types, const sharedbox::FieldD
     if (static_cast<std::uint8_t>(field.kind) <= sharedbox::kind_ref) {
         if (types != nullptr && types->field_via_types(index)) [[unlikely]]
             return types->decode(index, data, nullptr);
-        return decode_value(field, bytes);
+        return decode_value(field, bytes, types, index);
     }
     const sharedbox::Types &t = sharedbox::need(types, index);
     if (static_cast<std::uint8_t>(field.kind) == sharedbox::kind_attr) {
@@ -698,54 +703,6 @@ void release_box_capsule(PyObject *capsule) {
     delete handle;
 }
 
-int types_traverse(PyObject *self, visitproc visit, void *arg) {
-    Py_VISIT(Py_TYPE(self));
-    if (!nb::inst_ready(self))
-        return 0;
-    return nb::inst_ptr<sharedbox::Types>(self)->traverse(visit, arg);
-}
-
-int types_clear(PyObject *self) {
-    if (nb::inst_ready(self))
-        nb::inst_ptr<sharedbox::Types>(self)->clear();
-    return 0;
-}
-
-int value_cache_traverse(PyObject *self, visitproc visit, void *arg) {
-    Py_VISIT(Py_TYPE(self));
-    if (!nb::inst_ready(self))
-        return 0;
-    return nb::inst_ptr<ValueCache>(self)->traverse(visit, arg);
-}
-
-int value_cache_clear(PyObject *self) {
-    if (nb::inst_ready(self))
-        nb::inst_ptr<ValueCache>(self)->clear();
-    return 0;
-}
-
-PyType_Slot value_cache_slots[] = {{Py_tp_traverse, reinterpret_cast<void *>(value_cache_traverse)},
-                                   {Py_tp_clear, reinterpret_cast<void *>(value_cache_clear)},
-                                   {0, nullptr}};
-
-template <typename Store> int store_traverse(PyObject *self, visitproc visit, void *arg) {
-    Py_VISIT(Py_TYPE(self));
-    if (!nb::inst_ready(self))
-        return 0;
-    return nb::inst_ptr<Store>(self)->traverse(visit, arg);
-}
-
-template <typename Store> int store_clear(PyObject *self) {
-    if (nb::inst_ready(self))
-        nb::inst_ptr<Store>(self)->clear();
-    return 0;
-}
-
-template <typename Store>
-PyType_Slot store_slots[] = {{Py_tp_traverse, reinterpret_cast<void *>(store_traverse<Store>)},
-                             {Py_tp_clear, reinterpret_cast<void *>(store_clear<Store>)},
-                             {0, nullptr}};
-
 /// The iterator of a NativeCollection, NativeSet or NativeDict: one element, or a dict's key, decoded per
 /// step, forward up to the length the value has then, or backward from the end, as list's reversed iterator.
 template <typename Store> struct StoreIterator {
@@ -905,17 +862,18 @@ void collection_releasebuffer(PyObject *self, Py_buffer *) {
 }
 
 PyType_Slot collection_slots[] = {
-    {Py_tp_traverse, reinterpret_cast<void *>(store_traverse<sharedbox::NativeCollection>)},
-    {Py_tp_clear, reinterpret_cast<void *>(store_clear<sharedbox::NativeCollection>)},
+    {Py_tp_traverse, reinterpret_cast<void *>(sharedbox::traverse_slot<sharedbox::NativeCollection>)},
+    {Py_tp_clear, reinterpret_cast<void *>(sharedbox::clear_slot<sharedbox::NativeCollection>)},
     {Py_bf_getbuffer, reinterpret_cast<void *>(collection_getbuffer)},
     {Py_bf_releasebuffer, reinterpret_cast<void *>(collection_releasebuffer)},
     {0, nullptr}};
 
-PyType_Slot dict_slots[] = {{Py_tp_traverse, reinterpret_cast<void *>(store_traverse<sharedbox::NativeDict>)},
-                            {Py_tp_clear, reinterpret_cast<void *>(store_clear<sharedbox::NativeDict>)},
-                            {Py_mp_subscript, reinterpret_cast<void *>(dict_subscript)},
-                            {Py_mp_ass_subscript, reinterpret_cast<void *>(dict_ass_subscript)},
-                            {0, nullptr}};
+PyType_Slot dict_slots[] = {
+    {Py_tp_traverse, reinterpret_cast<void *>(sharedbox::traverse_slot<sharedbox::NativeDict>)},
+    {Py_tp_clear, reinterpret_cast<void *>(sharedbox::clear_slot<sharedbox::NativeDict>)},
+    {Py_mp_subscript, reinterpret_cast<void *>(dict_subscript)},
+    {Py_mp_ass_subscript, reinterpret_cast<void *>(dict_ass_subscript)},
+    {0, nullptr}};
 
 /// Raises TypeError when given, the number of arguments passed to name, passes most, as dict's methods do.
 void at_most(const char *name, std::size_t most, std::size_t given) {
@@ -944,9 +902,35 @@ template <int op> nb::object set_compare(sharedbox::NativeSet &self, nb::handle 
     return self.compare(other, op);
 }
 
-PyType_Slot types_slots[] = {{Py_tp_traverse, reinterpret_cast<void *>(types_traverse)},
-                             {Py_tp_clear, reinterpret_cast<void *>(types_clear)},
-                             {0, nullptr}};
+// The fields names gives a name to, read from one copy of the record, for get_dict of a Segment and of a
+// RecordWriter. names holds one entry per field, None for a field to leave out.
+nb::dict record_dict(const Segment &s, const nb::tuple &names, const sharedbox::Types *types,
+                     const std::byte *record) {
+    nb::dict out;
+    for (std::uint32_t i = 0; i < s.field_count(); ++i)
+        if (!names[i].is_none())
+            out[names[i]] = decode_payload(types, s.fields()[i], i, record);
+    return out;
+}
+
+void check_name_count(const Segment &s, const nb::tuple &names) {
+    if (names.size() != s.field_count())
+        throw std::invalid_argument("got " + std::to_string(names.size()) + " field names for " +
+                                    std::to_string(s.field_count()) + " fields");
+}
+
+// Encodes values for the fields of s, every one checked before any is stored, and hands their stored bytes
+// to store, for set of a Segment and of a RecordWriter. The bytes live until store returns.
+template <class Store>
+void encode_and_store(const Segment &s, const Values &values, nb::handle types, Store &&store) {
+    Scratch<sharedbox::Pending, 8> pending(values.size());
+    for (std::size_t i = 0; i < values.size(); ++i)
+        pending[i] = {values[i].first, values[i].second.ptr()};
+    Scratch<sharedbox::EncodeBuffer, 8> buffers(values.size());
+    Scratch<sharedbox::value, 8> encoded(values.size());
+    sharedbox::encode_all(s, types_of(types), pending.span(), buffers.span(), encoded.span());
+    store(encoded.span());
+}
 
 } // namespace
 
@@ -1019,31 +1003,16 @@ NB_MODULE(_native, m) {
         .def(
             "get_dict",
             [](const sharedbox::RecordWriter &w, nb::tuple names, nb::handle types) -> nb::dict {
-                const Segment &s = w.segment();
-                if (names.size() != s.field_count())
-                    throw std::invalid_argument("got " + std::to_string(names.size()) + " field names for " +
-                                                std::to_string(s.field_count()) + " fields");
-                const sharedbox::Types *t = types_of(types);
-                const std::byte *record = w.record();
-                nb::dict out;
-                for (std::uint32_t i = 0; i < s.field_count(); ++i)
-                    if (!names[i].is_none())
-                        out[names[i]] = decode_payload(t, s.fields()[i], i, record);
-                return out;
+                check_name_count(w.segment(), names);
+                return record_dict(w.segment(), names, types_of(types), w.record());
             },
             "names"_a, "types"_a = nb::none())
         .def(
             "set",
             [](sharedbox::RecordWriter &w, const Values &values, nb::handle types) {
                 w.check_live();
-                Scratch<sharedbox::Pending, 8> pending(values.size());
-                for (std::size_t i = 0; i < values.size(); ++i)
-                    pending[i] = {values[i].first, values[i].second.ptr()};
-                Scratch<sharedbox::EncodeBuffer, 8> buffers(values.size());
-                Scratch<sharedbox::value, 8> encoded(values.size());
-                sharedbox::encode_all(w.segment(), types_of(types), pending.span(), buffers.span(),
-                                      encoded.span());
-                w.set(encoded.span());
+                encode_and_store(w.segment(), values, types,
+                                 [&](std::span<const sharedbox::value> encoded) { w.set(encoded); });
             },
             "values"_a, "types"_a = nb::none())
         .def("end", &sharedbox::RecordWriter::end)
@@ -1189,32 +1158,21 @@ NB_MODULE(_native, m) {
         .def(
             "get_dict",
             [](const Segment &s, nb::tuple names, nb::handle types) -> nb::dict {
-                if (names.size() != s.field_count())
-                    throw std::invalid_argument("got " + std::to_string(names.size()) + " field names for " +
-                                                std::to_string(s.field_count()) + " fields");
+                check_name_count(s, names);
                 const sharedbox::Types *t = types_of(types);
-                return sharedbox::with_record(s, [&](const std::byte *record) {
-                    nb::dict out;
-                    for (std::uint32_t i = 0; i < s.field_count(); ++i)
-                        if (!names[i].is_none())
-                            out[names[i]] = decode_payload(t, s.fields()[i], i, record);
-                    return out;
-                });
+                return sharedbox::with_record(
+                    s, [&](const std::byte *record) { return record_dict(s, names, t, record); });
             },
             "names"_a, "types"_a = nb::none())
         .def(
             "set",
             [](Segment &s, const Values &values, nb::handle types, std::optional<nb::bytes> doc) {
-                Scratch<sharedbox::Pending, 8> pending(values.size());
-                for (std::size_t i = 0; i < values.size(); ++i)
-                    pending[i] = {values[i].first, values[i].second.ptr()};
-                Scratch<sharedbox::EncodeBuffer, 8> buffers(values.size());
-                Scratch<sharedbox::value, 8> encoded(values.size());
-                sharedbox::encode_all(s, types_of(types), pending.span(), buffers.span(), encoded.span());
-                if (doc)
-                    s.write(encoded.span(), std::string_view(doc->c_str(), doc->size()));
-                else
-                    s.write(encoded.span());
+                encode_and_store(s, values, types, [&](std::span<const sharedbox::value> encoded) {
+                    if (doc)
+                        s.write(encoded, std::string_view(doc->c_str(), doc->size()));
+                    else
+                        s.write(encoded);
+                });
             },
             "values"_a, "types"_a = nb::none(), "doc"_a = nb::none())
         .def(
@@ -1373,8 +1331,7 @@ NB_MODULE(_native, m) {
         .def_prop_ro("create_id", &Segment::create_id)
         .def_prop_ro("closed", &Segment::closed)
         .def_prop_ro("published", &Segment::published)
-        .def_prop_ro("name", &Segment::name)
-        .def_prop_ro("lock_timeout", &Segment::lock_timeout);
+        .def_prop_ro("name", &Segment::name);
 
     segment_type = reinterpret_cast<PyTypeObject *>(nb::type<Segment>().ptr());
     reraise = nb::cpp_function([] { std::rethrow_exception(std::exchange(pending, nullptr)); }).release().ptr();
@@ -1404,13 +1361,13 @@ NB_MODULE(_native, m) {
             "spec"_a, "segment_slot"_a, "types"_a = nb::none(), "values_slot"_a = nb::none())
         .def_ro("spec", &Field::spec);
 
-    nb::class_<ValueCache>(m, "ValueCache", nb::type_slots(value_cache_slots))
+    nb::class_<ValueCache>(m, "ValueCache", nb::type_slots(sharedbox::gc_slots<ValueCache>))
         .def(nb::init<std::uint32_t>(), "fields"_a)
         .def("clear", &ValueCache::clear)
         .def("_after_fork", &ValueCache::after_fork);
     value_cache_type = reinterpret_cast<PyTypeObject *>(nb::type<ValueCache>().ptr());
 
-    nb::class_<sharedbox::Types>(m, "Types", nb::type_slots(types_slots))
+    nb::class_<sharedbox::Types>(m, "Types", nb::type_slots(sharedbox::gc_slots<sharedbox::Types>))
         .def(
             "__init__",
             [](sharedbox::Types *self,
@@ -1495,7 +1452,7 @@ NB_MODULE(_native, m) {
     nb::module_::import_("collections.abc").attr("MutableSequence").attr("register")(collection);
 
     nb::class_<sharedbox::NativeSet> set(m, "NativeSet", nb::is_generic(),
-                                         nb::type_slots(store_slots<sharedbox::NativeSet>));
+                                         nb::type_slots(sharedbox::gc_slots<sharedbox::NativeSet>));
     set.def("__len__", &sharedbox::NativeSet::size)
         .def("__iter__",
              [](nb::pointer_and_handle<sharedbox::NativeSet> self) {

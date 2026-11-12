@@ -668,16 +668,21 @@ inline std::uint32_t current_pid() noexcept {
 inline std::uint64_t process_start(std::uint32_t pid) noexcept {
 #ifdef _WIN32
     HANDLE process = OpenProcess(SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION, FALSE, pid);
+    // Only ERROR_INVALID_PARAMETER says that no process has the pid. Any other failure, such as access
+    // denied or no memory for the handle, says nothing, and a live owner must not be judged gone.
     if (process == nullptr)
-        return GetLastError() == ERROR_ACCESS_DENIED ? start_unknown : 0;
+        return GetLastError() == ERROR_INVALID_PARAMETER ? 0 : start_unknown;
     std::uint64_t start = 0;
     // An exited process stays queryable while a handle to it is open, and its exit code may be any
     // value, STILL_ACTIVE included; only the handle's signal state is reliable.
-    if (WaitForSingleObject(process, 0) == WAIT_TIMEOUT) {
+    const DWORD state = WaitForSingleObject(process, 0);
+    if (state == WAIT_TIMEOUT) {
         FILETIME created, exited, kernel, user;
         start = GetProcessTimes(process, &created, &exited, &kernel, &user)
                     ? (std::uint64_t{created.dwHighDateTime} << 32) | created.dwLowDateTime
                     : start_unknown;
+    } else if (state != WAIT_OBJECT_0) {
+        start = start_unknown;
     }
     CloseHandle(process);
     return start;
@@ -838,6 +843,13 @@ public:
             cpu_relax();
         } else if (spins_ < 128) {
             std::this_thread::yield();
+#ifdef _WIN32
+        } else if (still_yielding()) {
+            // A Windows sleep ends on a timer tick, about 10 ms or more away, however short the sleep asked
+            // for. The spins and yields above take some tens of microseconds, so without this a wait that
+            // meets a large write or a short locked() block would sleep a whole tick for it.
+            std::this_thread::yield();
+#endif
         } else {
             std::this_thread::sleep_for(sleep_);
             // The parentheses stop a min macro, from windows.h included earlier without NOMINMAX.
@@ -846,6 +858,20 @@ public:
     }
 
 private:
+#ifdef _WIN32
+    // Whether the first millisecond of yielding, counted from the first call, is still running.
+    bool still_yielding() noexcept {
+        const clock::time_point now = clock::now();
+        if (!yielding_) {
+            yielding_ = true;
+            yield_until_ = now + std::chrono::milliseconds(1);
+        }
+        return now < yield_until_;
+    }
+
+    clock::time_point yield_until_{};
+    bool yielding_ = false;
+#endif
     double timeout_;
     clock::time_point deadline_{};
     std::chrono::microseconds sleep_{10};
@@ -2621,6 +2647,8 @@ inline result<std::uint32_t> metadata_length(const std::byte *area, const metada
 
 // Copies version's document into out and returns its length. As metadata_length, and status::range for an
 // out shorter than the document; status::not_found also when the version is overwritten during the copy.
+// status::corrupt also for stored bytes that are not a metadata document, which only a writer that
+// bypassed add_metadata leaves: a reader then decodes nothing it did not check.
 inline result<std::uint32_t> read_metadata(const std::byte *area, const metadata_line &line, std::uint64_t version,
                                            std::span<std::byte> out) noexcept {
     if (version == 0)
@@ -2640,6 +2668,8 @@ inline result<std::uint32_t> read_metadata(const std::byte *area, const metadata
         std::memcpy(out.data(), ring + copy.offset, copy.length);
     if (!metadata_entry_kept(e, copy.seq))
         return unexpected(status::not_found);
+    if (!metadata_ok(std::span<const std::byte>(out.data(), copy.length)))
+        return unexpected(status::corrupt);
     return copy.length;
 }
 

@@ -2,18 +2,23 @@ import enum
 import multiprocessing as mp
 import queue
 import struct
+import sys
 import threading
 import time
 
 import psygnal
 import pytest
 
-from sharedbox import SharedBox
+from sharedbox import LockTimeoutError, SharedBox
 
 
 class Counter(SharedBox):
     value: int = 0
     other: int = 0
+
+
+class Guarded(SharedBox, lock_timeout=0.2):
+    value: int = 0
 
 
 class Colour(enum.Enum):
@@ -198,3 +203,49 @@ def test_a_change_that_does_not_decode_is_logged_and_skipped(
         assert failed in caplog.text
         box.colour = Colour.GREEN
         assert seen.get(timeout=5) == (Colour.GREEN, Colour.RED)
+
+
+def test_callback_raising_system_exit_does_not_stop_delivery(unique_name: str) -> None:
+    """Keep delivering changes after a callback raises SystemExit."""
+    raised = threading.Event()
+    seen: queue.Queue[int] = queue.Queue()
+
+    def leave(new: int) -> None:
+        raised.set()
+        sys.exit(0)
+
+    with Counter.create(unique_name) as box:
+        box.events.other.connect(leave)
+        box.events.value.connect(seen.put)
+        box.other = 1
+        assert raised.wait(5)
+        box.value = 2
+        assert seen.get(timeout=5) == 2
+
+
+def test_events_deliver_after_a_first_access_that_raised(unique_name: str) -> None:
+    """Deliver changes through events although the first access raised a lock timeout."""
+    seen: queue.Queue[int] = queue.Queue()
+    with Guarded.create(unique_name) as box:
+        box._segment._hold_write_lock()
+        with pytest.raises(LockTimeoutError):
+            box.events  # noqa: B018
+        box.force_unlock()
+        box.events.value.connect(seen.put)
+        box.value = 4
+        assert seen.get(timeout=5) == 4
+
+
+def test_old_value_is_right_after_a_change_nobody_listened_to(unique_name: str) -> None:
+    """Report a value written while its field had no callback as the old value of the next change."""
+    passed: queue.Queue[int] = queue.Queue()
+    seen: queue.Queue[tuple[int, int]] = queue.Queue()
+    with Counter.create(unique_name) as box:
+        box.events.other.connect(passed.put)
+        box.value = 5
+        # The watcher has seen the write of value once it reports this later write of other.
+        box.other = 1
+        assert passed.get(timeout=5) == 1
+        box.events.value.connect(lambda new, old: seen.put((new, old)))
+        box.value = 6
+        assert seen.get(timeout=5) == (6, 5)

@@ -665,7 +665,7 @@ std::span<const std::byte> Types::encode(std::uint32_t index, PyObject *value, E
         return {out, t.size};
     }
     if (detail::is_collection(t.kind)) {
-        std::byte *out = buffer.reserve(t.size);
+        std::byte *out = buffer.room(t.size);
         return {out, encode_collection(t, value, out, {name})};
     }
     std::byte *out = buffer.reserve(t.size);
@@ -803,11 +803,11 @@ std::size_t Types::encode_collection(const detail::type_ref &t, PyObject *value,
     if (length > static_cast<Py_ssize_t>(node.capacity))
         raise(PyExc_ValueError, where.name + " holds at most " + std::to_string(node.capacity) +
                                     " elements; the value has " + std::to_string(length));
+    // out may hold anything: an older value in a stream slot, or memory never written. So the bytes in use
+    // are zeroed first, and what an element leaves unwritten, such as padding, reads as zero. Set elements
+    // and dict keys are compared by their bytes, and the bytes of a list are compared to detect a change.
+    std::memset(out, 0, node.slots + static_cast<std::size_t>(length) * node.stride);
     put(out, static_cast<std::uint32_t>(length));
-    // Set elements and dict keys are compared by their bytes, and out may hold an older value, as a stream slot
-    // does, so the slots are zeroed first: the bytes a key leaves unwritten, such as padding, then read as zero.
-    if (t.kind != kind_list)
-        std::memset(out + node.slots, 0, static_cast<std::size_t>(length) * node.stride);
     const detail::type_member &first = tree_.member(node.members);
     for (Py_ssize_t i = 0; i < length; ++i) {
         std::byte *slot = out + node.slots + static_cast<std::size_t>(i) * node.stride;
@@ -873,7 +873,11 @@ void Types::encode_plain(const detail::type_ref &t, PyObject *value, std::byte *
     case kind_enum: {
         if (reinterpret_cast<PyObject *>(Py_TYPE(value)) != n.cls)
             wrong(where.name, "a " + type_name(n.cls) + " member", value);
-        put(out, n.positions.at(value));
+        // A class with _missing_ can build a value of its own type that is not one of its members.
+        const auto found = n.positions.find(value);
+        if (found == n.positions.end())
+            raise(PyExc_ValueError, where.name + ": the value is not one of the members of " + type_name(n.cls));
+        put(out, found->second);
         return;
     }
     case kind_flag: {
@@ -1451,12 +1455,16 @@ nb::object Types::out_view(const detail::type_ref &t, PyObject *out, const std::
                            const std::string &name) const {
     if (t.kind != kind_max_array)
         return nb::borrow(out);
-    if (stored_bytes(t, data) == UINT64_MAX)
+    // The shape is checked and used from one copy of the line: data may be a live mapping, where a
+    // writer could change the line between a check and a second read.
+    std::byte line[64];
+    std::memcpy(line, data, sizeof line);
+    if (stored_bytes(t, line) == UINT64_MAX)
         corrupt(name);
     const detail::type_node &node = tree_.node(t.node);
     std::size_t shape[8];
     for (std::uint32_t i = 0; i < node.ndim; ++i)
-        shape[i] = static_cast<std::size_t>(load<std::uint64_t>(data + std::size_t{i} * 8));
+        shape[i] = static_cast<std::size_t>(load<std::uint64_t>(line + std::size_t{i} * 8));
     auto *raw = static_cast<std::byte *>(array_out_of(t, name, out).data());
     return wrap_array(t, raw, out, {shape, node.ndim});
 }
@@ -1502,13 +1510,16 @@ nb::object Types::decode_array(const detail::type_ref &t, const std::byte *data,
 
 nb::object Types::decode_max_array(const detail::type_ref &t, const std::byte *data,
                                    std::unique_ptr<std::byte[]> *owned, const std::string &name) const {
-    const std::uint64_t bytes = detail::max_array_bytes(tree_, t, data);
+    // One copy of the shape line for the check and for the shape, as in out_view.
+    std::byte line[64];
+    std::memcpy(line, data, sizeof line);
+    const std::uint64_t bytes = detail::max_array_bytes(tree_, t, line);
     if (bytes == UINT64_MAX)
         corrupt(name);
     const detail::type_node &node = tree_.node(t.node);
     std::size_t shape[8];
     for (std::uint32_t i = 0; i < node.ndim; ++i)
-        shape[i] = static_cast<std::size_t>(load<std::uint64_t>(data + std::size_t{i} * 8));
+        shape[i] = static_cast<std::size_t>(load<std::uint64_t>(line + std::size_t{i} * 8));
     std::unique_ptr<std::byte[]> buffer;
     std::byte *raw = nullptr;
     // A buffer mostly beyond the stored elements is not kept: its unused room would live as long as the array.
@@ -1559,10 +1570,13 @@ nb::object Types::array_over(std::uint32_t index, std::byte *data, nb::handle ow
     const detail::type_node &node = tree_.node(t.node);
     std::size_t stored[8];
     if (shape.empty()) {
-        if (detail::max_array_bytes(tree_, t, data) == UINT64_MAX)
+        // One copy of the shape line for the check and for the shape, as in out_view.
+        std::byte seen[64];
+        std::memcpy(seen, data, sizeof seen);
+        if (detail::max_array_bytes(tree_, t, seen) == UINT64_MAX)
             corrupt(labels_[index]);
         for (std::uint32_t i = 0; i < node.ndim; ++i)
-            stored[i] = static_cast<std::size_t>(load<std::uint64_t>(data + std::size_t{i} * 8));
+            stored[i] = static_cast<std::size_t>(load<std::uint64_t>(seen + std::size_t{i} * 8));
         shape = {stored, node.ndim};
     } else {
         std::uint64_t line[8] = {};

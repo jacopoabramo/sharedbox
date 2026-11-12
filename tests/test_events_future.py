@@ -5,6 +5,7 @@ import multiprocessing as mp
 import threading
 import time
 from collections.abc import Callable
+from dataclasses import dataclass
 
 import pytest
 
@@ -16,6 +17,20 @@ CONTEXT = mp.get_context("spawn")
 class Counter(SharedBox):
     value: int = 0
     other: int = 0
+
+
+@dataclass
+class Positive:
+    x: float = 0.0
+
+    def __post_init__(self) -> None:
+        if self.x < 0:
+            raise ValueError("x must not be negative")
+
+
+class Stage(SharedBox):
+    position: Positive
+    count: int = 0
 
 
 def write_later(name: str, value: int, delay: float) -> None:
@@ -279,3 +294,17 @@ def test_closing_the_box_wakes_a_wait_blocked_in_another_thread(
     waiter.join(10)
     assert not waiter.is_alive()
     assert result == [{future}]
+
+
+def test_future_fails_when_reading_the_new_value_raises(unique_name: str) -> None:
+    """Fail a future with the error of reading its value, and still resolve later futures."""
+    refused = Positive()
+    refused.x = -1.0
+    with Stage.create(unique_name, Positive()) as box:
+        future = box.watch("position").future()
+        box.position = refused
+        with pytest.raises(ValueError, match="must not be negative"):
+            future.result(timeout=5)
+        later = box.watch("count").future()
+        box.count = 1
+        assert later.result(timeout=5) == 1

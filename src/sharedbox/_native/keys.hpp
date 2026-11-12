@@ -93,6 +93,31 @@ protected:
     /// the first.
     void ensure_checked();
 
+    /// A new value of self's class holding self's keys, and for a dict their values. Its keys count as
+    /// checked when self's do: no other thread has the copy yet.
+    template <typename Store> static nb::object copy_keyed(nb::pointer_and_handle<Store> self) {
+        const Store &s = *self.p;
+        std::vector<std::byte> stored;
+        bool checked = false;
+        {
+            nb::ft_lock_guard guard(s.mutex_);
+            const std::span<const std::byte> used = s.used();
+            stored.assign(used.begin(), used.end());
+            checked = s.checked_;
+        }
+        nb::object out = like(self, stored);
+        nb::inst_ptr<Store>(out)->checked_ = checked;
+        return out;
+    }
+    /// Raises TypeError for a value of class Store that was allocated and never built.
+    template <typename Store> void refuse_unbuilt_as(nb::handle value) const {
+        if (nb::isinstance<Store>(value) && !nb::inst_ready(value))
+            raise(PyExc_TypeError,
+                  label_ + " got a " +
+                      nb::borrow<nb::str>(nb::handle(Py_TYPE(value.ptr())).attr("__qualname__")).c_str() +
+                      " that was never built");
+    }
+
     KeyIndex index_;
     /// Whether the stored keys have passed ensure_checked; a value that starts empty has.
     bool checked_ = false;

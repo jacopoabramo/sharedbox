@@ -177,6 +177,20 @@ def test_close_drops_items_kept_from_a_cancelled_receive(unique_name: str) -> No
             reader.receive(timeout=1)
 
 
+def test_a_latest_reader_drops_a_kept_item_for_a_newer_one(unique_name: str) -> None:
+    """Return the newest item from a latest reader that kept an older one, and count the older as missed."""
+    with SharedStream.create(int, unique_name, capacity=4) as stream:
+        reader = stream.reader("latest")
+        sender = stream.sender()
+        future = reader.receive_future()
+        sender.send(5)
+        wait([future], timeout=5)
+        reader._cancel(future)
+        sender.send(6)
+        sender.send(7)
+        assert (reader.receive(timeout=5), reader.missed) == (7, 2)
+
+
 def test_an_asend_cancelled_while_the_ring_stays_full_sends_nothing(
     unique_name: str,
 ) -> None:

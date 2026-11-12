@@ -21,6 +21,7 @@ nav = [
         { "Install" = [
             "how-to/install-sharedbox.md",
             "how-to/migrate-from-0.7.md",
+            "how-to/migrate-from-0.9.md",
         ]},
         { "Use a box or a stream" = [
             "how-to/name-a-box.md",

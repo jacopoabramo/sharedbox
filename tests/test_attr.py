@@ -327,7 +327,11 @@ def test_a_handler_exception_reaches_the_caller(
         text = str(raised.value).removeprefix("Scanner.move: ")
         assert text.startswith("ValueError: é")
         assert len(text.encode()) == 256
-    logged = [r for r in caplog.records if r.name == "sharedbox" and r.exc_info]
+    logged = [
+        r
+        for r in caplog.records
+        if r.name == "sharedbox" and "Traceback" in r.getMessage()
+    ]
     assert len(logged) == 2
 
 
@@ -587,6 +591,21 @@ def test_a_surrogate_in_a_handler_error_reaches_the_caller(
         box.move.serve(surrogate)
         with pytest.raises(RequestError, match=r"ValueError: \\ud800"):
             box.move(1.0).result(timeout=5)
+
+
+def test_a_surrogate_in_a_handler_error_is_escaped_in_the_log(
+    names: Callable[[str], str], caplog: pytest.LogCaptureFixture
+) -> None:
+    """Log the error of a handler, with its traceback, as text that UTF-8 can encode."""
+    with (
+        Scanner.create(names("logged")) as box,
+        caplog.at_level(logging.ERROR, logger="sharedbox"),
+    ):
+        box.move.serve(surrogate)
+        with pytest.raises(RequestError):
+            box.move(1.0).result(timeout=5)
+    logged = caplog.text.encode("utf-8").decode()
+    assert ("Traceback" in logged, "ValueError: \\ud800" in logged) == (True, True)
 
 
 @pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")
@@ -867,3 +886,66 @@ def test_a_cancelled_error_from_the_handler_fails_only_that_request(
         with pytest.raises(RequestError, match="CancelledError"):
             box.move(-1.0).result(timeout=10)
         assert box.move(1.0).result(timeout=10) == 1.0
+
+
+def test_stop_refused_in_a_locked_block_frees_the_field_when_repeated(
+    names: Callable[[str], str],
+) -> None:
+    """Free the field with a second stop after one inside a locked() block raised."""
+    with Scanner.create(names("stop")) as box:
+        server = box.move.serve(lambda position: position)
+        with box.locked(), pytest.raises(RuntimeError, match="locked"):
+            server.stop()
+        server.stop()
+        box.move.serve(lambda position: position * 2)
+        assert box.move(1.0).result(timeout=5) == 2.0
+
+
+def test_close_cancels_futures_when_the_served_field_cannot_be_released(
+    names: Callable[[str], str],
+) -> None:
+    """Cancel pending futures on close while a held lock keeps the served field from being released."""
+    name = names("stuck")
+    with Guarded.create(name) as holder:
+        box = Guarded.attach(name)
+        box.move.serve(double)
+        future = box.watch("move").future()
+        holder._segment._hold_write_lock()
+        try:
+            box.close()
+        finally:
+            holder._segment._release_held_lock()
+        assert future.cancelled()
+
+
+def test_result_in_a_callback_of_the_same_box_raises_at_once(
+    names: Callable[[str], str],
+) -> None:
+    """Raise RuntimeError from result() of a pending request inside an events callback of its box."""
+    seen: queue.Queue[type[BaseException] | float] = queue.Queue()
+
+    def forward(new: float) -> None:
+        try:
+            seen.put(box.move(new).result(timeout=5))
+        except RuntimeError as error:
+            seen.put(type(error))
+
+    with Scanner.create(names("callback")) as box:
+        box.move.serve(lambda position: position)
+        box.events.position.connect(forward)
+        box.position = 2.0
+        assert seen.get(timeout=4) is RuntimeError
+
+
+def test_requests_nobody_serves_are_superseded_by_the_next_one(
+    names: Callable[[str], str],
+) -> None:
+    """Fail each request a later one replaced while no server runs, and answer the newest once one starts."""
+    with Scanner.create(names("unserved")) as box:
+        first, second, newest = box.move(1.0), box.move(2.0), box.move(3.0)
+        with pytest.raises(RequestSupersededError):
+            first.result(timeout=5)
+        with pytest.raises(RequestSupersededError):
+            second.result(timeout=5)
+        box.move.serve(lambda position: position)
+        assert newest.result(timeout=5) == 3.0

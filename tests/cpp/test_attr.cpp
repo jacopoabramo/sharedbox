@@ -403,6 +403,18 @@ TEST_CASE("a step that changes nothing leaves the sequence number and the write 
     static_cast<void>(unlink(name));
 }
 
+TEST_CASE("a request replaced while no server takes any reads superseded at once") {
+    const std::string name = unique("attr-superseded-unserved");
+    handle box = make(name, int_request());
+    std::array<std::byte, 256> out{};
+
+    REQUIRE(box.request_send(0, eight(1), patience).has_value());
+    REQUIRE(box.request_send(0, eight(2), patience).has_value());
+    CHECK(box.request_answer_of(0, 1, out, false)->outcome == request_outcome::superseded);
+    CHECK(box.request_answer_of(0, 2, out, false)->outcome == request_outcome::pending);
+    static_cast<void>(unlink(name));
+}
+
 TEST_CASE("a later request supersedes one the server never took") {
     const std::string name = unique("attr-superseded");
     handle box = make(name, int_request());

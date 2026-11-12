@@ -325,6 +325,15 @@ wheels = [
 ]
 
 [[package]]
+name = "frozendict"
+version = "2.5.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/ed/45/7335e29396dde7c9ec00c4758c46bb7d4a9f07ca0a351ae58b814ca6b6a4/frozendict-2.5.1.tar.gz", hash = "sha256:b79b0c133220c5976ff05b8bfe3c1215119caa6255f477a309151fd5e2c2c0c3", size = 337443, upload-time = "2026-10-30T20:37:01.879Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/60/98/0902e074fb777b4064594a3a18773a50d661dbb8d73b7487fdf63ba088cc/frozendict-2.5.1-py3-none-any.whl", hash = "sha256:b6e602e286b912beca1e12615f50eda6c74646b440c8cfde34221adee6c98c5e", size = 18055, upload-time = "2026-10-30T20:37:00.614Z" },
+]
+
+[[package]]
 name = "ghp-import"
 version = "2.1.0"
 source = { registry = "https://pypi.org/simple" }
@@ -2216,6 +2225,7 @@ source = { editable = "." }
 default-groups = ["benchmarks", "dev", "lint"]
 dependencies = [
     { name = "cbor2" },
+    { name = "frozendict", marker = "python_full_version < '3.15'" },
     { name = "psygnal" },
     { name = "typing-extensions", marker = "python_full_version < '3.13'" },
 ]
@@ -2285,6 +2295,7 @@ tox = [
 [package.metadata]
 requires-dist = [
     { name = "cbor2", specifier = ">=6.1.5" },
+    { name = "frozendict", marker = "python_full_version < '3.15'", specifier = ">=2.5.1" },
     { name = "numpy", marker = "extra == 'benchmarks'", specifier = ">=2.4.6" },
     { name = "numpy", marker = "extra == 'bluebox'", specifier = ">=2.4.6" },
     { name = "plotly", marker = "extra == 'benchmarks'", specifier = ">=7.1.0" },

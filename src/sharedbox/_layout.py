@@ -10,6 +10,7 @@ from dataclasses import KW_ONLY, MISSING, InitVar, dataclass
 from types import MappingProxyType, NoneType
 from typing import (
     TYPE_CHECKING,
+    Annotated,
     Any,
     ClassVar,
     Final,
@@ -91,6 +92,8 @@ Kind = Literal[
 MAX_FIELDS: Final[int] = 256
 ALIGN: Final[int] = 8
 REF_SIZE: Final[int] = 256
+# The record ends within the first 2**32 - 4096 bytes of the segment.
+MAX_RECORD_SIZE: Final[int] = 2**32 - 4096
 
 
 @dataclass(frozen=True, eq=False)
@@ -397,7 +400,12 @@ def class_identity(cls: type) -> str:
 
 
 def reference(hint: object) -> tuple[type[SharedBox], bool] | None:
-    """Return the box class of a reference field annotated `X` or `X | None`, and whether it may be None."""
+    """Return the box class of a reference field annotated `X` or `X | None`, and whether it may be None.
+
+    `Annotated` and `Final` around the annotation are looked through.
+    """
+    while get_origin(hint) in (Annotated, Final):
+        hint = get_args(hint)[0]
     if is_box_class(hint):
         return hint, False
     if get_origin(hint) in (Union, types.UnionType):
@@ -423,6 +431,23 @@ def forward_refs(hint: object) -> list[ForwardRef]:
     return [ref for arg in get_args(hint) for ref in forward_refs(arg)]
 
 
+def enclosing_locals() -> dict[str, Any]:
+    """Return the local names of the function whose class statement is being run, or {} at module level.
+
+    With string annotations a class defined in a function can only name
+    another class of that function through these.
+    """
+    package = __name__.partition(".")[0]
+    frame: types.FrameType | None = sys._getframe(1)
+    while frame is not None and (
+        frame.f_globals.get("__name__", "").partition(".")[0] == package
+    ):
+        frame = frame.f_back
+    if frame is None or frame.f_locals is frame.f_globals:
+        return {}
+    return dict(frame.f_locals)
+
+
 def type_hints(cls: type) -> dict[str, Any]:
     """Return the resolved annotations of `cls` and its bases, in which `cls` may name itself.
 
@@ -436,7 +461,7 @@ def type_hints(cls: type) -> dict[str, Any]:
     except NameError:
         pass
     # The class's own name is bound in its module only after __init_subclass__ returns.
-    localns = {cls.__name__: cls}
+    localns = {**enclosing_locals(), cls.__name__: cls}
     if sys.version_info >= (3, 14):
         hints = get_type_hints(
             cls, include_extras=True, localns=localns, format=Format.FORWARDREF
@@ -485,7 +510,9 @@ def declared(cls: type) -> list[tuple[str, Any]]:
     """Return `(name, annotation)` of every field and `InitVar` of `cls`, base classes first.
 
     `dataclasses.KW_ONLY` and `ClassVar` annotations and names starting
-    with `_` are left out.
+    with `_` are left out. A base that is not a box class gives its
+    annotated attributes as fields too, so a plain mixin can hold the
+    fields several box classes share.
     """
     return [
         (name, hint)
@@ -522,6 +549,19 @@ def field_text(spec: FieldSpec) -> str:
     return f"{spec.name}:ref{optional}:{spec.target.__sharedbox_identity__}"
 
 
+def mixin_value(cls: type, name: str) -> Any:
+    """Return what a base of `cls` that is not a box class assigns to its annotated attribute `name`, or `MISSING`.
+
+    A box class records the options of its fields itself; a plain mixin
+    does not, so the default or the `field()` of a field it declares is
+    read from its class body.
+    """
+    for base in cls.__mro__[1:]:
+        if not is_box_class(base) and name in own_annotations(base):
+            return base.__dict__.get(name, MISSING)
+    return MISSING
+
+
 def sizing_options(
     cls: type, name: str
 ) -> tuple[tuple[int, ...] | None, Any, int | None]:
@@ -537,11 +577,14 @@ def sizing_options(
             ),
             None,
         )
-        if option is None:
+        if option is None and not own:
+            value = mixin_value(cls, name)
+        if option is None and value is MISSING:
             return None, MISSING, None
-        if own:
+        if option is not None and own:
             return None, option.default, None
-        return option.shape, option.default, option.capacity
+        if option is not None:
+            return option.shape, option.default, option.capacity
     if isinstance(value, Field):
         return value.shape, value.default, value.capacity
     return None, value, None
@@ -552,7 +595,7 @@ def declared_option(cls: type, name: str) -> Field | None:
     if name in own_annotations(cls):
         value = cls.__dict__.get(name, MISSING)
         return value if isinstance(value, Field) else None
-    return next(
+    option: Field | None = next(
         (
             base.__dict__["__sharedbox_options__"][name]
             for base in cls.__mro__[1:]
@@ -560,6 +603,10 @@ def declared_option(cls: type, name: str) -> Field | None:
         ),
         None,
     )
+    if option is None:
+        value = mixin_value(cls, name)
+        return value if isinstance(value, Field) else None
+    return option
 
 
 ZERO_KINDS: Final = frozenset(
@@ -723,6 +770,11 @@ def build_layout(cls: type, identity: str | None = None) -> Layout:
         offsets[i] = offset
         offset += sizes[i]
     record_size = round_up(offset, max(ALIGN, *aligns))
+    if record_size > MAX_RECORD_SIZE:
+        raise TypeError(
+            f"{cls.__qualname__}: the fields take {record_size} bytes; "
+            f"a box holds at most {MAX_RECORD_SIZE}"
+        )
     table = Table()
     specs: list[FieldSpec] = []
     for i, (name, spec, ref, info) in enumerate(found):

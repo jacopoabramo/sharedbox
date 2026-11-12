@@ -85,13 +85,18 @@ struct EncodeBuffer {
 
     /// n zeroed bytes, in place when they fit, else on the heap.
     std::byte *reserve(std::size_t n) {
-        std::byte *out = small;
-        if (n > sizeof small) {
-            large.reset(new std::byte[n]);
-            out = large.get();
-        }
+        std::byte *out = room(n);
         std::memset(out, 0, n);
         return out;
+    }
+
+    /// n bytes left as they are, for a value whose encoder zeroes what it uses: zeroing the whole
+    /// capacity of a collection that holds a few elements would cost more than the write.
+    std::byte *room(std::size_t n) {
+        if (n <= sizeof small)
+            return small;
+        large.reset(new std::byte[n]);
+        return large.get();
     }
 
     alignas(std::uint64_t) std::byte small[sizeof(box_ref)];
@@ -106,7 +111,9 @@ struct EncodeBuffer {
 std::span<const std::byte> encode(const FieldDesc &field, const std::string &name, PyObject *value,
                                   EncodeBuffer &buffer);
 
-/// A new reference to the value stored in data.
+/// A new reference to the value stored in data. nullptr with a Python error set when the conversion
+/// failed, and nullptr with none set when data holds bytes no value has; the caller knows the field's
+/// name and raises for it.
 PyObject *decode(const FieldDesc &field, const char *data, std::size_t size);
 
 /// One value to encode: the field index and the Python object, borrowed.

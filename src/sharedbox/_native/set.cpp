@@ -9,21 +9,7 @@
 
 namespace sharedbox {
 
-nb::object NativeSet::copy(nb::pointer_and_handle<NativeSet> self) {
-    const NativeSet &s = *self.p;
-    std::vector<std::byte> stored;
-    bool checked = false;
-    {
-        nb::ft_lock_guard guard(s.mutex_);
-        const std::span<const std::byte> used = s.used();
-        stored.assign(used.begin(), used.end());
-        checked = s.checked_;
-    }
-    nb::object out = like(self, stored);
-    // Copied from checked keys, so the copy's keys need no check either; no other thread has it yet.
-    nb::inst_ptr<NativeSet>(out)->checked_ = checked;
-    return out;
-}
+nb::object NativeSet::copy(nb::pointer_and_handle<NativeSet> self) { return copy_keyed(self); }
 
 bool NativeSet::contains(nb::handle value) {
     SlotBuffer key(stride_);
@@ -103,13 +89,7 @@ void NativeSet::remove_all() {
     checked_ = true;
 }
 
-void NativeSet::refuse_unbuilt(nb::handle value) const {
-    if (nb::isinstance<NativeSet>(value) && !nb::inst_ready(value))
-        raise(PyExc_TypeError,
-              label_ + " got a " +
-                  nb::borrow<nb::str>(nb::handle(Py_TYPE(value.ptr())).attr("__qualname__")).c_str() +
-                  " that was never built");
-}
+void NativeSet::refuse_unbuilt(nb::handle value) const { refuse_unbuilt_as<NativeSet>(value); }
 
 bool NativeSet::takes(nb::handle other) const {
     refuse_unbuilt(other);
