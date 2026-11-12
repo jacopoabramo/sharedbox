@@ -92,3 +92,9 @@ def check_exported_names(stream: SharedStream[Item], out: Item) -> None:
     on_full: OnFull = "release"
     assert_type(stream.reader(mode, start).iter_into(out), IterInto[Item])
     assert_type(stream.sender(on_full), SharedSendStream[Item])
+
+
+async def check_async_receive(reader: SharedReceiveStream[Item], out: Item) -> None:
+    assert_type(await reader.areceive(), Item)
+    assert_type(await reader.areceive_into(out, timeout=1), Item)
+    assert_type(await reader.afetch(0, timeout=1), Item)

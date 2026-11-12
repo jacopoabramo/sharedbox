@@ -1997,17 +1997,79 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T, M]):
         ValueError
             If `position` is negative or above `2**63 - 2`.
         """
+        return self._fetch_future(
+            position, [] if out is None else self._targets(out), None
+        )
+
+    def _fetch_future(
+        self,
+        position: int,
+        targets: list[tuple[tuple[int, ...], Any]],
+        timeout: float | None,
+    ) -> CallFuture:
         check_position(position)
-        targets = [] if out is None else self._targets(out)
         future = self._submit(
-            lambda future: self._receive(targets, None, future, position=position)
+            lambda future: self._receive(targets, timeout, future, position=position)
         )
         # A fetch takes nothing from the cursor, so stopping it mid-wait loses no item.
         future.on_cancel = self._interrupt_call
         return future
 
-    def _receive_future(self, targets: list[tuple[tuple[int, ...], Any]]) -> CallFuture:
-        return self._submit(lambda future: self._receive(targets, None, future))
+    async def afetch(self, position: int, /, *, timeout: float | None = None) -> T:
+        """Return the item at `position`, as [`fetch`][sharedbox.SharedReceiveStream.fetch] does, without blocking the event loop.
+
+        Cancelling the call stops the fetch, so it does not hold up later
+        calls on the reader.
+
+        Raises
+        ------
+        ItemGoneError
+            If the ring no longer holds the item.
+        EndOfStream
+            If the sender closed or died without sending the item.
+        TimeoutError
+            If `timeout` seconds pass first.
+        StreamClosedError
+            If this reader is closed, before or during the wait.
+        ValueError
+            If `position` is negative or above `2**63 - 2`.
+        """
+        return cast(T, await self._wait(self._fetch_future(position, [], timeout)))
+
+    def _receive_future(
+        self,
+        targets: list[tuple[tuple[int, ...], Any]],
+        timeout: float | None = None,
+    ) -> CallFuture:
+        return self._submit(lambda future: self._receive(targets, timeout, future))
+
+    async def areceive(self, *, timeout: float | None = None) -> T:
+        """Return the next item, as [`receive`][sharedbox.SharedReceiveStream.receive] does, without blocking the event loop.
+
+        An item a cancelled `areceive` had already taken is returned by the
+        next receive.
+
+        Raises
+        ------
+        EndOfStream
+            If the sender closed or died and no item is left.
+        ReaderReleased
+            If the sender released this reader.
+        TimeoutError
+            If `timeout` seconds pass first.
+        StreamClosedError
+            If this reader is closed, before or during the wait.
+        """
+        return await self._areceive([], timeout)
+
+    async def areceive_into(self, out: Any, /, *, timeout: float | None = None) -> T:
+        """As [`areceive`][sharedbox.SharedReceiveStream.areceive], with the item's arrays read into the arrays in `out`.
+
+        `out` has the shape that
+        [`receive_into`][sharedbox.SharedReceiveStream.receive_into] takes.
+        After an exception the contents of `out` are unspecified.
+        """
+        return await self._areceive(self._targets(out), timeout)
 
     def __aiter__(self) -> SharedReceiveStream[T, M]:
         return self
@@ -2017,17 +2079,22 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T, M]):
 
     async def _anext(self, targets: list[tuple[tuple[int, ...], Any]]) -> T:
         """Receive the next item for `async for`, into `targets` when given; the body of both `__anext__`."""
-        self._check_consumer()
         try:
-            await self._yield()
-            if self._fast():
-                try:
-                    return self._take_nowait(targets)
-                except WouldBlock:
-                    pass
-            return cast(T, await self._wait(self._receive_future(targets)))
+            return await self._areceive(targets, None)
         except EndOfStream:
             raise StopAsyncIteration from None
+
+    async def _areceive(
+        self, targets: list[tuple[tuple[int, ...], Any]], timeout: float | None
+    ) -> T:
+        self._check_consumer()
+        await self._yield()
+        if self._fast():
+            try:
+                return self._take_nowait(targets)
+            except WouldBlock:
+                pass
+        return cast(T, await self._wait(self._receive_future(targets, timeout)))
 
     def _receive(
         self,

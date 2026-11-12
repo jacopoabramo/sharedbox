@@ -317,11 +317,17 @@ async for letter in reader:
 await sender.asend(letter)
 ```
 
-To give up after a while, put `asyncio.timeout()` around the receive:
+For one item outside a loop, a reader has
+[`areceive`][sharedbox.SharedReceiveStream.areceive],
+[`areceive_into`][sharedbox.SharedReceiveStream.areceive_into] and
+[`afetch`][sharedbox.SharedReceiveStream.afetch], which take what
+`receive`, `receive_into` and `fetch` take. They raise
+[`EndOfStream`][sharedbox.EndOfStream] once the stream has ended, where
+`anext` raises `StopAsyncIteration`. To give up after a while, pass a
+`timeout`:
 
 ```python
-async with asyncio.timeout(5):
-    letter = await anext(reader)
+letter = await reader.areceive(timeout=5)
 ```
 
 !!! warning "A cancelled receive keeps its item for the next one"

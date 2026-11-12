@@ -16,6 +16,7 @@ from crossproc import fork
 
 from sharedbox import (
     DType,
+    EndOfStream,
     ReaderReleased,
     Shape,
     SharedReceiveStream,
@@ -113,6 +114,43 @@ def test_async_iteration_into_arrays(unique_name: str) -> None:
             return [int(item[0]) async for item in reader.iter_into(out)]
 
     assert asyncio.run(run()) == [0, 1, 2]
+
+
+def test_areceive_areceive_into_and_afetch_return_the_items_sent(
+    unique_name: str,
+) -> None:
+    """Receive, receive into an array and fetch by position with the asyncio calls."""
+
+    async def run() -> tuple[int, int, bool, int]:
+        stream = SharedStream.create(Frame, unique_name, capacity=4)
+        out = np.empty(2, np.int32)
+        async with stream.reader() as reader, stream.sender() as sender:
+            for i in range(2):
+                await sender.asend(np.full(2, i, np.int32))
+            first = await reader.areceive()
+            second = await reader.areceive_into(out)
+            fetched = await reader.afetch(0, timeout=5)
+            return int(first[0]), int(out[0]), second is out, int(fetched[0])
+
+    assert asyncio.run(run()) == (0, 1, True, 0)
+
+
+def test_areceive_raises_end_of_stream_and_timeout_error(unique_name: str) -> None:
+    """Raise TimeoutError from areceive and afetch when no item comes, and EndOfStream once the sender closed."""
+
+    async def run() -> None:
+        with SharedStream.create(int, unique_name, capacity=2) as stream:
+            reader = stream.reader()
+            sender = stream.sender()
+            with pytest.raises(TimeoutError):
+                await reader.areceive(timeout=0.1)
+            with pytest.raises(TimeoutError):
+                await reader.afetch(0, timeout=0.1)
+            sender.close()
+            with pytest.raises(EndOfStream):
+                await reader.areceive(timeout=5)
+
+    asyncio.run(run())
 
 
 def test_anext_works_with_asyncio_tasks(unique_name: str) -> None:
