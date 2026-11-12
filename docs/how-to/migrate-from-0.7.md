@@ -45,6 +45,7 @@ which it reads through three new members: `metadata`,
 class Parcel(SharedBox):
     metadata: Annotated[str, Capacity(64)] = ""
 
+
 # 0.8
 class Parcel(SharedBox):
     label: Annotated[str, Capacity(64)] = ""
@@ -72,9 +73,11 @@ you pass it:
 def restock(parcel: Parcel, values: dict[str, str]) -> None:
     parcel.update(**values)
 
+
 # 0.8
 def restock(parcel: Parcel, values: dict[str, Any]) -> None:
     parcel.update(**values)
+
 
 def restock_cast(parcel: Parcel, values: dict[str, str]) -> None:
     parcel.update(**cast("dict[str, Any]", values))

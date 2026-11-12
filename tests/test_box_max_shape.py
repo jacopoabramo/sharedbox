@@ -12,7 +12,7 @@ import numpy.typing as npt
 import pytest
 from forged_open import raw_bytes
 
-from sharedbox import Capacity, MaxShape, Shape, SharedBox, field
+from sharedbox import Capacity, MaxShape, Shape, SharedBox
 from sharedbox._native import Segment
 
 Image = Annotated[npt.NDArray[np.uint32], MaxShape((4, 3))]
@@ -201,11 +201,6 @@ def define_with_shape() -> None:
         image: Annotated[npt.NDArray[np.uint32], Shape((4, 3)), MaxShape((4, 3))]
 
 
-def define_with_option() -> None:
-    class Held(SharedBox):
-        image: Image = field(shape=(4, 3))
-
-
 @pytest.mark.parametrize(
     "define",
     [
@@ -213,7 +208,6 @@ def define_with_option() -> None:
         define_union,
         define_list_element,
         define_with_shape,
-        define_with_option,
     ],
 )
 def test_max_shape_is_refused_in_a_box_where_a_stream_refuses_it(define: Any) -> None:

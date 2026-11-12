@@ -100,7 +100,7 @@ def test_an_optional_array_member_crosses_a_stream(unique_name: str) -> None:
 @dataclass
 class Letter:
     index: int
-    scan: npt.NDArray[np.uint8] = field(metadata={"shape": (32, 32)})
+    scan: Annotated[npt.NDArray[np.uint8], Shape((32, 32))]
 
 
 def test_a_dataclass_member_takes_its_array_sizes_from_metadata(

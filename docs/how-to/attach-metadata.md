@@ -17,7 +17,7 @@ an item was sent under.
 
 The `metadata` you pass to [`field`][sharedbox.field] is a different
 thing: a mapping kept in each process's class and never stored in the
-segment, from which `sharedbox` reads only its own keys, such as `"shape"`.
+segment.
 
 ## Create a box with metadata
 

@@ -82,6 +82,7 @@ Dates are marked as `DD-MM-YYYY`
   class Parcel(SharedBox):
       metadata: Annotated[str, Capacity(64)] = ""
 
+
   # 0.8
   class Parcel(SharedBox):
       label: Annotated[str, Capacity(64)] = ""
@@ -95,6 +96,7 @@ Dates are marked as `DD-MM-YYYY`
   # 0.7
   def restock(parcel: Parcel, values: dict[str, str]) -> None:
       parcel.update(**values)
+
 
   # 0.8
   def restock(parcel: Parcel, values: dict[str, Any]) -> None:
@@ -477,7 +479,9 @@ Dates are marked as `DD-MM-YYYY`
 class Frame(SharedBox):
     taken: datetime.datetime
     image: Annotated[np.ndarray, Shape(480, 640), DType("uint8")]
-    tags: Annotated[list[Annotated[str, Capacity(16)]], Capacity(8)] = field(default_factory=list)
+    tags: Annotated[list[Annotated[str, Capacity(16)]], Capacity(8)] = field(
+        default_factory=list
+    )
 ```
 
 ### Changed

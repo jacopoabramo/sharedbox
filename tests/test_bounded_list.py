@@ -15,7 +15,7 @@ import numpy as np
 import pytest
 from crossproc import call_in_child, update_in_child
 
-from sharedbox import BoundedList, Capacity, SharedBox, SharedStream, field
+from sharedbox import BoundedList, Capacity, SharedBox, SharedStream
 from sharedbox._layout import build_layout
 from sharedbox._native import NativeCollection
 
@@ -120,7 +120,7 @@ class Places(SharedBox):
     shot: Shot
     maybe: Annotated[BoundedList[int], Capacity(4)] | None
     rows: Annotated[list[Annotated[BoundedList[int], Capacity(2)]], Capacity(2)]
-    points: BoundedList[int] = field(capacity=4)
+    points: Annotated[BoundedList[int], Capacity(4)]
 
 
 @dataclass

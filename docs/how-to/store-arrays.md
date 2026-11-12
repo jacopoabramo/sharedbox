@@ -15,56 +15,44 @@ whose shape changes.
 
 ## 1. Declare the field with a shape and a dtype
 
-With `numpy`, annotate the field with `numpy.typing.NDArray` and its dtype.
-The sizes come from the array you give as the field's default, or from
-`field(shape=...)`:
+With `numpy`, annotate the field with `numpy.typing.NDArray` and its dtype,
+and give its sizes with a [`Shape`][sharedbox.Shape] beside it in
+`Annotated`:
 
 ```{.python}
 --8<-- "docs/examples/store_arrays.py:declare"
 ```
 
-The `scan` field holds 4 by 6 values of `uint8`, because that is the shape
-of its default. The `gain` field holds 2 values, because `field(shape=(2,))`
-says so; with no default, `field(shape=...)` leaves the field required. A
-read gives back a `numpy.ndarray`. Only a plain default gives the sizes
-(`= array` or `field(default=array)`), not a `default_factory`. When
-several of them are given they must agree, and a `TypeError` tells you
-which two do not.
+The `scan` field holds 4 by 6 values of `uint8` and the `gain` field holds
+2 values, because their `Shape` says so. A read gives back a
+`numpy.ndarray`. The `Shape` is the only place the sizes come from: a
+default array gives the field its first value and must have that shape, or
+a `TypeError` names the two that disagree when the class is defined.
 
-Two things can go in the annotation as well, as `raw` shows:
+A [`DType`][sharedbox.DType] goes in the annotation as well, as `raw`
+shows, and gives the element type. A field needs one when its annotation
+names none: a plain `numpy.ndarray`, a `torch.Tensor`, or
+[`SupportsDLPack`][sharedbox.SupportsDLPack], an array object of
+`sharedbox`'s own that any DLPack library can take. `bfloat16` also needs a
+`DType`.
 
-- A [`Shape`][sharedbox.Shape] gives the sizes too, and it is the only way
-  to give them to a stream item that is an array, or to an array inside a
-  tuple, a `NamedTuple` or a `msgspec` `Struct`.
-- A [`DType`][sharedbox.DType] gives the element type. A field needs one
-  when its annotation names none: a plain `numpy.ndarray`, a
-  `torch.Tensor`, or [`SupportsDLPack`][sharedbox.SupportsDLPack], an array
-  object of `sharedbox`'s own that any DLPack library can take. `bfloat16`
-  also needs a `DType`.
-
-An array member of a dataclass or `attrs` record can take its sizes from
-its field's metadata, under the key `"shape"`, when its annotation has no
-`Shape`. A member's default array does not give them:
+An array inside a record is declared the same way, with the `Shape` in the
+member's annotation:
 
 ```{.python}
 --8<-- "docs/examples/store_arrays.py:record"
 ```
 
-The record works the same way as a stream item. A `NamedTuple` or a
-`msgspec` `Struct` has no metadata on its fields, so its array members keep
-the `Shape` in the annotation.
+That holds for a dataclass, an `attrs` class, a `NamedTuple` and a
+`msgspec` `Struct`, and for a stream item.
 
-A subclass that declares an inherited array field again states its sizes
-again: nothing but a plain default carries over from the base class, so
-another default array gives the field another shape. Repeat the `Shape` or
-`field(shape=...)` in the new declaration to keep the sizes; a default of
-another shape then raises a `TypeError`.
+A subclass that declares an inherited array field again repeats the
+`Shape`, because the new annotation replaces the old one.
 
 When the annotation gives the number of dimensions, as in
-`numpy.ndarray[tuple[int, int], numpy.dtype[numpy.uint8]]`, the sizes must
-have as many, wherever they come from. A `Shape((4, 6, 3))` or a
-3-dimensional default under `tuple[int, int]` raises a `TypeError` when
-the class is defined.
+`numpy.ndarray[tuple[int, int], numpy.dtype[numpy.uint8]]`, the `Shape`
+must have as many. A `Shape((4, 6, 3))` under `tuple[int, int]` raises a
+`TypeError` when the class is defined.
 
 ## 2. Write and read an array
 
@@ -241,9 +229,9 @@ envelope nobody has scanned yet:
 --8<-- "docs/examples/store_arrays.py:optional"
 ```
 
-The field takes its sizes in the same ways as any array field, so with
-`None` as its default it needs a `Shape` or `field(shape=...)`. It works as
-a record member and as a member of a stream item too. Because the field may
+The field takes its sizes from a `Shape` as any array field does, with the
+`| None` outside the `Annotated`. It works as a record member and as a
+member of a stream item too. Because the field may
 hold no array, `read_into` and `writing` refuse it, and
 [`receive_into`][sharedbox.SharedReceiveStream.receive_into] doesn't fill
 it; a plain read or `receive` gives you a new array or `None`.

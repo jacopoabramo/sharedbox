@@ -7,12 +7,12 @@ from typing import Annotated
 import numpy as np
 import numpy.typing as npt
 
-from sharedbox import DType, MaxShape, Shape, SharedBox, SupportsDLPack, field
+from sharedbox import DType, MaxShape, Shape, SharedBox, SupportsDLPack
 
 
 class Scanner(SharedBox, name="example-scanner"):
-    scan: npt.NDArray[np.uint8] = np.zeros((4, 6), np.uint8)
-    gain: npt.NDArray[np.float64] = field(shape=(2,), default=np.ones(2))
+    scan: Annotated[npt.NDArray[np.uint8], Shape((4, 6))] = np.zeros((4, 6), np.uint8)
+    gain: Annotated[npt.NDArray[np.float64], Shape((2,))] = np.ones(2)
     raw: Annotated[SupportsDLPack, Shape((3,)), DType("float32")] = np.zeros(
         3, np.float32
     )
@@ -25,7 +25,7 @@ class Scanner(SharedBox, name="example-scanner"):
 @dataclasses.dataclass
 class Page:
     number: int
-    scan: npt.NDArray[np.uint8] = dataclasses.field(metadata={"shape": (4, 6)})
+    scan: Annotated[npt.NDArray[np.uint8], Shape((4, 6))]
 
 
 class Binder(SharedBox, name="example-binder"):
@@ -79,7 +79,7 @@ print(np.from_dlpack(raw))  # [0. 0. 0.]
 
 # --8<-- [start:optional]
 class Tray(SharedBox, name="example-tray"):
-    scan: npt.NDArray[np.uint8] | None = field(default=None, shape=(4, 6))
+    scan: Annotated[npt.NDArray[np.uint8], Shape((4, 6))] | None = None
 
 
 tray = Tray()

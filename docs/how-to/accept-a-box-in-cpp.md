@@ -10,7 +10,7 @@ their Python code does:
 
 ```python
 with Parcel() as parcel:
-    printer.run(parcel)          # printer: an extension that supports sharedbox
+    printer.run(parcel)  # printer: an extension that supports sharedbox
 ```
 
 Your extension reads and writes the box through `sharedbox/sharedbox.hpp`, a
@@ -62,9 +62,9 @@ import hashlib
 
 identity = b"post/parcel/1"
 schema = b"post/parcel/1|weight:float:8|count:int:8"
-print(hashlib.sha256(identity).hexdigest()[:16])        # e73ca265fa48187e
+print(hashlib.sha256(identity).hexdigest()[:16])  # e73ca265fa48187e
 digest = hashlib.sha256(schema).digest()
-print(hex(int.from_bytes(digest[:8], "little")))        # 0x223e63b5a4e2ee25
+print(hex(int.from_bytes(digest[:8], "little")))  # 0x223e63b5a4e2ee25
 ```
 
 [The schema hash](../explanation/how-a-box-is-stored.md#the-schema-hash)
@@ -81,6 +81,7 @@ extension's stubs:
 
 ```python
 from sharedbox import SupportsSharedBox
+
 
 def run(parcel: SupportsSharedBox) -> None: ...
 ```

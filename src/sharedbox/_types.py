@@ -118,8 +118,6 @@ class Capacity:
 
     It goes in the annotation, as in `Annotated[str, Capacity(32)]` or
     `Annotated[list[int], Capacity(16)]`, and allows 1 to 1048576 (1 Mi).
-    A box field can take the same number from `field(capacity=...)`
-    instead.
 
     Raises
     ------
@@ -417,7 +415,7 @@ def parse(
     capacity: int | None = None,
     depth: int = 1,
     path: frozenset[int] = frozenset(),
-    sizes: tuple[tuple[str, tuple[int, ...]] | None, Any] | None = None,
+    default: Any = MISSING,
 ) -> TypeSpec:
     """Return how a value annotated `hint` is stored.
 
@@ -432,12 +430,9 @@ def parse(
         Nesting level of a described type here, the field's own being 1.
     path
         Type aliases being unwrapped around this one.
-    sizes
-        The `field(shape=...)` of a box field, as the name a message gives it
-        and its sizes, and the field's plain default, which an array field,
-        or the array of an optional field, takes its sizes from when the
-        annotation has no `Shape`. A record member passes its metadata shape
-        and no default. None when neither is given.
+    default
+        The plain default of a box field, whose shape must agree with the
+        `Shape` of an array field or of the array of an optional field.
 
     Raises
     ------
@@ -458,12 +453,9 @@ def parse(
             raise TypeError(
                 f"{where}: Capacity does not apply to an array; give its Shape"
             )
-        spec = array_spec(hint, extras, where, sizes)
+        spec = array_spec(hint, extras, where, default)
     else:
-        spec = dispatch(hint, extras, where, capacity, depth, path, sizes)
-        holds_array = spec.kind == "optional" and spec.members[0].type.kind == "array"
-        if sizes is not None and sizes[0] is not None and not holds_array:
-            raise TypeError(f"{where}: a shape applies only to an array")
+        spec = dispatch(hint, extras, where, capacity, depth, path, default)
     if spec.described:
         deeper(depth, where)
     return spec
@@ -533,16 +525,13 @@ def shape_text(dims: tuple[int, ...]) -> str:
 def given_sizes(
     extras: list[Any],
     where: str,
-    option: tuple[str, tuple[int, ...]] | None,
     default: Any,
 ) -> list[tuple[str, tuple[int, ...]]]:
-    """Return the sizes an array field is given, each with the name of where it came from."""
+    """Return the sizes of an array field's `Shape` and of its default array, each with the name of where it came from."""
     shapes = [extra for extra in extras if isinstance(extra, Shape)]
     if len(shapes) > 1:
         raise TypeError(f"{where}: an array field takes one Shape")
     given = [(f"Shape{shape_text(shape.dims)}", shape.dims) for shape in shapes]
-    if option is not None:
-        given.append(option)
     shape = getattr(default, "shape", None)
     if (
         default is not MISSING
@@ -562,29 +551,24 @@ def array_spec(
     hint: Any,
     extras: list[Any],
     where: str,
-    sizes: tuple[tuple[str, tuple[int, ...]] | None, Any] | None = None,
+    default: Any = MISSING,
 ) -> TypeSpec:
     dtypes = [extra.name for extra in extras if isinstance(extra, DType)]
-    option, default = sizes or (None, MISSING)
     maxes = [extra for extra in extras if isinstance(extra, MaxShape)]
-    # A default array gives a MaxShape field its value, not its size.
-    given = given_sizes(extras, where, option, MISSING if maxes else default)
+    # A default array gives a MaxShape field its value, and is not compared with its sizes.
+    given = given_sizes(extras, where, MISSING if maxes else default)
+    shaped = any(isinstance(extra, Shape) for extra in extras)
     if len(maxes) > 1:
         raise TypeError(f"{where}: an array takes one MaxShape")
-    if maxes and given:
+    if maxes and shaped:
         raise TypeError(f"{where}: an array takes a Shape or a MaxShape, not both")
     if maxes:
         given = [(f"MaxShape{shape_text(maxes[0].dims)}", maxes[0].dims)]
-    if not given:
-        ways = (
-            "a Shape in the annotation, as in Annotated[numpy.ndarray, Shape((2, 3)), DType('float32')]"
-            + (
-                ", from field(shape=(2, 3)), or from the shape of a default array"
-                if sizes is not None
-                else ""
-            )
+    elif not shaped:
+        raise TypeError(
+            f"{where}: an array field needs its sizes from a Shape in the annotation, "
+            "as in Annotated[numpy.ndarray, Shape((2, 3)), DType('float32')]"
         )
-        raise TypeError(f"{where}: an array field needs its sizes from {ways}")
     for label, dims in given[1:]:
         if dims != given[0][1]:
             raise TypeError(f"{where}: {given[0][0]} and {label} disagree")
@@ -635,7 +619,7 @@ def dispatch(
     capacity: int | None,
     depth: int,
     path: frozenset[int],
-    sizes: tuple[tuple[str, tuple[int, ...]] | None, Any] | None = None,
+    default: Any = MISSING,
 ) -> TypeSpec:
     """Return the `TypeSpec` of an unwrapped annotation; `parse` documents the parameters."""
     if isinstance(hint, type) and hint in TEXT:
@@ -659,7 +643,7 @@ def dispatch(
     if get_origin(hint) in (Union, types.UnionType):
         if capacity is not None and not takes_capacity(hint, where, path):
             raise TypeError(f"{where}: Capacity does not apply to {hint!r}")
-        return union_spec(hint, where, capacity, depth, path, sizes)
+        return union_spec(hint, where, capacity, depth, path, default)
     if is_box_class(hint):
         raise TypeError(
             f"{where}: a reference to a box must be a field of its own, annotated X or X | None, not part of another type"
@@ -811,7 +795,7 @@ def union_spec(
     capacity: int | None,
     depth: int,
     path: frozenset[int],
-    sizes: tuple[tuple[str, tuple[int, ...]] | None, Any] | None = None,
+    default: Any = MISSING,
 ) -> TypeSpec:
     args = get_args(hint)
     rest = tuple(arg for arg in args if arg is not NoneType)
@@ -823,7 +807,7 @@ def union_spec(
             capacity=capacity,
             depth=below,
             path=path,
-            sizes=sizes if len(rest) == 1 else None,
+            default=default if len(rest) == 1 else MISSING,
         )
         return optional_of(inner)
     takers = [arg for arg in rest if takes_capacity(arg, where, path)]
@@ -1037,22 +1021,11 @@ def record_spec(
             required.append(needed)
             items.append((key, spec))
     else:
-        for name, keyword, member, shape in record_members(hint, hints, form, where):
+        for name, keyword, member in record_members(hint, hints, form, where):
             attrs.append(name)
             keywords.append(keyword)
-            dims = None if shape is None else Shape(tuple(shape)).dims
-            sizes = (
-                None
-                if dims is None
-                else ((f"metadata shape {shape_text(dims)}", dims), MISSING)
-            )
             items.append(
-                (
-                    name,
-                    parse(
-                        member, f"{where}.{name}", depth=below, path=path, sizes=sizes
-                    ),
-                )
+                (name, parse(member, f"{where}.{name}", depth=below, path=path))
             )
     members, size, alignment = lay_out("record", items, where)
     hashable = (
@@ -1107,19 +1080,24 @@ def by_position(hint: type, keywords: list[str]) -> bool:
     )
 
 
+def refuse_shape_metadata(metadata: abc.Mapping[Any, Any], where: str) -> None:
+    """Raise TypeError for a record member that gives its sizes in its field metadata."""
+    for entry, marker in (("shape", "Shape"), ("max_shape", "MaxShape")):
+        if entry in metadata:
+            raise TypeError(
+                f"{where}: a {marker} goes in the annotation, not in {entry} metadata"
+            )
+
+
 def record_members(
     hint: type, hints: dict[str, Any], form: int, where: str
-) -> list[tuple[str, str, Any, Any]]:
-    """Return `(attribute, keyword, annotation, shape)` of each stored member of a dataclass, attrs class, Struct or NamedTuple.
-
-    The shape is the `"shape"` entry of a dataclass field's or attrs
-    attribute's metadata, or None.
-    """
+) -> list[tuple[str, str, Any]]:
+    """Return `(attribute, keyword, annotation)` of each stored member of a dataclass, attrs class, Struct or NamedTuple."""
     if form == 1:
         for name in hint._fields:  # type: ignore[attr-defined]
             if name not in hints:
                 raise TypeError(f"{where}: {hint.__qualname__}.{name} has no type")
-        return [(name, name, hints[name], None) for name in hint._fields]  # type: ignore[attr-defined]
+        return [(name, name, hints[name]) for name in hint._fields]  # type: ignore[attr-defined]
     if dataclasses.is_dataclass(hint):
         if not hint.__dataclass_params__.init:  # type: ignore[attr-defined]
             raise TypeError(
@@ -1136,11 +1114,8 @@ def record_members(
                 raise TypeError(
                     f"{where}: {hint.__qualname__}.{f.name} has init=False, so a read could not rebuild it"
                 )
-            if "max_shape" in f.metadata:
-                raise TypeError(
-                    f"{where}: {hint.__qualname__}.{f.name}: a MaxShape goes in the annotation, not in max_shape metadata"
-                )
-            found.append((f.name, f.name, hints[f.name], f.metadata.get("shape")))
+            refuse_shape_metadata(f.metadata, f"{where}: {hint.__qualname__}.{f.name}")
+            found.append((f.name, f.name, hints[f.name]))
         return found
     if hasattr(hint, "__attrs_attrs__"):
         if "__init__" not in vars(hint):
@@ -1156,14 +1131,11 @@ def record_members(
             member = hints.get(a.name, a.type)
             if member is None:
                 raise TypeError(f"{where}: {hint.__qualname__}.{a.name} has no type")
-            if "max_shape" in a.metadata:
-                raise TypeError(
-                    f"{where}: {hint.__qualname__}.{a.name}: a MaxShape goes in the annotation, not in max_shape metadata"
-                )
+            refuse_shape_metadata(a.metadata, f"{where}: {hint.__qualname__}.{a.name}")
             keyword = getattr(a, "alias", None) or a.name.lstrip("_")
-            found.append((a.name, keyword, member, a.metadata.get("shape")))
+            found.append((a.name, keyword, member))
         return found
-    return [(name, name, hints[name], None) for name in hint.__struct_fields__]  # type: ignore[attr-defined]
+    return [(name, name, hints[name]) for name in hint.__struct_fields__]  # type: ignore[attr-defined]
 
 
 def timed_spec(hint: Any, where: str, depth: int, path: frozenset[int]) -> TypeSpec:

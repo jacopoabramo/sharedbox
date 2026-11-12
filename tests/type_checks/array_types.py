@@ -1,15 +1,17 @@
-from typing import assert_type
+from typing import Annotated, assert_type
 
 import numpy as np
 import numpy.typing as npt
 
-from sharedbox import SharedBox, field
+from sharedbox import Shape, SharedBox
 
 
 class Sensor(SharedBox):
-    line: npt.NDArray[np.float32] = field(shape=(8,))
-    frame: np.ndarray[tuple[int, int], np.dtype[np.uint8]] = np.zeros((4, 6), np.uint8)
-    gain: npt.NDArray[np.float64] = field(shape=(2,), default=np.zeros(2))
+    line: Annotated[npt.NDArray[np.float32], Shape((8,))]
+    frame: Annotated[np.ndarray[tuple[int, int], np.dtype[np.uint8]], Shape((4, 6))] = (
+        np.zeros((4, 6), np.uint8)
+    )
+    gain: Annotated[npt.NDArray[np.float64], Shape((2,))] = np.zeros(2)
 
 
 def fields(sensor: Sensor) -> None:

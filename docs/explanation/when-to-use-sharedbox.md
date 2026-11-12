@@ -42,7 +42,7 @@ mailbox = Mailbox()
 lock = threading.Lock()
 mailbox.events.letters.connect(lambda new, old: print(old, "->", new))
 with lock:
-    mailbox.letters = 1              # prints: 0 -> 1
+    mailbox.letters = 1  # prints: 0 -> 1
 ```
 
 Unlike a box's signals, these callbacks run on the thread that changes the

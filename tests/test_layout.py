@@ -4,7 +4,7 @@ from typing import Annotated, Any, ClassVar
 import numpy as np
 import pytest
 
-from sharedbox import SharedBox, field
+from sharedbox import SharedBox
 from sharedbox._layout import Capacity, build_layout, class_identity
 
 
@@ -241,8 +241,6 @@ def test_a_reference_field_is_packed_with_8_byte_fields_and_hashed_by_identity()
 
 @pytest.mark.parametrize("size", [2.5, True, "8"])
 def test_capacity_refuses_a_size_that_is_not_an_int(size: Any) -> None:
-    """Raise TypeError for a capacity given as a float, a bool or a str, from Capacity and from field."""
+    """Raise TypeError for a capacity given as a float, a bool or a str."""
     with pytest.raises(TypeError, match="capacity must be an int"):
         Capacity(size)
-    with pytest.raises(TypeError, match="capacity must be an int"):
-        field(capacity=size)
