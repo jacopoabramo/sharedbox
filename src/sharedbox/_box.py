@@ -1747,6 +1747,12 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
     def __exit__(self, *exc_info: object) -> None:
         self.close()
 
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(self, *exc_info: object) -> None:
+        self.close()
+
     def __reduce__(
         self,
     ) -> tuple[Callable[..., SharedBox], tuple[type, str, int, int]]:

@@ -98,3 +98,8 @@ async def check_async_receive(reader: SharedReceiveStream[Item], out: Item) -> N
     assert_type(await reader.areceive(), Item)
     assert_type(await reader.areceive_into(out, timeout=1), Item)
     assert_type(await reader.afetch(0, timeout=1), Item)
+
+
+async def check_stream_entered(stream: SharedStream[Item]) -> None:
+    async with stream as entered:
+        assert_type(entered, SharedStream[Item])

@@ -133,3 +133,8 @@ def locked_block(motor: Motor) -> None:
         assert_type(b, Motor)
         assert_type(b.position, int)
         b.position = "3"  # type: ignore[assignment]
+
+
+async def check_async_with(motor: Motor) -> None:
+    async with motor as entered:
+        assert_type(entered, Motor)

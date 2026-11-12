@@ -60,3 +60,15 @@ def test_a_sync_and_an_async_watch_in_two_threads_both_see_another_process(
     for values in seen.values():
         assert values[-1] == last
         assert values == sorted(set(values))
+
+
+def test_async_with_closes_a_box(unique_name: str) -> None:
+    """Close a box when its async with block ends."""
+
+    async def run() -> Counter:
+        async with Counter.create(unique_name) as box:
+            box.value = 1
+        return box
+
+    assert asyncio.run(run()).closed
+    Counter.unlink(unique_name)

@@ -600,3 +600,15 @@ def test_a_release_a_cancelled_anext_received_is_raised_by_the_next_receive(
             return released.value.missed, reader.receive(timeout=5).index
 
     assert asyncio.run(run()) == (4, 14)
+
+
+def test_async_with_closes_a_stream(unique_name: str) -> None:
+    """Close a stream when its async with block ends."""
+
+    async def run() -> SharedStream[int]:
+        async with SharedStream.create(int, unique_name, capacity=2) as stream:
+            stream.sender().send(1)
+        return stream
+
+    with pytest.raises(StreamClosedError):
+        asyncio.run(run()).statistics()

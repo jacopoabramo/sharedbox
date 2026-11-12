@@ -649,6 +649,12 @@ class SharedStream(Generic[T, M]):
     def __exit__(self, *exc_info: object) -> None:
         self.close()
 
+    async def __aenter__(self) -> SharedStream[T, M]:
+        return self
+
+    async def __aexit__(self, *exc_info: object) -> None:
+        self.close()
+
     def __reduce__(
         self,
     ) -> tuple[Callable[..., SharedStream[Any, Any]], tuple[object, str, int]]:
