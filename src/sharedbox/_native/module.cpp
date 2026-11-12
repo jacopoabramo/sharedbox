@@ -902,6 +902,36 @@ template <int op> nb::object set_compare(sharedbox::NativeSet &self, nb::handle 
     return self.compare(other, op);
 }
 
+// The fields names gives a name to, read from one copy of the record, for get_dict of a Segment and of a
+// RecordWriter. names holds one entry per field, None for a field to leave out.
+nb::dict record_dict(const Segment &s, const nb::tuple &names, const sharedbox::Types *types,
+                     const std::byte *record) {
+    nb::dict out;
+    for (std::uint32_t i = 0; i < s.field_count(); ++i)
+        if (!names[i].is_none())
+            out[names[i]] = decode_payload(types, s.fields()[i], i, record);
+    return out;
+}
+
+void check_name_count(const Segment &s, const nb::tuple &names) {
+    if (names.size() != s.field_count())
+        throw std::invalid_argument("got " + std::to_string(names.size()) + " field names for " +
+                                    std::to_string(s.field_count()) + " fields");
+}
+
+// Encodes values for the fields of s, every one checked before any is stored, and hands their stored bytes
+// to store, for set of a Segment and of a RecordWriter. The bytes live until store returns.
+template <class Store>
+void encode_and_store(const Segment &s, const Values &values, nb::handle types, Store &&store) {
+    Scratch<sharedbox::Pending, 8> pending(values.size());
+    for (std::size_t i = 0; i < values.size(); ++i)
+        pending[i] = {values[i].first, values[i].second.ptr()};
+    Scratch<sharedbox::EncodeBuffer, 8> buffers(values.size());
+    Scratch<sharedbox::value, 8> encoded(values.size());
+    sharedbox::encode_all(s, types_of(types), pending.span(), buffers.span(), encoded.span());
+    store(encoded.span());
+}
+
 } // namespace
 
 NB_MODULE(_native, m) {
@@ -973,31 +1003,16 @@ NB_MODULE(_native, m) {
         .def(
             "get_dict",
             [](const sharedbox::RecordWriter &w, nb::tuple names, nb::handle types) -> nb::dict {
-                const Segment &s = w.segment();
-                if (names.size() != s.field_count())
-                    throw std::invalid_argument("got " + std::to_string(names.size()) + " field names for " +
-                                                std::to_string(s.field_count()) + " fields");
-                const sharedbox::Types *t = types_of(types);
-                const std::byte *record = w.record();
-                nb::dict out;
-                for (std::uint32_t i = 0; i < s.field_count(); ++i)
-                    if (!names[i].is_none())
-                        out[names[i]] = decode_payload(t, s.fields()[i], i, record);
-                return out;
+                check_name_count(w.segment(), names);
+                return record_dict(w.segment(), names, types_of(types), w.record());
             },
             "names"_a, "types"_a = nb::none())
         .def(
             "set",
             [](sharedbox::RecordWriter &w, const Values &values, nb::handle types) {
                 w.check_live();
-                Scratch<sharedbox::Pending, 8> pending(values.size());
-                for (std::size_t i = 0; i < values.size(); ++i)
-                    pending[i] = {values[i].first, values[i].second.ptr()};
-                Scratch<sharedbox::EncodeBuffer, 8> buffers(values.size());
-                Scratch<sharedbox::value, 8> encoded(values.size());
-                sharedbox::encode_all(w.segment(), types_of(types), pending.span(), buffers.span(),
-                                      encoded.span());
-                w.set(encoded.span());
+                encode_and_store(w.segment(), values, types,
+                                 [&](std::span<const sharedbox::value> encoded) { w.set(encoded); });
             },
             "values"_a, "types"_a = nb::none())
         .def("end", &sharedbox::RecordWriter::end)
@@ -1143,32 +1158,21 @@ NB_MODULE(_native, m) {
         .def(
             "get_dict",
             [](const Segment &s, nb::tuple names, nb::handle types) -> nb::dict {
-                if (names.size() != s.field_count())
-                    throw std::invalid_argument("got " + std::to_string(names.size()) + " field names for " +
-                                                std::to_string(s.field_count()) + " fields");
+                check_name_count(s, names);
                 const sharedbox::Types *t = types_of(types);
-                return sharedbox::with_record(s, [&](const std::byte *record) {
-                    nb::dict out;
-                    for (std::uint32_t i = 0; i < s.field_count(); ++i)
-                        if (!names[i].is_none())
-                            out[names[i]] = decode_payload(t, s.fields()[i], i, record);
-                    return out;
-                });
+                return sharedbox::with_record(
+                    s, [&](const std::byte *record) { return record_dict(s, names, t, record); });
             },
             "names"_a, "types"_a = nb::none())
         .def(
             "set",
             [](Segment &s, const Values &values, nb::handle types, std::optional<nb::bytes> doc) {
-                Scratch<sharedbox::Pending, 8> pending(values.size());
-                for (std::size_t i = 0; i < values.size(); ++i)
-                    pending[i] = {values[i].first, values[i].second.ptr()};
-                Scratch<sharedbox::EncodeBuffer, 8> buffers(values.size());
-                Scratch<sharedbox::value, 8> encoded(values.size());
-                sharedbox::encode_all(s, types_of(types), pending.span(), buffers.span(), encoded.span());
-                if (doc)
-                    s.write(encoded.span(), std::string_view(doc->c_str(), doc->size()));
-                else
-                    s.write(encoded.span());
+                encode_and_store(s, values, types, [&](std::span<const sharedbox::value> encoded) {
+                    if (doc)
+                        s.write(encoded, std::string_view(doc->c_str(), doc->size()));
+                    else
+                        s.write(encoded);
+                });
             },
             "values"_a, "types"_a = nb::none(), "doc"_a = nb::none())
         .def(
