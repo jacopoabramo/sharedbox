@@ -738,6 +738,8 @@
       
         
       
+        
+      
     
     
     
@@ -828,6 +830,35 @@
     
   
   How to migrate from 0.7
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../how-to/migrate-from-0.9/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-arrow-up-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m16 12-4-4-4 4M12 16V8"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  How to migrate from 0.9
 
     
   </span>
@@ -5052,9 +5083,11 @@ this order:</p>
 <ul>
 <li>an entry numbered <code>n</code> holds the answer, or its error text;</li>
 <li><code>n</code> of 0 or above <code>sent</code> is <code>status::range</code>;</li>
-<li><code>n</code> at or above <code>taken</code> is still pending, or, when the caller asks for
-  the server check, <code>server_exited</code> once a recorded server's process has
-  ended;</li>
+<li><code>n</code> above <code>taken</code> and below <code>sent</code> is superseded: a later send replaced
+  it and no server took it, so none ever will;</li>
+<li>any other <code>n</code> at or above <code>taken</code> is still pending, or, when the caller
+  asks for the server check, <code>server_exited</code> once a recorded server's
+  process has ended;</li>
 <li>when all four entries hold numbers above <code>n</code>, four later answers
   overwrote its answer;</li>
 <li>otherwise a later request superseded it before the server took it.</li>
@@ -5126,7 +5159,8 @@ attacher agree on it and on the class's meaning.</p>
 <p><code>schema_hash</code>: the first 8 bytes of SHA-256 over that text, read as a
   little-endian <code>u64</code>.</p>
 </li>
-<li>Identity: the <code>identity=</code> class keyword, a non-empty string; without it,
+<li>Identity: the <code>identity=</code> class keyword, a non-empty string without <code>|</code>,
+  the character that separates the parts of the schema text; without it,
   <code>module.qualname</code>. A subclass does not inherit its base's identity.</li>
 <li>The default box name is 16 hex digits of SHA-256 over the identity, so a
   class that sets <code>identity=</code> is found by that identity from any package or
@@ -5405,7 +5439,7 @@ and maps are outside the subset. <code>sharedbox::metadata_ok</code> checks that
 document is well formed and inside the subset, not that it is canonical,
 so a C or C++ producer brings its own encoder. The Python side encodes
 canonically, so equal values give equal bytes, and decodes a map as a
-<code>types.MappingProxyType</code> and an array as a tuple.</p>
+<code>frozendict</code> and an array as a tuple.</p>
 <h2 id="versioning-rules">Versioning rules<a class="headerlink" href="#versioning-rules" title="Permanent link">&para;</a></h2>
 <p>A segment carries two versions in its common line: the core version, for
 what every kind shares (the common line, the object names, liveness), and the
@@ -5819,7 +5853,9 @@ does not move, so the next send writes the same position again.</p>
    <code>data_word</code> in steps of at most 0.1 s, counting itself in <code>data_waiting</code>
    while it sleeps.</li>
 <li>A lossy reader with <code>write_pos - r &gt; capacity</code> moves to
-   <code>write_pos - capacity</code>. A latest reader with <code>write_pos - r &gt; 1</code> moves to
+   <code>write_pos - (capacity - capacity / 2)</code>, with integer division: the
+   middle of the ring, not its oldest item, whose slot the sender writes
+   next. A latest reader with <code>write_pos - r &gt; 1</code> moves to
    <code>write_pos - 1</code>. Both count the items they pass as missed.</li>
 <li>Load <code>seq</code>, which must be <code>2r + 2</code>, copy the item, issue an acquire fence
    and load <code>seq</code> again. If it changed, the sender wrote a later position over

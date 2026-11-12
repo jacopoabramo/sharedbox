@@ -738,6 +738,8 @@
       
         
       
+        
+      
     
     
     
@@ -828,6 +830,35 @@
     
   
   How to migrate from 0.7
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../how-to/migrate-from-0.9/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-arrow-up-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m16 12-4-4-4 4M12 16V8"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  How to migrate from 0.9
 
     
   </span>
@@ -5469,9 +5500,13 @@ to writers, gives up after <code>lock_timeout</code> seconds with
 process stored in <code>writer_pid</code> as the lock's holder. That process may have
 died while holding the lock, and <code>force_unlock</code> releases it.</p>
 <p>The wait for the lock spins, then yields, then sleeps for a doubling
-interval of at most 1 ms. On Windows a sleep ends on a timer tick, so a
-wait lasts at least one tick; the Notes of <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;SharedBox&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox"><code>SharedBox</code></a>
-give its length. In the stress tests on GitHub Actions runners (<abbr title="Continuous integration. The builds and tests GitHub runs on pushes and pull requests to the main branch.">CI</abbr> runs
+interval of at most 1 ms. On Windows a sleep ends on a timer tick however
+short it is, so there the wait goes on yielding for its first millisecond
+and sleeps only after that. A large write or a short <code>locked()</code> block ends
+within that millisecond, and a wait that does sleep lasts at least one
+tick; the Notes of <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;SharedBox&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox"><code>SharedBox</code></a> give its length. The
+figures that follow were measured before the wait yielded for that first
+millisecond. In the stress tests on GitHub Actions runners (<abbr title="Continuous integration. The builds and tests GitHub runs on pushes and pull requests to the main branch.">CI</abbr> runs
 36440952244 and 36443594984), a 1 ms <code>lock_timeout</code> ended after 15.7 and
 15.8 ms on Windows (median of 200 waits), against 1.18 and 1.16 ms on
 Linux. A lock holder that is descheduled for one timer tick can also make

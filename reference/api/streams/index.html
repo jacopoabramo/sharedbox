@@ -738,6 +738,8 @@
       
         
       
+        
+      
     
     
     
@@ -828,6 +830,35 @@
     
   
   How to migrate from 0.7
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../how-to/migrate-from-0.9/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-arrow-up-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m16 12-4-4-4 4M12 16V8"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  How to migrate from 0.9
 
     
   </span>
@@ -4750,7 +4781,7 @@ from the item sent with it, and a reader's
 version of the item it returned last. The stream keeps the earlier
 versions until it reclaims them for newer ones, and
 <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;metadata_version_of&lt;/span&gt;" href="./#sharedbox.SharedStream.metadata_version_of"><code>metadata_version_of</code></a>
-reads them until then. A mapping reads back as a read-only mapping
+reads them until then. A mapping reads back as a <code>frozendict</code>
 and a list as a tuple, nested the same way. Each stream object
 decodes a version once and keeps the 32 it used last.</p>
 
@@ -5379,7 +5410,8 @@ in this process raises <code>StreamBusyError</code> until then.</p>
               <div class="doc-md-description">
                 <p><code>"lossless"</code> receives every item and holds the sender back when
 a full ring behind; <code>"lossy"</code> skips the items the sender
-overwrote; <code>"latest"</code> always receives the newest item.</p>
+overwrote, and once a full ring behind goes on from the middle
+of the ring; <code>"latest"</code> always receives the newest item.</p>
               </div>
             </td>
             <td>
@@ -6571,7 +6603,7 @@ the receive.</p>
   &lt;span class=&quot;doc doc-labels&quot;&gt;
       &lt;small class=&quot;doc doc-label doc-label-property&quot;&gt;&lt;code&gt;property&lt;/code&gt;&lt;/small&gt;
   &lt;/span&gt;" href="./#sharedbox.SharedReceiveStream.metadata_version"><code>metadata_version</code></a>, None while it is 0.</p>
-<p>A mapping reads back as a read-only mapping and a list as a tuple,
+<p>A mapping reads back as a <code>frozendict</code> and a list as a tuple,
 nested the same way. Each reader decodes a version once and keeps
 the 32 it used last.</p>
 

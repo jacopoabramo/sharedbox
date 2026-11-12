@@ -743,6 +743,8 @@
       
         
       
+        
+      
     
     
     
@@ -836,6 +838,35 @@
     
   
   How to migrate from 0.7
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../migrate-from-0.9/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-arrow-up-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m16 12-4-4-4 4M12 16V8"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  How to migrate from 0.9
 
     
   </span>
@@ -3878,8 +3909,11 @@ happens when it is slower than the sender:</p>
 
   &lt;span class=&quot;doc doc-labels&quot;&gt;
       &lt;small class=&quot;doc doc-label doc-label-property&quot;&gt;&lt;code&gt;property&lt;/code&gt;&lt;/small&gt;
-  &lt;/span&gt;" href="../../reference/api/streams/#sharedbox.SharedReceiveStream.missed"><code>missed</code></a> counts them. Use it for
-  a viewer that can drop items, such as a display board in the hall.</li>
+  &lt;/span&gt;" href="../../reference/api/streams/#sharedbox.SharedReceiveStream.missed"><code>missed</code></a> counts them. A reader
+  that falls a whole ring behind is slower than the sender, so it goes on
+  from the middle of the ring and skips the older half as well, which
+  keeps the sender from overtaking it again at once. Use it for a viewer
+  that can drop items, such as a display board in the hall.</li>
 <li><code>"latest"</code> always receives the newest item. Use it for a display that
   shows only the current state.</li>
 </ul>

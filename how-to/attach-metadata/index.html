@@ -743,6 +743,8 @@
       
         
       
+        
+      
     
     
     
@@ -836,6 +838,35 @@
     
   
   How to migrate from 0.7
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../migrate-from-0.9/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-arrow-up-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m16 12-4-4-4 4M12 16V8"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  How to migrate from 0.9
 
     
   </span>
@@ -3813,17 +3844,20 @@ without it, and ignore the metadata. Create a stream without metadata
 while a process on 0.7 still opens it.</p>
 </div>
 <h2 id="change-a-value-you-read">Change a value you read<a class="headerlink" href="#change-a-value-you-read" title="Permanent link">&para;</a></h2>
-<p>A value you read is a read-only view, because every read of a version
+<p>A value you read cannot be changed, because every read of a version
 through the same box or stream shares one decoded copy. A mapping reads
-back as a <code>types.MappingProxyType</code> and a list as a tuple, nested the same
-way. A type checker still sees the metadata's type, though, so it accepts
+back as a <code>frozendict</code> and a list as a tuple, nested the same way. A
+<code>frozendict</code> raises <code>TypeError</code> on every change, and it pickles,
+deep-copies and converts to JSON, so it can go to another process or into
+a log. It is the builtin type from Python 3.15, and the one of the
+<code>frozendict</code> package on earlier versions. A type checker still sees the metadata's type, though, so it accepts
 a change that fails when it runs. To change a key, build a new value and
 add it as the next version:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="n">stored</span> <span class="o">=</span> <span class="n">scale</span><span class="o">.</span><span class="n">metadata_version_of</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
 </span><span id="__span-6-2"><a id="__codelineno-6-2" name="__codelineno-6-2" href="#__codelineno-6-2"></a><span class="k">try</span><span class="p">:</span>
 </span><span id="__span-6-3"><a id="__codelineno-6-3" name="__codelineno-6-3" href="#__codelineno-6-3"></a>    <span class="n">stored</span><span class="p">[</span><span class="s2">"offset"</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.5</span>
 </span><span id="__span-6-4"><a id="__codelineno-6-4" name="__codelineno-6-4" href="#__codelineno-6-4"></a><span class="k">except</span> <span class="ne">TypeError</span> <span class="k">as</span> <span class="n">error</span><span class="p">:</span>
-</span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">error</span><span class="p">)</span>  <span class="c1"># 'mappingproxy' object does not support item assignment</span>
+</span><span id="__span-6-5"><a id="__codelineno-6-5" name="__codelineno-6-5" href="#__codelineno-6-5"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">error</span><span class="p">)</span>  <span class="c1"># 'frozendict' object doesn't support item assignment</span>
 </span><span id="__span-6-6"><a id="__codelineno-6-6" name="__codelineno-6-6" href="#__codelineno-6-6"></a><span class="n">scale</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">metadata</span><span class="o">=</span><span class="p">{</span><span class="o">**</span><span class="n">stored</span><span class="p">,</span> <span class="s2">"offset"</span><span class="p">:</span> <span class="mf">0.5</span><span class="p">})</span>
 </span></code></pre></div>
 <h2 id="read-metadata-from-c-or-c">Read metadata from C or C++<a class="headerlink" href="#read-metadata-from-c-or-c" title="Permanent link">&para;</a></h2>
@@ -3878,7 +3912,7 @@ and the <abbr title="Concise Binary Object Representation. A compact binary form
 </span><span id="__span-7-38"><a id="__codelineno-7-38" name="__codelineno-7-38" href="#__codelineno-7-38"></a><span class="k">try</span><span class="p">:</span>
 </span><span id="__span-7-39"><a id="__codelineno-7-39" name="__codelineno-7-39" href="#__codelineno-7-39"></a>    <span class="n">stored</span><span class="p">[</span><span class="s2">"offset"</span><span class="p">]</span> <span class="o">=</span> <span class="mf">0.5</span>
 </span><span id="__span-7-40"><a id="__codelineno-7-40" name="__codelineno-7-40" href="#__codelineno-7-40"></a><span class="k">except</span> <span class="ne">TypeError</span> <span class="k">as</span> <span class="n">error</span><span class="p">:</span>
-</span><span id="__span-7-41"><a id="__codelineno-7-41" name="__codelineno-7-41" href="#__codelineno-7-41"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">error</span><span class="p">)</span>  <span class="c1"># 'mappingproxy' object does not support item assignment</span>
+</span><span id="__span-7-41"><a id="__codelineno-7-41" name="__codelineno-7-41" href="#__codelineno-7-41"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">error</span><span class="p">)</span>  <span class="c1"># 'frozendict' object doesn't support item assignment</span>
 </span><span id="__span-7-42"><a id="__codelineno-7-42" name="__codelineno-7-42" href="#__codelineno-7-42"></a><span class="n">scale</span><span class="o">.</span><span class="n">update</span><span class="p">(</span><span class="n">metadata</span><span class="o">=</span><span class="p">{</span><span class="o">**</span><span class="n">stored</span><span class="p">,</span> <span class="s2">"offset"</span><span class="p">:</span> <span class="mf">0.5</span><span class="p">})</span>
 </span><span id="__span-7-43"><a id="__codelineno-7-43" name="__codelineno-7-43" href="#__codelineno-7-43"></a>
 </span><span id="__span-7-44"><a id="__codelineno-7-44" name="__codelineno-7-44" href="#__codelineno-7-44"></a>

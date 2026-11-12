@@ -738,6 +738,8 @@
       
         
       
+        
+      
     
     
     
@@ -828,6 +830,35 @@
     
   
   How to migrate from 0.7
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../how-to/migrate-from-0.9/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-arrow-up-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m16 12-4-4-4 4M12 16V8"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  How to migrate from 0.9
 
     
   </span>
@@ -5814,7 +5845,7 @@ exception propagates.</p>
   progress before it raises
   <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;LockTimeoutError&lt;/span&gt;" href="../errors/#sharedbox.LockTimeoutError"><code>LockTimeoutError</code></a>; 5.0 by default,
   finite and in <code>(0, 86400]</code>.</li>
-<li><code>identity</code>: a non-empty string, by default the class's
+<li><code>identity</code>: a non-empty string without <code>|</code>, by default the class's
   <code>module.qualname</code>, with <code>__mp_main__</code> read as <code>__main__</code>. It enters
   the schema hash, and names the box when <code>name</code> is not given. A
   subclass does not inherit it. Two classes with the same identity and
@@ -6120,7 +6151,7 @@ or calibration the values were taken with. Adding a version with
 <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;update&lt;/span&gt;" href="./#sharedbox.SharedBox.update"><code>update</code></a> keeps the
 earlier ones until the box reclaims them for newer ones, and
 <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;metadata_version_of&lt;/span&gt;" href="./#sharedbox.SharedBox.metadata_version_of"><code>metadata_version_of</code></a>
-reads them until then. A mapping reads back as a read-only mapping
+reads them until then. A mapping reads back as a <code>frozendict</code>
 and a list as a tuple, nested the same way. Each box object decodes
 a version once and keeps the 32 it used last.</p>
 
@@ -7314,6 +7345,12 @@ nothing. Leaving a <code>with</code> block calls it.</p>
 <p>Called on a box's watcher thread, from an event callback, it does
 not wait for the watcher threads of the boxes it closes, and drops
 the writes those threads had not seen yet.</p>
+<p>While another thread of this process waits for the box's lock,
+<code>close</code> waits with it: it returns once that wait ends, which takes
+at most the class's <code>lock_timeout</code>. The waiting thread is not
+interrupted, and raises
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;LockTimeoutError&lt;/span&gt;" href="../errors/#sharedbox.LockTimeoutError"><code>LockTimeoutError</code></a> as it would
+without the close.</p>
 <p>A box that is garbage collected is closed. Forwarding it started
 keeps running until its events group and every group
 <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;follow&lt;/span&gt;" href="../events/#sharedbox.BoxEvents.follow"><code>follow</code></a> returned are garbage
@@ -9041,6 +9078,18 @@ Cancelling it stops the wait only: the request stays sent.</p>
               </div>
             </td>
           </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-external" href="https://docs.python.org/3/builtins/exceptions.html#RuntimeError">RuntimeError</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If the answer has not arrived and this is called from a
+callback of the same box's events: that thread is the one that
+delivers the answer.</p>
+              </div>
+            </td>
+          </tr>
       </tbody>
     </table>
 
@@ -9115,7 +9164,43 @@ from the handler itself or from a callback on the box's watcher
 thread. For an async handler, cancelling its task is requested of
 the event loop, which runs the cancellation after this returns. A
 request taken and not answered yet fails with "the server stopped".
-Calling it again does nothing.</p>
+Calling it again does nothing, unless the first call raised: then
+the field is still claimed and this call frees it.</p>
+
+
+<p><span class="doc-section-title">Raises:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-external" href="https://docs.python.org/3/builtins/exceptions.html#RuntimeError">RuntimeError</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If called inside a <code>locked()</code> block of the box. The server has
+stopped answering; call <code>stop</code> again after the block.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;LockTimeoutError&lt;/span&gt; (&lt;code&gt;sharedbox._native.LockTimeoutError&lt;/code&gt;)" href="../errors/#sharedbox.LockTimeoutError">LockTimeoutError</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If the box's write lock stayed held. Call <code>stop</code> again once it
+is free.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
 
 
     </div>
@@ -10330,6 +10415,16 @@ instead.</p>
         </tr>
       </thead>
       <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-external" href="https://docs.python.org/3/builtins/exceptions.html#TypeError">TypeError</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If <code>size</code> is not an <code>int</code>.</p>
+              </div>
+            </td>
+          </tr>
           <tr class="doc-section-item">
             <td>
                   <code><a class="autorefs autorefs-external" href="https://docs.python.org/3/builtins/exceptions.html#ValueError">ValueError</a></code>

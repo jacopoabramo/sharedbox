@@ -743,6 +743,8 @@
       
         
       
+        
+      
     
     
     
@@ -836,6 +838,35 @@
     
   
   How to migrate from 0.7
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../migrate-from-0.9/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-arrow-up-circle" viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"/><path d="m16 12-4-4-4 4M12 16V8"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  How to migrate from 0.9
 
     
   </span>
@@ -3739,6 +3770,9 @@ can't come.</p>
 <p>The handler handles one request at a time. Of the requests sent while it
 runs, only the newest is handled next, and each one before it raises
 <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;RequestSupersededError&lt;/span&gt;" href="../../reference/api/errors/#sharedbox.RequestSupersededError"><code>RequestSupersededError</code></a> in its caller.
+The same holds while no server runs: the field keeps one request, so a
+request that a later one replaces raises that error at once, and only the
+newest waits for the server to start.
 A camera told to move to 2 and then to 3 while it is still moving goes to
 3:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="n">started</span> <span class="o">=</span> <span class="n">threading</span><span class="o">.</span><span class="n">Event</span><span class="p">()</span>
