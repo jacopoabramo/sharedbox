@@ -1498,7 +1498,7 @@ class Slot(Generic[_T, M]):
     def abandon(self) -> None:
         """Give the slot up unless it was sent: nothing is published, and the next send takes its position.
 
-        Leaving the block of [`writing`][sharedbox.SharedSendStream.writing]
+        Leaving the block of [`reserve`][sharedbox.SharedSendStream.reserve]
         does this.
         """
 

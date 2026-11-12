@@ -63,7 +63,7 @@ def test_a_reader_behind_sees_the_old_version(unique_name: str) -> None:
             seen.append((reader.metadata_version, reader.metadata))
         assert seen == [(1, {"step": 1}), (1, {"step": 1}), (2, {"step": 2})]
         assert (stream.metadata_version, stream.metadata) == (2, {"step": 2})
-        assert stream.metadata_version_of(1) == {"step": 1}
+        assert stream.metadata_at(1) == {"step": 1}
     SharedStream.unlink(unique_name)
 
 
@@ -173,7 +173,7 @@ def test_a_send_that_waited_for_a_slot_holder_is_refused_without_release(
         reader = stream.reader("lossless")
         sender = stream.sender(on_full="release")
         sender.send(0)
-        with sender.writing(0) as slot:
+        with sender.reserve(0) as slot:
             thread = threading.Thread(target=send_with_metadata)
             thread.start()
             time.sleep(0.2)
@@ -190,13 +190,13 @@ def test_a_send_that_waited_for_a_slot_holder_is_refused_without_release(
 
 
 def test_a_slot_send_with_metadata(unique_name: str) -> None:
-    """Add the version with the item sent from a writing block, and keep the slot usable after a refused document."""
+    """Add the version with the item sent from a reserve block, and keep the slot usable after a refused document."""
     with SharedStream.create(
         int, unique_name, capacity=4, metadata={"step": 1}
     ) as stream:
         reader = stream.reader("lossless")
         sender = stream.sender()
-        with sender.writing(0) as slot:
+        with sender.reserve(0) as slot:
             with pytest.raises(TypeError):
                 slot.send(5, metadata={"a": object()})
             slot.send(5, metadata={"step": 2})
@@ -209,7 +209,7 @@ def test_a_refused_slot_send_leaves_the_slot_to_send_again(unique_name: str) -> 
     """Refuse slot.send with metadata on a stream without a metadata area, and publish on a later slot.send."""
     with SharedStream.create(int, unique_name, capacity=4) as stream:
         reader = stream.reader("lossless")
-        with stream.sender().writing(0) as slot:
+        with stream.sender().reserve(0) as slot:
             with pytest.raises(MetadataFullError):
                 slot.send(5, metadata={})
             slot.send(5)
@@ -383,7 +383,7 @@ def test_a_stream_without_metadata(unique_name: str) -> None:
         with pytest.raises(MetadataFullError, match="metadata_capacity"):
             sender.send(1, metadata={"step": 1})
         with pytest.raises(MetadataGoneError):
-            stream.metadata_version_of(1)
+            stream.metadata_at(1)
     SharedStream.unlink(unique_name)
 
 
@@ -393,11 +393,11 @@ def test_a_cached_stream_version_is_gone_once_reclaimed(unique_name: str) -> Non
         int, unique_name, capacity=4, metadata={"step": 1}, metadata_versions=2
     ) as stream:
         sender = stream.sender()
-        assert stream.metadata_version_of(1) == {"step": 1}
+        assert stream.metadata_at(1) == {"step": 1}
         for step in (2, 3):
             sender.send(step, metadata={"step": step})
         with pytest.raises(MetadataGoneError):
-            stream.metadata_version_of(1)
+            stream.metadata_at(1)
         assert stream.metadata == {"step": 3}
     SharedStream.unlink(unique_name)
 

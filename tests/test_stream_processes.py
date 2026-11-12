@@ -261,7 +261,7 @@ def test_frames_filled_in_place_reach_a_reader_in_another_process(
 
 
 def test_readers_end_after_a_sender_died_inside_its_block(unique_name: str) -> None:
-    """Receive what a sender killed inside writing published, then EndOfStream within a few seconds."""
+    """Receive what a sender killed inside reserve published, then EndOfStream within a few seconds."""
     with SharedStream.create(Frame, unique_name, capacity=4) as stream:
         reader = stream.reader()
         ready = CONTEXT.Event()

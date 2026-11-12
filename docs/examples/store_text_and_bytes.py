@@ -3,12 +3,12 @@
 # --8<-- [start:declare]
 from typing import Annotated
 
-from sharedbox import Capacity, SharedBox, field
+from sharedbox import Capacity, SharedBox
 
 
 class Envelope(SharedBox, name="example-envelope"):
     owner: Annotated[str, Capacity(16)] = ""
-    barcode: bytes = field(capacity=1024, default=b"")
+    barcode: Annotated[bytes, Capacity(1024)] = b""
 
 
 # --8<-- [end:declare]

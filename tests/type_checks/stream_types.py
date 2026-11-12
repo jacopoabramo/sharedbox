@@ -5,11 +5,15 @@ from typing import assert_type
 import numpy as np
 
 from sharedbox import (
+    IterInto,
+    Mode,
+    OnFull,
     ReceiveEvents,
     SendSlot,
     SharedReceiveStream,
     SharedSendStream,
     SharedStream,
+    Start,
 )
 
 
@@ -52,7 +56,7 @@ class Shot:
 
 
 def check_writing(sender: SharedSendStream[Shot]) -> None:
-    with sender.writing(Shot(0, np.empty(0))) as slot:
+    with sender.reserve(Shot(0, np.empty(0))) as slot:
         assert_type(slot, SendSlot[Shot])
         assert_type(slot.item, Shot)
         assert_type(slot.item.image, np.ndarray)
@@ -75,3 +79,27 @@ async def check_anext(reader: SharedReceiveStream[Item], out: Item) -> None:
     assert_type(await anext(reader.iter_into(out)), Item)
     async for item in reader:
         assert_type(item, Item)
+
+
+def check_unlink(stream: SharedStream[Item]) -> None:
+    assert_type(stream.unlink(), None)
+    assert_type(SharedStream.unlink("name"), None)
+
+
+def check_exported_names(stream: SharedStream[Item], out: Item) -> None:
+    mode: Mode = "lossy"
+    start: Start = "oldest"
+    on_full: OnFull = "release"
+    assert_type(stream.reader(mode, start).iter_into(out), IterInto[Item])
+    assert_type(stream.sender(on_full), SharedSendStream[Item])
+
+
+async def check_async_receive(reader: SharedReceiveStream[Item], out: Item) -> None:
+    assert_type(await reader.areceive(), Item)
+    assert_type(await reader.areceive_into(out, timeout=1), Item)
+    assert_type(await reader.afetch(0, timeout=1), Item)
+
+
+async def check_stream_entered(stream: SharedStream[Item]) -> None:
+    async with stream as entered:
+        assert_type(entered, SharedStream[Item])

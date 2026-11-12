@@ -21,9 +21,8 @@ C = TypeVar("C", bound=NativeCollection[Any] | NativeSet[Any] | NativeDict[Any, 
 class BoundedList(NativeCollection[T]):
     """A list of at most a field's capacity of elements, held as the field stores them.
 
-    Declared as `Annotated[BoundedList[T], Capacity(n)]` or with
-    `field(capacity=n)`, it is stored as `list[T]` is, and a read returns
-    one. Indexing decodes or encodes one element, and setting an element
+    Declared as `Annotated[BoundedList[T], Capacity(n)]`, it is stored as
+    `list[T]` is, and a read returns one. Indexing decodes or encodes one element, and setting an element
     checks the value as a write to the field would. A change that would
     leave more elements than the capacity raises `ValueError` and leaves
     the value as it was.
@@ -129,9 +128,8 @@ class BoundedList(NativeCollection[T]):
 class BoundedSet(NativeSet[T]):
     """A set of at most a field's capacity of elements, held as the field stores them.
 
-    Declared as `Annotated[BoundedSet[T], Capacity(n)]` or with
-    `field(capacity=n)`, it is stored as `set[T]` is, and a read returns
-    one. It iterates in the order its elements are stored, which may
+    Declared as `Annotated[BoundedSet[T], Capacity(n)]`, it is stored as
+    `set[T]` is, and a read returns one. It iterates in the order its elements are stored, which may
     differ from a builtin `set`'s.
 
     Elements are compared by their stored bytes, all of them but the fold
@@ -250,9 +248,8 @@ class BoundedSet(NativeSet[T]):
 class BoundedDict(NativeDict[K, V]):
     """A dict of at most a field's capacity of items, held as the field stores them.
 
-    Declared as `Annotated[BoundedDict[K, V], Capacity(n)]` or with
-    `field(capacity=n)`, it is stored as `dict[K, V]` is, and a read
-    returns one. It keeps its items in insertion order, as a `dict` does.
+    Declared as `Annotated[BoundedDict[K, V], Capacity(n)]`, it is stored
+    as `dict[K, V]` is, and a read returns one. It keeps its items in insertion order, as a `dict` does.
     A change that would leave more keys than the capacity raises
     `ValueError` and leaves the value as it was. `|` takes any mapping on
     either side and returns a value of this class and capacity.

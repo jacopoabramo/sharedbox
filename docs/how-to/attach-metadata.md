@@ -17,7 +17,7 @@ an item was sent under.
 
 The `metadata` you pass to [`field`][sharedbox.field] is a different
 thing: a mapping kept in each process's class and never stored in the
-segment, from which `sharedbox` reads only its own keys, such as `"shape"`.
+segment.
 
 ## Create a box with metadata
 
@@ -69,7 +69,7 @@ of the fields written with it:
 scale.events.metadata.connect(lambda version: print("calibration", version))
 ```
 
-[`metadata_version_of`][sharedbox.SharedBox.metadata_version_of] reads an
+[`metadata_at`][sharedbox.SharedBox.metadata_at] reads an
 older version for as long as the box keeps it. The box keeps the last
 `metadata_versions` versions, 64 unless the class sets that keyword, or
 fewer when they no longer fit in its room for metadata. Reading a version
@@ -101,7 +101,7 @@ A stream takes its first version as `metadata` in
 one with the `metadata` of [`send`][sharedbox.SharedSendStream.send].
 [`asend`][sharedbox.SharedSendStream.asend],
 [`send_nowait`][sharedbox.SharedSendStream.send_nowait] and the `send` of
-the slot that [`writing`][sharedbox.SharedSendStream.writing] gives take
+the slot that [`reserve`][sharedbox.SharedSendStream.reserve] gives take
 the keyword too. A version applies from the item sent with it, and a
 reader's [`metadata`][sharedbox.SharedReceiveStream.metadata] and
 [`metadata_version`][sharedbox.SharedReceiveStream.metadata_version]
@@ -135,7 +135,7 @@ under, and keeps version 1 while an item sent before it is in the ring,
 so that a reader can tell such an item from one whose version is gone. A
 send with `metadata` that would let such a version go raises
 `MetadataFullError` before it waits for room in the ring, so it sends
-nothing and releases no reader; the slot's `send` in a `writing` block
+nothing and releases no reader; the slot's `send` in a `reserve` block
 raises it the same way and leaves the slot reserved. The same send
 succeeds once the sender has sent enough further items that none of
 those items is left in the ring.

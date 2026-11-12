@@ -22,11 +22,8 @@ scan of its envelope as an array:
 --8<-- "docs/examples/send_items_through_a_stream.py:types"
 ```
 
-The scan takes its sizes from the `Shape` in its annotation. Because
-`Letter` is a dataclass, the sizes could go in the field's metadata instead,
-as in `scan: npt.NDArray[np.uint8] = field(metadata={"shape": (32, 32)})`,
-which works for an `attrs` class too. A `NamedTuple` or a `msgspec`
-`Struct` has no field metadata and keeps the `Shape`.
+The scan takes its sizes from the `Shape` in its annotation, as an array
+field of a box does.
 
 The creating process calls [`create`][sharedbox.SharedStream.create] with the
 item type, a name and a `capacity`, the number of items the ring holds:
@@ -79,7 +76,7 @@ stream, a later `sender()` raises [`EndOfStream`][sharedbox.EndOfStream].
 When your code can write an item's arrays itself, such as a device library
 that fills a buffer it is given, it can write them straight into the stream
 and leave `send` no array bytes to copy. Each item lives in a slot of the
-stream's ring. [`writing`][sharedbox.SharedSendStream.writing] reserves
+stream's ring. [`reserve`][sharedbox.SharedSendStream.reserve] reserves
 the next slot and yields a [`SendSlot`][sharedbox.SendSlot], whose
 [`item`][sharedbox.SendSlot.item] is the template item you pass with each
 of its arrays replaced by an array over the slot. The template's arrays are
@@ -96,7 +93,7 @@ Readers see nothing of the slot until it is sent. Leaving the block without
 the next send, so the block can also drop an item it finds bad. While the
 slot is reserved, a send from another thread or task waits for it. In
 asyncio code, use
-[`awriting`][sharedbox.SharedSendStream.awriting] with `async with`.
+[`areserve`][sharedbox.SharedSendStream.areserve] with `async with`.
 
 !!! warning "Write the item's arrays only inside the block"
     The arrays stay usable after the block, but they still view the slot.
@@ -209,7 +206,7 @@ choose the smallest maximum your data allows:
 --8<-- "docs/examples/send_items_through_a_stream.py:shapes"
 ```
 
-`send` takes an array of any shape that fits the maximum. With `writing`,
+`send` takes an array of any shape that fits the maximum. With `reserve`,
 the template's array gives the shape of the array over the slot, and its
 values are still never read, so `np.empty` will do. When you know the count
 only after filling the slot, send the first `n` rows of the slot's array, as
@@ -300,7 +297,7 @@ goes on delivering.
 The release happens only when the `timeout` passes, so a send with no
 `timeout` waits as before, and [`send_nowait`][sharedbox.SharedSendStream.send_nowait]
 releases at once. [`asend`][sharedbox.SharedSendStream.asend] and
-[`awriting`][sharedbox.SharedSendStream.awriting] take a `timeout` for the
+[`areserve`][sharedbox.SharedSendStream.areserve] take a `timeout` for the
 same reason, because a wait that `asyncio.wait_for` cancels releases
 nothing. A reader opened by sharedbox 0.7.0 or earlier cannot be released,
 so a send it holds back still raises `TimeoutError`.
@@ -317,11 +314,17 @@ async for letter in reader:
 await sender.asend(letter)
 ```
 
-To give up after a while, put `asyncio.timeout()` around the receive:
+For one item outside a loop, a reader has
+[`areceive`][sharedbox.SharedReceiveStream.areceive],
+[`areceive_into`][sharedbox.SharedReceiveStream.areceive_into] and
+[`afetch`][sharedbox.SharedReceiveStream.afetch], which take what
+`receive`, `receive_into` and `fetch` take. They raise
+[`EndOfStream`][sharedbox.EndOfStream] once the stream has ended, where
+`anext` raises `StopAsyncIteration`. To give up after a while, pass a
+`timeout`:
 
 ```python
-async with asyncio.timeout(5):
-    letter = await anext(reader)
+letter = await reader.areceive(timeout=5)
 ```
 
 !!! warning "A cancelled receive keeps its item for the next one"

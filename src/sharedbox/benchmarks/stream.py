@@ -145,7 +145,7 @@ def stream_sender(
 def stream_writer(
     name: str, item: str, capacity: int, total: int, start: Barrier, results: Any
 ) -> None:
-    """As `stream_sender`, sending the timed items with `writing`, whose arrays are not copied."""
+    """As `stream_sender`, sending the timed items with `reserve`, whose arrays are not copied."""
     stream = SharedStream.attach(SIZES[item], name)
     data = zeros(item)
     with stream.sender() as sender:
@@ -157,7 +157,7 @@ def stream_writer(
         start.wait()
         begin = time.perf_counter()
         for _ in range(total):
-            with sender.writing(template) as slot:
+            with sender.reserve(template) as slot:
                 slot.send(slot.item)
     results.put(("sender", total, time.perf_counter() - begin, 0))
     stream.close()
@@ -420,7 +420,7 @@ def fresh_stream(opts: Options, item: str) -> Generator[str, None, None]:
 def stream_run(
     mode: Mode, writing: bool = False
 ) -> Callable[[SpawnContext, Options, str, int], Throughput]:
-    """A contender that runs a stream with readers of `mode`, sending with `writing` when asked."""
+    """A contender that runs a stream with readers of `mode`, sending with `reserve` when asked."""
     contender = f"SharedStream {mode}" + (" writing" if writing else "")
     sender = stream_writer if writing else stream_sender
 

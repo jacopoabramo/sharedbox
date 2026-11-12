@@ -58,7 +58,7 @@ class Mailbox(SharedBox):
 
 
 def deliver() -> None:
-    mailbox = Mailbox.attach()      # finds the box by its class
+    mailbox = Mailbox.attach()  # finds the box by its class
     mailbox.letters = 1
     mailbox.close()
 
@@ -68,7 +68,7 @@ if __name__ == "__main__":
         mailbox.events.letters.connect(lambda new, old: print(old, "->", new))
         carrier = mp.Process(target=deliver)
         carrier.start()
-        carrier.join()                    # prints: 0 -> 1
+        carrier.join()  # prints: 0 -> 1
     Mailbox.unlink()
 ```
 

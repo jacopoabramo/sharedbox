@@ -61,8 +61,11 @@ from ._types import MAX_ARRAY_PLACES, Table, TypeSpec, misplaced_max_array, pars
 
 T = TypeVar("T")
 Mode = Literal["lossless", "lossy", "latest"]
+"""How a reader treats items it has not read when the ring is full, as [`reader`][sharedbox.SharedStream.reader] takes it."""
 Start = Literal["newest", "oldest"]
+"""Where a new reader starts, as [`reader`][sharedbox.SharedStream.reader] takes it."""
 OnFull = Literal["wait", "release"]
+"""What a sender does when a lossless reader keeps the ring full, as [`sender`][sharedbox.SharedStream.sender] takes it."""
 MODES: Final[dict[str, int]] = {"lossless": 1, "lossy": 2, "latest": 3}
 MODE_NAMES: Final[dict[int, Mode]] = {1: "lossless", 2: "lossy", 3: "latest"}
 STEP: Final = 1.0
@@ -246,6 +249,29 @@ class SharedStreamStatistics:
     readers: tuple[ReceiveStreamStatistics, ...]
 
 
+class Unlink:
+    """`SharedStream.unlink(name)` on the class, `stream.unlink()` on an instance.
+
+    Either removes the stream's name on Linux, as `SharedBox.unlink` does,
+    and does nothing on Windows.
+    """
+
+    @overload
+    def __get__(
+        self, stream: None, owner: type[SharedStream[Any, Any]]
+    ) -> Callable[[str], None]: ...
+    @overload
+    def __get__(
+        self, stream: SharedStream[Any, Any], owner: type[SharedStream[Any, Any]]
+    ) -> Callable[[], None]: ...
+    def __get__(
+        self, stream: SharedStream[Any, Any] | None, owner: type[SharedStream[Any, Any]]
+    ) -> Callable[..., None]:
+        if stream is not None:
+            return lambda: Segment.unlink(check_name(stream.name))
+        return lambda name: Segment.unlink(check_name(name))
+
+
 class SharedStream(Generic[T, M]):
     """A ring of items in shared memory, sent by one process and received by up to `max_readers` readers.
 
@@ -421,10 +447,7 @@ class SharedStream(Generic[T, M]):
         )
         return cls._wrap(item_type, item, native)
 
-    @staticmethod
-    def unlink(name: str) -> None:
-        """Remove the name `name` on Linux, as `SharedBox.unlink` does; a no-op on Windows."""
-        Segment.unlink(check_name(name))
+    unlink = Unlink()
 
     @classmethod
     def _wrap(cls, hint: object, item: Item, native: Stream) -> SharedStream[Any, Any]:
@@ -466,7 +489,7 @@ class SharedStream(Generic[T, M]):
         [`metadata`][sharedbox.SharedReceiveStream.metadata] gives the
         version of the item it returned last. The stream keeps the earlier
         versions until it reclaims them for newer ones, and
-        [`metadata_version_of`][sharedbox.SharedStream.metadata_version_of]
+        [`metadata_at`][sharedbox.SharedStream.metadata_at]
         reads them until then. A mapping reads back as a `frozendict`
         and a list as a tuple, nested the same way. Each stream object
         decodes a version once and keeps the 32 it used last.
@@ -476,7 +499,7 @@ class SharedStream(Generic[T, M]):
         StreamClosedError
             If the stream is closed.
         """
-        return newest(self._native.metadata_head, self.metadata_version_of)
+        return newest(self._native.metadata_head, self.metadata_at)
 
     @property
     def metadata_version(self) -> int:
@@ -489,7 +512,7 @@ class SharedStream(Generic[T, M]):
         """
         return self._native.metadata_head()
 
-    def metadata_version_of(self, version: int) -> M:
+    def metadata_at(self, version: int) -> M:
         """Return the value of metadata version `version`.
 
         Each stream object decodes a version once and keeps the 32 it used
@@ -624,6 +647,12 @@ class SharedStream(Generic[T, M]):
         return self
 
     def __exit__(self, *exc_info: object) -> None:
+        self.close()
+
+    async def __aenter__(self) -> SharedStream[T, M]:
+        return self
+
+    async def __aexit__(self, *exc_info: object) -> None:
         self.close()
 
     def __reduce__(
@@ -892,9 +921,10 @@ def holder() -> object:
 class SharedSendStream(End, Generic[T, M]):
     """The sender of a stream: one per stream, in the process that holds it.
 
-    [`SharedStream.sender`][sharedbox.SharedStream.sender] returns it. The
-    stream keeps it open until `close()`, or until the stream is closed or
-    the process dies; dropping the object does not close it.
+    [`SharedStream.sender`][sharedbox.SharedStream.sender] returns it; it
+    is not built directly. The stream keeps it open until `close()`, or
+    until the stream is closed or the process dies; dropping the object
+    does not close it.
     Closing it ends the stream: readers receive what is buffered, then
     [`EndOfStream`][sharedbox.EndOfStream].
     """
@@ -919,7 +949,7 @@ class SharedSendStream(End, Generic[T, M]):
         return "sender"
 
     def send(
-        self, item: T, timeout: float | None = None, *, metadata: M | None = None
+        self, item: T, *, timeout: float | None = None, metadata: M | None = None
     ) -> None:
         """Send `item`, waiting while a lossless reader is a full ring behind.
 
@@ -950,13 +980,13 @@ class SharedSendStream(End, Generic[T, M]):
         TimeoutError
             If `timeout` seconds pass first; the item is not sent. With
             `on_full="release"`, only if another thread or task holds the
-            slot from `writing`, or a reader from sharedbox 0.7.0 or earlier
+            slot from `reserve`, or a reader from sharedbox 0.7.0 or earlier
             holds the sender back.
         StreamClosedError
             If this sender is closed, before or during the wait.
         RuntimeError
             If called inside a block of this sender's
-            [`writing`][sharedbox.SharedSendStream.writing].
+            [`reserve`][sharedbox.SharedSendStream.reserve].
         TypeError
             If `metadata` holds another type, or a mapping key is not a
             `str`.
@@ -985,7 +1015,7 @@ class SharedSendStream(End, Generic[T, M]):
             )
 
     async def asend(
-        self, item: T, timeout: float | None = None, *, metadata: M | None = None
+        self, item: T, *, timeout: float | None = None, metadata: M | None = None
     ) -> None:
         """Send `item`, as [`send`][sharedbox.SharedSendStream.send] does, without blocking the event loop.
 
@@ -1005,7 +1035,7 @@ class SharedSendStream(End, Generic[T, M]):
         StreamClosedError
             If this sender is closed, before or during the wait.
         RuntimeError
-            If called inside a block of this sender's `writing`.
+            If called inside a block of this sender's `reserve`.
         TypeError
             If `metadata` holds a value `send` refuses.
         ValueError
@@ -1044,8 +1074,8 @@ class SharedSendStream(End, Generic[T, M]):
 
         It would wait while a lossless reader is a full ring behind, or while
         another thread or task holds the slot from
-        [`writing`][sharedbox.SharedSendStream.writing] or
-        [`awriting`][sharedbox.SharedSendStream.awriting].
+        [`reserve`][sharedbox.SharedSendStream.reserve] or
+        [`areserve`][sharedbox.SharedSendStream.areserve].
 
         With `on_full="release"`, a lossless reader that is a full ring
         behind is released at once and the item is sent. The call still
@@ -1059,7 +1089,7 @@ class SharedSendStream(End, Generic[T, M]):
         Raises
         ------
         RuntimeError
-            If called inside a block of this sender's `writing`.
+            If called inside a block of this sender's `reserve`.
         TypeError
             If `metadata` holds a value `send` refuses.
         ValueError
@@ -1091,11 +1121,11 @@ class SharedSendStream(End, Generic[T, M]):
             ) from None
 
     def _refuse_nested(self) -> None:
-        """Raise RuntimeError when called inside a `writing` block of this sender, whose slot a send would wait for."""
+        """Raise RuntimeError when called inside a `reserve` block of this sender, whose slot a send would wait for."""
         if self._holders and holder() in self._holders:
             raise RuntimeError(
                 f"stream {self._stream.name!r}: a send inside this sender's "
-                "writing block is refused"
+                "reserve block is refused"
             )
 
     def _retry(
@@ -1158,8 +1188,8 @@ class SharedSendStream(End, Generic[T, M]):
         self._retry(self._native.reserve, timeout, future)
 
     @contextlib.contextmanager
-    def writing(
-        self, template: T | None = None, timeout: float | None = None
+    def reserve(
+        self, template: T | None = None, *, timeout: float | None = None
     ) -> Generator[SendSlot[T, M], None, None]:
         """Reserve the next slot and yield it, to fill the item's arrays in place and send it.
 
@@ -1174,7 +1204,7 @@ class SharedSendStream(End, Generic[T, M]):
 
         ```python
         blank = Letter(0, "", np.empty((0, 0), np.uint8))
-        with sender.writing(blank) as slot:
+        with sender.reserve(blank) as slot:
             scanner.read_into(slot.item.scan)
             slot.send(replace(slot.item, index=n))
         ```
@@ -1184,7 +1214,7 @@ class SharedSendStream(End, Generic[T, M]):
         without `send`, or by an exception, gives the slot up: nothing is
         published, and the next send takes its position. Until the slot is
         sent or the block ends, readers see nothing new, and a send or
-        `writing` on this sender from another thread or task waits. That
+        `reserve` on this sender from another thread or task waits. That
         includes a task started inside the block by `asyncio.wait_for` or
         `create_task`.
 
@@ -1203,11 +1233,11 @@ class SharedSendStream(End, Generic[T, M]):
         TimeoutError
             If `timeout` seconds pass while a lossless reader is a full ring
             behind and the sender does not release it, or while another
-            thread or task holds the slot from `writing` or `awriting`.
+            thread or task holds the slot from `reserve` or `areserve`.
         StreamClosedError
             If this sender is closed, before or during the wait.
         RuntimeError
-            If called inside a block of this sender's `writing`.
+            If called inside a block of this sender's `reserve`.
 
         Notes
         -----
@@ -1221,12 +1251,12 @@ class SharedSendStream(End, Generic[T, M]):
             yield slot
 
     @contextlib.asynccontextmanager
-    async def awriting(
-        self, template: T | None = None, timeout: float | None = None
+    async def areserve(
+        self, template: T | None = None, *, timeout: float | None = None
     ) -> AsyncGenerator[SendSlot[T, M], None]:
-        """Reserve the next slot, as [`writing`][sharedbox.SharedSendStream.writing] does, without blocking the event loop.
+        """Reserve the next slot, as [`reserve`][sharedbox.SharedSendStream.reserve] does, without blocking the event loop.
 
-        `timeout` has the meaning it has in `writing`. An `awriting` cancelled
+        `timeout` has the meaning it has in `reserve`. An `areserve` cancelled
         before its `timeout` passes reserves nothing and releases no reader.
 
         Raises
@@ -1239,7 +1269,7 @@ class SharedSendStream(End, Generic[T, M]):
         StreamClosedError
             If this sender is closed, before or during the wait.
         RuntimeError
-            If called inside a block of this sender's `writing`.
+            If called inside a block of this sender's `reserve`.
         """
         self._refuse_nested()
         await self._yield()
@@ -1263,7 +1293,7 @@ class SharedSendStream(End, Generic[T, M]):
         return True
 
     def _abandon_reserved(self, future: Future[Any]) -> None:
-        """Give up the slot that a cancelled `awriting` reserved after all."""
+        """Give up the slot that a cancelled `areserve` reserved after all."""
         if not future.cancelled() and future.exception() is None:
             self._native.abandon()
 
@@ -1303,10 +1333,10 @@ class SharedSendStream(End, Generic[T, M]):
 
 
 class SendSlot(Slot[T, M]):
-    """A slot of a stream that [`SharedSendStream.writing`][sharedbox.SharedSendStream.writing] reserved for one item.
+    """A slot of a stream that [`SharedSendStream.reserve`][sharedbox.SharedSendStream.reserve] reserved for one item.
 
-    [`writing`][sharedbox.SharedSendStream.writing] and
-    [`awriting`][sharedbox.SharedSendStream.awriting] make it. Its
+    [`reserve`][sharedbox.SharedSendStream.reserve] and
+    [`areserve`][sharedbox.SharedSendStream.areserve] make it. Its
     [`item`][sharedbox.SendSlot.item] holds arrays over the slot, which
     the block fills, and [`send`][sharedbox.SendSlot.send] publishes an
     item.
@@ -1372,7 +1402,8 @@ class ReceiveEvents(SignalGroup):
 class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T, M]):
     """A reader of a stream, in the process that opened it.
 
-    [`SharedStream.reader`][sharedbox.SharedStream.reader] returns it.
+    [`SharedStream.reader`][sharedbox.SharedStream.reader] returns it; it
+    is not built directly.
     `for item in reader` and `async for item in reader` receive until the
     stream ends.
 
@@ -1485,7 +1516,7 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T, M]):
             ),
         )
 
-    def receive(self, timeout: float | None = None) -> T:
+    def receive(self, *, timeout: float | None = None) -> T:
         """Return the next item, with new arrays.
 
         Raises
@@ -1888,7 +1919,7 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T, M]):
         """
         return self._receive_future([] if out is None else self._targets(out))
 
-    def fetch(self, position: int, /, timeout: float | None = None) -> T:
+    def fetch(self, position: int, /, *, timeout: float | None = None) -> T:
         """Return the item at `position`, with new arrays, once the sender has sent it.
 
         A fetch leaves the receive cursor and
@@ -1974,17 +2005,79 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T, M]):
         ValueError
             If `position` is negative or above `2**63 - 2`.
         """
+        return self._fetch_future(
+            position, [] if out is None else self._targets(out), None
+        )
+
+    def _fetch_future(
+        self,
+        position: int,
+        targets: list[tuple[tuple[int, ...], Any]],
+        timeout: float | None,
+    ) -> CallFuture:
         check_position(position)
-        targets = [] if out is None else self._targets(out)
         future = self._submit(
-            lambda future: self._receive(targets, None, future, position=position)
+            lambda future: self._receive(targets, timeout, future, position=position)
         )
         # A fetch takes nothing from the cursor, so stopping it mid-wait loses no item.
         future.on_cancel = self._interrupt_call
         return future
 
-    def _receive_future(self, targets: list[tuple[tuple[int, ...], Any]]) -> CallFuture:
-        return self._submit(lambda future: self._receive(targets, None, future))
+    async def afetch(self, position: int, /, *, timeout: float | None = None) -> T:
+        """Return the item at `position`, as [`fetch`][sharedbox.SharedReceiveStream.fetch] does, without blocking the event loop.
+
+        Cancelling the call stops the fetch, so it does not hold up later
+        calls on the reader.
+
+        Raises
+        ------
+        ItemGoneError
+            If the ring no longer holds the item.
+        EndOfStream
+            If the sender closed or died without sending the item.
+        TimeoutError
+            If `timeout` seconds pass first.
+        StreamClosedError
+            If this reader is closed, before or during the wait.
+        ValueError
+            If `position` is negative or above `2**63 - 2`.
+        """
+        return cast(T, await self._wait(self._fetch_future(position, [], timeout)))
+
+    def _receive_future(
+        self,
+        targets: list[tuple[tuple[int, ...], Any]],
+        timeout: float | None = None,
+    ) -> CallFuture:
+        return self._submit(lambda future: self._receive(targets, timeout, future))
+
+    async def areceive(self, *, timeout: float | None = None) -> T:
+        """Return the next item, as [`receive`][sharedbox.SharedReceiveStream.receive] does, without blocking the event loop.
+
+        An item a cancelled `areceive` had already taken is returned by the
+        next receive.
+
+        Raises
+        ------
+        EndOfStream
+            If the sender closed or died and no item is left.
+        ReaderReleased
+            If the sender released this reader.
+        TimeoutError
+            If `timeout` seconds pass first.
+        StreamClosedError
+            If this reader is closed, before or during the wait.
+        """
+        return await self._areceive([], timeout)
+
+    async def areceive_into(self, out: Any, /, *, timeout: float | None = None) -> T:
+        """As [`areceive`][sharedbox.SharedReceiveStream.areceive], with the item's arrays read into the arrays in `out`.
+
+        `out` has the shape that
+        [`receive_into`][sharedbox.SharedReceiveStream.receive_into] takes.
+        After an exception the contents of `out` are unspecified.
+        """
+        return await self._areceive(self._targets(out), timeout)
 
     def __aiter__(self) -> SharedReceiveStream[T, M]:
         return self
@@ -1994,17 +2087,22 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T, M]):
 
     async def _anext(self, targets: list[tuple[tuple[int, ...], Any]]) -> T:
         """Receive the next item for `async for`, into `targets` when given; the body of both `__anext__`."""
-        self._check_consumer()
         try:
-            await self._yield()
-            if self._fast():
-                try:
-                    return self._take_nowait(targets)
-                except WouldBlock:
-                    pass
-            return cast(T, await self._wait(self._receive_future(targets)))
+            return await self._areceive(targets, None)
         except EndOfStream:
             raise StopAsyncIteration from None
+
+    async def _areceive(
+        self, targets: list[tuple[tuple[int, ...], Any]], timeout: float | None
+    ) -> T:
+        self._check_consumer()
+        await self._yield()
+        if self._fast():
+            try:
+                return self._take_nowait(targets)
+            except WouldBlock:
+                pass
+        return cast(T, await self._wait(self._receive_future(targets, timeout)))
 
     def _receive(
         self,
@@ -2045,6 +2143,9 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T, M]):
 
 class IterInto(Iterator[T], AsyncIterator[T], Generic[T]):
     """Items of one reader read into the same arrays, for `for` loops.
+
+    [`iter_into`][sharedbox.SharedReceiveStream.iter_into] returns it; it
+    is not built directly.
 
     Notes
     -----

@@ -6,7 +6,7 @@ icon: lucide/code
 
 | Name | What it does |
 | --- | --- |
-| [`Shape`][sharedbox.Shape] | the dimensions of an array field; a box field can take them from `field(shape=...)` or its default array instead |
+| [`Shape`][sharedbox.Shape] | the dimensions of an array field, a record member or a stream item, given in the annotation |
 | [`MaxShape`][sharedbox.MaxShape] | the largest dimensions of an array in a stream item or a box field, which stores its own shape with each value |
 | [`DType`][sharedbox.DType] | the element type of an array field; a numpy annotation that names its dtype needs none |
 | [`SupportsDLPack`][sharedbox.SupportsDLPack] | an object a DLPack library can import; a field annotated with it reads back sharedbox's own array |

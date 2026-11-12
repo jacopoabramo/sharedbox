@@ -185,9 +185,7 @@ than an event, such as the stop, waits `control_timeout` for it. Set `event_time
 goes on:
 
 ```python
-sender = DocumentSender.create(
-    "beamline", event_timeout=1.0, on_full="release"
-)
+sender = DocumentSender.create("beamline", event_timeout=1.0, on_full="release")
 ```
 
 !!! warning "A lossless receiver that reaches a descriptor late can be released"

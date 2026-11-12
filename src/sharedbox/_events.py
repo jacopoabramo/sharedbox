@@ -104,6 +104,8 @@ def stop_watchers() -> None:
 class FieldFuture(Future[T]):
     """The next value written to one field of a box.
 
+    `box.watch(field).future()` returns it; it is not built directly.
+
     A `concurrent.futures.Future`, so `concurrent.futures.wait`,
     `concurrent.futures.as_completed` and `asyncio.wrap_future` take it, and
     it can be awaited directly in a running event loop. It resolves on the

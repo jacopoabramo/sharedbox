@@ -5,7 +5,7 @@ import inspect
 import re
 import sys
 import types
-from collections.abc import Callable, Iterable, Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import KW_ONLY, MISSING, InitVar, dataclass
 from types import MappingProxyType, NoneType
 from typing import (
@@ -24,7 +24,6 @@ from typing import (
     get_type_hints,
 )
 
-from ._arrays import Shape
 from ._attr import Attr
 from ._native import Types
 from ._types import (
@@ -100,9 +99,10 @@ MAX_RECORD_SIZE: Final[int] = 2**32 - 4096
 class Field:
     """Options of one field of a `SharedBox` class, as [`field`][sharedbox.field] takes them.
 
-    [`fields`][sharedbox.fields] returns them. A `Field` is read-only, and
-    two are equal only if they are the same object, as with
-    `dataclasses.Field`.
+    [`field`][sharedbox.field] and [`attr`][sharedbox.attr] make one and
+    [`fields`][sharedbox.fields] returns them; a `Field` is not built
+    directly. It is read-only, and two are equal only if they are the same
+    object, as with `dataclasses.Field`.
     """
 
     name: str
@@ -122,10 +122,6 @@ class Field:
     """Read-only; kept in Python, never stored in the segment."""
     doc: str | None
     """Kept in Python, never stored in the segment."""
-    shape: tuple[int, ...] | None = None
-    """The `shape` option given to `field`, or None; a field sized by a `Shape` or a default array has None."""
-    capacity: int | None = None
-    """The `capacity` option given to `field`, or None; a field sized by a `Capacity` in its annotation has None."""
     is_attr: bool = False
     """True for a field declared with [`attr`][sharedbox.attr]."""
     timed: bool = False
@@ -143,8 +139,6 @@ def field(
     kw_only: bool | Any = MISSING,
     metadata: Mapping[Any, Any] | None = None,
     doc: str | None = None,
-    shape: Iterable[int] | None = None,
-    capacity: int | None = None,
 ) -> Any:
     """Set the options of one field of a `SharedBox` class, as `dataclasses.field` does.
 
@@ -154,7 +148,7 @@ def field(
     required. A default is checked against the field's type and capacity
     when the class is defined, and a factory's result when a box is
     created; both raise what assigning the value raises, except that an array
-    default of another shape than the field's sizes raises `TypeError` when
+    default of another shape than the field's `Shape` raises `TypeError` when
     the class is defined. Values are copied
     into the segment, and only the stored types exist: no lists, dicts or
     other objects.
@@ -196,26 +190,13 @@ def field(
         segment.
     doc
         Kept in Python, never stored in the segment.
-    shape
-        Sizes of an array field, as `Shape` takes them. It must agree with
-        a `Shape` in the annotation and with the shape of a plain
-        `default` array. A subclass that declares the field again without
-        `field(shape=...)` does not inherit it.
-    capacity
-        Capacity of a field of text, bytes, `bytearray`, `Decimal` or a
-        collection, as [`Capacity`][sharedbox.Capacity] takes it, in place
-        of a `Capacity` in the annotation. A subclass that declares the
-        field again without `field(capacity=...)` does not inherit it.
 
     Raises
     ------
     ValueError
-        If both `default` and `default_factory` are given, `shape` is
-        not 1 to 8 sizes of at least 1, or `capacity` is not 1 to 1 Mi.
+        If both `default` and `default_factory` are given.
     TypeError
-        When the class is defined, for `shape` on a field that is not an
-        array, `capacity` on a field that takes none or beside a
-        `Capacity` in the annotation, for `field()` on a name that is not a
+        When the class is defined, for `field()` on a name that is not a
         field (a name starting with `_`, a `ClassVar`), `field()` without
         an annotation, `init=False` without a default, or a subclass that
         sets a plain class attribute, without an annotation, on the name
@@ -233,8 +214,6 @@ def field(
         kw_only=kw_only,
         metadata=MappingProxyType(dict(metadata or {})),
         doc=doc,
-        shape=None if shape is None else Shape(tuple(shape)).dims,
-        capacity=None if capacity is None else Capacity(capacity).size,
     )
 
 
@@ -562,10 +541,8 @@ def mixin_value(cls: type, name: str) -> Any:
     return MISSING
 
 
-def sizing_options(
-    cls: type, name: str
-) -> tuple[tuple[int, ...] | None, Any, int | None]:
-    """Return the `field(shape=...)`, the plain default and the `field(capacity=...)` `cls` gives field `name`, following the rules of inherited options."""
+def plain_default(cls: type, name: str) -> Any:
+    """Return the plain default `cls` gives field `name`, following the rules of inherited options; `MISSING` for none."""
     own = name in own_annotations(cls)
     value = cls.__dict__.get(name, MISSING) if own else MISSING
     if value is MISSING:
@@ -580,14 +557,10 @@ def sizing_options(
         if option is None and not own:
             value = mixin_value(cls, name)
         if option is None and value is MISSING:
-            return None, MISSING, None
-        if option is not None and own:
-            return None, option.default, None
+            return MISSING
         if option is not None:
-            return option.shape, option.default, option.capacity
-    if isinstance(value, Field):
-        return value.shape, value.default, value.capacity
-    return None, value, None
+            return option.default
+    return value.default if isinstance(value, Field) else value
 
 
 def declared_option(cls: type, name: str) -> Field | None:
@@ -722,36 +695,20 @@ def build_layout(cls: type, identity: str | None = None) -> Layout:
         if isinstance(hint, InitVar):
             continue
         ref = reference(hint)
-        shape, default, capacity = sizing_options(cls, name)
+        default = plain_default(cls, name)
         where = f"{cls.__qualname__}.{name}"
         option = declared_option(cls, name)
         is_attr_hint = hint is Attr or get_origin(hint) is Attr
         info: AttrInfo | None = None
         if option is not None and option.is_attr and not is_attr_hint:
             raise TypeError(f"{where}: attr() applies only to a field annotated Attr")
-        if ref is not None and shape is not None:
-            raise TypeError(f"{where}: field(shape=...) applies only to an array field")
-        if ref is not None and capacity is not None:
-            raise TypeError(f"{where}: Capacity does not apply to a reference")
         if is_attr_hint:
-            if shape is not None or capacity is not None:
-                raise TypeError(
-                    f"{where}: field(shape=...) and field(capacity=...) do not apply to an Attr"
-                )
             spec: TypeSpec | None
             spec, info = attr_field(hint, where, option, default)
         elif ref is not None:
             spec = None
         else:
-            spec = parse(
-                hint,
-                where,
-                capacity=capacity,
-                sizes=(
-                    None if shape is None else (f"field(shape={shape})", shape),
-                    default,
-                ),
-            )
+            spec = parse(hint, where, default=default)
         if spec is not None and misplaced_max_array(spec):
             raise TypeError(f"{where}: {MAX_ARRAY_PLACES}")
         found.append((name, spec, ref, info))

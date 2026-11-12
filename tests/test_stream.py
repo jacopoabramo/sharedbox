@@ -100,7 +100,7 @@ def test_an_optional_array_member_crosses_a_stream(unique_name: str) -> None:
 @dataclass
 class Letter:
     index: int
-    scan: npt.NDArray[np.uint8] = field(metadata={"shape": (32, 32)})
+    scan: Annotated[npt.NDArray[np.uint8], Shape((32, 32))]
 
 
 def test_a_dataclass_member_takes_its_array_sizes_from_metadata(
@@ -458,6 +458,14 @@ def test_a_pickled_stream_attaches_and_its_ends_refuse(unique_name: str) -> None
         with pytest.raises(TypeError, match=r"call reader\(\)"):
             pickle.dumps(reader)
         copy.close()
+
+
+def test_unlink_on_a_stream_frees_its_name(unique_name: str) -> None:
+    """Create a stream again under the name its own unlink removed."""
+    stream = SharedStream.create(int, unique_name, capacity=2)
+    stream.close()
+    stream.unlink()
+    SharedStream.create(int, unique_name, capacity=2).close()
 
 
 def test_a_pickle_of_a_stream_made_again_is_refused(unique_name: str) -> None:
@@ -825,7 +833,7 @@ def test_writing_views_the_slot_in_the_template_shape(unique_name: str) -> None:
     with SharedStream.create(Block, unique_name, capacity=2) as stream:
         reader = stream.reader()
         template = np.empty((2, 3), np.uint32)
-        with stream.sender().writing(Block(1, template)) as slot:
+        with stream.sender().reserve(Block(1, template)) as slot:
             assert slot.item.counts.shape == (2, 3)
             assert not np.shares_memory(slot.item.counts, template)
             slot.item.counts[:] = [[1, 2, 3], [4, 5, 6]]
@@ -838,7 +846,7 @@ def test_slot_send_publishes_a_prefix_of_the_slot_view(unique_name: str) -> None
     """Send the first rows of the slot's array as an item of that shape."""
     with SharedStream.create(Block, unique_name, capacity=2) as stream:
         reader = stream.reader()
-        with stream.sender().writing(Block(1, np.empty((4, 3), np.uint32))) as slot:
+        with stream.sender().reserve(Block(1, np.empty((4, 3), np.uint32))) as slot:
             slot.item.counts[:] = counts(4, 3)
             slot.send(replace(slot.item, counts=slot.item.counts[:2]))
         got = reader.receive(timeout=5)
@@ -852,7 +860,7 @@ def test_slot_send_copies_a_view_not_at_the_start_of_the_slot(unique_name: str) 
         reader = stream.reader()
         sender = stream.sender()
         for index in (np.s_[1:3], np.s_[:, :2]):
-            with sender.writing(Block(1, np.empty((4, 3), np.uint32))) as slot:
+            with sender.reserve(Block(1, np.empty((4, 3), np.uint32))) as slot:
                 slot.item.counts[:] = counts(4, 3)
                 chosen = slot.item.counts[index]
                 expected = chosen.copy()
@@ -863,10 +871,10 @@ def test_slot_send_copies_a_view_not_at_the_start_of_the_slot(unique_name: str) 
 
 
 def test_writing_without_a_template_views_the_maximum(unique_name: str) -> None:
-    """Give a bare MaxShape item's slot array the maximum shape when writing takes no template."""
+    """Give a bare MaxShape item's slot array the maximum shape when reserve takes no template."""
     with (
         SharedStream.create(Counts, unique_name, capacity=2) as stream,
-        stream.sender().writing() as slot,
+        stream.sender().reserve() as slot,
     ):
         assert slot.item.shape == (4, 3)
 
@@ -878,7 +886,7 @@ def test_writing_refuses_a_template_beyond_the_maximum(unique_name: str) -> None
         sender = stream.sender()
         with (
             pytest.raises(ValueError, match="MaxShape"),
-            sender.writing(Block(1, np.empty((5, 3), np.uint32)), timeout=5),
+            sender.reserve(Block(1, np.empty((5, 3), np.uint32)), timeout=5),
         ):
             pass
         sender.send(Block(2, counts(1, 3)), timeout=5)
@@ -934,7 +942,7 @@ def test_writing_takes_a_typed_dict_template_without_its_max_shape_key(
     with SharedStream.create(Tally, unique_name, capacity=2) as stream:
         reader = stream.reader()
         template: Any = {"run": 1}
-        with stream.sender().writing(template) as slot:
+        with stream.sender().reserve(template) as slot:
             assert slot.item["counts"].shape == (4, 3)
             slot.item["counts"][:] = counts(4, 3)
             slot.send(slot.item)
@@ -947,7 +955,7 @@ def test_a_stored_shape_beyond_the_maximum_is_refused(unique_name: str) -> None:
         plain = stream.reader()
         into = stream.reader()
         sender = stream.sender()
-        with sender.writing(Block(1, np.empty((2, 3), np.uint32))) as slot:
+        with sender.reserve(Block(1, np.empty((2, 3), np.uint32))) as slot:
             view = slot.item.counts
             slot.send(slot.item)
         line = (ctypes.c_uint64 * 8).from_address(view.ctypes.data - 64)
@@ -1017,7 +1025,7 @@ def test_writing_with_a_timeout_releases(unique_name: str) -> None:
         reader = stream.reader()
         sender = stream.sender(on_full="release")
         fill(sender, 4)
-        with sender.writing(0, timeout=0.1) as slot:
+        with sender.reserve(0, timeout=0.1) as slot:
             slot.send(4)
         with pytest.raises(ReaderReleased):
             reader.receive(timeout=1)
@@ -1046,7 +1054,7 @@ def test_a_held_writing_slot_is_not_released(unique_name: str) -> None:
         holding, done = threading.Event(), threading.Event()
 
         def hold() -> None:
-            with sender.writing(0):
+            with sender.reserve(0):
                 holding.set()
                 done.wait(10)
 

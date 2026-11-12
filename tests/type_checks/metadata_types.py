@@ -31,9 +31,9 @@ class Plain(SharedBox):
 
 def check_box_metadata(motor: Motor, plain: Plain) -> None:
     assert_type(motor.metadata, Info | None)
-    assert_type(motor.metadata_version_of(1), Info)
+    assert_type(motor.metadata_at(1), Info)
     assert_type(plain.metadata, Mapping[str, Any] | None)
-    assert_type(plain.metadata_version_of(1), Mapping[str, Any])
+    assert_type(plain.metadata_at(1), Mapping[str, Any])
 
 
 def check_update_metadata(motor: Motor) -> None:
@@ -48,10 +48,10 @@ def check_send_metadata(stream: SharedStream[Item, Info]) -> None:
 
 
 def check_slot_metadata(sender: SharedSendStream[Item, Info]) -> None:
-    with sender.writing() as slot:
+    with sender.reserve() as slot:
         assert_type(slot, SendSlot[Item, Info])
         slot.send(Item(1), metadata={"unit": "mm"})
-    with sender.writing() as slot:
+    with sender.reserve() as slot:
         slot.send(Item(1), metadata={"unit": 1})  # type: ignore[arg-type]
 
 
@@ -106,10 +106,10 @@ def check_stream_metadata(
     stream: SharedStream[Item], typed: SharedStream[Item, Info]
 ) -> None:
     assert_type(stream.metadata, Mapping[str, Any] | None)
-    assert_type(stream.metadata_version_of(1), Mapping[str, Any])
+    assert_type(stream.metadata_at(1), Mapping[str, Any])
     assert_type(stream.reader().metadata, Mapping[str, Any] | None)
     assert_type(typed.metadata, Info | None)
-    assert_type(typed.metadata_version_of(1), Info)
+    assert_type(typed.metadata_at(1), Info)
     assert_type(typed.reader().metadata, Info | None)
     assert_type(
         SharedStream.create(Item, capacity=2, metadata={"unit": "mm"}),

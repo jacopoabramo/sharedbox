@@ -7,7 +7,7 @@ import numpy.typing as npt
 import pytest
 from crossproc import snapshot_in_child
 
-from sharedbox import Capacity, SharedBox
+from sharedbox import Capacity, Shape, SharedBox
 
 
 @attrs.define(frozen=True)
@@ -87,7 +87,7 @@ def test_an_attrs_record_that_can_change_is_never_shared(
 
 @attrs.frozen
 class Strip:
-    pixels: npt.NDArray[np.uint8] = attrs.field(metadata={"shape": (4,)})
+    pixels: Annotated[npt.NDArray[np.uint8], Shape((4,))]
 
 
 class Scanner(SharedBox):
