@@ -327,7 +327,11 @@ def test_a_handler_exception_reaches_the_caller(
         text = str(raised.value).removeprefix("Scanner.move: ")
         assert text.startswith("ValueError: é")
         assert len(text.encode()) == 256
-    logged = [r for r in caplog.records if r.name == "sharedbox" and r.exc_info]
+    logged = [
+        r
+        for r in caplog.records
+        if r.name == "sharedbox" and "Traceback" in r.getMessage()
+    ]
     assert len(logged) == 2
 
 
@@ -587,6 +591,21 @@ def test_a_surrogate_in_a_handler_error_reaches_the_caller(
         box.move.serve(surrogate)
         with pytest.raises(RequestError, match=r"ValueError: \\ud800"):
             box.move(1.0).result(timeout=5)
+
+
+def test_a_surrogate_in_a_handler_error_is_escaped_in_the_log(
+    names: Callable[[str], str], caplog: pytest.LogCaptureFixture
+) -> None:
+    """Log the error of a handler, with its traceback, as text that UTF-8 can encode."""
+    with (
+        Scanner.create(names("logged")) as box,
+        caplog.at_level(logging.ERROR, logger="sharedbox"),
+    ):
+        box.move.serve(surrogate)
+        with pytest.raises(RequestError):
+            box.move(1.0).result(timeout=5)
+    logged = caplog.text.encode("utf-8").decode()
+    assert ("Traceback" in logged, "ValueError: \\ud800" in logged) == (True, True)
 
 
 @pytest.mark.filterwarnings("ignore::pytest.PytestUnhandledThreadExceptionWarning")

@@ -6,6 +6,7 @@ import asyncio
 import contextlib
 import logging
 import threading
+import traceback
 from collections.abc import Callable, Generator
 from concurrent.futures import Future, InvalidStateError
 from enum import IntEnum
@@ -49,6 +50,21 @@ class Outcome(IntEnum):
     SUPERSEDED = 3
     OVERWRITTEN = 4
     SERVER_EXITED = 5
+
+
+def log_error(message: str, label: str, error: BaseException) -> None:
+    """Log `message`, which names `label` with one `%s`, followed by the traceback of `error`.
+
+    The traceback is written into the message with every character that
+    UTF-8 cannot encode escaped, as [`error_text`][sharedbox._request.error_text]
+    escapes the answer: the error of a handler may hold any text, a lone
+    surrogate included, and a record holding one cannot be written to a
+    UTF-8 log file.
+    """
+    text = "".join(traceback.format_exception(error)).rstrip()
+    logger.error(
+        message + "\n%s", label, text.encode(errors="backslashreplace").decode()
+    )
 
 
 def error_text(error: BaseException) -> str:
@@ -319,17 +335,17 @@ class RequestServer:
                 segment.request_answer(self._field.index, number, True, value, types)
                 return
             except Exception as error:
-                logger.exception("the result of %s cannot be stored", self._field.label)
+                log_error("the result of %s cannot be stored", self._field.label, error)
                 value = error_text(error)
         segment.request_answer(self._field.index, number, False, value, types)
 
     def _fail(self, number: int, error: BaseException) -> None:
-        logger.exception("the handler of %s raised", self._field.label)
+        log_error("the handler of %s raised", self._field.label, error)
         self._answer(number, False, error_text(error))
 
     def _failed_serving(self, number: int | None, error: Exception) -> None:
         """Log an error of the serving loop and answer the request it had taken, if any, as failed."""
-        logger.exception("serving %s failed", self._field.label)
+        log_error("serving %s failed", self._field.label, error)
         if number is not None:
             try:
                 self._answer(number, False, error_text(error))
