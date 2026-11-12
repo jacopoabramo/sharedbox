@@ -97,7 +97,7 @@ RESERVED = frozenset(
         "attach",
         "metadata",
         "metadata_version",
-        "metadata_version_of",
+        "metadata_at",
     }
 )
 # The events group has these as its own names, so no field can take them.
@@ -677,7 +677,7 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
         `SharedBox` member (`name`, `closed`, `close`, `unlink`, `update`,
         `snapshot`, `read_into`, `writing`, `locked`, `watch`, `events`,
         `force_unlock`, `create`, `attach`, `metadata`, `metadata_version`,
-        `metadata_version_of`), a field named `follow`,
+        `metadata_at`), a field named `follow`,
         `unfollow` or `nested`, a default of the wrong type, a
         positional field without a default after one with a default, an
         `InitVar` in a class without `__post_init__`, a reference to a
@@ -1182,7 +1182,7 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
         or calibration the values were taken with. Adding a version with
         [`update`][sharedbox.SharedBox.update] keeps the
         earlier ones until the box reclaims them for newer ones, and
-        [`metadata_version_of`][sharedbox.SharedBox.metadata_version_of]
+        [`metadata_at`][sharedbox.SharedBox.metadata_at]
         reads them until then. A mapping reads back as a `frozendict`
         and a list as a tuple, nested the same way. Each box object decodes
         a version once and keeps the 32 it used last.
@@ -1192,7 +1192,7 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
         BoxClosedError
             If the box is closed.
         """
-        return newest(self._segment.metadata_head, self.metadata_version_of)
+        return newest(self._segment.metadata_head, self.metadata_at)
 
     @property
     def metadata_version(self) -> int:
@@ -1205,7 +1205,7 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
         """
         return self._segment.metadata_head()
 
-    def metadata_version_of(self, version: int) -> M:
+    def metadata_at(self, version: int) -> M:
         """Return the value of metadata version `version`.
 
         Each box object decodes a version once and keeps the 32 it used

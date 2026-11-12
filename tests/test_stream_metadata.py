@@ -63,7 +63,7 @@ def test_a_reader_behind_sees_the_old_version(unique_name: str) -> None:
             seen.append((reader.metadata_version, reader.metadata))
         assert seen == [(1, {"step": 1}), (1, {"step": 1}), (2, {"step": 2})]
         assert (stream.metadata_version, stream.metadata) == (2, {"step": 2})
-        assert stream.metadata_version_of(1) == {"step": 1}
+        assert stream.metadata_at(1) == {"step": 1}
     SharedStream.unlink(unique_name)
 
 
@@ -383,7 +383,7 @@ def test_a_stream_without_metadata(unique_name: str) -> None:
         with pytest.raises(MetadataFullError, match="metadata_capacity"):
             sender.send(1, metadata={"step": 1})
         with pytest.raises(MetadataGoneError):
-            stream.metadata_version_of(1)
+            stream.metadata_at(1)
     SharedStream.unlink(unique_name)
 
 
@@ -393,11 +393,11 @@ def test_a_cached_stream_version_is_gone_once_reclaimed(unique_name: str) -> Non
         int, unique_name, capacity=4, metadata={"step": 1}, metadata_versions=2
     ) as stream:
         sender = stream.sender()
-        assert stream.metadata_version_of(1) == {"step": 1}
+        assert stream.metadata_at(1) == {"step": 1}
         for step in (2, 3):
             sender.send(step, metadata={"step": step})
         with pytest.raises(MetadataGoneError):
-            stream.metadata_version_of(1)
+            stream.metadata_at(1)
         assert stream.metadata == {"step": 3}
     SharedStream.unlink(unique_name)
 

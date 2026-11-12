@@ -466,7 +466,7 @@ class SharedStream(Generic[T, M]):
         [`metadata`][sharedbox.SharedReceiveStream.metadata] gives the
         version of the item it returned last. The stream keeps the earlier
         versions until it reclaims them for newer ones, and
-        [`metadata_version_of`][sharedbox.SharedStream.metadata_version_of]
+        [`metadata_at`][sharedbox.SharedStream.metadata_at]
         reads them until then. A mapping reads back as a `frozendict`
         and a list as a tuple, nested the same way. Each stream object
         decodes a version once and keeps the 32 it used last.
@@ -476,7 +476,7 @@ class SharedStream(Generic[T, M]):
         StreamClosedError
             If the stream is closed.
         """
-        return newest(self._native.metadata_head, self.metadata_version_of)
+        return newest(self._native.metadata_head, self.metadata_at)
 
     @property
     def metadata_version(self) -> int:
@@ -489,7 +489,7 @@ class SharedStream(Generic[T, M]):
         """
         return self._native.metadata_head()
 
-    def metadata_version_of(self, version: int) -> M:
+    def metadata_at(self, version: int) -> M:
         """Return the value of metadata version `version`.
 
         Each stream object decodes a version once and keeps the 32 it used

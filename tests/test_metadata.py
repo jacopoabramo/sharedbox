@@ -321,7 +321,7 @@ def test_box_metadata_end_to_end(unique_name: str) -> None:
         assert added.get(timeout=20) == 2
         assert box.metadata == {"units": "um"}
         assert box.metadata_version == 2
-        assert box.metadata_version_of(1) == {"units": "mm"}
+        assert box.metadata_at(1) == {"units": "mm"}
     Stage.unlink(unique_name)
 
 
@@ -331,7 +331,7 @@ def test_box_metadata_version_is_reclaimed(unique_name: str) -> None:
         for step in (2, 3, 4):
             box.update(metadata={"step": step})
         with pytest.raises(MetadataGoneError):
-            box.metadata_version_of(1)
+            box.metadata_at(1)
         assert box.metadata == {"step": 4}
     Kept.unlink(unique_name)
 
@@ -339,11 +339,11 @@ def test_box_metadata_version_is_reclaimed(unique_name: str) -> None:
 def test_a_cached_version_is_gone_once_reclaimed(unique_name: str) -> None:
     """Raise MetadataGoneError for a reclaimed version this box object read before."""
     with Kept.create(unique_name, metadata={"step": 1}) as box:
-        assert box.metadata_version_of(1) == {"step": 1}
+        assert box.metadata_at(1) == {"step": 1}
         for step in (2, 3):
             box.update(metadata={"step": step})
         with pytest.raises(MetadataGoneError):
-            box.metadata_version_of(1)
+            box.metadata_at(1)
     Kept.unlink(unique_name)
 
 
@@ -513,7 +513,7 @@ def test_update_with_metadata_on_a_subclass(unique_name: str) -> None:
 
 @pytest.mark.parametrize("hint", [int, InitVar[int]], ids=["field", "InitVar"])
 @pytest.mark.parametrize(
-    "name", ["metadata", "metadata_version", "metadata_version_of"]
+    "name", ["metadata", "metadata_version", "metadata_at"]
 )
 def test_a_field_named_metadata_is_refused(name: str, hint: object) -> None:
     """Refuse a field or InitVar named like a metadata member of SharedBox when the class is defined."""

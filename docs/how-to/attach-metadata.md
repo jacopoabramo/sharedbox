@@ -69,7 +69,7 @@ of the fields written with it:
 scale.events.metadata.connect(lambda version: print("calibration", version))
 ```
 
-[`metadata_version_of`][sharedbox.SharedBox.metadata_version_of] reads an
+[`metadata_at`][sharedbox.SharedBox.metadata_at] reads an
 older version for as long as the box keeps it. The box keeps the last
 `metadata_versions` versions, 64 unless the class sets that keyword, or
 fewer when they no longer fit in its room for metadata. Reading a version

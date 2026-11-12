@@ -25,8 +25,8 @@ print(scale.metadata)  # {'unit': 'kg', 'offset': 0.0}
 # --8<-- [start:add]
 scale.update(weight=1.2, metadata={"unit": "kg", "offset": 0.25})
 print(scale.weight, scale.metadata_version)  # 1.2 2
-print(scale.metadata_version_of(1)["offset"])  # 0.0
-print(scale.metadata_version_of(2)["offset"])  # 0.25
+print(scale.metadata_at(1)["offset"])  # 0.0
+print(scale.metadata_at(2)["offset"])  # 0.25
 scale.update(metadata={"unit": "kg", "offset": 0.3})
 print(scale.weight, scale.metadata_version)  # 1.2 3
 # --8<-- [end:add]
@@ -43,7 +43,7 @@ display.update(metadata={"unit": "g", "offset": 0.0})
 # --8<-- [end:capacity]
 
 # --8<-- [start:read-only]
-stored = scale.metadata_version_of(2)
+stored = scale.metadata_at(2)
 try:
     stored["offset"] = 0.5
 except TypeError as error:
