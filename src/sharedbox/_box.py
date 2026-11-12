@@ -1712,6 +1712,13 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
         not wait for the watcher threads of the boxes it closes, and drops
         the writes those threads had not seen yet.
 
+        While another thread of this process waits for the box's lock,
+        `close` waits with it: it returns once that wait ends, which takes
+        at most the class's `lock_timeout`. The waiting thread is not
+        interrupted, and raises
+        [`LockTimeoutError`][sharedbox.LockTimeoutError] as it would
+        without the close.
+
         A box that is garbage collected is closed. Forwarding it started
         keeps running until its events group and every group
         [`follow`][sharedbox.BoxEvents.follow] returned are garbage
