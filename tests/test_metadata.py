@@ -512,9 +512,7 @@ def test_update_with_metadata_on_a_subclass(unique_name: str) -> None:
 
 
 @pytest.mark.parametrize("hint", [int, InitVar[int]], ids=["field", "InitVar"])
-@pytest.mark.parametrize(
-    "name", ["metadata", "metadata_version", "metadata_at"]
-)
+@pytest.mark.parametrize("name", ["metadata", "metadata_version", "metadata_at"])
 def test_a_field_named_metadata_is_refused(name: str, hint: object) -> None:
     """Refuse a field or InitVar named like a metadata member of SharedBox when the class is defined."""
     with pytest.raises(TypeError, match=rf"field name\(s\) {name} clash"):

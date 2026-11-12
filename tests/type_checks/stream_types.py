@@ -75,3 +75,8 @@ async def check_anext(reader: SharedReceiveStream[Item], out: Item) -> None:
     assert_type(await anext(reader.iter_into(out)), Item)
     async for item in reader:
         assert_type(item, Item)
+
+
+def check_unlink(stream: SharedStream[Item]) -> None:
+    assert_type(stream.unlink(), None)
+    assert_type(SharedStream.unlink("name"), None)

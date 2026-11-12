@@ -460,6 +460,14 @@ def test_a_pickled_stream_attaches_and_its_ends_refuse(unique_name: str) -> None
         copy.close()
 
 
+def test_unlink_on_a_stream_frees_its_name(unique_name: str) -> None:
+    """Create a stream again under the name its own unlink removed."""
+    stream = SharedStream.create(int, unique_name, capacity=2)
+    stream.close()
+    stream.unlink()
+    SharedStream.create(int, unique_name, capacity=2).close()
+
+
 def test_a_pickle_of_a_stream_made_again_is_refused(unique_name: str) -> None:
     """Raise SchemaMismatchError for a pickle taken before the stream was created again."""
     stream = SharedStream.create(int, unique_name, capacity=2)

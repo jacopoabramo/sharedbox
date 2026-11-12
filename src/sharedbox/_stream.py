@@ -246,6 +246,29 @@ class SharedStreamStatistics:
     readers: tuple[ReceiveStreamStatistics, ...]
 
 
+class Unlink:
+    """`SharedStream.unlink(name)` on the class, `stream.unlink()` on an instance.
+
+    Either removes the stream's name on Linux, as `SharedBox.unlink` does,
+    and does nothing on Windows.
+    """
+
+    @overload
+    def __get__(
+        self, stream: None, owner: type[SharedStream[Any, Any]]
+    ) -> Callable[[str], None]: ...
+    @overload
+    def __get__(
+        self, stream: SharedStream[Any, Any], owner: type[SharedStream[Any, Any]]
+    ) -> Callable[[], None]: ...
+    def __get__(
+        self, stream: SharedStream[Any, Any] | None, owner: type[SharedStream[Any, Any]]
+    ) -> Callable[..., None]:
+        if stream is not None:
+            return lambda: Segment.unlink(check_name(stream.name))
+        return lambda name: Segment.unlink(check_name(name))
+
+
 class SharedStream(Generic[T, M]):
     """A ring of items in shared memory, sent by one process and received by up to `max_readers` readers.
 
@@ -421,10 +444,7 @@ class SharedStream(Generic[T, M]):
         )
         return cls._wrap(item_type, item, native)
 
-    @staticmethod
-    def unlink(name: str) -> None:
-        """Remove the name `name` on Linux, as `SharedBox.unlink` does; a no-op on Windows."""
-        Segment.unlink(check_name(name))
+    unlink = Unlink()
 
     @classmethod
     def _wrap(cls, hint: object, item: Item, native: Stream) -> SharedStream[Any, Any]:
@@ -919,7 +939,7 @@ class SharedSendStream(End, Generic[T, M]):
         return "sender"
 
     def send(
-        self, item: T, timeout: float | None = None, *, metadata: M | None = None
+        self, item: T, *, timeout: float | None = None, metadata: M | None = None
     ) -> None:
         """Send `item`, waiting while a lossless reader is a full ring behind.
 
@@ -985,7 +1005,7 @@ class SharedSendStream(End, Generic[T, M]):
             )
 
     async def asend(
-        self, item: T, timeout: float | None = None, *, metadata: M | None = None
+        self, item: T, *, timeout: float | None = None, metadata: M | None = None
     ) -> None:
         """Send `item`, as [`send`][sharedbox.SharedSendStream.send] does, without blocking the event loop.
 
@@ -1159,7 +1179,7 @@ class SharedSendStream(End, Generic[T, M]):
 
     @contextlib.contextmanager
     def writing(
-        self, template: T | None = None, timeout: float | None = None
+        self, template: T | None = None, *, timeout: float | None = None
     ) -> Generator[SendSlot[T, M], None, None]:
         """Reserve the next slot and yield it, to fill the item's arrays in place and send it.
 
@@ -1222,7 +1242,7 @@ class SharedSendStream(End, Generic[T, M]):
 
     @contextlib.asynccontextmanager
     async def awriting(
-        self, template: T | None = None, timeout: float | None = None
+        self, template: T | None = None, *, timeout: float | None = None
     ) -> AsyncGenerator[SendSlot[T, M], None]:
         """Reserve the next slot, as [`writing`][sharedbox.SharedSendStream.writing] does, without blocking the event loop.
 
@@ -1485,7 +1505,7 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T, M]):
             ),
         )
 
-    def receive(self, timeout: float | None = None) -> T:
+    def receive(self, *, timeout: float | None = None) -> T:
         """Return the next item, with new arrays.
 
         Raises
@@ -1888,7 +1908,7 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T, M]):
         """
         return self._receive_future([] if out is None else self._targets(out))
 
-    def fetch(self, position: int, /, timeout: float | None = None) -> T:
+    def fetch(self, position: int, /, *, timeout: float | None = None) -> T:
         """Return the item at `position`, with new arrays, once the sender has sent it.
 
         A fetch leaves the receive cursor and

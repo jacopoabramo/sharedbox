@@ -356,7 +356,8 @@ class DocumentSender:
             self._write_state(state)
         for index, part in enumerate(parts):
             self._control_sender.send(
-                ControlItem(seq, index, len(parts), part), self._control_timeout
+                ControlItem(seq, index, len(parts), part),
+                timeout=self._control_timeout,
             )
         if name == "stop":
             self._close_events()
@@ -377,7 +378,7 @@ class DocumentSender:
         ):
             self._wait_for_readers([events])
         for item in items:
-            events.sender.send(item, self._event_timeout)
+            events.sender.send(item, timeout=self._event_timeout)
         events.sent += len(items)
 
     def _wait_for_readers(self, streams: list[EventStream]) -> None:
@@ -708,7 +709,7 @@ class DocumentReceiver:
             )
         )
 
-    def receive(self, timeout: float | None = None) -> tuple[str, dict[str, Any]]:
+    def receive(self, *, timeout: float | None = None) -> tuple[str, dict[str, Any]]:
         """Return the next document's name and the document.
 
         Raises
