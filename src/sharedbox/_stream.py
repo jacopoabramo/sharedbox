@@ -2083,26 +2083,36 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T, M]):
         return self
 
     def __anext__(self) -> Coroutine[Any, Any, T]:
-        return self._anext([])
-
-    async def _anext(self, targets: list[tuple[tuple[int, ...], Any]]) -> T:
-        """Receive the next item for `async for`, into `targets` when given; the body of both `__anext__`."""
-        try:
-            return await self._areceive(targets, None)
-        except EndOfStream:
-            raise StopAsyncIteration from None
+        return self._areceive([], None, iterating=True)
 
     async def _areceive(
-        self, targets: list[tuple[tuple[int, ...], Any]], timeout: float | None
+        self,
+        targets: list[tuple[tuple[int, ...], Any]],
+        timeout: float | None,
+        iterating: bool = False,
     ) -> T:
+        """Receive the next item, into `targets` when given; the body of `areceive`, `areceive_into` and both `__anext__`.
+
+        Parameters
+        ----------
+        iterating
+            End with `StopAsyncIteration` when the stream has ended, as
+            `async for` needs. One coroutine serves both forms, since a
+            second one around it adds its cost to every item.
+        """
         self._check_consumer()
-        await self._yield()
-        if self._fast():
-            try:
-                return self._take_nowait(targets)
-            except WouldBlock:
-                pass
-        return cast(T, await self._wait(self._receive_future(targets, timeout)))
+        try:
+            await self._yield()
+            if self._fast():
+                try:
+                    return self._take_nowait(targets)
+                except WouldBlock:
+                    pass
+            return cast(T, await self._wait(self._receive_future(targets, timeout)))
+        except EndOfStream:
+            if iterating:
+                raise StopAsyncIteration from None
+            raise
 
     def _receive(
         self,
@@ -2172,7 +2182,7 @@ class IterInto(Iterator[T], AsyncIterator[T], Generic[T]):
         return self
 
     def __anext__(self) -> Coroutine[Any, Any, T]:
-        return self._reader._anext(self._targets)
+        return self._reader._areceive(self._targets, None, iterating=True)
 
     def __next__(self) -> T:
         try:
