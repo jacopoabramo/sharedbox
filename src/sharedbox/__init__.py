@@ -35,6 +35,9 @@ from ._request import (
 )
 from ._status import SegmentStatus, segment_status
 from ._stream import (
+    IterInto,
+    Mode,
+    OnFull,
     ReceiveEvents,
     ReceiveStreamStatistics,
     SendSlot,
@@ -42,6 +45,7 @@ from ._stream import (
     SharedSendStream,
     SharedStream,
     SharedStreamStatistics,
+    Start,
 )
 from ._timed import Timed
 from ._version import __version__
@@ -64,11 +68,14 @@ __all__ = [
     "FieldFuture",
     "FieldWatch",
     "ItemGoneError",
+    "IterInto",
     "KindMismatchError",
     "LockTimeoutError",
     "MaxShape",
     "MetadataFullError",
     "MetadataGoneError",
+    "Mode",
+    "OnFull",
     "ReaderReleased",
     "ReceiveEvents",
     "ReceiveStreamStatistics",
@@ -88,6 +95,7 @@ __all__ = [
     "SharedSendStream",
     "SharedStream",
     "SharedStreamStatistics",
+    "Start",
     "StreamBusyError",
     "StreamClosedError",
     "SupportsDLPack",

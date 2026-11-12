@@ -61,8 +61,11 @@ from ._types import MAX_ARRAY_PLACES, Table, TypeSpec, misplaced_max_array, pars
 
 T = TypeVar("T")
 Mode = Literal["lossless", "lossy", "latest"]
+"""How a reader treats items it has not read when the ring is full, as [`reader`][sharedbox.SharedStream.reader] takes it."""
 Start = Literal["newest", "oldest"]
+"""Where a new reader starts, as [`reader`][sharedbox.SharedStream.reader] takes it."""
 OnFull = Literal["wait", "release"]
+"""What a sender does when a lossless reader keeps the ring full, as [`sender`][sharedbox.SharedStream.sender] takes it."""
 MODES: Final[dict[str, int]] = {"lossless": 1, "lossy": 2, "latest": 3}
 MODE_NAMES: Final[dict[int, Mode]] = {1: "lossless", 2: "lossy", 3: "latest"}
 STEP: Final = 1.0

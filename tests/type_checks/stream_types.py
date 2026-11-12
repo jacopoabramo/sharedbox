@@ -5,11 +5,15 @@ from typing import assert_type
 import numpy as np
 
 from sharedbox import (
+    IterInto,
+    Mode,
+    OnFull,
     ReceiveEvents,
     SendSlot,
     SharedReceiveStream,
     SharedSendStream,
     SharedStream,
+    Start,
 )
 
 
@@ -80,3 +84,11 @@ async def check_anext(reader: SharedReceiveStream[Item], out: Item) -> None:
 def check_unlink(stream: SharedStream[Item]) -> None:
     assert_type(stream.unlink(), None)
     assert_type(SharedStream.unlink("name"), None)
+
+
+def check_exported_names(stream: SharedStream[Item], out: Item) -> None:
+    mode: Mode = "lossy"
+    start: Start = "oldest"
+    on_full: OnFull = "release"
+    assert_type(stream.reader(mode, start).iter_into(out), IterInto[Item])
+    assert_type(stream.sender(on_full), SharedSendStream[Item])
