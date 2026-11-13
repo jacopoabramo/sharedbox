@@ -33,11 +33,15 @@ at `default`, which also gives a `Setting` its starting setpoint. A `T`
 with no zero, such as a record without defaults, needs a `default`.
 
 The box's constructor has no parameter for an attribute, because only its
-owner writes it. Reading `camera.exposure` gives the
-[`Attr`][sharedbox.Attr] bound to the box, the same object every time, and
-assigning to it or passing it to `update` raises `TypeError`. `T` and the
-argument types may be any type a record member may be, except a
-[`Timed`][sharedbox.Timed], another `Attr` or a reference to a box.
+owner writes it. Reading `camera.exposure` gives the object through which
+this box's `exposure` is published, read and asked for work: a `Setting`
+here, an [`Attr`][sharedbox.Attr] for `temperature`, and the same object
+every time. A `Setting` is a kind of `Attr`, so everything below about an
+`Attr` holds for it too. Assigning to the field or passing it to `update`
+raises `TypeError`. `T` and the argument types may be any type a record
+member may be, except another `Attr` or a reference to a box. `T` may not
+be a [`Timed`][sharedbox.Timed] either, since the attribute already stores
+the time of each publish.
 
 An attribute takes requests when it has argument types, when its `T` is
 `None`, or when it is a `Setting`. In the `Camera` above, `move` and `home`
