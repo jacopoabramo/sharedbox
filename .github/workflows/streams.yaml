@@ -65,8 +65,12 @@ jobs:
           mkdir results
           for round in 1 2 3; do
             if [ "${{ steps.base.outputs.sides }}" != "head" ]; then
+              # The head's script measures both sides alike. A base that lacks a call
+              # the script uses is measured with its own script instead.
               (cd base && uv run --no-sync python ../head/src/sharedbox/benchmarks/stream.py \
                 --short --table both --json "../results/base-$round.json") \
+                || (cd base && uv run --no-sync python src/sharedbox/benchmarks/stream.py \
+                  --short --table both --json "../results/base-$round.json") \
                 || echo "::warning::base round $round failed"
             fi
             (cd head && uv run --no-sync python ../head/src/sharedbox/benchmarks/stream.py \
