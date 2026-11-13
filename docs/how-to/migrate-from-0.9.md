@@ -5,11 +5,12 @@ icon: lucide/arrow-up-circle
 # How to migrate from 0.9
 
 Code written for `sharedbox` 0.9 may need six changes before it runs on
-the next release. The size of a field now goes in its annotation only, a
-stream call takes its `timeout` by keyword, a sender's `writing` and
-`metadata_version_of` have new names,
-[metadata](../explanation/glossary.md#metadata) reads back as a
-`frozendict`, and a settable attribute is annotated `Setting`. Each section below shows the old form and the new one.
+the next release, one per section below. The size of a field goes in its
+annotation only, and a stream call takes its `timeout` by keyword. A
+sender's `writing` is now `reserve`, and `metadata_version_of`, on a box
+and on a stream, is now `metadata_at`. A settable attribute is annotated
+`Setting`, and [metadata](../explanation/glossary.md#metadata) reads back
+as a `frozendict`. Each section below shows the old form and the new one.
 
 ## Give sizes in the annotation
 
@@ -76,7 +77,9 @@ letter = reader.receive(timeout=5)
 The block that reserves a slot of a stream, fills its arrays in place and
 sends it is now [`reserve`][sharedbox.SharedSendStream.reserve], and its
 asyncio form is `areserve`. Both take the arguments that `writing` and
-`awriting` took and yield the same [`SendSlot`][sharedbox.SendSlot]:
+`awriting` took and yield the same [`SendSlot`][sharedbox.SendSlot]. The
+old names are gone, with no alias, so calling them raises
+`AttributeError`:
 
 ```python
 # 0.9
@@ -102,15 +105,20 @@ kind of attribute with `setpoint`, `set` and `publish(setpoint=...)`:
 # 0.9
 temperature: Attr[float] = attr(timed=True)
 exposure: Attr[float] = attr(timed=True, settable=True)
+position: Attr[float] = attr()
 
 # 0.10
 temperature: Attr[float] = attr()
 exposure: Setting[float] = attr()
+position: Attr[float] = attr()
 ```
 
-An attribute declared without `timed=True` in 0.9 is timed in 0.10, which
-changes its box's schema hash, so a process running 0.9 and one running
-0.10 cannot open the same box of that class.
+An attribute that was timed in 0.9, settable or not, is stored as before,
+so a 0.9 process and a 0.10 process still share a box whose attributes are
+all of that kind. An attribute declared without `timed=True` in 0.9, such
+as `position`, is timed in 0.10. That changes its box's schema hash, so a
+process running 0.9 and one running 0.10 cannot open the same box of that
+class.
 
 ## Call `metadata_at` in place of `metadata_version_of`
 
