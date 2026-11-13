@@ -172,9 +172,6 @@ def test_a_megabyte_attr_publishes_and_reads_back(names: Callable[[str], str]) -
         pytest.param(
             lambda box: box.temperature.publish(timestamp_ns=1), id="time-alone"
         ),
-        pytest.param(
-            lambda box: box.temperature.publish(setpoint=1.0), id="not-settable"
-        ),
         pytest.param(lambda box: box.home.publish(value=None), id="no-value"),
     ],
 )
@@ -193,7 +190,6 @@ def test_publish_refuses_bad_parts(
     "read",
     [
         pytest.param(lambda box: box.home.value, id="home-value"),
-        pytest.param(lambda box: box.temperature.setpoint, id="setpoint"),
         pytest.param(lambda box: box.home.read(), id="home-read"),
     ],
 )
@@ -206,6 +202,30 @@ def test_the_handle_refuses_parts_the_attr_lacks(
         pytest.raises(TypeError, match=r"Camera\.(temperature|move|home)"),
     ):
         read(box)
+
+
+@pytest.mark.parametrize(
+    "use",
+    [
+        pytest.param(lambda box: box.temperature.setpoint, id="setpoint"),
+        pytest.param(lambda box: box.temperature.set(1.0), id="set"),
+    ],
+)
+def test_a_plain_attr_has_no_setpoint(
+    names: Callable[[str], str], use: Callable[[Camera], object]
+) -> None:
+    """Raise AttributeError for the setpoint and set() of an attribute that is not a Setting."""
+    with Camera.create(names("plain")) as box, pytest.raises(AttributeError):
+        use(box)
+
+
+def test_a_plain_attr_publishes_no_setpoint(names: Callable[[str], str]) -> None:
+    """Raise TypeError for publish(setpoint=...) on a plain Attr and leave its value as it was."""
+    with Camera.create(names("nosetpoint")) as box:
+        box.temperature.publish(value=2.0)
+        with pytest.raises(TypeError, match="setpoint"):
+            box.temperature.publish(value=3.0, setpoint=3.0)  # type: ignore[call-arg]
+        assert box.temperature.value == 2.0
 
 
 def assign(box: Camera) -> None:
@@ -243,7 +263,7 @@ def test_the_handle_is_the_same_object_on_every_access(
     """Return one handle per field for the life of the box."""
     with Camera.create(names("same")) as box:
         assert box.exposure is box.exposure
-        assert box.exposure is not box.temperature
+        assert id(box.exposure) != id(box.temperature)
 
 
 def test_snapshot_holds_attr_values_and_leaves_out_commands(

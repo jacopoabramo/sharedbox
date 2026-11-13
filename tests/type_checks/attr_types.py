@@ -43,6 +43,12 @@ def attributes(camera: Camera) -> None:
     camera.move.serve(set_exposure)  # type: ignore[arg-type]
     camera.move("x", "fast")  # type: ignore[arg-type]
     camera.exposure.set("x")  # type: ignore[arg-type]
+    assert_type(camera.exposure.setpoint, float)
+    assert_type(camera.temperature.timestamp_ns, int)
+    assert_type(camera.temperature.read()["timestamp_ns"], int)
+    camera.temperature.set(1.0)  # type: ignore[attr-defined]
+    camera.temperature.publish(setpoint=1.0)  # type: ignore[call-arg]
+    camera.temperature.serve(set_exposure)  # type: ignore[arg-type]
     Camera()
 
 

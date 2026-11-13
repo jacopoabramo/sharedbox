@@ -56,9 +56,9 @@ class AttrValue(TypedDict, Generic[T]):
 
     value: T
     setpoint: NotRequired[T]
-    """Present when the attribute is settable."""
-    timestamp_ns: NotRequired[int]
-    """Present when the attribute is timed."""
+    """Present when read from a [`Setting`][sharedbox.Setting]."""
+    timestamp_ns: int
+    """The time of the last publish of the value, in nanoseconds since the Unix epoch."""
 
 
 class Attr(Generic[T, P]):
@@ -70,15 +70,16 @@ class Attr(Generic[T, P]):
     gives the `Attr` bound to that box, the same object every time, so an
     `Attr` is not built directly.
 
-    An attribute starts with its value and setpoint at the zero of `T`, or
-    at its `default`, and with a timestamp of 0. `T` may be anything a
+    An attribute stores the time of each publish of its value. It starts
+    with its value at the zero of `T`, or at its `default`, and with a
+    timestamp of 0. `T` may be anything a
     record member may be, except a [`Timed`][sharedbox.Timed], an `Attr` or a
     reference to a box.
 
     An attribute with argument types `P`, or with a `T` of `None`, takes
     requests: calling it sends one, and [`serve`][sharedbox.Attr.serve]
-    answers them. A settable attribute takes its requests through
-    [`set`][sharedbox.Attr.set]. Answering a request publishes nothing.
+    answers them. A [`Setting`][sharedbox.Setting] also has a setpoint and
+    takes its requests through `set`. Answering a request publishes nothing.
     """
 
     __slots__ = ("_box_ref", "_spec")
@@ -101,35 +102,20 @@ class Attr(Generic[T, P]):
         return self.read()["value"]
 
     @property
-    def setpoint(self) -> T:
-        """The setpoint, as of the last publish.
-
-        Raises
-        ------
-        TypeError
-            If the attribute is not settable.
-        BoxClosedError
-            If the box is closed.
-        """
-        self._require("setpoint")
-        return self.read()["setpoint"]
-
-    @property
     def timestamp_ns(self) -> int:
         """The time of the last publish of the value, in nanoseconds since the Unix epoch.
 
         Raises
         ------
         TypeError
-            If the attribute is not timed.
+            If the attribute has no value.
         BoxClosedError
             If the box is closed.
         """
-        self._require("timestamp_ns")
         return self.read()["timestamp_ns"]
 
     def read(self) -> AttrValue[T]:
-        """Return the value, with the setpoint and the timestamp where the attribute has them, from one write.
+        """Return the value and its timestamp, with the setpoint of a `Setting`, from one write.
 
         Raises
         ------
@@ -145,18 +131,11 @@ class Attr(Generic[T, P]):
             box._segment.get(self._spec.index, type(box).__layout__.types),
         )
 
-    def publish(
-        self,
-        *,
-        value: T = UNSET,
-        setpoint: T = UNSET,
-        timestamp_ns: SupportsIndex = UNSET,
-    ) -> None:
-        """Write the parts given in one write, so a reader never sees parts of different publishes together.
+    def publish(self, *, value: T = UNSET, timestamp_ns: SupportsIndex = UNSET) -> None:
+        """Write the value, and its time if given, in one write.
 
-        A value given without `timestamp_ns` on a timed attribute is stamped
-        with the time of the write, and so is one given `-2**63`. A
-        `setpoint` alone keeps the value and its time.
+        A value given without `timestamp_ns` is stamped with the time of the
+        write, and so is one given `-2**63`.
 
         Raises
         ------
@@ -170,6 +149,10 @@ class Attr(Generic[T, P]):
         BoxClosedError
             If the box is closed.
         """
+        self._publish(value, UNSET, timestamp_ns)
+
+    def _publish(self, value: Any, setpoint: Any, timestamp_ns: Any) -> None:
+        """Write the parts that are not `UNSET` in one write."""
         box = self._live()
         parts = 0
         for given, part in (
@@ -185,10 +168,7 @@ class Attr(Generic[T, P]):
             raise TypeError(f"{label}: publish() needs value, setpoint or timestamp_ns")
         if parts & PUBLISH_VALUE:
             self._require("value")
-        if parts & PUBLISH_SETPOINT:
-            self._require("setpoint")
         if parts & PUBLISH_TIMESTAMP:
-            self._require("timestamp_ns")
             if not parts & PUBLISH_VALUE:
                 raise TypeError(f"{label}: timestamp_ns needs a value to go with it")
             try:
@@ -239,36 +219,10 @@ class Attr(Generic[T, P]):
             raise TypeError(f"{self._spec.label} takes positional arguments only")
         return self._send(args)
 
-    def set(self, value: T) -> RequestFuture[T]:
-        """Send `value` as the one argument of a request, and return the future of its answer.
-
-        The handler given to [`serve`][sharedbox.Attr.serve] receives
-        `value` and decides what to publish.
-
-        Raises
-        ------
-        TypeError
-            If the attribute is not settable, or `value` does not have its type.
-        ValueError
-            If `value` does not fit its type.
-        BoxClosedError
-            If the box is closed.
-        """
-        if not self._info().settable:
-            raise TypeError(f"{self._spec.label} is not settable")
-        return self._send((value,))
-
     @overload
     def serve(self, handler: Callable[P, Awaitable[T]]) -> RequestServer: ...
     @overload
     def serve(self, handler: Callable[P, T]) -> RequestServer: ...
-    # shortcut: a non-settable Attr[T] also accepts a one-argument handler, as settable is not in the type; upgrade when Attr gets a type parameter for it
-    @overload
-    def serve(
-        self: Attr[T, []], handler: Callable[[T], Awaitable[T]]
-    ) -> RequestServer: ...
-    @overload
-    def serve(self: Attr[T, []], handler: Callable[[T], T]) -> RequestServer: ...
     def serve(self, handler: Callable[..., Any]) -> RequestServer:
         """Answer the attribute's requests with `handler` until the server is stopped or the box closed.
 
@@ -277,9 +231,9 @@ class Attr(Generic[T, P]):
         one request at a time, and of the requests sent meanwhile only the
         newest is handled next. Its return value is the answer; an
         exception it raises is logged to the `sharedbox` logger and reaches
-        the caller as [`RequestError`][sharedbox.RequestError]. A settable
-        attribute's handler receives the value given to
-        [`set`][sharedbox.Attr.set].
+        the caller as [`RequestError`][sharedbox.RequestError]. A
+        [`Setting`][sharedbox.Setting]'s handler receives the value given to
+        [`set`][sharedbox.Setting.set].
 
         Raises
         ------
@@ -325,13 +279,9 @@ class Attr(Generic[T, P]):
         match part:
             case "value" if not info.has_value:
                 raise TypeError(f"{label} has no value")
-            case "setpoint" if not info.settable:
-                raise TypeError(f"{label} is not settable, so it has no setpoint")
-            case "timestamp_ns" if not info.timed:
-                raise TypeError(f"{label} is not timed, so it has no timestamp_ns")
 
 
-class Setting(Attr[T, []]):
+class Setting(Attr[T, [T]]):
     """An attribute with a setpoint, which other processes ask its owner to change.
 
     Annotate a field `Setting[T]` and declare it with
@@ -342,6 +292,61 @@ class Setting(Attr[T, []]):
     """
 
     __slots__ = ()
+
+    @property
+    def setpoint(self) -> T:
+        """The setpoint, as of the last publish.
+
+        Raises
+        ------
+        BoxClosedError
+            If the box is closed.
+        """
+        return self.read()["setpoint"]
+
+    def publish(
+        self,
+        *,
+        value: T = UNSET,
+        setpoint: T = UNSET,
+        timestamp_ns: SupportsIndex = UNSET,
+    ) -> None:
+        """Write the parts given in one write, so a reader never sees parts of different publishes together.
+
+        A value given without `timestamp_ns` is stamped with the time of the
+        write, and so is one given `-2**63`. A `setpoint` alone keeps the
+        value and its time.
+
+        Raises
+        ------
+        TypeError
+            If nothing is given, `timestamp_ns` comes without `value`, or a
+            part has the wrong type.
+        ValueError
+            If a part does not fit its type.
+        OverflowError
+            If `timestamp_ns` does not fit 64 bits.
+        BoxClosedError
+            If the box is closed.
+        """
+        self._publish(value, setpoint, timestamp_ns)
+
+    def set(self, value: T) -> RequestFuture[T]:
+        """Send `value` as the one argument of a request, and return the future of its answer.
+
+        The handler given to [`serve`][sharedbox.Attr.serve] receives
+        `value` and decides what to publish.
+
+        Raises
+        ------
+        TypeError
+            If `value` does not have the attribute's type.
+        ValueError
+            If `value` does not fit its type.
+        BoxClosedError
+            If the box is closed.
+        """
+        return self._send((value,))
 
 
 def is_attr_annotation(hint: object) -> bool:

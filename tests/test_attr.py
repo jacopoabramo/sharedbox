@@ -140,12 +140,6 @@ def test_set_sends_the_value_as_its_argument(names: Callable[[str], str]) -> Non
     ("cls", "send", "message"),
     [
         (Camera, lambda box: box.temperature(), "Camera.temperature takes no requests"),
-        (Camera, lambda box: box.move.set(1.0), "Camera.move is not settable"),
-        (
-            Camera,
-            lambda box: box.temperature.set(1.0),
-            "Camera.temperature is not settable",
-        ),
         (Zero, lambda box: box.x(), "Zero.x takes no requests"),
         (
             Camera,
@@ -155,8 +149,6 @@ def test_set_sends_the_value_as_its_argument(names: Callable[[str], str]) -> Non
     ],
     ids=[
         "call without a request",
-        "set on a request",
-        "set on a value",
         "no arguments",
         "call on a settable",
     ],
