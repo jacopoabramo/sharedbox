@@ -16,6 +16,7 @@ from typing import (
     SupportsIndex,
     TypeVar,
     cast,
+    get_origin,
     overload,
 )
 
@@ -330,6 +331,25 @@ class Attr(Generic[T, P]):
                 raise TypeError(f"{label} is not timed, so it has no timestamp_ns")
 
 
+class Setting(Attr[T, []]):
+    """An attribute with a setpoint, which other processes ask its owner to change.
+
+    Annotate a field `Setting[T]` and declare it with
+    [`attr`][sharedbox.attr]. A `Setting` is an [`Attr`][sharedbox.Attr]
+    that also holds a setpoint of type `T`; its requests carry the new
+    value. Reading the field from a box gives the `Setting` bound to that
+    box, so a `Setting` is not built directly.
+    """
+
+    __slots__ = ()
+
+
+def is_attr_annotation(hint: object) -> bool:
+    """Return whether `hint` is `Attr`, `Setting` or a subscription of either."""
+    origin = get_origin(hint) or hint
+    return isinstance(origin, type) and issubclass(origin, Attr)
+
+
 class AttrAttribute:
     """The descriptor of an attr field: reading gives its [`Attr`][sharedbox.Attr], assigning or deleting raises."""
 
@@ -346,7 +366,9 @@ class AttrAttribute:
         handles = box._attrs
         handle = handles.get(self.spec.index)
         if handle is None:
-            handle = handles.setdefault(self.spec.index, Attr(box, self.spec))
+            info = self.spec.attr
+            kind = Setting if info is not None and info.settable else Attr
+            handle = handles.setdefault(self.spec.index, kind(box, self.spec))
         return handle
 
     def refuse(self) -> NoReturn:

@@ -182,7 +182,7 @@ def test_a_watch_resolves_on_a_publish_after_a_request(
         assert box.move(1.0, "fast").result(timeout=5) == 1.0
         assert not fut.done()
         box.move.publish(value=2.0)
-        assert fut.result(timeout=5) == {"value": 2.0}
+        assert fut.result(timeout=5)["value"] == 2.0
 
 
 def test_watch_and_events_refuse_an_attr_without_a_value(

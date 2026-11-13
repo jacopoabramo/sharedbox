@@ -6,14 +6,15 @@ from sharedbox import (
     Capacity,
     RequestFuture,
     RequestServer,
+    Setting,
     SharedBox,
     attr,
 )
 
 
 class Camera(SharedBox):
-    temperature: Attr[float] = attr(timed=True)
-    exposure: Attr[float] = attr(timed=True, settable=True)
+    temperature: Attr[float] = attr()
+    exposure: Setting[float] = attr()
     move: Attr[float, [float, Annotated[str, Capacity(16)]]] = attr()
     home: Attr[None] = attr()
 

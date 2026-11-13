@@ -24,7 +24,7 @@ from typing import (
     get_type_hints,
 )
 
-from ._attr import Attr
+from ._attr import Setting, is_attr_annotation
 from ._native import Types
 from ._types import (
     CODES,
@@ -124,10 +124,6 @@ class Field:
     """Kept in Python, never stored in the segment."""
     is_attr: bool = False
     """True for a field declared with [`attr`][sharedbox.attr]."""
-    timed: bool = False
-    """The `timed` option given to `attr`."""
-    settable: bool = False
-    """The `settable` option given to `attr`."""
 
 
 def field(
@@ -220,15 +216,13 @@ def field(
 def attr(
     *,
     init: Literal[False] = False,
-    timed: bool = False,
-    settable: bool = False,
     default: Any = MISSING,
     metadata: Mapping[Any, Any] | None = None,
     doc: str | None = None,
 ) -> Any:
-    """Declare an [`Attr`][sharedbox.Attr] field of a `SharedBox` class.
+    """Declare an [`Attr`][sharedbox.Attr] or [`Setting`][sharedbox.Setting] field of a `SharedBox` class.
 
-    Write `exposure: Attr[float] = attr(timed=True)`. An attribute is
+    Write `exposure: Setting[float] = attr(default=0.01)`. An attribute is
     published by its owner, so the box's constructor takes no value for it,
     for type checkers too.
 
@@ -236,10 +230,6 @@ def attr(
     ----------
     init
         Leave it out. Type checkers read its default.
-    timed
-        Store a timestamp with the value.
-    settable
-        Give the attribute a setpoint of the same type as the value.
     default
         The starting value, and the starting setpoint. Without it the
         value starts at the zero of its type, which a record has none of.
@@ -257,8 +247,6 @@ def attr(
         metadata=MappingProxyType(dict(metadata or {})),
         doc=doc,
         is_attr=True,
-        timed=bool(timed),
-        settable=bool(settable),
     )
 
 
@@ -610,18 +598,24 @@ ZERO_KINDS: Final = frozenset(
 def attr_field(
     hint: object, where: str, option: Field | None, default: Any
 ) -> tuple[TypeSpec, AttrInfo]:
-    """Return how an `Attr[T, P]` field declared with `option` is stored.
+    """Return how an `Attr[T, P]` or `Setting[T]` field declared with `option` is stored.
+
+    Every attribute with a value stores the time of each publish; a
+    `Setting` also stores a setpoint and takes its value as the one argument
+    of its request.
 
     Raises
     ------
     TypeError
         If the field is not declared with `attr()`, `T` or an argument cannot
-        be stored in an attribute, `timed` or `settable` is given for a type of
-        `None`, `settable` for arguments, or the value has no zero and no default.
+        be stored in an attribute, a `Setting` has no value, or the value has
+        no zero and no default.
     """
+    settable = (get_origin(hint) or hint) is Setting
+    kind = "Setting" if settable else "Attr"
     if option is None or not option.is_attr:
         raise TypeError(
-            f"{where}: an Attr field is declared with attr(), as in x: Attr[float] = attr()"
+            f"{where}: a {kind} field is declared with attr(), as in x: {kind}[float] = attr()"
         )
     if option.init:
         raise TypeError(
@@ -629,7 +623,7 @@ def attr_field(
         )
     args = get_args(hint)
     if not args:
-        raise TypeError(f"{where}: Attr needs its value type, as Attr[float]")
+        raise TypeError(f"{where}: {kind} needs its value type, as {kind}[float]")
     value = args[0]
     arguments = args[1] if len(args) > 1 else ()
     if not isinstance(arguments, (tuple, list)):
@@ -637,30 +631,28 @@ def attr_field(
             f"{where}: Attr takes a list of argument types, as Attr[float, [float, str]]"
         )
     has_value = value is not None and value is not NoneType
-    if not has_value and (option.timed or option.settable):
-        raise TypeError(f"{where}: an Attr[None] has no value to be timed or settable")
-    if option.settable and arguments:
+    if not has_value and settable:
         raise TypeError(
-            f"{where}: a settable Attr takes its value as the one argument of its request, so it has no argument types"
+            f"{where}: a Setting needs a value, so Setting[None] is refused"
         )
     if not has_value and default is not MISSING:
         raise TypeError(f"{where}: an Attr[None] has no value to give a default")
-    arguments = (value,) if option.settable else tuple(arguments)
+    arguments = (value,) if settable else tuple(arguments)
     request = bool(arguments) or not has_value
     spec = attr_spec(
         value,
         arguments,
         where,
         frozenset(),
-        timed=option.timed,
-        settable=option.settable,
+        timed=has_value,
+        settable=settable,
         request=request,
     )
     if has_value and default is MISSING and spec.members[0].type.kind not in ZERO_KINDS:
         raise TypeError(
-            f"{where}: {spec.members[0].type.kind} has no zero value, so the Attr needs attr(default=...)"
+            f"{where}: {spec.members[0].type.kind} has no zero value, so the {kind} needs attr(default=...)"
         )
-    return spec, AttrInfo(has_value, option.timed, option.settable, request, default)
+    return spec, AttrInfo(has_value, has_value, settable, request, default)
 
 
 def build_layout(cls: type, identity: str | None = None) -> Layout:
@@ -698,10 +690,12 @@ def build_layout(cls: type, identity: str | None = None) -> Layout:
         default = plain_default(cls, name)
         where = f"{cls.__qualname__}.{name}"
         option = declared_option(cls, name)
-        is_attr_hint = hint is Attr or get_origin(hint) is Attr
+        is_attr_hint = is_attr_annotation(hint)
         info: AttrInfo | None = None
         if option is not None and option.is_attr and not is_attr_hint:
-            raise TypeError(f"{where}: attr() applies only to a field annotated Attr")
+            raise TypeError(
+                f"{where}: attr() applies only to a field annotated Attr or Setting"
+            )
         if is_attr_hint:
             spec: TypeSpec | None
             spec, info = attr_field(hint, where, option, default)

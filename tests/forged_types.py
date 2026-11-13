@@ -19,7 +19,7 @@ from forged_open import raw_bytes
 from hypothesis import given, settings
 from hypothesis import strategies as st
 
-from sharedbox import Attr, Capacity, SharedBox, attr
+from sharedbox import Attr, Capacity, Setting, SharedBox, attr
 from sharedbox._native import SchemaMismatchError, Segment, SegmentNotFoundError
 
 
@@ -42,8 +42,8 @@ class Forged(SharedBox):
     inner: Inner = Inner(datetime.datetime(2026, 1, 1), [1])
     scores: Annotated[dict[Annotated[str, Capacity(4)], float], Capacity(2)] = {}
     price: Annotated[decimal.Decimal, Capacity(8)] = decimal.Decimal(1)
-    motion: Attr[float, [float]] = attr(timed=True)
-    gain: Attr[int] = attr(settable=True)
+    motion: Attr[float, [float]] = attr()
+    gain: Setting[int] = attr()
 
 
 LAYOUT = Forged.__layout__
