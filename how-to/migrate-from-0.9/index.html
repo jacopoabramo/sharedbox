@@ -955,6 +955,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#annotate-a-settable-attribute-setting" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Annotate a settable attribute <code>Setting</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#call-metadata_at-in-place-of-metadata_version_of" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -3427,6 +3438,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#annotate-a-settable-attribute-setting" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        Annotate a settable attribute <code>Setting</code>
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#call-metadata_at-in-place-of-metadata_version_of" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -3565,12 +3587,12 @@
 
 
 <h1 id="how-to-migrate-from-09">How to migrate from 0.9<a class="headerlink" href="#how-to-migrate-from-09" title="Permanent link">&para;</a></h1>
-<p>Code written for <code>sharedbox</code> 0.9 may need five changes before it runs on
+<p>Code written for <code>sharedbox</code> 0.9 may need six changes before it runs on
 the next release. The size of a field now goes in its annotation only, a
 stream call takes its <code>timeout</code> by keyword, a sender's <code>writing</code> and
-<code>metadata_version_of</code> have new names, and
+<code>metadata_version_of</code> have new names,
 <a href="../../explanation/glossary/#metadata">metadata</a> reads back as a
-<code>frozendict</code>. Each section below shows the old form and the new one.</p>
+<code>frozendict</code>, and a settable attribute is annotated <code>Setting</code>. Each section below shows the old form and the new one.</p>
 <h2 id="give-sizes-in-the-annotation">Give sizes in the annotation<a class="headerlink" href="#give-sizes-in-the-annotation" title="Permanent link">&para;</a></h2>
 <p>A capacity or a shape used to have several spellings: <code>field(capacity=...)</code>
 and <code>field(shape=...)</code> on a box field, the <code>"shape"</code> entry of a record
@@ -3647,15 +3669,31 @@ asyncio form is <code>areserve</code>. Both take the arguments that <code>writin
 </span></code></pre></div>
 <p><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;writing&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.writing"><code>SharedBox.writing</code></a>, which fills an array
 field of a box in place, keeps its name.</p>
+<h2 id="annotate-a-settable-attribute-setting">Annotate a settable attribute <code>Setting</code><a class="headerlink" href="#annotate-a-settable-attribute-setting" title="Permanent link">&para;</a></h2>
+<p><code>attr()</code> no longer takes <code>timed</code> or <code>settable</code>. Every attribute with a
+value now stores the time of each publish, and an attribute with a
+setpoint is annotated <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;Setting&lt;/span&gt;" href="../../reference/api/box/#sharedbox.Setting"><code>Setting</code></a>, which is the only
+kind of attribute with <code>setpoint</code>, <code>set</code> and <code>publish(setpoint=...)</code>:</p>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># 0.9</span>
+</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="n">temperature</span><span class="p">:</span> <span class="n">Attr</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="n">attr</span><span class="p">(</span><span class="n">timed</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a><span class="n">exposure</span><span class="p">:</span> <span class="n">Attr</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="n">attr</span><span class="p">(</span><span class="n">timed</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span> <span class="n">settable</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a>
+</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="c1"># 0.10</span>
+</span><span id="__span-3-6"><a id="__codelineno-3-6" name="__codelineno-3-6" href="#__codelineno-3-6"></a><span class="n">temperature</span><span class="p">:</span> <span class="n">Attr</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="n">attr</span><span class="p">()</span>
+</span><span id="__span-3-7"><a id="__codelineno-3-7" name="__codelineno-3-7" href="#__codelineno-3-7"></a><span class="n">exposure</span><span class="p">:</span> <span class="n">Setting</span><span class="p">[</span><span class="nb">float</span><span class="p">]</span> <span class="o">=</span> <span class="n">attr</span><span class="p">()</span>
+</span></code></pre></div>
+<p>An attribute declared without <code>timed=True</code> in 0.9 is timed in 0.10, which
+changes its box's schema hash, so a process running 0.9 and one running
+0.10 cannot open the same box of that class.</p>
 <h2 id="call-metadata_at-in-place-of-metadata_version_of">Call <code>metadata_at</code> in place of <code>metadata_version_of</code><a class="headerlink" href="#call-metadata_at-in-place-of-metadata_version_of" title="Permanent link">&para;</a></h2>
 <p>The method that returns the metadata stored under a version number is now
 <code>metadata_at</code>, on a box and on a stream. It takes the same argument and
 returns the same value:</p>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-3-1"><a id="__codelineno-3-1" name="__codelineno-3-1" href="#__codelineno-3-1"></a><span class="c1"># 0.9</span>
-</span><span id="__span-3-2"><a id="__codelineno-3-2" name="__codelineno-3-2" href="#__codelineno-3-2"></a><span class="n">calibration</span> <span class="o">=</span> <span class="n">box</span><span class="o">.</span><span class="n">metadata_version_of</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
-</span><span id="__span-3-3"><a id="__codelineno-3-3" name="__codelineno-3-3" href="#__codelineno-3-3"></a>
-</span><span id="__span-3-4"><a id="__codelineno-3-4" name="__codelineno-3-4" href="#__codelineno-3-4"></a><span class="c1"># 0.10</span>
-</span><span id="__span-3-5"><a id="__codelineno-3-5" name="__codelineno-3-5" href="#__codelineno-3-5"></a><span class="n">calibration</span> <span class="o">=</span> <span class="n">box</span><span class="o">.</span><span class="n">metadata_at</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1"># 0.9</span>
+</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="n">calibration</span> <span class="o">=</span> <span class="n">box</span><span class="o">.</span><span class="n">metadata_version_of</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
+</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>
+</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a><span class="c1"># 0.10</span>
+</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="n">calibration</span> <span class="o">=</span> <span class="n">box</span><span class="o">.</span><span class="n">metadata_at</span><span class="p">(</span><span class="mi">2</span><span class="p">)</span>
 </span></code></pre></div>
 <p>Because <code>metadata_at</code> is a member of every box, a field or an <code>InitVar</code>
 can no longer have that name, while <code>metadata_version_of</code> is free again.</p>
@@ -3666,13 +3704,13 @@ converted to JSON. It now reads back as a <code>frozendict</code>: the builtin t
 from Python 3.15 on, and the type of the <code>frozendict</code> package, which
 <code>sharedbox</code> installs, on earlier versions. Code that tested for the old
 type tests for <code>collections.abc.Mapping</code>, which holds on every version:</p>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-4-1"><a id="__codelineno-4-1" name="__codelineno-4-1" href="#__codelineno-4-1"></a><span class="c1"># 0.9</span>
-</span><span id="__span-4-2"><a id="__codelineno-4-2" name="__codelineno-4-2" href="#__codelineno-4-2"></a><span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">box</span><span class="o">.</span><span class="n">metadata</span><span class="p">,</span> <span class="n">types</span><span class="o">.</span><span class="n">MappingProxyType</span><span class="p">):</span>
-</span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a>    <span class="o">...</span>
-</span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>
-</span><span id="__span-4-5"><a id="__codelineno-4-5" name="__codelineno-4-5" href="#__codelineno-4-5"></a><span class="c1"># 0.10</span>
-</span><span id="__span-4-6"><a id="__codelineno-4-6" name="__codelineno-4-6" href="#__codelineno-4-6"></a><span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">box</span><span class="o">.</span><span class="n">metadata</span><span class="p">,</span> <span class="n">Mapping</span><span class="p">):</span>
-</span><span id="__span-4-7"><a id="__codelineno-4-7" name="__codelineno-4-7" href="#__codelineno-4-7"></a>    <span class="o">...</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-5-1"><a id="__codelineno-5-1" name="__codelineno-5-1" href="#__codelineno-5-1"></a><span class="c1"># 0.9</span>
+</span><span id="__span-5-2"><a id="__codelineno-5-2" name="__codelineno-5-2" href="#__codelineno-5-2"></a><span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">box</span><span class="o">.</span><span class="n">metadata</span><span class="p">,</span> <span class="n">types</span><span class="o">.</span><span class="n">MappingProxyType</span><span class="p">):</span>
+</span><span id="__span-5-3"><a id="__codelineno-5-3" name="__codelineno-5-3" href="#__codelineno-5-3"></a>    <span class="o">...</span>
+</span><span id="__span-5-4"><a id="__codelineno-5-4" name="__codelineno-5-4" href="#__codelineno-5-4"></a>
+</span><span id="__span-5-5"><a id="__codelineno-5-5" name="__codelineno-5-5" href="#__codelineno-5-5"></a><span class="c1"># 0.10</span>
+</span><span id="__span-5-6"><a id="__codelineno-5-6" name="__codelineno-5-6" href="#__codelineno-5-6"></a><span class="k">if</span> <span class="nb">isinstance</span><span class="p">(</span><span class="n">box</span><span class="o">.</span><span class="n">metadata</span><span class="p">,</span> <span class="n">Mapping</span><span class="p">):</span>
+</span><span id="__span-5-7"><a id="__codelineno-5-7" name="__codelineno-5-7" href="#__codelineno-5-7"></a>    <span class="o">...</span>
 </span></code></pre></div>
 <p>A <code>frozendict</code> still raises on every change, so code that only reads the
 metadata, or builds a new value from it as in

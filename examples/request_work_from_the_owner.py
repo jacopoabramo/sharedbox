@@ -4,12 +4,19 @@
 import asyncio
 import threading
 
-from sharedbox import Attr, RequestError, RequestSupersededError, SharedBox, attr
+from sharedbox import (
+    Attr,
+    RequestError,
+    RequestSupersededError,
+    Setting,
+    SharedBox,
+    attr,
+)
 
 
 class Camera(SharedBox, name="example-camera"):
-    temperature: Attr[float] = attr(timed=True)
-    exposure: Attr[float] = attr(timed=True, settable=True, default=0.01)
+    temperature: Attr[float] = attr()
+    exposure: Setting[float] = attr(default=0.01)
     move: Attr[float, [float]] = attr()
     home: Attr[None] = attr()
 

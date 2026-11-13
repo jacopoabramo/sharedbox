@@ -4980,7 +4980,7 @@ counted from the start of the value. A name is a <code>u16</code> length, then U
 <tr>
 <td>attr</td>
 <td>value + arguments, 1 to 256</td>
-<td><code>u16</code> argument count, 6 zero bytes, then the entry of <code>T</code> if there is one, then the arguments' entries, all with offsets from the field's start. The flags byte holds 1 for timed, 2 for settable and 4 for a request part.</td>
+<td><code>u16</code> argument count, 6 zero bytes, then the entry of <code>T</code> if there is one, then the arguments' entries, all with offsets from the field's start. The flags byte holds 1 for timed, 2 for settable and 4 for a request part; the Python side sets the timed flag on every attribute with a value.</td>
 </tr>
 </tbody>
 </table>
