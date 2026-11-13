@@ -13,9 +13,11 @@ a dotted underline to read what it stands for.
 
 ### Attribute
 
-An attribute is a [field](#field) declared with [`Attr`][sharedbox.Attr].
-It holds a value its owner publishes and, when it takes requests, a request
-part through which other processes ask the owner to act.
+An attribute is a [field](#field) declared with [`Attr`][sharedbox.Attr]
+or [`Setting`][sharedbox.Setting]. It holds a value its owner publishes,
+with the time of each publish, and, when it takes requests, a request part
+through which other processes ask the owner to act. A `Setting` also holds
+a setpoint.
 
 ### Box
 

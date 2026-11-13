@@ -45,7 +45,7 @@ from ._arrays import (
     dtype_name,
     key,
 )
-from ._attr import Attr
+from ._attr import is_attr_annotation
 from ._native import NativeCollection, NativeDict, NativeSet
 from ._timed import Timed
 
@@ -650,7 +650,7 @@ def dispatch(
         )
     if capacity is not None and not takes_capacity(hint, where, path):
         raise TypeError(f"{where}: Capacity does not apply to {hint!r}")
-    if hint is Attr or get_origin(hint) is Attr:
+    if is_attr_annotation(hint):
         raise TypeError(
             f"{where}: an Attr is a box field of its own, not part of another type"
         )

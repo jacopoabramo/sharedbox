@@ -140,23 +140,15 @@ def test_set_sends_the_value_as_its_argument(names: Callable[[str], str]) -> Non
     ("cls", "send", "message"),
     [
         (Camera, lambda box: box.temperature(), "Camera.temperature takes no requests"),
-        (Camera, lambda box: box.move.set(1.0), "Camera.move is not settable"),
-        (
-            Camera,
-            lambda box: box.temperature.set(1.0),
-            "Camera.temperature is not settable",
-        ),
         (Zero, lambda box: box.x(), "Zero.x takes no requests"),
         (
             Camera,
             lambda box: box.exposure(1.0),
-            "Camera.exposure is settable; send its requests with set()",
+            "Camera.exposure is a Setting; send its requests with set()",
         ),
     ],
     ids=[
         "call without a request",
-        "set on a request",
-        "set on a value",
         "no arguments",
         "call on a settable",
     ],
@@ -182,7 +174,7 @@ def test_a_watch_resolves_on_a_publish_after_a_request(
         assert box.move(1.0, "fast").result(timeout=5) == 1.0
         assert not fut.done()
         box.move.publish(value=2.0)
-        assert fut.result(timeout=5) == {"value": 2.0}
+        assert fut.result(timeout=5)["value"] == 2.0
 
 
 def test_watch_and_events_refuse_an_attr_without_a_value(

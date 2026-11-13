@@ -2,7 +2,7 @@ from pathlib import Path
 
 from . import _exit as _exit
 from ._arrays import DType, MaxShape, Shape, SupportsDLPack, register_array_type
-from ._attr import Attr, AttrValue
+from ._attr import Attr, AttrValue, Setting
 from ._bounded import BoundedDict, BoundedList, BoundedSet
 from ._box import SharedBox, SupportsSharedBox, fields
 from ._events import BoxEvents, FieldFuture, FieldWatch
@@ -89,6 +89,7 @@ __all__ = [
     "SegmentStatus",
     "SendSlot",
     "ServerExitedError",
+    "Setting",
     "Shape",
     "SharedBox",
     "SharedReceiveStream",

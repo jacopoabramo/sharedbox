@@ -16,7 +16,8 @@ can go wrong.
 ## 1. Declare an attribute
 
 Annotate the [field](../explanation/glossary.md#field) `Attr[T]`, with `T`
-the type of its value, and declare it with [`attr()`][sharedbox.attr]. An
+the type of its value, or `Setting[T]` when other processes may ask to
+change the value, and declare it with [`attr()`][sharedbox.attr]. An
 attribute that takes arguments lists their types after `T`, and one that
 only carries out a command has a `T` of `None`:
 
@@ -24,42 +25,46 @@ only carries out a command has a `T` of `None`:
 --8<-- "docs/examples/request_work_from_the_owner.py:declare"
 ```
 
-The options of `attr()` say what the attribute holds besides its value.
-With `timed=True` it stores the time of each publish of the value, and
-with `settable=True` it holds a setpoint of the same type as the value,
-which other processes ask to change with [`set`][sharedbox.Attr.set]. An
-attribute starts at the zero of `T`, or at `default`, which also gives the
-starting setpoint. A `T` with no zero, such as a record without defaults,
-needs a `default`.
+Every attribute with a value stores the time of each publish of the
+value. A [`Setting`][sharedbox.Setting] also holds a setpoint of the same
+type as the value, which other processes ask to change with
+[`set`][sharedbox.Setting.set]. An attribute starts at the zero of `T`, or
+at `default`, which also gives a `Setting` its starting setpoint. A `T`
+with no zero, such as a record without defaults, needs a `default`.
 
 The box's constructor has no parameter for an attribute, because only its
-owner writes it. Reading `camera.exposure` gives the
-[`Attr`][sharedbox.Attr] bound to the box, the same object every time, and
-assigning to it or passing it to `update` raises `TypeError`. `T` and the
-argument types may be any type a record member may be, except a
-[`Timed`][sharedbox.Timed], another `Attr` or a reference to a box.
+owner writes it. Reading `camera.exposure` gives the object through which
+this box's `exposure` is published, read and asked for work: a `Setting`
+here, an [`Attr`][sharedbox.Attr] for `temperature`, and the same object
+every time. A `Setting` is a kind of `Attr`, so everything below about an
+`Attr` holds for it too. Assigning to the field or passing it to `update`
+raises `TypeError`. `T` and the argument types may be any type a record
+member may be, except another `Attr` or a reference to a box. `T` may not
+be a [`Timed`][sharedbox.Timed] either, since the attribute already stores
+the time of each publish.
 
 An attribute takes requests when it has argument types, when its `T` is
-`None`, or when it is settable. In the `Camera` above, `move` and `home`
+`None`, or when it is a `Setting`. In the `Camera` above, `move` and `home`
 take requests through a call, `exposure` through `set`, and `temperature`
-takes none. A settable attribute's request carries the new value as its one
-argument, so `settable=True` together with argument types raises
-`TypeError`.
+takes none. A `Setting`'s request carries the new value as its one
+argument, so a `Setting` takes no argument types and its `T` cannot be
+`None`.
 
 ## 2. Publish its value
 
 The owner writes an attribute with [`publish`][sharedbox.Attr.publish],
 which takes the parts by keyword and writes all of them in one write, so a
 reader never sees a value next to a setpoint from a different publish. Any
-process reads the parts with `value`, `setpoint` and `timestamp_ns`, or all
-of them from one write with [`read`][sharedbox.Attr.read]:
+process reads the parts with `value`, `timestamp_ns` and, on a `Setting`,
+`setpoint`, or all of them from one write with
+[`read`][sharedbox.Attr.read]:
 
 ```{.python}
 --8<-- "docs/examples/request_work_from_the_owner.py:publish"
 ```
 
-A timed value published without `timestamp_ns` is stamped with the time of
-the write. Give `timestamp_ns` when the device reports its own time. A
+A value published without `timestamp_ns` is stamped with the time of the
+write. Give `timestamp_ns` when the device reports its own time. A
 publish of the setpoint alone keeps the value and its time.
 
 [`watch`][sharedbox.SharedBox.watch] and
@@ -74,8 +79,8 @@ process publishes, so keep `publish` in the owner's code.
 ## 3. Serve it
 
 The process that owns the device registers a handler with
-[`serve`][sharedbox.Attr.serve]. A settable attribute's handler receives
-the value given to `set`:
+[`serve`][sharedbox.Attr.serve]. A `Setting`'s handler receives the value
+given to `set`:
 
 ```{.python}
 --8<-- "docs/examples/request_work_from_the_owner.py:serve"
@@ -106,7 +111,7 @@ wait for a plain handler's thread.
 
 ## 4. Send a request
 
-Calling the attribute, or `set` on a settable one, sends the request at
+Calling the attribute, or `set` on a `Setting`, sends the request at
 once and returns a [`RequestFuture`][sharedbox.RequestFuture], which you
 wait on with `result` in any thread or `await` in a running event loop:
 

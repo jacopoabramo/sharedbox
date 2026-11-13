@@ -30,7 +30,7 @@ sharedbox/
 |   |-- _types.py              annotation parsing into TypeSpec, the description table
 |   |-- _arrays.py             Shape, MaxShape, DType, SupportsDLPack, register_array_type
 |   |-- _timed.py              Timed: a value with its timestamp in ns, Timed.now and the mark a write replaces
-|   |-- _attr.py               Attr and AttrValue: the handle of an attribute field, publish, read, requests and serve
+|   |-- _attr.py               Attr, Setting and AttrValue: the handle of an attribute field, publish, read, requests and serve
 |   |-- _request.py            request fields: RequestFuture, RequestServer, the request errors, serving threads and tasks
 |   |-- _events.py             BoxEvents, FieldWatch, the watcher thread, which also completes request futures and kicks request servers
 |   |-- _follow.py             BoxEvents.follow and unfollow: forwarding the events of boxes that references reach
@@ -386,8 +386,10 @@ computed from the box's values, such as `b.count += 1`, loses no update; a
 block that raises puts every field back. See
 `docs/how-to/change-a-field-from-several-processes.md`.
 A field declared `Attr[T]` with `attr()` is published by its owner with
-`publish` and read by any process, and may take requests the owner serves;
-see `docs/how-to/request-work-from-the-owner.md`.
+`publish`, stamped with the time of each publish, and read by any process,
+and may take requests the owner serves; `Setting[T]` adds a setpoint that
+other processes change with `set`. See
+`docs/how-to/request-work-from-the-owner.md`.
 C++ and C code take a box through `__sharedbox_box__` or open it by name; see
 `docs/how-to/accept-a-box-in-cpp.md`, `docs/how-to/accept-a-box-in-c.md` and
 `docs/how-to/open-a-box-from-a-program.md`.

@@ -14,8 +14,9 @@ icon: lucide/code
 | [`BoundedSet`][sharedbox.BoundedSet] | a set value that keeps the stored form of a set field, so reading and writing it copies bytes and a lookup compares the stored bytes of one key |
 | [`BoundedDict`][sharedbox.BoundedDict] | a dict value that keeps the stored form of a dict field, so reading and writing it copies bytes and a lookup compares the stored bytes of one key |
 | [`Timed`][sharedbox.Timed] | a value with its timestamp in nanoseconds, written in one go; `Timed.now` asks the write to stamp it |
-| [`Attr`][sharedbox.Attr] | an [attribute](../../explanation/glossary.md#attribute): a field its owner publishes and every process reads, with a value and optionally a setpoint and a timestamp, and through which other processes may send the owner requests |
-| [`attr`][sharedbox.attr] | declares an `Attr` field, which the box's constructor takes no value for |
+| [`Attr`][sharedbox.Attr] | an [attribute](../../explanation/glossary.md#attribute): a field its owner publishes and every process reads, with a value and the time of its last publish, and through which other processes may send the owner requests |
+| [`Setting`][sharedbox.Setting] | an `Attr` that also holds a setpoint, which other processes ask the owner to change with `set` |
+| [`attr`][sharedbox.attr] | declares an `Attr` or `Setting` field, which the box's constructor takes no value for |
 | [`AttrValue`][sharedbox.AttrValue] | what `Attr.read` returns |
 | [`RequestFuture`][sharedbox.RequestFuture] | the answer to one request, waited on with `result` or `await` |
 | [`RequestServer`][sharedbox.RequestServer] | answers the requests of one attribute; `Attr.serve` returns it |
@@ -45,6 +46,11 @@ icon: lucide/code
       show_root_heading: true
 
 ::: sharedbox.Attr
+    options:
+      show_root_heading: true
+      merge_init_into_class: false
+
+::: sharedbox.Setting
     options:
       show_root_heading: true
       merge_init_into_class: false

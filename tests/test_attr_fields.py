@@ -14,6 +14,7 @@ from sharedbox import (
     Capacity,
     DType,
     MaxShape,
+    Setting,
     Shape,
     SharedBox,
     SharedStream,
@@ -40,20 +41,18 @@ class Plain(SharedBox):
 
 
 class Camera(SharedBox):
-    temperature: Attr[float] = attr(timed=True)
-    exposure: Attr[float] = attr(timed=True, settable=True)
+    temperature: Attr[float] = attr()
+    exposure: Setting[float] = attr()
     move: Attr[float, [float, Annotated[str, Capacity(16)]]] = attr()
     home: Attr[None] = attr()
 
 
 class Recipe(SharedBox):
-    mix: Attr[Point] = attr(default=Point(1, 2), settable=True)
+    mix: Setting[Point] = attr(default=Point(1, 2))
 
 
 class Frames(SharedBox):
-    image: Attr[Annotated[np.ndarray, MaxShape((4, 4)), DType(np.uint8)]] = attr(
-        settable=True
-    )
+    image: Setting[Annotated[np.ndarray, MaxShape((4, 4)), DType(np.uint8)]] = attr()
 
 
 class Megapixels(SharedBox):
@@ -70,13 +69,17 @@ def test_an_attr_starts_at_zero(names: Callable[[str], str]) -> None:
     with Camera.create(names("zero")) as box:
         assert box.exposure.read() == {"value": 0.0, "setpoint": 0.0, "timestamp_ns": 0}
         assert box.temperature.read() == {"value": 0.0, "timestamp_ns": 0}
-        assert box.move.read() == {"value": 0.0}
+        assert box.move.read() == {"value": 0.0, "timestamp_ns": 0}
 
 
 def test_an_attr_starts_at_its_default(names: Callable[[str], str]) -> None:
     """Give the value and the setpoint the default of the field."""
     with Recipe.create(names("default")) as box:
-        assert box.mix.read() == {"value": Point(1, 2), "setpoint": Point(1, 2)}
+        assert box.mix.read() == {
+            "value": Point(1, 2),
+            "setpoint": Point(1, 2),
+            "timestamp_ns": 0,
+        }
 
 
 def test_publish_writes_the_parts_it_is_given(names: Callable[[str], str]) -> None:
@@ -169,12 +172,6 @@ def test_a_megabyte_attr_publishes_and_reads_back(names: Callable[[str], str]) -
         pytest.param(
             lambda box: box.temperature.publish(timestamp_ns=1), id="time-alone"
         ),
-        pytest.param(
-            lambda box: box.temperature.publish(setpoint=1.0), id="not-settable"
-        ),
-        pytest.param(
-            lambda box: box.move.publish(timestamp_ns=1, value=1.0), id="not-timed"
-        ),
         pytest.param(lambda box: box.home.publish(value=None), id="no-value"),
     ],
 )
@@ -193,8 +190,6 @@ def test_publish_refuses_bad_parts(
     "read",
     [
         pytest.param(lambda box: box.home.value, id="home-value"),
-        pytest.param(lambda box: box.temperature.setpoint, id="setpoint"),
-        pytest.param(lambda box: box.move.timestamp_ns, id="timestamp"),
         pytest.param(lambda box: box.home.read(), id="home-read"),
     ],
 )
@@ -207,6 +202,30 @@ def test_the_handle_refuses_parts_the_attr_lacks(
         pytest.raises(TypeError, match=r"Camera\.(temperature|move|home)"),
     ):
         read(box)
+
+
+@pytest.mark.parametrize(
+    "use",
+    [
+        pytest.param(lambda box: box.temperature.setpoint, id="setpoint"),
+        pytest.param(lambda box: box.temperature.set(1.0), id="set"),
+    ],
+)
+def test_a_plain_attr_has_no_setpoint(
+    names: Callable[[str], str], use: Callable[[Camera], object]
+) -> None:
+    """Raise AttributeError for the setpoint and set() of an attribute that is not a Setting."""
+    with Camera.create(names("plain")) as box, pytest.raises(AttributeError):
+        use(box)
+
+
+def test_a_plain_attr_publishes_no_setpoint(names: Callable[[str], str]) -> None:
+    """Raise TypeError for publish(setpoint=...) on a plain Attr and leave its value as it was."""
+    with Camera.create(names("nosetpoint")) as box:
+        box.temperature.publish(value=2.0)
+        with pytest.raises(TypeError, match="setpoint"):
+            box.temperature.publish(value=3.0, setpoint=3.0)  # type: ignore[call-arg]
+        assert box.temperature.value == 2.0
 
 
 def assign(box: Camera) -> None:
@@ -300,11 +319,10 @@ def define(annotation: Any, value: Any) -> type[SharedBox]:
         pytest.param(Attr[float], MISSING, id="no-attr"),
         pytest.param(Attr[float], field(init=False), id="field"),
         pytest.param(float, attr(), id="attr-on-a-float"),
-        pytest.param(Attr[None], attr(timed=True), id="timed-command"),
-        pytest.param(Attr[None], attr(settable=True), id="settable-command"),
-        pytest.param(
-            Attr[float, [float]], attr(settable=True), id="settable-with-arguments"
-        ),
+        pytest.param(Setting[None], attr(), id="settable-command"),
+        pytest.param(Setting, attr(), id="bare-setting"),
+        pytest.param(Setting[float], MISSING, id="setting-without-attr"),
+        pytest.param(Setting[Timed[float]], attr(), id="timed-setting"),
         pytest.param(Attr[float, ...], attr(), id="ellipsis-arguments"),
         pytest.param(Attr[float], attr(default="x"), id="bad-default"),
         pytest.param(Attr[None], attr(default=1), id="default-without-value"),
@@ -322,6 +340,38 @@ def test_an_attr_declaration_is_refused(annotation: Any, value: Any) -> None:
         define(annotation, value)
 
 
+def test_a_setting_takes_no_argument_types() -> None:
+    """Raise TypeError for a Setting subscripted with argument types."""
+    with pytest.raises(TypeError):
+        Setting[float, [float]]  # type: ignore[misc, valid-type]
+
+
+@pytest.mark.parametrize("option", ["timed", "settable"])
+def test_attr_takes_no_storage_option(option: str) -> None:
+    """Raise TypeError for the removed timed and settable options of attr()."""
+    removed: dict[str, Any] = {option: True}
+    with pytest.raises(TypeError, match=option):
+        attr(**removed)
+
+
+def test_every_attr_with_a_value_is_timed(names: Callable[[str], str]) -> None:
+    """Stamp a value published without a time on an Attr declared with a plain attr()."""
+    with Camera.create(names("timed")) as box:
+        before = time.time_ns()
+        box.move.publish(value=1.0)
+        assert box.move.timestamp_ns >= before - CLOCK_SLACK_NS
+        move_type = Camera.__layout__.by_name["move"].type
+        assert move_type is not None and move_type.text.startswith("attr(timed,")
+
+
+def test_a_settable_field_gives_a_setting(names: Callable[[str], str]) -> None:
+    """Give a Setting handle for a Setting field and a plain Attr for the others."""
+    with Camera.create(names("kinds")) as box:
+        assert type(box.exposure) is Setting
+        assert isinstance(box.exposure, Attr)
+        assert type(box.temperature) is Attr
+
+
 def test_a_timed_or_reference_value_is_refused() -> None:
     """Raise TypeError for a Timed value and for a box reference as an argument."""
     with pytest.raises(TypeError, match=r"Declared\.x"):
@@ -337,12 +387,16 @@ def test_attr_is_refused_where_it_cannot_go() -> None:
         Optional[Attr[float]],  # noqa: UP045
         Attr[float] | int,
         Annotated[list[Attr[float]], Capacity(2)],
+        Optional[Setting[float]],  # noqa: UP045
+        Annotated[list[Setting[float]], Capacity(2)],
     ]
     for holder in holders:
         with pytest.raises(TypeError, match=r"Declared\.x"):
             define(holder, MISSING)
     with pytest.raises(TypeError):
         SharedStream.create(Attr[float], capacity=2)
+    with pytest.raises(TypeError):
+        SharedStream.create(Setting[float], capacity=2)
 
 
 def test_the_python_layout_matches_the_native_parser() -> None:
