@@ -199,7 +199,7 @@ class Attr(Generic[T, P]):
         Raises
         ------
         TypeError
-            If the attribute takes no requests or is settable, an argument
+            If the attribute takes no requests or is a `Setting`, an argument
             is given by keyword, or the arguments do not match its argument types.
         ValueError
             If an argument does not fit its type.
@@ -211,7 +211,7 @@ class Attr(Generic[T, P]):
         info = self._info()
         if info.settable:
             raise TypeError(
-                f"{self._spec.label} is settable; send its requests with set()"
+                f"{self._spec.label} is a Setting; send its requests with set()"
             )
         if not info.request:
             raise TypeError(f"{self._spec.label} takes no requests")

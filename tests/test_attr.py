@@ -144,7 +144,7 @@ def test_set_sends_the_value_as_its_argument(names: Callable[[str], str]) -> Non
         (
             Camera,
             lambda box: box.exposure(1.0),
-            "Camera.exposure is settable; send its requests with set()",
+            "Camera.exposure is a Setting; send its requests with set()",
         ),
     ],
     ids=[

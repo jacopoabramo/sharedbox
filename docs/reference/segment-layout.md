@@ -367,7 +367,7 @@ counted from the start of the value. A name is a `u16` length, then UTF-8.
 | array | 0 | `u8` DLPack code, `u8` bits, `u16` lanes (1), `u8` ndim (1 to 8), 3 zero bytes, then `ndim` `u64` dimensions |
 | max_array | 0 | as `array`, the dimensions being the maximum ones |
 | timed | 1 | one entry, at offset 0 |
-| attr | value + arguments, 1 to 256 | `u16` argument count, 6 zero bytes, then the entry of `T` if there is one, then the arguments' entries, all with offsets from the field's start. The flags byte holds 1 for timed, 2 for settable and 4 for a request part. |
+| attr | value + arguments, 1 to 256 | `u16` argument count, 6 zero bytes, then the entry of `T` if there is one, then the arguments' entries, all with offsets from the field's start. The flags byte holds 1 for timed, 2 for settable and 4 for a request part; the Python side sets the timed flag on every attribute with a value. |
 
 Attach copies the table and checks it before using it: every description
 is 8-aligned, inside the table, read once, after its parent and apart from

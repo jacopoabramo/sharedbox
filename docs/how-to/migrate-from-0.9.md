@@ -4,12 +4,12 @@ icon: lucide/arrow-up-circle
 
 # How to migrate from 0.9
 
-Code written for `sharedbox` 0.9 may need five changes before it runs on
+Code written for `sharedbox` 0.9 may need six changes before it runs on
 the next release. The size of a field now goes in its annotation only, a
 stream call takes its `timeout` by keyword, a sender's `writing` and
-`metadata_version_of` have new names, and
+`metadata_version_of` have new names,
 [metadata](../explanation/glossary.md#metadata) reads back as a
-`frozendict`. Each section below shows the old form and the new one.
+`frozendict`, and a settable attribute is annotated `Setting`. Each section below shows the old form and the new one.
 
 ## Give sizes in the annotation
 
@@ -90,6 +90,27 @@ with sender.reserve(blank) as slot:
 
 [`SharedBox.writing`][sharedbox.SharedBox.writing], which fills an array
 field of a box in place, keeps its name.
+
+## Annotate a settable attribute `Setting`
+
+`attr()` no longer takes `timed` or `settable`. Every attribute with a
+value now stores the time of each publish, and an attribute with a
+setpoint is annotated [`Setting`][sharedbox.Setting], which is the only
+kind of attribute with `setpoint`, `set` and `publish(setpoint=...)`:
+
+```python
+# 0.9
+temperature: Attr[float] = attr(timed=True)
+exposure: Attr[float] = attr(timed=True, settable=True)
+
+# 0.10
+temperature: Attr[float] = attr()
+exposure: Setting[float] = attr()
+```
+
+An attribute declared without `timed=True` in 0.9 is timed in 0.10, which
+changes its box's schema hash, so a process running 0.9 and one running
+0.10 cannot open the same box of that class.
 
 ## Call `metadata_at` in place of `metadata_version_of`
 
