@@ -281,7 +281,7 @@ class Attr(Generic[T, P]):
                 raise TypeError(f"{label} has no value")
 
 
-class Setting(Attr[T, [T]]):
+class Setting(Attr[T, []]):
     """An attribute with a setpoint, which other processes ask its owner to change.
 
     Annotate a field `Setting[T]` and declare it with
@@ -334,7 +334,7 @@ class Setting(Attr[T, [T]]):
     def set(self, value: T) -> RequestFuture[T]:
         """Send `value` as the one argument of a request, and return the future of its answer.
 
-        The handler given to [`serve`][sharedbox.Attr.serve] receives
+        The handler given to [`serve`][sharedbox.Setting.serve] receives
         `value` and decides what to publish.
 
         Raises
@@ -347,6 +347,29 @@ class Setting(Attr[T, [T]]):
             If the box is closed.
         """
         return self._send((value,))
+
+    # The base takes a handler of no arguments, since a Setting is an Attr[T]
+    # with no argument types; a Setting's request carries the new value.
+    @overload  # type: ignore[override]
+    def serve(self, handler: Callable[[T], Awaitable[T]]) -> RequestServer: ...
+    @overload
+    def serve(self, handler: Callable[[T], T]) -> RequestServer: ...
+    def serve(self, handler: Callable[..., Any]) -> RequestServer:
+        """Answer the setting's requests with `handler` until the server is stopped or the box closed.
+
+        `handler` receives the value given to [`set`][sharedbox.Setting.set]
+        and is served as [`Attr.serve`][sharedbox.Attr.serve] describes.
+
+        Raises
+        ------
+        AlreadyServedError
+            If a live process serves the field already, this one included.
+        RuntimeError
+            If `handler` is async and no event loop is running.
+        BoxClosedError
+            If the box is closed.
+        """
+        return super().serve(handler)
 
 
 def is_attr_annotation(hint: object) -> bool:

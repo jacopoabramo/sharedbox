@@ -31,7 +31,13 @@ async def set_exposure(value: float) -> float:
     return value
 
 
+def show(attribute: Attr[float]) -> float:
+    return attribute.value
+
+
 def attributes(camera: Camera) -> None:
+    show(camera.exposure)
+    camera.exposure(1.0)  # type: ignore[call-arg]
     assert_type(camera.exposure.value, float)
     assert_type(camera.exposure.set(0.02), RequestFuture[float])
     assert_type(camera.move(1.0, "fast"), RequestFuture[float])

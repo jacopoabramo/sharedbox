@@ -263,7 +263,7 @@ def test_the_handle_is_the_same_object_on_every_access(
     """Return one handle per field for the life of the box."""
     with Camera.create(names("same")) as box:
         assert box.exposure is box.exposure
-        assert id(box.exposure) != id(box.temperature)
+        assert box.exposure is not box.temperature
 
 
 def test_snapshot_holds_attr_values_and_leaves_out_commands(
