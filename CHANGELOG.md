@@ -9,6 +9,173 @@ Dates are marked as `DD-MM-YYYY`
 
 <!-- towncrier release notes start -->
 
+## [0.10.0](https://github.com/jacopoabramo/sharedbox/releases/tag/v0.10.0) - 16-11-2026
+
+### Breaking
+
+- A map in the metadata of a box or a stream reads back as a `frozendict`,
+  which can be pickled, deep-copied and converted to JSON, in place of a
+  `types.MappingProxyType`. It is the builtin type from Python 3.15 on and
+  the type of the `frozendict` package before, which is a new dependency on
+  those versions. See "How to migrate from 0.9". ([#112](https://github.com/jacopoabramo/sharedbox/pull/112))
+- The size of a field is given in its annotation only, with `Capacity` and
+  `Shape` in `Annotated`. `field()` no longer takes `capacity` or `shape`, a
+  record member no longer takes its shape from the `"shape"` entry of its
+  field metadata, and a default array no longer gives an array field its
+  shape. See "How to migrate from 0.9". ([#113](https://github.com/jacopoabramo/sharedbox/pull/113))
+- `timeout` is keyword-only in `SharedSendStream.send`, `asend`, `reserve` and
+  `areserve`, in `SharedReceiveStream.receive` and `fetch`, and in
+  `sharedbox.bluebox.DocumentReceiver.receive`. See "How to migrate from 0.9". ([#113](https://github.com/jacopoabramo/sharedbox/pull/113))
+- `SharedBox.metadata_version_of` and `SharedStream.metadata_version_of` are
+  renamed `metadata_at`, and a box field can no longer be named
+  `metadata_at`. See "How to migrate from 0.9". ([#113](https://github.com/jacopoabramo/sharedbox/pull/113))
+- `SharedSendStream.writing` and `awriting` are renamed `reserve` and
+  `areserve`. See "How to migrate from 0.9". ([#113](https://github.com/jacopoabramo/sharedbox/pull/113))
+- `attr()` no longer takes `timed` or `settable`, and `Field` no longer has
+  `timed` or `settable` attributes. Every `Attr` with a value stores the
+  time of each publish, so `timestamp_ns` is always a key of `AttrValue`,
+  and only a `Setting` has `setpoint`, `set()` and `publish(setpoint=...)`.
+  See "How to migrate from 0.9". ([#116](https://github.com/jacopoabramo/sharedbox/pull/116))
+
+### Added
+
+- `SharedBox.locked()` holds the box's write lock for a `with` block, so a
+  write computed from the box's values loses no update to another process:
+
+  ```python
+  with box.locked() as b:
+      b.count += 1
+  ```
+
+  Leaving the block counts one write for each field it assigned; a block that
+  raises puts every field back and counts nothing. C++ gets the same through
+  `handle::begin_record_write`, `held_bytes`, `write_held`, `end_record_write`
+  and `abort_record_write`. ([#109](https://github.com/jacopoabramo/sharedbox/pull/109))
+- `sharedbox.bluebox` carries the documents of `bluesky` runs to other
+  processes. `DocumentSender` is a `RunEngine` callback that sends on a named
+  channel, and `DocumentReceiver` receives the documents in the order they
+  were sent, in mode `lossless`, `lossy` or `latest`, with each event's
+  arrays copied through shared memory:
+
+  ```python
+  sender = DocumentSender.create("beamline")
+  engine.subscribe(sender)
+
+  for name, doc in DocumentReceiver.attach("beamline", mode="lossy"):
+      ...
+  ```
+
+  A receiver that attaches during a run first gets its start and descriptors.
+  `ReceiverReleasedError` and `LateJoinError` report a receiver that lost
+  documents or cannot join the run under way. The `bluebox` extra installs
+  what it needs. ([#110](https://github.com/jacopoabramo/sharedbox/pull/110))
+- `SharedReceiveStream.areceive`, `areceive_into` and `afetch` receive and
+  fetch an item without blocking the event loop, as `SharedSendStream.asend`
+  sends one, and take a `timeout`. ([#113](https://github.com/jacopoabramo/sharedbox/pull/113))
+- `SharedBox` and `SharedStream` work with `async with`, which closes them
+  when the block ends, as `with` does. ([#113](https://github.com/jacopoabramo/sharedbox/pull/113))
+- `SharedStream.unlink` can be called on a stream with no argument, as
+  `stream.unlink()`, to remove that stream's name. ([#113](https://github.com/jacopoabramo/sharedbox/pull/113))
+- `sharedbox` exports `Mode`, `Start` and `OnFull`, the literal types of a
+  reader's `mode` and `start` and of a sender's `on_full`, and `IterInto`, the
+  type `SharedReceiveStream.iter_into` returns. ([#113](https://github.com/jacopoabramo/sharedbox/pull/113))
+- `Setting[T]`, an `Attr` that also holds a setpoint, which other processes
+  change through `set()` ([#116](https://github.com/jacopoabramo/sharedbox/pull/116)):
+
+  ```python
+  class Camera(SharedBox):
+      exposure: Setting[float] = attr(default=0.01)
+  ```
+
+### Changed
+
+- Opening a box or stream that holds a kind this version does not read, inside
+  a field or as a stream item, raises `SchemaMismatchError` naming the kind,
+  such as "holds a value of kind 80, which this sharedbox does not read",
+  instead of reporting a corrupt header. C++ gets `status::unsupported` with the
+  kind in `error::found`, and C gets `SBX_E_UNSUPPORTED` (-18), in place of
+  `status::corrupt` and `SBX_E_CORRUPT`. ([#108](https://github.com/jacopoabramo/sharedbox/pull/108))
+- A changed field is decoded for `SharedBox.events` only when a callback is
+  connected to it, and on Windows a wait for the lock of a box yields for 1 ms
+  before it sleeps, so it no longer sleeps a whole timer tick behind a large
+  write or a short `locked()` block. ([#112](https://github.com/jacopoabramo/sharedbox/pull/112))
+- The `identity` class keyword of `SharedBox` raises `ValueError` for a
+  string that contains `|`. ([#112](https://github.com/jacopoabramo/sharedbox/pull/112))
+- A `lossy` reader that falls a whole ring behind goes on from the middle of
+  the ring and counts the older half in `missed`, where it used to go on from
+  the oldest item. C++ `stream_reader::receive` follows the same rule. ([#112](https://github.com/jacopoabramo/sharedbox/pull/112))
+- A request that a later one replaced before any server took it raises
+  `RequestSupersededError` at once, also while no process serves the field.
+  It used to stay pending until a server took the later request. C++
+  `handle::request_answer_of` reports `request_outcome::superseded` for it. ([#112](https://github.com/jacopoabramo/sharedbox/pull/112))
+- A blocking `SharedReceiveStream.receive` or `SharedSendStream.send` that
+  has to wait no longer makes a first native call that fails, a waiting item
+  is received without giving up the GIL, and writing a `list`, `set` or
+  `dict` field no longer clears the field's whole capacity. ([#112](https://github.com/jacopoabramo/sharedbox/pull/112))
+- `FieldFuture.result` and `RequestFuture.result` raise `RuntimeError` when
+  the result is not ready and the call comes from a callback of the same
+  box's `events`, where they used to wait until their timeout. ([#112](https://github.com/jacopoabramo/sharedbox/pull/112))
+
+### Fixed
+
+- A box class defined in a function, in a module with
+  `from __future__ import annotations`, can name a type defined in that
+  function. ([#112](https://github.com/jacopoabramo/sharedbox/pull/112))
+- Assigning an enum value that is not one of its class's members raises
+  `ValueError` naming the field, in place of `IndexError`. ([#112](https://github.com/jacopoabramo/sharedbox/pull/112))
+- A reference field may be annotated `Annotated[Box, ...]` or
+  `Final[Box]`. ([#112](https://github.com/jacopoabramo/sharedbox/pull/112))
+- `Capacity` raises `TypeError` for a size that is not an `int`. ([#112](https://github.com/jacopoabramo/sharedbox/pull/112))
+- `send_nowait`, `receive_nowait` and the first step of `asend` and
+  `async for` return at once while another thread waits in a call on the
+  same end, so they no longer block the event loop for up to a second. ([#112](https://github.com/jacopoabramo/sharedbox/pull/112))
+- A record type of 4 GiB or more, and a box class whose fields exceed the
+  size of a box, raise `TypeError` saying the size when the class is
+  defined. ([#112](https://github.com/jacopoabramo/sharedbox/pull/112))
+- `repr` of a box inside its own `locked()` block, and of the block's object
+  after the block, returns `<Name locked>` in place of raising. ([#112](https://github.com/jacopoabramo/sharedbox/pull/112))
+- `SharedBox.close` cancels the pending futures when a served field cannot
+  be released, and a second `RequestServer.stop` frees a field that the
+  first call, made inside a `locked()` block, could not. ([#112](https://github.com/jacopoabramo/sharedbox/pull/112))
+- The error of a request handler is logged with every character that UTF-8
+  cannot encode escaped, such as a lone surrogate, so the record can be
+  written to a log file. The traceback is part of the message text, and the
+  record no longer carries `exc_info`. ([#112](https://github.com/jacopoabramo/sharedbox/pull/112))
+- A process no longer aborts at exit when a daemon thread is inside a box or
+  a stream call: a thread that the exit cleanup ends with `BoxClosedError`,
+  `StreamClosedError` or `LockTimeoutError` prints no traceback. ([#112](https://github.com/jacopoabramo/sharedbox/pull/112))
+- Connecting a callback to the `events` of a stream reader that nothing
+  refers to any more logs a warning. ([#112](https://github.com/jacopoabramo/sharedbox/pull/112))
+- Reading metadata whose stored bytes are not a metadata document is
+  refused. C++ `read_metadata` returns `status::corrupt`. ([#112](https://github.com/jacopoabramo/sharedbox/pull/112))
+- `SharedBox.locked` works for a class whose `__init_subclass__` accepts no
+  keyword. ([#112](https://github.com/jacopoabramo/sharedbox/pull/112))
+- `receive` on a `lossy` or `latest` reader raises `TimeoutError` at its
+  timeout when the sender overwrites every item during its copy. ([#112](https://github.com/jacopoabramo/sharedbox/pull/112))
+- On Windows a process is counted as exited only when no process has its
+  pid, not when the process cannot be opened for another reason. ([#112](https://github.com/jacopoabramo/sharedbox/pull/112))
+- Reading a `bool` field whose stored byte is neither 0 nor 1 raises
+  `ValueError` naming the field, as a `bool` inside a record does. ([#112](https://github.com/jacopoabramo/sharedbox/pull/112))
+- The thread behind `SharedBox.events`, `watch` and requests keeps running
+  after a callback raises `SystemExit` or reading a changed value raises. A
+  `FieldFuture` whose value cannot be read fails with that error. ([#112](https://github.com/jacopoabramo/sharedbox/pull/112))
+- A first `SharedBox.events` that raises, such as on a lock timeout, no
+  longer leaves a group that never emits. ([#112](https://github.com/jacopoabramo/sharedbox/pull/112))
+- On Linux, a sender that was killed while it claimed the stream, after it
+  stored its pid and before its namespace and start time, is replaced after
+  100 ms. It used to keep every later `SharedStream.sender` busy, and readers
+  never saw the stream end. ([#112](https://github.com/jacopoabramo/sharedbox/pull/112))
+- A `latest` reader returns the newest item when it had kept an older one
+  from a cancelled receive, and counts the older one in `missed`. ([#112](https://github.com/jacopoabramo/sharedbox/pull/112))
+- A `ReceiveEvents.received` callback that raises `SystemExit` no longer
+  stops delivery. ([#112](https://github.com/jacopoabramo/sharedbox/pull/112))
+- `BoxEvents.follow` raises `BoxClosedError` when the box is closed while
+  the call starts, where it used to start forwarding on the closed box. ([#112](https://github.com/jacopoabramo/sharedbox/pull/112))
+- A field that a box class takes from a base that is not a box class keeps
+  the default that base gives it, or its `field()` options. It used to become
+  a required field. ([#112](https://github.com/jacopoabramo/sharedbox/pull/112))
+
+
 ## [0.9.0](https://github.com/jacopoabramo/sharedbox/releases/tag/v0.9.0) - 04-11-2026
 
 ### Added
