@@ -159,9 +159,10 @@ saves you the extra copy. It gives you the field itself to fill:
 ```
 
 The array starts out holding the field's current value. When the block
-ends, the box counts the write and wakes everyone watching the field. That
-happens even if the block stops halfway with an exception, and then the
-field keeps whatever the block wrote before it stopped.
+ends, other processes see the new values, and the box counts the write and
+wakes everyone watching the field. That happens even if the block stops
+halfway with an exception, and then the field keeps whatever the block
+wrote before it stopped.
 
 !!! warning "Everyone else waits while the block runs"
     The block holds the box's write lock, so every read and write of the
@@ -200,12 +201,12 @@ To fill the field in place, give [`writing`][sharedbox.SharedBox.writing]
 the shape you are about to write, as above. The box stores that shape and
 hands you an array of it under the same lock, so a reader never sees the
 new shape with the old values. Without `shape`, `writing` hands you the
-shape stored last. The elements past those stored before, counted in C
-order, hold whatever an earlier and larger write left there, and old
-elements move when a dimension other than the first changes, so fill all
-of the array.
-`read_into` takes fields of a fixed shape only, and raises `TypeError` for
-this one.
+shape stored last. Fill all of the array you are handed, because its
+contents are not the old value in the new shape. Elements beyond the ones
+the last write stored, counted in C order, hold whatever an earlier and
+larger write left there. When a dimension other than the first changes,
+the old elements also end up at other positions. `read_into` takes fields
+of a fixed shape only, and raises `TypeError` for this one.
 
 ## 6. Read with another library
 
@@ -229,10 +230,11 @@ envelope nobody has scanned yet:
 --8<-- "docs/examples/store_arrays.py:optional"
 ```
 
-The field takes its sizes from a `Shape` as any array field does, with the
-`| None` outside the `Annotated`. It works as a record member and as a
-member of a stream item too. Because the field may
-hold no array, `read_into` and `writing` refuse it, and
+Reading the field gives `None` while it holds no array. The field takes
+its sizes from a `Shape` as any array field does, with the `| None`
+outside the `Annotated`. It works as a record member and as a member of a
+stream item too. Because the field may hold no array, `read_into` and
+`writing` refuse it, and
 [`receive_into`][sharedbox.SharedReceiveStream.receive_into] doesn't fill
 it; a plain read or `receive` gives you a new array or `None`.
 
