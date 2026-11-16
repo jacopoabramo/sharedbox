@@ -219,6 +219,7 @@ filename = "CHANGELOG.md"
 start_string = "<!-- towncrier release notes start -->\n"
 title_format = "## [{version}](https://github.com/jacopoabramo/sharedbox/releases/tag/v{version}) - {project_date}"
 issue_format = "[#{issue}](https://github.com/jacopoabramo/sharedbox/pull/{issue})"
+template = "changelog.d/template.md"
 # set, even empty, so a misnamed entry fails the build instead of being skipped
 ignore = []
 
