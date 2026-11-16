@@ -46,7 +46,7 @@ jobs:
             echo "The changelog already has a section for $VERSION."
             exit 1
           fi
-          if [ -z "$(find changelog.d -type f ! -name .gitkeep)" ]; then
+          if [ -z "$(find changelog.d -type f ! -name .gitkeep ! -name template.md)" ]; then
             echo "changelog.d holds no entries, so there is nothing to release."
             exit 1
           fi

@@ -131,7 +131,7 @@ sharedbox/
 |                              request on Windows cp311, for pull requests that touch the native code
 |-- .github/workflows/streams.yaml  benchbox stream, base branch against the pull request on Linux and
 |                              Windows, for pull requests that touch the stream
-|-- changelog.d/               towncrier entry files of the next release
+|-- changelog.d/               towncrier entry files of the next release, and template.md, which shapes a release section
 |-- CMakeLists.txt             sharedbox::headers, sharedbox::c, extension build
 |-- stubtest-allowlist.txt     stubtest exceptions for nanobind types
 |-- .clang-format              clang-format style for the C and C++ sources
