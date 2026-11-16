@@ -267,7 +267,6 @@ class AttrInfo:
 
     has_value: bool
     """False for an attribute whose type is `None`."""
-    timed: bool
     settable: bool
     request: bool
     default: Any = MISSING
@@ -652,7 +651,7 @@ def attr_field(
         raise TypeError(
             f"{where}: {spec.members[0].type.kind} has no zero value, so the {kind} needs attr(default=...)"
         )
-    return spec, AttrInfo(has_value, has_value, settable, request, default)
+    return spec, AttrInfo(has_value, settable, request, default)
 
 
 def build_layout(cls: type, identity: str | None = None) -> Layout:
