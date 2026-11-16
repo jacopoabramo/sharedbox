@@ -123,7 +123,7 @@ class Attr(Generic[T, P]):
         BoxClosedError
             If the box is closed.
         """
-        self._require("value")
+        self._require_value()
         box = self._live()
         return cast(
             "AttrValue[T]",
@@ -167,7 +167,7 @@ class Attr(Generic[T, P]):
             needed = "a value or a setpoint" if self._info().settable else "a value"
             raise TypeError(f"{label}: publish() needs {needed}")
         if parts & PUBLISH_VALUE:
-            self._require("value")
+            self._require_value()
         if parts & PUBLISH_TIMESTAMP:
             if not parts & PUBLISH_VALUE:
                 raise TypeError(f"{label}: timestamp_ns needs a value to go with it")
@@ -272,13 +272,10 @@ class Attr(Generic[T, P]):
             raise BoxClosedError(f"{self._spec.label}: its box is gone")
         return box
 
-    def _require(self, part: str) -> None:
-        """Raise `TypeError` unless the attribute has `part`."""
-        info = self._info()
-        label = self._spec.label
-        match part:
-            case "value" if not info.has_value:
-                raise TypeError(f"{label} has no value")
+    def _require_value(self) -> None:
+        """Raise `TypeError` unless the attribute has a value."""
+        if not self._info().has_value:
+            raise TypeError(f"{self._spec.label} has no value")
 
 
 class Setting(Attr[T, []]):
@@ -373,7 +370,7 @@ class Setting(Attr[T, []]):
 
 
 def is_attr_annotation(hint: object) -> bool:
-    """Return whether `hint` is `Attr`, `Setting` or a subscription of either."""
+    """Return whether `hint` is `Attr`, `Setting`, a subclass of one or a subscription of any of them."""
     origin = get_origin(hint) or hint
     return isinstance(origin, type) and issubclass(origin, Attr)
 

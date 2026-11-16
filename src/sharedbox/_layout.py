@@ -24,7 +24,7 @@ from typing import (
     get_type_hints,
 )
 
-from ._attr import Setting, is_attr_annotation
+from ._attr import Attr, Setting, is_attr_annotation
 from ._native import Types
 from ._types import (
     CODES,
@@ -606,11 +606,17 @@ def attr_field(
     Raises
     ------
     TypeError
-        If the field is not declared with `attr()`, `T` or an argument cannot
-        be stored in an attribute, a `Setting` has no value, or the value has
-        no zero and no default.
+        If the field is annotated with a subclass of `Attr` or `Setting`, is
+        not declared with `attr()`, `T` or an argument cannot be stored in an
+        attribute, a `Setting` has no value, or the value has no zero and no
+        default.
     """
-    settable = (get_origin(hint) or hint) is Setting
+    origin = get_origin(hint) or hint
+    if origin is not Attr and origin is not Setting:
+        raise TypeError(
+            f"{where}: a subclass of Attr or Setting is not a field type; annotate the field Attr[T] or Setting[T]"
+        )
+    settable = origin is Setting
     kind = "Setting" if settable else "Attr"
     if option is None or not option.is_attr:
         raise TypeError(
