@@ -2,7 +2,7 @@ import time
 import weakref
 from collections.abc import Callable
 from dataclasses import MISSING, dataclass
-from typing import Annotated, Any, Optional
+from typing import Annotated, Any, Optional, TypeVar
 
 import numpy as np
 import numpy.typing as npt
@@ -26,6 +26,7 @@ from sharedbox._layout import NativeField
 from sharedbox._native import Types
 from sharedbox._types import CODES, Table, attr_spec
 
+T = TypeVar("T")
 CLOCK_SLACK_NS = 20_000_000
 VECTOR = Annotated[npt.NDArray[np.float64], Shape((4,))]
 
@@ -343,6 +344,21 @@ def test_an_attr_declaration_is_refused(annotation: Any, value: Any) -> None:
     """Raise TypeError naming the field when the class is defined."""
     with pytest.raises(TypeError, match=r"Declared\.x"):
         define(annotation, value)
+
+
+class OwnAttr(Attr[T, []]):
+    __slots__ = ()
+
+
+class OwnSetting(Setting[float]):
+    __slots__ = ()
+
+
+@pytest.mark.parametrize("annotation", [OwnAttr[float], OwnSetting])
+def test_a_subclass_of_attr_is_refused(annotation: Any) -> None:
+    """Raise TypeError naming Attr[T] and Setting[T] for a field annotated with a subclass of either."""
+    with pytest.raises(TypeError, match=r"Declared\.x: a subclass of Attr or Setting"):
+        define(annotation, attr())
 
 
 def test_a_setting_takes_no_argument_types() -> None:
