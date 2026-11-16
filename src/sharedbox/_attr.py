@@ -72,9 +72,8 @@ class Attr(Generic[T, P]):
 
     An attribute stores the time of each publish of its value. It starts
     with its value at the zero of `T`, or at its `default`, and with a
-    timestamp of 0. `T` may be anything a
-    record member may be, except a [`Timed`][sharedbox.Timed], an `Attr` or a
-    reference to a box.
+    timestamp of 0. `T` may be anything a record member may be, except a
+    [`Timed`][sharedbox.Timed], an `Attr` or a reference to a box.
 
     An attribute with argument types `P`, or with a `T` of `None`, takes
     requests: calling it sends one, and [`serve`][sharedbox.Attr.serve]
@@ -165,7 +164,8 @@ class Attr(Generic[T, P]):
         label = self._spec.label
         stamp = 0
         if not parts:
-            raise TypeError(f"{label}: publish() needs value, setpoint or timestamp_ns")
+            needed = "a value or a setpoint" if self._info().settable else "a value"
+            raise TypeError(f"{label}: publish() needs {needed}")
         if parts & PUBLISH_VALUE:
             self._require("value")
         if parts & PUBLISH_TIMESTAMP:

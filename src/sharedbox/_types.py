@@ -108,7 +108,8 @@ SUPPORTED: Final[str] = (
     "a tuple, a NamedTuple, a dataclass, a TypedDict, an attrs class, a msgspec Struct, "
     "Annotated[list | set | frozenset | dict | tuple[T, ...], Capacity(n)] and their "
     "collections.abc forms, Annotated[<array type>, Shape((...)), DType(...)], a SharedBox "
-    "subclass, optionally with | None, or, as a box field only, Attr[T, [A, ...]]"
+    "subclass, optionally with | None, or, as a box field only, Attr[T, [A, ...]] "
+    "or Setting[T]"
 )
 
 

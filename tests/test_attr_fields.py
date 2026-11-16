@@ -64,6 +64,11 @@ class Holder:
     inner: Attr[float]
 
 
+@dataclass
+class SettingHolder:
+    inner: Setting[float]
+
+
 def test_an_attr_starts_at_zero(names: Callable[[str], str]) -> None:
     """Read zero values and timestamps from a new box."""
     with Camera.create(names("zero")) as box:
@@ -364,6 +369,17 @@ def test_every_attr_with_a_value_is_timed(names: Callable[[str], str]) -> None:
         assert move_type is not None and move_type.text.startswith("attr(timed,")
 
 
+def test_an_empty_publish_names_the_parts_the_field_has(
+    names: Callable[[str], str],
+) -> None:
+    """Raise TypeError naming a setpoint for a Setting only, when publish is given nothing."""
+    with Camera.create(names("empty")) as box:
+        with pytest.raises(TypeError, match=r"publish\(\) needs a value$"):
+            box.temperature.publish()
+        with pytest.raises(TypeError, match=r"needs a value or a setpoint$"):
+            box.exposure.publish()
+
+
 def test_a_settable_field_gives_a_setting(names: Callable[[str], str]) -> None:
     """Give a Setting handle for a Setting field and a plain Attr for the others."""
     with Camera.create(names("kinds")) as box:
@@ -381,13 +397,17 @@ def test_a_timed_or_reference_value_is_refused() -> None:
 
 
 def test_attr_is_refused_where_it_cannot_go() -> None:
-    """Raise TypeError for an Attr inside a record, an optional, a union, a list or a stream item."""
+    """Raise TypeError for an Attr or a Setting inside a record, an optional, a union, a tuple, a list or a stream item."""
     holders: list[Any] = [
         Holder,
         Optional[Attr[float]],  # noqa: UP045
         Attr[float] | int,
         Annotated[list[Attr[float]], Capacity(2)],
+        tuple[Attr[float], int],
+        SettingHolder,
         Optional[Setting[float]],  # noqa: UP045
+        Setting[float] | int,
+        tuple[Setting[float], int],
         Annotated[list[Setting[float]], Capacity(2)],
     ]
     for holder in holders:
