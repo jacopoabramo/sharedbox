@@ -80,12 +80,12 @@ Dates are marked as `DD-MM-YYYY`
   reader's `mode` and `start` and of a sender's `on_full`, and `IterInto`, the
   type `SharedReceiveStream.iter_into` returns. ([#113](https://github.com/jacopoabramo/sharedbox/pull/113))
 - `Setting[T]`, an `Attr` that also holds a setpoint, which other processes
-  change through `set()`:
+  change through `set()` ([#116](https://github.com/jacopoabramo/sharedbox/pull/116)):
 
   ```python
   class Camera(SharedBox):
       exposure: Setting[float] = attr(default=0.01)
-  ``` ([#116](https://github.com/jacopoabramo/sharedbox/pull/116))
+  ```
 
 ### Changed
 
