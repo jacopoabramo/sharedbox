@@ -1363,13 +1363,14 @@ NB_MODULE(_native, m) {
     nb::class_<sharedbox::Types>(m, "Types", nb::type_slots(sharedbox::gc_slots<sharedbox::Types>))
         .def(
             "__init__",
-            [](sharedbox::Types *self,
+            [](nb::pointer_and_handle<sharedbox::Types> self,
                const std::vector<std::tuple<std::uint32_t, std::uint32_t, std::uint32_t>> &fields,
                std::vector<std::string> labels, nb::bytes table, const nb::dict &info,
                const std::vector<std::pair<std::int64_t, std::uint32_t>> &bytearrays,
                const std::vector<std::uint32_t> &reusable, const std::vector<sharedbox::Convert> &converts) {
-                new (self) sharedbox::Types(fields, std::move(labels), std::string(table.c_str(), table.size()),
-                                            info, bytearrays, reusable, converts);
+                new (self.p) sharedbox::Types(fields, std::move(labels), std::string(table.c_str(), table.size()),
+                                              info, bytearrays, reusable, converts);
+                self.p->bind(self.h.ptr());
             },
             "fields"_a, "labels"_a, "table"_a, "info"_a, "bytearrays"_a,
             "reusable"_a = std::vector<std::uint32_t>(), "converts"_a = std::vector<sharedbox::Convert>())

@@ -576,15 +576,15 @@ private:
         // here, with the GIL held and before the wait, so a bad array consumes no item. The arguments keep
         // each array alive for the whole call.
         std::vector<Types::ArrayTarget> targets;
-        // Made only when arrays are given, so a plain receive builds no map.
+        // Made only for an array given for a member, so a receive of a plain item or into one whole array
+        // builds no map.
         std::optional<std::unordered_map<std::uint64_t, PyObject *>> given;
-        if (!arrays.empty())
-            given.emplace();
         nb::object whole;
         for (const auto &[path, out] : arrays) {
             Types::ArrayTarget &target = targets.emplace_back(types.array_target(0, path, out.ptr()));
-            const bool fresh = path.empty() ? !std::exchange(whole, out).is_valid()
-                                            : given->emplace(target.key, out.ptr()).second;
+            const bool fresh = path.empty()
+                                   ? !std::exchange(whole, out).is_valid()
+                                   : (given ? *given : given.emplace()).emplace(target.key, out.ptr()).second;
             if (!fresh)
                 throw std::invalid_argument("stream '" + name_ + "': two arrays given for one member");
         }

@@ -745,12 +745,12 @@ nb::object Types::decode(std::uint32_t index, std::span<const std::byte> bytes,
         const NodeInfo &n = nodes_[t.node];
         if (n.stored && owned != nullptr && owned->get() == bytes.data()) {
             if (t.kind == kind_list)
-                return SlotStore::make<NativeCollection>(n.cls, nb::find(*this), t, name, std::move(*owned),
+                return SlotStore::make<NativeCollection>(n.cls, nb::borrow(self_), t, name, std::move(*owned),
                                                          bytes.size());
             if (t.kind == kind_set)
-                return SlotStore::make<NativeSet>(n.cls, nb::find(*this), t, name, std::move(*owned),
+                return SlotStore::make<NativeSet>(n.cls, nb::borrow(self_), t, name, std::move(*owned),
                                                   bytes.size());
-            return SlotStore::make<NativeDict>(n.cls, nb::find(*this), t, name, std::move(*owned), bytes.size());
+            return SlotStore::make<NativeDict>(n.cls, nb::borrow(self_), t, name, std::move(*owned), bytes.size());
         }
     }
     if (t.kind <= kind_ref) {
@@ -1174,10 +1174,10 @@ nb::object Types::decode_stored(const detail::type_ref &t, const std::byte *data
         if (n.stored) {
             const std::span<const std::byte> stored(data, node.slots + std::size_t{length} * node.stride);
             if (t.kind == kind_list)
-                return SlotStore::make<NativeCollection>(n.cls, nb::find(*this), t, where.name, stored);
+                return SlotStore::make<NativeCollection>(n.cls, nb::borrow(self_), t, where.name, stored);
             if (t.kind == kind_set)
-                return SlotStore::make<NativeSet>(n.cls, nb::find(*this), t, where.name, stored);
-            return SlotStore::make<NativeDict>(n.cls, nb::find(*this), t, where.name, stored);
+                return SlotStore::make<NativeSet>(n.cls, nb::borrow(self_), t, where.name, stored);
+            return SlotStore::make<NativeDict>(n.cls, nb::borrow(self_), t, where.name, stored);
         }
         if (t.kind == kind_dict) {
             const detail::type_member &value_member = tree_.member(node.members + 1);
