@@ -280,6 +280,12 @@ public:
     // As read, for a list, set or dict field: copies the length and the slots the value uses, not the
     // whole capacity. status::range for a field of another kind.
     [[nodiscard]] result<read_value> read_used(std::uint16_t field, std::span<std::byte> buf) const;
+    // As read_record, copying only the bytes each field uses: the length and the bytes of a str, bytes or
+    // Decimal, the length and the slots in use of a list, set or dict, the shape line and the elements of a
+    // max_array, and all of any other field. Each lands where read_record puts it, so payload finds it;
+    // the rest of buf keeps what it held. With large_copy bytes or more in use the record is copied as
+    // read_record_large copies it.
+    [[nodiscard]] result<std::uint64_t> read_record_used(std::span<std::byte> buf) const;
     // As read and read_record, for values of large_copy bytes or more: the wait hooks run once around
     // the whole call, and a copy starts again as soon as a writer moves the sequence number.
     [[nodiscard]] result<read_value> read_large(std::uint16_t field, std::span<std::byte> buf) const;
@@ -1019,7 +1025,82 @@ result<read_value> read_used_impl(const state &s, std::uint16_t field, std::span
     return out;
 }
 
+// How many bytes at the start of a field say how much of it is in use; 0 for a field that is all in use.
+inline std::size_t used_head(const field_spec &f) noexcept {
+    if (prefixed(f.kind) || is_collection(f.kind))
+        return sizeof(std::uint32_t);
+    return f.kind == kind_max_array ? 64 : 0;
+}
+
+// The bytes of field i in use, as its first used_head bytes at at say: the length and the bytes of a str,
+// bytes or decimal, the length and the slots of a list, set or dict, the shape line and the elements of a
+// max_array, all of any other field. Never less than the head nor more than the field, whatever at holds.
+inline std::size_t used_bytes(const state &s, std::uint16_t i, const std::byte *at) noexcept {
+    const field_spec &f = s.fields[i];
+    const auto size = static_cast<std::size_t>(field_span(f));
+    const std::size_t head = used_head(f);
+    std::uint64_t used = size;
+    if (f.kind == kind_max_array) {
+        // A shape above its maximum, which only a torn copy or a forged segment shows, has no elements.
+        const std::uint64_t elements = max_array_bytes(s.types, s.types.field(i), at);
+        used = elements == UINT64_MAX ? head : head + elements;
+    } else if (head != 0) {
+        std::uint32_t length;
+        std::memcpy(&length, at, sizeof length);
+        if (prefixed(f.kind)) {
+            used = head + std::uint64_t{length};
+        } else {
+            const type_node &node = s.types.node(s.types.field(i).node);
+            used = node.slots + std::uint64_t{(std::min)(length, node.capacity)} * node.stride;
+        }
+    }
+    return static_cast<std::size_t>((std::clamp<std::uint64_t>)(used, head, size));
+}
+
 } // namespace detail
+
+inline result<std::uint64_t> handle::read_record_used(std::span<std::byte> buf) const {
+    const detail::state &s = *s_;
+    if (buf.size() < s.record_size)
+        return unexpected(status::range);
+    auto seq = detail::atomic(s.hdr->seq);
+    std::uint64_t generation = 0;
+    const auto copy = [&]() noexcept {
+        const std::uint64_t before = seq.load(std::memory_order_acquire);
+        if ((before & 1u) != 0)
+            return false;
+        for (std::uint16_t i = 0; i < s.field_count; ++i) {
+            const std::byte *src = s.record + s.fields[i].offset;
+            std::byte *dst = buf.data() + s.fields[i].offset;
+            // The head is copied first and read from the copy, so the bytes copied after it are the ones
+            // a reader of buf will look for.
+            const std::size_t head = detail::used_head(s.fields[i]);
+            std::memcpy(dst, src, head);
+            const std::size_t rest = detail::used_bytes(s, i, dst) - head;
+            if (!detail::copy_checked(dst + head, src + head, rest, seq, before))
+                return false;
+        }
+        std::atomic_thread_fence(std::memory_order_acquire);
+        if (seq.load(std::memory_order_acquire) != before)
+            return false;
+        generation = before >> 1;
+        return true;
+    };
+    // The bytes in use now, read without the sequence check, only decide how the copy waits.
+    std::uint64_t total = 0;
+    for (std::uint16_t i = 0; i < s.field_count; ++i)
+        total += detail::used_bytes(s, i, s.record + s.fields[i].offset);
+    bool done;
+    if (total >= detail::large_copy) {
+        const detail::hooks_around hooks(s);
+        done = detail::retry<false>(s, s.lock_timeout, copy);
+    } else {
+        done = detail::retry(s, s.lock_timeout, copy);
+    }
+    if (!done)
+        return unexpected(status::lock_timeout);
+    return generation;
+}
 
 inline result<read_value> handle::read_used(std::uint16_t field, std::span<std::byte> buf) const {
     const detail::state &s = *s_;

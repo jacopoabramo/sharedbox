@@ -29,6 +29,16 @@ class Fixed(SharedBox):
     )
 
 
+class Roomy(SharedBox, lock_timeout=0.5):
+    image: Annotated[npt.NDArray[np.uint32], MaxShape((64, 64))]
+    label: Annotated[str, Capacity(256)]
+    blob: Annotated[bytes, Capacity(256)]
+    numbers: Annotated[list[int], Capacity(64)]
+    seen: Annotated[set[int], Capacity(64)]
+    scores: Annotated[dict[int, float], Capacity(64)]
+    count: int
+
+
 @dataclass
 class Pair:
     image: Image
@@ -256,6 +266,58 @@ def test_a_stored_shape_beyond_the_maximum_is_refused_on_every_read(
             pass
         assert read_from_thread(lambda: setattr(box, "count", 1)) == []
         assert box.count == 1
+
+
+def test_a_snapshot_of_a_large_record_holds_the_values_stored_last(
+    unique_name: str,
+) -> None:
+    """Return each field's current value from a record above 4 KiB after longer values were stored."""
+    full: dict[str, Any] = {
+        "image": grid(64, 64),
+        "label": "x" * 256,
+        "blob": bytes(range(256)),
+        "numbers": list(range(64)),
+        "seen": set(range(64)),
+        "scores": {key: key / 2 for key in range(64)},
+        "count": 7,
+    }
+    short: dict[str, Any] = {
+        "image": grid(2, 3),
+        "label": "ab",
+        "blob": b"",
+        "numbers": [5],
+        "seen": {9},
+        "scores": {1: 0.5},
+        "count": 8,
+    }
+    empty: dict[str, Any] = {
+        "image": grid(0, 3),
+        "label": "",
+        "blob": b"",
+        "numbers": [],
+        "seen": set(),
+        "scores": {},
+        "count": 9,
+    }
+    with Roomy.create(unique_name, **empty) as box:
+        for values in (full, short, empty, full):
+            box.update(**values)
+            snapshot = box.snapshot()
+            image = snapshot.pop("image")
+            assert image.shape == values["image"].shape
+            assert np.array_equal(image, values["image"])
+            assert snapshot == {k: v for k, v in values.items() if k != "image"}
+
+
+def test_a_snapshot_of_a_large_record_refuses_a_forged_shape(unique_name: str) -> None:
+    """Raise ValueError from a snapshot of a record above 4 KiB whose stored shape is beyond the maximum."""
+    with Roomy.create(unique_name, grid(2, 3), "", b"", [], set(), {}, 0) as box:
+        with raw_bytes(unique_name) as view:
+            (record,) = struct.unpack_from("<I", view, 96)
+            offset = Roomy.__layout__.by_name["image"].offset
+            struct.pack_into("<Q", view, record + offset, 65)
+        with pytest.raises(ValueError, match="is not one Python can hold"):
+            box.snapshot()
 
 
 def test_a_forged_shape_in_a_record_member_is_refused(unique_name: str) -> None:

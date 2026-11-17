@@ -31,6 +31,8 @@ void check_index(std::uint32_t index, std::size_t count);
 void check_names(const std::vector<std::string> &names, std::size_t count);
 /// Throws std::invalid_argument, starting with what (such as "box 'name'"), for a spec create would refuse.
 void check_metadata_spec(const std::string &what, const metadata_spec &spec);
+/// The largest record Segment::read_record copies whole, and the one with_record keeps on the stack.
+inline constexpr std::size_t small_record = 4096;
 /// The stored bytes of field inside a copy of the record made by Segment::read_record.
 std::string_view payload(const FieldDesc &field, const std::byte *record);
 /// "missing", "running" or "creator_exited": whether a segment is called name and its creator still runs.
@@ -194,8 +196,9 @@ public:
     void check_not_held() const;
     /// Bytes of the record, the size of the buffer read_record fills.
     std::size_t record_size() const;
-    /// Copies the whole record, every field from one moment, into out, which holds record_size() bytes;
-    /// payload() finds a field in it.
+    /// Copies the record, every field from one moment, into out, which holds record_size() bytes. Of a
+    /// record above small_record bytes it copies only the bytes each field uses. payload() finds a field
+    /// in it.
     void read_record(std::span<std::byte> out) const;
     std::uint32_t field_count() const;
     /// Writes values under one lock; each field index was checked against field_count() before it
