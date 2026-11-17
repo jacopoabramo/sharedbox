@@ -44,9 +44,20 @@ Reading a reference field looks the stored hash up there.
     [`UnknownBoxClassError`][sharedbox.UnknownBoxClassError]. Import that
     module in every process that reads the reference.
 
+Two classes of one process can share a schema hash, because the hash covers
+a class's identity and fields and nothing else: a module imported again, a
+notebook cell run twice or a class defined inside a function that runs
+twice each leave an earlier class alive beside the new one. The field's
+annotation then decides. A box whose hash is the annotated class's own is
+read with that class, so `stage.motor` annotated `Motor` gives an instance
+of exactly that `Motor`. A box of a subclass has another hash, and among
+the classes with it the one defined last is taken, a subclass of the
+annotated class before any other. [`BoxRef.box_class`][sharedbox.BoxRef]
+has no annotation to go by and gives the class defined last.
+
 The list holds each class weakly, so a class nothing else uses, such as one
-defined inside a function, can still be freed. That's why the lookup takes
-the first matching class "that is still alive".
+defined inside a function, can still be freed, and the lookup only
+considers classes that are still alive.
 
 ## Broken references
 

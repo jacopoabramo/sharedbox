@@ -823,7 +823,7 @@ def test_box_class_is_the_class_this_process_has_for_the_hash(
         ref = stage.snapshot()["motor"]
         assert ref is not None
         assert ref.box_class is FastMotor
-    assert BoxRef("m", Motor.__layout__.schema_hash, 1).box_class is Motor
+    assert BoxRef("m", Other.__layout__.schema_hash, 1).box_class is Other
     assert BoxRef("m", 0x5EED, 1).box_class is None
     assert BoxRef("m", 0x5EED, 1) != BoxRef("m", 0x5EED, 2)
 
@@ -884,6 +884,58 @@ def test_a_later_class_with_the_same_hash_reads_after_the_first_is_freed(
         inner = mount.motor
         assert type(inner) is Kept
         assert inner.position == 8
+
+
+def test_a_reference_is_read_with_the_class_it_is_annotated_with(
+    names: Callable[[str], str],
+) -> None:
+    """Read a reference with the annotated class when two live classes have the box's schema hash."""
+
+    class Once(SharedBox, identity="sbtest/twice"):
+        position: int = 0
+
+    class Again(SharedBox, identity="sbtest/twice"):
+        position: int = 0
+
+    class Old(SharedBox):
+        motor: Once | None = None
+
+    class New(SharedBox):
+        motor: Again | None = None
+
+    with (
+        Once.create(names("o"), 3) as motor,
+        Old.create(names("old"), motor) as old,
+        New.create(names("new")) as new,
+    ):
+        new.motor = motor  # type: ignore[assignment]
+        assert (type(old.motor), type(new.motor)) == (Once, Again)
+        reported = old.snapshot()["motor"]
+        assert isinstance(reported, BoxRef)
+        assert reported.box_class is Again
+
+
+def test_a_box_of_a_subclass_is_read_with_a_subclass_of_the_annotated_class(
+    names: Callable[[str], str],
+) -> None:
+    """Read a subclass's box with the subclass when an unrelated class defined later has its schema hash."""
+
+    class Base(SharedBox, identity="sbtest/base"):
+        position: int = 0
+
+    class Fast(Base, identity="sbtest/fast"):
+        speed: int = 0
+
+    class Unrelated(SharedBox, identity="sbtest/fast"):
+        position: int = 0
+        speed: int = 0
+
+    class Rig(SharedBox):
+        motor: Base | None = None
+
+    assert Fast.__layout__.schema_hash == Unrelated.__layout__.schema_hash
+    with Fast.create(names("f"), 1, 2) as fast, Rig.create(names("r"), fast) as rig:
+        assert type(rig.motor) is Fast
 
 
 @pytest.mark.parametrize("name", [b"", b"bad/name"], ids=["empty", "invalid"])

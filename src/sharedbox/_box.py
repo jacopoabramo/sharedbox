@@ -466,7 +466,7 @@ class SharedBoxMeta(type):
 
     Also record each subclass by schema hash, where reference fields find the
     class of the box they refer to; of several classes with one hash, the
-    first one defined that is still alive is used.
+    one the field is annotated with is used, else the one defined last.
     """
 
     def __new__(
@@ -644,8 +644,9 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
     may be a subclass of `X`, and keeps that handle: later reads return
     the same object while the field refers to the same box. The class is
     found by the stored schema hash among the `SharedBox` classes this
-    process has defined; of several with one hash, the first one defined
-    that is still alive is used. After another thread or process assigns
+    process has defined; of several with one hash, `X` itself is used when
+    the hash is its own, else the class defined last, a subclass of `X`
+    before any other. After another thread or process assigns
     another box, the next read attaches that one and closes the handle it
     kept. [`close`][sharedbox.SharedBox.close] on the outer box closes the
     handles its reads attached, and closing a returned box makes the next
