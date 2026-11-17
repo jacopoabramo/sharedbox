@@ -12,3 +12,6 @@ race:detail::read_metadata
 race:handle::read
 race:stream_reader::receive
 race:stream_reader::fetch
+race:handle::attr_read
+race:handle::attr_published
+race:handle::request_answer_of

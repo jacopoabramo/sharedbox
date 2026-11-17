@@ -8,6 +8,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <cstring>
@@ -25,6 +26,12 @@ using sharedbox::detail::type_table;
 namespace {
 
 constexpr seconds patience{1.0};
+// The sanitizer builds of CI pass a smaller count.
+#ifdef SHAREDBOX_TEST_ROUNDS
+constexpr std::int64_t rounds = SHAREDBOX_TEST_ROUNDS;
+#else
+constexpr std::int64_t rounds = 100000;
+#endif
 constexpr std::uint64_t server_start_at = 24;
 
 status parse(const table_builder &t, type_table &table) {
@@ -594,6 +601,58 @@ TEST_CASE("a small attr copy does not run the wait hooks") {
     REQUIRE(box.attr_publish(0, publish_value, parts(0, 5, 0, 0), patience).has_value());
     static_cast<void>(value_part(box));
     CHECK((hooks_before == 0 && hooks_after == 0));
+    static_cast<void>(unlink(name));
+}
+
+// A read that passed its sequence check during a write would return parts of two publishes or of two
+// answers; ThreadSanitizer also checks these reads here.
+TEST_CASE("a read of an attr during publishes and answers returns one write whole") {
+    const std::string name = unique("attr-torn");
+    // One handle for both threads: a second one maps the segment again, and ThreadSanitizer compares addresses.
+    handle box = make(name, everything());
+    std::atomic<std::int64_t> answered{0};
+    std::atomic<bool> started{false}, stop{false};
+    std::atomic<int> torn{0};
+    std::thread reader([&] {
+        std::int64_t published = 0;
+        started.store(true, std::memory_order_release);
+        while (!stop.load(std::memory_order_acquire)) {
+            // Publish i stores i in the value, the timestamp and the setpoint and is the i-th publish.
+            const auto count = box.attr_published(0);
+            std::array<std::byte, everything_parts> now{};
+            if (!count || !box.attr_read(0, now).has_value() || static_cast<std::int64_t>(*count) < published ||
+                at(now, 0) < static_cast<std::int64_t>(*count) || at(now, 1) != at(now, 0) ||
+                at(now, 2) != at(now, 0) || at(now, 3) != at(now, 0))
+                ++torn;
+            else
+                published = static_cast<std::int64_t>(*count);
+            // Request i is answered with i; four later answers may have replaced it.
+            const std::int64_t number = answered.load(std::memory_order_acquire);
+            if (number == 0)
+                continue;
+            std::array<std::byte, 256> out{};
+            const auto reply = box.request_answer_of(0, static_cast<std::uint64_t>(number), out, false);
+            if (!reply ||
+                (reply->outcome == request_outcome::answered ? reply->length != 8 || number_of(out) != number
+                                                             : reply->outcome != request_outcome::overwritten))
+                ++torn;
+        }
+    });
+    while (!started.load(std::memory_order_acquire))
+        std::this_thread::yield();
+    bool wrote = true;
+    for (std::int64_t i = 1; wrote && i <= rounds; ++i) {
+        std::array<std::byte, 8> arguments{};
+        wrote = box.attr_publish(0, 7, parts(0, i, i, i), patience).has_value() &&
+                box.request_send(0, eight(i), patience).has_value() &&
+                box.request_take(0, arguments, patience).has_value() &&
+                box.request_answer(0, static_cast<std::uint64_t>(i), true, eight(i), patience).has_value();
+        answered.store(i, std::memory_order_release);
+    }
+    stop.store(true, std::memory_order_release);
+    reader.join();
+    CHECK(wrote);
+    CHECK(torn == 0);
     static_cast<void>(unlink(name));
 }
 
