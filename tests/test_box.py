@@ -796,6 +796,22 @@ def test_update_and_snapshot_handle_a_record_larger_than_a_page(
         assert box.snapshot() == {"count": 7, "blob": blob}
 
 
+class Megabytes(SharedBox):
+    first: Annotated[bytes, Capacity(1 << 20)] = b""
+    second: Annotated[bytes, Capacity(1 << 20)] = b""
+
+
+def test_snapshot_reads_a_record_with_megabytes_in_use(unique_name: str) -> None:
+    """Return both values from a snapshot of a record that holds 2 MiB, then the short ones stored after."""
+    first = bytes(range(256)) * 4096
+    second = first[::-1]
+    with Megabytes.create(unique_name) as box:
+        box.update(first=first, second=second)
+        assert box.snapshot() == {"first": first, "second": second}
+        box.update(first=b"a", second=b"")
+        assert box.snapshot() == {"first": b"a", "second": b""}
+
+
 class Overriding(SharedBox):
     x: float = 0.0
     y: float = 0.0

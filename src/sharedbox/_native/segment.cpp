@@ -657,8 +657,10 @@ std::size_t Segment::record_size() const { return impl_->record_size; }
 void Segment::read_record(std::span<std::byte> out) const {
     auto guard = impl_->enter();
     impl_->check_not_held();
-    if (out.size() >= detail::large_copy)
-        impl_->check(impl_->box.read_record_large(out));
+    // One copy of a small record costs less than a walk over its fields; a larger one is mostly room
+    // that its strings and collections do not use.
+    if (out.size() > small_record)
+        impl_->check(impl_->box.read_record_used(out));
     else
         impl_->check(impl_->box.read_record(out));
 }

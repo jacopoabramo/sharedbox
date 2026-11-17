@@ -134,12 +134,12 @@ const Types &need(const Types *types, std::uint32_t index);
 /// Reads the whole record and passes it to use; a record of up to 4 KiB, the usual size, is read
 /// into the stack, so the read allocates nothing.
 template <typename Use> decltype(auto) with_record(const Segment &s, Use &&use) {
-    alignas(std::max_align_t) std::byte small[4096];
+    alignas(std::max_align_t) std::byte small[small_record];
     std::unique_ptr<std::byte[]> large;
     const std::size_t size = s.record_size();
     std::byte *record = small;
     if (size > sizeof small) {
-        // new[] without () leaves the bytes uninitialised; the read overwrites all of them.
+        // new[] without () leaves the bytes uninitialised; the read fills the ones each field uses.
         large.reset(new std::byte[size]);
         record = large.get();
     }

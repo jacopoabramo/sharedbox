@@ -1537,6 +1537,7 @@ public:
     result<read_value> read(std::uint16_t field, std::span<std::byte> buf) const;
     result<std::uint64_t> read_record(std::span<std::byte> buf) const;
     result<read_value> read_used(std::uint16_t field, std::span<std::byte> buf) const;
+    result<std::uint64_t> read_record_used(std::span<std::byte> buf) const;
     result<read_value> read_large(std::uint16_t field, std::span<std::byte> buf) const;
     result<std::uint64_t> read_record_large(std::span<std::byte> buf) const;
     result<void> write_large(std::span<const value> values, seconds lock_timeout);
@@ -1662,7 +1663,12 @@ The header also declares these names:
   nothing is copied and `len` says how long it is; a buffer of the field's
   capacity always fits. `read_record` copies every field from one moment
   and returns the generation of that moment; `payload` finds a field in
-  such a copy.
+  such a copy. `read_record_used` does the same and copies only the bytes
+  each field uses, which are the length and the bytes of a `str`, `bytes`
+  or `Decimal`, the length and the slots in use of a list, set or dict, and
+  the shape line and the elements of a `max_array`. It leaves the other
+  bytes of `buf` as they were, so it costs what the stored values cost,
+  not the room the fields reserve.
 - `inspect(name)` copies the common line of a published segment of any
   kind, without waiting and without the checks of `open`. The Python
   extension uses it to name the layout of a segment it refuses and the

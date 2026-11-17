@@ -4,6 +4,7 @@
 
 #include "unique.hpp"
 
+#include <algorithm>
 #include <array>
 #include <cstring>
 
@@ -73,6 +74,16 @@ TEST_CASE("write then read") {
     const auto payload = h->payload(1, record);
     CHECK((payload.size() == 12 && std::memcmp(payload.data(), text, 12) == 0));
     CHECK(h->read_record({record.data(), 31}).error().code == status::range);
+    // The int, then the length and the 12 bytes in use of the 16 the bytes field holds; no byte after them.
+    std::array<std::byte, 32> used;
+    used.fill(std::byte{0xEE});
+    const auto used_generation = h->read_record_used(used);
+    CHECK((used_generation && *used_generation == 1));
+    CHECK(std::memcmp(used.data(), record.data(), 24) == 0);
+    CHECK(std::all_of(used.begin() + 24, used.end(), [](std::byte b) { return b == std::byte{0xEE}; }));
+    const auto used_payload = h->payload(1, used);
+    CHECK((used_payload.size() == 12 && std::memcmp(used_payload.data(), text, 12) == 0));
+    CHECK(h->read_record_used({used.data(), 31}).error().code == status::range);
     // A value of the wrong size or for a missing field changes nothing.
     const sharedbox::value wrong[1] = {{0, std::as_bytes(std::span(text, 4))}};
     CHECK(h->write(wrong, seconds(1.0)).error().code == status::range);
