@@ -29,6 +29,15 @@ class RequestError(Exception):
     """The request failed: the handler raised, the server stopped, or four later answers overwrote its answer."""
 
 
+class RequestRefused(Exception):
+    """Raised by a request handler to refuse a request without a log record.
+
+    The caller gets [`RequestError`][sharedbox.RequestError] with this
+    exception's type and message, as for any exception a handler raises;
+    the serving process logs nothing for it.
+    """
+
+
 class RequestSupersededError(RequestError):
     """A later request replaced this one before the server took it."""
 
@@ -347,7 +356,8 @@ class RequestServer:
         segment.request_answer(self._field.index, number, False, value, types)
 
     def _fail(self, number: int, error: BaseException) -> None:
-        log_error("the handler of %s raised", self._field.label, error)
+        if not isinstance(error, RequestRefused):
+            log_error("the handler of %s raised", self._field.label, error)
         self._answer(number, False, error_text(error))
 
     def _failed_serving(self, number: int | None, error: Exception) -> None:

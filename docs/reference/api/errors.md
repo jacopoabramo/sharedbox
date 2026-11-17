@@ -11,6 +11,7 @@ icon: lucide/code
 | [`SchemaMismatchError`][sharedbox.SchemaMismatchError] | `TypeError` | attaching, or unpickling a box, with a class whose [identity](../../explanation/glossary.md#identity) or [fields](../../explanation/glossary.md#field) differ from the creator's; a segment of another core or layout major version; a segment whose magic this version does not know, which another version of `sharedbox` made or which is not a `sharedbox` segment; a segment with a field of a kind this version cannot read; unpickling after the box was created again; attaching a stream with another item type than the creator's; a lossless reader finding that the sender overwrote an item it had not read |
 | [`KindMismatchError`][sharedbox.KindMismatchError] | `SchemaMismatchError` | attaching a box to a name that holds a stream, or a stream to a name that holds a box |
 | [`RequestError`][sharedbox.RequestError] | `Exception` | waiting on a request whose handler raised, whose server stopped while handling it, or whose answer four later answers replaced |
+| [`RequestRefused`][sharedbox.RequestRefused] | `Exception` | raised by a request handler to refuse a request, which fails for its caller and leaves no log record |
 | [`RequestSupersededError`][sharedbox.RequestSupersededError] | `RequestError` | waiting on a request that a later request replaced before the server took it |
 | [`ServerExitedError`][sharedbox.ServerExitedError] | `RequestError` | waiting on a request whose server's process ended |
 | [`AlreadyServedError`][sharedbox.AlreadyServedError] | `RuntimeError` | serving an [attribute](../../explanation/glossary.md#attribute) that a live process serves already, this one included |
@@ -57,6 +58,10 @@ icon: lucide/code
       show_root_heading: true
 
 ::: sharedbox.RequestError
+    options:
+      show_root_heading: true
+
+::: sharedbox.RequestRefused
     options:
       show_root_heading: true
 
