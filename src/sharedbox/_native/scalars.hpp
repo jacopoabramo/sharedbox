@@ -31,9 +31,12 @@ bool is_real(PyObject *value);
 bool is_complex(PyObject *value);
 /// Whether value is a numpy.bool_; false while numpy is not imported, since no such value exists then.
 bool is_numpy_bool(PyObject *value);
-/// collections.abc.Mapping, Sequence and Set, borrowed.
-PyObject *mapping();
-PyObject *sequence();
-PyObject *set();
+/// Whether value is a collections.abc.Mapping, Sequence or Set. A dict, list, tuple, set or frozenset
+/// itself is answered without the call into Python that the check against an abstract class makes.
+bool is_mapping(PyObject *value);
+bool is_sequence(PyObject *value);
+bool is_set(PyObject *value);
+/// The module collections.abc, borrowed.
+PyObject *collections_abc();
 
 } // namespace sharedbox::scalars

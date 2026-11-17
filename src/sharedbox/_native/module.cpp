@@ -386,6 +386,13 @@ struct BoxMethod {
     bool has_refs; // whether any entry of specs is not None
 };
 
+// Every reference a BoxMethod holds, listed once for traverse and clear: one left out of either would
+// leak or keep a cycle alive.
+constexpr PyObject *BoxMethod::*box_method_held[] = {
+    &BoxMethod::cls,    &BoxMethod::qualname, &BoxMethod::names,        &BoxMethod::specs, &BoxMethod::helper,
+    &BoxMethod::follow, &BoxMethod::fallback, &BoxMethod::segment_slot, &BoxMethod::types,
+};
+
 enum BoxMethodKind { kind_update = 0, kind_snapshot = 1 };
 
 using sharedbox::Scratch;
@@ -589,15 +596,8 @@ PyObject *box_method_new(PyTypeObject *type, PyObject *args, PyObject *kwargs) n
 int box_method_traverse(PyObject *self, visitproc visit, void *arg) {
     const auto *m = reinterpret_cast<BoxMethod *>(self);
     Py_VISIT(Py_TYPE(self));
-    Py_VISIT(m->cls);
-    Py_VISIT(m->qualname);
-    Py_VISIT(m->names);
-    Py_VISIT(m->specs);
-    Py_VISIT(m->helper);
-    Py_VISIT(m->follow);
-    Py_VISIT(m->fallback);
-    Py_VISIT(m->segment_slot);
-    Py_VISIT(m->types);
+    for (const auto held : box_method_held)
+        Py_VISIT(m->*held);
     return 0;
 }
 
@@ -605,15 +605,8 @@ int box_method_clear(PyObject *self) {
     auto *m = reinterpret_cast<BoxMethod *>(self);
     // Cleared first, since t is the Types inside types, which a decref below can free.
     m->t = nullptr;
-    Py_CLEAR(m->cls);
-    Py_CLEAR(m->qualname);
-    Py_CLEAR(m->names);
-    Py_CLEAR(m->specs);
-    Py_CLEAR(m->helper);
-    Py_CLEAR(m->follow);
-    Py_CLEAR(m->fallback);
-    Py_CLEAR(m->segment_slot);
-    Py_CLEAR(m->types);
+    for (const auto held : box_method_held)
+        Py_CLEAR(m->*held);
     return 0;
 }
 
@@ -885,7 +878,7 @@ void at_most(const char *name, std::size_t most, std::size_t given) {
 
 /// A view of self of the collections.abc class name: KeysView, ValuesView or ItemsView.
 nb::object view(const char *name, nb::handle self) {
-    return nb::module_::import_("collections.abc").attr(name)(self);
+    return nb::borrow(sharedbox::scalars::collections_abc()).attr(name)(self);
 }
 
 template <sharedbox::set_op op, bool reflected>
