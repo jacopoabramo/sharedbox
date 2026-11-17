@@ -1008,7 +1008,7 @@ void Types::encode_plain(const detail::type_ref &t, PyObject *value, std::byte *
             return tree_.member(node.members + i);
         };
         if (n.form == 3) {
-            if (!instance(value, scalars::mapping()))
+            if (!scalars::is_mapping(value))
                 wrong(where.name, "a mapping with the TypedDict's keys", value);
             const nb::object keys = nb::steal(PyMapping_Keys(value));
             if (!keys.is_valid())
@@ -1650,7 +1650,7 @@ nb::object Types::rebuild(const detail::type_ref &t, PyObject *value, std::byte 
     const detail::type_node &node = tree_.node(t.node);
     auto member = [&](std::uint32_t i) -> const detail::type_member & { return tree_.member(node.members + i); };
     if (n.form == 3) {
-        if (!instance(value, scalars::mapping()))
+        if (!scalars::is_mapping(value))
             wrong(where.name, "a mapping with the TypedDict's keys", value);
         nb::dict out;
         if (PyDict_Update(out.ptr(), value) != 0)
@@ -1736,16 +1736,16 @@ bool Types::accepts(const detail::type_ref &t, PyObject *value) const {
         return false;
     }
     case kind_list:
-        return instance(value, scalars::sequence()) && !PyUnicode_Check(value) && !PyBytes_Check(value) &&
+        return scalars::is_sequence(value) && !PyUnicode_Check(value) && !PyBytes_Check(value) &&
                !PyByteArray_Check(value);
     case kind_set:
-        return instance(value, scalars::set());
+        return scalars::is_set(value);
     case kind_dict:
-        return instance(value, scalars::mapping());
+        return scalars::is_mapping(value);
     case kind_record:
     case kind_tuple:
         if (n.form == 3)
-            return instance(value, scalars::mapping());
+            return scalars::is_mapping(value);
         return n.form == 2 ? PyTuple_Check(value) != 0 : instance(value, n.cls);
     case kind_timed:
         return instance(value, n.cls);

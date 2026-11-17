@@ -53,7 +53,7 @@ void NativeDict::refuse_unbuilt(nb::handle value) const { refuse_unbuilt_as<Nati
 
 nb::object NativeDict::equals(nb::handle other) {
     refuse_unbuilt(other);
-    if (!instance(other.ptr(), scalars::mapping()))
+    if (!scalars::is_mapping(other.ptr()))
         return nb::borrow(Py_NotImplemented);
     const Types &types = codec();
     std::uint32_t count = 0;
@@ -335,7 +335,7 @@ void NativeDict::remove_all() {
 nb::object NativeDict::merge(nb::pointer_and_handle<NativeDict> self, nb::handle other, bool reflected) {
     const NativeDict &d = *self.p;
     d.refuse_unbuilt(other);
-    if (!instance(other.ptr(), scalars::mapping()))
+    if (!scalars::is_mapping(other.ptr()))
         return nb::borrow(Py_NotImplemented);
     std::vector<std::byte> items;
     d.items_of(other, items);

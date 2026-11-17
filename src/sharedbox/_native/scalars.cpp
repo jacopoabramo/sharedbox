@@ -29,6 +29,7 @@ PyObject *decimal_type = nullptr;
 PyObject *mapping_abc = nullptr;
 PyObject *sequence_abc = nullptr;
 PyObject *set_abc = nullptr;
+PyObject *abc_module = nullptr;
 PyObject *real_abc = nullptr;
 PyObject *complex_abc = nullptr;
 PyObject *numpy_name = nullptr;
@@ -76,8 +77,10 @@ const char *kind_name(std::uint8_t kind) {
         return "a complex";
     case kind_datetime64:
         return "a numpy.datetime64";
-    default:
+    case kind_decimal:
         return "a Decimal";
+    default:
+        return "a value";
     }
 }
 
@@ -384,6 +387,7 @@ void init() {
     uuid_type = nb::object(nb::module_::import_("uuid").attr("UUID")).release().ptr();
     decimal_type = nb::object(nb::module_::import_("decimal").attr("Decimal")).release().ptr();
     const nb::module_ abc = nb::module_::import_("collections.abc");
+    abc_module = nb::object(abc).release().ptr();
     mapping_abc = nb::object(abc.attr("Mapping")).release().ptr();
     sequence_abc = nb::object(abc.attr("Sequence")).release().ptr();
     set_abc = nb::object(abc.attr("Set")).release().ptr();
@@ -428,9 +432,14 @@ bool is_complex(PyObject *value) {
     return PyComplex_Check(value) || PyFloat_Check(value) || PyLong_Check(value) || is_abc(value, complex_abc);
 }
 
-PyObject *mapping() { return mapping_abc; }
-PyObject *sequence() { return sequence_abc; }
-PyObject *set() { return set_abc; }
+PyObject *collections_abc() { return abc_module; }
+bool is_mapping(PyObject *value) { return PyDict_CheckExact(value) || instance(value, mapping_abc); }
+bool is_sequence(PyObject *value) {
+    return PyList_CheckExact(value) || PyTuple_CheckExact(value) || instance(value, sequence_abc);
+}
+bool is_set(PyObject *value) {
+    return Py_IS_TYPE(value, &PySet_Type) || Py_IS_TYPE(value, &PyFrozenSet_Type) || instance(value, set_abc);
+}
 
 bool accepts(std::uint8_t kind, PyObject *value) {
     switch (kind) {

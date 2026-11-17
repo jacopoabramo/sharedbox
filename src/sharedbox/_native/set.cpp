@@ -93,7 +93,7 @@ void NativeSet::refuse_unbuilt(nb::handle value) const { refuse_unbuilt_as<Nativ
 
 bool NativeSet::takes(nb::handle other) const {
     refuse_unbuilt(other);
-    return nb::isinstance<NativeSet>(other) || instance(other.ptr(), scalars::set());
+    return nb::isinstance<NativeSet>(other) || scalars::is_set(other.ptr());
 }
 
 bool NativeSet::encode_keys(nb::handle iterable, std::vector<std::byte> &out, bool quiet) const {
