@@ -67,6 +67,9 @@ inline constexpr std::uint32_t field_container = detail::no_node;
 /// and what converting values needs from Python. Fixed once made.
 class Types {
 public:
+    /// Tells this object its Python object, which the collections it decodes keep alive; called once, after
+    /// the constructor.
+    void bind(PyObject *self) { self_ = self; }
     /// fields as Segment.create takes them; info maps a description's offset to its tuple; bytearrays
     /// lists (description offset, member) of each bytes member read back as bytearray, offset -1 for a
     /// field; reusable lists the fields whose values cannot be changed once read; converts lists the
@@ -278,6 +281,8 @@ private:
     std::string table_;
     std::vector<NodeInfo> nodes_;
     bool max_arrays_ = false;
+    /// The Python object of this Types, borrowed: it owns this object, so it outlives every call made on it.
+    PyObject *self_ = nullptr;
     /// NativeCollection, NativeSet and NativeDict, which encode_collection tests a list, set and dict value
     /// against.
     PyTypeObject *collection_type_ = nullptr;

@@ -105,8 +105,11 @@ void NativeDict::encode_item(nb::handle key, nb::handle value, std::vector<std::
 }
 
 void NativeDict::setitem(nb::handle key, nb::handle value) {
-    std::vector<std::byte> item;
-    encode_item(key, value, item);
+    // One item fits the buffer's stack bytes in most dicts, so the write takes no heap block.
+    SlotBuffer item(stride_);
+    std::memset(item.data(), 0, stride_);
+    encode_key(key, item.data(), false);
+    codec().encode_member(node_, 1, value.ptr(), item.data(), label_);
     {
         nb::ft_lock_guard guard(mutex_);
         // On a scan, lookup returns the last slot holding key, whose value ensure_checked later keeps.
