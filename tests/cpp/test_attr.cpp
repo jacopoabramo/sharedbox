@@ -292,6 +292,7 @@ TEST_CASE("attr_publish refuses a part the field lacks") {
     }
     SUBCASE("a field past the last") { refuses(everything(), 1, publish_value, everything_parts); }
     SUBCASE("bytes one byte short") { refuses(everything(), 0, publish_value, everything_parts - 1); }
+    SUBCASE("bytes one byte long") { refuses(everything(), 0, publish_value, everything_parts + 1); }
     SUBCASE("a field of another kind") {
         const std::string name = unique("attr-int");
         const field_spec fields[1] = {{0, 8, kind_int}};
@@ -303,6 +304,77 @@ TEST_CASE("attr_publish refuses a part the field lacks") {
         CHECK(box->version(0) == 0);
         static_cast<void>(unlink(name));
     }
+}
+
+TEST_CASE("attr_publish leaves the request part") {
+    const std::string name = unique("attr-publish-request");
+    handle box = make(name, everything());
+    REQUIRE(box.request_send(0, eight(41), patience).has_value());
+    std::vector<std::byte> before(box.field(0).capacity);
+    REQUIRE(box.read(0, before).has_value());
+
+    REQUIRE(box.attr_publish(0, 7, parts(0, 8, 9, 10), patience).has_value());
+    std::vector<std::byte> after(before.size());
+    REQUIRE(box.read(0, after).has_value());
+    const auto request_part = static_cast<std::ptrdiff_t>(before.size() - everything_parts);
+    CHECK(std::equal(before.begin(), before.begin() + request_part, after.begin()));
+    CHECK(!std::equal(before.begin() + request_part, before.end(), after.begin() + request_part));
+    static_cast<void>(unlink(name));
+}
+
+TEST_CASE("a request step refuses bytes of the wrong size and a field without a request part") {
+    std::array<std::byte, 8> eight_bytes{};
+    std::array<std::byte, 7> seven_bytes{};
+    const auto range = [](const auto &refused) { return !refused && refused.error().code == status::range; };
+    SUBCASE("bytes of the wrong size") {
+        const std::string name = unique("attr-step-size");
+        handle box = make(name, int_request());
+        const std::uint64_t seq = seq_of(box);
+        CHECK(range(box.request_send(0, seven_bytes, patience)));
+        CHECK(range(box.request_take(0, seven_bytes, patience)));
+        CHECK(seq_of(box) == seq);
+        REQUIRE(box.request_send(0, eight(1), patience).has_value());
+        REQUIRE(box.request_take(0, eight_bytes, patience).has_value());
+        CHECK(range(box.request_answer(0, 1, true, seven_bytes, patience)));
+        // The request is still unanswered, so a result of the right size is taken.
+        CHECK(box.request_answer(0, 1, true, eight(1), patience).has_value());
+        static_cast<void>(unlink(name));
+    }
+    SUBCASE("a field without a request part") {
+        const std::string name = unique("attr-step-none");
+        handle box = make(name, attr({{kind_int, 8}}, {}, 0));
+        const std::uint64_t seq = seq_of(box);
+        CHECK(range(box.request_send(0, {}, patience)));
+        CHECK(range(box.request_take(0, {}, patience)));
+        CHECK(range(box.request_answer(0, 1, false, {}, patience)));
+        CHECK(range(box.serve_claim(0, patience)));
+        CHECK(range(box.serve_release(0, patience)));
+        CHECK((seq_of(box) == seq && box.version(0) == 0));
+        static_cast<void>(unlink(name));
+    }
+}
+
+TEST_CASE("a release by a handle that is not the server leaves the server and its request") {
+    const std::string name = unique("attr-release-other");
+    handle box = make(name, int_request());
+    std::array<std::byte, 8> arguments{};
+    REQUIRE(box.serve_claim(0, patience).has_value());
+    REQUIRE(box.request_send(0, eight(1), patience).has_value());
+    REQUIRE(box.request_take(0, arguments, patience).has_value());
+    // The server's identity becomes another process's, as in the claim test above.
+    std::vector<std::byte> record(box.field(0).capacity);
+    REQUIRE(box.read(0, record).has_value());
+    const std::uint64_t other_start = detail::current_start() + 1;
+    std::memcpy(record.data() + server_start_at, &other_start, sizeof other_start);
+    const value forged[1] = {{0, record}};
+    REQUIRE(box.write(forged, patience).has_value());
+    const std::uint64_t seq = seq_of(box);
+
+    CHECK(box.serve_release(0, patience).has_value());
+    std::vector<std::byte> after(record.size());
+    REQUIRE(box.read(0, after).has_value());
+    CHECK((after == record && seq_of(box) == seq));
+    static_cast<void>(unlink(name));
 }
 
 TEST_CASE("attr_publish stamps a timestamp that is the timed mark") {
@@ -586,11 +658,27 @@ TEST_CASE("large attr copies run the wait hooks once around themselves") {
     CHECK(number_of(got) == 1);
 
     hooks_before = hooks_after = 0;
+    const std::int64_t before = detail::wall_ns();
     REQUIRE(box.attr_publish(0, publish_value, bytes, patience).has_value());
+    const std::int64_t after = detail::wall_ns();
     CHECK((hooks_before == 1 && hooks_after == 1));
     hooks_before = hooks_after = 0;
     REQUIRE(box.attr_read(0, got).has_value());
     CHECK((hooks_before == 1 && hooks_after == 1 && number_of(got) == 2));
+    // No timestamp was named, so the large publish stamps the time of the write over the one in bytes.
+    const std::int64_t stamp = number_of(std::span(got).subspan(stamp_at, 8));
+    CHECK((stamp >= before && stamp <= after));
+
+    // A large publish that cannot take the lock writes nothing.
+    const auto locked = other->lock(patience);
+    REQUIRE(locked.has_value());
+    const std::vector<std::byte> zeros(size);
+    const auto timed_out = box.attr_publish(0, publish_value, zeros, seconds(0.05));
+    other->unlock(*locked);
+    CHECK((!timed_out && timed_out.error().code == status::lock_timeout));
+    std::vector<std::byte> kept(size);
+    REQUIRE(box.attr_read(0, kept).has_value());
+    CHECK(kept == got);
     static_cast<void>(unlink(name));
 }
 
