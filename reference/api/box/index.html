@@ -8380,7 +8380,9 @@ task on the event loop running at this call. The handler handles
 one request at a time, and of the requests sent meanwhile only the
 newest is handled next. Its return value is the answer; an
 exception it raises is logged to the <code>sharedbox</code> logger and reaches
-the caller as <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;RequestError&lt;/span&gt;" href="../errors/#sharedbox.RequestError"><code>RequestError</code></a>. A
+the caller as <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;RequestError&lt;/span&gt;" href="../errors/#sharedbox.RequestError"><code>RequestError</code></a>;
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;RequestRefused&lt;/span&gt;" href="../errors/#sharedbox.RequestRefused"><code>RequestRefused</code></a> reaches the caller the
+same way and is not logged. A
 <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;Setting&lt;/span&gt;" href="./#sharedbox.Setting"><code>Setting</code></a>'s handler receives the value given to
 <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;set&lt;/span&gt;" href="./#sharedbox.Setting.set"><code>set</code></a>.</p>
 

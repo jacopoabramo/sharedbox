@@ -2768,6 +2768,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#sharedbox.RequestRefused" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-class"></code>&nbsp;RequestRefused
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#sharedbox.RequestSupersededError" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -3649,6 +3660,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#sharedbox.RequestRefused" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-class"></code>&nbsp;RequestRefused
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#sharedbox.RequestSupersededError" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -3957,6 +3979,11 @@
 <td><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;RequestError&lt;/span&gt;" href="./#sharedbox.RequestError"><code>RequestError</code></a></td>
 <td><code>Exception</code></td>
 <td>waiting on a request whose handler raised, whose server stopped while handling it, or whose answer four later answers replaced</td>
+</tr>
+<tr>
+<td><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;RequestRefused&lt;/span&gt;" href="./#sharedbox.RequestRefused"><code>RequestRefused</code></a></td>
+<td><code>Exception</code></td>
+<td>raised by a request handler to refuse a request, which fails for its caller and leaves no log record</td>
 </tr>
 <tr>
 <td><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;RequestSupersededError&lt;/span&gt;" href="./#sharedbox.RequestSupersededError"><code>RequestSupersededError</code></a></td>
@@ -4290,6 +4317,40 @@ the add would overwrite.</p>
 
 
         <p>The request failed: the handler raised, the server stopped, or four later answers overwrote its answer.</p>
+
+
+
+
+
+
+
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="sharedbox.RequestRefused" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-class"></code>            <span class="doc doc-object-name doc-class-name">RequestRefused</span>
+
+
+<a href="#sharedbox.RequestRefused" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents first">
+            <p class="doc doc-class-bases">
+              Bases: <code><a class="autorefs autorefs-external" href="https://docs.python.org/3/builtins/exceptions.html#Exception">Exception</a></code></p>
+
+
+
+        <p>Raised by a request handler to refuse a request without a log record.</p>
+<p>The caller gets <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;RequestError&lt;/span&gt;" href="./#sharedbox.RequestError"><code>RequestError</code></a> with this
+exception's type and message, as for any exception a handler raises;
+the serving process logs nothing for it.</p>
 
 
 

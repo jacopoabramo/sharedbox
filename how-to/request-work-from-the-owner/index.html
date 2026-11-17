@@ -3773,6 +3773,11 @@ message cut to 256 bytes:</p>
 </span><span id="__span-4-3"><a id="__codelineno-4-3" name="__codelineno-4-3" href="#__codelineno-4-3"></a><span class="k">except</span> <span class="n">RequestError</span> <span class="k">as</span> <span class="n">error</span><span class="p">:</span>
 </span><span id="__span-4-4"><a id="__codelineno-4-4" name="__codelineno-4-4" href="#__codelineno-4-4"></a>    <span class="nb">print</span><span class="p">(</span><span class="n">error</span><span class="p">)</span>  <span class="c1"># Camera.move: ValueError: 250.0 is out of range</span>
 </span></code></pre></div>
+<p>A handler that turns down a request as part of its normal work, such as a
+value outside the range it accepts, raises
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;RequestRefused&lt;/span&gt;" href="../../reference/api/errors/#sharedbox.RequestRefused"><code>RequestRefused</code></a> instead. The caller gets the
+same <code>RequestError</code>, but the serving process logs nothing, so its log keeps
+showing only the errors nobody expected.</p>
 <p>A caller waiting on a server whose process ends gets
 <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;ServerExitedError&lt;/span&gt;" href="../../reference/api/errors/#sharedbox.ServerExitedError"><code>ServerExitedError</code></a> within about a tenth of
 a second. A server that stops while it handles a request answers that
