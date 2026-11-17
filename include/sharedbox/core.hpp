@@ -704,8 +704,13 @@ inline std::uint64_t process_start(std::uint32_t pid) noexcept {
     // /proc mounted with hidepid hides processes of other users, which kill reports as EPERM. Any
     // other reason open can fail (EMFILE, ENFILE, ENOMEM, ...) means the process could not be
     // inspected, not that it is gone.
-    if (fd < 0)
-        return (denied || (open_errno != ENOENT && open_errno != ESRCH)) ? start_unknown : 0;
+    if (fd < 0) {
+        if (denied || (open_errno != ENOENT && open_errno != ESRCH))
+            return start_unknown;
+        // kill found the process and /proc has no entry for it: it is gone only if kill no longer finds
+        // it; otherwise this /proc does not show it, and its start time is unknown.
+        return kill(static_cast<pid_t>(pid), 0) != 0 && errno == ESRCH ? 0 : start_unknown;
+    }
     char text[1024];
     const ssize_t n = read(fd, text, sizeof text - 1);
     close(fd);
