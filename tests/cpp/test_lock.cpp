@@ -6,6 +6,8 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
+#include <chrono>
 #include <cstring>
 
 using sharedbox::handle;
@@ -106,6 +108,13 @@ TEST_CASE("a held lock times out") {
     std::array<std::byte, 8> buf{};
     CHECK(a->set_lock_timeout(seconds(0.05)).has_value());
     CHECK(a->read(0, buf).error().code == status::lock_timeout);
+    // A wait told to stop ends long before its timeout, as timed out.
+    std::atomic<bool> stop{true};
+    a->set_wait_cancel(&stop);
+    const auto started = std::chrono::steady_clock::now();
+    CHECK(a->write({&value, 1}, seconds(30.0)).error().code == status::lock_timeout);
+    CHECK(std::chrono::steady_clock::now() - started < std::chrono::seconds(5));
+    a->set_wait_cancel(nullptr);
     a->unlock(*locked);
     CHECK(a->read(0, buf).has_value());
     static_cast<void>(sharedbox::unlink(name));

@@ -270,6 +270,9 @@ public:
     [[nodiscard]] result<void> set_lock_timeout(seconds timeout) noexcept;
     // Called around a wait for another writer's lock: before the first pause and after the last.
     void set_wait_hooks(void *(*before)(), void (*after)(void *)) noexcept;
+    // Gives the waits for another writer's lock a flag to watch: once it is true, a wait ends within a
+    // pause, at most 1 ms, as if its time had run out. flag outlives the handle; nullptr watches nothing.
+    void set_wait_cancel(const std::atomic<bool> *flag) noexcept;
     // Copies the field's stored bytes, and no more, into buf, with the field's write count from the same
     // moment. If they do not fit, nothing is copied and len says how many bytes they need; a buf of the
     // field's capacity always fits.
@@ -486,6 +489,7 @@ struct state {
     double lock_timeout = default_lock_timeout;
     void *(*before_wait)() = nullptr;
     void (*after_wait)(void *) = nullptr;
+    const std::atomic<bool> *cancel_wait = nullptr;
     sbx_handle foreign{};
     waiter_table waiters;
 
@@ -861,7 +865,8 @@ template <bool Hooks = true, class F> SHAREDBOX_HOT bool retry(const state &s, d
         hook = s.before_wait != nullptr ? s.before_wait() : nullptr;
     backoff wait(timeout);
     bool done = false;
-    while (!wait.expired()) {
+    // The flag is read only here, after a failed attempt, so a call that meets no lock never loads it.
+    while (!wait.expired() && !(s.cancel_wait != nullptr && s.cancel_wait->load(std::memory_order_relaxed))) {
         wait.pause();
         if (attempt()) {
             done = true;
@@ -919,6 +924,8 @@ inline result<void> handle::set_lock_timeout(seconds timeout) noexcept {
     s_->lock_timeout = timeout.count();
     return {};
 }
+
+inline void handle::set_wait_cancel(const std::atomic<bool> *flag) noexcept { s_->cancel_wait = flag; }
 
 inline void handle::set_wait_hooks(void *(*before)(), void (*after)(void *)) noexcept {
     s_->before_wait = before;

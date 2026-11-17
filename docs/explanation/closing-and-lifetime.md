@@ -145,6 +145,12 @@ in the meantime.
 So each open box has a reader-writer lock that only guards its own
 lifetime.[^shared-mutex] Every operation holds it in shared mode;
 `close` takes it exclusively, so it waits until running operations finish.
+One of them could keep it waiting for a long time: a read or write that
+waits for another writer's lock, for as long as the class's `lock_timeout`.
+So `close` sets the box's `closed` flag before it asks for the lock, the
+wait loop in `sharedbox.hpp` reads that flag between two pauses, and the
+waiting call gives up within a millisecond and raises
+[`BoxClosedError`][sharedbox.BoxClosedError].
 
 A wait for the write lock (see [Reading and
 writing](reading-and-writing.md#the-write-lock-a-sequence-counter)), or for
