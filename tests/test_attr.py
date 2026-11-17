@@ -16,9 +16,10 @@ from multiprocessing.sharedctypes import Synchronized
 from multiprocessing.synchronize import Event as EventType
 from typing import Any, TypeVar
 
+import numpy as np
 import pytest
+from attr_boxes import CLOCK_SLACK_NS, Camera, Frames
 from crossproc import call_in_child, fork, serve_once, serving_in_child
-from test_attr_fields import CLOCK_SLACK_NS, Camera
 
 from sharedbox import (
     AlreadyServedError,
@@ -134,6 +135,22 @@ def test_set_sends_the_value_as_its_argument(names: Callable[[str], str]) -> Non
         box.exposure.serve(record)
         assert box.exposure.set(3.0).result(timeout=10) == 3.0
         assert seen == [3.0]
+
+
+def test_set_sends_an_array_with_its_shape(names: Callable[[str], str]) -> None:
+    """Pass an array given to set to the handler with its shape and elements."""
+    seen: list[np.ndarray] = []
+
+    def record(value: np.ndarray) -> np.ndarray:
+        seen.append(value.copy())
+        return value
+
+    image = np.arange(6, dtype=np.uint8).reshape(2, 3)
+    with Frames.create(names("array")) as box:
+        box.image.serve(record)
+        np.testing.assert_array_equal(box.image.set(image).result(timeout=10), image)
+    np.testing.assert_array_equal(seen[0], image)
+    assert seen[0].shape == (2, 3)
 
 
 @pytest.mark.parametrize(

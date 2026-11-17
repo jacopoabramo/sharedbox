@@ -13,8 +13,8 @@ from multiprocessing.synchronize import Event
 from typing import Any, cast
 
 import pytest
+from attr_boxes import Camera
 from os_names import os_name
-from test_attr_fields import Camera
 
 from sharedbox import SharedBox
 from sharedbox._layout import NativeField

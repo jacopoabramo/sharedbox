@@ -7,6 +7,7 @@ from typing import Annotated, Any, Optional, TypeVar
 import numpy as np
 import numpy.typing as npt
 import pytest
+from attr_boxes import CLOCK_SLACK_NS, Camera, Frames
 
 from sharedbox import (
     Attr,
@@ -27,7 +28,6 @@ from sharedbox._native import Types
 from sharedbox._types import CODES, Table, attr_spec
 
 T = TypeVar("T")
-CLOCK_SLACK_NS = 20_000_000
 VECTOR = Annotated[npt.NDArray[np.float64], Shape((4,))]
 
 
@@ -41,19 +41,8 @@ class Plain(SharedBox):
     count: int = 0
 
 
-class Camera(SharedBox):
-    temperature: Attr[float] = attr()
-    exposure: Setting[float] = attr()
-    move: Attr[float, [float, Annotated[str, Capacity(16)]]] = attr()
-    home: Attr[None] = attr()
-
-
 class Recipe(SharedBox):
     mix: Setting[Point] = attr(default=Point(1, 2))
-
-
-class Frames(SharedBox):
-    image: Setting[Annotated[np.ndarray, MaxShape((4, 4)), DType(np.uint8)]] = attr()
 
 
 class Megapixels(SharedBox):

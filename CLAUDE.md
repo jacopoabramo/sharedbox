@@ -70,6 +70,7 @@ sharedbox/
 |       `-- stream.{hpp,cpp}   Stream, Sender and Reader: the Python binding of a stream and its errors
 |-- tests/                     pytest; many tests spawn processes
 |   |-- crossproc.py           helpers that run a box in another process
+|   |-- attr_boxes.py          boxes with attribute fields that several test modules use
 |   |-- forged_types.py        builds segments with forged description tables
 |   |-- test_benchbox_contention.py  benchbox contention, a short run
 |   |-- test_benchbox_plot.py  benchbox plot; skipped without plotly and pyperf
