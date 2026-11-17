@@ -231,7 +231,9 @@ class Attr(Generic[T, P]):
         one request at a time, and of the requests sent meanwhile only the
         newest is handled next. Its return value is the answer; an
         exception it raises is logged to the `sharedbox` logger and reaches
-        the caller as [`RequestError`][sharedbox.RequestError]. A
+        the caller as [`RequestError`][sharedbox.RequestError];
+        [`RequestRefused`][sharedbox.RequestRefused] reaches the caller the
+        same way and is not logged. A
         [`Setting`][sharedbox.Setting]'s handler receives the value given to
         [`set`][sharedbox.Setting.set].
 

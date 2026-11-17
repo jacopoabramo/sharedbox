@@ -136,6 +136,12 @@ message cut to 256 bytes:
 --8<-- "docs/examples/request_work_from_the_owner.py:error"
 ```
 
+A handler that turns down a request as part of its normal work, such as a
+value outside the range it accepts, raises
+[`RequestRefused`][sharedbox.RequestRefused] instead. The caller gets the
+same `RequestError`, but the serving process logs nothing, so its log keeps
+showing only the errors nobody expected.
+
 A caller waiting on a server whose process ends gets
 [`ServerExitedError`][sharedbox.ServerExitedError] within about a tenth of
 a second. A server that stops while it handles a request answers that

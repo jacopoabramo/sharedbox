@@ -26,6 +26,7 @@ from sharedbox import (
     Attr,
     BoxClosedError,
     RequestError,
+    RequestRefused,
     RequestServer,
     RequestSupersededError,
     ServerExitedError,
@@ -342,6 +343,30 @@ def test_a_handler_exception_reaches_the_caller(
         if r.name == "sharedbox" and "Traceback" in r.getMessage()
     ]
     assert len(logged) == 2
+
+
+def test_a_refused_request_fails_without_a_log_record(
+    names: Callable[[str], str], caplog: pytest.LogCaptureFixture
+) -> None:
+    """Give the caller a RequestError for a RequestRefused of a sync or an async handler and log nothing."""
+
+    def refuse(position: float) -> float:
+        raise RequestRefused(f"{position} is past the end")
+
+    async def refuse_later(position: float) -> float:
+        raise RequestRefused(f"{position} is past the end")
+
+    refused = r"Scanner\.move: RequestRefused: 1\.0 is past the end$"
+    with caplog.at_level(logging.DEBUG):
+        with Scanner.create(names("refused")) as box:
+            box.move.serve(refuse)
+            with pytest.raises(RequestError, match=refused):
+                box.move(1.0).result(timeout=10)
+        with running_loop() as loop, Scanner.create(names("refused-async")) as box:
+            on_loop(loop, serve_on(box.move, refuse_later))
+            with pytest.raises(RequestError, match=refused):
+                box.move(1.0).result(timeout=10)
+    assert [r for r in caplog.records if r.name == "sharedbox"] == []
 
 
 def test_a_request_sent_before_serve_is_answered(names: Callable[[str], str]) -> None:
