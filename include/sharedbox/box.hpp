@@ -750,8 +750,10 @@ inline result<handle> create_impl(std::string_view name, std::span<const field_s
         store(*s, v, now);
     if (area_size != 0) {
         auto *area = static_cast<std::byte *>(base) + area_at;
-        if (const status rc = init_metadata(area, metadata.versions, ring); rc != status::ok)
+        if (const status rc = init_metadata(area, metadata.versions, ring); rc != status::ok) {
+            static_cast<void>(unlink(name));
             return unexpected(rc);
+        }
         s->metadata = area;
         s->metadata_first = copy_metadata_line(area);
         // The generation is still 0 here, and nothing is shared before magic is stored.
@@ -759,8 +761,10 @@ inline result<handle> create_impl(std::string_view name, std::span<const field_s
             const result<std::uint64_t> added = add_metadata(
                 area, s->metadata_first, atomic(h.metadata_head), metadata.initial,
                 atomic(h.seq).load(std::memory_order_relaxed) >> 1, [](std::uint64_t) { return true; });
-            if (!added)
+            if (!added) {
+                static_cast<void>(unlink(name));
                 return unexpected(added.error());
+            }
         }
     }
     handle made(s.release());
