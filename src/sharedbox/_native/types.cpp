@@ -470,6 +470,36 @@ void Types::prepare(std::uint32_t node, std::uint8_t kind, nb::object info) {
 
 namespace {
 
+// Releases the references of held. The entries start as nullptr, so a member that fails to be made
+// releases the ones before it.
+struct Release {
+    std::span<PyObject *> held;
+    ~Release() {
+        for (PyObject *p : held)
+            Py_XDECREF(p);
+    }
+};
+
+// The record or tuple of n built from members, one new reference each, which the tuple forms take.
+nb::object make_record(const NodeInfo &n, std::span<PyObject *> members) {
+    // Without keywords, a class that has no vectorcall of its own gets a tuple from CPython, which its
+    // __init__ unpacks without a dict.
+    if (n.form == 0 && n.by_position)
+        return nb::steal(owned(PyObject_Vectorcall(n.cls, members.data(), members.size(), nullptr)));
+    if (n.form == 0) {
+        nb::dict kwargs;
+        for (std::size_t i = 0; i < members.size(); ++i)
+            kwargs[nb::handle(n.keywords[i])] = nb::handle(members[i]);
+        return nb::steal(owned(PyObject_Call(n.cls, nb::tuple().ptr(), kwargs.ptr())));
+    }
+    nb::object items = nb::steal(owned(PyTuple_New(static_cast<Py_ssize_t>(members.size()))));
+    for (std::size_t i = 0; i < members.size(); ++i)
+        store_new_item(items.ptr(), false, static_cast<std::uint32_t>(i), std::exchange(members[i], nullptr));
+    if (n.form == 2)
+        return items;
+    return nb::steal(owned(PyObject_CallObject(n.cls, items.ptr())));
+}
+
 std::uint32_t request_first_argument(const detail::type_node &node) { return node.count > node.capacity ? 1 : 0; }
 
 } // namespace
@@ -1241,39 +1271,11 @@ nb::object Types::decode_stored(const detail::type_ref &t, const std::byte *data
             }
             return out;
         }
-        if (n.form == 0 && n.by_position) {
-            // The entries start as nullptr and the guard releases every one, so a member that fails to
-            // decode releases the ones before it. Without keywords, a class that has no vectorcall of its
-            // own gets a tuple from CPython, which its __init__ unpacks without a dict.
-            Scratch<PyObject *, 16> args(node.count);
-            struct Release {
-                std::span<PyObject *> held;
-                ~Release() {
-                    for (PyObject *p : held)
-                        Py_XDECREF(p);
-                }
-            } release{args.span()};
-            for (std::uint32_t i = 0; i < node.count; ++i)
-                args[i] = element(member(i).type, data + member(i).offset, i);
-            PyObject *made = PyObject_Vectorcall(n.cls, args.span().data(), node.count, nullptr);
-            return nb::steal(owned(made));
-        }
-        if (n.form == 0) {
-            nb::dict kwargs;
-            for (std::uint32_t i = 0; i < node.count; ++i)
-                kwargs[nb::handle(n.keywords[i])] = nb::steal(element(member(i).type, data + member(i).offset, i));
-            PyObject *made = PyObject_Call(n.cls, nb::tuple().ptr(), kwargs.ptr());
-            return nb::steal(owned(made));
-        }
-        nb::object items = nb::steal(PyTuple_New(node.count));
-        if (!items.is_valid())
-            throw nb::python_error();
+        Scratch<PyObject *, 16> members(node.count);
+        const Release release{members.span()};
         for (std::uint32_t i = 0; i < node.count; ++i)
-            store_new_item(items.ptr(), false, i, element(member(i).type, data + member(i).offset, i));
-        if (n.form == 2)
-            return items;
-        PyObject *made = PyObject_CallObject(n.cls, items.ptr());
-        return nb::steal(owned(made));
+            members[i] = element(member(i).type, data + member(i).offset, i);
+        return make_record(n, members.span());
     }
     case kind_timed: {
         const detail::type_member &inner = tree_.member(node.members);
@@ -1675,9 +1677,8 @@ nb::object Types::rebuild(const detail::type_ref &t, PyObject *value, std::byte 
     if (n.form != 0 && PyTuple_Size(value) != node.count)
         raise(PyExc_ValueError, where.name + " holds a tuple of " + std::to_string(node.count) +
                                     " items; the value has " + std::to_string(PyTuple_Size(value)));
-    nb::object items = nb::steal(PyTuple_New(node.count));
-    if (!items.is_valid())
-        throw nb::python_error();
+    Scratch<PyObject *, 16> members(node.count);
+    const Release release{members.span()};
     for (std::uint32_t i = 0; i < node.count; ++i) {
         nb::object v = n.form == 0 ? nb::steal(PyObject_GetAttr(value, n.attrs[i]))
                                    : nb::borrow(PyTuple_GetItem(value, static_cast<Py_ssize_t>(i)));
@@ -1686,19 +1687,9 @@ nb::object Types::rebuild(const detail::type_ref &t, PyObject *value, std::byte 
         const detail::type_member &m = member(i);
         if (holds_array(m.type))
             v = rebuild(m.type, v.ptr(), data + m.offset, owner, where);
-        PyTuple_SetItem(items.ptr(), static_cast<Py_ssize_t>(i), v.release().ptr());
+        members[i] = v.release().ptr();
     }
-    if (n.form == 2)
-        return items;
-    if (n.form == 1) {
-        PyObject *made = PyObject_CallObject(n.cls, items.ptr());
-        return nb::steal(owned(made));
-    }
-    nb::dict kwargs;
-    for (std::uint32_t i = 0; i < node.count; ++i)
-        kwargs[nb::handle(n.keywords[i])] = nb::borrow(PyTuple_GetItem(items.ptr(), static_cast<Py_ssize_t>(i)));
-    PyObject *made = PyObject_Call(n.cls, nb::tuple().ptr(), kwargs.ptr());
-    return nb::steal(owned(made));
+    return make_record(n, members.span());
 }
 
 bool Types::accepts(const detail::type_ref &t, PyObject *value) const {
