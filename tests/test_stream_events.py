@@ -384,7 +384,7 @@ def test_psygnal_still_calls_the_slot_hooks() -> None:
     seen: list[tuple[int, bool]] = []
 
     class Probe(CountedSignal):
-        def _changed(self) -> None:
+        def _changed(self, may_start: bool = True) -> None:
             owned = self._lock._is_owned()  # type: ignore[attr-defined]
             seen.append((len(self), owned))
 

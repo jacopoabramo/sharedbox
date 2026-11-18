@@ -1354,12 +1354,12 @@ class CountedSignal(SignalInstance):
 
     def _remove_slot(self, slot: Any) -> None:
         super()._remove_slot(slot)
-        self._changed()
+        self._changed(may_start=False)
 
-    def _changed(self) -> None:
+    def _changed(self, may_start: bool = True) -> None:
         group = self.instance
         if isinstance(group, ReceiveEvents):
-            group._sharedbox_changed()
+            group._sharedbox_changed(may_start)
 
 
 class ReceiveEvents(SignalGroup):
@@ -1387,10 +1387,10 @@ class ReceiveEvents(SignalGroup):
         self._reader = None if reader is None else weakref.ref(reader)
         super().__init__()
 
-    def _sharedbox_changed(self) -> None:
+    def _sharedbox_changed(self, may_start: bool = True) -> None:
         reader = None if self._reader is None else self._reader()
         if reader is not None:
-            reader._reconcile()
+            reader._reconcile(may_start)
         elif self._reader is not None and len(self.received) > 0:
             # stream.reader().events.received.connect(f) frees the reader before connect runs.
             logger.warning(
@@ -1698,18 +1698,23 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T, M]):
                 self._events = ReceiveEvents(self)
             return self._events
 
-    def _reconcile(self) -> None:
+    def _reconcile(self, may_start: bool = True) -> None:
         """Start or stop delivery to match the `received` callbacks, until the two agree.
 
         Connects and disconnects can run on several threads, and psygnal calls
         this without its lock when a weakly referenced callback is collected,
         so the stop path takes no `End._lock` and the loop rechecks after
-        acting.
+        acting. A collection can run on a thread that holds `End._lock`, so
+        the removal of a callback passes `may_start=False` and never starts
+        delivery: the delivery it stopped calls this again as it ends, on the
+        background thread.
         """
         events = self._events
         assert events is not None
         while (wanted := len(events.received) > 0) != self._delivering:
             if wanted:
+                if not may_start:
+                    return
                 self._start_delivery()
             else:
                 self._generation += 1
@@ -1727,7 +1732,7 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T, M]):
             generation = self._generation
             self._delivering = True
             try:
-                self._submit_locked(lambda future: self._deliver(generation))
+                self._submit_locked(lambda future: self._run_delivery(generation))
             except StreamClosedError:
                 self._delivering = False
 
@@ -1774,7 +1779,12 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T, M]):
     def _stopped(self, generation: int) -> bool:
         return not self._delivering or self._generation != generation
 
-    def _deliver(self, generation: int) -> None:
+    def _run_delivery(self, generation: int) -> None:
+        if self._deliver(generation):
+            self._reconcile()
+
+    def _deliver(self, generation: int) -> bool:
+        """Emit the items until delivery stops or cannot go on; return whether it was stopped."""
         events = self._events
         assert events is not None
         while not self._stopped(generation):
@@ -1782,29 +1792,31 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T, M]):
             try:
                 item = self._receive([], None, delivering=generation)
             except _Interrupted:
-                return
+                return True
             except EndOfStream:
                 with events.received._lock:
-                    if not self._stopped(generation):
-                        self._emit(events.ended)
-                return
+                    if self._stopped(generation):
+                        return True
+                    self._emit(events.ended)
+                return False
             except StreamClosedError:
-                return
+                return False
             except ReaderReleased as released:
                 with events.received._lock:
                     if self._stopped(generation):
                         self._carry.appendleft(released)
-                        return
+                        return True
                     self._emit(events.released, released.missed)
                 continue
             except Exception:
                 logger.exception(
                     "delivery of stream %r stopped on an error", self._stream.name
                 )
-                if not self._stopped(generation):
-                    self._generation += 1
-                    self._delivering = False
-                return
+                if self._stopped(generation):
+                    return True
+                self._generation += 1
+                self._delivering = False
+                return False
             position = self._position
             # SignalInstance._lock is a private psygnal name: disconnect holds it while it
             # stops delivery, so an item taken as delivery stops is either emitted to the
@@ -1813,8 +1825,9 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T, M]):
                 if self._stopped(generation):
                     self._carry.appendleft((item, position))
                     self._position = before
-                    return
+                    return True
                 self._emit(events.received, item, position)
+        return True
 
     def _emit(self, signal: SignalInstance, *args: Any) -> None:
         try:
