@@ -445,6 +445,7 @@ public:
 
 private:
     template <bool Hooks> result<std::uint64_t> lock_with(seconds lock_timeout);
+    template <bool Large> result<void> write_values(std::span<const value> values, seconds lock_timeout);
     template <bool Hooks>
     result<std::uint64_t> write_with_document(std::span<const value> values, std::span<const std::byte> doc,
                                               seconds lock_timeout);
@@ -1208,22 +1209,7 @@ inline result<std::uint64_t> handle::read_record_large(std::span<std::byte> buf)
 }
 
 inline result<void> handle::write_large(std::span<const value> values, seconds lock_timeout) {
-    detail::state &s = *s_;
-    if (!detail::values_ok(s, values))
-        return unexpected(status::range);
-    const detail::hooks_around hooks(s);
-    const result<std::uint64_t> locked = lock_with<false>(lock_timeout);
-    if (!locked)
-        return unexpected(locked.error());
-    detail::write_lock held(*this, *locked);
-    std::int64_t now = 0;
-    for (const value &v : values) {
-        detail::store(s, v, now);
-        auto count = detail::atomic(s.counts[v.field]);
-        count.store(count.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
-    }
-    held.commit();
-    return {};
+    return write_values<true>(values, lock_timeout);
 }
 
 inline result<std::uint64_t> handle::write_large(std::span<const value> values, std::span<const std::byte> doc,
@@ -1335,23 +1321,39 @@ inline void handle::end_record_write(const record_write &w, std::span<const std:
 
 inline void handle::abort_record_write(const record_write &w) noexcept { unlock(w.locked); }
 
-SHAREDBOX_HOT result<void> handle::write(std::span<const value> values, seconds lock_timeout) {
+namespace detail {
+
+// Stores each value and counts one write of its field. Only the lock holder changes a count, so a plain
+// store of the sum is enough.
+SHAREDBOX_HOT void store_counted(const state &s, std::span<const value> values) noexcept {
+    std::int64_t now = 0;
+    for (const value &v : values) {
+        store(s, v, now);
+        auto count = atomic(s.counts[v.field]);
+        count.store(count.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
+    }
+}
+
+} // namespace detail
+
+// Large runs the wait hooks once around the lock wait and the copy.
+template <bool Large>
+SHAREDBOX_HOT result<void> handle::write_values(std::span<const value> values, seconds lock_timeout) {
     detail::state &s = *s_;
     if (!detail::values_ok(s, values))
         return unexpected(status::range);
-    const result<std::uint64_t> locked = lock(lock_timeout);
+    const std::conditional_t<Large, detail::hooks_around, detail::no_hooks> hooks(s);
+    const result<std::uint64_t> locked = lock_with<!Large>(lock_timeout);
     if (!locked)
         return unexpected(locked.error());
     detail::write_lock held(*this, *locked);
-    std::int64_t now = 0;
-    for (const value &v : values) {
-        detail::store(s, v, now);
-        // Only the lock holder changes a count, so a plain store of the sum is enough.
-        auto count = detail::atomic(s.counts[v.field]);
-        count.store(count.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
-    }
+    detail::store_counted(s, values);
     held.commit();
     return {};
+}
+
+SHAREDBOX_HOT result<void> handle::write(std::span<const value> values, seconds lock_timeout) {
+    return write_values<false>(values, lock_timeout);
 }
 
 inline std::uint64_t handle::metadata_head() const noexcept {
@@ -1394,12 +1396,7 @@ result<std::uint64_t> handle::write_with_document(std::span<const value> values,
         held.unchanged();
         return unexpected(added.error());
     }
-    std::int64_t now = 0;
-    for (const value &v : values) {
-        detail::store(s, v, now);
-        auto count = detail::atomic(s.counts[v.field]);
-        count.store(count.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
-    }
+    detail::store_counted(s, values);
     held.commit();
     return *added;
 }
