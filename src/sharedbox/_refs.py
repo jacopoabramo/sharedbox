@@ -29,14 +29,27 @@ def register(cls: type[SharedBox]) -> None:
     classes.append(weakref.ref(cls, classes.remove))
 
 
-def box_class(schema_hash: int) -> type[SharedBox] | None:
-    """Return the first class defined with `schema_hash` that is still alive, or None if there is none."""
+def box_class(
+    schema_hash: int, target: type[SharedBox] | None = None
+) -> type[SharedBox] | None:
+    """Return the class that reads a box of `schema_hash`, or None if no class alive has that hash.
+
+    `target` is the class a reference field is annotated with. It reads the
+    box when the hash is its own. For another hash, that of a subclass, or
+    with no `target`, the class defined last reads it, a subclass of
+    `target` before any other.
+    """
+    if target is not None and target.__layout__.schema_hash == schema_hash:
+        return target
     # A copy, since a class freed during the loop removes its entry from the list.
-    for ref in tuple(CLASSES.get(schema_hash, ())):
-        cls = ref()
-        if cls is not None:
-            return cls
-    return None
+    alive = [
+        cls
+        for ref in reversed(tuple(CLASSES.get(schema_hash, ())))
+        if (cls := ref()) is not None
+    ]
+    if target is not None:
+        alive.sort(key=lambda cls: not issubclass(cls, target))
+    return alive[0] if alive else None
 
 
 class BrokenReferenceError(LookupError):
@@ -72,7 +85,7 @@ class BoxRef:
 
     @property
     def box_class(self) -> type[SharedBox] | None:
-        """The class defined in this process with `schema_hash`, or None if there is none."""
+        """The class defined last in this process with `schema_hash`, or None if there is none."""
         return box_class(self.schema_hash)
 
 
@@ -137,7 +150,7 @@ def attach_reference(
     where = f"{spec.label} refers to box {name!r}, which"
     if not valid_name(name):
         raise BrokenReferenceError(f"{where} is not a valid box name")
-    cls = box_class(schema_hash)
+    cls = box_class(schema_hash, spec.target)
     if cls is None:
         raise UnknownBoxClassError(
             f"{spec.label} refers to box {name!r}, whose class (schema hash "

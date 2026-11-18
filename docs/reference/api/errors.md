@@ -15,7 +15,7 @@ icon: lucide/code
 | [`RequestSupersededError`][sharedbox.RequestSupersededError] | `RequestError` | waiting on a request that a later request replaced before the server took it |
 | [`ServerExitedError`][sharedbox.ServerExitedError] | `RequestError` | waiting on a request whose server's process ended |
 | [`AlreadyServedError`][sharedbox.AlreadyServedError] | `RuntimeError` | serving an [attribute](../../explanation/glossary.md#attribute) that a live process serves already, this one included |
-| [`BoxClosedError`][sharedbox.BoxClosedError] | `ValueError` | using a box after `close()` |
+| [`BoxClosedError`][sharedbox.BoxClosedError] | `ValueError` | using a box after `close()`, or waiting for its lock while another thread closes it |
 | [`LockTimeoutError`][sharedbox.LockTimeoutError] | `TimeoutError` | a read or write waits for a write in progress for longer than `lock_timeout` |
 | [`BrokenReferenceError`][sharedbox.BrokenReferenceError] | `LookupError` | reading a [reference field](../../explanation/glossary.md#reference-field), or `snapshot(follow=True)`, when the box it refers to was removed or created again since it was assigned |
 | [`UnknownBoxClassError`][sharedbox.UnknownBoxClassError] | `TypeError` | reading a reference field, or `snapshot(follow=True)`, when no class this process has defined has the stored box's [schema hash](../../explanation/glossary.md#schema-hash) |

@@ -1597,8 +1597,9 @@ result<segment_state> segment_status(std::string_view name, seconds wait = secon
 ```
 
 Every function returning `result` is `[[nodiscard]]`. `handle` also has
-`lock`, `unlock` and `set_wait_hooks`, which the tests and the Python
-extension use.
+`lock`, `unlock`, `set_wait_hooks` and `set_wait_cancel`, which the tests
+and the Python extension use. `set_wait_cancel` takes a flag that ends
+every wait for another writer's lock, as timed out, once it is true.
 
 The header also declares these names:
 

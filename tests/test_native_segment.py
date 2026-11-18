@@ -688,13 +688,10 @@ def test_a_blocked_read_lets_other_threads_run(unique_name: str) -> None:
     segment.close()
 
 
-def test_close_waits_for_a_read_blocked_on_the_lock(unique_name: str) -> None:
-    # The blocked read has released the GIL and takes it back before it returns, so
-    # close() must not hold the GIL while it waits for that read. If this test hangs,
-    """Check that close waits for a read blocked on the lock, and reads arriving meanwhile raise BoxClosedError."""
-    # it does.
+def test_close_ends_a_read_blocked_on_the_lock(unique_name: str) -> None:
+    """End a read waiting for the lock with BoxClosedError when its box closes, long before its lock timeout."""
     owner = create(unique_name)
-    segment = attach(unique_name, timeout=0.5)
+    segment = attach(unique_name, timeout=30.0)
     owner._hold_write_lock()
     errors: list[BaseException] = []
 
@@ -707,18 +704,16 @@ def test_close_waits_for_a_read_blocked_on_the_lock(unique_name: str) -> None:
     reader = threading.Thread(target=read, daemon=True)
     reader.start()
     time.sleep(0.1)
+    # The blocked read has released the GIL and takes it back before it returns, so close() must not
+    # hold the GIL while it waits for that read; the joins below time out if it does.
     closer = threading.Thread(target=segment.close, daemon=True)
     closer.start()
-    while not segment.closed:
-        time.sleep(0.001)
-    # Lets the closer queue on the lock, so this read arrives while close() is pending.
-    time.sleep(0.05)
-    with pytest.raises(BoxClosedError):
-        segment._read(0)
     closer.join(10)
     reader.join(10)
     assert not closer.is_alive() and not reader.is_alive()
-    assert [type(error) for error in errors] == [LockTimeoutError]
+    assert [type(error) for error in errors] == [BoxClosedError]
+    with pytest.raises(BoxClosedError):
+        segment._read(0)
     owner.force_unlock()
     owner.close()
 

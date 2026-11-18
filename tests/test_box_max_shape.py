@@ -226,6 +226,15 @@ def test_max_shape_is_refused_in_a_box_where_a_stream_refuses_it(define: Any) ->
         define()
 
 
+@pytest.mark.parametrize("shape", [(5, 3), (12,), (1, 1, 1)])
+def test_a_default_array_that_does_not_fit_is_refused(shape: tuple[int, ...]) -> None:
+    """Raise ValueError at class definition for a default beyond the maximum or of other dimensions."""
+    with pytest.raises(ValueError, match="at most MaxShape"):
+
+        class Oversized(SharedBox):
+            image: Image = np.zeros(shape, np.uint32)
+
+
 @pytest.mark.parametrize("shape", [(1, 3), (0, 3)])
 def test_a_default_array_of_a_smaller_shape_is_accepted(
     unique_name: str, shape: tuple[int, ...]

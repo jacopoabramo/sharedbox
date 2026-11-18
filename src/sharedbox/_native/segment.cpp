@@ -275,9 +275,15 @@ struct Segment::Impl {
         record_size = box.record_size();
         static_cast<void>(box.set_lock_timeout(seconds(lock_timeout)));
         box.set_wait_hooks(before_wait, after_wait);
+        // close() sets closed before it waits for the calls inside the box, so a call waiting for a
+        // lock ends at once and close() does not wait out its lock timeout.
+        box.set_wait_cancel(&closed);
     }
 
     [[noreturn]] void fail(const error &e) const {
+        // A wait that close() ended reports a timeout; the box is closed, which is what the caller is told.
+        if (e.code == status::lock_timeout && closed.load())
+            throw SegmentClosed("box '" + name + "' is closed");
         if (e.code == status::lock_timeout)
             throw LockTimeout("box '" + name + "' is locked by pid " + std::to_string(box.writer_pid()) +
                               "; call force_unlock() if that process is gone");
@@ -322,6 +328,7 @@ struct Segment::Impl {
             writer = std::make_shared<handle>(check(box.duplicate()));
             // duplicate() copies the lock timeout but not the wait hooks.
             writer->set_wait_hooks(before_wait, after_wait);
+            writer->set_wait_cancel(&closed);
         }
         return writer;
     }

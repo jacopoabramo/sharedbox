@@ -171,5 +171,8 @@ uv run pytest benchmarks --codspeed
 
 CI runs them on CodSpeed for every push and pull request to `main`. The
 `Ops` and `Streams` workflows time `benchbox ops` and `benchbox stream` on
-the base branch and on the pull request, for pull requests that touch the
-native code or the stream.
+the base branch and on the pull request: `Streams` for pull requests that
+touch the stream, and `Ops` for pull requests that carry the `ops` label,
+because it takes about half an hour. Add the label when a change touches
+the C++ read or write path of a box, since CodSpeed runs on Linux and does
+not show what MSVC makes of it.

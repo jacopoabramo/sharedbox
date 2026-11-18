@@ -3,12 +3,7 @@ name: Ops
 on:
   pull_request:
     branches: [ main ]
-    paths:
-      - include/sharedbox/**
-      - src/sharedbox/_native/**
-      - src/sharedbox/benchmarks/ops.py
-      - .github/workflows/ops.yaml
-      - CMakeLists.txt
+    types: [ labeled, synchronize ]
   workflow_dispatch:
 
 permissions:
@@ -17,6 +12,11 @@ permissions:
 jobs:
   ops:
     name: Reads and writes against the base branch on Windows
+    # Another label added to a pull request that already carries ops starts no second run.
+    if: >-
+      github.event_name == 'workflow_dispatch'
+      || (contains(github.event.pull_request.labels.*.name, 'ops')
+          && (github.event.action != 'labeled' || github.event.label.name == 'ops'))
     runs-on: windows-latest
     timeout-minutes: 60
     steps:

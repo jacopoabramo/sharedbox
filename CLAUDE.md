@@ -129,7 +129,7 @@ sharedbox/
 |-- .github/workflows/contention.yaml  benchbox contention on Linux and Windows, for pull requests
 |                              that touch the native code, and by hand
 |-- .github/workflows/ops.yaml  benchbox ops int and record rows, base branch against the pull
-|                              request on Windows cp311, for pull requests that touch the native code
+|                              request on Windows cp311, for pull requests labelled ops, and by hand
 |-- .github/workflows/streams.yaml  benchbox stream, base branch against the pull request on Linux and
 |                              Windows, for pull requests that touch the stream
 |-- changelog.d/               towncrier entry files of the next release, and template.md, which shapes a release section
@@ -306,12 +306,16 @@ AddressSanitizer and UndefinedBehaviorSanitizer, once more on Linux with
 ThreadSanitizer (`tests/cpp/tsan.supp` lists the sequence lock's reads,
 which race by design), then the C consumer with that variable set.
 
-Performance check for changes to the read or write path: the `Ops`
-workflow (`.github/workflows/ops.yaml`) runs on pull requests that touch
-the native code, and by hand. On Windows cp311 it times the `int` and
-`record` rows of `benchbox ops --fast` three times on the base branch and
-three times on the pull request, alternating, and writes the medians and
-their ratio to the job summary. Read the ratios of `read int/SharedBox`,
+Performance check for changes to the read or write path: CodSpeed
+(`.github/workflows/codspeed.yml`) counts instructions on Linux for every
+pull request, and its check fails when a benchmark slows by more than the
+threshold set for the project on CodSpeed. It does not see what MSVC does,
+so a pull request that changes the C++ read or write path of a box also
+gets the `ops` label, which runs the `Ops` workflow
+(`.github/workflows/ops.yaml`); the workflow also runs by hand. On
+Windows cp311 it times the `int` and `record` rows of `benchbox ops --fast`
+three times on the base branch and three times on the pull request,
+alternating, and writes the medians and their ratio to the job summary. Read the ratios of `read int/SharedBox`,
 `write int/SharedBox` and `write+read record/SharedBox`; the last decodes
 the record on every read. The `Streams` workflow
 (`.github/workflows/streams.yaml`) does the same for `benchbox stream` on
