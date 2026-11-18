@@ -918,6 +918,72 @@ private:
     void *hook_;
 };
 
+struct no_hooks {
+    explicit no_hooks(const state &) noexcept {}
+};
+
+// One pass of a reader under the sequence lock: copy runs only while seq is even and may give the pass up by
+// returning false, and the pass counts only if seq is the same afterwards.
+template <class Copy> SHAREDBOX_HOT bool seq_pass(std::atomic_ref<std::uint64_t> seq, Copy &copy) noexcept {
+    const std::uint64_t before = seq.load(std::memory_order_acquire);
+    if ((before & 1u) != 0 || !copy(seq, before))
+        return false;
+    std::atomic_thread_fence(std::memory_order_acquire);
+    return seq.load(std::memory_order_acquire) == before;
+}
+
+// Copies n bytes for a pass that began at before: at once, or with Large in chunks that stop when seq moves.
+template <bool Large>
+SHAREDBOX_HOT bool seq_copy(std::byte *dst, const std::byte *src, std::size_t n,
+                            std::atomic_ref<std::uint64_t> seq, std::uint64_t before) noexcept {
+    if constexpr (Large) {
+        return copy_checked(dst, src, n, seq, before);
+    } else {
+        std::memcpy(dst, src, n);
+        return true;
+    }
+}
+
+// Passes of copy until one counts; false once the lock timeout has passed. Large runs the wait hooks once
+// around every pass.
+template <bool Large, class Copy> SHAREDBOX_HOT bool seq_read(const state &s, Copy &&copy) {
+    const std::conditional_t<Large, hooks_around, no_hooks> hooks(s);
+    auto seq = atomic(s.hdr->seq);
+    return retry<!Large>(s, s.lock_timeout, [&]() noexcept { return seq_pass(seq, copy); });
+}
+
+template <bool Large>
+SHAREDBOX_HOT result<read_value> read_field(const state &s, std::uint16_t field, std::span<std::byte> buf) {
+    if (field >= s.field_count)
+        return unexpected(status::range);
+    const field_spec &f = s.fields[field];
+    read_value out{0, 0};
+    const bool done = seq_read<Large>(s, [&](std::atomic_ref<std::uint64_t> seq, std::uint64_t before) noexcept {
+        const std::span<const std::byte> src = payload(f, s.record);
+        if (!src.empty() && src.size() <= buf.size() &&
+            !seq_copy<Large>(buf.data(), src.data(), src.size(), seq, before))
+            return false;
+        out = {src.size(), atomic(s.counts[field]).load(std::memory_order_relaxed)};
+        return true;
+    });
+    if (!done)
+        return unexpected(status::lock_timeout);
+    return out;
+}
+
+template <bool Large> result<std::uint64_t> read_whole(const state &s, std::span<std::byte> buf) {
+    if (buf.size() < s.record_size)
+        return unexpected(status::range);
+    std::uint64_t generation = 0;
+    const bool done = seq_read<Large>(s, [&](std::atomic_ref<std::uint64_t> seq, std::uint64_t before) noexcept {
+        generation = before >> 1;
+        return seq_copy<Large>(buf.data(), s.record, s.record_size, seq, before);
+    });
+    if (!done)
+        return unexpected(status::lock_timeout);
+    return generation;
+}
+
 } // namespace detail
 
 inline result<void> handle::set_lock_timeout(seconds timeout) noexcept {
@@ -935,58 +1001,14 @@ inline void handle::set_wait_hooks(void *(*before)(), void (*after)(void *)) noe
 }
 
 SHAREDBOX_HOT result<read_value> handle::read(std::uint16_t field, std::span<std::byte> buf) const {
-    const detail::state &s = *s_;
-    if (field >= s.field_count)
-        return unexpected(status::range);
-    const field_spec &f = s.fields[field];
-    auto seq = detail::atomic(s.hdr->seq);
-    read_value out{0, 0};
-    const bool done = detail::retry(s, s.lock_timeout, [&]() noexcept {
-        const std::uint64_t before = seq.load(std::memory_order_acquire);
-        if ((before & 1u) != 0)
-            return false;
-        const std::span<const std::byte> src = detail::payload(f, s.record);
-        if (!src.empty() && src.size() <= buf.size())
-            std::memcpy(buf.data(), src.data(), src.size());
-        const std::uint64_t version = detail::atomic(s.counts[field]).load(std::memory_order_relaxed);
-        std::atomic_thread_fence(std::memory_order_acquire);
-        if (seq.load(std::memory_order_acquire) != before)
-            return false;
-        out = {src.size(), version};
-        return true;
-    });
-    if (!done)
-        return unexpected(status::lock_timeout);
-    return out;
+    return detail::read_field<false>(*s_, field, buf);
 }
 
 inline result<std::uint64_t> handle::read_record(std::span<std::byte> buf) const {
-    const detail::state &s = *s_;
-    if (buf.size() < s.record_size)
-        return unexpected(status::range);
-    auto seq = detail::atomic(s.hdr->seq);
-    std::uint64_t generation = 0;
-    const bool done = detail::retry(s, s.lock_timeout, [&]() noexcept {
-        const std::uint64_t before = seq.load(std::memory_order_acquire);
-        if ((before & 1u) != 0)
-            return false;
-        std::memcpy(buf.data(), s.record, s.record_size);
-        std::atomic_thread_fence(std::memory_order_acquire);
-        if (seq.load(std::memory_order_acquire) != before)
-            return false;
-        generation = before >> 1;
-        return true;
-    });
-    if (!done)
-        return unexpected(status::lock_timeout);
-    return generation;
+    return detail::read_whole<false>(*s_, buf);
 }
 
 namespace detail {
-
-struct no_hooks {
-    explicit no_hooks(const state &) noexcept {}
-};
 
 // Gives back the lock taken from the even seq locked, for a write that stored nothing: no write is counted
 // and seq is as it was. A force_unlock that has already released the lock leaves seq as another writer's,
@@ -1040,13 +1062,8 @@ template <bool Large>
 result<read_value> read_used_impl(const state &s, std::uint16_t field, std::span<std::byte> buf) {
     const field_spec &f = s.fields[field];
     const type_node &node = s.types.node(s.types.field(field).node);
-    auto seq = atomic(s.hdr->seq);
     read_value out{0, 0};
-    const std::conditional_t<Large, hooks_around, no_hooks> hooks(s);
-    const bool done = retry<!Large>(s, s.lock_timeout, [&]() noexcept {
-        const std::uint64_t before = seq.load(std::memory_order_acquire);
-        if ((before & 1u) != 0)
-            return false;
+    const bool done = seq_read<Large>(s, [&](std::atomic_ref<std::uint64_t> seq, std::uint64_t before) noexcept {
         const std::byte *src = s.record + f.offset;
         std::uint32_t length;
         std::memcpy(&length, src, sizeof length);
@@ -1054,19 +1071,9 @@ result<read_value> read_used_impl(const state &s, std::uint16_t field, std::span
         if (length > node.capacity)
             length = node.capacity;
         const std::size_t used = node.slots + std::size_t{length} * node.stride;
-        if (used <= buf.size()) {
-            if constexpr (Large) {
-                if (!copy_checked(buf.data(), src, used, seq, before))
-                    return false;
-            } else {
-                std::memcpy(buf.data(), src, used);
-            }
-        }
-        const std::uint64_t version = atomic(s.counts[field]).load(std::memory_order_relaxed);
-        std::atomic_thread_fence(std::memory_order_acquire);
-        if (seq.load(std::memory_order_acquire) != before)
+        if (used <= buf.size() && !seq_copy<Large>(buf.data(), src, used, seq, before))
             return false;
-        out = {used, version};
+        out = {used, atomic(s.counts[field]).load(std::memory_order_relaxed)};
         return true;
     });
     if (!done)
@@ -1112,12 +1119,8 @@ inline result<std::uint64_t> handle::read_record_used(std::span<std::byte> buf) 
     const detail::state &s = *s_;
     if (buf.size() < s.record_size)
         return unexpected(status::range);
-    auto seq = detail::atomic(s.hdr->seq);
     std::uint64_t generation = 0;
-    const auto copy = [&]() noexcept {
-        const std::uint64_t before = seq.load(std::memory_order_acquire);
-        if ((before & 1u) != 0)
-            return false;
+    const auto copy = [&](std::atomic_ref<std::uint64_t> seq, std::uint64_t before) noexcept {
         for (std::uint16_t i = 0; i < s.field_count; ++i) {
             const std::byte *src = s.record + s.fields[i].offset;
             std::byte *dst = buf.data() + s.fields[i].offset;
@@ -1129,9 +1132,6 @@ inline result<std::uint64_t> handle::read_record_used(std::span<std::byte> buf) 
             if (!detail::copy_checked(dst + head, src + head, rest, seq, before))
                 return false;
         }
-        std::atomic_thread_fence(std::memory_order_acquire);
-        if (seq.load(std::memory_order_acquire) != before)
-            return false;
         generation = before >> 1;
         return true;
     };
@@ -1139,14 +1139,7 @@ inline result<std::uint64_t> handle::read_record_used(std::span<std::byte> buf) 
     std::uint64_t total = 0;
     for (std::uint16_t i = 0; i < s.field_count; ++i)
         total += detail::used_bytes(s, i, s.record + s.fields[i].offset);
-    bool done;
-    if (total >= detail::large_copy) {
-        const detail::hooks_around hooks(s);
-        done = detail::retry<false>(s, s.lock_timeout, copy);
-    } else {
-        done = detail::retry(s, s.lock_timeout, copy);
-    }
-    if (!done)
+    if (!(total >= detail::large_copy ? detail::seq_read<true>(s, copy) : detail::seq_read<false>(s, copy)))
         return unexpected(status::lock_timeout);
     return generation;
 }
@@ -1162,49 +1155,11 @@ inline result<read_value> handle::read_used(std::uint16_t field, std::span<std::
 }
 
 inline result<read_value> handle::read_large(std::uint16_t field, std::span<std::byte> buf) const {
-    const detail::state &s = *s_;
-    if (field >= s.field_count)
-        return unexpected(status::range);
-    const field_spec &f = s.fields[field];
-    auto seq = detail::atomic(s.hdr->seq);
-    read_value out{0, 0};
-    const detail::hooks_around hooks(s);
-    const bool done = detail::retry<false>(s, s.lock_timeout, [&]() noexcept {
-        const std::uint64_t before = seq.load(std::memory_order_acquire);
-        if ((before & 1u) != 0)
-            return false;
-        const std::span<const std::byte> src = detail::payload(f, s.record);
-        if (src.size() <= buf.size() && !detail::copy_checked(buf.data(), src.data(), src.size(), seq, before))
-            return false;
-        const std::uint64_t version = detail::atomic(s.counts[field]).load(std::memory_order_relaxed);
-        std::atomic_thread_fence(std::memory_order_acquire);
-        if (seq.load(std::memory_order_acquire) != before)
-            return false;
-        out = {src.size(), version};
-        return true;
-    });
-    if (!done)
-        return unexpected(status::lock_timeout);
-    return out;
+    return detail::read_field<true>(*s_, field, buf);
 }
 
 inline result<std::uint64_t> handle::read_record_large(std::span<std::byte> buf) const {
-    const detail::state &s = *s_;
-    if (buf.size() < s.record_size)
-        return unexpected(status::range);
-    auto seq = detail::atomic(s.hdr->seq);
-    std::uint64_t generation = 0;
-    const detail::hooks_around hooks(s);
-    const bool done = detail::retry<false>(s, s.lock_timeout, [&]() noexcept {
-        const std::uint64_t before = seq.load(std::memory_order_acquire);
-        if ((before & 1u) != 0 || !detail::copy_checked(buf.data(), s.record, s.record_size, seq, before))
-            return false;
-        generation = before >> 1;
-        return true;
-    });
-    if (!done)
-        return unexpected(status::lock_timeout);
-    return generation;
+    return detail::read_whole<true>(*s_, buf);
 }
 
 inline result<void> handle::write_large(std::span<const value> values, seconds lock_timeout) {
@@ -1565,16 +1520,12 @@ inline result<request_reply> handle::request_answer_of(std::uint16_t field, std:
     detail::request_field c;
     if (!detail::request_field_of(s, field, c) || out.size() < (std::max)(c.result_size, request_error_size))
         return unexpected(status::range);
-    auto seq = detail::atomic(s.hdr->seq);
     std::uint64_t sent = 0, taken = 0, start = 0, pidns = 0;
     std::uint32_t pid = 0, length = 0;
     std::uint64_t numbers[request_answers] = {};
     std::uint32_t statuses[request_answers] = {};
     std::uint32_t found = 0;
-    const bool done = detail::retry(s, s.lock_timeout, [&]() noexcept {
-        const std::uint64_t before = seq.load(std::memory_order_acquire);
-        if ((before & 1u) != 0)
-            return false;
+    const bool done = detail::seq_read<false>(s, [&](std::atomic_ref<std::uint64_t>, std::uint64_t) noexcept {
         sent = detail::request_get<std::uint64_t>(c.at + detail::request_sent_at);
         taken = detail::request_get<std::uint64_t>(c.at + detail::request_taken_at);
         start = detail::request_get<std::uint64_t>(c.at + detail::request_server_start_at);
@@ -1598,8 +1549,7 @@ inline result<request_reply> handle::request_answer_of(std::uint16_t field, std:
                 std::memcpy(out.data(), entry + detail::answer_error_at, length);
             }
         }
-        std::atomic_thread_fence(std::memory_order_acquire);
-        return seq.load(std::memory_order_acquire) == before;
+        return true;
     });
     if (!done)
         return unexpected(status::lock_timeout);
@@ -1733,28 +1683,15 @@ inline result<void> handle::attr_read(std::uint16_t field, std::span<std::byte> 
     if (node.value_at == detail::attr_absent || out.size() != s.fields[field].capacity - node.value_at)
         return unexpected(status::range);
     const std::byte *src = s.record + s.fields[field].offset + node.value_at;
-    auto seq = detail::atomic(s.hdr->seq);
-    const auto read = [&](auto large) -> result<void> {
+    const auto read = [&](auto large) {
         constexpr bool Large = decltype(large)::value;
-        const std::conditional_t<Large, detail::hooks_around, detail::no_hooks> hooks(s);
-        const bool done = detail::retry<!Large>(s, s.lock_timeout, [&]() noexcept {
-            const std::uint64_t before = seq.load(std::memory_order_acquire);
-            if ((before & 1u) != 0)
-                return false;
-            if constexpr (Large) {
-                if (!detail::copy_checked(out.data(), src, out.size(), seq, before))
-                    return false;
-            } else {
-                std::memcpy(out.data(), src, out.size());
-            }
-            std::atomic_thread_fence(std::memory_order_acquire);
-            return seq.load(std::memory_order_acquire) == before;
+        return detail::seq_read<Large>(s, [&](std::atomic_ref<std::uint64_t> seq, std::uint64_t before) noexcept {
+            return detail::seq_copy<Large>(out.data(), src, out.size(), seq, before);
         });
-        if (!done)
-            return unexpected(status::lock_timeout);
-        return {};
     };
-    return out.size() >= detail::large_copy ? read(std::true_type{}) : read(std::false_type{});
+    if (!(out.size() >= detail::large_copy ? read(std::true_type{}) : read(std::false_type{})))
+        return unexpected(status::lock_timeout);
+    return {};
 }
 
 inline result<std::uint64_t> handle::attr_published(std::uint16_t field) const {
@@ -1763,15 +1700,10 @@ inline result<std::uint64_t> handle::attr_published(std::uint16_t field) const {
     if (at == detail::attr_absent)
         return unexpected(status::range);
     const std::byte *src = s.record + s.fields[field].offset + at;
-    auto seq = detail::atomic(s.hdr->seq);
     std::uint64_t count = 0;
-    const bool done = detail::retry(s, s.lock_timeout, [&]() noexcept {
-        const std::uint64_t before = seq.load(std::memory_order_acquire);
-        if ((before & 1u) != 0)
-            return false;
+    const bool done = detail::seq_read<false>(s, [&](std::atomic_ref<std::uint64_t>, std::uint64_t) noexcept {
         count = detail::request_get<std::uint64_t>(src);
-        std::atomic_thread_fence(std::memory_order_acquire);
-        return seq.load(std::memory_order_acquire) == before;
+        return true;
     });
     if (!done)
         return unexpected(status::lock_timeout);
