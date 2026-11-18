@@ -120,4 +120,28 @@ TEST_CASE("a held lock times out") {
     static_cast<void>(sharedbox::unlink(name));
 }
 
+TEST_CASE("a write lock left without a commit is released and moves the generation") {
+    const std::string name = unique("guard");
+    auto a = handle::create(name, fields, 32, 1, 1, {});
+    REQUIRE(a.has_value());
+    const std::uint64_t before = a->generation();
+    {
+        const auto locked = a->lock(seconds(1.0));
+        REQUIRE(locked.has_value());
+        const sharedbox::detail::write_lock held(*a, *locked);
+    }
+    CHECK(a->generation() == before + 1);
+    {
+        const auto locked = a->lock(seconds(0.05));
+        REQUIRE(locked.has_value());
+        sharedbox::detail::write_lock held(*a, *locked);
+        held.unchanged();
+    }
+    CHECK(a->generation() == before + 1);
+    const auto locked = a->lock(seconds(0.05));
+    REQUIRE(locked.has_value());
+    a->unlock(*locked);
+    static_cast<void>(sharedbox::unlink(name));
+}
+
 } // namespace
