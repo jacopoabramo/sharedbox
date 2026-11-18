@@ -936,10 +936,12 @@ template <class Copy> SHAREDBOX_HOT bool seq_pass(std::atomic_ref<std::uint64_t>
 template <bool Large>
 SHAREDBOX_HOT bool seq_copy(std::byte *dst, const std::byte *src, std::size_t n,
                             std::atomic_ref<std::uint64_t> seq, std::uint64_t before) noexcept {
-    if constexpr (Large)
+    if constexpr (Large) {
         return copy_checked(dst, src, n, seq, before);
-    std::memcpy(dst, src, n);
-    return true;
+    } else {
+        std::memcpy(dst, src, n);
+        return true;
+    }
 }
 
 // Passes of copy until one counts; false once the lock timeout has passed. Large runs the wait hooks once
