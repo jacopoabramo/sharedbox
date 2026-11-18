@@ -192,6 +192,7 @@ struct box_layout {
 static_assert(segment_layout<box_layout>);
 
 struct state;
+class write_lock;
 
 } // namespace detail
 
@@ -444,6 +445,7 @@ private:
     template <bool Hooks>
     result<std::uint64_t> write_with_document(std::span<const value> values, std::span<const std::byte> doc,
                                               seconds lock_timeout);
+    friend class detail::write_lock;
     explicit handle(detail::state *s) noexcept : s_(s) {}
     void swap(handle &other) noexcept { std::swap(s_, other.s_); }
 
@@ -989,6 +991,42 @@ inline void unlock_unchanged(state &s, std::uint64_t locked) noexcept {
     atomic(s.hdr->seq).compare_exchange_strong(held, locked, std::memory_order_release, std::memory_order_relaxed);
 }
 
+// The write lock a member function took from the even seq locked. Leaving the scope without commit or
+// unchanged releases the lock with no write counted and the generation moved on, so a reader that copied
+// during the hold retries: that exit is safe whatever was stored.
+class write_lock {
+public:
+    write_lock(handle &h, std::uint64_t locked) noexcept : h_(h), locked_(locked) {}
+    write_lock(const write_lock &) = delete;
+    write_lock &operator=(const write_lock &) = delete;
+    ~write_lock() {
+        if (held_)
+            h_.unlock(locked_);
+    }
+    // Releases the lock and wakes the waiters; the caller has counted its writes.
+    void commit() noexcept {
+        held_ = false;
+        h_.unlock(locked_);
+        wake_waiters(*h_.s_);
+    }
+    // Counts one write of field, then as commit().
+    void commit(std::uint16_t field) noexcept {
+        held_ = false;
+        h_.end_write({field, {}, locked_});
+    }
+    // Nothing was stored: puts seq back, as unlock_unchanged.
+    void unchanged() noexcept {
+        held_ = false;
+        unlock_unchanged(*h_.s_, locked_);
+    }
+    std::uint64_t locked() const noexcept { return locked_; }
+
+private:
+    handle &h_;
+    std::uint64_t locked_;
+    bool held_ = true;
+};
+
 // read_used for one field; Large runs the wait hooks once around the copy and checks the sequence
 // number between chunks.
 template <bool Large>
@@ -1170,14 +1208,14 @@ inline result<void> handle::write_large(std::span<const value> values, seconds l
     const result<std::uint64_t> locked = lock_with<false>(lock_timeout);
     if (!locked)
         return unexpected(locked.error());
+    detail::write_lock held(*this, *locked);
     std::int64_t now = 0;
     for (const value &v : values) {
         detail::store(s, v, now);
         auto count = detail::atomic(s.counts[v.field]);
         count.store(count.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
     }
-    unlock(*locked);
-    detail::wake_waiters(s);
+    held.commit();
     return {};
 }
 
@@ -1297,6 +1335,7 @@ SHAREDBOX_HOT result<void> handle::write(std::span<const value> values, seconds 
     const result<std::uint64_t> locked = lock(lock_timeout);
     if (!locked)
         return unexpected(locked.error());
+    detail::write_lock held(*this, *locked);
     std::int64_t now = 0;
     for (const value &v : values) {
         detail::store(s, v, now);
@@ -1304,8 +1343,7 @@ SHAREDBOX_HOT result<void> handle::write(std::span<const value> values, seconds 
         auto count = detail::atomic(s.counts[v.field]);
         count.store(count.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
     }
-    unlock(*locked);
-    detail::wake_waiters(s);
+    held.commit();
     return {};
 }
 
@@ -1338,6 +1376,7 @@ result<std::uint64_t> handle::write_with_document(std::span<const value> values,
     const result<std::uint64_t> locked = lock_with<Hooks>(lock_timeout);
     if (!locked)
         return unexpected(locked.error());
+    detail::write_lock held(*this, *locked);
     // The write lock takes seq from an even value to the next odd one and unlock to the one after, so the
     // generation once unlocked is one more than now. The document was checked above, outside the lock.
     const result<std::uint64_t> added = detail::add_metadata(
@@ -1345,7 +1384,7 @@ result<std::uint64_t> handle::write_with_document(std::span<const value> values,
         [](std::uint64_t) { return true; }, true);
     if (!added) {
         // Only a forged area gets here, and no field is stored yet.
-        detail::unlock_unchanged(s, *locked);
+        held.unchanged();
         return unexpected(added.error());
     }
     std::int64_t now = 0;
@@ -1354,8 +1393,7 @@ result<std::uint64_t> handle::write_with_document(std::span<const value> values,
         auto count = detail::atomic(s.counts[v.field]);
         count.store(count.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
     }
-    unlock(*locked);
-    detail::wake_waiters(s);
+    held.commit();
     return *added;
 }
 
@@ -1463,10 +1501,11 @@ inline result<std::uint64_t> handle::request_send(std::uint16_t field, std::span
     const result<std::uint64_t> locked = lock(lock_timeout);
     if (!locked)
         return unexpected(locked.error());
+    detail::write_lock held(*this, *locked);
     const std::uint64_t sent = detail::request_get<std::uint64_t>(c.at + detail::request_sent_at) + 1;
     detail::request_put(c.at + detail::request_sent_at, sent);
     detail::request_copy(c.at + request_arguments_at, arguments);
-    end_write({field, {}, *locked});
+    held.commit(field);
     return sent;
 }
 
@@ -1479,15 +1518,16 @@ inline result<std::uint64_t> handle::request_take(std::uint16_t field, std::span
     const result<std::uint64_t> locked = lock(lock_timeout);
     if (!locked)
         return unexpected(locked.error());
+    detail::write_lock held(*this, *locked);
     const auto sent = detail::request_get<std::uint64_t>(c.at + detail::request_sent_at);
     if (detail::request_get<std::uint64_t>(c.at + detail::request_taken_at) == sent) {
-        detail::unlock_unchanged(s, *locked);
+        held.unchanged();
         return std::uint64_t{0};
     }
     if (!arguments.empty())
         std::memcpy(arguments.data(), c.at + request_arguments_at, arguments.size());
     detail::request_put(c.at + detail::request_taken_at, sent);
-    end_write({field, {}, *locked});
+    held.commit(field);
     return sent;
 }
 
@@ -1501,13 +1541,14 @@ inline result<void> handle::request_answer(std::uint16_t field, std::uint64_t nu
     const result<std::uint64_t> locked = lock(lock_timeout);
     if (!locked)
         return unexpected(locked.error());
+    detail::write_lock held(*this, *locked);
     if (number == 0 || number != detail::request_get<std::uint64_t>(c.at + detail::request_taken_at) ||
         detail::request_has_answer(c, number)) {
-        detail::unlock_unchanged(s, *locked);
+        held.unchanged();
         return unexpected(status::ended);
     }
     detail::request_store_answer(c, number, ok, bytes);
-    end_write({field, {}, *locked});
+    held.commit(field);
     return {};
 }
 
@@ -1582,12 +1623,13 @@ inline result<void> handle::serve_claim(std::uint16_t field, seconds lock_timeou
     const result<std::uint64_t> locked = lock(lock_timeout);
     if (!locked)
         return unexpected(locked.error());
+    detail::write_lock held(*this, *locked);
     const auto pid = detail::request_get<std::uint32_t>(c.at + detail::request_server_pid_at);
     if (pid != 0) {
         const auto start = detail::request_get<std::uint64_t>(c.at + detail::request_server_start_at);
         const auto pidns = detail::request_get<std::uint64_t>(c.at + detail::request_server_pidns_at);
         if (!detail::owner_exited(pid, start, pidns)) {
-            detail::unlock_unchanged(s, *locked);
+            held.unchanged();
             return unexpected(status::busy);
         }
         const auto taken = detail::request_get<std::uint64_t>(c.at + detail::request_taken_at);
@@ -1597,7 +1639,7 @@ inline result<void> handle::serve_claim(std::uint16_t field, seconds lock_timeou
     detail::request_put(c.at + detail::request_server_start_at, detail::current_start());
     detail::request_put(c.at + detail::request_server_pidns_at, detail::current_pidns());
     detail::request_put(c.at + detail::request_server_pid_at, detail::current_pid());
-    end_write({field, {}, *locked});
+    held.commit(field);
     return {};
 }
 
@@ -1609,10 +1651,11 @@ inline result<void> handle::serve_release(std::uint16_t field, seconds lock_time
     const result<std::uint64_t> locked = lock(lock_timeout);
     if (!locked)
         return unexpected(locked.error());
+    detail::write_lock held(*this, *locked);
     if (detail::request_get<std::uint32_t>(c.at + detail::request_server_pid_at) != detail::current_pid() ||
         detail::request_get<std::uint64_t>(c.at + detail::request_server_start_at) != detail::current_start() ||
         detail::request_get<std::uint64_t>(c.at + detail::request_server_pidns_at) != detail::current_pidns()) {
-        detail::unlock_unchanged(s, *locked);
+        held.unchanged();
         return {};
     }
     const auto taken = detail::request_get<std::uint64_t>(c.at + detail::request_taken_at);
@@ -1621,7 +1664,7 @@ inline result<void> handle::serve_release(std::uint16_t field, seconds lock_time
     detail::request_put<std::uint64_t>(c.at + detail::request_server_start_at, 0);
     detail::request_put<std::uint64_t>(c.at + detail::request_server_pidns_at, 0);
     detail::request_put<std::uint32_t>(c.at + detail::request_server_pid_at, 0);
-    end_write({field, {}, *locked});
+    held.commit(field);
     return {};
 }
 
@@ -1649,6 +1692,7 @@ inline result<void> handle::attr_publish(std::uint16_t field, std::uint8_t parts
         const result<std::uint64_t> locked = lock_with<!Large>(lock_timeout);
         if (!locked)
             return unexpected(locked.error());
+        detail::write_lock held(*this, *locked);
         std::byte *room = s.record + s.fields[field].offset;
         const auto copy = [&](std::uint32_t at, std::size_t length) {
             std::memcpy(room + at, bytes.data() + (at - node.value_at), length);
@@ -1668,7 +1712,7 @@ inline result<void> handle::attr_publish(std::uint16_t field, std::uint8_t parts
         if (names_setpoint)
             copy(node.setpoint_at, value.type.size);
         detail::request_put(room + node.value_at, detail::request_get<std::uint64_t>(room + node.value_at) + 1);
-        end_write({field, {}, *locked});
+        held.commit(field);
         return {};
     };
     return bytes.size() >= detail::large_copy ? publish(std::true_type{}) : publish(std::false_type{});
