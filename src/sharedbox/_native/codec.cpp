@@ -136,11 +136,7 @@ std::span<const std::byte> encode(const FieldDesc &field, const std::string &nam
         if (size > field.capacity)
             goto too_long;
         // Copied, since a bytearray can change while a write waits for the lock without the GIL.
-        std::byte *out = buffer.small;
-        if (size > sizeof buffer.small) {
-            buffer.large.reset(new std::byte[size]);
-            out = buffer.large.get();
-        }
+        std::byte *out = buffer.room(size);
         // Copies a strided memoryview in logical order, as bytes() would.
         if (PyBuffer_ToContiguous(out, &view.view, view.view.len, 'C') != 0)
             throw nb::python_error();
