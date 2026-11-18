@@ -1371,7 +1371,7 @@ class ReceiveEvents(SignalGroup):
     received = Signal(object, int, signal_instance_class=CountedSignal)
     """Emitted as `(item, position)` for each item the reader receives."""
     ended = Signal()
-    """Emitted once per delivery, when it reaches the end of the stream."""
+    """Emitted once, when delivery reaches the end of the stream."""
     released = Signal(int)
     """Emitted as `(missed,)` when the sender released this lossless reader; delivery goes on at the newest item."""
 
@@ -1419,6 +1419,7 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T, M]):
         "_carry",
         "_delivering",
         "_documents",
+        "_ended",
         "_events",
         "_generation",
         "_position",
@@ -1435,6 +1436,7 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T, M]):
         )
         self._events: ReceiveEvents | None = None
         self._delivering = False
+        self._ended = False
         self._generation = 0
         # Kept items a latest reader dropped for a newer one, which count as missed.
         self._stale = 0
@@ -1797,7 +1799,9 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T, M]):
                 with events.received._lock:
                     if self._stopped(generation):
                         return True
-                    self._emit(events.ended)
+                    if not self._ended:
+                        self._ended = True
+                        self._emit(events.ended)
                 return False
             except StreamClosedError:
                 return False
@@ -1894,6 +1898,7 @@ class SharedReceiveStream(End, Iterator[T], AsyncIterator[T], Generic[T, M]):
         super()._after_fork()
         self._carry.clear()
         self._delivering = False
+        self._ended = False
 
     def _cancel(self, future: Future[Any]) -> None:
         super()._cancel(future)

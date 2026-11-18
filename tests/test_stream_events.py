@@ -279,6 +279,26 @@ def test_a_quick_reconnect_emits_ended_once(unique_name: str) -> None:
         assert ended == [1]
 
 
+def test_a_reconnect_after_the_end_does_not_emit_ended_again(unique_name: str) -> None:
+    """Emit ended once when the callbacks disconnect and connect again after the stream ended."""
+    with SharedStream.create(int, unique_name, capacity=4) as stream:
+        reader = stream.reader()
+        stream.sender().close()
+        ended: list[int] = []
+
+        def on_received(item: int, position: int) -> None:
+            pass
+
+        reader.events.ended.connect(lambda: ended.append(1))
+        reader.events.received.connect(on_received)
+        wait_until(lambda: bool(ended))
+        reader.events.received.disconnect(on_received)
+        reader.events.received.connect(on_received)
+        # Nothing reports that the second delivery reached the end, so give it time to.
+        time.sleep(0.2)
+        assert ended == [1]
+
+
 def test_ended_alone_does_not_start_delivery(unique_name: str) -> None:
     """Leave the items to receive when only an ended callback is connected."""
     with SharedStream.create(int, unique_name, capacity=4) as stream:
