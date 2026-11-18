@@ -7,6 +7,7 @@
 # The names carry no namespace: the library's is versioned (sharedbox::v3), and a pattern matches any
 # part of a frame's function name.
 race:detail::copy_checked
+race:detail::seq_pass
 race:detail::read_used_impl
 race:detail::read_metadata
 race:handle::read
