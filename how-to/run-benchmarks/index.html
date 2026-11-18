@@ -3765,8 +3765,11 @@ Copy the files to <code>docs/assets/benchmarks/</code> to update the charts of
 </span></code></pre></div>
 <p><abbr title="Continuous integration. The builds and tests GitHub runs on pushes and pull requests to the main branch.">CI</abbr> runs them on CodSpeed for every push and pull request to <code>main</code>. The
 <code>Ops</code> and <code>Streams</code> workflows time <code>benchbox ops</code> and <code>benchbox stream</code> on
-the base branch and on the pull request, for pull requests that touch the
-native code or the stream.</p>
+the base branch and on the pull request: <code>Streams</code> for pull requests that
+touch the stream, and <code>Ops</code> for pull requests that carry the <code>ops</code> label,
+because it takes about half an hour. Add the label when a change touches
+the C++ read or write path of a box, since CodSpeed runs on Linux and does
+not show what MSVC makes of it.</p>
 
 
 

@@ -3556,9 +3556,24 @@ class, the lookup finds nothing and reading the field raises
 <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;UnknownBoxClassError&lt;/span&gt;" href="../../reference/api/errors/#sharedbox.UnknownBoxClassError"><code>UnknownBoxClassError</code></a>. Import that
 module in every process that reads the reference.</p>
 </div>
+<p>Two classes of one process can share a schema hash, because the hash covers
+a class's identity and fields and nothing else: a module imported again, a
+notebook cell run twice or a class defined inside a function that runs
+twice each leave an earlier class alive beside the new one. The field's
+annotation then decides. A box whose hash is the annotated class's own is
+read with that class, so <code>stage.motor</code> annotated <code>Motor</code> gives an instance
+of exactly that <code>Motor</code>. A box of a subclass has another hash, and among
+the classes with it the one defined last is taken, a subclass of the
+annotated class before any other. <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;BoxRef&lt;/span&gt;
+
+
+  &lt;span class=&quot;doc doc-labels&quot;&gt;
+      &lt;small class=&quot;doc doc-label doc-label-dataclass&quot;&gt;&lt;code&gt;dataclass&lt;/code&gt;&lt;/small&gt;
+  &lt;/span&gt;" href="../../reference/api/references/#sharedbox.BoxRef"><code>BoxRef.box_class</code></a>
+has no annotation to go by and gives the class defined last.</p>
 <p>The list holds each class weakly, so a class nothing else uses, such as one
-defined inside a function, can still be freed. That's why the lookup takes
-the first matching class "that is still alive".</p>
+defined inside a function, can still be freed, and the lookup only
+considers classes that are still alive.</p>
 <h2 id="broken-references">Broken references<a class="headerlink" href="#broken-references" title="Permanent link">&para;</a></h2>
 <p>A reference can outlive the box it names, and the name alone can't show
 it. Step through a carrier whose stop is replaced under the same name:</p>

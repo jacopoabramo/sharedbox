@@ -5910,8 +5910,9 @@ another class with <code>X</code>'s schema hash needs a <code>cast</code>.</p>
 may be a subclass of <code>X</code>, and keeps that handle: later reads return
 the same object while the field refers to the same box. The class is
 found by the stored schema hash among the <code>SharedBox</code> classes this
-process has defined; of several with one hash, the first one defined
-that is still alive is used. After another thread or process assigns
+process has defined; of several with one hash, <code>X</code> itself is used when
+the hash is its own, else the class defined last, a subclass of <code>X</code>
+before any other. After another thread or process assigns
 another box, the next read attaches that one and closes the handle it
 kept. <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;close&lt;/span&gt;" href="./#sharedbox.SharedBox.close"><code>close</code></a> on the outer box closes the
 handles its reads attached, and closing a returned box makes the next
@@ -7339,12 +7340,10 @@ nothing. Leaving a <code>with</code> block calls it.</p>
 <p>Called on a box's watcher thread, from an event callback, it does
 not wait for the watcher threads of the boxes it closes, and drops
 the writes those threads had not seen yet.</p>
-<p>While another thread of this process waits for the box's lock,
-<code>close</code> waits with it: it returns once that wait ends, which takes
-at most the class's <code>lock_timeout</code>. The waiting thread is not
-interrupted, and raises
-<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;LockTimeoutError&lt;/span&gt;" href="../errors/#sharedbox.LockTimeoutError"><code>LockTimeoutError</code></a> as it would
-without the close.</p>
+<p>A thread of this process that waits for the box's lock stops
+waiting within a millisecond and raises
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;BoxClosedError&lt;/span&gt;" href="../errors/#sharedbox.BoxClosedError"><code>BoxClosedError</code></a>, so <code>close</code> does not
+wait for the class's <code>lock_timeout</code> to pass.</p>
 <p>A box that is garbage collected is closed. Forwarding it started
 keeps running until its events group and every group
 <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;follow&lt;/span&gt;" href="../events/#sharedbox.BoxEvents.follow"><code>follow</code></a> returned are garbage

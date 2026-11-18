@@ -4396,7 +4396,13 @@ another writer's lock releases the <abbr title="Global interpreter lock. The loc
 in the meantime.</p>
 <p>So each open box has a reader-writer lock that only guards its own
 lifetime.<sup id="fnref:shared-mutex"><a class="footnote-ref" href="#fn:shared-mutex">3</a></sup> Every operation holds it in shared mode;
-<code>close</code> takes it exclusively, so it waits until running operations finish.</p>
+<code>close</code> takes it exclusively, so it waits until running operations finish.
+One of them could keep it waiting for a long time: a read or write that
+waits for another writer's lock, for as long as the class's <code>lock_timeout</code>.
+So <code>close</code> sets the box's <code>closed</code> flag before it asks for the lock, the
+wait loop in <code>sharedbox.hpp</code> reads that flag between two pauses, and the
+waiting call gives up within a millisecond and raises
+<a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;BoxClosedError&lt;/span&gt;" href="../../reference/api/errors/#sharedbox.BoxClosedError"><code>BoxClosedError</code></a>.</p>
 <p>A wait for the write lock (see <a href="../reading-and-writing/#the-write-lock-a-sequence-counter">Reading and
 writing</a>), or for
 a copy that no write interrupted, releases the <abbr title="Global interpreter lock. The lock that lets only one thread of a CPython process run Python code at a time.">GIL</abbr> through hooks the

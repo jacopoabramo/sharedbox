@@ -6221,8 +6221,9 @@ Windows.</p>
 </span><span id="__span-9-132"><a id="__codelineno-9-132" name="__codelineno-9-132" href="#__codelineno-9-132"></a><span class="p">}</span><span class="w">  </span><span class="c1">// namespace sharedbox</span>
 </span></code></pre></div>
 <p>Every function returning <code>result</code> is <code>[[nodiscard]]</code>. <code>handle</code> also has
-<code>lock</code>, <code>unlock</code> and <code>set_wait_hooks</code>, which the tests and the Python
-extension use.</p>
+<code>lock</code>, <code>unlock</code>, <code>set_wait_hooks</code> and <code>set_wait_cancel</code>, which the tests
+and the Python extension use. <code>set_wait_cancel</code> takes a flag that ends
+every wait for another writer's lock, as timed out, once it is true.</p>
 <p>The header also declares these names:</p>
 <ul>
 <li><code>type_view</code> and <code>handle::field_type(index)</code>: a field's type, read from
