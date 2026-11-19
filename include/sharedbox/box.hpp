@@ -253,7 +253,7 @@ public:
     // The type of a field: kind, size and, for a described kind, its description. Valid while this handle
     // lives; index must be below field_count().
     type_view field_type(std::uint16_t index) const noexcept;
-    // The description table as checked when the handle was made; empty for a 1.0 segment.
+    // The description table as checked when the handle was made.
     std::span<const std::byte> types_table() const noexcept;
     std::uint32_t record_size() const noexcept;
     std::uint64_t schema_hash() const noexcept;
@@ -262,7 +262,7 @@ public:
     std::uint16_t waiter_slots() const noexcept;
     // The segment's minor version, or this header's if that is lower.
     std::uint16_t minor_version() const noexcept;
-    // The segment's major version: 1 for a box made by a 0.3 release, 2 otherwise.
+    // The segment's major version, which is 3: open refuses any other.
     std::uint16_t major_version() const noexcept;
     void *base() const noexcept;
     std::uint64_t size() const noexcept;
@@ -1375,7 +1375,6 @@ inline constexpr std::uint32_t request_server_pidns_at = 32;
 inline constexpr std::uint32_t request_server_pid_at = 40;
 inline constexpr std::uint32_t answer_status_at = 8;
 inline constexpr std::uint32_t answer_length_at = 12;
-inline constexpr std::uint32_t answer_error_at = 16;
 inline constexpr std::uint32_t answer_ok = 1;
 inline constexpr std::uint32_t answer_failed = 2;
 
@@ -1418,7 +1417,8 @@ inline bool request_field_of(const state &s, std::uint16_t field, request_field 
         return false;
     const type_ref *result = node.count > node.capacity ? &s.types.member(node.members).type : nullptr;
     out = {s.record + s.fields[field].offset, node.slots, node.stride,
-           result != nullptr ? static_cast<std::uint32_t>(round_up(272, result->alignment)) : 272,
+           result != nullptr ? static_cast<std::uint32_t>(round_up(answer_result_at, result->alignment))
+                             : answer_result_at,
            result != nullptr ? result->size : 0};
     return true;
 }
@@ -1760,10 +1760,7 @@ SHAREDBOX_HOT void wake_waiters(const state &s) noexcept {
     // loaded before the change returns at once, and a waiter whose load comes after it reads this change
     // or a later one, every change to wake_word being a read-modify-write, and the swap happens before
     // its check. On Windows the value of wake_word is unused, but the waiter's load stays.
-    if (atomic(h.sleepers).load(std::memory_order_seq_cst) == 0)
-        return;
-    atomic(h.wake_word).fetch_add(1, std::memory_order_seq_cst);
-    wake_all(s.waiters, h.wake_word);
+    notify(s.waiters, h.wake_word, h.sleepers);
 }
 
 } // namespace detail
@@ -1773,7 +1770,7 @@ inline result<wake> handle::wait(std::uint16_t slot, std::uint64_t last_generati
     return detail::wait_on(
         s_->waiters, slot, h.wake_word,
         [&]() noexcept { return detail::atomic(h.seq).load(std::memory_order_seq_cst) >> 1 != last_generation; },
-        timeout, &h.sleepers);
+        timeout, h.sleepers);
 }
 
 inline result<void> handle::interrupt(std::uint16_t slot) {

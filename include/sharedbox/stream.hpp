@@ -371,21 +371,23 @@ inline bool claim_dead_sender(stream_header &h, std::uint32_t seen, std::uint64_
     return false;
 }
 
+// The slot of position p: a position maps to a slot only modulo the capacity.
+inline std::byte *slot_at(const stream_state &s, std::uint64_t p) noexcept {
+    return s.slots + p % s.capacity * s.slot_size;
+}
+
 // Stores write_pos for an item the dead sender finished (its seq is even) but did not count. The caller
 // holds the claim, so nobody else stores write_pos. The item passed the gate when it was sent. Wakes
 // waiting readers the way a send does.
 inline void complete_last_publish(stream_state &s) noexcept {
     stream_header &h = *s.hdr;
     const std::uint64_t p = atomic(h.write_pos).load(std::memory_order_acquire);
-    std::byte *slot = s.slots + p % s.capacity * s.slot_size;
+    std::byte *slot = slot_at(s, p);
     if (atomic(*reinterpret_cast<std::uint64_t *>(slot)).load(std::memory_order_acquire) != 2 * p + 2)
         return;
     atomic(h.write_pos).store(p + 1, std::memory_order_release);
     std::atomic_thread_fence(std::memory_order_seq_cst);
-    if (atomic(h.data_waiting).load(std::memory_order_seq_cst) != 0) {
-        atomic(h.data_word).fetch_add(1, std::memory_order_seq_cst);
-        wake_all(s.waiters, h.data_word);
-    }
+    notify(s.waiters, h.data_word, h.data_waiting);
 }
 
 // Ends the stream when the process holding the sender has exited, so readers drain and then get
@@ -403,8 +405,7 @@ inline void end_if_sender_died(stream_state &s) noexcept {
     atomic(h.sender_pidns).store(0, std::memory_order_relaxed);
     atomic(h.sender_pid).store(0, std::memory_order_release);
     atomic(h.sender_start).store(0, std::memory_order_release);
-    atomic(h.data_word).fetch_add(1, std::memory_order_seq_cst);
-    wake_all(s.waiters, h.data_word);
+    notify_all(s.waiters, h.data_word);
 }
 
 } // namespace detail
@@ -1003,7 +1004,7 @@ inline result<void> stream_sender::gate(std::uint64_t p, seconds timeout, on_ful
                 min_ = lossless_min(p, floor);
                 return p < min_ + s.capacity;
             },
-            (std::min)(left, seconds(liveness_delay)), &h.space_waiting);
+            (std::min)(left, seconds(liveness_delay)), h.space_waiting);
         if (woken)
             return *woken == wake::interrupted ? result<void>(unexpected(status::interrupted)) : result<void>();
         if (woken.error().code != status::timeout)
@@ -1025,7 +1026,7 @@ inline result<std::span<std::byte>> stream_sender::begin(seconds timeout, on_ful
     const std::uint64_t p = detail::atomic(h.write_pos).load(std::memory_order_relaxed);
     if (const result<void> open = gate(p, timeout, policy); !open)
         return unexpected(open.error());
-    std::byte *slot = s.slots + p % s.capacity * s.slot_size;
+    std::byte *slot = detail::slot_at(s, p);
     detail::atomic(*reinterpret_cast<std::uint64_t *>(slot)).store(2 * p + 1, std::memory_order_relaxed);
     // Keeps the item stores that follow from moving before the odd seq, as a box write's lock does.
     std::atomic_thread_fence(std::memory_order_release);
@@ -1050,10 +1051,7 @@ inline result<std::uint64_t> stream_sender::publish() noexcept {
     // or this load sees its count. The same fence orders this send's slot stores before the next gate's
     // load of lossless_readers, which a joining reader's fence pairs with.
     std::atomic_thread_fence(std::memory_order_seq_cst);
-    if (detail::atomic(h.data_waiting).load(std::memory_order_seq_cst) != 0) {
-        detail::atomic(h.data_word).fetch_add(1, std::memory_order_seq_cst);
-        detail::wake_all(s.waiters, h.data_word);
-    }
+    detail::notify(s.waiters, h.data_word, h.data_waiting);
     return p;
 }
 
@@ -1095,8 +1093,7 @@ inline void stream_sender::close() noexcept {
         detail::atomic(h.sender_start).store(0, std::memory_order_release);
         detail::atomic(h.sender_pidns).store(0, std::memory_order_relaxed);
         detail::atomic(h.sender_pid).store(0, std::memory_order_release);
-        detail::atomic(h.data_word).fetch_add(1, std::memory_order_seq_cst);
-        detail::wake_all(s.waiters, h.data_word);
+        detail::notify_all(s.waiters, h.data_word);
         detail::release_slot(s.waiters, slot_);
     }
     reserved_ = nullptr;
@@ -1129,7 +1126,7 @@ inline result<void> stream_reader::wait_for_data(std::uint64_t position, detail:
                 return detail::atomic(h.write_pos).load(std::memory_order_seq_cst) > position ||
                        detail::atomic(h.state).load(std::memory_order_seq_cst) == stream_ended;
             },
-            (std::min)(std::chrono::duration_cast<seconds>(left), seconds(liveness_delay)), &h.data_waiting);
+            (std::min)(std::chrono::duration_cast<seconds>(left), seconds(liveness_delay)), h.data_waiting);
         if (woken)
             return *woken == wake::interrupted ? result<void>(unexpected(status::interrupted)) : result<void>();
         if (woken.error().code != status::timeout)
@@ -1153,17 +1150,14 @@ inline void stream_reader::advance() noexcept {
 inline void stream_reader::wake_sender() noexcept {
     detail::stream_state &s = *s_;
     stream_header &h = *s.hdr;
-    if (detail::atomic(h.space_waiting).load(std::memory_order_seq_cst) != 0) {
-        detail::atomic(h.space_word).fetch_add(1, std::memory_order_seq_cst);
-        detail::wake_all(s.waiters, h.space_word);
-    }
+    detail::notify(s.waiters, h.space_word, h.space_waiting);
 }
 
 // Copies the item at position when its slot still holds it whole: its seq reads 2 * position + 2 before and
 // after the copy.
 template <class F> bool stream_reader::take(std::uint64_t position, F &copy) noexcept {
     const detail::stream_state &s = *s_;
-    std::byte *slot = s.slots + position % s.capacity * s.slot_size;
+    std::byte *slot = detail::slot_at(s, position);
     auto seq = detail::atomic(*reinterpret_cast<std::uint64_t *>(slot));
     const std::uint64_t expected = 2 * position + 2;
     if (seq.load(std::memory_order_acquire) != expected)
@@ -1326,10 +1320,8 @@ inline void stream_reader::close() noexcept {
         detail::atomic(e.owner_pidns).store(0, std::memory_order_relaxed);
         detail::atomic(e.owner_pid).store(0, std::memory_order_release);
         // Only a lossless reader leaving can unblock a sender waiting for space.
-        if (mode_ == read_mode::lossless) {
-            detail::atomic(h.space_word).fetch_add(1, std::memory_order_seq_cst);
-            detail::wake_all(s.waiters, h.space_word);
-        }
+        if (mode_ == read_mode::lossless)
+            detail::notify_all(s.waiters, h.space_word);
     }
     detail::release_slot(s.waiters, slot_);
     s_ = nullptr;

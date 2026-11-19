@@ -152,6 +152,12 @@ inline constexpr std::uint8_t publish_setpoint = 4;
 inline constexpr std::uint32_t request_answers = 4;
 inline constexpr std::uint32_t request_error_size = 256;
 inline constexpr std::uint32_t request_arguments_at = 48;
+namespace detail {
+// An answer holds its request's number, its status and the length of its error text, then the text, then
+// the result at the first multiple of the result's alignment.
+inline constexpr std::uint32_t answer_error_at = 16;
+inline constexpr std::uint32_t answer_result_at = answer_error_at + request_error_size;
+} // namespace detail
 // A value followed by an i64 timestamp in nanoseconds since the Unix epoch.
 inline constexpr std::uint8_t kind_timed = 77;
 // The timestamp that a write replaces with the time of the write.
@@ -560,7 +566,7 @@ inline std::uint64_t layout_found(const common_header &line0) noexcept {
 // Checks the copy h of the header of a published segment of mapped bytes as a segment of kind L: the
 // kind, the core version, the kind's version, then the kind's geometry. Fills found with what refused it.
 template <segment_layout L>
-result<common_header> open_check(const typename L::header_type &h, std::uint64_t mapped) noexcept {
+result<void> open_check(const typename L::header_type &h, std::uint64_t mapped) noexcept {
     const common_header &line0 = h.common;
     if (line0.magic != L::magic)
         return unexpected(
@@ -573,7 +579,7 @@ result<common_header> open_check(const typename L::header_type &h, std::uint64_t
         return unexpected(status::corrupt);
     if (const status rc = L::check_geometry(h, mapped); rc != status::ok)
         return unexpected(rc);
-    return line0;
+    return {};
 }
 
 // Copies the header of a published segment of mapped bytes and checks the copy as kind L. A mapping
@@ -584,8 +590,8 @@ result<typename L::header_type> open_header(const void *base, std::uint64_t mapp
     if (mapped < page_size)
         return unexpected(status::corrupt);
     const typename L::header_type h = L::copy_header(base);
-    if (const result<common_header> line0 = open_check<L>(h, mapped); !line0)
-        return unexpected(line0.error());
+    if (const result<void> checked = open_check<L>(h, mapped); !checked)
+        return unexpected(checked.error());
     return h;
 }
 
@@ -1543,7 +1549,8 @@ inline status type_parser::place(std::uint8_t kind, const type_head &head, type_
                 a = (std::max)(a, std::uint64_t{argument[i].type.alignment});
             }
             const std::uint64_t answers = round_up(end, result_alignment);
-            const std::uint64_t result_at = value != nullptr ? round_up(272, value->alignment) : 272;
+            const std::uint64_t result_at =
+                value != nullptr ? round_up(answer_result_at, value->alignment) : answer_result_at;
             const std::uint64_t stride =
                 round_up(result_at + (value != nullptr ? value->size : 0), result_alignment);
             request_end = answers + request_answers * stride;
@@ -2259,39 +2266,49 @@ SHAREDBOX_HOT void wake_all(const waiter_table &t, std::uint32_t &word) noexcept
 #endif
 }
 
+// Changes word and wakes every process waiting on it.
+SHAREDBOX_HOT void notify_all(const waiter_table &t, std::uint32_t &word) noexcept {
+    atomic(word).fetch_add(1, std::memory_order_seq_cst);
+    wake_all(t, word);
+}
+
+// notify_all when count says a process waits. The caller has made its change and then a seq_cst operation
+// or fence, so either the load here sees the waiter's count or the waiter's check sees the change.
+SHAREDBOX_HOT void notify(const waiter_table &t, std::uint32_t &word, std::uint32_t &count) noexcept {
+    if (atomic(count).load(std::memory_order_seq_cst) != 0)
+        notify_all(t, word);
+}
+
 // Blocks in a slot this process holds until changed() is true, the slot is interrupted, or timeout
 // passes (status::timeout). changed must read with seq_cst: word is read before it, so a change between
-// the two moves the word and the futex refuses to sleep. With sleepers, one of the counts in
-// t.sleeper_counts, the wait counts itself there for its whole length, before its first check, so a
+// the two moves the word and the futex refuses to sleep. The wait counts itself in sleepers, one of the
+// counts in t.sleeper_counts, for its whole length, before its first check, so a
 // writer that reads sleepers with seq_cst after its own change either sees the count or has its change
 // seen by the check.
 template <class Changed>
 result<wake> wait_on(const waiter_table &t, std::uint16_t slot, std::uint32_t &word, Changed changed,
-                     seconds timeout, std::uint32_t *sleepers = nullptr) {
+                     seconds timeout, std::uint32_t &sleepers) {
     if (!slot_held(t, slot) || !timeout_ok(timeout, true))
         return unexpected(status::range);
     // The slot names the count only after the increment, and the exit subtracts only if it takes the name
     // back, so a freer of a dead owner's slot subtracts at most what was added: a kill between the two
     // steps leaves the count one too high, which costs wake calls and never loses a wake.
     struct counted {
-        std::uint32_t *n;
+        std::uint32_t &n;
         std::uint32_t &mark;
-        counted(std::uint32_t *count, std::uint32_t &asleep_on, std::uint32_t offset) noexcept
+        counted(std::uint32_t &count, std::uint32_t &asleep_on, std::uint32_t offset) noexcept
             : n(count), mark(asleep_on) {
-            if (n == nullptr)
-                return;
-            atomic(*n).fetch_add(1, std::memory_order_seq_cst);
+            atomic(n).fetch_add(1, std::memory_order_seq_cst);
             atomic(mark).store(offset, std::memory_order_seq_cst);
         }
         ~counted() {
-            if (n != nullptr && atomic(mark).exchange(0, std::memory_order_seq_cst) != 0)
-                atomic(*n).fetch_sub(1, std::memory_order_seq_cst);
+            if (atomic(mark).exchange(0, std::memory_order_seq_cst) != 0)
+                atomic(n).fetch_sub(1, std::memory_order_seq_cst);
         }
         counted(const counted &) = delete;
         counted &operator=(const counted &) = delete;
     } asleep(sleepers, t.slots[slot].asleep_on,
-             sleepers == nullptr ? 0
-                                 : static_cast<std::uint32_t>(reinterpret_cast<std::byte *>(sleepers) - t.base));
+             static_cast<std::uint32_t>(reinterpret_cast<std::byte *>(&sleepers) - t.base));
     const clock::time_point deadline = clock::now() + std::chrono::duration_cast<clock::duration>(timeout);
     for (;;) {
         const std::uint32_t seen = atomic(word).load(std::memory_order_seq_cst);
