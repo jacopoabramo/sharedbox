@@ -375,9 +375,9 @@ struct Segment::Impl {
             return read_attr(f, out);
         const std::size_t size = field.capacity;
         std::byte *buf = reinterpret_cast<std::byte *>(out.words);
-        // A collection usually uses far less than its capacity, so it is read into words first and
-        // gets a heap buffer only at the length it reports.
-        if (detail::is_collection(field.kind)) {
+        // A collection or a max_array usually uses far less than its capacity, so it is read into words
+        // first and gets a heap buffer only at the length it reports.
+        if (detail::is_collection(field.kind) || field.kind == kind_max_array) {
             read_value got = check(box.read_used(f, {buf, sizeof out.words}));
             std::size_t held = sizeof out.words;
             while (got.len > held) {

@@ -281,8 +281,9 @@ public:
     // Copies the whole record, every field from one moment, into buf of at least record_size() bytes,
     // and returns the generation of that moment.
     [[nodiscard]] result<std::uint64_t> read_record(std::span<std::byte> buf) const;
-    // As read, for a list, set or dict field: copies the length and the slots the value uses, not the
-    // whole capacity. status::range for a field of another kind.
+    // As read, for a list, set, dict or max_array field: copies the length and the slots the value uses,
+    // or the shape line and the elements in use, not the whole capacity. status::range for a field of
+    // another kind.
     [[nodiscard]] result<read_value> read_used(std::uint16_t field, std::span<std::byte> buf) const;
     // As read_record, copying only the bytes each field uses: the length and the bytes of a str, bytes or
     // Decimal, the length and the slots in use of a list, set or dict, the shape line and the elements of a
@@ -1057,31 +1058,6 @@ private:
     bool held_ = true;
 };
 
-// read_used for one field; Large runs the wait hooks once around the copy and checks the sequence
-// number between chunks.
-template <bool Large>
-result<read_value> read_used_impl(const state &s, std::uint16_t field, std::span<std::byte> buf) {
-    const field_spec &f = s.fields[field];
-    const type_node &node = s.types.node(s.types.field(field).node);
-    read_value out{0, 0};
-    const bool done = seq_read<Large>(s, [&](std::atomic_ref<std::uint64_t> seq, std::uint64_t before) noexcept {
-        const std::byte *src = s.record + f.offset;
-        std::uint32_t length;
-        std::memcpy(&length, src, sizeof length);
-        // A torn read may see any length; the sequence check below throws that copy away.
-        if (length > node.capacity)
-            length = node.capacity;
-        const std::size_t used = node.slots + std::size_t{length} * node.stride;
-        if (used <= buf.size() && !seq_copy<Large>(buf.data(), src, used, seq, before))
-            return false;
-        out = {used, atomic(s.counts[field]).load(std::memory_order_relaxed)};
-        return true;
-    });
-    if (!done)
-        return unexpected(status::lock_timeout);
-    return out;
-}
-
 // How many bytes at the start of a field say how much of it is in use; 0 for a field that is all in use.
 inline std::size_t used_head(const field_spec &f) noexcept {
     if (prefixed(f.kind) || is_collection(f.kind))
@@ -1112,6 +1088,26 @@ inline std::size_t used_bytes(const state &s, std::uint16_t i, const std::byte *
         }
     }
     return static_cast<std::size_t>((std::clamp<std::uint64_t>)(used, head, size));
+}
+
+// read_used for one field; Large runs the wait hooks once around the copy and checks the sequence
+// number between chunks.
+template <bool Large>
+result<read_value> read_used_impl(const state &s, std::uint16_t field, std::span<std::byte> buf) {
+    const std::byte *src = s.record + s.fields[field].offset;
+    read_value out{0, 0};
+    const bool done = seq_read<Large>(s, [&](std::atomic_ref<std::uint64_t> seq, std::uint64_t before) noexcept {
+        // A torn read may see any length or shape; used_bytes keeps the count inside the field, and the
+        // sequence check throws that copy away.
+        const std::size_t used = used_bytes(s, field, src);
+        if (used <= buf.size() && !seq_copy<Large>(buf.data(), src, used, seq, before))
+            return false;
+        out = {used, atomic(s.counts[field]).load(std::memory_order_relaxed)};
+        return true;
+    });
+    if (!done)
+        return unexpected(status::lock_timeout);
+    return out;
 }
 
 } // namespace detail
@@ -1147,10 +1143,10 @@ inline result<std::uint64_t> handle::read_record_used(std::span<std::byte> buf) 
 
 inline result<read_value> handle::read_used(std::uint16_t field, std::span<std::byte> buf) const {
     const detail::state &s = *s_;
-    if (field >= s.field_count || !detail::is_collection(s.fields[field].kind))
+    if (field >= s.field_count ||
+        !(detail::is_collection(s.fields[field].kind) || s.fields[field].kind == kind_max_array))
         return unexpected(status::range);
-    const detail::type_node &node = s.types.node(s.types.field(field).node);
-    if (node.slots + std::uint64_t{node.capacity} * node.stride >= detail::large_copy)
+    if (detail::field_span(s.fields[field]) >= detail::large_copy)
         return detail::read_used_impl<true>(s, field, buf);
     return detail::read_used_impl<false>(s, field, buf);
 }
