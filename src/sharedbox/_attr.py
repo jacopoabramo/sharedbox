@@ -123,8 +123,7 @@ class Attr(Generic[T, P]):
         BoxClosedError
             If the box is closed.
         """
-        self._require_value()
-        box = self._live()
+        box = self._require_value()
         return cast(
             "AttrValue[T]",
             box._segment.get(self._spec.index, type(box).__layout__.types),
@@ -274,10 +273,14 @@ class Attr(Generic[T, P]):
             raise BoxClosedError(f"{self._spec.label}: its box is gone")
         return box
 
-    def _require_value(self) -> None:
-        """Raise `TypeError` unless the attribute has a value."""
-        if not self._info().has_value:
+    def _require_value(self) -> SharedBox:
+        """Return the box, or raise `TypeError` when the attribute has no value."""
+        box = self._live()
+        info = self._spec.attr
+        assert info is not None
+        if not info.has_value:
             raise TypeError(f"{self._spec.label} has no value")
+        return box
 
 
 class Setting(Attr[T, []]):
