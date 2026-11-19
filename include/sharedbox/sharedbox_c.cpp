@@ -43,11 +43,11 @@ template <class KindOk, class Use> int read_as(const sbx_handle *h, uint16_t fie
     return use(owner->field_type(field), bytes_in(buf, read->len));
 }
 
-// Encodes into a buffer of N bytes with encode, then writes it to field if its kind is kind.
-template <std::size_t N, class Encode>
-int write_as(sbx_handle *h, uint16_t field, std::uint8_t kind, double lock_timeout, Encode encode) {
+// Encodes into a buffer of N bytes with encode, then writes it to field if its kind passes kind_ok.
+template <std::size_t N, class KindOk, class Encode>
+int write_as(sbx_handle *h, uint16_t field, KindOk kind_ok, double lock_timeout, Encode encode) {
     sharedbox::handle *owner = owned(h);
-    if (owner == nullptr || field >= owner->field_count() || owner->field(field).kind != kind)
+    if (owner == nullptr || field >= owner->field_count() || !kind_ok(owner->field(field).kind))
         return SBX_E_RANGE;
     std::array<std::byte, N> buf{};
     if (const sharedbox::status rc = encode(owner->field_type(field), bytes_out(buf)); rc != sharedbox::status::ok)
@@ -63,10 +63,11 @@ auto is(std::uint8_t kind) {
 
 bool positioned(std::uint8_t k) { return k == sharedbox::kind_enum || k == sharedbox::kind_literal; }
 
-template <class T> int stored(sharedbox::result<T> &&got, T *out) {
+// The code of a decode that failed, else SBX_OK after set took the value.
+template <class T, class Set> int decoded(sharedbox::result<T> &&got, Set set) {
     if (!got)
         return static_cast<int>(got.error().code);
-    *out = *got;
+    set(*got);
     return SBX_OK;
 }
 
@@ -150,37 +151,31 @@ int sbx_read_complex(const sbx_handle *h, uint16_t field, double out[2]) {
     if (out == nullptr)
         return SBX_E_RANGE;
     return read_as(h, field, is(sharedbox::kind_complex), [&](sharedbox::type_view, bytes_in b) {
-        const auto got = sharedbox::decode_complex(b);
-        if (!got)
-            return static_cast<int>(got.error().code);
-        out[0] = got->real();
-        out[1] = got->imag();
-        return SBX_OK;
+        return decoded(sharedbox::decode_complex(b), [&](const auto &got) {
+            out[0] = got.real();
+            out[1] = got.imag();
+        });
     });
 }
 
 int sbx_write_complex(sbx_handle *h, uint16_t field, const double value[2], double lock_timeout) {
     if (value == nullptr)
         return SBX_E_RANGE;
-    return write_as<16>(h, field, sharedbox::kind_complex, lock_timeout, [&](sharedbox::type_view, bytes_out b) {
-        return sharedbox::encode_complex({value[0], value[1]}, b);
-    });
+    return write_as<16>(
+        h, field, is(sharedbox::kind_complex), lock_timeout,
+        [&](sharedbox::type_view, bytes_out b) { return sharedbox::encode_complex({value[0], value[1]}, b); });
 }
 
 int sbx_read_float16(const sbx_handle *h, uint16_t field, float *out) {
     if (out == nullptr)
         return SBX_E_RANGE;
     return read_as(h, field, is(sharedbox::kind_float16), [&](sharedbox::type_view, bytes_in b) {
-        const auto got = sharedbox::decode_float16(b);
-        if (!got)
-            return static_cast<int>(got.error().code);
-        *out = static_cast<float>(*got);
-        return SBX_OK;
+        return decoded(sharedbox::decode_float16(b), [&](const auto &got) { *out = static_cast<float>(got); });
     });
 }
 
 int sbx_write_float16(sbx_handle *h, uint16_t field, double value, double lock_timeout) {
-    return write_as<2>(h, field, sharedbox::kind_float16, lock_timeout,
+    return write_as<2>(h, field, is(sharedbox::kind_float16), lock_timeout,
                        [&](sharedbox::type_view, bytes_out b) { return sharedbox::encode_float16(value, b); });
 }
 
@@ -188,16 +183,12 @@ int sbx_read_float32(const sbx_handle *h, uint16_t field, float *out) {
     if (out == nullptr)
         return SBX_E_RANGE;
     return read_as(h, field, is(sharedbox::kind_float32), [&](sharedbox::type_view, bytes_in b) {
-        const auto got = sharedbox::decode_float32(b);
-        if (!got)
-            return static_cast<int>(got.error().code);
-        *out = static_cast<float>(*got);
-        return SBX_OK;
+        return decoded(sharedbox::decode_float32(b), [&](const auto &got) { *out = static_cast<float>(got); });
     });
 }
 
 int sbx_write_float32(sbx_handle *h, uint16_t field, double value, double lock_timeout) {
-    return write_as<4>(h, field, sharedbox::kind_float32, lock_timeout,
+    return write_as<4>(h, field, is(sharedbox::kind_float32), lock_timeout,
                        [&](sharedbox::type_view, bytes_out b) { return sharedbox::encode_float32(value, b); });
 }
 
@@ -205,16 +196,14 @@ int sbx_read_date(const sbx_handle *h, uint16_t field, int32_t *ordinal) {
     if (ordinal == nullptr)
         return SBX_E_RANGE;
     return read_as(h, field, is(sharedbox::kind_date), [&](sharedbox::type_view, bytes_in b) {
-        const auto got = sharedbox::decode_date(b);
-        if (!got)
-            return static_cast<int>(got.error().code);
-        *ordinal = static_cast<int32_t>(got->time_since_epoch().count() + sharedbox::unix_epoch_ordinal);
-        return SBX_OK;
+        return decoded(sharedbox::decode_date(b), [&](const auto &got) {
+            *ordinal = static_cast<int32_t>(got.time_since_epoch().count() + sharedbox::unix_epoch_ordinal);
+        });
     });
 }
 
 int sbx_write_date(sbx_handle *h, uint16_t field, int32_t ordinal, double lock_timeout) {
-    return write_as<4>(h, field, sharedbox::kind_date, lock_timeout, [&](sharedbox::type_view, bytes_out b) {
+    return write_as<4>(h, field, is(sharedbox::kind_date), lock_timeout, [&](sharedbox::type_view, bytes_out b) {
         return sharedbox::encode_date(
             std::chrono::sys_days(std::chrono::days(std::int64_t{ordinal} - sharedbox::unix_epoch_ordinal)), b);
     });
@@ -224,19 +213,17 @@ int sbx_read_time(const sbx_handle *h, uint16_t field, sbx_time *out) {
     if (out == nullptr)
         return SBX_E_RANGE;
     return read_as(h, field, is(sharedbox::kind_time), [&](sharedbox::type_view, bytes_in b) {
-        const auto got = sharedbox::decode_time(b);
-        if (!got)
-            return static_cast<int>(got.error().code);
-        *out = {got->of_day.count(), got->offset, static_cast<uint8_t>(got->naive),
-                static_cast<uint8_t>(got->fold)};
-        return SBX_OK;
+        return decoded(sharedbox::decode_time(b), [&](const auto &got) {
+            *out = {got.of_day.count(), got.offset, static_cast<uint8_t>(got.naive),
+                    static_cast<uint8_t>(got.fold)};
+        });
     });
 }
 
 int sbx_write_time(sbx_handle *h, uint16_t field, const sbx_time *value, double lock_timeout) {
     if (value == nullptr)
         return SBX_E_RANGE;
-    return write_as<16>(h, field, sharedbox::kind_time, lock_timeout, [&](sharedbox::type_view, bytes_out b) {
+    return write_as<16>(h, field, is(sharedbox::kind_time), lock_timeout, [&](sharedbox::type_view, bytes_out b) {
         return sharedbox::encode_time(
             {std::chrono::microseconds(value->micros), value->offset_minutes, value->naive != 0, value->fold != 0},
             b);
@@ -247,59 +234,52 @@ int sbx_read_datetime(const sbx_handle *h, uint16_t field, sbx_datetime *out) {
     if (out == nullptr)
         return SBX_E_RANGE;
     return read_as(h, field, is(sharedbox::kind_datetime), [&](sharedbox::type_view, bytes_in b) {
-        const auto got = sharedbox::decode_datetime(b);
-        if (!got)
-            return static_cast<int>(got.error().code);
-        *out = {got->micros, got->offset, static_cast<uint8_t>(got->naive), static_cast<uint8_t>(got->fold)};
-        return SBX_OK;
+        return decoded(sharedbox::decode_datetime(b), [&](const auto &got) {
+            *out = {got.micros, got.offset, static_cast<uint8_t>(got.naive), static_cast<uint8_t>(got.fold)};
+        });
     });
 }
 
 int sbx_write_datetime(sbx_handle *h, uint16_t field, const sbx_datetime *value, double lock_timeout) {
     if (value == nullptr)
         return SBX_E_RANGE;
-    return write_as<16>(h, field, sharedbox::kind_datetime, lock_timeout, [&](sharedbox::type_view, bytes_out b) {
-        return sharedbox::encode_datetime(
-            {value->micros, value->offset_minutes, value->naive != 0, value->fold != 0}, b);
-    });
+    return write_as<16>(h, field, is(sharedbox::kind_datetime), lock_timeout,
+                        [&](sharedbox::type_view, bytes_out b) {
+                            return sharedbox::encode_datetime(
+                                {value->micros, value->offset_minutes, value->naive != 0, value->fold != 0}, b);
+                        });
 }
 
 int sbx_read_timedelta(const sbx_handle *h, uint16_t field, sbx_timedelta *out) {
     if (out == nullptr)
         return SBX_E_RANGE;
     return read_as(h, field, is(sharedbox::kind_timedelta), [&](sharedbox::type_view, bytes_in b) {
-        const auto got = sharedbox::decode_timedelta(b);
-        if (!got)
-            return static_cast<int>(got.error().code);
-        *out = {got->days, got->seconds, got->microseconds};
-        return SBX_OK;
+        return decoded(sharedbox::decode_timedelta(b),
+                       [&](const auto &got) { *out = {got.days, got.seconds, got.microseconds}; });
     });
 }
 
 int sbx_write_timedelta(sbx_handle *h, uint16_t field, const sbx_timedelta *value, double lock_timeout) {
     if (value == nullptr)
         return SBX_E_RANGE;
-    return write_as<12>(h, field, sharedbox::kind_timedelta, lock_timeout, [&](sharedbox::type_view, bytes_out b) {
-        return sharedbox::encode_timedelta({value->days, value->seconds, value->microseconds}, b);
-    });
+    return write_as<12>(
+        h, field, is(sharedbox::kind_timedelta), lock_timeout, [&](sharedbox::type_view, bytes_out b) {
+            return sharedbox::encode_timedelta({value->days, value->seconds, value->microseconds}, b);
+        });
 }
 
 int sbx_read_uuid(const sbx_handle *h, uint16_t field, uint8_t out[16]) {
     if (out == nullptr)
         return SBX_E_RANGE;
     return read_as(h, field, is(sharedbox::kind_uuid), [&](sharedbox::type_view, bytes_in b) {
-        const auto got = sharedbox::decode_uuid(b);
-        if (!got)
-            return static_cast<int>(got.error().code);
-        std::memcpy(out, got->data(), 16);
-        return SBX_OK;
+        return decoded(sharedbox::decode_uuid(b), [&](const auto &got) { std::memcpy(out, got.data(), 16); });
     });
 }
 
 int sbx_write_uuid(sbx_handle *h, uint16_t field, const uint8_t value[16], double lock_timeout) {
     if (value == nullptr)
         return SBX_E_RANGE;
-    return write_as<16>(h, field, sharedbox::kind_uuid, lock_timeout, [&](sharedbox::type_view, bytes_out b) {
+    return write_as<16>(h, field, is(sharedbox::kind_uuid), lock_timeout, [&](sharedbox::type_view, bytes_out b) {
         std::array<std::byte, 16> raw;
         std::memcpy(raw.data(), value, 16);
         return sharedbox::encode_uuid(raw, b);
@@ -310,15 +290,12 @@ int sbx_read_position(const sbx_handle *h, uint16_t field, uint16_t *position) {
     if (position == nullptr)
         return SBX_E_RANGE;
     return read_as(h, field, positioned, [&](sharedbox::type_view t, bytes_in b) {
-        return stored(sharedbox::decode_position(t, b), position);
+        return decoded(sharedbox::decode_position(t, b), [&](std::uint16_t got) { *position = got; });
     });
 }
 
 int sbx_write_position(sbx_handle *h, uint16_t field, uint16_t position, double lock_timeout) {
-    const sharedbox::handle *owner = owned(h);
-    if (owner == nullptr || field >= owner->field_count() || !positioned(owner->field(field).kind))
-        return SBX_E_RANGE;
-    return write_as<2>(h, field, owner->field(field).kind, lock_timeout, [&](sharedbox::type_view t, bytes_out b) {
+    return write_as<2>(h, field, positioned, lock_timeout, [&](sharedbox::type_view t, bytes_out b) {
         return sharedbox::encode_position(t, position, b);
     });
 }
@@ -326,12 +303,13 @@ int sbx_write_position(sbx_handle *h, uint16_t field, uint16_t position, double 
 int sbx_read_flag(const sbx_handle *h, uint16_t field, uint64_t *bits) {
     if (bits == nullptr)
         return SBX_E_RANGE;
-    return read_as(h, field, is(sharedbox::kind_flag),
-                   [&](sharedbox::type_view, bytes_in b) { return stored(sharedbox::decode_flag(b), bits); });
+    return read_as(h, field, is(sharedbox::kind_flag), [&](sharedbox::type_view, bytes_in b) {
+        return decoded(sharedbox::decode_flag(b), [&](std::uint64_t got) { *bits = got; });
+    });
 }
 
 int sbx_write_flag(sbx_handle *h, uint16_t field, uint64_t bits, double lock_timeout) {
-    return write_as<8>(h, field, sharedbox::kind_flag, lock_timeout,
+    return write_as<8>(h, field, is(sharedbox::kind_flag), lock_timeout,
                        [&](sharedbox::type_view, bytes_out b) { return sharedbox::encode_flag(bits, b); });
 }
 
@@ -339,11 +317,7 @@ int sbx_read_present(const sbx_handle *h, uint16_t field, int *present) {
     if (present == nullptr)
         return SBX_E_RANGE;
     return read_as(h, field, is(sharedbox::kind_optional), [&](sharedbox::type_view, bytes_in b) {
-        const auto got = sharedbox::decode_present(b);
-        if (!got)
-            return static_cast<int>(got.error().code);
-        *present = *got ? 1 : 0;
-        return SBX_OK;
+        return decoded(sharedbox::decode_present(b), [&](const auto &got) { *present = got ? 1 : 0; });
     });
 }
 
