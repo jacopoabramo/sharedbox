@@ -122,6 +122,25 @@ static_assert(offsetof(reader_entry, owner_pid) % detail::align32 == 0 &&
 
 namespace detail {
 
+// When a call given timeout must stop waiting. The clock is read on the first use, so a call that finds
+// its item at once reads no clock, and the timeout counts from the first time the call had to wait.
+class lazy_deadline {
+public:
+    explicit lazy_deadline(seconds timeout) noexcept : timeout_(timeout) {}
+    clock::time_point at() noexcept {
+        if (!set_) {
+            at_ = clock::now() + std::chrono::duration_cast<clock::duration>(timeout_);
+            set_ = true;
+        }
+        return at_;
+    }
+
+private:
+    seconds timeout_;
+    clock::time_point at_{};
+    bool set_ = false;
+};
+
 // Where an item starts in its slot: after the slot's seq, at the item's own alignment.
 inline std::uint64_t item_start(std::uint32_t alignment) noexcept {
     return round_up(sizeof(std::uint64_t), alignment);
@@ -1174,8 +1193,7 @@ result<received> stream_reader::receive_with(F &&copy, seconds timeout) {
         return unexpected(status::range);
     detail::stream_state &s = *s_;
     stream_header &h = *s.hdr;
-    const detail::clock::time_point deadline =
-        detail::clock::now() + std::chrono::duration_cast<detail::clock::duration>(timeout);
+    detail::lazy_deadline deadline(timeout);
     const std::uint64_t missed_before = missed_;
     for (;;) {
         // A slot whose seq is 2 * r_ + 2 holds item r_ whole, so write_pos need not be read: it is only
@@ -1191,7 +1209,7 @@ result<received> stream_reader::receive_with(F &&copy, seconds timeout) {
         }
         const std::uint64_t w = detail::atomic(h.write_pos).load(std::memory_order_acquire);
         if (w <= r_) {
-            if (const result<void> waited = wait_for_data(r_, deadline); !waited)
+            if (const result<void> waited = wait_for_data(r_, deadline.at()); !waited)
                 return unexpected(waited.error());
             continue;
         }
@@ -1239,7 +1257,9 @@ result<received> stream_reader::receive_with(F &&copy, seconds timeout) {
             ++r_;
             // A sender that overwrites each item during its copy keeps this loop from reaching wait_for_data,
             // the only other place that looks at the deadline.
-            if (mode_ != read_mode::lossless && detail::clock::now() >= deadline)
+            // The deadline is found before the clock is read again, so a timeout of 0 has passed here.
+            if (const detail::clock::time_point end = deadline.at();
+                mode_ != read_mode::lossless && detail::clock::now() >= end)
                 return unexpected(status::timeout);
             continue;
         }
@@ -1260,8 +1280,7 @@ result<received> stream_reader::fetch_with(std::uint64_t position, F &&copy, sec
         return unexpected(status::range);
     const detail::stream_state &s = *s_;
     stream_header &h = *s.hdr;
-    const detail::clock::time_point deadline =
-        detail::clock::now() + std::chrono::duration_cast<detail::clock::duration>(timeout);
+    detail::lazy_deadline deadline(timeout);
     for (;;) {
         // Read before the check: the sender stores write_pos after it publishes, so a write_pos above position
         // means the slot held the item whole before the check, and a failed check means a later lap.
@@ -1275,7 +1294,7 @@ result<received> stream_reader::fetch_with(std::uint64_t position, F &&copy, sec
             const std::uint64_t oldest = now > s.capacity ? now - s.capacity : 0;
             return unexpected(error{status::not_found, 0, (std::max)(oldest, position + 1)});
         }
-        if (const result<void> waited = wait_for_data(position, deadline); !waited)
+        if (const result<void> waited = wait_for_data(position, deadline.at()); !waited)
             return unexpected(waited.error());
     }
 }
