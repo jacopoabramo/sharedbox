@@ -1003,7 +1003,7 @@ inline result<void> stream_sender::gate(std::uint64_t p, seconds timeout, on_ful
                 min_ = lossless_min(p, floor);
                 return p < min_ + s.capacity;
             },
-            (std::min)(left, seconds(liveness_delay)), &h.space_waiting);
+            (std::min)(left, seconds(liveness_delay)), h.space_waiting);
         if (woken)
             return *woken == wake::interrupted ? result<void>(unexpected(status::interrupted)) : result<void>();
         if (woken.error().code != status::timeout)
@@ -1129,7 +1129,7 @@ inline result<void> stream_reader::wait_for_data(std::uint64_t position, detail:
                 return detail::atomic(h.write_pos).load(std::memory_order_seq_cst) > position ||
                        detail::atomic(h.state).load(std::memory_order_seq_cst) == stream_ended;
             },
-            (std::min)(std::chrono::duration_cast<seconds>(left), seconds(liveness_delay)), &h.data_waiting);
+            (std::min)(std::chrono::duration_cast<seconds>(left), seconds(liveness_delay)), h.data_waiting);
         if (woken)
             return *woken == wake::interrupted ? result<void>(unexpected(status::interrupted)) : result<void>();
         if (woken.error().code != status::timeout)
