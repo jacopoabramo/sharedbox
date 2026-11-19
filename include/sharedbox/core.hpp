@@ -2266,6 +2266,19 @@ SHAREDBOX_HOT void wake_all(const waiter_table &t, std::uint32_t &word) noexcept
 #endif
 }
 
+// Changes word and wakes every process waiting on it.
+SHAREDBOX_HOT void notify_all(const waiter_table &t, std::uint32_t &word) noexcept {
+    atomic(word).fetch_add(1, std::memory_order_seq_cst);
+    wake_all(t, word);
+}
+
+// notify_all when count says a process waits. The caller has made its change and then a seq_cst operation
+// or fence, so either the load here sees the waiter's count or the waiter's check sees the change.
+SHAREDBOX_HOT void notify(const waiter_table &t, std::uint32_t &word, std::uint32_t &count) noexcept {
+    if (atomic(count).load(std::memory_order_seq_cst) != 0)
+        notify_all(t, word);
+}
+
 // Blocks in a slot this process holds until changed() is true, the slot is interrupted, or timeout
 // passes (status::timeout). changed must read with seq_cst: word is read before it, so a change between
 // the two moves the word and the futex refuses to sleep. The wait counts itself in sleepers, one of the

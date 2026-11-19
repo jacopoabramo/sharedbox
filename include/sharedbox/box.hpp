@@ -1760,10 +1760,7 @@ SHAREDBOX_HOT void wake_waiters(const state &s) noexcept {
     // loaded before the change returns at once, and a waiter whose load comes after it reads this change
     // or a later one, every change to wake_word being a read-modify-write, and the swap happens before
     // its check. On Windows the value of wake_word is unused, but the waiter's load stays.
-    if (atomic(h.sleepers).load(std::memory_order_seq_cst) == 0)
-        return;
-    atomic(h.wake_word).fetch_add(1, std::memory_order_seq_cst);
-    wake_all(s.waiters, h.wake_word);
+    notify(s.waiters, h.wake_word, h.sleepers);
 }
 
 } // namespace detail
