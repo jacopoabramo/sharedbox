@@ -1537,6 +1537,7 @@ public:
     result<read_value> read(std::uint16_t field, std::span<std::byte> buf) const;
     result<std::uint64_t> read_record(std::span<std::byte> buf) const;
     result<read_value> read_used(std::uint16_t field, std::span<std::byte> buf) const;
+    std::size_t used_now(std::uint16_t field) const noexcept;
     result<std::uint64_t> read_record_used(std::span<std::byte> buf) const;
     result<read_value> read_large(std::uint16_t field, std::span<std::byte> buf) const;
     result<std::uint64_t> read_record_large(std::span<std::byte> buf) const;
