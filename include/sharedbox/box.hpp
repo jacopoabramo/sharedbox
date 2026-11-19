@@ -285,9 +285,6 @@ public:
     // or the shape line and the elements in use, not the whole capacity. status::range for a field of
     // another kind.
     [[nodiscard]] result<read_value> read_used(std::uint16_t field, std::span<std::byte> buf) const;
-    // The bytes field has in use at this moment, read without the sequence check: a size for the buffer
-    // of read_used, which reports the real one. 0 for a field read_used refuses.
-    std::size_t used_now(std::uint16_t field) const noexcept;
     // As read_record, copying only the bytes each field uses: the length and the bytes of a str, bytes or
     // Decimal, the length and the slots in use of a list, set or dict, the shape line and the elements of a
     // max_array, and all of any other field. Each lands where read_record puts it, so payload finds it;
@@ -1144,17 +1141,10 @@ inline result<std::uint64_t> handle::read_record_used(std::span<std::byte> buf) 
     return generation;
 }
 
-inline std::size_t handle::used_now(std::uint16_t field) const noexcept {
+inline result<read_value> handle::read_used(std::uint16_t field, std::span<std::byte> buf) const {
     const detail::state &s = *s_;
     if (field >= s.field_count ||
         !(detail::is_collection(s.fields[field].kind) || s.fields[field].kind == kind_max_array))
-        return 0;
-    return detail::used_bytes(s, field, s.record + s.fields[field].offset);
-}
-
-inline result<read_value> handle::read_used(std::uint16_t field, std::span<std::byte> buf) const {
-    const detail::state &s = *s_;
-    if (used_now(field) == 0)
         return unexpected(status::range);
     if (detail::field_span(s.fields[field]) >= detail::large_copy)
         return detail::read_used_impl<true>(s, field, buf);
