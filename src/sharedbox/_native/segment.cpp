@@ -31,13 +31,12 @@ void check_lock_timeout(double lock_timeout) {
         throw std::invalid_argument("lock_timeout must be finite and in (0, 86400]");
 }
 
-void check_values(const std::vector<FieldDesc> &fields, std::span<const value> values) {
+void check_values(const std::vector<field_spec> &fields, std::span<const value> values) {
     for (const value &v : values) {
         check_index(v.field, fields.size());
-        const FieldDesc &f = fields[v.field];
-        const bool max_array = static_cast<std::uint32_t>(f.kind) == kind_max_array;
-        const bool shorter_ok = detail::prefixed(static_cast<std::uint32_t>(f.kind)) ||
-                                detail::is_collection(static_cast<std::uint32_t>(f.kind)) || max_array;
+        const field_spec &f = fields[v.field];
+        const bool max_array = f.kind == kind_max_array;
+        const bool shorter_ok = detail::prefixed(f.kind) || detail::is_collection(f.kind) || max_array;
         if (shorter_ok ? v.bytes.size() > f.capacity : v.bytes.size() != f.capacity)
             throw std::invalid_argument("value for field " + std::to_string(v.field) + " is " +
                                         std::to_string(v.bytes.size()) + " bytes; the field holds " +
@@ -51,15 +50,13 @@ void check_values(const std::vector<FieldDesc> &fields, std::span<const value> v
 
 // Segment has no type table, so it cannot tell which max_array value breaks its shape line: the first one in
 // a refused write is named.
-void check_max_arrays(const std::vector<FieldDesc> &fields, std::span<const value> values) {
+void check_max_arrays(const std::vector<field_spec> &fields, std::span<const value> values) {
     for (const value &v : values)
-        if (static_cast<std::uint32_t>(fields[v.field].kind) == kind_max_array)
+        if (fields[v.field].kind == kind_max_array)
             throw std::invalid_argument("value for field " + std::to_string(v.field) +
                                         " does not match its shape line, which must give the number of element "
                                         "bytes that follow it");
 }
-
-field_spec to_spec(const FieldDesc &f) { return {f.offset, f.capacity, static_cast<std::uint8_t>(f.kind)}; }
 
 std::span<const std::byte> bytes_of(std::string_view s) { return std::as_bytes(std::span(s.data(), s.size())); }
 
@@ -234,8 +231,8 @@ void check_metadata_spec(const std::string &what, const metadata_spec &spec) {
                                 " does not make a metadata area");
 }
 
-std::string_view payload(const FieldDesc &field, const std::byte *record) {
-    const std::span<const std::byte> bytes = detail::payload(to_spec(field), record);
+std::string_view payload_view(const field_spec &field, const std::byte *record) {
+    const std::span<const std::byte> bytes = detail::payload(field, record);
     return {reinterpret_cast<const char *>(bytes.data()), bytes.size()};
 }
 
@@ -248,7 +245,7 @@ struct Segment::Impl {
     std::string name;
     handle box;
     // The handle's checked field table, in the form codec.cpp takes.
-    std::vector<FieldDesc> fields;
+    std::vector<field_spec> fields;
     std::vector<std::string> names;
     std::size_t record_size = 0;
     double lock_timeout = default_lock_timeout;
@@ -268,10 +265,8 @@ struct Segment::Impl {
     // Called once the handle is open, to take what the rest of this file reads from it.
     void bind() {
         fields.reserve(box.field_count());
-        for (std::uint16_t i = 0; i < box.field_count(); ++i) {
-            const field_spec &f = box.field(i);
-            fields.push_back({f.offset, f.capacity, static_cast<FieldKind>(f.kind)});
-        }
+        for (std::uint16_t i = 0; i < box.field_count(); ++i)
+            fields.push_back(box.field(i));
         record_size = box.record_size();
         static_cast<void>(box.set_lock_timeout(seconds(lock_timeout)));
         box.set_wait_hooks(before_wait, after_wait);
@@ -347,7 +342,7 @@ struct Segment::Impl {
         return guard;
     }
 
-    const FieldDesc &field(std::uint32_t index) const {
+    const field_spec &field(std::uint32_t index) const {
         check_index(index, fields.size());
         return fields[index];
     }
@@ -375,14 +370,14 @@ struct Segment::Impl {
     // A described field: a list, set or dict copies its used slots, a large value runs the wait hooks
     // around its copy, anything else is read whole.
     void read_described(std::uint16_t f, FieldRead &out) const {
-        const FieldDesc &field = fields[f];
-        if (static_cast<std::uint8_t>(field.kind) == kind_attr)
+        const field_spec &field = fields[f];
+        if (field.kind == kind_attr)
             return read_attr(f, out);
         const std::size_t size = field.capacity;
         std::byte *buf = reinterpret_cast<std::byte *>(out.words);
         // A collection usually uses far less than its capacity, so it is read into words first and
         // gets a heap buffer only at the length it reports.
-        if (detail::is_collection(static_cast<std::uint32_t>(field.kind))) {
+        if (detail::is_collection(field.kind)) {
             read_value got = check(box.read_used(f, {buf, sizeof out.words}));
             std::size_t held = sizeof out.words;
             while (got.len > held) {
@@ -396,7 +391,7 @@ struct Segment::Impl {
             return;
         }
         // An array is read straight into the heap buffer its decoded value then owns.
-        if (size > sizeof out.words || static_cast<std::uint8_t>(field.kind) == kind_array) {
+        if (size > sizeof out.words || field.kind == kind_array) {
             out.large.reset(new std::byte[size]);
             buf = out.large.get();
         }
@@ -448,7 +443,7 @@ Segment::~Segment() {
     }
 }
 
-std::unique_ptr<Segment> Segment::create(const std::string &name, const std::vector<FieldDesc> &fields,
+std::unique_ptr<Segment> Segment::create(const std::string &name, const std::vector<field_spec> &fields,
                                          const std::vector<std::string> &names, std::uint64_t record_size,
                                          std::uint64_t schema_hash, double lock_timeout,
                                          std::uint16_t waiter_slots,
@@ -474,20 +469,15 @@ std::unique_ptr<Segment> Segment::create(const std::string &name, const std::vec
     // description's offset, not its size, and kinds 6 to 11 are always encoded at their exact size;
     // the header checks both.
     for (const value &v : initial)
-        if (const auto kind = static_cast<std::uint32_t>(fields[v.field].kind);
-            kind <= kind_ref || detail::prefixed(kind))
+        if (const auto kind = fields[v.field].kind; kind <= kind_ref || detail::prefixed(kind))
             check_values(fields, {&v, 1});
-    std::vector<field_spec> table;
-    table.reserve(fields.size());
-    for (const auto &f : fields)
-        table.push_back(to_spec(f));
 
     auto impl = std::make_unique<Impl>();
     impl->name = name;
     impl->names = names;
     impl->lock_timeout = lock_timeout;
     const auto size = static_cast<std::uint32_t>(record_size);
-    result<handle> made = detail::create_impl(name, table, size, schema_hash, waiter_slots, initial,
+    result<handle> made = detail::create_impl(name, fields, size, schema_hash, waiter_slots, initial,
                                               bytes_of(types_table), spec, publish);
     if (!made && made.error().code == status::exists)
         throw SegmentExists(exists_message(name, names));
@@ -539,7 +529,7 @@ void Segment::read(std::uint32_t index, FieldRead &out) const {
     impl_->check_not_held();
     out.field = &impl_->field(index);
     const auto f = static_cast<std::uint16_t>(index);
-    if (detail::described(static_cast<std::uint32_t>(out.field->kind))) [[unlikely]]
+    if (detail::described(out.field->kind)) [[unlikely]]
         return impl_->read_described(f, out);
     const read_value got = impl_->check(impl_->box.read(f, std::as_writable_bytes(std::span(out.words))));
     if (got.len > sizeof out.words) [[unlikely]]
@@ -551,7 +541,7 @@ void Segment::read(std::uint32_t index, FieldRead &out) const {
 void Segment::read_into(std::uint32_t index, std::span<std::byte> out) const {
     auto guard = impl_->enter();
     impl_->check_not_held();
-    const FieldDesc &field = impl_->field(index);
+    const field_spec &field = impl_->field(index);
     if (out.size() != field.capacity)
         throw std::invalid_argument("box '" + impl_->name + "': field " + std::to_string(index) + " holds " +
                                     std::to_string(field.capacity) + " bytes, not " + std::to_string(out.size()));
@@ -972,7 +962,7 @@ bool Segment::closed() const { return impl_->closed; }
 
 const std::string &Segment::name() const { return impl_->name; }
 
-std::span<const FieldDesc> Segment::fields() const { return impl_->fields; }
+std::span<const field_spec> Segment::fields() const { return impl_->fields; }
 
 std::span<const std::string> Segment::field_names() const { return impl_->names; }
 

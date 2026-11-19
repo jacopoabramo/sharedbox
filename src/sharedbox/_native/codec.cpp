@@ -14,19 +14,19 @@ namespace nb = nanobind;
 namespace sharedbox {
 namespace {
 
-const char *kind_name(FieldKind kind) {
+const char *kind_name(std::uint8_t kind) {
     switch (kind) {
-    case FieldKind::Bool:
+    case kind_bool:
         return "bool";
-    case FieldKind::Int:
+    case kind_int:
         return "int";
-    case FieldKind::Float:
+    case kind_float:
         return "float";
-    case FieldKind::Str:
+    case kind_str:
         return "str";
-    case FieldKind::Bytes:
+    case kind_bytes:
         return "bytes";
-    case FieldKind::Ref:
+    case kind_ref:
         return "a reference";
     }
     return "?";
@@ -79,12 +79,12 @@ public:
 
 } // namespace
 
-std::span<const std::byte> encode(const FieldDesc &field, const std::string &name, PyObject *value,
+std::span<const std::byte> encode(const field_spec &field, const std::string &name, PyObject *value,
                                   EncodeBuffer &buffer) {
     static constexpr std::byte bool_bytes[2] = {std::byte{0}, std::byte{1}};
     std::size_t size = 0;
     switch (field.kind) {
-    case FieldKind::Bool: {
+    case kind_bool: {
         if (PyBool_Check(value))
             return {&bool_bytes[value == Py_True ? 1 : 0], 1};
         if (!scalars::is_numpy_bool(value))
@@ -94,7 +94,7 @@ std::span<const std::byte> encode(const FieldDesc &field, const std::string &nam
             throw nb::python_error();
         return {&bool_bytes[truth], 1};
     }
-    case FieldKind::Int: {
+    case kind_int: {
         if (PyBool_Check(value) || !PyLong_Check(value)) [[unlikely]] {
             if (!scalars::is_integer(value))
                 goto wrong_type;
@@ -102,7 +102,7 @@ std::span<const std::byte> encode(const FieldDesc &field, const std::string &nam
         }
         return int_bytes(value, name, buffer);
     }
-    case FieldKind::Float: {
+    case kind_float: {
         if ((PyBool_Check(value) || !(PyFloat_Check(value) || PyLong_Check(value))) && !scalars::is_real(value))
             goto wrong_type;
         double number = PyFloat_AsDouble(value);
@@ -115,7 +115,7 @@ std::span<const std::byte> encode(const FieldDesc &field, const std::string &nam
         std::memcpy(buffer.small, &number, 8);
         return {buffer.small, 8};
     }
-    case FieldKind::Str: {
+    case kind_str: {
         if (!PyUnicode_Check(value))
             goto wrong_type;
         Py_ssize_t length = 0;
@@ -128,7 +128,7 @@ std::span<const std::byte> encode(const FieldDesc &field, const std::string &nam
             goto too_long;
         return std::as_bytes(std::span(data, size));
     }
-    case FieldKind::Bytes: {
+    case kind_bytes: {
         if (!PyBytes_Check(value) && !PyByteArray_Check(value) && !PyMemoryView_Check(value))
             goto wrong_type;
         Buffer view(value);
@@ -142,7 +142,7 @@ std::span<const std::byte> encode(const FieldDesc &field, const std::string &nam
             throw nb::python_error();
         return {out, size};
     }
-    case FieldKind::Ref: {
+    case kind_ref: {
         box_ref ref{};
         if (value != Py_None) {
             // The Python layer passes (create_id, schema_hash, name) of the box assigned.
@@ -178,28 +178,28 @@ wrong_type:
           name + " expects " + kind_name(field.kind) + ", got " + nb::borrow<nb::str>(type_name).c_str());
 }
 
-PyObject *decode(const FieldDesc &field, const char *data, std::size_t size) {
+PyObject *decode(const field_spec &field, const char *data, std::size_t size) {
     switch (field.kind) {
-    case FieldKind::Bool:
+    case kind_bool:
         // Only 0 and 1 are ever stored, so another byte is damage, as it is for a bool inside a record.
         if (static_cast<unsigned char>(data[0]) > 1)
             return nullptr;
         return PyBool_FromLong(data[0]);
-    case FieldKind::Int: {
+    case kind_int: {
         long long number;
         std::memcpy(&number, data, 8);
         return PyLong_FromLongLong(number);
     }
-    case FieldKind::Float: {
+    case kind_float: {
         double number;
         std::memcpy(&number, data, 8);
         return PyFloat_FromDouble(number);
     }
-    case FieldKind::Str:
+    case kind_str:
         return PyUnicode_DecodeUTF8(data, static_cast<Py_ssize_t>(size), "replace");
-    case FieldKind::Bytes:
+    case kind_bytes:
         return PyBytes_FromStringAndSize(data, static_cast<Py_ssize_t>(size));
-    case FieldKind::Ref: {
+    case kind_ref: {
         box_ref ref;
         std::memcpy(&ref, data, sizeof ref);
         if (ref.create_id == 0)
@@ -217,19 +217,18 @@ PyObject *decode(const FieldDesc &field, const char *data, std::size_t size) {
 
 void encode_all(const Segment &s, const Types *types, std::span<const Pending> values,
                 std::span<EncodeBuffer> buffers, std::span<value> out) {
-    const std::span<const FieldDesc> fields = s.fields();
+    const std::span<const field_spec> fields = s.fields();
     const std::span<const std::string> names = s.field_names();
     for (std::size_t i = 0; i < values.size(); ++i) {
         const std::uint32_t index = values[i].field;
         // Checked before the narrowing cast, which would otherwise turn index 65536 into field 0.
         check_index(index, fields.size());
-        const FieldDesc &field = fields[index];
+        const field_spec &field = fields[index];
         // The members are written separately because MSVC copies a value built in one step through
         // a stack temporary and reloads it, which stalls for about 10 ns per update.
         const std::span<const std::byte> bytes =
-            static_cast<std::uint8_t>(field.kind) <= kind_ref
-                ? encode(field, names[index], values[i].value, buffers[i])
-                : need(types, index).encode(index, values[i].value, buffers[i]);
+            field.kind <= kind_ref ? encode(field, names[index], values[i].value, buffers[i])
+                                   : need(types, index).encode(index, values[i].value, buffers[i]);
         out[i].field = static_cast<std::uint16_t>(index);
         out[i].bytes = bytes;
     }

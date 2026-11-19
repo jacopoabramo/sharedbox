@@ -17,14 +17,6 @@
 
 namespace sharedbox {
 
-enum class FieldKind : std::uint8_t { Bool = 0, Int = 1, Float = 2, Str = 3, Bytes = 4, Ref = 5 };
-
-struct FieldDesc {
-    std::uint32_t offset;
-    std::uint32_t capacity;
-    FieldKind kind;
-};
-
 /// Throws std::out_of_range unless index < count.
 void check_index(std::uint32_t index, std::size_t count);
 /// Throws std::invalid_argument unless there is one name per field.
@@ -34,7 +26,7 @@ void check_metadata_spec(const std::string &what, const metadata_spec &spec);
 /// The largest record Segment::read_record copies whole, and the one with_record keeps on the stack.
 inline constexpr std::size_t small_record = 4096;
 /// The stored bytes of field inside a copy of the record made by Segment::read_record.
-std::string_view payload(const FieldDesc &field, const std::byte *record);
+std::string_view payload_view(const field_spec &field, const std::byte *record);
 /// "missing", "running" or "creator_exited": whether a segment is called name and its creator still runs.
 std::string segment_status_of(const std::string &name);
 
@@ -77,7 +69,7 @@ struct FieldRead {
     FieldRead(const FieldRead &) = delete;
     FieldRead &operator=(const FieldRead &) = delete;
 
-    const FieldDesc *field = nullptr;
+    const field_spec *field = nullptr;
     std::uint64_t version = 0;
     std::string_view bytes;
     // Most values fit in words. Words rather than chars, so MSVC's /GS adds no stack cookie check to
@@ -134,7 +126,7 @@ public:
     const Segment &segment() const { return segment_; }
     /// Throws std::runtime_error once end() or abort() ran, or in another thread than the one that took the write.
     void check_live() const;
-    /// The record's first byte, for payload(); the record holds every value set so far.
+    /// The record's first byte, for payload_view(); the record holds every value set so far.
     const std::byte *record() const;
     /// Stores values, every one checked before any is stored, and keeps the bytes of each field not set before.
     void set(std::span<const value> values);
@@ -167,7 +159,7 @@ public:
     /// gives the box a metadata area of metadata_versions entries, whose version 1 is metadata unless that
     /// is empty.
     static std::unique_ptr<Segment>
-    create(const std::string &name, const std::vector<FieldDesc> &fields, const std::vector<std::string> &names,
+    create(const std::string &name, const std::vector<field_spec> &fields, const std::vector<std::string> &names,
            std::uint64_t record_size, std::uint64_t schema_hash, double lock_timeout, std::uint16_t waiter_slots,
            const std::vector<std::pair<std::uint32_t, std::string>> &values, const std::string &types_table = {},
            bool publish = true, std::string_view metadata = {}, std::uint64_t metadata_capacity = 0,
@@ -197,7 +189,7 @@ public:
     /// Bytes of the record, the size of the buffer read_record fills.
     std::size_t record_size() const;
     /// Copies the record, every field from one moment, into out, which holds record_size() bytes. Of a
-    /// record above small_record bytes it copies only the bytes each field uses. payload() finds a field
+    /// record above small_record bytes it copies only the bytes each field uses. payload_view() finds a field
     /// in it.
     void read_record(std::span<std::byte> out) const;
     std::uint32_t field_count() const;
@@ -278,7 +270,7 @@ public:
     bool closed() const;
     const std::string &name() const;
     /// Every field, in index order; fixed once the segment is open.
-    std::span<const FieldDesc> fields() const;
+    std::span<const field_spec> fields() const;
     /// The label of every field, in index order; fixed once the segment is open.
     std::span<const std::string> field_names() const;
     /// Removes the name, like shm_unlink: existing handles keep working. A no-op on
