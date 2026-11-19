@@ -107,6 +107,7 @@ sharedbox/
 |   |-- test_bench_box.py      pytest-codspeed benchmarks, run by codspeed.yml
 |   `-- test_bench_stream.py   pytest-codspeed stream benchmarks: send plus receive_into
 |-- scripts/
+|   |-- ops_compare.py         base against head table of two benchbox ops runs, for the Ops workflow
 |   |-- stream_compare.py      base against head table of two benchbox stream runs, for the Streams workflow
 |   |-- release_notes.py       prints a release's CHANGELOG.md section, for the release workflows
 |   |-- vscode_setup.py        points VS Code's C/C++ extension at the build headers
@@ -315,7 +316,7 @@ gets the `ops` label, which runs the `Ops` workflow
 (`.github/workflows/ops.yaml`); the workflow also runs by hand. On
 Windows cp311 it times the `int` and `record` rows of `benchbox ops --fast`
 three times on the base branch and three times on the pull request,
-alternating, and writes each side's median and the median of the three rounds' ratios to the job summary. Read the ratios of `read int/SharedBox`,
+alternating, and `scripts/ops_compare.py` writes each side's median and the median of the three rounds' ratios to the job summary. Read the ratios of `read int/SharedBox`,
 `write int/SharedBox` and `write+read record/SharedBox`; the last decodes
 the record on every read. The `Streams` workflow
 (`.github/workflows/streams.yaml`) does the same for `benchbox stream` on

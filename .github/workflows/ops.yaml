@@ -72,39 +72,7 @@ jobs:
         shell: bash
         run: |
           cd head
-          uv run --no-sync python - ../results <<'EOF' | tee -a "$GITHUB_STEP_SUMMARY"
-          import statistics
-          import sys
-          from pathlib import Path
-
-          import pyperf
-          from sharedbox.benchmarks._app import machine
-
-          means: dict[tuple[str, str], dict[str, float]] = {}
-          for path in sorted(Path(sys.argv[1]).glob("*.json")):
-              side, round_ = path.name.split("-")[:2]
-              for bench in pyperf.BenchmarkSuite.load(str(path)).get_benchmarks():
-                  means.setdefault((bench.get_name(), side), {})[round_] = bench.mean()
-          print("### benchbox ops on Windows cp311, median of three rounds, list, set and dict rows one round")
-          print()
-          print("head / base is the median of each round's ratio, so a runner that drifts between rounds moves it less.")
-          print()
-          print("A pull request skips the 64k set and dict rows; start the workflow by hand for them.")
-          print()
-          print(machine())
-          print()
-          print("| benchmark | base | head | head / base |")
-          print("| --- | --- | --- | --- |")
-          for name in sorted({name for name, _ in means}):
-              base = means.get((name, "base"), {})
-              head = means.get((name, "head"), {})
-              # A row added or removed by the pull request has times on one side only.
-              cells = [f"{statistics.median(v.values()) * 1e9:.1f} ns" if v else "-" for v in (base, head)]
-              # Base and head of one round ran minutes apart, so the round's ratio is taken first.
-              ratios = [head[r] / base[r] for r in base if r in head and base[r]]
-              ratio = f"{statistics.median(ratios):.3f}" if ratios else "-"
-              print(f"| {name} | {cells[0]} | {cells[1]} | {ratio} |")
-          EOF
+          uv run --no-sync python scripts/ops_compare.py ../results | tee -a "$GITHUB_STEP_SUMMARY"
 
       - uses: actions/upload-artifact@v7
         with:
