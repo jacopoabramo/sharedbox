@@ -315,7 +315,7 @@ gets the `ops` label, which runs the `Ops` workflow
 (`.github/workflows/ops.yaml`); the workflow also runs by hand. On
 Windows cp311 it times the `int` and `record` rows of `benchbox ops --fast`
 three times on the base branch and three times on the pull request,
-alternating, and writes the medians and their ratio to the job summary. Read the ratios of `read int/SharedBox`,
+alternating, and writes each side's median and the median of the three rounds' ratios to the job summary. Read the ratios of `read int/SharedBox`,
 `write int/SharedBox` and `write+read record/SharedBox`; the last decodes
 the record on every read. The `Streams` workflow
 (`.github/workflows/streams.yaml`) does the same for `benchbox stream` on
