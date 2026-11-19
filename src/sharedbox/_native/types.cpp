@@ -751,11 +751,18 @@ nb::object Types::decode(std::uint32_t index, std::span<const std::byte> bytes,
     const std::string &name = labels_[index];
     if (t.kind == kind_attr)
         return decode_attr(index, bytes);
-    if (t.kind == kind_array || t.kind == kind_max_array) {
+    if (t.kind == kind_array) {
         if (bytes.size() != t.size)
             raise(PyExc_ValueError, name + ": the stored array has the wrong size");
-        return t.kind == kind_array ? decode_array(t, bytes.data(), owned)
-                                    : decode_max_array(t, bytes.data(), owned, name);
+        return decode_array(t, bytes.data(), owned);
+    }
+    if (t.kind == kind_max_array) {
+        // Read as its shape line and the elements in use, so it may be shorter than its size.
+        // A shape above the maximum is refused by decode_max_array, which names it corrupt.
+        const std::uint64_t in_use = bytes.size() < 64 ? 0 : detail::max_array_bytes(tree_, t, bytes.data());
+        if (bytes.size() < 64 || bytes.size() > t.size || (in_use != UINT64_MAX && in_use > bytes.size() - 64))
+            raise(PyExc_ValueError, name + ": the stored array has the wrong size");
+        return decode_max_array(t, bytes.data(), owned, name);
     }
     // A list, set or dict is read as its length and the slots it uses, so it may be shorter than its size.
     const bool fits = detail::prefixed(t.kind)        ? bytes.size() <= t.size - 4

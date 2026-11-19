@@ -6,6 +6,7 @@
 #include "table_builder.hpp"
 #include "unique.hpp"
 
+#include <algorithm>
 #include <chrono>
 #include <cmath>
 #include <cstring>
@@ -376,6 +377,13 @@ TEST_CASE("a max_array value is its shape line and its stored elements") {
     const auto read = box->read(0, out);
     REQUIRE(read);
     CHECK(std::memcmp(out.data(), good.data(), good.size()) == 0);
+    // read_used copies the shape line and the elements in use, and leaves the rest of the buffer alone.
+    std::vector<std::byte> used(out.size(), std::byte{0xEE});
+    const auto partial = box->read_used(0, used);
+    REQUIRE(partial);
+    CHECK((partial->len == good.size() && std::memcmp(used.data(), good.data(), good.size()) == 0));
+    CHECK(std::all_of(used.begin() + static_cast<std::ptrdiff_t>(good.size()), used.end(),
+                      [](std::byte b) { return b == std::byte{0xEE}; }));
     const std::uint64_t generation = box->generation();
     CHECK(write(value_of(2, 3, 64 + 4)).error().code == status::range);
     CHECK(write(value_of(5, 3, 64 + 5 * 3 * 4)).error().code == status::range);
