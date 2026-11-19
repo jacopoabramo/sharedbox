@@ -108,13 +108,13 @@ struct EncodeBuffer {
 
 /// The bytes stored for value, held in buffer, in constant data, or for a str in value itself, so
 /// they stay valid while value and buffer live; raises a Python exception naming the field.
-std::span<const std::byte> encode(const FieldDesc &field, const std::string &name, PyObject *value,
+std::span<const std::byte> encode(const field_spec &field, const std::string &name, PyObject *value,
                                   EncodeBuffer &buffer);
 
 /// A new reference to the value stored in data. nullptr with a Python error set when the conversion
 /// failed, and nullptr with none set when data holds bytes no value has; the caller knows the field's
 /// name and raises for it.
-PyObject *decode(const FieldDesc &field, const char *data, std::size_t size);
+PyObject *decode(const field_spec &field, const char *data, std::size_t size);
 
 /// One value to encode: the field index and the Python object, borrowed.
 struct Pending {

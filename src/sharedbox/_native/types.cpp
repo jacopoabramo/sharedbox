@@ -134,8 +134,8 @@ constexpr detail::type_ref timestamp_type{kind_int, 8, 8, detail::no_node};
 
 std::size_t timestamp_at(const detail::type_ref &value) { return (std::size_t{value.size} + 7) & ~std::size_t{7}; }
 
-FieldDesc desc_of(const detail::type_ref &t) {
-    return {0, detail::prefixed(t.kind) ? t.size - 4 : t.size, static_cast<FieldKind>(t.kind)};
+field_spec desc_of(const detail::type_ref &t) {
+    return {0, detail::prefixed(t.kind) ? t.size - 4 : t.size, t.kind};
 }
 
 // A bool, int, float or str stored at data, as a new reference, or nullptr with a Python error set.

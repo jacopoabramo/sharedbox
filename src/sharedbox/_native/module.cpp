@@ -47,13 +47,13 @@ namespace {
 using Values = std::vector<std::pair<std::uint32_t, nb::object>>;
 using Encoded = std::vector<std::pair<std::uint32_t, std::string>>;
 
-sharedbox::FieldKind to_kind(std::uint32_t code) {
+std::uint8_t to_kind(std::uint32_t code) {
     if (!sharedbox::detail::kind_known(code))
         throw std::invalid_argument("unknown field kind " + std::to_string(code));
-    return static_cast<sharedbox::FieldKind>(code);
+    return code;
 }
 
-nb::object decode_value(const sharedbox::FieldDesc &field, std::string_view bytes, const sharedbox::Types *types,
+nb::object decode_value(const sharedbox::field_spec &field, std::string_view bytes, const sharedbox::Types *types,
                         std::uint32_t index) {
     PyObject *value = sharedbox::decode(field, bytes.data(), bytes.size());
     if (value == nullptr) {
@@ -73,7 +73,7 @@ const sharedbox::Types *types_of(nb::handle types) {
 // Decodes a field read with Segment::read; an array takes the read's heap buffer instead of copying it.
 nb::object decode_read(const sharedbox::Types *types, std::uint32_t index, sharedbox::FieldRead &read) {
     const auto *data = reinterpret_cast<const std::byte *>(read.bytes.data());
-    if (static_cast<std::uint8_t>(read.field->kind) <= sharedbox::kind_ref) {
+    if (read.field->kind <= sharedbox::kind_ref) {
         if (types != nullptr && types->field_via_types(index)) [[unlikely]]
             return types->decode(index, {data, read.bytes.size()}, nullptr);
         return decode_value(*read.field, read.bytes, types, index);
@@ -83,17 +83,17 @@ nb::object decode_read(const sharedbox::Types *types, std::uint32_t index, share
 }
 
 // A field inside a copy of the record made by with_record.
-nb::object decode_payload(const sharedbox::Types *types, const sharedbox::FieldDesc &field, std::uint32_t index,
+nb::object decode_payload(const sharedbox::Types *types, const sharedbox::field_spec &field, std::uint32_t index,
                           const std::byte *record) {
-    const std::string_view bytes = sharedbox::payload(field, record);
+    const std::string_view bytes = sharedbox::payload_view(field, record);
     const auto data = std::as_bytes(std::span(bytes.data(), bytes.size()));
-    if (static_cast<std::uint8_t>(field.kind) <= sharedbox::kind_ref) {
+    if (field.kind <= sharedbox::kind_ref) {
         if (types != nullptr && types->field_via_types(index)) [[unlikely]]
             return types->decode(index, data, nullptr);
         return decode_value(field, bytes, types, index);
     }
     const sharedbox::Types &t = sharedbox::need(types, index);
-    if (static_cast<std::uint8_t>(field.kind) == sharedbox::kind_attr) {
+    if (field.kind == sharedbox::kind_attr) {
         const std::uint32_t at = t.attr_value_at(index);
         return t.decode(index, data.subspan(at == sharedbox::detail::attr_absent ? data.size() : at), nullptr);
     }
@@ -110,7 +110,7 @@ nb::object get(const Segment &s, std::uint32_t index, const sharedbox::Types *ty
 std::uint64_t stored_ref_id(const Segment &s, std::uint32_t index) {
     sharedbox::FieldRead read;
     s.read(index, read);
-    if (read.field->kind != sharedbox::FieldKind::Ref)
+    if (read.field->kind != sharedbox::kind_ref)
         throw std::invalid_argument("field " + std::to_string(index) + " is not a reference");
     std::uint64_t create_id = 0;
     std::memcpy(&create_id, read.bytes.data(), sizeof create_id);
@@ -202,8 +202,8 @@ nb::object get_reusable(const Segment &s, ValueCache &cache, std::uint32_t index
 void set_one(Segment &s, std::uint32_t index, nb::handle value, const sharedbox::Types *types) {
     sharedbox::check_index(index, s.field_count());
     sharedbox::EncodeBuffer buffer;
-    const sharedbox::FieldDesc &field = s.fields()[index];
-    s.write_one(index, static_cast<std::uint8_t>(field.kind) <= sharedbox::kind_ref
+    const sharedbox::field_spec &field = s.fields()[index];
+    s.write_one(index, field.kind <= sharedbox::kind_ref
                            ? sharedbox::encode(field, s.field_names()[index], value.ptr(), buffer)
                            : sharedbox::need(types, index).encode(index, value.ptr(), buffer));
 }
@@ -487,7 +487,7 @@ PyObject *box_snapshot(PyObject *callable, PyObject *const *args, std::size_t na
             return nullptr;
         const Segment &s = *nb::inst_ptr<Segment>(segment);
         // The Segment's own copy of the fields, not the handle's, which a close() may empty while this runs.
-        const std::span<const sharedbox::FieldDesc> fields = s.fields();
+        const std::span<const sharedbox::field_spec> fields = s.fields();
         const nb::object values = sharedbox::with_record(s, [&](const std::byte *record) {
             nb::object out = nb::steal(PyDict_New());
             if (!out.is_valid())
@@ -1022,7 +1022,7 @@ NB_MODULE(_native, m) {
                nb::handle types, std::optional<nb::bytes> metadata, std::uint64_t metadata_capacity,
                std::uint32_t metadata_versions) {
                 const sharedbox::Types *t = types_of(types);
-                std::vector<sharedbox::FieldDesc> descs;
+                std::vector<sharedbox::field_spec> descs;
                 descs.reserve(fields.size());
                 for (const auto &[offset, capacity, kind] : fields)
                     descs.push_back({offset, capacity, to_kind(kind)});
@@ -1033,7 +1033,7 @@ NB_MODULE(_native, m) {
                     sharedbox::check_index(index, descs.size());
                     sharedbox::EncodeBuffer buffer;
                     const std::span<const std::byte> bytes =
-                        static_cast<std::uint8_t>(descs[index].kind) <= sharedbox::kind_ref
+                        descs[index].kind <= sharedbox::kind_ref
                             ? sharedbox::encode(descs[index], names[index], value.ptr(), buffer)
                             : sharedbox::need(t, index).encode(index, value.ptr(), buffer);
                     encoded.emplace_back(index,
@@ -1181,7 +1181,7 @@ NB_MODULE(_native, m) {
                  return sharedbox::with_record(s, [&](const std::byte *record) {
                      nb::list_builder out(s.field_count());
                      for (std::uint32_t i = 0; i < s.field_count(); ++i) {
-                         const std::string_view value = sharedbox::payload(s.fields()[i], record);
+                         const std::string_view value = sharedbox::payload_view(s.fields()[i], record);
                          out.put(nb::bytes(value.data(), value.size()));
                      }
                      return out.commit();
