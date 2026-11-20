@@ -2310,6 +2310,7 @@ SHAREDBOX_HOT void notify(const waiter_table &t, std::uint32_t &word, std::uint3
 // writer that reads sleepers with seq_cst after its own change either sees the count or has its change
 // seen by the check.
 template <class Changed>
+    requires std::predicate<Changed &>
 result<wake> wait_on(const waiter_table &t, std::uint16_t slot, std::uint32_t &word, Changed changed,
                      seconds timeout, std::uint32_t &sleepers) {
     if (!slot_held(t, slot) || !timeout_ok(timeout, true))
