@@ -17,6 +17,7 @@ from sharedbox import (
     SegmentNotFoundError,
     SharedStream,
     StreamClosedError,
+    WaiterSlotsFullError,
 )
 from sharedbox.bluebox import (
     DocumentReceiver,
@@ -223,6 +224,48 @@ def test_late_receiver_gets_start_first(unique_name: str, note: int) -> None:
             # No control document was sent after the five events, and their
             # ring still holds them, so the receiver gets them too.
             assert_documents_equal(documents, collector.join())
+
+
+def test_a_receiver_beyond_max_readers_is_refused_and_keeps_no_place(
+    unique_name: str,
+) -> None:
+    """Refuse a third receiver mid-run when max_readers is 2, and let one attach once a place is free."""
+    documents = run_documents()
+    with DocumentSender.create(unique_name, max_readers=2) as sender:
+        send_all(sender, documents[:3])
+        first = DocumentReceiver.attach(unique_name)
+        with DocumentReceiver.attach(unique_name) as second:
+            with pytest.raises(WaiterSlotsFullError):
+                DocumentReceiver.attach(unique_name)
+            first.close()
+            with DocumentReceiver.attach(unique_name) as third:
+                collectors = [Collector(second), Collector(third)]
+                send_all(sender, documents[3:])
+
+                for collector in collectors:
+                    assert_documents_equal(documents, collector.join())
+
+
+def test_a_lossy_receiver_refused_halfway_gives_its_first_place_back(
+    unique_name: str,
+) -> None:
+    """Free the control place a lossy receiver took before it found no second one."""
+    documents = run_documents()
+    with (
+        DocumentSender.create(unique_name, max_readers=2) as sender,
+        DocumentReceiver.attach(unique_name) as first,
+    ):
+        # Kept, as a caller that logs the error would: its traceback keeps the
+        # refused receiver alive, so only attach itself can give its place back.
+        with pytest.raises(WaiterSlotsFullError) as refused:
+            DocumentReceiver.attach(unique_name, mode="lossy")
+        with DocumentReceiver.attach(unique_name) as second:
+            collectors = [Collector(first), Collector(second)]
+            send_all(sender, documents)
+
+            for collector in collectors:
+                assert_documents_equal(documents, collector.join())
+        del refused
 
 
 def test_state_too_large_refuses_late_join(unique_name: str) -> None:
