@@ -6,8 +6,11 @@ import atexit
 import contextlib
 import dataclasses
 import logging
+import sys
 import threading
+import time
 from collections.abc import Callable
+from types import FrameType
 from typing import Any, Final, NoReturn, TypeVar, cast
 
 from ._bounded import _cached_codec
@@ -36,6 +39,9 @@ from ._stream import (
 
 T = TypeVar("T")
 logger = logging.getLogger("sharedbox")
+PACKAGE: Final = __name__.rpartition(".")[0] + "."
+# How long the exit waits for threads the release woke to leave this package.
+LEAVE_TIMEOUT: Final = 1.0
 RELEASED: Final = (
     "is unavailable: sharedbox released its native objects at interpreter exit"
 )
@@ -156,6 +162,40 @@ def release_each(release: Callable[[T], object], targets: list[T]) -> None:
             )
 
 
+def runs_package_code(frame: FrameType | None) -> bool:
+    """Return whether `frame` or a frame it was called from runs code of this package."""
+    while frame is not None:
+        if frame.f_globals.get("__name__", "").startswith(PACKAGE):
+            return True
+        frame = frame.f_back
+    return False
+
+
+def threads_inside() -> set[int]:
+    """Return the ids of the threads other than this one that run code of this package."""
+    own = threading.get_ident()
+    return {
+        ident
+        for ident, frame in sys._current_frames().items()
+        if ident != own and runs_package_code(frame)
+    }
+
+
+def let_calls_leave(timeout: float) -> None:
+    """Wait up to `timeout` seconds for the other threads inside this package to leave it.
+
+    A thread that the release woke from a wait in a native call keeps the
+    native object it called on until it runs again, and a daemon thread
+    stops for good once the interpreter finalizes, which would leave that
+    object alive.
+    """
+    deadline = time.monotonic() + timeout
+    inside = threads_inside()
+    while inside and time.monotonic() < deadline:
+        time.sleep(0.001)
+        inside &= threads_inside()
+
+
 def quiet_hook(
     previous: Callable[[threading.ExceptHookArgs], Any], state: dict[str, bool]
 ) -> Callable[[threading.ExceptHookArgs], Any]:
@@ -200,10 +240,11 @@ def release_native() -> None:
     [`BoxClosedError`][sharedbox.BoxClosedError], and using a stream or
     one of its ends raises
     [`StreamClosedError`][sharedbox.StreamClosedError]; `close` does
-    nothing. Calling it again does nothing more. A thread that ends on
-    one of those two errors from then on, or on the
-    [`LockTimeoutError`][sharedbox.LockTimeoutError] of a lock wait the
-    release cut short, prints no traceback.
+    nothing. It then waits up to a second for the threads that the release
+    woke inside a call of this package to leave it. Calling it again does
+    nothing more. A thread that ends on one of those two errors from then
+    on, or on the [`LockTimeoutError`][sharedbox.LockTimeoutError] of a
+    lock wait the release cut short, prints no traceback.
     """
     if not EXIT_STATE["exiting"]:
         EXIT_STATE["exiting"] = True
@@ -229,6 +270,7 @@ def release_native() -> None:
     release_each(release_end, list(LIVE_ENDS))
     release_each(release_stream, list(LIVE_STREAMS))
     _cached_codec.cache_clear()
+    let_calls_leave(LEAVE_TIMEOUT)
 
 
 atexit.register(release_native)
