@@ -861,7 +861,9 @@ namespace detail {
 // Runs attempt until it succeeds, pausing between tries; false once timeout seconds have passed. With
 // Hooks, the wait hooks run only when the first try fails, before the first pause and after the last;
 // the large copies run them around everything instead, so they pass false.
-template <bool Hooks = true, class F> SHAREDBOX_HOT bool retry(const state &s, double timeout, F &&attempt) {
+template <bool Hooks = true, class F>
+    requires std::predicate<F &>
+SHAREDBOX_HOT bool retry(const state &s, double timeout, F &&attempt) {
     if (attempt())
         return true;
     void *hook = nullptr;
