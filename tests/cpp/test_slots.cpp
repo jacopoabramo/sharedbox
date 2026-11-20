@@ -280,6 +280,17 @@ TEST_CASE("a dead owner's slot is freed only when both namespaces are known and 
 }
 #endif
 
+TEST_CASE("a time namespace other than the initial one changes the namespace value") {
+    using sharedbox::detail::initial_time_namespace;
+    using sharedbox::detail::namespace_value;
+    constexpr std::uint64_t pid_ns = 0xEFFFFFFCu;
+    CHECK(namespace_value(pid_ns, 0) == pid_ns);
+    CHECK(namespace_value(pid_ns, initial_time_namespace) == pid_ns);
+    CHECK(namespace_value(pid_ns, 0xF0000123u) == (pid_ns | std::uint64_t{0xF0000123u} << 32));
+    CHECK(namespace_value(pid_ns, 0xF0000123u) != namespace_value(pid_ns, 0xF0000124u));
+    CHECK(namespace_value(0, 0xF0000123u) == 0);
+}
+
 TEST_CASE("a handle from a capsule frees its waiter slot before it releases the capsule") {
     constexpr sharedbox::field_spec fields[1] = {{0, 8, sharedbox::kind_int}};
     const std::string name = unique("slots-capsule");

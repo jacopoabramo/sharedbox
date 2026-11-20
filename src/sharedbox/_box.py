@@ -47,6 +47,7 @@ from ._layout import (
     mixin_value,
     own_annotations,
     own_kw_only,
+    reader_minor,
 )
 from ._layout import (
     attr as attr_specifier,
@@ -1665,8 +1666,9 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
         ------
         BufferError
             If the major version of `max_version` differs from the box's
-            layout, or if called from `__post_init__`, before the box is
-            published.
+            layout, if its minor version is older than the oldest whose
+            readers open this box, or if called from `__post_init__`,
+            before the box is published.
         NotImplementedError
             If any other keyword is given.
 
@@ -1687,6 +1689,13 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
             raise BufferError(
                 f"box {self.name!r} has layout {major}.{minor}; "
                 f"the caller supports major version {max_version[0]}"
+            )
+        if max_version is not None and max_version[1] < (
+            needed := reader_minor(type(self).__layout__)
+        ):
+            raise BufferError(
+                f"box {self.name!r} has layout {major}.{minor} and uses field types that a reader of "
+                f"layout {major}.{max_version[1]} refuses; the caller needs layout {major}.{needed} or newer"
             )
         return self._segment._export()
 

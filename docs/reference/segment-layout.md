@@ -1143,7 +1143,13 @@ A process is named by its pid and its start time.
   recorded start time was the unreadable marker. A slot is never freed on
   a guess.
 - Pid namespaces (Linux): a slot records its owner's pid namespace, the
-  inode number of `/proc/self/ns/pid`. A slot whose `owner_pidns` differs
+  inode number of `/proc/self/ns/pid`. When the inode number of
+  `/proc/self/ns/time` is not that of the initial time namespace,
+  `0xEFFFFFFA`, it goes in the upper 32 bits of the same value, because
+  `/proc/<pid>/stat` shifts a start time by the reading process's time
+  namespace. A kernel without time namespaces leaves the upper bits 0, and
+  a `/proc/self/ns/time` that exists but cannot be read makes the whole
+  value 0. A slot whose `owner_pidns` differs
   from the checking process's own counts as alive, because its pid cannot
   be checked from there; only its owner, or creating the segment again,
   frees it. This covers containers that share `/dev/shm` but not a pid
@@ -2094,8 +2100,13 @@ no Python-level export method.
   `sbx_handle` made by `duplicate()` and `to_capsule()`, so it works after
   `unlink()`.
 - `max_version` is `(major, minor)`; a major the box does not have raises
-  `BufferError`, and `None` means the current version. Any other keyword
-  raises `NotImplementedError`.
+  `BufferError`, and so does a minor older than the oldest whose readers
+  open the box, following "Versioning rules": 3 for a box with a
+  `max_array` field, or a `max_array` or `timed` inside a described type;
+  1 for one with the kinds 13 to 23 inside a described type, or an array
+  as an optional's member; 0 otherwise. Inside an `attr` or `timed` field
+  nothing counts, since an older reader keeps such a field as opaque bytes. `None` means the current
+  version. Any other keyword raises `NotImplementedError`.
 - A consumer that takes the handle renames the capsule
   `"used_sharedbox_box"` and releases the handle itself.
 - `release` unmaps and closes OS handles only: no Python objects, no GIL,
