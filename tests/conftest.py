@@ -75,6 +75,15 @@ def unique_name() -> Iterator[str]:
 
 
 @pytest.fixture
+def no_leftover_segments(unique_name: str) -> Iterator[None]:
+    """Fail a test that leaves a segment whose name starts with `unique_name`; checked on Linux only."""
+    yield
+    if sys.platform.startswith("linux"):
+        left = sorted(p.name for p in Path("/dev/shm").glob(f"{os_name(unique_name)}*"))
+        assert not left, f"segments left behind: {left}"
+
+
+@pytest.fixture
 def names(unique_name: str) -> Iterator[Callable[[str], str]]:
     """Box names made from `unique_name`; on Linux each one is removed afterwards."""
     made: list[str] = []

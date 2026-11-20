@@ -27,6 +27,8 @@ from sharedbox.bluebox import (
 )
 from sharedbox.bluebox._channel import ChannelState, ControlItem
 
+pytestmark = pytest.mark.usefixtures("no_leftover_segments")
+
 Document = tuple[str, dict[str, Any]]
 CONTEXT = mp.get_context("spawn")
 NUMBER = {"source": "sim://number", "dtype": "number", "shape": []}

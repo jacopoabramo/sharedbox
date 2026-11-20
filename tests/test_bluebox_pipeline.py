@@ -12,6 +12,8 @@ from ophyd_async.core import init_devices
 from sharedbox.bluebox import DocumentSender
 from sharedbox.bluebox._channel import remove_channel
 
+pytestmark = pytest.mark.usefixtures("no_leftover_segments")
+
 
 @pytest.fixture
 def channels(unique_name: str) -> Iterator[tuple[str, str]]:
