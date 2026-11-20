@@ -2100,8 +2100,13 @@ no Python-level export method.
   `sbx_handle` made by `duplicate()` and `to_capsule()`, so it works after
   `unlink()`.
 - `max_version` is `(major, minor)`; a major the box does not have raises
-  `BufferError`, and `None` means the current version. Any other keyword
-  raises `NotImplementedError`.
+  `BufferError`, and so does a minor older than the oldest whose readers
+  open the box, following "Versioning rules": 3 for a box with a
+  `max_array` field, or a `max_array` or `timed` inside a described type;
+  1 for one with the kinds 13 to 23 inside a described type, or an array
+  as an optional's member; 0 otherwise. Inside an `attr` or `timed` field
+  nothing counts, since an older reader keeps such a field as opaque bytes. `None` means the current
+  version. Any other keyword raises `NotImplementedError`.
 - A consumer that takes the handle renames the capsule
   `"used_sharedbox_box"` and releases the handle itself.
 - `release` unmaps and closes OS handles only: no Python objects, no GIL,

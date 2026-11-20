@@ -806,3 +806,33 @@ def build_layout(cls: type, identity: str | None = None) -> Layout:
         watched,
         types,
     )
+
+
+def nested_minor(spec: TypeSpec) -> int:
+    """Return the oldest minor of box layout 3 whose readers take every member of `spec`, at any depth."""
+    minor = 0
+    for member in spec.members:
+        kind = member.type.kind
+        if kind in ("max_array", "timed"):
+            return 3
+        if 13 <= CODES[kind] <= 23 or (spec.kind == "optional" and kind == "array"):
+            minor = 1
+        minor = max(minor, nested_minor(member.type))
+    return minor
+
+
+def reader_minor(layout: Layout) -> int:
+    """Return the oldest minor of box layout 3 whose C and C++ readers open a box of `layout`.
+
+    A reader opens a top-level field of a kind it does not know as opaque
+    bytes, without reading its description, except a `max_array` field,
+    which a reader of 3.2 refuses. It refuses a kind it does not know inside
+    a described type.
+    """
+    minor = 0
+    for spec in layout.fields:
+        if spec.kind == "max_array":
+            return 3
+        if spec.type is not None and spec.kind not in ("attr", "timed"):
+            minor = max(minor, nested_minor(spec.type))
+    return minor

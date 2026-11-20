@@ -8,12 +8,13 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
+from typing import Annotated
 
 import numpy as np
 import pytest
 
 import sharedbox
-from sharedbox import BoxClosedError, SharedBox
+from sharedbox import BoxClosedError, Capacity, DType, MaxShape, SharedBox
 from sharedbox._native import LAYOUT_VERSION
 
 CONSUMER = Path(__file__).parent / "cpp" / "consumer"
@@ -165,6 +166,33 @@ def test_requests_the_box_cannot_meet_are_refused(unique_name: str) -> None:
             box.__sharedbox_box__(stream=True)
     with pytest.raises(BoxClosedError):
         box.__sharedbox_box__()
+
+
+class Bytes(SharedBox):
+    small: Annotated[list[np.uint8], Capacity(4)]
+
+
+class Image(SharedBox):
+    image: Annotated[np.ndarray, MaxShape((4, 4)), DType("uint8")]
+
+
+@pytest.mark.parametrize(
+    ("cls", "values", "needed"),
+    [
+        (Frame, (), 0),
+        (Bytes, ([1],), 1),
+        (Image, (np.zeros((2, 2), np.uint8),), 3),
+    ],
+)
+def test_a_minor_older_than_the_box_needs_is_refused(
+    unique_name: str, cls: type[SharedBox], values: tuple[object, ...], needed: int
+) -> None:
+    """Refuse a max_version minor below the oldest whose readers open the box, and accept that one."""
+    with cls.create(unique_name, *values) as box:
+        if needed > 0:
+            with pytest.raises(BufferError, match=f"needs layout 3.{needed} or newer"):
+                box.__sharedbox_box__(max_version=(3, needed - 1))
+        box.__sharedbox_box__(max_version=(3, needed))
 
 
 def test_a_c_library_keeps_the_box_after_close_and_unlink(
