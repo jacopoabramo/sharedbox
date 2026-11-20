@@ -1143,7 +1143,13 @@ A process is named by its pid and its start time.
   recorded start time was the unreadable marker. A slot is never freed on
   a guess.
 - Pid namespaces (Linux): a slot records its owner's pid namespace, the
-  inode number of `/proc/self/ns/pid`. A slot whose `owner_pidns` differs
+  inode number of `/proc/self/ns/pid`. When the inode number of
+  `/proc/self/ns/time` is not that of the initial time namespace,
+  `0xEFFFFFFA`, it goes in the upper 32 bits of the same value, because
+  `/proc/<pid>/stat` shifts a start time by the reading process's time
+  namespace. A kernel without time namespaces leaves the upper bits 0, and
+  a `/proc/self/ns/time` that exists but cannot be read makes the whole
+  value 0. A slot whose `owner_pidns` differs
   from the checking process's own counts as alive, because its pid cannot
   be checked from there; only its owner, or creating the segment again,
   frees it. This covers containers that share `/dev/shm` but not a pid

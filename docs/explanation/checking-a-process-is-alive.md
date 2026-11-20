@@ -56,7 +56,11 @@ set of pids, called a pid namespace, so the same pid can mean different
 processes in different containers. That's why
 [waiter slots](glossary.md#waiter-slot) and the header's creator fields also
 record the namespace, and a process in another namespace, or one whose
-namespace is unknown, is never judged dead.
+namespace is unknown, is never judged dead. A time namespace, which some
+container tools give a process, shifts the start times that process reads
+from `/proc`. So when a process is not in the time namespace the machine
+started with, its time namespace is recorded beside its pid namespace, and only a process in the same
+pair of namespaces can judge it dead.
 
 ## Where the check is used
 

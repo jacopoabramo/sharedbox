@@ -80,7 +80,7 @@ std::optional<std::string> foreign_creator(const common_header &h, const std::st
     if (h.creator_pidns == 0 || own_pidns == 0)
         return taken;
     if (h.creator_pidns != own_pidns)
-        return taken + "; it was created in another pid namespace, such as another container";
+        return taken + "; it was created in another pid or time namespace, such as another container";
 #else
     static_cast<void>(h);
     static_cast<void>(taken);

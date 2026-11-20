@@ -14,6 +14,7 @@ from typing import Any, cast
 
 import pytest
 from attr_boxes import Camera
+from namespaces import own_pidns
 from os_names import os_name
 
 from sharedbox import SharedBox
@@ -87,11 +88,6 @@ def foreign_mapping(name: str) -> Generator[None, None, None]:
             yield
         finally:
             os.close(fd)
-
-
-def own_pidns() -> int:
-    """This process's pid namespace as sharedbox.hpp records it: 0 on Windows."""
-    return 0 if sys.platform == "win32" else os.stat("/proc/self/ns/pid").st_ino
 
 
 def create_and_exit(name: str, created: Event, attached: Event) -> None:
@@ -567,10 +563,10 @@ def test_exists_names_a_creator_that_is_running(unique_name: str) -> None:
 
 @pytest.mark.skipif(sys.platform == "win32", reason="no pid namespaces")
 def test_exists_says_the_creator_is_in_another_namespace(unique_name: str) -> None:
-    """Check that SegmentExistsError mentions another pid namespace when the stored namespace differs."""
+    """Check that SegmentExistsError mentions another pid or time namespace when the stored namespace differs."""
     segment = create(unique_name)
     patch_header(unique_name, 40, "<Q", own_pidns() + 1)
-    with pytest.raises(SegmentExistsError, match="another pid namespace"):
+    with pytest.raises(SegmentExistsError, match="another pid or time namespace"):
         create(unique_name)
     segment.close()
 
@@ -581,7 +577,7 @@ def test_exists_treats_an_unknown_namespace_as_no_information(unique_name: str) 
     patch_header(unique_name, 40, "<Q", 0)
     with pytest.raises(SegmentExistsError) as error:
         create(unique_name)
-    assert "another pid namespace" not in str(error.value)
+    assert "another pid or time namespace" not in str(error.value)
     assert "no longer running" not in str(error.value)
     segment.close()
 

@@ -15,6 +15,7 @@ from multiprocessing.shared_memory import SharedMemory
 from multiprocessing.synchronize import Event
 
 import pytest
+from namespaces import own_pidns
 from os_names import os_name
 
 from sharedbox import SharedBox
@@ -25,10 +26,6 @@ INT = 1
 FIELDS = [NativeField(0, 8, INT)]
 NAMES = ["a"]
 SCHEMA = 0xAA17
-
-
-def own_pidns() -> int:
-    return 0 if sys.platform == "win32" else os.stat("/proc/self/ns/pid").st_ino
 
 
 def slot_offset(slot: int, field_count: int = 1) -> int:

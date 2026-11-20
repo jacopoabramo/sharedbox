@@ -612,6 +612,21 @@ inline std::atomic<bool> atfork_registered{true};
 
 inline process_cache &cache() noexcept;
 
+// The inode number of the initial time namespace, PROC_TIME_INIT_INO in the Linux kernel.
+inline constexpr std::uint64_t initial_time_namespace = 0xEFFFFFFAu;
+
+// The namespace value a process records beside its pid: the inode number of its pid namespace, with that of
+// its time namespace in the upper 32 bits unless the time namespace is the initial one or the kernel has
+// none (0). /proc/<pid>/stat shifts a start time by the reading process's time namespace, so two processes
+// in different time namespaces must not compare start times. 0, unknown, when the pid namespace is.
+constexpr std::uint64_t namespace_value(std::uint64_t pid_namespace, std::uint64_t time_namespace) noexcept {
+    if (pid_namespace == 0)
+        return 0;
+    if (time_namespace == 0 || time_namespace == initial_time_namespace)
+        return pid_namespace;
+    return pid_namespace | time_namespace << 32;
+}
+
 #ifndef _WIN32
 inline void after_fork() noexcept {
     process_cache &c = cache();
@@ -621,8 +636,16 @@ inline void after_fork() noexcept {
 }
 
 inline std::uint64_t read_pidns() noexcept {
-    struct stat st;
-    return stat("/proc/self/ns/pid", &st) == 0 ? static_cast<std::uint64_t>(st.st_ino) : 0;
+    struct stat pid_ns;
+    if (stat("/proc/self/ns/pid", &pid_ns) != 0)
+        return 0;
+    struct stat time_ns;
+    std::uint64_t time_namespace = 0;
+    if (stat("/proc/self/ns/time", &time_ns) == 0)
+        time_namespace = static_cast<std::uint64_t>(time_ns.st_ino);
+    else if (errno != ENOENT)
+        return 0; // a kernel without time namespaces has no such file; anything else leaves it unknown
+    return namespace_value(static_cast<std::uint64_t>(pid_ns.st_ino), time_namespace);
 }
 #endif
 
@@ -767,8 +790,9 @@ inline std::uint64_t current_start() noexcept {
     return start;
 }
 
-// The inode number of /proc/self/ns/pid, which tells pid namespaces apart. 0 means unknown: on Linux
-// when /proc cannot be read, and always on Windows, which has no pid namespaces.
+// This process's namespace_value, which tells pid namespaces, and time namespaces other than the initial
+// one, apart. 0 means unknown: on Linux when /proc cannot be read, and always on Windows, which has no
+// pid namespaces.
 inline std::uint64_t current_pidns() noexcept {
 #ifdef _WIN32
     return 0;
