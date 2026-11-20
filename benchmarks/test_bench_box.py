@@ -1,6 +1,7 @@
 import os
 from collections.abc import Iterator
 from dataclasses import dataclass
+from datetime import UTC, datetime
 from itertools import count
 from typing import Annotated
 
@@ -63,6 +64,13 @@ class Collections(SharedBox):
     names: Annotated[tuple[Tag, ...], Capacity(8)]
     tags: Annotated[frozenset[int], Capacity(16)]
     scores: Annotated[dict[Tag, int], Capacity(8)]
+
+
+class Moments(SharedBox):
+    when: datetime
+
+
+MOMENT = datetime(2026, 11, 20, 12, 30, 15, 250000, tzinfo=UTC)
 
 
 class Ticket(msgspec.Struct):
@@ -438,3 +446,26 @@ def tickets() -> Iterator[Tickets]:
 def test_read_msgspec_record(benchmark: BenchmarkFixture, tickets: Tickets) -> None:
     """Time reading a msgspec Struct field."""
     benchmark(getattr, tickets, "ticket")
+
+
+@pytest.fixture
+def moments() -> Iterator[Moments]:
+    name = f"bench-codspeed-{os.getpid()}-{next(NAMES)}"
+    with Moments.create(name, MOMENT) as box:
+        yield box
+    Moments.unlink(name)
+
+
+def test_write_datetime(benchmark: BenchmarkFixture, moments: Moments) -> None:
+    """Time writing an aware datetime field."""
+    benchmark(setattr, moments, "when", MOMENT)
+
+
+def write_then_read(box: Moments) -> datetime:
+    box.when = MOMENT
+    return box.when
+
+
+def test_write_and_read_datetime(benchmark: BenchmarkFixture, moments: Moments) -> None:
+    """Time writing an aware datetime field and reading it back, which decodes it since the write changed it."""
+    benchmark(write_then_read, moments)
