@@ -9,6 +9,69 @@ Dates are marked as `DD-MM-YYYY`
 
 <!-- towncrier release notes start -->
 
+## [0.11.0](https://github.com/jacopoabramo/sharedbox/releases/tag/v0.11.0) - 20-11-2026
+
+### Added
+
+- `RequestRefused`: an exception a request handler raises to refuse a request.
+  The caller gets `RequestError` with its type and message, as for any
+  exception of a handler, and the serving process logs nothing for it. ([#125](https://github.com/jacopoabramo/sharedbox/pull/125))
+
+  ```python
+  def move(position: float) -> float:
+      if position > 10.0:
+          raise RequestRefused(f"{position} is past the end")
+      return position
+  ```
+
+### Changed
+
+- `SharedBox.snapshot` copies only the bytes each field uses when the record
+  is larger than 4 KiB, where it used to copy the whole room of every `str`,
+  `bytes`, list, set, dict and `MaxShape` field. C++ gets the same read as
+  `handle::read_record_used`. ([#122](https://github.com/jacopoabramo/sharedbox/pull/122))
+- Writing a `list`, `tuple`, `set`, `frozenset` or `dict` to a field of a
+  `SharedBox` no longer calls into Python to check the value's type; a write
+  of 16 elements takes about a quarter less time. ([#124](https://github.com/jacopoabramo/sharedbox/pull/124))
+- A reference field annotated `X` is read with `X` itself when two classes of
+  the process have the box's schema hash, as after a module is imported again;
+  it used to be read with the one defined first. A box of a subclass of `X`
+  is read with the class of its hash defined last, a subclass of `X` before
+  any other, and `BoxRef.box_class` gives the class defined last. ([#128](https://github.com/jacopoabramo/sharedbox/pull/128))
+- `SharedBox.close` no longer waits for a thread of the same process that
+  waits for the box's lock. That thread stops waiting within a millisecond and
+  raises `BoxClosedError`, where it used to wait out the class's `lock_timeout`
+  and raise `LockTimeoutError`. C++ gets the same through
+  `handle::set_wait_cancel`. ([#128](https://github.com/jacopoabramo/sharedbox/pull/128))
+- Reading one `MaxShape` field of a `SharedBox` copies the shape and the
+  elements the array holds, where it used to copy the field's maximum size; a
+  4 by 4 array in a field of at most 1024 by 1024 `uint8` elements is read
+  about 300 times faster. C++ gets the same read from `handle::read_used`,
+  which now takes a `max_array` field. ([#136](https://github.com/jacopoabramo/sharedbox/pull/136))
+- `SharedBox.__sharedbox_box__` raises `BufferError` when the minor version of
+  `max_version` is older than the oldest whose readers open the box, such as
+  `(3, 2)` for a box with a `MaxShape` field. It used to hand the capsule
+  over, and the consumer then refused the box as corrupt. ([#140](https://github.com/jacopoabramo/sharedbox/pull/140))
+
+### Fixed
+
+- On Linux, a process that `kill` finds but whose `/proc/<pid>/stat` is missing
+  is no longer taken for exited, so its waiter slot, its reader entry or its
+  claim on a stream's sender is not freed while it may still run. ([#126](https://github.com/jacopoabramo/sharedbox/pull/126))
+- `ReceiveEvents.ended` is emitted once for a reader. It used to be emitted
+  again each time the `received` callbacks were all disconnected and one
+  connected again after the stream had ended. ([#128](https://github.com/jacopoabramo/sharedbox/pull/128))
+- At interpreter exit, sharedbox waits up to a second for threads it woke
+  inside a call, such as a daemon thread waiting in `receive`, to leave it.
+  nanobind no longer reports the stream end such a thread called on as
+  leaked. ([#140](https://github.com/jacopoabramo/sharedbox/pull/140))
+- On Linux, a process in a time namespace other than the initial one, as
+  `unshare -T` or a CRIU restore gives, is no longer taken for exited by a
+  process outside that namespace, whose reading of its start time from
+  `/proc/<pid>/stat` is shifted. Its waiter slot, its reader entry and its
+  claim on a stream's sender are kept, as for a process of another pid
+  namespace. ([#140](https://github.com/jacopoabramo/sharedbox/pull/140))
+
 ## [0.10.0](https://github.com/jacopoabramo/sharedbox/releases/tag/v0.10.0) - 16-11-2026
 
 ### Breaking
