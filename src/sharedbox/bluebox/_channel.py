@@ -649,6 +649,10 @@ class DocumentReceiver:
             If there is no channel of that name.
         LateJoinError
             If the run under way has a state too large for the channel.
+        WaiterSlotsFullError
+            If the channel has no free reader place: a receiver takes one on
+            each event stream of the run under way, and on the control stream
+            one when lossless, two when lossy or latest.
         """
         if mode not in ("lossless", "lossy", "latest"):
             raise ValueError(f"mode is 'lossless', 'lossy' or 'latest'; got {mode!r}")

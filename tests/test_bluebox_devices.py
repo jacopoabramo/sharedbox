@@ -37,6 +37,8 @@ from ophyd_async.testing import OneOfEverythingDevice
 from sharedbox.bluebox import DocumentSender
 from sharedbox.bluebox._channel import remove_channel
 
+pytestmark = pytest.mark.usefixtures("no_leftover_segments")
+
 DATA = Path(__file__).parent / "bluebox_data"
 Plan = Callable[[Path], Any]
 
