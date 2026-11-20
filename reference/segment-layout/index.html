@@ -5783,7 +5783,13 @@ a wake-up.</p>
   recorded start time was the unreadable marker. A slot is never freed on
   a guess.</li>
 <li>Pid namespaces (Linux): a slot records its owner's pid namespace, the
-  inode number of <code>/proc/self/ns/pid</code>. A slot whose <code>owner_pidns</code> differs
+  inode number of <code>/proc/self/ns/pid</code>. When the inode number of
+  <code>/proc/self/ns/time</code> is not that of the initial time namespace,
+  <code>0xEFFFFFFA</code>, it goes in the upper 32 bits of the same value, because
+  <code>/proc/&lt;pid&gt;/stat</code> shifts a start time by the reading process's time
+  namespace. A kernel without time namespaces leaves the upper bits 0, and
+  a <code>/proc/self/ns/time</code> that exists but cannot be read makes the whole
+  value 0. A slot whose <code>owner_pidns</code> differs
   from the checking process's own counts as alive, because its pid cannot
   be checked from there; only its owner, or creating the segment again,
   frees it. This covers containers that share <code>/dev/shm</code> but not a pid
@@ -6708,8 +6714,13 @@ no Python-level export method.</p>
   <code>sbx_handle</code> made by <code>duplicate()</code> and <code>to_capsule()</code>, so it works after
   <code>unlink()</code>.</li>
 <li><code>max_version</code> is <code>(major, minor)</code>; a major the box does not have raises
-  <code>BufferError</code>, and <code>None</code> means the current version. Any other keyword
-  raises <code>NotImplementedError</code>.</li>
+  <code>BufferError</code>, and so does a minor older than the oldest whose readers
+  open the box, following "Versioning rules": 3 for a box with a
+  <code>max_array</code> field, or a <code>max_array</code> or <code>timed</code> inside a described type;
+  1 for one with the kinds 13 to 23 inside a described type, or an array
+  as an optional's member; 0 otherwise. Inside an <code>attr</code> or <code>timed</code> field
+  nothing counts, since an older reader keeps such a field as opaque bytes. <code>None</code> means the current
+  version. Any other keyword raises <code>NotImplementedError</code>.</li>
 <li>A consumer that takes the handle renames the capsule
   <code>"used_sharedbox_box"</code> and releases the handle itself.</li>
 <li><code>release</code> unmaps and closes <abbr title="Operating system.">OS</abbr> handles only: no Python objects, no <abbr title="Global interpreter lock. The lock that lets only one thread of a CPython process run Python code at a time.">GIL</abbr>,

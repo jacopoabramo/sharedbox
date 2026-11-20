@@ -7277,8 +7277,9 @@ means the box's own.</p>
             <td>
               <div class="doc-md-description">
                 <p>If the major version of <code>max_version</code> differs from the box's
-layout, or if called from <code>__post_init__</code>, before the box is
-published.</p>
+layout, if its minor version is older than the oldest whose
+readers open this box, or if called from <code>__post_init__</code>,
+before the box is published.</p>
               </div>
             </td>
           </tr>

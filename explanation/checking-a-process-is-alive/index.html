@@ -3973,7 +3973,11 @@ set of pids, called a pid namespace, so the same pid can mean different
 processes in different containers. That's why
 <a href="../glossary/#waiter-slot">waiter slots</a> and the header's creator fields also
 record the namespace, and a process in another namespace, or one whose
-namespace is unknown, is never judged dead.</p>
+namespace is unknown, is never judged dead. A time namespace, which some
+container tools give a process, shifts the start times that process reads
+from <code>/proc</code>. So when a process is not in the time namespace the machine
+started with, its time namespace is recorded beside its pid namespace, and only a process in the same
+pair of namespaces can judge it dead.</p>
 <h2 id="where-the-check-is-used">Where the check is used<a class="headerlink" href="#where-the-check-is-used" title="Permanent link">&para;</a></h2>
 <ul>
 <li>Freeing the waiter slots of dead processes, as <a href="../waiting-for-changes/#waking-a-process">Waiting for
