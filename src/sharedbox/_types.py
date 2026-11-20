@@ -556,7 +556,8 @@ def array_spec(
 ) -> TypeSpec:
     dtypes = [extra.name for extra in extras if isinstance(extra, DType)]
     maxes = [extra for extra in extras if isinstance(extra, MaxShape)]
-    # A default array gives a MaxShape field its value, and is not compared with its sizes.
+    # A MaxShape field takes its size from the MaxShape alone; its default is checked
+    # against that maximum when the class is defined, by layout.check.
     given = given_sizes(extras, where, MISSING if maxes else default)
     shaped = any(isinstance(extra, Shape) for extra in extras)
     if len(maxes) > 1:
