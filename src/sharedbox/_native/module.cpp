@@ -1063,9 +1063,18 @@ NB_MODULE(_native, m) {
             "field"_a, "types"_a = nb::none())
         .def(
             "read_into",
-            [](const Segment &s, std::uint32_t index, nb::handle out, nb::handle types) {
-                const auto view = sharedbox::need(types_of(types), index).array_out(index, out.ptr());
-                s.read_into(index, {static_cast<std::byte *>(view.data()), view.nbytes()});
+            [](const Segment &s, std::uint32_t index, nb::handle out, nb::handle types) -> nb::object {
+                const sharedbox::Types &t = sharedbox::need(types_of(types), index);
+                const auto view = t.array_out(index, out.ptr());
+                if (!t.field_is_max_array(index)) {
+                    s.read_into(index, {static_cast<std::byte *>(view.data()), view.nbytes()});
+                    return nb::none();
+                }
+                // Read as the shape line and the elements in use, then copied to the front of out.
+                sharedbox::FieldRead read;
+                s.read(index, read);
+                return t.fill_max_array(index, std::as_bytes(std::span(read.bytes.data(), read.bytes.size())),
+                                        view);
             },
             "field"_a, "out"_a, "types"_a = nb::none())
         .def(

@@ -136,10 +136,23 @@ def test_writing_without_a_shape_views_the_stored_shape(unique_name: str) -> Non
         assert np.array_equal(view, grid(2, 3))
 
 
-def test_read_into_refuses_a_max_shape_field(unique_name: str) -> None:
-    """Raise TypeError when read_into is given a MaxShape field."""
-    with Frame.create(unique_name) as box, pytest.raises(TypeError):
-        box.read_into("image", np.zeros((4, 3), np.uint32))
+def test_read_into_views_the_stored_shape_over_out(unique_name: str) -> None:
+    """Fill the start of an out of the maximum shape and return a view of it in each stored shape."""
+    out = np.full((4, 3), 99, np.uint32)
+    with Frame.create(unique_name, grid(2, 3)) as box:
+        view = box.read_into("image", out)
+        assert np.shares_memory(view, out)
+        assert np.array_equal(view, grid(2, 3))
+        box.image = grid(3, 2)
+        assert np.array_equal(box.read_into("image", out), grid(3, 2))
+        box.image = grid(0, 3)
+        assert box.read_into("image", out).shape == (0, 3)
+
+
+def test_read_into_refuses_an_out_below_the_maximum_shape(unique_name: str) -> None:
+    """Raise ValueError for an out of the stored shape rather than the maximum."""
+    with Frame.create(unique_name, grid(2, 3)) as box, pytest.raises(ValueError):
+        box.read_into("image", np.zeros((2, 3), np.uint32))
 
 
 def test_a_record_field_holds_a_max_shape_member(unique_name: str) -> None:

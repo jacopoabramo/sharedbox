@@ -1400,9 +1400,36 @@ nb::ndarray<nb::c_contig, nb::device::cpu> Types::array_out_of(const detail::typ
 nb::ndarray<nb::c_contig, nb::device::cpu> Types::array_out(std::uint32_t index, PyObject *out) const {
     const detail::type_ref &t = field(index);
     const std::string &name = labels_[index];
-    if (t.kind != kind_array)
+    if (t.kind != kind_array && t.kind != kind_max_array)
         raise(PyExc_TypeError, name + " is not an array field");
     return array_out_of(t, name, out);
+}
+
+bool Types::field_is_max_array(std::uint32_t index) const { return field(index).kind == kind_max_array; }
+
+nb::tuple Types::fill_max_array(std::uint32_t index, std::span<const std::byte> bytes,
+                                const nb::ndarray<nb::c_contig, nb::device::cpu> &view) const {
+    const detail::type_ref &t = field(index);
+    const std::string &name = labels_[index];
+    std::byte line[64];
+    if (bytes.size() < sizeof line)
+        corrupt(name);
+    std::memcpy(line, bytes.data(), sizeof line);
+    const std::uint64_t stored = stored_bytes(t, line);
+    if (stored == UINT64_MAX || stored > bytes.size() - sizeof line)
+        corrupt(name);
+    if (stored >= detail::large_copy) {
+        nb::gil_scoped_release unlocked;
+        std::memcpy(view.data(), bytes.data() + sizeof line, stored);
+    } else if (stored != 0) {
+        std::memcpy(view.data(), bytes.data() + sizeof line, stored);
+    }
+    const detail::type_node &node = tree_.node(t.node);
+    nb::object shape = nb::steal(owned(PyTuple_New(node.ndim)));
+    for (std::uint32_t i = 0; i < node.ndim; ++i)
+        store_new_item(shape.ptr(), false, i,
+                       owned(PyLong_FromUnsignedLongLong(load<std::uint64_t>(line + std::size_t{i} * 8))));
+    return nb::borrow<nb::tuple>(shape);
 }
 
 Types::ArrayTarget Types::array_target(std::uint32_t index, std::span<const std::uint32_t> path,

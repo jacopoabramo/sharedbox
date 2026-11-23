@@ -108,8 +108,15 @@ public:
 
     /// out as a writable destination for array field index. Raises TypeError unless the field is an array and
     /// out a writable C-contiguous array in CPU memory, and ValueError unless out has the field's dtype and
-    /// shape; an ml_dtypes bfloat16 array is taken as its uint16 view.
+    /// shape, the maximum shape for a max_array; an ml_dtypes bfloat16 array is taken as its uint16 view.
     nb::ndarray<nb::c_contig, nb::device::cpu> array_out(std::uint32_t index, PyObject *out) const;
+    /// Whether field index is an array up to a maximum shape.
+    bool field_is_max_array(std::uint32_t index) const;
+    /// Copies the elements of the max_array field index that bytes, its shape line and elements in use,
+    /// holds into the first elements of view, and returns the stored shape as a tuple. Raises ValueError for
+    /// bytes no value has.
+    nb::tuple fill_max_array(std::uint32_t index, std::span<const std::byte> bytes,
+                             const nb::ndarray<nb::c_contig, nb::device::cpu> &view) const;
     /// Where an array the caller passed to receive into goes: its writable view, where its bytes start in the
     /// field's value and how many there are, and the key decode_given finds it under. For a max_array, max is
     /// its node, offset the start of its shape line and size its whole span; view may then be empty, for a
