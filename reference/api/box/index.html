@@ -6799,6 +6799,17 @@ schema hash of a box referred to.</p>
         <p>Copy an array field into <code>out</code> and return <code>out</code>.</p>
 <p>The copy holds one complete write, as a read does, but goes into
 memory the caller already has, so nothing is allocated.</p>
+<p>For a field with a <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;MaxShape&lt;/span&gt;
+
+
+  &lt;span class=&quot;doc doc-labels&quot;&gt;
+      &lt;small class=&quot;doc doc-label doc-label-dataclass&quot;&gt;&lt;code&gt;dataclass&lt;/code&gt;&lt;/small&gt;
+  &lt;/span&gt;" href="../arrays/#sharedbox.MaxShape"><code>MaxShape</code></a>, <code>out</code> has the
+maximum shape and the stored elements go to its start in C order.
+The call then returns a view of <code>out</code> in the stored shape, made with
+<code>out</code>'s own <code>reshape</code>, rather than <code>out</code> itself. Those elements are
+<code>out</code>'s first rows only when every dimension but the first is at its
+maximum, so read the values through the view.</p>
 
 
 <p><span class="doc-section-title">Parameters:</span></p>
@@ -6827,8 +6838,8 @@ memory the caller already has, so nothing is allocated.</p>
 
   &lt;span class=&quot;doc doc-labels&quot;&gt;
       &lt;small class=&quot;doc doc-label doc-label-dataclass&quot;&gt;&lt;code&gt;dataclass&lt;/code&gt;&lt;/small&gt;
-  &lt;/span&gt;" href="../arrays/#sharedbox.Shape"><code>Shape</code></a>. Its
-contents are unspecified if the call raises.</p>
+  &lt;/span&gt;" href="../arrays/#sharedbox.Shape"><code>Shape</code></a>, or
+its <code>MaxShape</code>. Its contents are unspecified if the call raises.</p>
               </div>
             </td>
             <td>
@@ -6854,8 +6865,9 @@ contents are unspecified if the call raises.</p>
             </td>
             <td>
               <div class="doc-md-description">
-                <p>If the field is not an array field, or <code>out</code> is not a writable,
-C-contiguous array in <abbr title="Central processing unit. The processor that runs a program.">CPU</abbr> memory.</p>
+                <p>If the field is not an array field, <code>out</code> is not a writable,
+C-contiguous array in <abbr title="Central processing unit. The processor that runs a program.">CPU</abbr> memory, or for a <code>MaxShape</code> field <code>out</code>
+has no <code>reshape</code> that gives a view.</p>
               </div>
             </td>
           </tr>

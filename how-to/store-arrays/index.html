@@ -4494,8 +4494,12 @@ shape stored last. Fill all of the array you are handed, because its
 contents are not the old value in the new shape. Elements beyond the ones
 the last write stored, counted in C order, hold whatever an earlier and
 larger write left there. When a dimension other than the first changes,
-the old elements also end up at other positions. <code>read_into</code> takes fields
-of a fixed shape only, and raises <code>TypeError</code> for this one.</p>
+the old elements also end up at other positions.</p>
+<p><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-method&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;read_into&lt;/span&gt;" href="../../reference/api/box/#sharedbox.SharedBox.read_into"><code>read_into</code></a> takes an array of the maximum
+shape for this field. It copies the stored elements to the start of that
+array and returns a view of it in the stored shape, so keep the view, not
+your array: the elements are your array's first rows only when every
+dimension but the first is at its maximum.</p>
 <h2 id="6-read-with-another-library">6. Read with another library<a class="headerlink" href="#6-read-with-another-library" title="Permanent link">&para;</a></h2>
 <p>A <code>SupportsDLPack</code> field reads back an object any <abbr title="An open in-memory tensor format that array libraries use to share an array's memory without copying it.">DLPack</abbr> library imports:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-6-1"><a id="__codelineno-6-1" name="__codelineno-6-1" href="#__codelineno-6-1"></a><span class="n">raw</span> <span class="o">=</span> <span class="n">scanner</span><span class="o">.</span><span class="n">raw</span>
