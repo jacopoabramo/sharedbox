@@ -1400,9 +1400,23 @@ nb::ndarray<nb::c_contig, nb::device::cpu> Types::array_out_of(const detail::typ
 nb::ndarray<nb::c_contig, nb::device::cpu> Types::array_out(std::uint32_t index, PyObject *out) const {
     const detail::type_ref &t = field(index);
     const std::string &name = labels_[index];
-    if (t.kind != kind_array)
+    if (t.kind != kind_array && t.kind != kind_max_array)
         raise(PyExc_TypeError, name + " is not an array field");
     return array_out_of(t, name, out);
+}
+
+bool Types::field_is_max_array(std::uint32_t index) const { return field(index).kind == kind_max_array; }
+
+nb::tuple Types::max_array_shape(std::uint32_t index, const std::byte *line, std::uint64_t used) const {
+    const detail::type_ref &t = field(index);
+    if (stored_bytes(t, line) != used)
+        corrupt(labels_[index]);
+    const detail::type_node &node = tree_.node(t.node);
+    nb::object shape = nb::steal(owned(PyTuple_New(node.ndim)));
+    for (std::uint32_t i = 0; i < node.ndim; ++i)
+        store_new_item(shape.ptr(), false, i,
+                       owned(PyLong_FromUnsignedLongLong(load<std::uint64_t>(line + std::size_t{i} * 8))));
+    return nb::borrow<nb::tuple>(shape);
 }
 
 Types::ArrayTarget Types::array_target(std::uint32_t index, std::span<const std::uint32_t> path,

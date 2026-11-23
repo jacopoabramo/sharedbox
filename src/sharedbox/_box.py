@@ -4,6 +4,7 @@ import contextlib
 import dataclasses
 import hashlib
 import inspect
+import math
 import os
 import sys
 import threading
@@ -1329,18 +1330,26 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
         The copy holds one complete write, as a read does, but goes into
         memory the caller already has, so nothing is allocated.
 
+        For a field with a [`MaxShape`][sharedbox.MaxShape], `out` has the
+        maximum shape and the stored elements go to its start in C order.
+        The call then returns a view of `out` in the stored shape, made with
+        `out`'s own `reshape`, rather than `out` itself. Those elements are
+        `out`'s first rows only when every dimension but the first is at its
+        maximum, so read the values through the view.
+
         Parameters
         ----------
         out
             A writable, C-contiguous array in CPU memory with the field's
-            [`DType`][sharedbox.DType] and [`Shape`][sharedbox.Shape]. Its
-            contents are unspecified if the call raises.
+            [`DType`][sharedbox.DType] and [`Shape`][sharedbox.Shape], or
+            its `MaxShape`. Its contents are unspecified if the call raises.
 
         Raises
         ------
         TypeError
-            If the field is not an array field, or `out` is not a writable,
-            C-contiguous array in CPU memory.
+            If the field is not an array field, `out` is not a writable,
+            C-contiguous array in CPU memory, or for a `MaxShape` field `out`
+            has no `reshape` that gives a view.
         ValueError
             If the box has no such field, or `out` has another dtype or
             shape.
@@ -1350,12 +1359,21 @@ class SharedBox(Generic[M], metaclass=SharedBoxMeta):
             If the box is closed.
         """
         spec = self._spec(field)
-        if spec.kind != "array":
+        if spec.kind not in ("array", "max_array"):
             raise TypeError(
                 f"{spec.label} is not an array field; read_into takes array fields only"
             )
-        self._segment.read_into(spec.index, out, type(self).__layout__.types)
-        return out
+        shape = self._segment.read_into(spec.index, out, type(self).__layout__.types)
+        if shape is None:
+            return out
+        # Any keeps reshape, which A does not promise, and the view is of out's own type.
+        array: Any = out
+        try:
+            return cast("A", array.reshape(-1)[: math.prod(shape)].reshape(shape))
+        except AttributeError:
+            raise TypeError(
+                f"{spec.label}: out needs a reshape to view the stored shape"
+            ) from None
 
     @contextlib.contextmanager
     def writing(

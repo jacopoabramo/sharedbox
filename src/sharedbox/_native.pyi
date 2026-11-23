@@ -297,8 +297,14 @@ class Segment:
             If another writer holds the lock longer than the lock timeout.
         """
 
-    def read_into(self, field: int, out: object, types: Types | None = None) -> None:
+    def read_into(
+        self, field: int, out: object, types: Types | None = None
+    ) -> tuple[int, ...] | None:
         """Copy an array field into `out`, a writable C-contiguous CPU array of the field's dtype and shape.
+
+        For a `MaxShape` field `out` has the maximum shape, gets the stored
+        elements at its start in C order, and the stored shape is returned;
+        for any other array field nothing is returned.
 
         Raises
         ------

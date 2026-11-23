@@ -552,6 +552,13 @@ void Segment::read_into(std::uint32_t index, std::span<std::byte> out) const {
         impl_->check(impl_->box.read(f, out));
 }
 
+read_value Segment::read_into(std::uint32_t index, std::span<std::byte> head, std::span<std::byte> rest) const {
+    auto guard = impl_->enter();
+    impl_->check_not_held();
+    impl_->field(index);
+    return impl_->check(impl_->box.read_used(static_cast<std::uint16_t>(index), head, rest));
+}
+
 std::unique_ptr<FieldWriter> Segment::begin_write(std::uint32_t index) const {
     auto guard = impl_->enter();
     impl_->check_not_held();

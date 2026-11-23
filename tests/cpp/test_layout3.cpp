@@ -7,6 +7,7 @@
 #include "unique.hpp"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cmath>
 #include <cstring>
@@ -384,6 +385,15 @@ TEST_CASE("a max_array value is its shape line and its stored elements") {
     CHECK((partial->len == good.size() && std::memcmp(used.data(), good.data(), good.size()) == 0));
     CHECK(std::all_of(used.begin() + static_cast<std::ptrdiff_t>(good.size()), used.end(),
                       [](std::byte b) { return b == std::byte{0xEE}; }));
+    // The split read puts the shape line in head and the elements in use at the start of rest.
+    std::array<std::byte, 64> head{};
+    std::vector<std::byte> rest(4 * 3 * 4, std::byte{0xEE});
+    const auto split = box->read_used(0, head, rest);
+    REQUIRE(split);
+    CHECK((split->len == good.size() && std::memcmp(head.data(), good.data(), 64) == 0));
+    CHECK(std::memcmp(rest.data(), good.data() + 64, good.size() - 64) == 0);
+    CHECK(rest[good.size() - 64] == std::byte{0xEE});
+    CHECK(box->read_used(0, std::span(head).first(8), rest).error().code == status::range);
     const std::uint64_t generation = box->generation();
     CHECK(write(value_of(2, 3, 64 + 4)).error().code == status::range);
     CHECK(write(value_of(5, 3, 64 + 5 * 3 * 4)).error().code == status::range);

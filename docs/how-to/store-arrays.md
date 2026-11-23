@@ -205,8 +205,13 @@ shape stored last. Fill all of the array you are handed, because its
 contents are not the old value in the new shape. Elements beyond the ones
 the last write stored, counted in C order, hold whatever an earlier and
 larger write left there. When a dimension other than the first changes,
-the old elements also end up at other positions. `read_into` takes fields
-of a fixed shape only, and raises `TypeError` for this one.
+the old elements also end up at other positions.
+
+[`read_into`][sharedbox.SharedBox.read_into] takes an array of the maximum
+shape for this field. It copies the stored elements to the start of that
+array and returns a view of it in the stored shape, so keep the view, not
+your array: the elements are your array's first rows only when every
+dimension but the first is at its maximum.
 
 ## 6. Read with another library
 
