@@ -116,6 +116,37 @@ def test_a_dataclass_member_takes_its_array_sizes_from_metadata(
         assert np.array_equal(got.scan, np.full((32, 32), 7, np.uint8))
 
 
+@dataclass
+class Scans:
+    index: int
+    first: Annotated[npt.NDArray[np.uint8], Shape((64, 64))]
+    second: Annotated[npt.NDArray[np.uint16], Shape((2, 3))]
+
+
+def test_a_large_item_receives_each_array_into_its_own(unique_name: str) -> None:
+    """Receive an item past 4 KiB with arrays holding its values and owned by that item alone."""
+    with SharedStream.create(Scans, unique_name, capacity=2) as stream:
+        reader = stream.reader()
+        sender = stream.sender()
+        sender.send(
+            Scans(
+                1,
+                np.full((64, 64), 7, np.uint8),
+                np.arange(6, dtype=np.uint16).reshape(2, 3),
+            )
+        )
+        got = reader.receive(timeout=1)
+        sender.send(
+            Scans(2, np.full((64, 64), 9, np.uint8), np.zeros((2, 3), np.uint16))
+        )
+        later = reader.receive(timeout=1)
+        assert got.index == 1
+        assert np.array_equal(got.first, np.full((64, 64), 7, np.uint8))
+        assert np.array_equal(got.second, np.arange(6, dtype=np.uint16).reshape(2, 3))
+        assert not np.shares_memory(got.first, later.first)
+        assert later.first[0, 0] == 9
+
+
 def test_receive_into_refuses_an_optional_array(unique_name: str) -> None:
     """Raise TypeError when receive_into is given an array for an optional array member."""
     with SharedStream.create(Notice, unique_name, capacity=4) as stream:

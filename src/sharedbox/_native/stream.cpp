@@ -588,15 +588,21 @@ private:
             if (!fresh)
                 throw std::invalid_argument("stream '" + name_ + "': two arrays given for one member");
         }
+        constexpr std::size_t small_item = 4096;
+        const std::size_t size = core_->s.item_size();
+        // A plain receive of an item past the stack scratch copies each array of fixed shape straight into
+        // the array it returns, rather than into the scratch and from there into a new array.
+        std::vector<nb::object> arrays_made;
+        if (arrays.empty() && size > small_item)
+            targets = types.fresh_targets(0, given.emplace(), arrays_made);
         std::sort(targets.begin(), targets.end(),
                   [](const Types::ArrayTarget &a, const Types::ArrayTarget &b) { return a.offset < b.offset; });
         // Every max_array is a target too, so only the elements its shape line counts are copied.
         if (types.has_max_arrays())
             targets = types.item_targets(0, std::move(targets));
-        const std::size_t size = core_->s.item_size();
         // An item of up to 4 KiB is copied to the stack; a larger one to the heap, which a bare array item
         // then keeps as its data instead of copying again.
-        alignas(std::max_align_t) std::byte small[4096];
+        alignas(std::max_align_t) std::byte small[small_item];
         std::unique_ptr<std::byte[]> large;
         std::byte *scratch = small;
         // ponytail: the scratch holds the whole item even when arrays take most of it, and its pages under the

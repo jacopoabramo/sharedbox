@@ -1474,6 +1474,38 @@ std::vector<Types::ArrayTarget> Types::item_targets(std::uint32_t index, std::ve
     return targets;
 }
 
+std::vector<Types::ArrayTarget> Types::fresh_targets(std::uint32_t index,
+                                                     std::unordered_map<std::uint64_t, PyObject *> &given,
+                                                     std::vector<nb::object> &keep) const {
+    std::vector<ArrayTarget> targets;
+    auto walk = [&](auto &self, const detail::type_ref &t, std::uint64_t offset) -> void {
+        if (t.kind != kind_record && t.kind != kind_tuple)
+            return;
+        const detail::type_node &node = tree_.node(t.node);
+        for (std::uint32_t i = 0; i < node.count; ++i) {
+            const detail::type_member &m = tree_.member(node.members + i);
+            if (m.type.kind != kind_array) {
+                self(self, m.type, offset + m.offset);
+                continue;
+            }
+            std::unique_ptr<std::byte[]> buffer(new std::byte[m.type.size == 0 ? 1 : m.type.size]);
+            std::byte *raw = buffer.get();
+            nb::capsule owner(raw, [](void *p) noexcept { delete[] static_cast<std::byte *>(p); });
+            // Released only once the capsule exists, so a failure to make it does not leak the buffer.
+            buffer.release();
+            const std::size_t bytes = m.type.size;
+            const std::uint64_t key = bytearray_key(t.node, i);
+            targets.push_back({nb::ndarray<nb::c_contig, nb::device::cpu>(raw, 1, &bytes, owner, nullptr,
+                                                                          nb::dtype<std::uint8_t>()),
+                               offset + m.offset, m.type.size, key, nullptr});
+            keep.push_back(wrap_array(m.type, raw, owner));
+            given.emplace(key, keep.back().ptr());
+        }
+    };
+    walk(walk, field(index), 0);
+    return targets;
+}
+
 nb::object Types::out_view(const detail::type_ref &t, PyObject *out, const std::byte *data,
                            const std::string &name) const {
     if (t.kind != kind_max_array)
