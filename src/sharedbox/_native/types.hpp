@@ -134,6 +134,12 @@ public:
     /// given, plus a target with an empty view for each max_array of field index that given lacks, sorted by
     /// offset.
     std::vector<ArrayTarget> item_targets(std::uint32_t index, std::vector<ArrayTarget> given) const;
+    /// A target over a new array of the field's array type for each array of fixed shape that field index
+    /// reaches through records and tuples, so a receive copies it once. Each array goes into given under the
+    /// key decode_given finds it by, and into keep, which owns it.
+    std::vector<ArrayTarget> fresh_targets(std::uint32_t index,
+                                           std::unordered_map<std::uint64_t, PyObject *> &given,
+                                           std::vector<nb::object> &keep) const;
     /// Whether the table describes a max_array anywhere.
     bool has_max_arrays() const { return max_arrays_; }
     /// How many element bytes the max_array t stores after the shape line at line, or UINT64_MAX for a shape
