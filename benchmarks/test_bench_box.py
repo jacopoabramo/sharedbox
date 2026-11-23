@@ -6,10 +6,19 @@ from itertools import count
 from typing import Annotated
 
 import msgspec
+import numpy as np
+import numpy.typing as npt
 import pytest
 from pytest_codspeed import BenchmarkFixture
 
-from sharedbox import BoundedDict, BoundedList, BoundedSet, Capacity, SharedBox
+from sharedbox import (
+    BoundedDict,
+    BoundedList,
+    BoundedSet,
+    Capacity,
+    MaxShape,
+    SharedBox,
+)
 
 NAMES = count()
 
@@ -469,3 +478,27 @@ def write_then_read(box: Moments) -> datetime:
 def test_write_and_read_datetime(benchmark: BenchmarkFixture, moments: Moments) -> None:
     """Time writing an aware datetime field and reading it back, which decodes it since the write changed it."""
     benchmark(write_then_read, moments)
+
+
+class Frames(SharedBox):
+    image: Annotated[npt.NDArray[np.uint8], MaxShape((1024, 1024))]
+
+
+@pytest.fixture(params=[4, 1024], ids=["4x4", "1024x1024"])
+def frames(request: pytest.FixtureRequest) -> Iterator[Frames]:
+    name = f"bench-codspeed-{os.getpid()}-{next(NAMES)}"
+    side = request.param
+    with Frames.create(name, np.ones((side, side), np.uint8)) as box:
+        yield box
+    Frames.unlink(name)
+
+
+def test_read_max_array(benchmark: BenchmarkFixture, frames: Frames) -> None:
+    """Time reading a MaxShape field of at most 1024 by 1024 bytes into a new array."""
+    benchmark(getattr, frames, "image")
+
+
+def test_read_into_max_array(benchmark: BenchmarkFixture, frames: Frames) -> None:
+    """Time reading a MaxShape field of at most 1024 by 1024 bytes into an array of the maximum shape."""
+    out = np.empty((1024, 1024), np.uint8)
+    benchmark(frames.read_into, "image", out)
