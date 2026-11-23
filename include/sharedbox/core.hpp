@@ -2298,8 +2298,10 @@ inline bool slot_held(const waiter_table &t, std::uint16_t slot) noexcept {
 SHAREDBOX_HOT void wake_all(const waiter_table &t, std::uint32_t &word) noexcept {
 #ifdef _WIN32
     static_cast<void>(word);
+    // Only a slot whose wait is under way is signalled: wait_on stores asleep_on before its last check of
+    // the change, both seq_cst, so a slot read here as 0 belongs to a wait that sees the change itself.
     for (std::uint16_t i = 0; i < t.count; ++i)
-        if (atomic(t.slots[i].owner_pid).load(std::memory_order_seq_cst) != 0)
+        if (atomic(t.slots[i].asleep_on).load(std::memory_order_seq_cst) != 0)
             if (HANDLE e = event(t, i); e != nullptr)
                 SetEvent(e);
 #else
