@@ -149,6 +149,20 @@ def holds_array(spec: TypeSpec) -> bool:
             return False
 
 
+# The position of each member name of a record, by the record's members; the stored tuple is compared by
+# identity on a hit, so an id reused after a type was freed never returns another type's positions.
+POSITIONS: dict[int, tuple[tuple[Any, ...], dict[str, int]]] = {}
+
+
+def positions_of(spec: TypeSpec) -> dict[str, int]:
+    """Return the position of each member of the record `spec` by its name."""
+    found = POSITIONS.get(id(spec.members))
+    if found is None or found[0] is not spec.members:
+        found = (spec.members, {m.name: i for i, m in enumerate(spec.members)})
+        POSITIONS[id(spec.members)] = found
+    return found[1]
+
+
 def targets_of(
     spec: TypeSpec, out: object, label: str, path: tuple[int, ...] = ()
 ) -> list[tuple[tuple[int, ...], object]]:
@@ -179,26 +193,27 @@ def targets_of(
                 for target in targets_of(m.type, entry, f"{label}[{i}]", (*path, i))
             ]
         case "record":
-            if not isinstance(out, Mapping):
+            if type(out) is not dict and not isinstance(out, Mapping):
                 raise TypeError(
                     f"{label}: out maps member names to arrays, None or an out of the member's shape"
                 )
-            positions = {m.name: i for i, m in enumerate(spec.members)}
-            for name in out:
-                if name not in positions:
+            positions = positions_of(spec)
+            found: list[tuple[tuple[int, ...], object]] = []
+            for name, entry in out.items():
+                at = positions.get(name)
+                if at is None:
                     raise TypeError(
                         f"{label} has no member {name!r}; its members: {', '.join(positions)}"
                     )
-            return [
-                target
-                for name, entry in out.items()
-                for target in targets_of(
-                    spec.members[positions[name]].type,
-                    entry,
-                    f"{label}.{name}",
-                    (*path, positions[name]),
-                )
-            ]
+                if entry is None:
+                    continue
+                member = spec.members[at].type
+                # An array entry needs no walk and no label, which is most of the time of a receive_into.
+                if member.kind == "array" or member.kind == "max_array":
+                    found.append(((*path, at), entry))
+                else:
+                    found += targets_of(member, entry, f"{label}.{name}", (*path, at))
+            return found
         case "list" | "set" | "dict":
             raise TypeError(
                 f"{label} is a {spec.kind}, which cannot hold an array; "
