@@ -325,11 +325,13 @@ public:
     std::uint64_t version(std::uint16_t field) const noexcept;
     // The pid holding the write lock, 0 when free; after force_unlock, the last holder.
     std::uint32_t writer_pid() const noexcept;
-    // Releases a write lock left by a process that died while writing. writer_pid keeps its value.
+    // Releases a write lock left by a process that died while writing, and wakes waiters. writer_pid keeps
+    // its value.
     [[nodiscard]] result<void> force_unlock() noexcept;
     // Takes the write lock and returns the even seq it was taken from, for unlock; write does both
     // itself. For tests that hold the lock.
     [[nodiscard]] result<std::uint64_t> lock(seconds lock_timeout);
+    // Releases the lock lock took and wakes waiters.
     void unlock(std::uint64_t locked) noexcept;
     // Takes the write lock and returns the bytes of an array field for writing in place, with the seq to end
     // with. For a max_array field the bytes start with the shape line, which the caller must keep within
@@ -349,8 +351,8 @@ public:
     [[nodiscard]] result<void> write_held(const record_write &w, std::span<const value> values);
     // Adds one to the write count of each changed field, releases the lock and wakes waiters.
     void end_record_write(const record_write &w, std::span<const std::uint16_t> changed) noexcept;
-    // Releases the lock with no write counted and wakes nobody; the caller has restored every byte it changed.
-    // The generation still moves by one, so a reader that copied bytes during the block retries.
+    // Releases the lock with no write counted and wakes waiters; the caller has restored every byte it
+    // changed. The generation still moves by one, so a reader that copied bytes during the block retries.
     void abort_record_write(const record_write &w) noexcept;
 
     // Claims a free waiter slot for this process, first freeing the slots of processes that have exited.
@@ -500,7 +502,8 @@ struct state {
     void (*after_wait)(void *) = nullptr;
     const std::atomic<bool> *cancel_wait = nullptr;
     sbx_handle foreign{};
-    waiter_table waiters;
+    // Mutable: a read that meets a writer may claim a slot to sleep in, from a const handle.
+    mutable waiter_table waiters;
 
     ~state();
 };
@@ -866,6 +869,51 @@ namespace detail {
 // Runs attempt until it succeeds, pausing between tries; false once timeout seconds have passed. With
 // Hooks, the wait hooks run only when the first try fails, before the first pause and after the last;
 // the large copies run them around everything instead, so they pass false.
+// Where a wait sleeps once backoff stops spinning and yielding: in a waiter slot, until seq is even, so the
+// unlock that frees the lock wakes it at once rather than after a timed sleep. The slot is claimed on the
+// first sleep and kept for the wait. Each sleep lasts at most a slice of 10 ms, which bounds how late a
+// wait sees the cancel flag or a lock that a process released without waking anyone, such as one that
+// died holding it.
+class lock_sleep {
+public:
+    explicit lock_sleep(const state &s) noexcept : s_(s) {}
+    lock_sleep(const lock_sleep &) = delete;
+    lock_sleep &operator=(const lock_sleep &) = delete;
+    ~lock_sleep() {
+        if (slot_ >= 0)
+            release_slot(s_.waiters, static_cast<std::uint16_t>(slot_));
+    }
+
+    // Sleeps for at most left; false when no slot was free, and the caller pauses instead.
+    bool sleep(seconds left) {
+        if (slot_ == none_free)
+            return false;
+        if (slot_ == unclaimed) {
+            const result<std::uint16_t> claimed = claim_slot(s_.waiters);
+            if (!claimed) {
+                slot_ = none_free;
+                return false;
+            }
+            slot_ = *claimed;
+        }
+        header &h = *s_.hdr;
+        static_cast<void>(wait_on(
+            s_.waiters, static_cast<std::uint16_t>(slot_), h.wake_word,
+            [&]() noexcept {
+                return (atomic(h.seq).load(std::memory_order_seq_cst) & 1u) == 0 ||
+                       (s_.cancel_wait != nullptr && s_.cancel_wait->load(std::memory_order_acquire));
+            },
+            (std::min)(left, seconds(0.01)), h.sleepers));
+        return true;
+    }
+
+private:
+    static constexpr int unclaimed = -1;
+    static constexpr int none_free = -2;
+    const state &s_;
+    int slot_ = unclaimed;
+};
+
 template <bool Hooks = true, class F>
     requires std::predicate<F &>
 SHAREDBOX_HOT bool retry(const state &s, double timeout, F &&attempt) {
@@ -875,10 +923,12 @@ SHAREDBOX_HOT bool retry(const state &s, double timeout, F &&attempt) {
     if constexpr (Hooks)
         hook = s.before_wait != nullptr ? s.before_wait() : nullptr;
     backoff wait(timeout);
+    lock_sleep asleep(s);
     bool done = false;
     // The flag is read only here, after a failed attempt, so a call that meets no lock never loads it.
     while (!wait.expired() && !(s.cancel_wait != nullptr && s.cancel_wait->load(std::memory_order_relaxed))) {
-        wait.pause();
+        if (!wait.next_sleeps() || !asleep.sleep(wait.left()))
+            wait.pause();
         if (attempt()) {
             done = true;
             break;
@@ -1026,7 +1076,10 @@ inline void unlock_unchanged(state &s, std::uint64_t locked) noexcept {
     std::uint64_t held = locked + 1;
     if (atomic(s.hdr->seq).load(std::memory_order_relaxed) == held)
         atomic(s.hdr->writer_pid).store(0, std::memory_order_relaxed);
-    atomic(s.hdr->seq).compare_exchange_strong(held, locked, std::memory_order_release, std::memory_order_relaxed);
+    // Sequentially consistent so that wake_waiters, which loads sleepers next, is ordered after it. A lock
+    // waiter sleeps until seq is even, so it wakes for this as for any unlock.
+    atomic(s.hdr->seq).compare_exchange_strong(held, locked, std::memory_order_seq_cst, std::memory_order_relaxed);
+    wake_waiters(s);
 }
 
 // The write lock a member function took from the even seq locked. Leaving the scope without commit or
@@ -1045,7 +1098,6 @@ public:
     void commit() noexcept {
         held_ = false;
         h_.unlock(locked_);
-        wake_waiters(*h_.s_);
     }
     // Counts one write of field, then as commit().
     void commit(std::uint16_t field) noexcept {
@@ -1253,6 +1305,7 @@ SHAREDBOX_HOT void handle::unlock(std::uint64_t locked) noexcept {
     // Sequentially consistent so that wake_waiters, which loads sleepers next, is ordered after it.
     detail::atomic(h.seq).compare_exchange_strong(expected, locked + 2, std::memory_order_seq_cst,
                                                   std::memory_order_relaxed);
+    detail::wake_waiters(*s_);
 }
 
 inline result<field_write> handle::begin_write(std::uint16_t field, seconds lock_timeout) {
@@ -1272,7 +1325,6 @@ inline void handle::end_write(const field_write &w) noexcept {
     auto count = detail::atomic(s.counts[w.field]);
     count.store(count.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
     unlock(w.locked);
-    detail::wake_waiters(s);
 }
 
 inline result<record_write> handle::begin_record_write(seconds lock_timeout) {
@@ -1310,7 +1362,6 @@ inline void handle::end_record_write(const record_write &w, std::span<const std:
         count.store(count.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
     }
     unlock(w.locked);
-    detail::wake_waiters(s);
 }
 
 inline void handle::abort_record_write(const record_write &w) noexcept { unlock(w.locked); }
@@ -1769,7 +1820,8 @@ inline result<void> handle::force_unlock() noexcept {
     auto seq = detail::atomic(s_->hdr->seq);
     std::uint64_t odd = seq.load(std::memory_order_relaxed);
     if ((odd & 1u) != 0)
-        seq.compare_exchange_strong(odd, odd + 1, std::memory_order_release, std::memory_order_relaxed);
+        seq.compare_exchange_strong(odd, odd + 1, std::memory_order_seq_cst, std::memory_order_relaxed);
+    detail::wake_waiters(*s_);
     return {};
 }
 

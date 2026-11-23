@@ -9,6 +9,7 @@
 #include <atomic>
 #include <chrono>
 #include <cstring>
+#include <thread>
 
 using sharedbox::handle;
 using sharedbox::seconds;
@@ -141,6 +142,54 @@ TEST_CASE("a write lock left without a commit is released and moves the generati
     const auto locked = a->lock(seconds(0.05));
     REQUIRE(locked.has_value());
     a->unlock(*locked);
+    static_cast<void>(sharedbox::unlink(name));
+}
+
+// A waiter past its spins and yields sleeps in a waiter slot, and the unlock wakes it at once. A timed
+// sleep ends on the next timer tick, about 15 ms on Windows, so 5 ms after the unlock is late.
+TEST_CASE("a lock waiter wakes when the lock is released") {
+    const std::string name = unique("lock-wake");
+    auto a = handle::create(name, fields, 32, 1, 4, {});
+    auto b = handle::open(name, seconds(1.0));
+    REQUIRE((a && b));
+    for (int round = 0; round < 3; ++round) {
+        const auto locked = a->lock(seconds(1.0));
+        REQUIRE(locked.has_value());
+        std::atomic<std::int64_t> got_ns{0};
+        std::thread waiter([&] {
+            const auto taken = b->lock(seconds(5.0));
+            got_ns = std::chrono::steady_clock::now().time_since_epoch().count();
+            if (taken)
+                b->unlock(*taken);
+        });
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        const std::int64_t released_ns = std::chrono::steady_clock::now().time_since_epoch().count();
+        a->unlock(*locked);
+        waiter.join();
+        CHECK(got_ns.load() - released_ns < 5'000'000);
+    }
+    static_cast<void>(sharedbox::unlink(name));
+}
+
+// With every waiter slot taken, a waiter sleeps as before and still gets the lock.
+TEST_CASE("a lock waiter with no free slot still gets the lock") {
+    const std::string name = unique("lock-noslot");
+    auto a = handle::create(name, fields, 32, 1, 1, {});
+    auto b = handle::open(name, seconds(1.0));
+    REQUIRE((a && b));
+    const auto slot = a->register_waiter();
+    REQUIRE(slot.has_value());
+    const auto locked = a->lock(seconds(1.0));
+    REQUIRE(locked.has_value());
+    std::thread holder([&] {
+        std::this_thread::sleep_for(std::chrono::milliseconds(30));
+        a->unlock(*locked);
+    });
+    const auto taken = b->lock(seconds(2.0));
+    holder.join();
+    REQUIRE(taken.has_value());
+    b->unlock(*taken);
+    a->release_waiter(*slot);
     static_cast<void>(sharedbox::unlink(name));
 }
 
