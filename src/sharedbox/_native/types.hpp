@@ -112,11 +112,9 @@ public:
     nb::ndarray<nb::c_contig, nb::device::cpu> array_out(std::uint32_t index, PyObject *out) const;
     /// Whether field index is an array up to a maximum shape.
     bool field_is_max_array(std::uint32_t index) const;
-    /// Copies the elements of the max_array field index that bytes, its shape line and elements in use,
-    /// holds into the first elements of view, and returns the stored shape as a tuple. Raises ValueError for
-    /// bytes no value has.
-    nb::tuple fill_max_array(std::uint32_t index, std::span<const std::byte> bytes,
-                             const nb::ndarray<nb::c_contig, nb::device::cpu> &view) const;
+    /// The shape the max_array field index stores as its shape line line, whose elements take used bytes,
+    /// as a tuple. Raises ValueError for a line and count no value has.
+    nb::tuple max_array_shape(std::uint32_t index, const std::byte *line, std::uint64_t used) const;
     /// Where an array the caller passed to receive into goes: its writable view, where its bytes start in the
     /// field's value and how many there are, and the key decode_given finds it under. For a max_array, max is
     /// its node, offset the start of its shape line and size its whole span; view may then be empty, for a

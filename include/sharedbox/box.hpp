@@ -285,6 +285,11 @@ public:
     // or the shape line and the elements in use, not the whole capacity. status::range for a field of
     // another kind.
     [[nodiscard]] result<read_value> read_used(std::uint16_t field, std::span<std::byte> buf) const;
+    // As read_used, with the head of the field, the length of a list, set or dict or the shape line of a
+    // max_array, copied into head and the bytes in use after it into rest; len counts both. status::range
+    // unless head is exactly the head's size. Nothing goes into rest when it is too small for them.
+    [[nodiscard]] result<read_value> read_used(std::uint16_t field, std::span<std::byte> head,
+                                               std::span<std::byte> rest) const;
     // As read_record, copying only the bytes each field uses: the length and the bytes of a str, bytes or
     // Decimal, the length and the slots in use of a list, set or dict, the shape line and the elements of a
     // max_array, and all of any other field. Each lands where read_record puts it, so payload finds it;
@@ -1151,6 +1156,42 @@ inline result<read_value> handle::read_used(std::uint16_t field, std::span<std::
     if (detail::field_span(s.fields[field]) >= detail::large_copy)
         return detail::read_used_impl<true>(s, field, buf);
     return detail::read_used_impl<false>(s, field, buf);
+}
+
+namespace detail {
+
+// read_used in two parts; Large as for read_used_impl.
+template <bool Large>
+result<read_value> read_used_split(const state &s, std::uint16_t field, std::span<std::byte> head,
+                                   std::span<std::byte> rest) {
+    const std::byte *src = s.record + s.fields[field].offset;
+    read_value out{0, 0};
+    const bool done = seq_read<Large>(s, [&](std::atomic_ref<std::uint64_t> seq, std::uint64_t before) noexcept {
+        // The head is read from its copy, so the count of the bytes after it is the one the caller sees.
+        std::memcpy(head.data(), src, head.size());
+        const std::size_t tail = used_bytes(s, field, head.data()) - head.size();
+        if (tail <= rest.size() && !seq_copy<Large>(rest.data(), src + head.size(), tail, seq, before))
+            return false;
+        out = {head.size() + tail, atomic(s.counts[field]).load(std::memory_order_relaxed)};
+        return true;
+    });
+    if (!done)
+        return unexpected(status::lock_timeout);
+    return out;
+}
+
+} // namespace detail
+
+inline result<read_value> handle::read_used(std::uint16_t field, std::span<std::byte> head,
+                                            std::span<std::byte> rest) const {
+    const detail::state &s = *s_;
+    if (field >= s.field_count ||
+        !(detail::is_collection(s.fields[field].kind) || s.fields[field].kind == kind_max_array) ||
+        head.size() != detail::used_head(s.fields[field]))
+        return unexpected(status::range);
+    if (detail::field_span(s.fields[field]) >= detail::large_copy)
+        return detail::read_used_split<true>(s, field, head, rest);
+    return detail::read_used_split<false>(s, field, head, rest);
 }
 
 inline result<read_value> handle::read_large(std::uint16_t field, std::span<std::byte> buf) const {

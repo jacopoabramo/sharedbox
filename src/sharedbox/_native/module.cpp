@@ -1070,11 +1070,11 @@ NB_MODULE(_native, m) {
                     s.read_into(index, {static_cast<std::byte *>(view.data()), view.nbytes()});
                     return nb::none();
                 }
-                // Read as the shape line and the elements in use, then copied to the front of out.
-                sharedbox::FieldRead read;
-                s.read(index, read);
-                return t.fill_max_array(index, std::as_bytes(std::span(read.bytes.data(), read.bytes.size())),
-                                        view);
+                // The shape line goes to a copy here and the elements in use straight to the front of out.
+                std::byte line[64];
+                const sharedbox::read_value got =
+                    s.read_into(index, line, {static_cast<std::byte *>(view.data()), view.nbytes()});
+                return t.max_array_shape(index, line, got.len - sizeof line);
             },
             "field"_a, "out"_a, "types"_a = nb::none())
         .def(

@@ -177,6 +177,8 @@ public:
     /// Copies the field's stored bytes, from one complete write, into out, which holds exactly as many bytes
     /// as the field; for an array field. Throws std::invalid_argument for another size.
     void read_into(std::uint32_t field, std::span<std::byte> out) const;
+    /// The bytes in use of a list, set, dict or max_array field, its head into head and the rest into rest.
+    read_value read_into(std::uint32_t field, std::span<std::byte> head, std::span<std::byte> rest) const;
     /// Takes the write lock on the segment's second handle, made on the first call, and returns the array
     /// field's bytes to fill in place; the lock wait releases the GIL as other writes do.
     std::unique_ptr<FieldWriter> begin_write(std::uint32_t field) const;

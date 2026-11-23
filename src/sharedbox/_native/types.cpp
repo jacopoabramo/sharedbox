@@ -1407,23 +1407,10 @@ nb::ndarray<nb::c_contig, nb::device::cpu> Types::array_out(std::uint32_t index,
 
 bool Types::field_is_max_array(std::uint32_t index) const { return field(index).kind == kind_max_array; }
 
-nb::tuple Types::fill_max_array(std::uint32_t index, std::span<const std::byte> bytes,
-                                const nb::ndarray<nb::c_contig, nb::device::cpu> &view) const {
+nb::tuple Types::max_array_shape(std::uint32_t index, const std::byte *line, std::uint64_t used) const {
     const detail::type_ref &t = field(index);
-    const std::string &name = labels_[index];
-    std::byte line[64];
-    if (bytes.size() < sizeof line)
-        corrupt(name);
-    std::memcpy(line, bytes.data(), sizeof line);
-    const std::uint64_t stored = stored_bytes(t, line);
-    if (stored == UINT64_MAX || stored > bytes.size() - sizeof line)
-        corrupt(name);
-    if (stored >= detail::large_copy) {
-        nb::gil_scoped_release unlocked;
-        std::memcpy(view.data(), bytes.data() + sizeof line, stored);
-    } else if (stored != 0) {
-        std::memcpy(view.data(), bytes.data() + sizeof line, stored);
-    }
+    if (stored_bytes(t, line) != used)
+        corrupt(labels_[index]);
     const detail::type_node &node = tree_.node(t.node);
     nb::object shape = nb::steal(owned(PyTuple_New(node.ndim)));
     for (std::uint32_t i = 0; i < node.ndim; ++i)
