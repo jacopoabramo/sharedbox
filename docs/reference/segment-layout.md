@@ -1543,6 +1543,8 @@ public:
     result<read_value> read(std::uint16_t field, std::span<std::byte> buf) const;
     result<std::uint64_t> read_record(std::span<std::byte> buf) const;
     result<read_value> read_used(std::uint16_t field, std::span<std::byte> buf) const;
+    result<read_value> read_used(std::uint16_t field, std::span<std::byte> head,
+                                 std::span<std::byte> rest) const;
     result<std::uint64_t> read_record_used(std::span<std::byte> buf) const;
     result<read_value> read_large(std::uint16_t field, std::span<std::byte> buf) const;
     result<std::uint64_t> read_record_large(std::span<std::byte> buf) const;
@@ -1624,8 +1626,10 @@ The header also declares these names:
   `unix_epoch_ordinal`, `micros_per_day`, `max_offset_minutes` and
   `literal_none` through `literal_enum`, and the structs `type_head`,
   `dl_dtype` and `literal_value`.
-- `handle::read_used`, which copies only the used part of a list, set or
-  dict field; `read_large`, `read_record_large` and `write_large`, which
+- `handle::read_used`, which copies only the used part of a list, set,
+  dict or `max_array` field, and its overload that copies the field's head
+  (the length, or the shape line) into one buffer and the bytes in use after
+  it into another; `read_large`, `read_record_large` and `write_large`, which
   copy a large value, running the wait hooks once around the copy.
 - A `types` parameter on `handle::create` and `handle::create_unpublished`:
   the description table, empty by default.
