@@ -9,6 +9,42 @@ Dates are marked as `DD-MM-YYYY`
 
 <!-- towncrier release notes start -->
 
+## [0.11.1](https://github.com/jacopoabramo/sharedbox/releases/tag/v0.11.1) - 23-11-2026
+
+### Added
+
+- `handle::read_used(field, head, rest)` in `box.hpp`: copies the head of a
+  list, set, dict or `max_array` field, its length or shape line, into
+  `head` and the bytes in use after it into `rest`. ([#145](https://github.com/jacopoabramo/sharedbox/pull/145))
+- `SharedBox.read_into` takes a `MaxShape` field. `out` has the field's
+  maximum shape, the stored elements are copied to its start, and the call
+  returns a view of `out` in the stored shape. ([#145](https://github.com/jacopoabramo/sharedbox/pull/145))
+
+  ```python
+  out = np.empty((1024, 1024), np.uint8)
+  image = box.read_into("image", out)  # image.shape is the stored shape
+  ```
+
+### Changed
+
+- A process waiting for the write lock of a `SharedBox`, to write or to read
+  past a writer, sleeps in a waiter slot once it stops spinning, and the
+  release of the lock wakes it. On Windows a write behind a long `locked()`
+  block takes the lock as it is released, not up to a timer tick of about
+  15 ms later. A box whose waiter slots are all taken waits on a timer as
+  before. ([#147](https://github.com/jacopoabramo/sharedbox/pull/147))
+- On Windows a write to a box or a send on a stream that has a process
+  waiting signals only the waiter slots whose wait is under way, not every
+  claimed slot. With 32 claimed slots idle, a write to a `SharedBox` took
+  about 2 us and now takes about 90 ns, as with none. ([#148](https://github.com/jacopoabramo/sharedbox/pull/148))
+- `SharedReceiveStream.receive_into` and `receive_into_nowait` check the
+  `out` they are given faster: a send and a `receive_into` of a record of two
+  small arrays took about 4.1 us and now take about 3.4 us. ([#149](https://github.com/jacopoabramo/sharedbox/pull/149))
+- `SharedReceiveStream.receive` of an item larger than 4 KiB copies each of
+  its fixed-shape arrays once, straight into the array it returns. A send and
+  a `receive` of a record holding a 512 KiB array took about 215 us and now
+  take about 135 us. ([#149](https://github.com/jacopoabramo/sharedbox/pull/149))
+
 ## [0.11.0](https://github.com/jacopoabramo/sharedbox/releases/tag/v0.11.0) - 20-11-2026
 
 ### Added
