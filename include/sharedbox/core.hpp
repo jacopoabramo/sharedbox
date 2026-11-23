@@ -892,6 +892,24 @@ public:
         }
     }
 
+    // Whether the next pause would sleep rather than spin or yield.
+    bool next_sleeps() noexcept {
+        if (spins_ + 1 < 128)
+            return false;
+#ifdef _WIN32
+        return !still_yielding();
+#else
+        return true;
+#endif
+    }
+
+    // The time left before expired() turns true, the whole timeout before its first call.
+    seconds left() const noexcept {
+        if (!started_)
+            return seconds(timeout_);
+        return (std::max)(std::chrono::duration_cast<seconds>(deadline_ - clock::now()), seconds(0));
+    }
+
 private:
 #ifdef _WIN32
     // Whether the first millisecond of yielding, counted from the first call, is still running.
