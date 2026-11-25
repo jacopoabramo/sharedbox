@@ -322,7 +322,7 @@ USED_STREAM_NAME = b"used_sharedbox_stream"
 
 def take_stream(consumer: ctypes.CDLL, capsule: object) -> int:
     code = ctypes.c_int()
-    taken = consumer.consumer_take_stream(
+    taken: int | None = consumer.consumer_take_stream(
         get_pointer(capsule, b"sharedbox_stream"), ctypes.byref(code)
     )
     assert taken, code.value
