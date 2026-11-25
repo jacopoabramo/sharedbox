@@ -553,6 +553,10 @@ attacher agree on it and on the class's meaning.
 
 - `schema_hash`: the first 8 bytes of SHA-256 over that text, read as a
   little-endian `u64`.
+- A stream's `schema_hash` is taken the same way over `stream|` followed by
+  the item's type text, with `bool:1`, `int:8` and `float:8` for those
+  kinds: `stream|float:8` for an item of `float`, whose hash is
+  `0xca61a9c40c375b90`.
 - Identity: the `identity=` class keyword, a non-empty string without `|`,
   the character that separates the parts of the schema text; without it,
   `module.qualname`. A subclass does not inherit its base's identity.
@@ -1835,6 +1839,9 @@ public:
                                  std::uint32_t max_readers, std::uint64_t schema_hash,
                                  const metadata_spec &metadata = {});
     static result<stream> open(std::string_view name, seconds timeout);
+    static result<stream> from_capsule(sbx_handle *capsule);
+    result<stream> duplicate() const;
+    sbx_handle *to_capsule() &&;
 
     std::string_view name() const noexcept;
     std::uint64_t schema_hash() const noexcept;
@@ -1870,6 +1877,20 @@ Stream layout). Every function returning a `result` is `[[nodiscard]]`.
 - `stream::open` compares nothing: the caller compares `schema_hash()` with
   its own. Its errors are those of Attach, and `status::corrupt` for an
   item type or slot size that does not fit.
+- `stream::from_capsule` takes over a handle made by another build, such as
+  the one in a `"sharedbox_stream"` capsule. It checks the segment at
+  `capsule->base` as `open` does, so a box's handle gives
+  `status::kind_mismatch`, and gives `status::range` for a null handle, a
+  null `release`, `base` or `name`, a `handle_version` of 0 or a name that
+  breaks the rules. On success it clears `capsule->release`, and destroying
+  the stream calls the release it had.
+- `duplicate` gives a stream with its own mapping of the same segment,
+  checked again as `open` checks it, claiming no sender and opening no
+  reader; `status::range` for a stream made by `from_capsule`.
+- `to_capsule` gives a heap `sbx_handle` that owns the stream, whose
+  `layout_major` and `layout_minor` are the segment's stream layout; its
+  `release` destroys the stream and the caller deletes the struct.
+  `nullptr` when memory runs out, leaving the stream as it was.
 - `sender` gives `status::busy` while a running process holds the sender,
   `status::ended` once a sender has closed the stream, and `status::no_slot`
   when no waiter slot is free.
@@ -1957,7 +1978,7 @@ Stream layout). Every function returning a `result` is `[[nodiscard]]`.
 ### Capsule handle
 
 `sbx_handle` is the struct a capsule holds. It is plain C data with function
-pointers, declared in `sharedbox_c.h` and included by `box.hpp`,
+pointers, declared in `sharedbox_c.h` and included by `core.hpp`, and the same for every kind,
 because it passes between extensions compiled separately, possibly with
 different compilers and standard libraries. No C++ standard-library type
 crosses the capsule.
@@ -1968,7 +1989,7 @@ typedef struct sbx_handle {
     uint32_t handle_version;              /* 1; grows by appending fields */
     void    *base;                        /* this handle's own mapping */
     uint64_t size;
-    const char *name;                     /* the box name, for slot events */
+    const char *name;                     /* the segment name, for slot events */
     void   (*release)(struct sbx_handle *);
     void    *private_data;                /* owned by the build that made the handle */
 } sbx_handle;
@@ -1977,19 +1998,20 @@ typedef struct sbx_handle {
 - `private_data` belongs to the build that made the handle, and only that
   build's `release` reads it.
 - A consumer never reads another build's `private_data`. It takes the handle
-  with `handle::from_capsule` (or `sbx_import`). It does not wait for `magic`:
+  with `handle::from_capsule` (or `sbx_import`) for a box and `stream::from_capsule` for a stream. It does not wait for `magic`:
   it loads it once and returns `status::corrupt` if it is not set or `size` is
   below 4096, then runs steps 3 and 4 of Attach on the segment at `base`, which
   includes the kind and version checks. It keeps its own copy of the struct and
-  of the field table, and checks no schema: the consumer compares
+  of the field table or item type, and checks no schema: the consumer compares
   `schema_hash()`. On success it clears the capsule struct's `release`, and
   destroying the new handle calls the producer's `release`. The consumer's
   handle opens slot events by `name` when it first waits.
-- `to_capsule()` moves a handle to the heap and returns a new `sbx_handle`
+- `to_capsule()` moves a box handle or a stream to the heap and returns a new `sbx_handle`
   whose `release` destroys it; the caller deletes the struct afterwards.
 - The Python extension's capsule destructor deletes the struct while the
-  capsule is named `"sharedbox_box"` or `"used_sharedbox_box"`, and calls
-  `release` only under the first name.
+  capsule is named `"sharedbox_box"` or `"used_sharedbox_box"`, or
+  `"sharedbox_stream"` or `"used_sharedbox_stream"`, and calls `release`
+  only under the unused name.
 
 ## `sharedbox_c.h`
 

@@ -45,8 +45,8 @@ digest = hashlib.sha256(b"stream|float:8").digest()
 print(hex(int.from_bytes(digest[:8], "little")))  # 0xca61a9c40c375b90
 ```
 
-[The schema hash](../explanation/how-a-box-is-stored.md#the-schema-hash)
-explains how to write the type text of other item types.
+[Schema identity](../reference/segment-layout.md#schema-identity) gives the
+type text of every other item type.
 
 ## Declare the parameter
 
@@ -107,7 +107,10 @@ static PyObject *record(PyObject *, PyObject *readings) {
     if (!reader)
         return PyErr_Format(PyExc_RuntimeError, "no reader: %d", static_cast<int>(reader.error().code));
     double reading = 0.0;
+    // Without the GIL, so a Python thread of this process can send while the receive waits.
+    PyThreadState *saved = PyEval_SaveThread();
     const auto got = reader->receive(std::as_writable_bytes(std::span(&reading, 1)), sharedbox::seconds(1.0));
+    PyEval_RestoreThread(saved);
     if (!got)
         return PyErr_Format(PyExc_RuntimeError, "receive failed: %d", static_cast<int>(got.error().code));
     return PyFloat_FromDouble(reading);

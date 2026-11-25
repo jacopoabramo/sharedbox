@@ -168,7 +168,7 @@ group_by_category = true
 show_symbol_type_heading = true
 show_symbol_type_toc = true
 inherited_members = false
-filters = ["!^_", "^__call__$", "^__sharedbox_box__$"]
+filters = ["!^_", "^__call__$", "^__sharedbox_box__$", "^__sharedbox_stream__$"]
 
 [project.markdown_extensions]
 abbr = {}
