@@ -208,11 +208,16 @@ struct stream_state {
     type_table types;
     os_mapping map;
     waiter_table waiters;
+    // The handle of another build that keeps the segment mapped, for a stream made by from_capsule; map is
+    // empty then.
+    sbx_handle foreign{};
 
     ~stream_state() {
-        // Before map unmaps the segment the slots live in.
+        // Before map, or foreign's release, unmaps the segment the slots live in.
         if (waiters.slots != nullptr)
             release_owned_slots(waiters);
+        if (foreign.release != nullptr)
+            foreign.release(&foreign);
     }
 };
 
@@ -234,11 +239,12 @@ inline std::unique_ptr<stream_state> make_stream_state(std::string_view name,
     return s;
 }
 
-// Takes the mapping into s, checks the item type of h, which passed the geometry check, and points s
-// into the mapping. status::unsupported for an item of a kind this header does not know, or holding one,
-// and status::corrupt for a slot size that does not fit the item.
-inline status bind_stream(stream_state &s, os_mapping &&map, const stream_header &h) noexcept {
-    const auto *bytes = static_cast<const std::byte *>(map.base());
+// Checks the item type of h, which passed the geometry check, and points s into the segment at segment,
+// which s.map or s.foreign keeps mapped. status::unsupported for an item of a kind this header does not
+// know, or holding one, and status::corrupt for a slot size that does not fit the item.
+inline status bind_stream(stream_state &s, void *segment, const stream_header &h) noexcept {
+    auto *base = static_cast<std::byte *>(segment);
+    const std::byte *bytes = base;
     const std::uint32_t entry = h.item_entry;
     if (const status rc = s.types.parse({bytes + h.types, h.types_size}, {&entry, 1}, true); rc != status::ok)
         return rc;
@@ -253,8 +259,6 @@ inline status bind_stream(stream_state &s, os_mapping &&map, const stream_header
         if (!metadata_geometry_ok(line, h.metadata_size))
             return status::corrupt;
     }
-    s.map = std::move(map);
-    auto *base = static_cast<std::byte *>(s.map.base());
     s.metadata = h.metadata == 0 ? nullptr : base + h.metadata;
     s.metadata_first = line;
     s.hdr = reinterpret_cast<stream_header *>(base);
@@ -604,6 +608,16 @@ public:
     // Opens the stream called name, waiting up to timeout for a creator that has not finished. The caller
     // compares schema_hash() with its own.
     [[nodiscard]] static result<stream> open(std::string_view name, seconds timeout);
+    // Takes over a handle made by another build, such as the one in a "sharedbox_stream" capsule: checks
+    // the segment at capsule->base as open does and, on success, clears capsule->release; destroying the
+    // stream then calls the release it had. status::kind_mismatch for a box's handle.
+    [[nodiscard]] static result<stream> from_capsule(sbx_handle *capsule);
+    // A stream with its own mapping of the same segment, which claims no sender and opens no reader.
+    // status::range for a stream made by from_capsule.
+    [[nodiscard]] result<stream> duplicate() const;
+    // A heap sbx_handle that owns this stream; its release destroys the stream, and the caller deletes the
+    // struct. nullptr when allocation fails, leaving the stream as it was.
+    [[nodiscard]] sbx_handle *to_capsule() &&;
 
     std::string_view name() const noexcept { return s_->name; }
     std::uint64_t schema_hash() const noexcept { return s_->schema_hash; }
@@ -731,7 +745,8 @@ inline result<stream> stream::create(std::string_view name, std::span<const std:
             }
         }
     }
-    if (const status rc = detail::bind_stream(*s, std::move(*map), detail::stream_layout::copy_header(base));
+    s->map = std::move(*map);
+    if (const status rc = detail::bind_stream(*s, base, detail::stream_layout::copy_header(base));
         rc != status::ok) {
         static_cast<void>(unlink(name));
         return unexpected(rc);
@@ -756,10 +771,86 @@ inline result<stream> stream::open(std::string_view name, seconds timeout) {
     std::unique_ptr<detail::stream_state> s = detail::make_stream_state(name, opened->common.waiter_slots);
     if (s == nullptr)
         return unexpected(status::os);
-    if (const status rc = detail::bind_stream(*s, std::move(*map), *opened); rc != status::ok)
+    s->map = std::move(*map);
+    if (const status rc = detail::bind_stream(*s, s->map.base(), *opened); rc != status::ok)
         return unexpected(detail::types_error(rc, s->types));
     detail::free_dead_waiters(s->waiters);
     return stream(s.release());
+}
+
+inline result<stream> stream::from_capsule(sbx_handle *capsule) {
+    if (capsule == nullptr || capsule->release == nullptr || capsule->base == nullptr ||
+        capsule->handle_version < 1 || capsule->name == nullptr)
+        return unexpected(status::range);
+    std::size_t length = 0;
+    while (length <= name_max && capsule->name[length] != '\0')
+        ++length;
+    const std::string_view name(capsule->name, length);
+    if (!detail::name_ok(name))
+        return unexpected(status::range);
+    if (capsule->size < page_size ||
+        detail::atomic(static_cast<common_header *>(capsule->base)->magic).load(std::memory_order_acquire) == 0)
+        return unexpected(status::corrupt);
+    const result<stream_header> opened = detail::open_header<detail::stream_layout>(capsule->base, capsule->size);
+    if (!opened)
+        return unexpected(opened.error());
+    std::unique_ptr<detail::stream_state> s = detail::make_stream_state(name, opened->common.waiter_slots);
+    if (s == nullptr)
+        return unexpected(status::os);
+    if (const status rc = detail::bind_stream(*s, capsule->base, *opened); rc != status::ok)
+        return unexpected(detail::types_error(rc, s->types));
+    s->foreign = *capsule;
+    capsule->release = nullptr;
+    detail::free_dead_waiters(s->waiters);
+    return stream(s.release());
+}
+
+inline result<stream> stream::duplicate() const {
+    const detail::stream_state &src = *s_;
+    if (src.foreign.release != nullptr)
+        return unexpected(status::range);
+    result<detail::os_mapping> map = detail::duplicate_mapping(src.map);
+    if (!map)
+        return unexpected(map.error());
+    std::unique_ptr<detail::stream_state> s = detail::make_stream_state(src.name, src.hdr->common.waiter_slots);
+    if (s == nullptr)
+        return unexpected(status::os);
+    s->map = std::move(*map);
+    void *base = s->map.base();
+    if (const status rc = detail::bind_stream(*s, base, detail::stream_layout::copy_header(base));
+        rc != status::ok)
+        return unexpected(detail::types_error(rc, s->types));
+    return stream(s.release());
+}
+
+namespace detail {
+
+inline void release_owned_stream(sbx_handle *h) noexcept {
+    delete static_cast<stream *>(h->private_data);
+    h->release = nullptr;
+    h->private_data = nullptr;
+    h->base = nullptr;
+}
+
+} // namespace detail
+
+inline sbx_handle *stream::to_capsule() && {
+    std::unique_ptr<sbx_handle> out(new (std::nothrow) sbx_handle{});
+    if (out == nullptr)
+        return nullptr;
+    auto *owner = new (std::nothrow) stream(std::move(*this));
+    if (owner == nullptr)
+        return nullptr;
+    const common_header &common = owner->s_->hdr->common;
+    out->layout_major = common.kind_major;
+    out->layout_minor = common.kind_minor;
+    out->handle_version = handle_version;
+    out->base = owner->base();
+    out->size = owner->size();
+    out->name = owner->s_->name;
+    out->release = detail::release_owned_stream;
+    out->private_data = owner;
+    return out.release();
 }
 
 inline result<stream_sender> stream::sender() {
