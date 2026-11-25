@@ -28,11 +28,13 @@ from collections.abc import (
 from concurrent.futures import CancelledError, Future
 from dataclasses import dataclass
 from typing import (
+    TYPE_CHECKING,
     Any,
     Final,
     Generic,
     Literal,
     NoReturn,
+    Protocol,
     Self,
     TypeVar,
     cast,
@@ -58,6 +60,12 @@ from ._native import (
     _Interrupted,
 )
 from ._types import MAX_ARRAY_PLACES, Table, TypeSpec, misplaced_max_array, parse
+
+if TYPE_CHECKING:
+    if sys.version_info >= (3, 13):
+        from types import CapsuleType
+    else:
+        from typing_extensions import CapsuleType
 
 T = TypeVar("T")
 Mode = Literal["lossless", "lossy", "latest"]
@@ -285,6 +293,18 @@ class Unlink:
         if stream is not None:
             return lambda: Segment.unlink(check_name(stream.name))
         return lambda name: Segment.unlink(check_name(name))
+
+
+class SupportsSharedStream(Protocol):
+    """An object that hands a stream's shared-memory segment to other extensions.
+
+    [`SharedStream`][sharedbox.SharedStream] is one. Annotate a parameter
+    with it in a function that accepts a stream.
+    """
+
+    def __sharedbox_stream__(
+        self, max_version: tuple[int, int] | None = None
+    ) -> CapsuleType: ...
 
 
 class SharedStream(Generic[T, M]):
@@ -669,6 +689,63 @@ class SharedStream(Generic[T, M]):
 
     async def __aexit__(self, *exc_info: object) -> None:
         self.close()
+
+    def __sharedbox_stream__(
+        self, max_version: tuple[int, int] | None = None, **kwargs: Any
+    ) -> CapsuleType:
+        """Return a `"sharedbox_stream"` capsule holding a handle with its own mapping of the segment.
+
+        Python code does not call it; an extension that accepts a stream
+        does. The capsule holds a pointer to an `sbx_handle`, declared in
+        `sharedbox/sharedbox_c.h`. The handle's mapping is made from the
+        stream's OS handle, so closing or unlinking the stream does not
+        affect it. A consumer takes the handle with
+        `sharedbox::stream::from_capsule`, renames the capsule
+        `"used_sharedbox_stream"`, compares the stream's schema hash with
+        the one it expects, and destroys the stream it gets. The handle
+        claims no sender and opens no reader; the consumer does that
+        itself. A capsule that is never taken releases the handle when it
+        is garbage collected. Releasing touches no Python objects and does
+        not need the GIL, so it may run on any thread and after
+        interpreter shutdown.
+
+        Parameters
+        ----------
+        max_version
+            The `(major, minor)` stream layout version the caller
+            supports; None means the stream's own.
+
+        Raises
+        ------
+        BufferError
+            If the major version of `max_version` differs from the
+            stream's layout, or if its minor version is older than the
+            stream's.
+        NotImplementedError
+            If any other keyword is given.
+        StreamClosedError
+            If this object is closed.
+
+        Notes
+        -----
+        On Windows the segment stays in existence while a handle is held.
+        """
+        if kwargs:
+            raise NotImplementedError(
+                f"__sharedbox_stream__ does not support {', '.join(sorted(kwargs))}"
+            )
+        major, minor = self._native.layout_version
+        if max_version is not None and max_version[0] != major:
+            raise BufferError(
+                f"stream {self.name!r} has layout {major}.{minor}; "
+                f"the caller supports major version {max_version[0]}"
+            )
+        if max_version is not None and max_version[1] < minor:
+            raise BufferError(
+                f"stream {self.name!r} has layout {major}.{minor}; "
+                f"the caller needs layout {major}.{minor} or newer"
+            )
+        return self._native._export()
 
     def __reduce__(
         self,

@@ -35,6 +35,17 @@ namespace nb = nanobind;
 using namespace nb::literals;
 
 namespace sharedbox {
+
+void release_handle_capsule(PyObject *capsule, const char *name, const char *used_name) {
+    const bool unused = PyCapsule_IsValid(capsule, name) != 0;
+    if (!unused && PyCapsule_IsValid(capsule, used_name) == 0)
+        return;
+    auto *handle = static_cast<sbx_handle *>(PyCapsule_GetPointer(capsule, unused ? name : used_name));
+    if (unused && handle->release != nullptr)
+        handle->release(handle);
+    delete handle;
+}
+
 namespace {
 
 struct WouldBlock : std::runtime_error {
@@ -69,6 +80,10 @@ struct StreamCore {
     stream s;
     std::string name;
 };
+
+void release_stream_capsule(PyObject *capsule) {
+    release_handle_capsule(capsule, "sharedbox_stream", "used_sharedbox_stream");
+}
 
 [[noreturn]] void throw_stream(const error &e, const std::string &name) {
 #ifdef _WIN32
@@ -750,6 +765,28 @@ public:
     std::uint32_t max_readers() const { return core().s.max_readers(); }
     std::uint64_t create_id() const { return core().s.create_id(); }
     bool closed() const { return core_ == nullptr; }
+
+    nb::tuple layout_version() const {
+        const common_header &common = static_cast<const common_header *>(core().s.base())[0];
+        return nb::make_tuple(common.kind_major, common.kind_minor);
+    }
+
+    /// A "sharedbox_stream" capsule holding a handle with its own mapping of the segment.
+    nb::object export_capsule() const {
+        result<stream> copy = core().s.duplicate();
+        if (!copy)
+            throw_stream(copy.error(), core().name);
+        sbx_handle *handle = std::move(*copy).to_capsule();
+        if (handle == nullptr)
+            throw std::bad_alloc();
+        PyObject *capsule = PyCapsule_New(handle, "sharedbox_stream", release_stream_capsule);
+        if (capsule == nullptr) {
+            handle->release(handle);
+            delete handle;
+            throw nb::python_error();
+        }
+        return nb::steal(capsule);
+    }
     std::uint64_t metadata_head() const { return core().s.metadata_head(); }
 
     std::uint32_t metadata_length(std::uint64_t version) const {
@@ -902,6 +939,8 @@ void bind_stream(nb::module_ &m) {
         .def_prop_ro("max_readers", &Stream::max_readers, nb::lock_self())
         .def_prop_ro("create_id", &Stream::create_id, nb::lock_self())
         .def_prop_ro("closed", &Stream::closed, nb::lock_self())
+        .def_prop_ro("layout_version", &Stream::layout_version, nb::lock_self())
+        .def("_export", &Stream::export_capsule, nb::lock_self())
         .def("metadata_head", &Stream::metadata_head, nb::lock_self())
         .def("metadata_length", &Stream::metadata_length, "version"_a, nb::lock_self())
         .def("read_metadata", &Stream::read_metadata, "version"_a, nb::lock_self())

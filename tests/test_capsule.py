@@ -14,7 +14,15 @@ import numpy as np
 import pytest
 
 import sharedbox
-from sharedbox import BoxClosedError, Capacity, DType, MaxShape, SharedBox
+from sharedbox import (
+    BoxClosedError,
+    Capacity,
+    DType,
+    MaxShape,
+    SharedBox,
+    SharedStream,
+    StreamClosedError,
+)
 from sharedbox._native import LAYOUT_VERSION
 
 CONSUMER = Path(__file__).parent / "cpp" / "consumer"
@@ -50,8 +58,8 @@ set_name.restype = ctypes.c_int
 set_name.argtypes = [ctypes.py_object, ctypes.c_char_p]
 
 
-def handle_of(capsule: object) -> Handle:
-    return Handle.from_address(get_pointer(capsule, b"sharedbox_box"))
+def handle_of(capsule: object, name: bytes = b"sharedbox_box") -> Handle:
+    return Handle.from_address(get_pointer(capsule, name))
 
 
 @pytest.fixture(scope="session")
@@ -166,6 +174,46 @@ def test_requests_the_box_cannot_meet_are_refused(unique_name: str) -> None:
             box.__sharedbox_box__(stream=True)
     with pytest.raises(BoxClosedError):
         box.__sharedbox_box__()
+
+
+def test_the_stream_capsule_holds_a_handle_on_the_stream(unique_name: str) -> None:
+    """Check that the stream capsule's handle reports the stream's layout version, name and segment start."""
+    with SharedStream.create(int, unique_name, capacity=2) as stream:
+        capsule = stream.__sharedbox_stream__()
+        handle = handle_of(capsule, b"sharedbox_stream")
+        assert (handle.layout_major, handle.layout_minor, handle.handle_version) == (
+            *stream._native.layout_version,
+            1,
+        )
+        assert handle.name == unique_name.encode()
+        assert ctypes.string_at(handle.base, 8) == b"SBX_STRM"
+
+
+def test_an_unused_stream_capsule_outlives_close_and_unlink(unique_name: str) -> None:
+    """Check that the memory behind a stream capsule stays readable after the stream is closed and unlinked."""
+    stream = SharedStream.create(int, unique_name, capacity=2)
+    capsule = stream.__sharedbox_stream__()
+    handle = handle_of(capsule, b"sharedbox_stream")
+    stream.close()
+    SharedStream.unlink(unique_name)
+    assert ctypes.string_at(handle.base, 8) == b"SBX_STRM"
+    del capsule, handle
+    gc.collect()
+
+
+def test_requests_the_stream_cannot_meet_are_refused(unique_name: str) -> None:
+    """Refuse another major, an older minor and unknown keywords, accept the stream's own version, and raise StreamClosedError once closed."""
+    with SharedStream.create(int, unique_name, capacity=2) as stream:
+        major, minor = stream._native.layout_version
+        with pytest.raises(BufferError, match=f"major version {major + 1}"):
+            stream.__sharedbox_stream__(max_version=(major + 1, 0))
+        with pytest.raises(BufferError, match=f"needs layout {major}.{minor} or newer"):
+            stream.__sharedbox_stream__(max_version=(major, minor - 1))
+        stream.__sharedbox_stream__(max_version=(major, minor))
+        with pytest.raises(NotImplementedError, match="sender"):
+            stream.__sharedbox_stream__(sender=True)
+    with pytest.raises(StreamClosedError):
+        stream.__sharedbox_stream__()
 
 
 class Bytes(SharedBox):
