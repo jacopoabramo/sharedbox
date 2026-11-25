@@ -812,13 +812,15 @@ inline result<stream> stream::duplicate() const {
     result<detail::os_mapping> map = detail::duplicate_mapping(src.map);
     if (!map)
         return unexpected(map.error());
-    std::unique_ptr<detail::stream_state> s = detail::make_stream_state(src.name, src.hdr->common.waiter_slots);
+    // Checked again as open checks it: another process may have written the header since this stream opened.
+    const result<stream_header> opened = detail::open_header<detail::stream_layout>(map->base(), map->size());
+    if (!opened)
+        return unexpected(opened.error());
+    std::unique_ptr<detail::stream_state> s = detail::make_stream_state(src.name, opened->common.waiter_slots);
     if (s == nullptr)
         return unexpected(status::os);
     s->map = std::move(*map);
-    void *base = s->map.base();
-    if (const status rc = detail::bind_stream(*s, base, detail::stream_layout::copy_header(base));
-        rc != status::ok)
+    if (const status rc = detail::bind_stream(*s, s->map.base(), *opened); rc != status::ok)
         return unexpected(detail::types_error(rc, s->types));
     return stream(s.release());
 }

@@ -48,6 +48,19 @@ TEST_CASE("a duplicate stream receives what the original sends") {
     static_cast<void>(unlink(name));
 }
 
+TEST_CASE("duplicate checks the header it maps again") {
+    const std::string name = unique("scap-forged");
+    stream original = make_stream(name);
+    auto &common = static_cast<common_header *>(original.base())[0];
+    const std::uint16_t slots = common.waiter_slots;
+    common.waiter_slots = static_cast<std::uint16_t>(max_waiter_slots + 1);
+    auto copy = original.duplicate();
+    REQUIRE_FALSE(copy);
+    CHECK(copy.error().code == status::corrupt);
+    common.waiter_slots = slots;
+    static_cast<void>(unlink(name));
+}
+
 TEST_CASE("a stream survives a round trip through a capsule") {
     const std::string name = unique("scap-trip");
     stream original = make_stream(name);
