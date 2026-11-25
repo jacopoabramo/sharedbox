@@ -61,6 +61,24 @@ TEST_CASE("duplicate checks the header it maps again") {
     static_cast<void>(unlink(name));
 }
 
+TEST_CASE("a stream of a newer minor reports this header's minor") {
+    const std::string name = unique("scap-minor");
+    stream original = make_stream(name);
+    static_cast<common_header *>(original.base())->kind_minor = stream_layout_minor + 1;
+    CHECK(original.major_version() == stream_layout_major);
+    CHECK(original.minor_version() == stream_layout_minor);
+    auto copy = original.duplicate();
+    REQUIRE(copy);
+    CHECK(copy->minor_version() == stream_layout_minor);
+    sbx_handle *h = std::move(*copy).to_capsule();
+    REQUIRE(h != nullptr);
+    CHECK(h->layout_major == stream_layout_major);
+    CHECK(h->layout_minor == stream_layout_minor);
+    h->release(h);
+    delete h;
+    static_cast<void>(unlink(name));
+}
+
 TEST_CASE("a stream survives a round trip through a capsule") {
     const std::string name = unique("scap-trip");
     stream original = make_stream(name);

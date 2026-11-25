@@ -200,6 +200,9 @@ struct stream_state {
     std::uint64_t schema_hash = 0;
     std::uint64_t create_id = 0;
     std::uint32_t max_readers = 0;
+    // The segment's checked stream layout, the minor no higher than this header's.
+    std::uint16_t layout_major = 0;
+    std::uint16_t layout_minor = 0;
     // Whether the item is, or holds, a timed value.
     bool stamps = false;
     // The metadata area, nullptr for none, and the copy of its first line that open checked.
@@ -273,6 +276,8 @@ inline status bind_stream(stream_state &s, void *segment, const stream_header &h
     s.schema_hash = h.common.schema_hash;
     s.create_id = h.common.create_id;
     s.max_readers = h.max_readers;
+    s.layout_major = h.common.kind_major;
+    s.layout_minor = h.common.kind_minor < stream_layout_minor ? h.common.kind_minor : stream_layout_minor;
     s.waiters.slots =
         reinterpret_cast<waiter_slot *>(base + h.readers + std::uint64_t{h.max_readers} * sizeof(reader_entry));
     s.waiters.claimed = &s.hdr->waiters;
@@ -624,6 +629,10 @@ public:
     std::uint64_t create_id() const noexcept { return s_->create_id; }
     std::uint64_t capacity() const noexcept { return s_->capacity; }
     std::uint32_t max_readers() const noexcept { return s_->max_readers; }
+    // The segment's major version, which is 1: open refuses any other.
+    std::uint16_t major_version() const noexcept { return s_->layout_major; }
+    // The segment's minor version, or this header's if that is lower.
+    std::uint16_t minor_version() const noexcept { return s_->layout_minor; }
     // Bytes of one item, a length prefix included.
     std::uint64_t item_size() const noexcept { return s_->item_size; }
     // Valid while this stream lives.
@@ -843,9 +852,8 @@ inline sbx_handle *stream::to_capsule() && {
     auto *owner = new (std::nothrow) stream(std::move(*this));
     if (owner == nullptr)
         return nullptr;
-    const common_header &common = owner->s_->hdr->common;
-    out->layout_major = common.kind_major;
-    out->layout_minor = common.kind_minor;
+    out->layout_major = owner->major_version();
+    out->layout_minor = owner->minor_version();
     out->handle_version = handle_version;
     out->base = owner->base();
     out->size = owner->size();

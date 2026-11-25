@@ -766,10 +766,7 @@ public:
     std::uint64_t create_id() const { return core().s.create_id(); }
     bool closed() const { return core_ == nullptr; }
 
-    nb::tuple layout_version() const {
-        const common_header &common = static_cast<const common_header *>(core().s.base())[0];
-        return nb::make_tuple(common.kind_major, common.kind_minor);
-    }
+    nb::tuple layout_version() const { return nb::make_tuple(core().s.major_version(), core().s.minor_version()); }
 
     /// A "sharedbox_stream" capsule holding a handle with its own mapping of the segment.
     nb::object export_capsule() const {

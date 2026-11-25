@@ -237,6 +237,20 @@ def test_requests_the_stream_cannot_meet_are_refused(unique_name: str) -> None:
         stream.__sharedbox_stream__()
 
 
+def test_a_stream_of_a_newer_minor_meets_this_version(unique_name: str) -> None:
+    """Accept this version's max_version for a stream whose header names a newer minor."""
+    with SharedStream.create(int, unique_name, capacity=2) as stream:
+        major, minor = stream._native.layout_version
+        capsule = stream.__sharedbox_stream__()
+        # kind_minor of the common line, at offset 14.
+        ctypes.c_uint16.from_address(
+            handle_of(capsule, b"sharedbox_stream").base + 14
+        ).value = minor + 1
+        with SharedStream.attach(int, unique_name) as again:
+            assert again._native.layout_version == (major, minor)
+            again.__sharedbox_stream__(max_version=(major, minor))
+
+
 class Bytes(SharedBox):
     small: Annotated[list[np.uint8], Capacity(4)]
 

@@ -1848,6 +1848,8 @@ public:
     std::uint64_t create_id() const noexcept;
     std::uint64_t capacity() const noexcept;
     std::uint32_t max_readers() const noexcept;
+    std::uint16_t major_version() const noexcept;
+    std::uint16_t minor_version() const noexcept;
     std::uint64_t item_size() const noexcept;
     type_view item_type() const noexcept;
     std::span<const std::byte> types_table() const noexcept;
@@ -1887,8 +1889,11 @@ Stream layout). Every function returning a `result` is `[[nodiscard]]`.
 - `duplicate` gives a stream with its own mapping of the same segment,
   checked again as `open` checks it, claiming no sender and opening no
   reader; `status::range` for a stream made by `from_capsule`.
+- `major_version` and `minor_version` give the segment's stream layout as
+  open checked it, the minor no higher than this header's.
 - `to_capsule` gives a heap `sbx_handle` that owns the stream, whose
-  `layout_major` and `layout_minor` are the segment's stream layout; its
+  `layout_major` and `layout_minor` are `major_version()` and
+  `minor_version()`; its
   `release` destroys the stream and the caller deletes the struct.
   `nullptr` when memory runs out, leaving the stream as it was.
 - `sender` gives `status::busy` while a running process holds the sender,
@@ -2152,9 +2157,10 @@ A stream has the same protocol under its own names:
   returns a PyCapsule named `"sharedbox_stream"` holding a heap-allocated
   `sbx_handle` made by `stream::duplicate()` and `stream::to_capsule()`,
   so it works after `close()` and `unlink()`. Its `layout_major` and
-  `layout_minor` are the stream layout the segment was created with.
+  `layout_minor` are the segment's stream layout, the minor no higher than
+  the extension's own.
 - `max_version` is `(major, minor)`; a major the stream does not have
-  raises `BufferError`, and so does a minor older than the stream's own.
+  raises `BufferError`, and so does a minor older than that layout minor.
   `None` means the stream's version. Any other keyword raises
   `NotImplementedError`, and a closed stream raises `StreamClosedError`.
 - `sharedbox::stream::from_capsule` checks the segment as `stream::open`
