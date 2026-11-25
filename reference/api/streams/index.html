@@ -1546,6 +1546,8 @@
       
         
       
+        
+      
     
     
     
@@ -1636,6 +1638,35 @@
     
   
   How to accept a box in a C extension
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../how-to/accept-a-stream-in-cpp/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-wrench" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  How to accept a stream in a C++ extension
 
     
   </span>
@@ -2697,6 +2728,17 @@
     <span class="md-ellipsis">
       <span class="md-typeset">
         <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;close
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sharedbox.SharedStream.__sharedbox_stream__" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;__sharedbox_stream__
       </span>
     </span>
   </a>
@@ -4092,6 +4134,17 @@
     <span class="md-ellipsis">
       <span class="md-typeset">
         <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;close
+      </span>
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sharedbox.SharedStream.__sharedbox_stream__" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-method"></code>&nbsp;__sharedbox_stream__
       </span>
     </span>
   </a>
@@ -5660,6 +5713,121 @@ oldest the ring still holds.</p>
 <p>Other processes keep the stream. Using a closed stream raises
 <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;StreamClosedError&lt;/span&gt;" href="../errors/#sharedbox.StreamClosedError"><code>StreamClosedError</code></a>.</p>
 
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h3 id="sharedbox.SharedStream.__sharedbox_stream__" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-method"></code>            <span class="doc doc-object-name doc-function-name">__sharedbox_stream__</span>
+
+
+<a href="#sharedbox.SharedStream.__sharedbox_stream__" class="headerlink" title="Permanent link">&para;</a></h3>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">__sharedbox_stream__</span><span class="p">(</span><span class="n">max_version</span><span class="p">:</span> <span class="nb">tuple</span><span class="p">[</span><span class="nb">int</span><span class="p">,</span> <span class="nb">int</span><span class="p">]</span> <span class="o">|</span> <span class="kc">None</span> <span class="o">=</span> <span class="kc">None</span><span class="p">,</span> <span class="o">**</span><span class="n">kwargs</span><span class="p">:</span> <span class="n">Any</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="n">CapsuleType</span>
+</span></code></pre></div>
+
+    <div class="doc doc-contents ">
+
+        <p>Return a <code>"sharedbox_stream"</code> capsule holding a handle with its own mapping of the segment.</p>
+<p>Python code does not call it; an extension that accepts a stream
+does. The capsule holds a pointer to an <code>sbx_handle</code>, declared in
+<code>sharedbox/sharedbox_c.h</code>. The handle's mapping is made from the
+stream's <abbr title="Operating system.">OS</abbr> handle, so closing or unlinking the stream does not
+affect it. A consumer takes the handle with
+<code>sharedbox::stream::from_capsule</code>, renames the capsule
+<code>"used_sharedbox_stream"</code>, compares the stream's schema hash with
+the one it expects, and destroys the stream it gets. The handle
+claims no sender and opens no reader; the consumer does that
+itself. A capsule that is never taken releases the handle when it
+is garbage collected. Releasing touches no Python objects and does
+not need the <abbr title="Global interpreter lock. The lock that lets only one thread of a CPython process run Python code at a time.">GIL</abbr>, so it may run on any thread and after
+interpreter shutdown.</p>
+
+
+<p><span class="doc-section-title">Parameters:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Name</th>
+          <th>Type</th>
+          <th>Description</th>
+          <th>Default</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                <code>max_version</code>
+            </td>
+            <td>
+                  <code><a class="autorefs autorefs-external" href="https://docs.python.org/3/builtins/stdtypes.html#tuple">tuple</a>[<a class="autorefs autorefs-external" href="https://docs.python.org/3/builtins/functions.html#int">int</a>, <a class="autorefs autorefs-external" href="https://docs.python.org/3/builtins/functions.html#int">int</a>] | None</code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>The <code>(major, minor)</code> stream layout version the caller
+supports; None means the stream's own.</p>
+              </div>
+            </td>
+            <td>
+                  <code>None</code>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+<p><span class="doc-section-title">Raises:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-external" href="https://docs.python.org/3/builtins/exceptions.html#BufferError">BufferError</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If the major version of <code>max_version</code> differs from the
+stream's layout, or if its minor version is older than the
+stream's.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-external" href="https://docs.python.org/3/builtins/exceptions.html#NotImplementedError">NotImplementedError</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If any other keyword is given.</p>
+              </div>
+            </td>
+          </tr>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;StreamClosedError&lt;/span&gt; (&lt;code&gt;sharedbox._native.StreamClosedError&lt;/code&gt;)" href="../errors/#sharedbox.StreamClosedError">StreamClosedError</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If this object is closed.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+<details class="note" open>
+  <summary>Notes</summary>
+  <p>On Windows the segment stays in existence while a handle is held.</p>
+</details>
 
     </div>
 

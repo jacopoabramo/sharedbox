@@ -1546,6 +1546,8 @@
       
         
       
+        
+      
     
     
     
@@ -1636,6 +1638,35 @@
     
   
   How to accept a box in a C extension
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../how-to/accept-a-stream-in-cpp/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-wrench" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  How to accept a stream in a C++ extension
 
     
   </span>
@@ -4337,8 +4368,8 @@ versioned, and a header-only C++20 library implements them.</p>
 </tr>
 <tr>
 <td>Scope</td>
-<td>every segment starts with the same first line; the box and the stream are the kinds implemented, and the stream is C++ only; the handle struct is versioned so that streams can get their own dunder later</td>
-<td>streams in the same step</td>
+<td>every segment starts with the same first line; the box and the stream are the kinds implemented, and the C functions cover the box only; every kind's capsule holds the same versioned handle struct, and the kind comes from the capsule name and the segment's magic</td>
+<td>a kind field in the handle struct</td>
 </tr>
 <tr>
 <td>Contract</td>
@@ -4362,12 +4393,12 @@ versioned, and a header-only C++20 library implements them.</p>
 </tr>
 <tr>
 <td>Dunder and capsule</td>
-<td><code>__sharedbox_box__</code>, capsule <code>"sharedbox_box"</code></td>
+<td><code>__sharedbox_box__</code>, capsule <code>"sharedbox_box"</code>; <code>__sharedbox_stream__</code>, capsule <code>"sharedbox_stream"</code></td>
 <td><code>_c_</code> in the name, which reads as "implemented in C"</td>
 </tr>
 <tr>
 <td>Negotiation</td>
-<td><abbr title="An open in-memory tensor format that array libraries use to share an array's memory without copying it.">DLPack</abbr>'s <code>max_version</code>; the consumer renames the capsule <code>"used_sharedbox_box"</code>; other keywords raise <code>NotImplementedError</code>, as in Arrow</td>
+<td><abbr title="An open in-memory tensor format that array libraries use to share an array's memory without copying it.">DLPack</abbr>'s <code>max_version</code>; the consumer renames the capsule <code>"used_sharedbox_box"</code> or <code>"used_sharedbox_stream"</code>; other keywords raise <code>NotImplementedError</code>, as in Arrow</td>
 <td>none</td>
 </tr>
 <tr>
@@ -5159,6 +5190,10 @@ attacher agree on it and on the class's meaning.</p>
 <p><code>schema_hash</code>: the first 8 bytes of SHA-256 over that text, read as a
   little-endian <code>u64</code>.</p>
 </li>
+<li>A stream's <code>schema_hash</code> is taken the same way over <code>stream|</code> followed by
+  the item's type text, with <code>bool:1</code>, <code>int:8</code> and <code>float:8</code> for those
+  kinds: <code>stream|float:8</code> for an item of <code>float</code>, whose hash is
+  <code>0xca61a9c40c375b90</code>.</li>
 <li>Identity: the <code>identity=</code> class keyword, a non-empty string without <code>|</code>,
   the character that separates the parts of the schema text; without it,
   <code>module.qualname</code>. A subclass does not inherit its base's identity.</li>
@@ -6459,27 +6494,32 @@ every wait for another writer's lock, as timed out, once it is true.</p>
 </span><span id="__span-10-54"><a id="__codelineno-10-54" name="__codelineno-10-54" href="#__codelineno-10-54"></a><span class="w">                                 </span><span class="n">std</span><span class="o">::</span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">max_readers</span><span class="p">,</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">uint64_t</span><span class="w"> </span><span class="n">schema_hash</span><span class="p">,</span>
 </span><span id="__span-10-55"><a id="__codelineno-10-55" name="__codelineno-10-55" href="#__codelineno-10-55"></a><span class="w">                                 </span><span class="k">const</span><span class="w"> </span><span class="n">metadata_spec</span><span class="w"> </span><span class="o">&amp;</span><span class="n">metadata</span><span class="w"> </span><span class="o">=</span><span class="w"> </span><span class="p">{});</span>
 </span><span id="__span-10-56"><a id="__codelineno-10-56" name="__codelineno-10-56" href="#__codelineno-10-56"></a><span class="w">    </span><span class="k">static</span><span class="w"> </span><span class="n">result</span><span class="o">&lt;</span><span class="n">stream</span><span class="o">&gt;</span><span class="w"> </span><span class="n">open</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="n">string_view</span><span class="w"> </span><span class="n">name</span><span class="p">,</span><span class="w"> </span><span class="n">seconds</span><span class="w"> </span><span class="n">timeout</span><span class="p">);</span>
-</span><span id="__span-10-57"><a id="__codelineno-10-57" name="__codelineno-10-57" href="#__codelineno-10-57"></a>
-</span><span id="__span-10-58"><a id="__codelineno-10-58" name="__codelineno-10-58" href="#__codelineno-10-58"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="n">string_view</span><span class="w"> </span><span class="nf">name</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
-</span><span id="__span-10-59"><a id="__codelineno-10-59" name="__codelineno-10-59" href="#__codelineno-10-59"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="kt">uint64_t</span><span class="w"> </span><span class="nf">schema_hash</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
-</span><span id="__span-10-60"><a id="__codelineno-10-60" name="__codelineno-10-60" href="#__codelineno-10-60"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="kt">uint64_t</span><span class="w"> </span><span class="nf">create_id</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
-</span><span id="__span-10-61"><a id="__codelineno-10-61" name="__codelineno-10-61" href="#__codelineno-10-61"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="kt">uint64_t</span><span class="w"> </span><span class="nf">capacity</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
-</span><span id="__span-10-62"><a id="__codelineno-10-62" name="__codelineno-10-62" href="#__codelineno-10-62"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="kt">uint32_t</span><span class="w"> </span><span class="nf">max_readers</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
-</span><span id="__span-10-63"><a id="__codelineno-10-63" name="__codelineno-10-63" href="#__codelineno-10-63"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="kt">uint64_t</span><span class="w"> </span><span class="nf">item_size</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
-</span><span id="__span-10-64"><a id="__codelineno-10-64" name="__codelineno-10-64" href="#__codelineno-10-64"></a><span class="w">    </span><span class="n">type_view</span><span class="w"> </span><span class="nf">item_type</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
-</span><span id="__span-10-65"><a id="__codelineno-10-65" name="__codelineno-10-65" href="#__codelineno-10-65"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="n">span</span><span class="o">&lt;</span><span class="k">const</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">byte</span><span class="o">&gt;</span><span class="w"> </span><span class="n">types_table</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
-</span><span id="__span-10-66"><a id="__codelineno-10-66" name="__codelineno-10-66" href="#__codelineno-10-66"></a><span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="nf">base</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
-</span><span id="__span-10-67"><a id="__codelineno-10-67" name="__codelineno-10-67" href="#__codelineno-10-67"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="kt">uint64_t</span><span class="w"> </span><span class="nf">size</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
-</span><span id="__span-10-68"><a id="__codelineno-10-68" name="__codelineno-10-68" href="#__codelineno-10-68"></a><span class="w">    </span><span class="n">result</span><span class="o">&lt;</span><span class="n">stream_sender</span><span class="o">&gt;</span><span class="w"> </span><span class="n">sender</span><span class="p">();</span>
-</span><span id="__span-10-69"><a id="__codelineno-10-69" name="__codelineno-10-69" href="#__codelineno-10-69"></a><span class="w">    </span><span class="n">result</span><span class="o">&lt;</span><span class="n">stream_reader</span><span class="o">&gt;</span><span class="w"> </span><span class="n">reader</span><span class="p">(</span><span class="n">read_mode</span><span class="w"> </span><span class="n">mode</span><span class="p">,</span><span class="w"> </span><span class="n">start_at</span><span class="w"> </span><span class="n">start</span><span class="p">);</span>
-</span><span id="__span-10-70"><a id="__codelineno-10-70" name="__codelineno-10-70" href="#__codelineno-10-70"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="kt">uint64_t</span><span class="w"> </span><span class="nf">write_position</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
-</span><span id="__span-10-71"><a id="__codelineno-10-71" name="__codelineno-10-71" href="#__codelineno-10-71"></a><span class="w">    </span><span class="kt">bool</span><span class="w"> </span><span class="nf">ended</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
-</span><span id="__span-10-72"><a id="__codelineno-10-72" name="__codelineno-10-72" href="#__codelineno-10-72"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="kt">uint32_t</span><span class="w"> </span><span class="nf">sender_pid</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
-</span><span id="__span-10-73"><a id="__codelineno-10-73" name="__codelineno-10-73" href="#__codelineno-10-73"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="kt">uint64_t</span><span class="w"> </span><span class="nf">metadata_head</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
-</span><span id="__span-10-74"><a id="__codelineno-10-74" name="__codelineno-10-74" href="#__codelineno-10-74"></a><span class="w">    </span><span class="n">result</span><span class="o">&lt;</span><span class="n">std</span><span class="o">::</span><span class="kt">uint32_t</span><span class="o">&gt;</span><span class="w"> </span><span class="n">metadata_length</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="kt">uint64_t</span><span class="w"> </span><span class="n">version</span><span class="p">)</span><span class="w"> </span><span class="k">const</span><span class="p">;</span>
-</span><span id="__span-10-75"><a id="__codelineno-10-75" name="__codelineno-10-75" href="#__codelineno-10-75"></a><span class="w">    </span><span class="n">result</span><span class="o">&lt;</span><span class="n">std</span><span class="o">::</span><span class="kt">uint32_t</span><span class="o">&gt;</span><span class="w"> </span><span class="n">read_metadata</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="kt">uint64_t</span><span class="w"> </span><span class="n">version</span><span class="p">,</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">span</span><span class="o">&lt;</span><span class="n">std</span><span class="o">::</span><span class="kt">byte</span><span class="o">&gt;</span><span class="w"> </span><span class="n">out</span><span class="p">)</span><span class="w"> </span><span class="k">const</span><span class="p">;</span>
-</span><span id="__span-10-76"><a id="__codelineno-10-76" name="__codelineno-10-76" href="#__codelineno-10-76"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="kt">size_t</span><span class="w"> </span><span class="nf">readers</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="n">span</span><span class="o">&lt;</span><span class="n">reader_info</span><span class="o">&gt;</span><span class="w"> </span><span class="n">out</span><span class="p">)</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
-</span><span id="__span-10-77"><a id="__codelineno-10-77" name="__codelineno-10-77" href="#__codelineno-10-77"></a><span class="p">};</span>
+</span><span id="__span-10-57"><a id="__codelineno-10-57" name="__codelineno-10-57" href="#__codelineno-10-57"></a><span class="w">    </span><span class="k">static</span><span class="w"> </span><span class="n">result</span><span class="o">&lt;</span><span class="n">stream</span><span class="o">&gt;</span><span class="w"> </span><span class="n">from_capsule</span><span class="p">(</span><span class="n">sbx_handle</span><span class="w"> </span><span class="o">*</span><span class="n">capsule</span><span class="p">);</span>
+</span><span id="__span-10-58"><a id="__codelineno-10-58" name="__codelineno-10-58" href="#__codelineno-10-58"></a><span class="w">    </span><span class="n">result</span><span class="o">&lt;</span><span class="n">stream</span><span class="o">&gt;</span><span class="w"> </span><span class="n">duplicate</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="p">;</span>
+</span><span id="__span-10-59"><a id="__codelineno-10-59" name="__codelineno-10-59" href="#__codelineno-10-59"></a><span class="w">    </span><span class="n">sbx_handle</span><span class="w"> </span><span class="o">*</span><span class="nf">to_capsule</span><span class="p">()</span><span class="w"> </span><span class="o">&amp;&amp;</span><span class="p">;</span>
+</span><span id="__span-10-60"><a id="__codelineno-10-60" name="__codelineno-10-60" href="#__codelineno-10-60"></a>
+</span><span id="__span-10-61"><a id="__codelineno-10-61" name="__codelineno-10-61" href="#__codelineno-10-61"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="n">string_view</span><span class="w"> </span><span class="nf">name</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
+</span><span id="__span-10-62"><a id="__codelineno-10-62" name="__codelineno-10-62" href="#__codelineno-10-62"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="kt">uint64_t</span><span class="w"> </span><span class="nf">schema_hash</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
+</span><span id="__span-10-63"><a id="__codelineno-10-63" name="__codelineno-10-63" href="#__codelineno-10-63"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="kt">uint64_t</span><span class="w"> </span><span class="nf">create_id</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
+</span><span id="__span-10-64"><a id="__codelineno-10-64" name="__codelineno-10-64" href="#__codelineno-10-64"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="kt">uint64_t</span><span class="w"> </span><span class="nf">capacity</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
+</span><span id="__span-10-65"><a id="__codelineno-10-65" name="__codelineno-10-65" href="#__codelineno-10-65"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="kt">uint32_t</span><span class="w"> </span><span class="nf">max_readers</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
+</span><span id="__span-10-66"><a id="__codelineno-10-66" name="__codelineno-10-66" href="#__codelineno-10-66"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="w"> </span><span class="nf">major_version</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
+</span><span id="__span-10-67"><a id="__codelineno-10-67" name="__codelineno-10-67" href="#__codelineno-10-67"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="kt">uint16_t</span><span class="w"> </span><span class="nf">minor_version</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
+</span><span id="__span-10-68"><a id="__codelineno-10-68" name="__codelineno-10-68" href="#__codelineno-10-68"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="kt">uint64_t</span><span class="w"> </span><span class="nf">item_size</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
+</span><span id="__span-10-69"><a id="__codelineno-10-69" name="__codelineno-10-69" href="#__codelineno-10-69"></a><span class="w">    </span><span class="n">type_view</span><span class="w"> </span><span class="nf">item_type</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
+</span><span id="__span-10-70"><a id="__codelineno-10-70" name="__codelineno-10-70" href="#__codelineno-10-70"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="n">span</span><span class="o">&lt;</span><span class="k">const</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="kt">byte</span><span class="o">&gt;</span><span class="w"> </span><span class="n">types_table</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
+</span><span id="__span-10-71"><a id="__codelineno-10-71" name="__codelineno-10-71" href="#__codelineno-10-71"></a><span class="w">    </span><span class="kt">void</span><span class="w"> </span><span class="o">*</span><span class="nf">base</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
+</span><span id="__span-10-72"><a id="__codelineno-10-72" name="__codelineno-10-72" href="#__codelineno-10-72"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="kt">uint64_t</span><span class="w"> </span><span class="nf">size</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
+</span><span id="__span-10-73"><a id="__codelineno-10-73" name="__codelineno-10-73" href="#__codelineno-10-73"></a><span class="w">    </span><span class="n">result</span><span class="o">&lt;</span><span class="n">stream_sender</span><span class="o">&gt;</span><span class="w"> </span><span class="n">sender</span><span class="p">();</span>
+</span><span id="__span-10-74"><a id="__codelineno-10-74" name="__codelineno-10-74" href="#__codelineno-10-74"></a><span class="w">    </span><span class="n">result</span><span class="o">&lt;</span><span class="n">stream_reader</span><span class="o">&gt;</span><span class="w"> </span><span class="n">reader</span><span class="p">(</span><span class="n">read_mode</span><span class="w"> </span><span class="n">mode</span><span class="p">,</span><span class="w"> </span><span class="n">start_at</span><span class="w"> </span><span class="n">start</span><span class="p">);</span>
+</span><span id="__span-10-75"><a id="__codelineno-10-75" name="__codelineno-10-75" href="#__codelineno-10-75"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="kt">uint64_t</span><span class="w"> </span><span class="nf">write_position</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
+</span><span id="__span-10-76"><a id="__codelineno-10-76" name="__codelineno-10-76" href="#__codelineno-10-76"></a><span class="w">    </span><span class="kt">bool</span><span class="w"> </span><span class="nf">ended</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
+</span><span id="__span-10-77"><a id="__codelineno-10-77" name="__codelineno-10-77" href="#__codelineno-10-77"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="kt">uint32_t</span><span class="w"> </span><span class="nf">sender_pid</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
+</span><span id="__span-10-78"><a id="__codelineno-10-78" name="__codelineno-10-78" href="#__codelineno-10-78"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="kt">uint64_t</span><span class="w"> </span><span class="nf">metadata_head</span><span class="p">()</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
+</span><span id="__span-10-79"><a id="__codelineno-10-79" name="__codelineno-10-79" href="#__codelineno-10-79"></a><span class="w">    </span><span class="n">result</span><span class="o">&lt;</span><span class="n">std</span><span class="o">::</span><span class="kt">uint32_t</span><span class="o">&gt;</span><span class="w"> </span><span class="n">metadata_length</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="kt">uint64_t</span><span class="w"> </span><span class="n">version</span><span class="p">)</span><span class="w"> </span><span class="k">const</span><span class="p">;</span>
+</span><span id="__span-10-80"><a id="__codelineno-10-80" name="__codelineno-10-80" href="#__codelineno-10-80"></a><span class="w">    </span><span class="n">result</span><span class="o">&lt;</span><span class="n">std</span><span class="o">::</span><span class="kt">uint32_t</span><span class="o">&gt;</span><span class="w"> </span><span class="n">read_metadata</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="kt">uint64_t</span><span class="w"> </span><span class="n">version</span><span class="p">,</span><span class="w"> </span><span class="n">std</span><span class="o">::</span><span class="n">span</span><span class="o">&lt;</span><span class="n">std</span><span class="o">::</span><span class="kt">byte</span><span class="o">&gt;</span><span class="w"> </span><span class="n">out</span><span class="p">)</span><span class="w"> </span><span class="k">const</span><span class="p">;</span>
+</span><span id="__span-10-81"><a id="__codelineno-10-81" name="__codelineno-10-81" href="#__codelineno-10-81"></a><span class="w">    </span><span class="n">std</span><span class="o">::</span><span class="kt">size_t</span><span class="w"> </span><span class="nf">readers</span><span class="p">(</span><span class="n">std</span><span class="o">::</span><span class="n">span</span><span class="o">&lt;</span><span class="n">reader_info</span><span class="o">&gt;</span><span class="w"> </span><span class="n">out</span><span class="p">)</span><span class="w"> </span><span class="k">const</span><span class="w"> </span><span class="k">noexcept</span><span class="p">;</span>
+</span><span id="__span-10-82"><a id="__codelineno-10-82" name="__codelineno-10-82" href="#__codelineno-10-82"></a><span class="p">};</span>
 </span></code></pre></div>
 <p>The header also declares the structs <code>stream_header</code> and <code>reader_entry</code> (see
 Stream layout). Every function returning a <code>result</code> is <code>[[nodiscard]]</code>.</p>
@@ -6493,6 +6533,23 @@ Stream layout). Every function returning a <code>result</code> is <code>[[nodisc
 <li><code>stream::open</code> compares nothing: the caller compares <code>schema_hash()</code> with
   its own. Its errors are those of Attach, and <code>status::corrupt</code> for an
   item type or slot size that does not fit.</li>
+<li><code>stream::from_capsule</code> takes over a handle made by another build, such as
+  the one in a <code>"sharedbox_stream"</code> capsule. It checks the segment at
+  <code>capsule-&gt;base</code> as <code>open</code> does, so a box's handle gives
+  <code>status::kind_mismatch</code>, and gives <code>status::range</code> for a null handle, a
+  null <code>release</code>, <code>base</code> or <code>name</code>, a <code>handle_version</code> of 0 or a name that
+  breaks the rules. On success it clears <code>capsule-&gt;release</code>, and destroying
+  the stream calls the release it had.</li>
+<li><code>duplicate</code> gives a stream with its own mapping of the same segment,
+  checked again as <code>open</code> checks it, claiming no sender and opening no
+  reader; <code>status::range</code> for a stream made by <code>from_capsule</code>.</li>
+<li><code>major_version</code> and <code>minor_version</code> give the segment's stream layout as
+  open checked it, the minor no higher than this header's.</li>
+<li><code>to_capsule</code> gives a heap <code>sbx_handle</code> that owns the stream, whose
+  <code>layout_major</code> and <code>layout_minor</code> are <code>major_version()</code> and
+  <code>minor_version()</code>; its
+  <code>release</code> destroys the stream and the caller deletes the struct.
+  <code>nullptr</code> when memory runs out, leaving the stream as it was.</li>
 <li><code>sender</code> gives <code>status::busy</code> while a running process holds the sender,
   <code>status::ended</code> once a sender has closed the stream, and <code>status::no_slot</code>
   when no waiter slot is free.</li>
@@ -6579,7 +6636,7 @@ Stream layout). Every function returning a <code>result</code> is <code>[[nodisc
 </ul>
 <h3 id="capsule-handle">Capsule handle<a class="headerlink" href="#capsule-handle" title="Permanent link">&para;</a></h3>
 <p><code>sbx_handle</code> is the struct a capsule holds. It is plain C data with function
-pointers, declared in <code>sharedbox_c.h</code> and included by <code>box.hpp</code>,
+pointers, declared in <code>sharedbox_c.h</code> and included by <code>core.hpp</code>, and the same for every kind,
 because it passes between extensions compiled separately, possibly with
 different compilers and standard libraries. No C++ standard-library type
 crosses the capsule.</p>
@@ -6588,7 +6645,7 @@ crosses the capsule.</p>
 </span><span id="__span-11-3"><a id="__codelineno-11-3" name="__codelineno-11-3" href="#__codelineno-11-3"></a><span class="w">    </span><span class="kt">uint32_t</span><span class="w"> </span><span class="n">handle_version</span><span class="p">;</span><span class="w">              </span><span class="cm">/* 1; grows by appending fields */</span>
 </span><span id="__span-11-4"><a id="__codelineno-11-4" name="__codelineno-11-4" href="#__codelineno-11-4"></a><span class="w">    </span><span class="kt">void</span><span class="w">    </span><span class="o">*</span><span class="n">base</span><span class="p">;</span><span class="w">                        </span><span class="cm">/* this handle's own mapping */</span>
 </span><span id="__span-11-5"><a id="__codelineno-11-5" name="__codelineno-11-5" href="#__codelineno-11-5"></a><span class="w">    </span><span class="kt">uint64_t</span><span class="w"> </span><span class="n">size</span><span class="p">;</span>
-</span><span id="__span-11-6"><a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a><span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">name</span><span class="p">;</span><span class="w">                     </span><span class="cm">/* the box name, for slot events */</span>
+</span><span id="__span-11-6"><a id="__codelineno-11-6" name="__codelineno-11-6" href="#__codelineno-11-6"></a><span class="w">    </span><span class="k">const</span><span class="w"> </span><span class="kt">char</span><span class="w"> </span><span class="o">*</span><span class="n">name</span><span class="p">;</span><span class="w">                     </span><span class="cm">/* the segment name, for slot events */</span>
 </span><span id="__span-11-7"><a id="__codelineno-11-7" name="__codelineno-11-7" href="#__codelineno-11-7"></a><span class="w">    </span><span class="kt">void</span><span class="w">   </span><span class="p">(</span><span class="o">*</span><span class="n">release</span><span class="p">)(</span><span class="k">struct</span><span class="w"> </span><span class="nc">sbx_handle</span><span class="w"> </span><span class="o">*</span><span class="p">);</span>
 </span><span id="__span-11-8"><a id="__codelineno-11-8" name="__codelineno-11-8" href="#__codelineno-11-8"></a><span class="w">    </span><span class="kt">void</span><span class="w">    </span><span class="o">*</span><span class="n">private_data</span><span class="p">;</span><span class="w">                </span><span class="cm">/* owned by the build that made the handle */</span>
 </span><span id="__span-11-9"><a id="__codelineno-11-9" name="__codelineno-11-9" href="#__codelineno-11-9"></a><span class="p">}</span><span class="w"> </span><span class="n">sbx_handle</span><span class="p">;</span>
@@ -6597,19 +6654,20 @@ crosses the capsule.</p>
 <li><code>private_data</code> belongs to the build that made the handle, and only that
   build's <code>release</code> reads it.</li>
 <li>A consumer never reads another build's <code>private_data</code>. It takes the handle
-  with <code>handle::from_capsule</code> (or <code>sbx_import</code>). It does not wait for <code>magic</code>:
+  with <code>handle::from_capsule</code> (or <code>sbx_import</code>) for a box and <code>stream::from_capsule</code> for a stream. It does not wait for <code>magic</code>:
   it loads it once and returns <code>status::corrupt</code> if it is not set or <code>size</code> is
   below 4096, then runs steps 3 and 4 of Attach on the segment at <code>base</code>, which
   includes the kind and version checks. It keeps its own copy of the struct and
-  of the field table, and checks no schema: the consumer compares
+  of the field table or item type, and checks no schema: the consumer compares
   <code>schema_hash()</code>. On success it clears the capsule struct's <code>release</code>, and
   destroying the new handle calls the producer's <code>release</code>. The consumer's
   handle opens slot events by <code>name</code> when it first waits.</li>
-<li><code>to_capsule()</code> moves a handle to the heap and returns a new <code>sbx_handle</code>
+<li><code>to_capsule()</code> moves a box handle or a stream to the heap and returns a new <code>sbx_handle</code>
   whose <code>release</code> destroys it; the caller deletes the struct afterwards.</li>
 <li>The Python extension's capsule destructor deletes the struct while the
-  capsule is named <code>"sharedbox_box"</code> or <code>"used_sharedbox_box"</code>, and calls
-  <code>release</code> only under the first name.</li>
+  capsule is named <code>"sharedbox_box"</code> or <code>"used_sharedbox_box"</code>, or
+  <code>"sharedbox_stream"</code> or <code>"used_sharedbox_stream"</code>, and calls <code>release</code>
+  only under the unused name.</li>
 </ul>
 <h2 id="sharedbox_ch"><code>sharedbox_c.h</code><a class="headerlink" href="#sharedbox_ch" title="Permanent link">&para;</a></h2>
 <p><code>include/sharedbox/sharedbox_c.h</code> is a minimal C99 interface, documented as
@@ -6738,6 +6796,27 @@ no Python-level export method.</p>
   <code>__sharedbox_box__</code>, for annotations in consuming libraries.</li>
 <li><code>sharedbox._native.LAYOUT_VERSION</code> is <code>(3, 3)</code>, the box layout.</li>
 </ul>
+<p>A stream has the same protocol under its own names:</p>
+<ul>
+<li><code>SharedStream.__sharedbox_stream__(self, max_version=None, **kwargs)</code>
+  returns a PyCapsule named <code>"sharedbox_stream"</code> holding a heap-allocated
+  <code>sbx_handle</code> made by <code>stream::duplicate()</code> and <code>stream::to_capsule()</code>,
+  so it works after <code>close()</code> and <code>unlink()</code>. Its <code>layout_major</code> and
+  <code>layout_minor</code> are the segment's stream layout, the minor no higher than
+  the extension's own.</li>
+<li><code>max_version</code> is <code>(major, minor)</code>; a major the stream does not have
+  raises <code>BufferError</code>, and so does a minor older than that layout minor.
+  <code>None</code> means the stream's version. Any other keyword raises
+  <code>NotImplementedError</code>, and a closed stream raises <code>StreamClosedError</code>.</li>
+<li><code>sharedbox::stream::from_capsule</code> checks the segment as <code>stream::open</code>
+  does, so a box's handle gives <code>status::kind_mismatch</code>. The handle claims
+  no sender and opens no reader.</li>
+<li>A consumer that takes the handle renames the capsule
+  <code>"used_sharedbox_stream"</code> and destroys the stream it gets, which
+  releases the handle. <code>release</code> behaves as a box handle's does.</li>
+<li><code>sharedbox.SupportsSharedStream</code> is a <code>typing.Protocol</code> with
+  <code>__sharedbox_stream__</code>.</li>
+</ul>
 <h2 id="rust-crate-deferred">Rust crate (deferred)<a class="headerlink" href="#rust-crate-deferred" title="Permanent link">&para;</a></h2>
 <p>A Rust crate is not part of this release. It will be a safe layer over
 the headers through cxx, so Python, C++ and Rust share one
@@ -6768,8 +6847,8 @@ computed in Rust and checked against the test vector above.</p>
 <h2 id="out-of-scope">Out of scope<a class="headerlink" href="#out-of-scope" title="Permanent link">&para;</a></h2>
 <ul>
 <li>Queues, which would get <code>__sharedbox_queue__</code>.</li>
-<li>A Python class, a capsule (<code>__sharedbox_stream__</code>) and C functions for
-  streams. A stream is C++ only in this version.</li>
+<li>C functions for streams. C++ code takes a stream from Python through
+  <code>__sharedbox_stream__</code> or opens it by name; C code cannot use a stream.</li>
 <li><code>Global\</code> names on Windows. They would let a service in session 0 share
   a box with a desktop application, but creating a file mapping there
   needs <code>SeCreateGlobalPrivilege</code> and a security descriptor that lets the

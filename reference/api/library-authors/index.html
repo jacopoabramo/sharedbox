@@ -1546,6 +1546,8 @@
       
         
       
+        
+      
     
     
     
@@ -1636,6 +1638,35 @@
     
   
   How to accept a box in a C extension
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+                
+              
+                
+                  
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../../how-to/accept-a-stream-in-cpp/" class="md-nav__link">
+        
+  
+  
+    <svg xmlns="http://www.w3.org/2000/svg" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round" stroke-width="2" class="lucide lucide-wrench" viewBox="0 0 24 24"><path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.106-3.105c.32-.322.863-.22.983.218a6 6 0 0 1-8.259 7.057l-7.91 7.91a1 1 0 0 1-2.999-3l7.91-7.91a6 6 0 0 1 7.057-8.259c.438.12.54.662.219.984z"/></svg>
+  
+  <span class="md-ellipsis">
+    
+  
+  How to accept a stream in a C++ extension
 
     
   </span>
@@ -2720,6 +2751,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#sharedbox.SupportsSharedStream" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-class"></code>&nbsp;SupportsSharedStream
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#sharedbox.get_include" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -3363,6 +3405,17 @@
 </li>
       
         <li class="md-nav__item">
+  <a href="#sharedbox.SupportsSharedStream" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-class"></code>&nbsp;SupportsSharedStream
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
   <a href="#sharedbox.get_include" class="md-nav__link">
     <span class="md-ellipsis">
       <span class="md-typeset">
@@ -3519,6 +3572,10 @@
 <td>an object that hands its shared-memory <a href="../../../explanation/glossary/#segment">segment</a> to other extensions</td>
 </tr>
 <tr>
+<td><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;SupportsSharedStream&lt;/span&gt;" href="./#sharedbox.SupportsSharedStream"><code>SupportsSharedStream</code></a></td>
+<td>an object that hands a <a href="../../../explanation/glossary/#stream">stream</a>'s segment to other extensions</td>
+</tr>
+<tr>
 <td><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-function&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;get_include&lt;/span&gt;" href="./#sharedbox.get_include"><code>get_include</code></a></td>
 <td>returns the folder holding <code>sharedbox/sharedbox.hpp</code>, <code>sharedbox/sharedbox_c.h</code> and <code>sharedbox/sharedbox_c.cpp</code></td>
 </tr>
@@ -3526,7 +3583,9 @@
 </table>
 <p>To build an extension that takes a <a href="../../../explanation/glossary/#box">box</a>
 from Python, follow
-<a href="../../../how-to/accept-a-box-in-cpp/">How to accept a box in a C++ extension</a>.</p>
+<a href="../../../how-to/accept-a-box-in-cpp/">How to accept a box in a C++ extension</a>;
+for a stream, follow
+<a href="../../../how-to/accept-a-stream-in-cpp/">How to accept a stream in a C++ extension</a>.</p>
 
 
 <div class="doc doc-object doc-class">
@@ -3549,6 +3608,56 @@ from Python, follow
         <p>An object that hands its shared-memory segment to other extensions.</p>
 <p><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;SharedBox&lt;/span&gt;" href="../box/#sharedbox.SharedBox"><code>SharedBox</code></a> is one. Annotate a parameter with it
 in a function that accepts a box.</p>
+
+
+
+
+
+
+
+
+
+
+
+<div class="doc doc-children">
+
+
+
+
+
+
+
+
+
+
+
+
+  </div>
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-class">
+
+
+
+<h2 id="sharedbox.SupportsSharedStream" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-class"></code>            <span class="doc doc-object-name doc-class-name">SupportsSharedStream</span>
+
+
+<a href="#sharedbox.SupportsSharedStream" class="headerlink" title="Permanent link">&para;</a></h2>
+
+
+    <div class="doc doc-contents first">
+            <p class="doc doc-class-bases">
+              Bases: <code><a class="autorefs autorefs-external" title="&lt;code&gt;typing.Protocol&lt;/code&gt;" href="https://docs.python.org/3/library/typing.html#typing.Protocol">Protocol</a></code></p>
+
+
+
+        <p>An object that hands a stream's shared-memory segment to other extensions.</p>
+<p><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;SharedStream&lt;/span&gt;" href="../streams/#sharedbox.SharedStream"><code>SharedStream</code></a> is one. Annotate a parameter
+with it in a function that accepts a stream.</p>
 
 
 
