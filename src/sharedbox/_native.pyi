@@ -1583,6 +1583,11 @@ class Stream:
     def create_id(self) -> int: ...
     @property
     def closed(self) -> bool: ...
+    @property
+    def layout_version(self) -> tuple[int, int]:
+        """The segment's stream layout `(major, minor)`, the minor no higher than this extension's."""
+    def _export(self) -> CapsuleType:
+        """Return a `"sharedbox_stream"` capsule holding a handle with its own mapping of the segment."""
     def metadata_head(self) -> int:
         """Return the newest metadata version, 0 for none."""
     def metadata_length(self, version: int) -> int:

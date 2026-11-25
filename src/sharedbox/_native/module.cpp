@@ -682,18 +682,8 @@ PyType_Spec box_method_spec = {"sharedbox._native.BoxMethod", sizeof(BoxMethod),
                                    Py_TPFLAGS_IMMUTABLETYPE | Py_TPFLAGS_METHOD_DESCRIPTOR,
                                box_method_slots};
 
-// A consumer that takes the handle renames the capsule "used_sharedbox_box" and releases the
-// handle itself; the struct's memory is freed here either way. PyCapsule_IsValid sets no error,
-// so a destructor running while an exception is pending leaves it alone.
 void release_box_capsule(PyObject *capsule) {
-    const bool unused = PyCapsule_IsValid(capsule, "sharedbox_box") != 0;
-    if (!unused && PyCapsule_IsValid(capsule, "used_sharedbox_box") == 0)
-        return;
-    auto *handle =
-        static_cast<sbx_handle *>(PyCapsule_GetPointer(capsule, unused ? "sharedbox_box" : "used_sharedbox_box"));
-    if (unused && handle->release != nullptr)
-        handle->release(handle);
-    delete handle;
+    sharedbox::release_handle_capsule(capsule, "sharedbox_box", "used_sharedbox_box");
 }
 
 /// The iterator of a NativeCollection, NativeSet or NativeDict: one element, or a dict's key, decoded per

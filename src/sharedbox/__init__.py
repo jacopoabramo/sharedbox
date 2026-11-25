@@ -47,6 +47,7 @@ from ._stream import (
     SharedStream,
     SharedStreamStatistics,
     Start,
+    SupportsSharedStream,
 )
 from ._timed import Timed
 from ._version import __version__
@@ -103,6 +104,7 @@ __all__ = [
     "StreamClosedError",
     "SupportsDLPack",
     "SupportsSharedBox",
+    "SupportsSharedStream",
     "Timed",
     "UnknownBoxClassError",
     "WaiterSlotsFullError",

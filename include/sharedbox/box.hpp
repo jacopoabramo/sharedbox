@@ -9,7 +9,6 @@ inline namespace v3 {
 
 inline constexpr std::uint16_t layout_major = 3;
 inline constexpr std::uint16_t layout_minor = 3;
-inline constexpr std::uint32_t handle_version = 1;
 inline constexpr std::uint32_t header_size = 128;
 inline constexpr std::uint32_t record_alignment = 64;
 inline constexpr double default_lock_timeout = 5.0;
@@ -1933,29 +1932,10 @@ inline result<handle> handle::duplicate() const {
     const detail::state &src = *s_;
     if (src.foreign.release != nullptr)
         return unexpected(status::range);
-#ifdef _WIN32
-    HANDLE os = nullptr;
-    if (!DuplicateHandle(GetCurrentProcess(), src.map.os(), GetCurrentProcess(), &os, 0, FALSE,
-                         DUPLICATE_SAME_ACCESS))
-        return detail::os_failure();
-    void *base = MapViewOfFile(os, FILE_MAP_READ | FILE_MAP_WRITE, 0, 0, 0);
-    if (base == nullptr) {
-        const unexpected failed = detail::os_failure();
-        CloseHandle(os);
-        return failed;
-    }
-#else
-    const int os = fcntl(src.map.os(), F_DUPFD_CLOEXEC, 0);
-    if (os < 0)
-        return detail::os_failure();
-    void *base = mmap(nullptr, static_cast<std::size_t>(src.size), PROT_READ | PROT_WRITE, MAP_SHARED, os, 0);
-    if (base == MAP_FAILED) {
-        const unexpected failed = detail::os_failure();
-        close(os);
-        return failed;
-    }
-#endif
-    detail::os_mapping map = detail::os_mapping::adopt(os, base, src.size);
+    result<detail::os_mapping> duplicated = detail::duplicate_mapping(src.map);
+    if (!duplicated)
+        return unexpected(duplicated.error());
+    detail::os_mapping map = std::move(*duplicated);
     std::unique_ptr<detail::state> s = detail::make_state(src.name, src.field_count, src.waiter_slots);
     if (s == nullptr)
         return unexpected(status::os);

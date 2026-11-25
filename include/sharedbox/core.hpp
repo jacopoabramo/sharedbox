@@ -91,6 +91,8 @@ inline constexpr std::uint32_t max_waiter_slots = 4096;
 inline constexpr std::uint16_t default_waiter_slots = 64;
 inline constexpr std::uint32_t page_size = 4096;
 inline constexpr double max_timeout = 86400.0;
+// The version of sbx_handle that to_capsule writes, for every kind of segment.
+inline constexpr std::uint32_t handle_version = 1;
 inline constexpr std::uint32_t kind_shift = 24;
 inline constexpr std::uint32_t capacity_mask = (std::uint32_t{1} << kind_shift) - 1;
 // A description's offset is the low 24 bits of a field entry, so the table holds at most 16 MiB.
@@ -1916,6 +1918,33 @@ private:
     void *base_ = nullptr;
     std::uint64_t size_ = 0;
 };
+
+// A second mapping of the segment from's OS handle maps, with an OS handle of its own.
+inline result<os_mapping> duplicate_mapping(const os_mapping &from) {
+#ifdef _WIN32
+    HANDLE os = nullptr;
+    if (!DuplicateHandle(GetCurrentProcess(), from.os(), GetCurrentProcess(), &os, 0, FALSE,
+                         DUPLICATE_SAME_ACCESS))
+        return os_failure();
+    void *base = MapViewOfFile(os, FILE_MAP_READ | FILE_MAP_WRITE, 0, 0, 0);
+    if (base == nullptr) {
+        const unexpected failed = os_failure();
+        CloseHandle(os);
+        return failed;
+    }
+#else
+    const int os = fcntl(from.os(), F_DUPFD_CLOEXEC, 0);
+    if (os < 0)
+        return os_failure();
+    void *base = mmap(nullptr, static_cast<std::size_t>(from.size()), PROT_READ | PROT_WRITE, MAP_SHARED, os, 0);
+    if (base == MAP_FAILED) {
+        const unexpected failed = os_failure();
+        close(os);
+        return failed;
+    }
+#endif
+    return os_mapping::adopt(os, base, from.size());
+}
 
 #ifndef _WIN32
 // Reserves the pages now, so a /dev/shm too small for the box fails here with ENOSPC instead of

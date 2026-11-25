@@ -14,6 +14,7 @@ from sharedbox import (
     SharedSendStream,
     SharedStream,
     Start,
+    SupportsSharedStream,
 )
 
 
@@ -103,3 +104,11 @@ async def check_async_receive(reader: SharedReceiveStream[Item], out: Item) -> N
 async def check_stream_entered(stream: SharedStream[Item]) -> None:
     async with stream as entered:
         assert_type(entered, SharedStream[Item])
+
+
+def record(readings: SupportsSharedStream) -> None: ...
+
+
+def check_protocol(stream: SharedStream[Item]) -> None:
+    record(stream)
+    record(object())  # type: ignore[arg-type]

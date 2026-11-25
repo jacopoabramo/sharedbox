@@ -33,13 +33,13 @@ versioned, and a header-only C++20 library implements them.
 | Topic | Decision | Not taken |
 | --- | --- | --- |
 | Model | the Arrow PyCapsule Interface; the closest analogue is `ArrowArrayStream`, a live handle rather than a one-shot transfer | numpy's `__array_struct__` |
-| Scope | every segment starts with the same first line; the box and the stream are the kinds implemented, and the stream is C++ only; the handle struct is versioned so that streams can get their own dunder later | streams in the same step |
+| Scope | every segment starts with the same first line; the box and the stream are the kinds implemented, and the C functions cover the box only; every kind's capsule holds the same versioned handle struct, and the kind comes from the capsule name and the segment's magic | a kind field in the handle struct |
 | Contract | a documented memory layout plus a header-only reference implementation | a compiled C library; definitions only |
 | Language | the C++20 headers `core.hpp` and `box.hpp`, which `sharedbox.hpp` includes, namespace `sharedbox` | a C99 header with `static inline` functions |
 | Atomics | `std::atomic_ref` on plain integer fields | wrappers over compiler intrinsics; C11 `<stdatomic.h>` |
 | C interface | a minimal `sharedbox_c.h`, whose functions call `sharedbox.hpp`, in one `.cpp` file the consumer compiles | a static library in the wheel; a C implementation of the protocols |
-| Dunder and capsule | `__sharedbox_box__`, capsule `"sharedbox_box"` | `_c_` in the name, which reads as "implemented in C" |
-| Negotiation | DLPack's `max_version`; the consumer renames the capsule `"used_sharedbox_box"`; other keywords raise `NotImplementedError`, as in Arrow | none |
+| Dunder and capsule | `__sharedbox_box__`, capsule `"sharedbox_box"`; `__sharedbox_stream__`, capsule `"sharedbox_stream"` | `_c_` in the name, which reads as "implemented in C" |
+| Negotiation | DLPack's `max_version`; the consumer renames the capsule `"used_sharedbox_box"` or `"used_sharedbox_stream"`; other keywords raise `NotImplementedError`, as in Arrow | none |
 | Object names | `SBX:` + box name + suffix, for every object | the bare box name; names stored in the header |
 | Windows scope | `Local\` only | `Global\` (see Out of scope) |
 | Versioning | the core version and the box layout each have a major that refuses and a minor that opens and ignores what it does not know | exact match; flag masks |
@@ -553,6 +553,10 @@ attacher agree on it and on the class's meaning.
 
 - `schema_hash`: the first 8 bytes of SHA-256 over that text, read as a
   little-endian `u64`.
+- A stream's `schema_hash` is taken the same way over `stream|` followed by
+  the item's type text, with `bool:1`, `int:8` and `float:8` for those
+  kinds: `stream|float:8` for an item of `float`, whose hash is
+  `0xca61a9c40c375b90`.
 - Identity: the `identity=` class keyword, a non-empty string without `|`,
   the character that separates the parts of the schema text; without it,
   `module.qualname`. A subclass does not inherit its base's identity.
@@ -1835,12 +1839,17 @@ public:
                                  std::uint32_t max_readers, std::uint64_t schema_hash,
                                  const metadata_spec &metadata = {});
     static result<stream> open(std::string_view name, seconds timeout);
+    static result<stream> from_capsule(sbx_handle *capsule);
+    result<stream> duplicate() const;
+    sbx_handle *to_capsule() &&;
 
     std::string_view name() const noexcept;
     std::uint64_t schema_hash() const noexcept;
     std::uint64_t create_id() const noexcept;
     std::uint64_t capacity() const noexcept;
     std::uint32_t max_readers() const noexcept;
+    std::uint16_t major_version() const noexcept;
+    std::uint16_t minor_version() const noexcept;
     std::uint64_t item_size() const noexcept;
     type_view item_type() const noexcept;
     std::span<const std::byte> types_table() const noexcept;
@@ -1870,6 +1879,23 @@ Stream layout). Every function returning a `result` is `[[nodiscard]]`.
 - `stream::open` compares nothing: the caller compares `schema_hash()` with
   its own. Its errors are those of Attach, and `status::corrupt` for an
   item type or slot size that does not fit.
+- `stream::from_capsule` takes over a handle made by another build, such as
+  the one in a `"sharedbox_stream"` capsule. It checks the segment at
+  `capsule->base` as `open` does, so a box's handle gives
+  `status::kind_mismatch`, and gives `status::range` for a null handle, a
+  null `release`, `base` or `name`, a `handle_version` of 0 or a name that
+  breaks the rules. On success it clears `capsule->release`, and destroying
+  the stream calls the release it had.
+- `duplicate` gives a stream with its own mapping of the same segment,
+  checked again as `open` checks it, claiming no sender and opening no
+  reader; `status::range` for a stream made by `from_capsule`.
+- `major_version` and `minor_version` give the segment's stream layout as
+  open checked it, the minor no higher than this header's.
+- `to_capsule` gives a heap `sbx_handle` that owns the stream, whose
+  `layout_major` and `layout_minor` are `major_version()` and
+  `minor_version()`; its
+  `release` destroys the stream and the caller deletes the struct.
+  `nullptr` when memory runs out, leaving the stream as it was.
 - `sender` gives `status::busy` while a running process holds the sender,
   `status::ended` once a sender has closed the stream, and `status::no_slot`
   when no waiter slot is free.
@@ -1957,7 +1983,7 @@ Stream layout). Every function returning a `result` is `[[nodiscard]]`.
 ### Capsule handle
 
 `sbx_handle` is the struct a capsule holds. It is plain C data with function
-pointers, declared in `sharedbox_c.h` and included by `box.hpp`,
+pointers, declared in `sharedbox_c.h` and included by `core.hpp`, and the same for every kind,
 because it passes between extensions compiled separately, possibly with
 different compilers and standard libraries. No C++ standard-library type
 crosses the capsule.
@@ -1968,7 +1994,7 @@ typedef struct sbx_handle {
     uint32_t handle_version;              /* 1; grows by appending fields */
     void    *base;                        /* this handle's own mapping */
     uint64_t size;
-    const char *name;                     /* the box name, for slot events */
+    const char *name;                     /* the segment name, for slot events */
     void   (*release)(struct sbx_handle *);
     void    *private_data;                /* owned by the build that made the handle */
 } sbx_handle;
@@ -1977,19 +2003,20 @@ typedef struct sbx_handle {
 - `private_data` belongs to the build that made the handle, and only that
   build's `release` reads it.
 - A consumer never reads another build's `private_data`. It takes the handle
-  with `handle::from_capsule` (or `sbx_import`). It does not wait for `magic`:
+  with `handle::from_capsule` (or `sbx_import`) for a box and `stream::from_capsule` for a stream. It does not wait for `magic`:
   it loads it once and returns `status::corrupt` if it is not set or `size` is
   below 4096, then runs steps 3 and 4 of Attach on the segment at `base`, which
   includes the kind and version checks. It keeps its own copy of the struct and
-  of the field table, and checks no schema: the consumer compares
+  of the field table or item type, and checks no schema: the consumer compares
   `schema_hash()`. On success it clears the capsule struct's `release`, and
   destroying the new handle calls the producer's `release`. The consumer's
   handle opens slot events by `name` when it first waits.
-- `to_capsule()` moves a handle to the heap and returns a new `sbx_handle`
+- `to_capsule()` moves a box handle or a stream to the heap and returns a new `sbx_handle`
   whose `release` destroys it; the caller deletes the struct afterwards.
 - The Python extension's capsule destructor deletes the struct while the
-  capsule is named `"sharedbox_box"` or `"used_sharedbox_box"`, and calls
-  `release` only under the first name.
+  capsule is named `"sharedbox_box"` or `"used_sharedbox_box"`, or
+  `"sharedbox_stream"` or `"used_sharedbox_stream"`, and calls `release`
+  only under the unused name.
 
 ## `sharedbox_c.h`
 
@@ -2124,6 +2151,27 @@ no Python-level export method.
   `__sharedbox_box__`, for annotations in consuming libraries.
 - `sharedbox._native.LAYOUT_VERSION` is `(3, 3)`, the box layout.
 
+A stream has the same protocol under its own names:
+
+- `SharedStream.__sharedbox_stream__(self, max_version=None, **kwargs)`
+  returns a PyCapsule named `"sharedbox_stream"` holding a heap-allocated
+  `sbx_handle` made by `stream::duplicate()` and `stream::to_capsule()`,
+  so it works after `close()` and `unlink()`. Its `layout_major` and
+  `layout_minor` are the segment's stream layout, the minor no higher than
+  the extension's own.
+- `max_version` is `(major, minor)`; a major the stream does not have
+  raises `BufferError`, and so does a minor older than that layout minor.
+  `None` means the stream's version. Any other keyword raises
+  `NotImplementedError`, and a closed stream raises `StreamClosedError`.
+- `sharedbox::stream::from_capsule` checks the segment as `stream::open`
+  does, so a box's handle gives `status::kind_mismatch`. The handle claims
+  no sender and opens no reader.
+- A consumer that takes the handle renames the capsule
+  `"used_sharedbox_stream"` and destroys the stream it gets, which
+  releases the handle. `release` behaves as a box handle's does.
+- `sharedbox.SupportsSharedStream` is a `typing.Protocol` with
+  `__sharedbox_stream__`.
+
 ## Rust crate (deferred)
 
 A Rust crate is not part of this release. It will be a safe layer over
@@ -2156,8 +2204,8 @@ computed in Rust and checked against the test vector above.
 ## Out of scope
 
 - Queues, which would get `__sharedbox_queue__`.
-- A Python class, a capsule (`__sharedbox_stream__`) and C functions for
-  streams. A stream is C++ only in this version.
+- C functions for streams. C++ code takes a stream from Python through
+  `__sharedbox_stream__` or opens it by name; C code cannot use a stream.
 - `Global\` names on Windows. They would let a service in session 0 share
   a box with a desktop application, but creating a file mapping there
   needs `SeCreateGlobalPrivilege` and a security descriptor that lets the

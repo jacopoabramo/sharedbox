@@ -47,6 +47,7 @@ nav = [
         { "C and C++" = [
             "how-to/accept-a-box-in-cpp.md",
             "how-to/accept-a-box-in-c.md",
+            "how-to/accept-a-stream-in-cpp.md",
             "how-to/open-a-box-from-a-program.md",
         ]},
         { "Measure" = [
@@ -167,7 +168,7 @@ group_by_category = true
 show_symbol_type_heading = true
 show_symbol_type_toc = true
 inherited_members = false
-filters = ["!^_", "^__call__$", "^__sharedbox_box__$"]
+filters = ["!^_", "^__call__$", "^__sharedbox_box__$", "^__sharedbox_stream__$"]
 
 [project.markdown_extensions]
 abbr = {}

@@ -19,4 +19,4 @@ from sharedbox import SharedBox, Capacity, field
 | [References](references.md) | `BoxRef` |
 | [Bluesky documents](bluebox.md) | `DocumentSender`, `DocumentReceiver`, `ReceiverReleasedError`, `LateJoinError`, imported from `sharedbox.bluebox` |
 | [Errors](errors.md) | every exception `sharedbox` raises |
-| [Library authors](library-authors.md) | `SupportsSharedBox`, `get_include` |
+| [Library authors](library-authors.md) | `SupportsSharedBox`, `SupportsSharedStream`, `get_include` |

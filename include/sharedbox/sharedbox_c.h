@@ -42,8 +42,8 @@ extern "C" {
 #define SBX_E_METADATA_FULL (-17)
 #define SBX_E_UNSUPPORTED (-18)
 
-/* A handle on one box, as a "sharedbox_box" capsule carries it between builds. private_data belongs to
- * the build that made the handle, and only its release reads it. */
+/* A handle on one segment, as a "sharedbox_box" or "sharedbox_stream" capsule carries it between builds.
+ * private_data belongs to the build that made the handle, and only its release reads it. */
 typedef struct sbx_handle {
     uint16_t layout_major, layout_minor;
     uint32_t handle_version;

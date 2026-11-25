@@ -14,7 +14,15 @@ import numpy as np
 import pytest
 
 import sharedbox
-from sharedbox import BoxClosedError, Capacity, DType, MaxShape, SharedBox
+from sharedbox import (
+    BoxClosedError,
+    Capacity,
+    DType,
+    MaxShape,
+    SharedBox,
+    SharedStream,
+    StreamClosedError,
+)
 from sharedbox._native import LAYOUT_VERSION
 
 CONSUMER = Path(__file__).parent / "cpp" / "consumer"
@@ -50,8 +58,8 @@ set_name.restype = ctypes.c_int
 set_name.argtypes = [ctypes.py_object, ctypes.c_char_p]
 
 
-def handle_of(capsule: object) -> Handle:
-    return Handle.from_address(get_pointer(capsule, b"sharedbox_box"))
+def handle_of(capsule: object, name: bytes = b"sharedbox_box") -> Handle:
+    return Handle.from_address(get_pointer(capsule, name))
 
 
 @pytest.fixture(scope="session")
@@ -113,6 +121,27 @@ def consumer(tmp_path_factory: pytest.TempPathFactory) -> ctypes.CDLL:
         ctypes.c_uint16,
         ctypes.POINTER(ctypes.c_float),
     ]
+    library.consumer_take_stream.restype = ctypes.c_void_p
+    library.consumer_take_stream.argtypes = [
+        ctypes.c_void_p,
+        ctypes.POINTER(ctypes.c_int),
+    ]
+    library.consumer_send_ints.restype = ctypes.c_int
+    library.consumer_send_ints.argtypes = [
+        ctypes.c_void_p,
+        ctypes.c_int64,
+        ctypes.c_uint32,
+        ctypes.c_double,
+    ]
+    library.consumer_receive_ints.restype = ctypes.c_int
+    library.consumer_receive_ints.argtypes = [
+        ctypes.c_void_p,
+        ctypes.POINTER(ctypes.c_int64),
+        ctypes.c_uint32,
+        ctypes.c_double,
+    ]
+    library.consumer_release_stream.restype = None
+    library.consumer_release_stream.argtypes = [ctypes.c_void_p]
     library.consumer_release.restype = None
     library.consumer_release.argtypes = [ctypes.c_void_p]
     return library
@@ -166,6 +195,60 @@ def test_requests_the_box_cannot_meet_are_refused(unique_name: str) -> None:
             box.__sharedbox_box__(stream=True)
     with pytest.raises(BoxClosedError):
         box.__sharedbox_box__()
+
+
+def test_the_stream_capsule_holds_a_handle_on_the_stream(unique_name: str) -> None:
+    """Check that the stream capsule's handle reports the stream's layout version, name and segment start."""
+    with SharedStream.create(int, unique_name, capacity=2) as stream:
+        capsule = stream.__sharedbox_stream__()
+        handle = handle_of(capsule, b"sharedbox_stream")
+        assert (handle.layout_major, handle.layout_minor, handle.handle_version) == (
+            *stream._native.layout_version,
+            1,
+        )
+        assert handle.name == unique_name.encode()
+        assert ctypes.string_at(handle.base, 8) == b"SBX_STRM"
+
+
+def test_an_unused_stream_capsule_outlives_close_and_unlink(unique_name: str) -> None:
+    """Check that the memory behind a stream capsule stays readable after the stream is closed and unlinked."""
+    stream = SharedStream.create(int, unique_name, capacity=2)
+    capsule = stream.__sharedbox_stream__()
+    handle = handle_of(capsule, b"sharedbox_stream")
+    stream.close()
+    SharedStream.unlink(unique_name)
+    assert ctypes.string_at(handle.base, 8) == b"SBX_STRM"
+    del capsule, handle
+    gc.collect()
+
+
+def test_requests_the_stream_cannot_meet_are_refused(unique_name: str) -> None:
+    """Refuse another major, an older minor and unknown keywords, accept the stream's own version, and raise StreamClosedError once closed."""
+    with SharedStream.create(int, unique_name, capacity=2) as stream:
+        major, minor = stream._native.layout_version
+        with pytest.raises(BufferError, match=f"major version {major + 1}"):
+            stream.__sharedbox_stream__(max_version=(major + 1, 0))
+        with pytest.raises(BufferError, match=f"needs layout {major}.{minor} or newer"):
+            stream.__sharedbox_stream__(max_version=(major, minor - 1))
+        stream.__sharedbox_stream__(max_version=(major, minor))
+        with pytest.raises(NotImplementedError, match="sender"):
+            stream.__sharedbox_stream__(sender=True)
+    with pytest.raises(StreamClosedError):
+        stream.__sharedbox_stream__()
+
+
+def test_a_stream_of_a_newer_minor_meets_this_version(unique_name: str) -> None:
+    """Accept this version's max_version for a stream whose header names a newer minor."""
+    with SharedStream.create(int, unique_name, capacity=2) as stream:
+        major, minor = stream._native.layout_version
+        capsule = stream.__sharedbox_stream__()
+        # kind_minor of the common line, at offset 14.
+        ctypes.c_uint16.from_address(
+            handle_of(capsule, b"sharedbox_stream").base + 14
+        ).value = minor + 1
+        with SharedStream.attach(int, unique_name) as again:
+            assert again._native.layout_version == (major, minor)
+            again.__sharedbox_stream__(max_version=(major, minor))
 
 
 class Bytes(SharedBox):
@@ -232,6 +315,91 @@ def test_a_c_library_keeps_the_box_after_close_and_unlink(
 
 class Weighing(SharedBox):
     grams: np.float32 = np.float32(1.5)
+
+
+USED_STREAM_NAME = b"used_sharedbox_stream"
+
+
+def take_stream(consumer: ctypes.CDLL, capsule: object) -> int:
+    code = ctypes.c_int()
+    taken: int | None = consumer.consumer_take_stream(
+        get_pointer(capsule, b"sharedbox_stream"), ctypes.byref(code)
+    )
+    assert taken, code.value
+    assert set_name(capsule, USED_STREAM_NAME) == 0
+    return taken
+
+
+def test_python_receives_what_a_cpp_library_sends(
+    unique_name: str, consumer: ctypes.CDLL
+) -> None:
+    """Receive in Python the items a C++ library sends through the stream it took from the capsule."""
+    with SharedStream.create(int, unique_name, capacity=4) as stream:
+        reader = stream.reader(mode="lossless")
+        taken = take_stream(consumer, stream.__sharedbox_stream__())
+        assert consumer.consumer_send_ints(taken, 7, 3, 1.0) == 0
+        assert [reader.receive(timeout=1.0) for _ in range(3)] == [7, 8, 9]
+        consumer.consumer_release_stream(taken)
+
+
+def test_a_cpp_library_receives_what_python_sends_after_close_and_unlink(
+    unique_name: str, consumer: ctypes.CDLL
+) -> None:
+    """Receive in C++ the items Python sent, after the Python stream is closed and unlinked."""
+    stream = SharedStream.create(int, unique_name, capacity=4)
+    taken = take_stream(consumer, stream.__sharedbox_stream__())
+    sender = stream.sender()
+    sender.send(4)
+    sender.send(5)
+    stream.close()
+    SharedStream.unlink(unique_name)
+    received = (ctypes.c_int64 * 2)()
+    assert consumer.consumer_receive_ints(taken, received, 2, 1.0) == 0
+    assert list(received) == [4, 5]
+    consumer.consumer_release_stream(taken)
+
+
+def test_a_cpp_library_sends_after_close_and_unlink(
+    unique_name: str, consumer: ctypes.CDLL
+) -> None:
+    """Send from a C++ library after the Python stream is closed and unlinked, and receive through a second capsule."""
+    stream = SharedStream.create(int, unique_name, capacity=4)
+    sending = take_stream(consumer, stream.__sharedbox_stream__())
+    receiving = take_stream(consumer, stream.__sharedbox_stream__())
+    stream.close()
+    SharedStream.unlink(unique_name)
+    assert consumer.consumer_send_ints(sending, 20, 2, 1.0) == 0
+    received = (ctypes.c_int64 * 2)()
+    assert consumer.consumer_receive_ints(receiving, received, 2, 1.0) == 0
+    assert list(received) == [20, 21]
+    consumer.consumer_release_stream(sending)
+    consumer.consumer_release_stream(receiving)
+
+
+def test_a_cpp_library_gets_no_second_sender(
+    unique_name: str, consumer: ctypes.CDLL
+) -> None:
+    """Refuse the sender to a C++ library while Python holds it."""
+    with SharedStream.create(int, unique_name, capacity=4) as stream:
+        stream.sender()
+        taken = take_stream(consumer, stream.__sharedbox_stream__())
+        assert consumer.consumer_send_ints(taken, 1, 1, 1.0) == -13
+        consumer.consumer_release_stream(taken)
+
+
+def test_a_box_capsule_is_not_a_stream(unique_name: str, consumer: ctypes.CDLL) -> None:
+    """Refuse a box capsule's handle as a stream and leave it to the box capsule to release."""
+    with Frame.create(unique_name) as box:
+        capsule = box.__sharedbox_box__()
+        code = ctypes.c_int()
+        taken = consumer.consumer_take_stream(
+            get_pointer(capsule, b"sharedbox_box"), ctypes.byref(code)
+        )
+        assert not taken
+        assert code.value == -11
+        assert handle_of(capsule).release is not None
+        del capsule
+        gc.collect()
 
 
 def test_a_c_library_reads_a_float32(unique_name: str, consumer: ctypes.CDLL) -> None:
