@@ -33,13 +33,13 @@ versioned, and a header-only C++20 library implements them.
 | Topic | Decision | Not taken |
 | --- | --- | --- |
 | Model | the Arrow PyCapsule Interface; the closest analogue is `ArrowArrayStream`, a live handle rather than a one-shot transfer | numpy's `__array_struct__` |
-| Scope | every segment starts with the same first line; the box and the stream are the kinds implemented, and the stream is C++ only; the handle struct is versioned so that streams can get their own dunder later | streams in the same step |
+| Scope | every segment starts with the same first line; the box and the stream are the kinds implemented, and the C functions cover the box only; every kind's capsule holds the same versioned handle struct, and the kind comes from the capsule name and the segment's magic | a kind field in the handle struct |
 | Contract | a documented memory layout plus a header-only reference implementation | a compiled C library; definitions only |
 | Language | the C++20 headers `core.hpp` and `box.hpp`, which `sharedbox.hpp` includes, namespace `sharedbox` | a C99 header with `static inline` functions |
 | Atomics | `std::atomic_ref` on plain integer fields | wrappers over compiler intrinsics; C11 `<stdatomic.h>` |
 | C interface | a minimal `sharedbox_c.h`, whose functions call `sharedbox.hpp`, in one `.cpp` file the consumer compiles | a static library in the wheel; a C implementation of the protocols |
-| Dunder and capsule | `__sharedbox_box__`, capsule `"sharedbox_box"` | `_c_` in the name, which reads as "implemented in C" |
-| Negotiation | DLPack's `max_version`; the consumer renames the capsule `"used_sharedbox_box"`; other keywords raise `NotImplementedError`, as in Arrow | none |
+| Dunder and capsule | `__sharedbox_box__`, capsule `"sharedbox_box"`; `__sharedbox_stream__`, capsule `"sharedbox_stream"` | `_c_` in the name, which reads as "implemented in C" |
+| Negotiation | DLPack's `max_version`; the consumer renames the capsule `"used_sharedbox_box"` or `"used_sharedbox_stream"`; other keywords raise `NotImplementedError`, as in Arrow | none |
 | Object names | `SBX:` + box name + suffix, for every object | the bare box name; names stored in the header |
 | Windows scope | `Local\` only | `Global\` (see Out of scope) |
 | Versioning | the core version and the box layout each have a major that refuses and a minor that opens and ignores what it does not know | exact match; flag masks |
@@ -2124,6 +2124,26 @@ no Python-level export method.
   `__sharedbox_box__`, for annotations in consuming libraries.
 - `sharedbox._native.LAYOUT_VERSION` is `(3, 3)`, the box layout.
 
+A stream has the same protocol under its own names:
+
+- `SharedStream.__sharedbox_stream__(self, max_version=None, **kwargs)`
+  returns a PyCapsule named `"sharedbox_stream"` holding a heap-allocated
+  `sbx_handle` made by `stream::duplicate()` and `stream::to_capsule()`,
+  so it works after `close()` and `unlink()`. Its `layout_major` and
+  `layout_minor` are the stream layout the segment was created with.
+- `max_version` is `(major, minor)`; a major the stream does not have
+  raises `BufferError`, and so does a minor older than the stream's own.
+  `None` means the stream's version. Any other keyword raises
+  `NotImplementedError`, and a closed stream raises `StreamClosedError`.
+- `sharedbox::stream::from_capsule` checks the segment as `stream::open`
+  does, so a box's handle gives `status::kind_mismatch`. The handle claims
+  no sender and opens no reader.
+- A consumer that takes the handle renames the capsule
+  `"used_sharedbox_stream"` and destroys the stream it gets, which
+  releases the handle. `release` behaves as a box handle's does.
+- `sharedbox.SupportsSharedStream` is a `typing.Protocol` with
+  `__sharedbox_stream__`.
+
 ## Rust crate (deferred)
 
 A Rust crate is not part of this release. It will be a safe layer over
@@ -2156,8 +2176,8 @@ computed in Rust and checked against the test vector above.
 ## Out of scope
 
 - Queues, which would get `__sharedbox_queue__`.
-- A Python class, a capsule (`__sharedbox_stream__`) and C functions for
-  streams. A stream is C++ only in this version.
+- C functions for streams. C++ code takes a stream from Python through
+  `__sharedbox_stream__` or opens it by name; C code cannot use a stream.
 - `Global\` names on Windows. They would let a service in session 0 share
   a box with a desktop application, but creating a file mapping there
   needs `SeCreateGlobalPrivilege` and a security descriptor that lets the

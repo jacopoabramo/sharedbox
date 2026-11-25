@@ -15,7 +15,7 @@ sharedbox/
 |-- include/sharedbox/
 |   |-- core.hpp               what every segment kind uses: result and error, liveness, names, mappings, the open step, waiter slots, the type codec, the metadata area and its CBOR check
 |   |-- box.hpp                box layout 3.3 and its protocols: create, publish, open, lock, read, write, record write, metadata, capsule handle
-|   |-- stream.hpp             stream layout 1.5: create, open, the sender, readers, the gate, dead ends, metadata
+|   |-- stream.hpp             stream layout 1.5: create, open, the capsule handle, the sender, readers, the gate, dead ends, metadata
 |   |-- sharedbox.hpp          includes every kind; the header consumers include
 |   |-- sharedbox_c.h          minimal C interface: sbx_open, sbx_import, sbx_read, sbx_write, sbx_schema_hash, sbx_release, sbx_field_desc, typed sbx_read_* and sbx_write_*, sbx_metadata_head, sbx_read_metadata, sbx_add_metadata
 |   `-- sharedbox_c.cpp        its implementation, compiled by the consumer (CMake target sharedbox::c)
@@ -74,7 +74,7 @@ sharedbox/
 |   |-- forged_types.py        builds segments with forged description tables
 |   |-- test_benchbox_contention.py  benchbox contention, a short run
 |   |-- test_benchbox_plot.py  benchbox plot; skipped without plotly and pyperf
-|   |-- test_capsule.py        __sharedbox_box__, and the C consumer in tests/cpp/consumer/
+|   |-- test_capsule.py        __sharedbox_box__ and __sharedbox_stream__, and the consumer in tests/cpp/consumer/
 |   |-- test_doc_examples.py   runs each docs/examples/*.py script
 |   |-- test_doc_tutorials.py  runs docs/tutorials/mailbox.py and checks the output its pages show
 |   |-- test_follow.py         BoxEvents.follow, unfollow and nested
@@ -101,7 +101,7 @@ sharedbox/
 |   |-- test_properties_*.py   Hypothesis property tests, streams included
 |   |-- stress/                stress tests, marker stress, deselected by default
 |   |-- cpp/                   C++ tests (doctest, CTest) and the C smoke test
-|   |   `-- consumer/          a C library built against an installed wheel, loaded by test_capsule.py
+|   |   `-- consumer/          a C and C++ library built against an installed wheel, loaded by test_capsule.py
 |   `-- type_checks/           checked by mypy, never imported at run time
 |-- benchmarks/                not collected by the default pytest run
 |   |-- test_bench_box.py      pytest-codspeed benchmarks, run by codspeed.yml
@@ -299,7 +299,7 @@ cmake --build build-cpp --config Release
 ctest --test-dir build-cpp -C Release --output-on-failure
 ```
 
-`tests/test_capsule.py` builds the C consumer in `tests/cpp/consumer/`
+`tests/test_capsule.py` builds the C and C++ consumer in `tests/cpp/consumer/`
 against the installed wheel with CMake and skips when CMake is missing;
 `SHAREDBOX_REQUIRE_C_CONSUMER=1` makes that a failure. The `cpp_header` CI
 job runs the C++ tests on Linux and Windows, again on Linux with
@@ -406,7 +406,9 @@ attaches to it.
 One `SharedSendStream` fills it, and up to `max_readers` readers read it,
 each a `SharedReceiveStream` in mode `lossless`, `lossy` or `latest`;
 `receive_into` reads into arrays the caller allocated. See
-`docs/how-to/send-items-through-a-stream.md`.
+`docs/how-to/send-items-through-a-stream.md`. C++ code takes a stream
+through `__sharedbox_stream__` and `sharedbox::stream::from_capsule`; see
+`docs/how-to/accept-a-stream-in-cpp.md`.
 
 `sharedbox.bluebox.DocumentSender.create(name)` is a `RunEngine` callback
 that sends bluesky documents on a channel (`N:control`, one `N:e<seq>` per

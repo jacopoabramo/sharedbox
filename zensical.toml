@@ -47,6 +47,7 @@ nav = [
         { "C and C++" = [
             "how-to/accept-a-box-in-cpp.md",
             "how-to/accept-a-box-in-c.md",
+            "how-to/accept-a-stream-in-cpp.md",
             "how-to/open-a-box-from-a-program.md",
         ]},
         { "Measure" = [
