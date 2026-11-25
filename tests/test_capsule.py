@@ -359,6 +359,23 @@ def test_a_cpp_library_receives_what_python_sends_after_close_and_unlink(
     consumer.consumer_release_stream(taken)
 
 
+def test_a_cpp_library_sends_after_close_and_unlink(
+    unique_name: str, consumer: ctypes.CDLL
+) -> None:
+    """Send from a C++ library after the Python stream is closed and unlinked, and receive through a second capsule."""
+    stream = SharedStream.create(int, unique_name, capacity=4)
+    sending = take_stream(consumer, stream.__sharedbox_stream__())
+    receiving = take_stream(consumer, stream.__sharedbox_stream__())
+    stream.close()
+    SharedStream.unlink(unique_name)
+    assert consumer.consumer_send_ints(sending, 20, 2, 1.0) == 0
+    received = (ctypes.c_int64 * 2)()
+    assert consumer.consumer_receive_ints(receiving, received, 2, 1.0) == 0
+    assert list(received) == [20, 21]
+    consumer.consumer_release_stream(sending)
+    consumer.consumer_release_stream(receiving)
+
+
 def test_a_cpp_library_gets_no_second_sender(
     unique_name: str, consumer: ctypes.CDLL
 ) -> None:
