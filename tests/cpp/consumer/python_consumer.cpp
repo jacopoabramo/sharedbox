@@ -24,3 +24,30 @@ PYCONSUMER_API PyObject *py_read_int(PyObject *obj, std::uint64_t schema, std::u
     }
     return PyLong_FromLongLong(value);
 }
+
+// Sends count items value, value + 1, ... through the stream obj offers, then closes the sender; None, or
+// nullptr with an exception set.
+PYCONSUMER_API PyObject *py_send_ints(PyObject *obj, std::uint64_t schema, std::int64_t value, std::uint32_t count,
+                                      double timeout) {
+    std::optional<sharedbox::stream> stream = sharedbox::python::take_stream(obj, schema);
+    if (!stream)
+        return nullptr;
+    sharedbox::result<sharedbox::stream_sender> sender = stream->sender();
+    if (!sender) {
+        PyErr_Format(PyExc_RuntimeError, "send failed: %d", static_cast<int>(sender.error().code));
+        return nullptr;
+    }
+    if (sender->item_size() != sizeof(std::int64_t)) {
+        PyErr_SetString(PyExc_RuntimeError, "item size");
+        return nullptr;
+    }
+    for (std::uint32_t i = 0; i < count; ++i) {
+        const std::int64_t item = value + i;
+        const auto sent = sender->send(std::as_bytes(std::span{&item, 1}), sharedbox::seconds(timeout));
+        if (!sent) {
+            PyErr_Format(PyExc_RuntimeError, "send failed: %d", static_cast<int>(sent.error().code));
+            return nullptr;
+        }
+    }
+    Py_RETURN_NONE;
+}

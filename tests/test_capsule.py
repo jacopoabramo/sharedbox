@@ -4,6 +4,7 @@ import ctypes
 import datetime
 import enum
 import gc
+import hashlib
 import importlib.metadata
 import os
 import shutil
@@ -25,6 +26,7 @@ from sharedbox import (
     SharedStream,
     StreamClosedError,
     SupportsSharedBox,
+    SupportsSharedStream,
 )
 from sharedbox._native import LAYOUT_VERSION
 
@@ -108,6 +110,14 @@ def pyconsumer(consumer_build: Path) -> ctypes.PyDLL:
     library = ctypes.PyDLL(str(next(consumer_build.rglob(pattern))))
     library.py_read_int.restype = ctypes.py_object
     library.py_read_int.argtypes = [ctypes.py_object, ctypes.c_uint64, ctypes.c_uint16]
+    library.py_send_ints.restype = ctypes.py_object
+    library.py_send_ints.argtypes = [
+        ctypes.py_object,
+        ctypes.c_uint64,
+        ctypes.c_int64,
+        ctypes.c_uint32,
+        ctypes.c_double,
+    ]
     return library
 
 
@@ -554,3 +564,69 @@ def test_take_box_keeps_no_reference(
         with pytest.raises(TypeError):
             pyconsumer.py_read_int(offered, schema ^ 1, 0)
         assert sys.getrefcount(offered) == before
+
+
+class OfferedStream:
+    """Hand out a capsule of the stream it wraps and remember the request."""
+
+    def __init__(self, target: SupportsSharedStream) -> None:
+        self.target = target
+        self.capsule: CapsuleType | None = None
+        self.max_version: tuple[int, int] | None = None
+
+    def __sharedbox_stream__(
+        self, max_version: tuple[int, int] | None = None
+    ) -> CapsuleType:
+        self.max_version = max_version
+        self.capsule = self.target.__sharedbox_stream__(max_version)
+        return self.capsule
+
+
+INT_STREAM_SCHEMA = int.from_bytes(
+    hashlib.sha256(b"stream|int:8").digest()[:8], "little"
+)
+# A capsule renamed to this keeps the pointer, so the name must outlive it.
+STREAM_NAME = b"sharedbox_stream"
+
+
+def test_take_stream_sends_to_python(
+    unique_name: str, pyconsumer: ctypes.PyDLL
+) -> None:
+    """Send items from C++ through a stream taken with take_stream, which asked for the header's version."""
+    with SharedStream.create(int, unique_name, capacity=4) as stream:
+        reader = stream.reader(mode="lossless")
+        offered = OfferedStream(stream)
+        pyconsumer.py_send_ints(offered, INT_STREAM_SCHEMA, 7, 3, 1.0)
+        assert [reader.receive(timeout=1.0) for _ in range(3)] == [7, 8, 9]
+        assert offered.max_version == stream._native.layout_version
+        assert get_name(offered.capsule) == USED_STREAM_NAME
+
+
+def test_take_stream_lets_a_closed_stream_raise(
+    unique_name: str, pyconsumer: ctypes.PyDLL
+) -> None:
+    """Pass the StreamClosedError of a closed stream's dunder through take_stream."""
+    stream = SharedStream.create(int, unique_name, capacity=4)
+    stream.close()
+    with pytest.raises(StreamClosedError):
+        pyconsumer.py_send_ints(stream, INT_STREAM_SCHEMA, 0, 1, 1.0)
+
+
+def test_take_stream_cannot_open_a_box(
+    unique_name: str, pyconsumer: ctypes.PyDLL
+) -> None:
+    """Raise ValueError for a box's handle offered as a stream, and leave the capsule its name and release."""
+    with Frame.create(unique_name, 0.5, 3) as box:
+        capsule = box.__sharedbox_box__()
+        assert set_name(capsule, STREAM_NAME) == 0
+
+        class Forged:
+            def __sharedbox_stream__(
+                self, max_version: tuple[int, int] | None = None
+            ) -> CapsuleType:
+                return capsule
+
+        with pytest.raises(ValueError, match="cannot open the stream: status -11"):
+            pyconsumer.py_send_ints(Forged(), INT_STREAM_SCHEMA, 0, 1, 1.0)
+        assert get_name(capsule) == STREAM_NAME
+        assert handle_of(capsule, STREAM_NAME).release is not None
