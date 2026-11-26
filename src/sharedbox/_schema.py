@@ -18,18 +18,21 @@ def get_schema_hash(obj: object) -> int:
 
     A box's hash covers the class's identity, the `identity` class keyword
     or by default `module.qualname`, and the name and type of every field
-    in declaration order. Renaming or moving the class, or renaming,
-    reordering, adding, removing or retyping a field changes it; defaults
-    and documentation do not. A stream's hash covers only the structure of
-    its item type, so all streams of one item type share it.
+    in declaration order. Changing the identity, which renaming or moving a
+    class without an `identity` keyword does, or renaming, reordering,
+    adding, removing or retyping a field changes it; defaults and
+    documentation do not. A stream's hash covers only the structure of its
+    item type, so all streams of one item type share it.
 
     Raises
     ------
     TypeError
-        If `obj` is not a box class, a box, a stream or a stream end, and no
-        stream can carry it as its item type.
+        If `obj` is `SharedBox` itself, or is not a box class, a box, a
+        stream or a stream end and no stream can carry it as its item type.
     """
     match obj:
+        case _ if obj is SharedBox:
+            raise TypeError("SharedBox has no schema hash; pass a SharedBox subclass")
         case SharedBox():
             return type(obj).__layout__.schema_hash
         case SharedStream():
