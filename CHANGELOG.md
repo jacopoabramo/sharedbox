@@ -9,6 +9,36 @@ Dates are marked as `DD-MM-YYYY`
 
 <!-- towncrier release notes start -->
 
+## [0.12.0](https://github.com/jacopoabramo/sharedbox/releases/tag/v0.12.0) - 26-11-2026
+
+### Added
+
+- `sharedbox::stream::major_version` and `minor_version` in `stream.hpp`
+  return the segment's stream layout as open checked it, the minor no higher
+  than the header's own. ([#152](https://github.com/jacopoabramo/sharedbox/pull/152))
+- `SharedStream.__sharedbox_stream__` returns a `"sharedbox_stream"` capsule
+  holding an `sbx_handle` with its own mapping of the stream, and
+  `sharedbox::stream::from_capsule` in `stream.hpp` takes it over, so a C++
+  extension can send or receive on a stream it is given from Python.
+  `SupportsSharedStream` is the protocol to annotate such a parameter with. ([#152](https://github.com/jacopoabramo/sharedbox/pull/152))
+
+  ```cpp
+  auto *given = static_cast<sbx_handle *>(PyCapsule_GetPointer(capsule, "sharedbox_stream"));
+  sharedbox::result<sharedbox::stream> stream = sharedbox::stream::from_capsule(given);
+  ```
+- `sharedbox::python::take_box` and `take_stream` in `sharedbox/python.hpp`
+  take a box or a stream from a Python object, check its schema hash and set
+  a Python exception when either step fails. ([#153](https://github.com/jacopoabramo/sharedbox/pull/153))
+- `sharedbox.get_schema_hash` returns the schema hash of a box class, box,
+  stream, stream end or stream item type, the value `take_box`, `take_stream`
+  and `sbx_schema_hash` compare. ([#154](https://github.com/jacopoabramo/sharedbox/pull/154))
+
+### Fixed
+
+- The errors `SharedStream.create` and `get_schema_hash` raise for an item type
+  they refuse name the whole type, such as `tuple[int, str]`, where they named
+  only `tuple`, and on Python 3.14 `Union` for `X | None`. ([#154](https://github.com/jacopoabramo/sharedbox/pull/154))
+
 ## [0.11.1](https://github.com/jacopoabramo/sharedbox/releases/tag/v0.11.1) - 23-11-2026
 
 ### Added
