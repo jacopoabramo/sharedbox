@@ -27,6 +27,7 @@ from sharedbox import (
     StreamClosedError,
     SupportsSharedBox,
     SupportsSharedStream,
+    Timed,
 )
 from sharedbox._native import LAYOUT_VERSION
 
@@ -261,13 +262,11 @@ def test_an_unused_stream_capsule_outlives_close_and_unlink(unique_name: str) ->
 
 
 def test_requests_the_stream_cannot_meet_are_refused(unique_name: str) -> None:
-    """Refuse another major, an older minor and unknown keywords, accept the stream's own version, and raise StreamClosedError once closed."""
+    """Refuse another major and unknown keywords, accept the stream's own version, and raise StreamClosedError once closed."""
     with SharedStream.create(int, unique_name, capacity=2) as stream:
         major, minor = stream._native.layout_version
         with pytest.raises(BufferError, match=f"major version {major + 1}"):
             stream.__sharedbox_stream__(max_version=(major + 1, 0))
-        with pytest.raises(BufferError, match=f"needs layout {major}.{minor} or newer"):
-            stream.__sharedbox_stream__(max_version=(major, minor - 1))
         stream.__sharedbox_stream__(max_version=(major, minor))
         with pytest.raises(NotImplementedError, match="sender"):
             stream.__sharedbox_stream__(sender=True)
@@ -287,6 +286,20 @@ def test_a_stream_of_a_newer_minor_meets_this_version(unique_name: str) -> None:
         with SharedStream.attach(int, unique_name) as again:
             assert again._native.layout_version == (major, minor)
             again.__sharedbox_stream__(max_version=(major, minor))
+
+
+@pytest.mark.parametrize(
+    ("item", "needed"),
+    [(int, 4), (tuple[int, Timed[int]], 5), (Timed[int], 5)],
+)
+def test_a_minor_older_than_the_stream_needs_is_refused(
+    unique_name: str, item: object, needed: int
+) -> None:
+    """Refuse a max_version minor below the oldest whose readers open the stream, and accept that one."""
+    with SharedStream.create(item, unique_name, capacity=2) as stream:
+        with pytest.raises(BufferError, match=f"needs layout 1.{needed} or newer"):
+            stream.__sharedbox_stream__(max_version=(1, needed - 1))
+        stream.__sharedbox_stream__(max_version=(1, needed))
 
 
 class Bytes(SharedBox):
@@ -585,8 +598,9 @@ class OfferedStream:
 INT_STREAM_SCHEMA = int.from_bytes(
     hashlib.sha256(b"stream|int:8").digest()[:8], "little"
 )
-# A capsule renamed to this keeps the pointer, so the name must outlive it.
+# A capsule renamed to one of these keeps the pointer, so the name must outlive it.
 STREAM_NAME = b"sharedbox_stream"
+BOX_NAME = b"sharedbox_box"
 
 
 def test_take_stream_sends_to_python(
@@ -630,6 +644,8 @@ def test_take_stream_cannot_open_a_box(
             pyconsumer.py_send_ints(Forged(), INT_STREAM_SCHEMA, 0, 1, 1.0)
         assert get_name(capsule) == STREAM_NAME
         assert handle_of(capsule, STREAM_NAME).release is not None
+        # The capsule's destructor releases the handle only under a box capsule's name.
+        assert set_name(capsule, BOX_NAME) == 0
 
 
 class Raising:

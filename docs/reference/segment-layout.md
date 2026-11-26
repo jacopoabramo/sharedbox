@@ -2160,8 +2160,11 @@ A stream has the same protocol under its own names:
   `layout_minor` are the segment's stream layout, the minor no higher than
   the extension's own.
 - `max_version` is `(major, minor)`; a major the stream does not have
-  raises `BufferError`, and so does a minor older than that layout minor.
-  `None` means the stream's version. Any other keyword raises
+  raises `BufferError`, and so does a minor older than the oldest whose
+  readers open the stream, following "Versioning rules": 5 for an item
+  that is or holds a `timed`; 4 otherwise, since a reader of 1.3 or older
+  refuses a stream with a metadata area and the extension does not tell
+  whether a stream has one. `None` means the stream's version. Any other keyword raises
   `NotImplementedError`, and a closed stream raises `StreamClosedError`.
 - `sharedbox::stream::from_capsule` checks the segment as `stream::open`
   does, so a box's handle gives `status::kind_mismatch`. The handle claims

@@ -44,6 +44,7 @@ from typing import (
 from psygnal import Signal, SignalGroup, SignalInstance
 
 from ._box import METADATA_CAPACITY, check_name
+from ._layout import stream_reader_minor
 from ._metadata import DocumentCache, M, encode, newest
 from ._native import (
     EndOfStream,
@@ -720,7 +721,7 @@ class SharedStream(Generic[T, M]):
         BufferError
             If the major version of `max_version` differs from the
             stream's layout, or if its minor version is older than the
-            stream's.
+            oldest whose readers open the stream.
         NotImplementedError
             If any other keyword is given.
         StreamClosedError
@@ -740,10 +741,12 @@ class SharedStream(Generic[T, M]):
                 f"stream {self.name!r} has layout {major}.{minor}; "
                 f"the caller supports major version {max_version[0]}"
             )
-        if max_version is not None and max_version[1] < minor:
+        if max_version is not None and max_version[1] < (
+            needed := stream_reader_minor(self._item.spec)
+        ):
             raise BufferError(
-                f"stream {self.name!r} has layout {major}.{minor}; "
-                f"the caller needs layout {major}.{minor} or newer"
+                f"stream {self.name!r} has layout {major}.{minor} and an item type that a reader of "
+                f"layout {major}.{max_version[1]} refuses; the caller needs layout {major}.{needed} or newer"
             )
         return self._native._export()
 
