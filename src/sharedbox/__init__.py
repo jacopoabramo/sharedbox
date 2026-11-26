@@ -34,6 +34,7 @@ from ._request import (
     RequestSupersededError,
     ServerExitedError,
 )
+from ._schema import get_schema_hash
 from ._status import SegmentStatus, segment_status
 from ._stream import (
     IterInto,
@@ -114,6 +115,7 @@ __all__ = [
     "field",
     "fields",
     "get_include",
+    "get_schema_hash",
     "register_array_type",
     "segment_status",
 ]

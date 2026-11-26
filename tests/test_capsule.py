@@ -18,6 +18,7 @@ import pytest
 
 import sharedbox
 from sharedbox import (
+    Attr,
     BoxClosedError,
     Capacity,
     DType,
@@ -28,6 +29,7 @@ from sharedbox import (
     SupportsSharedBox,
     SupportsSharedStream,
     Timed,
+    get_schema_hash,
 )
 from sharedbox._native import LAYOUT_VERSION
 
@@ -663,3 +665,46 @@ def test_take_box_passes_on_an_attribute_error_of_the_dunder(
     """Pass on an AttributeError the dunder raises instead of reporting a missing dunder."""
     with pytest.raises(AttributeError, match="inside the dunder"):
         pyconsumer.py_read_int(Raising(), 0, 0)
+
+
+def test_get_schema_hash_is_what_take_box_and_take_stream_compare(
+    unique_name: str, pyconsumer: ctypes.PyDLL
+) -> None:
+    """Take a box and a stream with the hashes get_schema_hash returns."""
+    with Frame.create(unique_name, 0.5, 3) as box:
+        count = Frame.__layout__.by_name["count"].index
+        assert pyconsumer.py_read_int(box, get_schema_hash(Frame), count) == 3
+    with SharedStream.create(int, unique_name + "s", capacity=4) as stream:
+        reader = stream.reader(mode="lossless")
+        pyconsumer.py_send_ints(stream, get_schema_hash(int), 7, 1, 1.0)
+        assert reader.receive(timeout=1.0) == 7
+
+
+def test_get_schema_hash_keeps_the_documented_value() -> None:
+    """Return the hash the how-to page documents for Parcel, so compiled consumers keep working."""
+
+    class Parcel(SharedBox, identity="post/parcel/1"):
+        weight: float = 0.5
+        count: int = 0
+
+    assert get_schema_hash(Parcel) == 0x223E63B5A4E2EE25
+
+
+def test_get_schema_hash_of_an_object_is_that_of_its_type(unique_name: str) -> None:
+    """Give a box, a stream and both its ends the hash of their class or item type."""
+    with Frame.create(unique_name) as box:
+        assert get_schema_hash(box) == get_schema_hash(Frame)
+    item = tuple[int, float]
+    with SharedStream.create(item, unique_name + "s", capacity=4) as stream:
+        expected = get_schema_hash(item)
+        assert get_schema_hash(stream) == expected
+        with stream.sender() as sender, stream.reader() as reader:
+            assert get_schema_hash(sender) == expected
+            assert get_schema_hash(reader) == expected
+
+
+@pytest.mark.parametrize("obj", [Attr[int], object()])
+def test_get_schema_hash_refuses_what_no_stream_carries(obj: object) -> None:
+    """Raise TypeError for an object that is neither a box nor an item type a stream can carry."""
+    with pytest.raises(TypeError):
+        get_schema_hash(obj)
