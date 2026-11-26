@@ -209,7 +209,8 @@ jobs:
           uv venv --python ${{ matrix.build }} .build
           python=.build/bin/python
           [ -x "$python" ] || python=.build/Scripts/python.exe
-          uv pip install --python .build wheelhouse/*.whl scikit-build-core nanobind cmake pip
+          # The example's [build-system] requires, which --no-build-isolation does not install.
+          uv pip install --python .build wheelhouse/*.whl "scikit-build-core>=1.0,<1.1" "nanobind>=3.1.0" cmake pip
           # --no-deps: the example asks for a released sharedbox, newer than this run's version.
           "$python" -m pip wheel --no-build-isolation --no-deps ./examples/capsule-consumer -w dist
           ls dist/*-${{ matrix.tag }}-*.whl
