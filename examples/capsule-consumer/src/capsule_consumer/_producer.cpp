@@ -74,6 +74,21 @@ sharedbox::stream take_samples(nb::handle obj) {
     std::optional<sharedbox::stream> stream = sharedbox::python::take_stream(obj.ptr(), sample_schema);
     if (!stream)
         throw nb::python_error();
+    // As for Settings: the item must hold the members of Item, at the offsets the thread writes them to.
+    const sharedbox::type_view item = stream->item_type();
+    if (item.kind() != sharedbox::kind_record || item.count() != 2)
+        throw nb::type_error("Sample is not a record of two members");
+    const std::array<std::pair<std::uint8_t, std::uint32_t>, 2> members{
+        {{sharedbox::kind_int, offsetof(Item, index)}, {sharedbox::kind_float, offsetof(Item, value)}}};
+    for (std::uint16_t i = 0; i < members.size(); ++i) {
+        const auto [kind, offset] = members[i];
+        if (item.member(i).kind() != kind || item.member_offset(i) != offset)
+            throw nb::type_error(("Sample member " + std::to_string(i) + " is kind " +
+                                  std::to_string(item.member(i).kind()) + " at offset " +
+                                  std::to_string(item.member_offset(i)) + ", expected kind " +
+                                  std::to_string(kind) + " at offset " + std::to_string(offset))
+                                     .c_str());
+    }
     if (stream->item_size() != sizeof(Item))
         throw nb::type_error(("Sample items are " + std::to_string(stream->item_size()) + " bytes, expected " +
                               std::to_string(sizeof(Item)))

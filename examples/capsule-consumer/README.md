@@ -51,8 +51,8 @@ The hash proves that a box is a `Settings`, but not that the C++ code reads
 it as `Settings` declares it. The constructor therefore also checks the
 kind code the box stores for each field, `sharedbox::kind_float` for field
 0, `rate_hz`, and `sharedbox::kind_int` for field 1, `count`, and that a
-stream item is 16 bytes: an `int64` index and a `double` value, in the
-order `Sample` declares them. A change to `Settings` or `Sample` needs the
+stream item is a 16-byte record of an `int64` index at offset 0 and a
+`double` value at offset 8, the members `Sample` declares. A change to `Settings` or `Sample` needs the
 same change in `_producer.cpp`: the `Item` struct for a field of `Sample`,
 and the list of expected fields and the reads in the thread for a field of
 `Settings`. Until it is made, these checks refuse the classes.

@@ -1,13 +1,14 @@
 import contextlib
+import dataclasses
 import math
 import time
 import uuid
 from collections.abc import Generator
 
 import pytest
-from capsule_consumer import Producer, Sample, Settings
+from capsule_consumer import Producer, Sample, Settings, _producer
 
-from sharedbox import EndOfStream, SharedBox, SharedStream
+from sharedbox import EndOfStream, SharedBox, SharedStream, get_schema_hash
 
 
 @pytest.fixture
@@ -58,6 +59,26 @@ def test_the_thread_reads_the_box_while_it_runs(name: str) -> None:
     assert [sample.index for sample in first + rest] == list(range(10))
 
 
+def test_a_count_below_what_was_sent_ends_the_stream(name: str) -> None:
+    """End the stream without an error when Python lowers count below the samples already sent."""
+    with (
+        Settings.create(name, rate_hz=20.0, count=0) as settings,
+        SharedStream.create(Sample, name + "-items", capacity=16) as stream,
+    ):
+        reader = stream.reader(mode="lossless")
+        producer = Producer(settings, stream)
+        producer.start()
+        first = [reader.receive(timeout=5.0) for _ in range(3)]
+        settings.count = 1
+        rest = receive_all(reader)
+        producer.stop()
+    # The thread may have sent one more sample before it read the new count.
+    assert [sample.index for sample in first + rest] in (
+        [0, 1, 2],
+        [0, 1, 2, 3],
+    )
+
+
 def test_a_box_of_another_class_is_refused(name: str) -> None:
     """Refuse a box whose schema hash is not that of Settings."""
 
@@ -71,6 +92,28 @@ def test_a_box_of_another_class_is_refused(name: str) -> None:
         pytest.raises(TypeError, match="expected schema"),
     ):
         Producer(other, stream)
+
+
+@dataclasses.dataclass(frozen=True)
+class Swapped:
+    """Sample's members in the other order: 16 bytes, like Sample."""
+
+    value: float
+    index: int
+
+
+def test_an_item_type_the_thread_does_not_write_is_refused(name: str) -> None:
+    """Refuse a 16-byte item whose members differ from Item, even when the hash agrees."""
+    _producer.set_schemas(get_schema_hash(Settings), get_schema_hash(Swapped))
+    try:
+        with (
+            Settings.create(name) as settings,
+            SharedStream.create(Swapped, name + "-items", capacity=4) as stream,
+            pytest.raises(TypeError, match="member 0"),
+        ):
+            Producer(settings, stream)
+    finally:
+        _producer.set_schemas(get_schema_hash(Settings), get_schema_hash(Sample))
 
 
 def test_a_second_producer_on_one_stream_is_refused(name: str) -> None:
@@ -94,7 +137,8 @@ def test_an_error_in_the_thread_reaches_stop(name: str) -> None:
         reader = stream.reader(mode="lossless")
         producer = Producer(settings, stream)
         producer.start()
-        time.sleep(1.5)
+        # The ninth send times out after 1 s; the rest is room for a slow runner.
+        time.sleep(3.0)
         with pytest.raises(RuntimeError, match="timeout"):
             producer.stop()
         reader.close()
