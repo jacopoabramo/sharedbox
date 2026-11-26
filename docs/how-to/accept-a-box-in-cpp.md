@@ -139,37 +139,24 @@ whatever its target settings.
 
 ## Take the box from the capsule
 
-With the build set up, taking the box is four steps:
-
-1. Call `__sharedbox_box__` on the object you were given.
-2. Take the handle out of the capsule with
-   `sharedbox::handle::from_capsule`.
-3. Rename the capsule `"used_sharedbox_box"`.
-4. Compare the schema hash with the one you expect.
+With the build set up, `sharedbox/python.hpp` takes the box in one call.
+`sharedbox::python::take_box` calls `__sharedbox_box__` on the object you
+were given, asking for the layout version the header implements, takes the
+handle out of the capsule with `sharedbox::handle::from_capsule`, renames
+the capsule `"used_sharedbox_box"` and compares the box's schema hash with
+the one you pass. It returns the handle, or an empty `std::optional` with a
+Python exception set, so the function only has to return `nullptr`:
 
 ```cpp
 #include <Python.h>
-#include <sharedbox/sharedbox.hpp>
+#include <sharedbox/python.hpp>
 
 constexpr std::uint64_t PARCEL_SCHEMA = 0x223e63b5a4e2ee25;
 
 static PyObject *run(PyObject *, PyObject *parcel) {
-    PyObject *capsule = PyObject_CallMethod(parcel, "__sharedbox_box__", nullptr);
-    if (capsule == nullptr)
-        return nullptr;
-    auto *given = static_cast<sbx_handle *>(PyCapsule_GetPointer(capsule, "sharedbox_box"));
-    if (given == nullptr) {
-        Py_DECREF(capsule);
-        return nullptr;
-    }
-    sharedbox::result<sharedbox::handle> box = sharedbox::handle::from_capsule(given);
-    if (box)
-        PyCapsule_SetName(capsule, "used_sharedbox_box");
-    Py_DECREF(capsule);
+    std::optional<sharedbox::handle> box = sharedbox::python::take_box(parcel, PARCEL_SCHEMA);
     if (!box)
-        return PyErr_Format(PyExc_ValueError, "not a box this sharedbox.hpp can open");
-    if (box->schema_hash() != PARCEL_SCHEMA)
-        return PyErr_Format(PyExc_TypeError, "expected a Parcel box");
+        return nullptr;
     // box is independent of the Python box from here on, and may move to another thread.
     std::int64_t count = 0;
     const auto read = box->read(1, std::as_writable_bytes(std::span(&count, 1)));
@@ -179,11 +166,31 @@ static PyObject *run(PyObject *, PyObject *parcel) {
 }
 ```
 
+An object without `__sharedbox_box__` raises `TypeError`, and so does a box
+with another schema hash. A capsule the header cannot open raises
+`ValueError`, and an exception the object's `__sharedbox_box__` raises
+passes through. `take_box` calls into Python, so call it with the GIL held.
+With nanobind or pybind11, pass `obj.ptr()`, and on an empty result throw
+`nb::python_error()` or `py::error_already_set()` instead of returning
+`nullptr`.
+
 `from_capsule` checks the segment the handle points to, just as an attach does,
 including its kind and its layout version. If the check passes, `box` takes
 over the capsule's handle and releases it when `box` is destroyed. If it fails,
 the capsule keeps its handle and releases it when the capsule is garbage
 collected, so nothing leaks either way.
+
+A consumer that does not know the schema in advance, such as one that reads
+any box by its field descriptions, calls `from_capsule` itself: it calls
+`__sharedbox_box__`, gets the handle with
+`PyCapsule_GetPointer(capsule, "sharedbox_box")`, passes it to
+`sharedbox::handle::from_capsule` and, when that succeeds, renames the
+capsule `"used_sharedbox_box"`.
+
+On Windows, an extension built for free-threaded Python needs
+`Py_GIL_DISABLED` defined, because that build's `pyconfig.h` does not
+define it; linking CMake's `Python::Module` target defines it from CMake
+3.30.3 on.
 
 ## Next steps
 

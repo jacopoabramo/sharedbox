@@ -1,14 +1,17 @@
+from __future__ import annotations
+
 import ctypes
 import datetime
 import enum
 import gc
+import hashlib
 import importlib.metadata
 import os
 import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 
 import numpy as np
 import pytest
@@ -22,8 +25,17 @@ from sharedbox import (
     SharedBox,
     SharedStream,
     StreamClosedError,
+    SupportsSharedBox,
+    SupportsSharedStream,
+    Timed,
 )
 from sharedbox._native import LAYOUT_VERSION
+
+if TYPE_CHECKING:
+    if sys.version_info >= (3, 13):
+        from types import CapsuleType
+    else:
+        from typing_extensions import CapsuleType
 
 CONSUMER = Path(__file__).parent / "cpp" / "consumer"
 # PyCapsule_SetName keeps the pointer, so the name must outlive the capsule.
@@ -56,6 +68,9 @@ get_pointer.argtypes = [ctypes.py_object, ctypes.c_char_p]
 set_name = ctypes.pythonapi.PyCapsule_SetName
 set_name.restype = ctypes.c_int
 set_name.argtypes = [ctypes.py_object, ctypes.c_char_p]
+get_name = ctypes.pythonapi.PyCapsule_GetName
+get_name.restype = ctypes.c_char_p
+get_name.argtypes = [ctypes.py_object]
 
 
 def handle_of(capsule: object, name: bytes = b"sharedbox_box") -> Handle:
@@ -63,7 +78,7 @@ def handle_of(capsule: object, name: bytes = b"sharedbox_box") -> Handle:
 
 
 @pytest.fixture(scope="session")
-def consumer(tmp_path_factory: pytest.TempPathFactory) -> ctypes.CDLL:
+def consumer_build(tmp_path_factory: pytest.TempPathFactory) -> Path:
     cmake = shutil.which("cmake")
     if cmake is None:
         if os.environ.get("SHAREDBOX_REQUIRE_C_CONSUMER"):
@@ -82,12 +97,35 @@ def consumer(tmp_path_factory: pytest.TempPathFactory) -> ctypes.CDLL:
             str(build),
             f"-DCMAKE_PREFIX_PATH={prefix}",
             f"-DSHAREDBOX_VERSION={version}",
+            f"-DPython_EXECUTABLE={sys.executable}",
         ],
         check=True,
     )
     subprocess.run([cmake, "--build", str(build), "--config", "Release"], check=True)
+    return build
+
+
+@pytest.fixture(scope="session")
+def pyconsumer(consumer_build: Path) -> ctypes.PyDLL:
+    pattern = "pyconsumer.dll" if sys.platform == "win32" else "libpyconsumer.so"
+    library = ctypes.PyDLL(str(next(consumer_build.rglob(pattern))))
+    library.py_read_int.restype = ctypes.py_object
+    library.py_read_int.argtypes = [ctypes.py_object, ctypes.c_uint64, ctypes.c_uint16]
+    library.py_send_ints.restype = ctypes.py_object
+    library.py_send_ints.argtypes = [
+        ctypes.py_object,
+        ctypes.c_uint64,
+        ctypes.c_int64,
+        ctypes.c_uint32,
+        ctypes.c_double,
+    ]
+    return library
+
+
+@pytest.fixture(scope="session")
+def consumer(consumer_build: Path) -> ctypes.CDLL:
     pattern = "consumer.dll" if sys.platform == "win32" else "libconsumer.so"
-    library = ctypes.CDLL(str(next(build.rglob(pattern))))
+    library = ctypes.CDLL(str(next(consumer_build.rglob(pattern))))
     library.consumer_take.restype = ctypes.c_void_p
     library.consumer_take.argtypes = [ctypes.c_void_p, ctypes.c_uint64]
     library.consumer_read_int.restype = ctypes.c_int
@@ -154,6 +192,7 @@ def test_get_include_holds_the_headers() -> None:
         "core.hpp",
         "box.hpp",
         "sharedbox.hpp",
+        "python.hpp",
         "sharedbox_c.h",
         "sharedbox_c.cpp",
     ):
@@ -223,13 +262,11 @@ def test_an_unused_stream_capsule_outlives_close_and_unlink(unique_name: str) ->
 
 
 def test_requests_the_stream_cannot_meet_are_refused(unique_name: str) -> None:
-    """Refuse another major, an older minor and unknown keywords, accept the stream's own version, and raise StreamClosedError once closed."""
+    """Refuse another major and unknown keywords, accept the stream's own version, and raise StreamClosedError once closed."""
     with SharedStream.create(int, unique_name, capacity=2) as stream:
         major, minor = stream._native.layout_version
         with pytest.raises(BufferError, match=f"major version {major + 1}"):
             stream.__sharedbox_stream__(max_version=(major + 1, 0))
-        with pytest.raises(BufferError, match=f"needs layout {major}.{minor} or newer"):
-            stream.__sharedbox_stream__(max_version=(major, minor - 1))
         stream.__sharedbox_stream__(max_version=(major, minor))
         with pytest.raises(NotImplementedError, match="sender"):
             stream.__sharedbox_stream__(sender=True)
@@ -249,6 +286,20 @@ def test_a_stream_of_a_newer_minor_meets_this_version(unique_name: str) -> None:
         with SharedStream.attach(int, unique_name) as again:
             assert again._native.layout_version == (major, minor)
             again.__sharedbox_stream__(max_version=(major, minor))
+
+
+@pytest.mark.parametrize(
+    ("item", "needed"),
+    [(int, 4), (tuple[int, Timed[int]], 5), (Timed[int], 5)],
+)
+def test_a_minor_older_than_the_stream_needs_is_refused(
+    unique_name: str, item: object, needed: int
+) -> None:
+    """Refuse a max_version minor below the oldest whose readers open the stream, and accept that one."""
+    with SharedStream.create(item, unique_name, capacity=2) as stream:
+        with pytest.raises(BufferError, match=f"needs layout 1.{needed} or newer"):
+            stream.__sharedbox_stream__(max_version=(1, needed - 1))
+        stream.__sharedbox_stream__(max_version=(1, needed))
 
 
 class Bytes(SharedBox):
@@ -464,3 +515,151 @@ def test_a_c_library_reads_a_datetime_and_an_enum(
         assert position.value == 1
         consumer.consumer_release(taken)
     Shot.unlink(unique_name)
+
+
+class Offered:
+    """Hand out a capsule of the object it wraps and remember the request."""
+
+    def __init__(self, target: SupportsSharedBox) -> None:
+        self.target = target
+        self.capsule: CapsuleType | None = None
+        self.max_version: tuple[int, int] | None = None
+
+    def __sharedbox_box__(
+        self, max_version: tuple[int, int] | None = None
+    ) -> CapsuleType:
+        self.max_version = max_version
+        self.capsule = self.target.__sharedbox_box__(max_version)
+        return self.capsule
+
+
+def test_take_box_reads_a_field(unique_name: str, pyconsumer: ctypes.PyDLL) -> None:
+    """Read a field of a box taken with take_box, which asked for the header's layout version."""
+    with Frame.create(unique_name, 0.5, 3) as box:
+        offered = Offered(box)
+        count = Frame.__layout__.by_name["count"].index
+        assert pyconsumer.py_read_int(offered, Frame.__layout__.schema_hash, count) == 3
+        assert offered.max_version == LAYOUT_VERSION
+        assert get_name(offered.capsule) == USED_NAME
+
+
+def test_take_box_refuses_an_object_without_the_dunder(
+    pyconsumer: ctypes.PyDLL,
+) -> None:
+    """Raise TypeError naming the type of an object that offers no box."""
+    with pytest.raises(TypeError, match="expected a box, got object"):
+        pyconsumer.py_read_int(object(), 0, 0)
+
+
+def test_take_box_refuses_another_schema(
+    unique_name: str, pyconsumer: ctypes.PyDLL
+) -> None:
+    """Raise TypeError naming both hashes when the box has another schema, and use up the capsule."""
+    with Frame.create(unique_name, 0.5, 3) as box:
+        offered = Offered(box)
+        schema = Frame.__layout__.schema_hash
+        with pytest.raises(
+            TypeError, match=f"expected schema {schema ^ 1:#x}, got {schema:#x}"
+        ):
+            pyconsumer.py_read_int(offered, schema ^ 1, 0)
+        assert get_name(offered.capsule) == USED_NAME
+
+
+def test_take_box_keeps_no_reference(
+    unique_name: str, pyconsumer: ctypes.PyDLL
+) -> None:
+    """Leave the reference count of the object unchanged after a call that succeeds and one that fails."""
+    with Frame.create(unique_name, 0.5, 3) as box:
+        offered = Offered(box)
+        schema = Frame.__layout__.schema_hash
+        before = sys.getrefcount(offered)
+        pyconsumer.py_read_int(offered, schema, 0)
+        with pytest.raises(TypeError):
+            pyconsumer.py_read_int(offered, schema ^ 1, 0)
+        assert sys.getrefcount(offered) == before
+
+
+class OfferedStream:
+    """Hand out a capsule of the stream it wraps and remember the request."""
+
+    def __init__(self, target: SupportsSharedStream) -> None:
+        self.target = target
+        self.capsule: CapsuleType | None = None
+        self.max_version: tuple[int, int] | None = None
+
+    def __sharedbox_stream__(
+        self, max_version: tuple[int, int] | None = None
+    ) -> CapsuleType:
+        self.max_version = max_version
+        self.capsule = self.target.__sharedbox_stream__(max_version)
+        return self.capsule
+
+
+INT_STREAM_SCHEMA = int.from_bytes(
+    hashlib.sha256(b"stream|int:8").digest()[:8], "little"
+)
+# A capsule renamed to one of these keeps the pointer, so the name must outlive it.
+STREAM_NAME = b"sharedbox_stream"
+BOX_NAME = b"sharedbox_box"
+
+
+def test_take_stream_sends_to_python(
+    unique_name: str, pyconsumer: ctypes.PyDLL
+) -> None:
+    """Send items from C++ through a stream taken with take_stream, which asked for the header's version."""
+    with SharedStream.create(int, unique_name, capacity=4) as stream:
+        reader = stream.reader(mode="lossless")
+        offered = OfferedStream(stream)
+        pyconsumer.py_send_ints(offered, INT_STREAM_SCHEMA, 7, 3, 1.0)
+        assert [reader.receive(timeout=1.0) for _ in range(3)] == [7, 8, 9]
+        assert offered.max_version == stream._native.layout_version
+        assert get_name(offered.capsule) == USED_STREAM_NAME
+
+
+def test_take_stream_lets_a_closed_stream_raise(
+    unique_name: str, pyconsumer: ctypes.PyDLL
+) -> None:
+    """Pass the StreamClosedError of a closed stream's dunder through take_stream."""
+    stream = SharedStream.create(int, unique_name, capacity=4)
+    stream.close()
+    with pytest.raises(StreamClosedError):
+        pyconsumer.py_send_ints(stream, INT_STREAM_SCHEMA, 0, 1, 1.0)
+
+
+def test_take_stream_cannot_open_a_box(
+    unique_name: str, pyconsumer: ctypes.PyDLL
+) -> None:
+    """Raise ValueError for a box's handle offered as a stream, and leave the capsule its name and release."""
+    with Frame.create(unique_name, 0.5, 3) as box:
+        capsule = box.__sharedbox_box__()
+        assert set_name(capsule, STREAM_NAME) == 0
+
+        class Forged:
+            def __sharedbox_stream__(
+                self, max_version: tuple[int, int] | None = None
+            ) -> CapsuleType:
+                return capsule
+
+        with pytest.raises(ValueError, match="cannot open the stream: status -11"):
+            pyconsumer.py_send_ints(Forged(), INT_STREAM_SCHEMA, 0, 1, 1.0)
+        assert get_name(capsule) == STREAM_NAME
+        assert handle_of(capsule, STREAM_NAME).release is not None
+        # The capsule's destructor releases the handle only under a box capsule's name.
+        assert set_name(capsule, BOX_NAME) == 0
+
+
+class Raising:
+    """A box whose dunder fails with an AttributeError of its own."""
+
+    def __sharedbox_box__(
+        self, max_version: tuple[int, int] | None = None
+    ) -> CapsuleType:
+        raise AttributeError("inside the dunder")
+
+
+def test_take_box_passes_on_an_attribute_error_of_the_dunder(
+    pyconsumer: ctypes.PyDLL,
+) -> None:
+    """Pass on an AttributeError the dunder raises instead of reporting a missing dunder."""
+    with pytest.raises(AttributeError, match="inside the dunder"):
+        pyconsumer.py_read_int(Raising(), 0, 0)

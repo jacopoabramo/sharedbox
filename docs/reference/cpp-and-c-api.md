@@ -4,7 +4,7 @@ icon: lucide/file-code
 
 # C and C++ interface
 
-C and C++ code reaches a box through two headers that come with the
+C and C++ code reaches a box through three headers that come with the
 `sharedbox` wheel, in the folder that [`get_include`][sharedbox.get_include]
 returns. This page says where each one is specified; to get started, follow
 [How to accept a box in a C++ extension](../how-to/accept-a-box-in-cpp.md)
@@ -14,7 +14,8 @@ instead.
 | --- | --- | --- |
 | [`sharedbox/sharedbox.hpp`](https://github.com/jacopoabramo/sharedbox/blob/main/include/sharedbox/sharedbox.hpp), which includes `core.hpp` and `box.hpp` | the C++20 API: `sharedbox::handle`, `sharedbox::result`, `sharedbox::error`, `sharedbox::status`, `sharedbox::type_view` and the `encode_*` and `decode_*` functions of the value types; the inline namespace is `v3` | [`sharedbox.hpp`](segment-layout.md#sharedboxhpp) |
 | [`sharedbox/sharedbox_c.h`](https://github.com/jacopoabramo/sharedbox/blob/main/include/sharedbox/sharedbox_c.h) | the `sbx_*` C functions, including `sbx_field_desc` and the typed reads and writes, and the status codes | [`sharedbox_c.h`](segment-layout.md#sharedbox_ch) |
-| both | `sbx_handle`, the struct a capsule holds | [Capsule handle](segment-layout.md#capsule-handle) |
+| [`sharedbox/python.hpp`](https://github.com/jacopoabramo/sharedbox/blob/main/include/sharedbox/python.hpp), which includes `Python.h` and `sharedbox.hpp` | `sharedbox::python::take_box` and `take_stream`, which take a box or a stream from a Python object and check its schema hash; they use the Limited API of Python 3.11 and need the GIL; they raise `TypeError` for an object that offers none or another schema hash, `ValueError` for a capsule the header cannot open, and pass on what the object's dunder raises | [How to accept a box in a C++ extension](../how-to/accept-a-box-in-cpp.md#take-the-box-from-the-capsule) |
+| `sharedbox.hpp` and `sharedbox_c.h` | `sbx_handle`, the struct a capsule holds | [Capsule handle](segment-layout.md#capsule-handle) |
 
 A C++ program that changes a field from what the box holds, such as an
 increment, holds the write lock across its read and its write with

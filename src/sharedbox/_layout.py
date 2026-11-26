@@ -821,6 +821,21 @@ def nested_minor(spec: TypeSpec) -> int:
     return minor
 
 
+def stream_reader_minor(item: TypeSpec) -> int:
+    """Return the oldest minor of stream layout 1 whose C and C++ readers open a stream of `item`.
+
+    A reader of 1.4 refuses an item that is or holds a `timed`, and a reader
+    of 1.3 or older refuses a stream with a metadata area. A reader of 1.4
+    knows every other kind, so these two cases decide.
+    """
+    return 5 if holds_timed(item) else 4
+
+
+def holds_timed(spec: TypeSpec) -> bool:
+    """Return whether `spec` is a `timed` or has one among its members, at any depth."""
+    return spec.kind == "timed" or any(holds_timed(m.type) for m in spec.members)
+
+
 def reader_minor(layout: Layout) -> int:
     """Return the oldest minor of box layout 3 whose C and C++ readers open a box of `layout`.
 

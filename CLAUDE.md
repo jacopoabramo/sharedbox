@@ -17,6 +17,7 @@ sharedbox/
 |   |-- box.hpp                box layout 3.3 and its protocols: create, publish, open, lock, read, write, record write, metadata, capsule handle
 |   |-- stream.hpp             stream layout 1.5: create, open, the capsule handle, the sender, readers, the gate, dead ends, metadata
 |   |-- sharedbox.hpp          includes every kind; the header consumers include
+|   |-- python.hpp             optional, needs Python.h: sharedbox::python::take_box and take_stream, which take a box or stream from a Python object
 |   |-- sharedbox_c.h          minimal C interface: sbx_open, sbx_import, sbx_read, sbx_write, sbx_schema_hash, sbx_release, sbx_field_desc, typed sbx_read_* and sbx_write_*, sbx_metadata_head, sbx_read_metadata, sbx_add_metadata
 |   `-- sharedbox_c.cpp        its implementation, compiled by the consumer (CMake target sharedbox::c)
 |-- cmake/
@@ -396,7 +397,8 @@ A field declared `Attr[T]` with `attr()` is published by its owner with
 and may take requests the owner serves; `Setting[T]` adds a setpoint that
 other processes change with `set`. See
 `docs/how-to/request-work-from-the-owner.md`.
-C++ and C code take a box through `__sharedbox_box__` or open it by name; see
+C++ and C code take a box through `__sharedbox_box__` (in C++ with
+`sharedbox::python::take_box` from `python.hpp`) or open it by name; see
 `docs/how-to/accept-a-box-in-cpp.md`, `docs/how-to/accept-a-box-in-c.md` and
 `docs/how-to/open-a-box-from-a-program.md`.
 
@@ -407,7 +409,8 @@ One `SharedSendStream` fills it, and up to `max_readers` readers read it,
 each a `SharedReceiveStream` in mode `lossless`, `lossy` or `latest`;
 `receive_into` reads into arrays the caller allocated. See
 `docs/how-to/send-items-through-a-stream.md`. C++ code takes a stream
-through `__sharedbox_stream__` and `sharedbox::stream::from_capsule`; see
+through `__sharedbox_stream__`, with `sharedbox::python::take_stream` or
+`sharedbox::stream::from_capsule`; see
 `docs/how-to/accept-a-stream-in-cpp.md`.
 
 `sharedbox.bluebox.DocumentSender.create(name)` is a `RunEngine` callback
