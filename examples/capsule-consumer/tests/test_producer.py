@@ -160,6 +160,23 @@ def test_stop_interrupts_a_waiting_send(name: str) -> None:
         reader.close()
 
 
+def test_stop_ends_a_read_waiting_for_the_box_lock(name: str) -> None:
+    """Return from stop at once, without an error, while the thread waits for a lock Python holds."""
+    with (
+        Settings.create(name) as settings,
+        SharedStream.create(Sample, name + "-items", capacity=16) as stream,
+    ):
+        reader = stream.reader(mode="lossy")
+        producer = Producer(settings, stream)
+        producer.start()
+        reader.receive(timeout=5.0)
+        with settings.locked():
+            time.sleep(0.2)
+            began = time.monotonic()
+            producer.stop()
+            assert time.monotonic() - began < 0.5
+
+
 @pytest.mark.parametrize("rate_hz", [0.0, -1.0, math.nan])
 def test_a_rate_that_is_not_positive_is_an_error(name: str, rate_hz: float) -> None:
     """Raise from stop when the box holds a rate the thread cannot wait for."""

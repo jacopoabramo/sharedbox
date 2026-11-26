@@ -59,7 +59,8 @@ and the list of expected fields and the reads in the thread for a field of
 
 `Producer` guards its thread with a mutex, so two Python threads that call
 `start()` and `stop()` at once on a free-threaded build cannot both start a
-thread. `stop()` interrupts a send that waits for a slow reader, releases
+thread. `stop()` interrupts a send that waits for a slow reader and a read
+that waits for another process to release the box's write lock, releases
 the GIL while it joins the thread, and raises the error that ended the
 thread, if one did, as `RuntimeError`.
 

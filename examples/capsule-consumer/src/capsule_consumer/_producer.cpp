@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <cmath>
 #include <condition_variable>
@@ -109,7 +110,10 @@ sharedbox::stream_sender claim_sender(sharedbox::stream &stream) {
 class Producer {
 public:
     Producer(nb::handle settings, nb::handle stream)
-        : box_(take_settings(settings)), stream_(take_samples(stream)), sender_(claim_sender(stream_)) {}
+        : box_(take_settings(settings)), stream_(take_samples(stream)), sender_(claim_sender(stream_)) {
+        // A read waits up to 5 s for another process's write lock; stop() ends that wait through cancel_.
+        box_.set_wait_cancel(&cancel_);
+    }
 
     Producer(const Producer &) = delete;
     Producer &operator=(const Producer &) = delete;
@@ -150,6 +154,7 @@ private:
         {
             std::lock_guard lock(mutex_);
             stopping_ = true;
+            cancel_.store(true);
             // interrupt must not overlap close, which the thread calls under the same lock.
             if (!closed_)
                 static_cast<void>(sender_.interrupt());
@@ -195,7 +200,10 @@ private:
         std::array<std::byte, sizeof(T)> bytes;
         const auto got = box_.read(field, bytes);
         if (!got) {
-            fail("reading Settings failed: " + status_text(got.error().code));
+            std::lock_guard lock(mutex_);
+            // A wait that stop() cancelled is not an error.
+            if (!stopping_)
+                fail_locked("reading Settings failed: " + status_text(got.error().code));
             return false;
         }
         std::memcpy(&out, bytes.data(), sizeof(T));
@@ -212,6 +220,8 @@ private:
             error_ = std::move(message);
     }
 
+    // Declared before box_, which watches it until the handle is destroyed.
+    std::atomic<bool> cancel_{false};
     sharedbox::handle box_;
     // Declared before sender_, which uses its state and so is destroyed first.
     sharedbox::stream stream_;
