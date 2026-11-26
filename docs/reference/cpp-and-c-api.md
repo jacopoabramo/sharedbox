@@ -14,6 +14,7 @@ instead.
 | --- | --- | --- |
 | [`sharedbox/sharedbox.hpp`](https://github.com/jacopoabramo/sharedbox/blob/main/include/sharedbox/sharedbox.hpp), which includes `core.hpp` and `box.hpp` | the C++20 API: `sharedbox::handle`, `sharedbox::result`, `sharedbox::error`, `sharedbox::status`, `sharedbox::type_view` and the `encode_*` and `decode_*` functions of the value types; the inline namespace is `v3` | [`sharedbox.hpp`](segment-layout.md#sharedboxhpp) |
 | [`sharedbox/sharedbox_c.h`](https://github.com/jacopoabramo/sharedbox/blob/main/include/sharedbox/sharedbox_c.h) | the `sbx_*` C functions, including `sbx_field_desc` and the typed reads and writes, and the status codes | [`sharedbox_c.h`](segment-layout.md#sharedbox_ch) |
+| [`sharedbox/python.hpp`](https://github.com/jacopoabramo/sharedbox/blob/main/include/sharedbox/python.hpp), which includes `Python.h` and `sharedbox.hpp` | `sharedbox::python::take_box` and `take_stream`, which take a box or a stream from a Python object and check its schema hash; called with the GIL held, they raise `TypeError` for an object that offers none or another schema hash, `ValueError` for a capsule the header cannot open, and pass on what the object's dunder raises | [The PyCapsule interface](segment-layout.md#the-pycapsule-interface) |
 | both | `sbx_handle`, the struct a capsule holds | [Capsule handle](segment-layout.md#capsule-handle) |
 
 A C++ program that changes a field from what the box holds, such as an

@@ -71,37 +71,25 @@ needs on Linux.
 
 ## Take the stream from the capsule
 
-With the build set up, taking the stream is four steps:
-
-1. Call `__sharedbox_stream__` on the object you were given.
-2. Take the handle out of the capsule with
-   `sharedbox::stream::from_capsule`.
-3. Rename the capsule `"used_sharedbox_stream"`.
-4. Compare the schema hash with the one you expect.
+With the build set up, `sharedbox::python::take_stream` from
+`sharedbox/python.hpp` takes the stream in one call, the way
+[`take_box`](accept-a-box-in-cpp.md#take-the-box-from-the-capsule) takes a
+box. It calls `__sharedbox_stream__`, takes the handle out of the capsule
+with `sharedbox::stream::from_capsule`, renames the capsule
+`"used_sharedbox_stream"` and compares the schema hash with the one you
+pass. It returns the stream, or an empty `std::optional` with a Python
+exception set:
 
 ```cpp
 #include <Python.h>
-#include <sharedbox/sharedbox.hpp>
+#include <sharedbox/python.hpp>
 
 constexpr std::uint64_t READING_SCHEMA = 0xca61a9c40c375b90;
 
 static PyObject *record(PyObject *, PyObject *readings) {
-    PyObject *capsule = PyObject_CallMethod(readings, "__sharedbox_stream__", nullptr);
-    if (capsule == nullptr)
-        return nullptr;
-    auto *given = static_cast<sbx_handle *>(PyCapsule_GetPointer(capsule, "sharedbox_stream"));
-    if (given == nullptr) {
-        Py_DECREF(capsule);
-        return nullptr;
-    }
-    sharedbox::result<sharedbox::stream> stream = sharedbox::stream::from_capsule(given);
-    if (stream)
-        PyCapsule_SetName(capsule, "used_sharedbox_stream");
-    Py_DECREF(capsule);
+    std::optional<sharedbox::stream> stream = sharedbox::python::take_stream(readings, READING_SCHEMA);
     if (!stream)
-        return PyErr_Format(PyExc_ValueError, "not a stream this sharedbox.hpp can open");
-    if (stream->schema_hash() != READING_SCHEMA)
-        return PyErr_Format(PyExc_TypeError, "expected a stream of float");
+        return nullptr;
     // stream is independent of the Python stream from here on, and may move to another thread.
     auto reader = stream->reader(sharedbox::read_mode::lossless, sharedbox::start_at::oldest);
     if (!reader)
@@ -117,13 +105,25 @@ static PyObject *record(PyObject *, PyObject *readings) {
 }
 ```
 
+`take_stream` raises the same exceptions as `take_box`, and a closed
+stream's `StreamClosedError` passes through. It returns before any wait, so
+release the GIL yourself around a receive or a send that may block, as the
+example does.
+
 `from_capsule` checks the segment the handle points to, just as an attach
 does, including its kind, so a box's handle fails with
-`status::kind_mismatch`. If the check passes, `stream` takes over the
-capsule's handle and releases it when `stream` is destroyed; if it fails,
-the capsule keeps its handle and releases it when it is garbage collected,
-so nothing leaks either way. A reader or a sender made from `stream` must
-not outlive it.
+`status::kind_mismatch`, which `take_stream` raises as `ValueError`. If the
+check passes, `stream` takes over the capsule's handle and releases it when
+`stream` is destroyed; if it fails, the capsule keeps its handle and
+releases it when it is garbage collected, so nothing leaks either way. A
+reader or a sender made from `stream` must not outlive it.
+
+A consumer that does not know the schema in advance calls
+`sharedbox::stream::from_capsule` itself, with the handle from
+`PyCapsule_GetPointer(capsule, "sharedbox_stream")`, and renames the
+capsule `"used_sharedbox_stream"` when it succeeds. On Windows, an
+extension built for free-threaded Python needs `Py_GIL_DISABLED` defined,
+which linking `Python::Module` from CMake 3.30.3 on does.
 
 To send instead, claim the sender with `stream->sender()`. It returns
 `status::busy` while another end holds the sender, the Python side
