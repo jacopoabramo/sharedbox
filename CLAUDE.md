@@ -266,7 +266,8 @@ uv run python scripts/vscode_setup.py  # once, for VS Code's C/C++ extension
 `uv sync` rebuilds the extension after they change. Build folders are
 `build/<wheel tag>`. The wheel also carries `include/sharedbox/` under
 `sharedbox/include/` and the CMake config and config version file under
-`sharedbox/share/cmake/sharedbox/`.
+`sharedbox/share/cmake/sharedbox/`, where a scikit-build-core build of a
+consumer finds it through its search of site-packages.
 
 Wheels per platform (Windows x64, Linux x86_64 glibc and musl): `cp311-cp311`,
 `cp312-abi3` for CPython 3.12 and newer, and `cp314-cp314t` for free-threaded

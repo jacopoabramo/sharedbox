@@ -94,11 +94,13 @@ your build at the header in one of two ways:
 
 - Put [`sharedbox.get_include()`][sharedbox.get_include] on the include
   path.
-- With CMake, add `Path(sharedbox.get_include()).parent` to
-  `CMAKE_PREFIX_PATH`, call `find_package(sharedbox 0.6 CONFIG REQUIRED)`
-  and link `sharedbox::headers` (C++) or `sharedbox::c` (C). The version
-  is optional. Before 1.0 a request accepts only the same minor version,
-  so `0.6` accepts 0.6.0 and later 0.6 releases but not 0.7.
+- With CMake, call `find_package(sharedbox 0.6 CONFIG REQUIRED)` and link
+  `sharedbox::headers` (C++) or `sharedbox::c` (C). A build run by
+  scikit-build-core finds the package with nothing more, because it
+  searches the build environment's site-packages; any other CMake build
+  first adds `Path(sharedbox.get_include()).parent` to `CMAKE_PREFIX_PATH`.
+  The version is optional. Before 1.0 a request accepts only the same minor
+  version, so `0.6` accepts 0.6.0 and later 0.6 releases but not 0.7.
 
 `sharedbox::c` compiles `sharedbox_c.cpp` into the target that links it,
 so your project has to enable the CXX language as well as C; if it doesn't,

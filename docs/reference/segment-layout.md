@@ -2202,7 +2202,9 @@ computed in Rust and checked against the test vector above.
   time with a message saying so.
 - A Python extension that uses the header adds `sharedbox` to its
   `[build-system] requires`, calls `sharedbox.get_include()` and builds as
-  C++20. The sharedbox extension itself builds as C++20.
+  C++20. Built with scikit-build-core, it finds the CMake config through
+  `find_package(sharedbox)` alone, since scikit-build-core searches the
+  build environment's site-packages. The sharedbox extension itself builds as C++20.
 
 ## Out of scope
 

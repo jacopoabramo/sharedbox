@@ -33,9 +33,6 @@ dependencies = [
 [project.scripts]
 benchbox = "sharedbox.benchmarks.cli:main"
 
-[project.entry-points."cmake.root"]
-sharedbox = "sharedbox"
-
 [project.optional-dependencies]
 benchmarks = [
     "numpy>=2.4.6",
