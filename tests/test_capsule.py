@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import ctypes
+import dataclasses
 import datetime
 import enum
 import gc
@@ -10,24 +11,30 @@ import os
 import shutil
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
-from typing import TYPE_CHECKING, Annotated
+from typing import TYPE_CHECKING, Annotated, Any
 
 import numpy as np
 import pytest
 
 import sharedbox
 from sharedbox import (
+    Attr,
     BoxClosedError,
     Capacity,
     DType,
     MaxShape,
+    Setting,
+    Shape,
     SharedBox,
     SharedStream,
     StreamClosedError,
     SupportsSharedBox,
     SupportsSharedStream,
     Timed,
+    attr,
+    get_schema_hash,
 )
 from sharedbox._native import LAYOUT_VERSION
 
@@ -663,3 +670,155 @@ def test_take_box_passes_on_an_attribute_error_of_the_dunder(
     """Pass on an AttributeError the dunder raises instead of reporting a missing dunder."""
     with pytest.raises(AttributeError, match="inside the dunder"):
         pyconsumer.py_read_int(Raising(), 0, 0)
+
+
+def test_get_schema_hash_is_what_take_box_and_take_stream_compare(
+    unique_name: str, pyconsumer: ctypes.PyDLL
+) -> None:
+    """Take a box and a stream with the hashes get_schema_hash returns."""
+    with Frame.create(unique_name, 0.5, 3) as box:
+        count = Frame.__layout__.by_name["count"].index
+        assert pyconsumer.py_read_int(box, get_schema_hash(Frame), count) == 3
+    with SharedStream.create(int, unique_name + "s", capacity=4) as stream:
+        reader = stream.reader(mode="lossless")
+        pyconsumer.py_send_ints(stream, get_schema_hash(int), 7, 1, 1.0)
+        assert reader.receive(timeout=1.0) == 7
+
+
+def test_get_schema_hash_keeps_the_documented_value() -> None:
+    """Return the hash the how-to page documents for Parcel, so compiled consumers keep working."""
+
+    class Parcel(SharedBox, identity="post/parcel/1"):
+        weight: float = 0.5
+        count: int = 0
+
+    assert get_schema_hash(Parcel) == 0x223E63B5A4E2EE25
+
+
+def stored_hash(capsule: object, name: bytes) -> int:
+    """Read the schema hash a segment's header stores, at offset 16 of its first line."""
+    return ctypes.c_uint64.from_address(handle_of(capsule, name).base + 16).value
+
+
+@dataclasses.dataclass(frozen=True)
+class Point:
+    x: float
+    y: float
+
+
+ITEM_TYPES = [
+    int,
+    float,
+    bool,
+    np.float32,
+    Annotated[str, Capacity(8)],
+    Annotated[list[int], Capacity(4)],
+    Point,
+    tuple[int, float],
+    Timed[float],
+    int | None,
+    Annotated[np.ndarray, Shape((2, 3)), DType("float64")],
+    Annotated[np.ndarray, MaxShape((4,)), DType("uint8")],
+]
+
+
+@pytest.mark.parametrize("item", ITEM_TYPES, ids=repr)
+def test_get_schema_hash_of_an_item_type_is_what_its_stream_stores(
+    unique_name: str, item: object
+) -> None:
+    """Return, for every kind of item type, the hash a stream of that item writes into its header."""
+    with SharedStream.create(item, unique_name, capacity=2) as stream:
+        capsule = stream.__sharedbox_stream__()
+        assert get_schema_hash(item) == stored_hash(capsule, STREAM_NAME)
+
+
+class Labelled(SharedBox, identity="tests/labelled/1"):
+    value: int = 0
+
+
+class Linked(SharedBox):
+    other: Frame | None = None
+
+
+class Reported(SharedBox):
+    temperature: Attr[float] = attr()
+
+
+class Pictured(SharedBox):
+    image: Annotated[np.ndarray, Shape((2, 2)), DType("uint8")] = np.zeros(
+        (2, 2), np.uint8
+    )
+
+
+class Stamped(SharedBox):
+    reading: Timed[float] = Timed(0.0, 0)
+
+
+@pytest.mark.parametrize(
+    "cls",
+    [Frame, Labelled, Linked, Reported, Stamped, Pictured],
+    ids=lambda c: c.__name__,
+)
+def test_get_schema_hash_of_a_box_class_is_what_its_box_stores(
+    unique_name: str, cls: type[SharedBox]
+) -> None:
+    """Return, for every kind of box class, the hash its box writes into its header."""
+    with cls.create(unique_name) as box:
+        capsule = box.__sharedbox_box__()
+        assert get_schema_hash(cls) == stored_hash(capsule, BOX_NAME)
+
+
+@pytest.mark.parametrize(
+    "make",
+    [
+        lambda box, stream: box,
+        lambda box, stream: stream,
+        lambda box, stream: stream.sender(),
+        lambda box, stream: stream.reader(),
+        lambda box, stream: SharedStream.attach(tuple[int, float], stream.name),
+    ],
+    ids=["box", "stream", "sender", "reader", "attached stream"],
+)
+def test_get_schema_hash_of_an_object_is_that_of_its_type(
+    unique_name: str, make: Callable[[Frame, SharedStream[Any, Any]], object]
+) -> None:
+    """Give a box, a stream, its ends and an attached stream their type's hash, open and closed."""
+    item = tuple[int, float]
+    with (
+        Frame.create(unique_name) as box,
+        SharedStream.create(item, unique_name + "s", capacity=4) as stream,
+    ):
+        obj = make(box, stream)
+        expected = get_schema_hash(Frame if obj is box else item)
+        assert get_schema_hash(obj) == expected
+        obj.close()  # type: ignore[attr-defined]
+        assert get_schema_hash(obj) == expected
+
+
+@pytest.mark.parametrize(
+    ("obj", "message"),
+    [
+        (Attr[int], "Attr"),
+        (Setting[int], "Setting"),
+        (str, "Capacity"),
+        (Frame | None, "Frame"),
+        (tuple[int, str], r"^tuple\[int, str\]\[1\]: unsupported"),
+        (object(), "unsupported"),
+        (SharedBox, "pass a SharedBox subclass"),
+    ],
+    ids=[
+        "Attr",
+        "Setting",
+        "str",
+        "box reference",
+        "generic alias",
+        "object",
+        "SharedBox",
+    ],
+)
+def test_get_schema_hash_refuses_what_is_neither_a_box_nor_an_item(
+    obj: object, message: str
+) -> None:
+    """Raise TypeError, naming the problem, for an object that is neither a box nor an item type a stream can carry."""
+    with pytest.raises(TypeError, match=message):
+        get_schema_hash(obj)

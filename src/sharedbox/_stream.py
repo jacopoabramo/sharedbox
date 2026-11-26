@@ -110,7 +110,8 @@ class Item:
 def item_of(hint: object, label: str | None = None) -> Item:
     """Return how a stream stores items annotated `hint`.
 
-    Errors name `label`, by default the qualified name or repr of `hint`.
+    Errors name `label`, by default the qualified name of a class `hint`
+    and the repr of any other `hint`.
 
     Raises
     ------
@@ -118,7 +119,8 @@ def item_of(hint: object, label: str | None = None) -> Item:
         If a box field could not hold `hint`, or it names a box class.
     """
     if label is None:
-        label = getattr(hint, "__qualname__", None) or repr(hint)
+        # A generic alias or a union forwards __qualname__ to its origin, which drops its arguments.
+        label = hint.__qualname__ if isinstance(hint, type) else repr(hint)
     spec = parse(hint, label)
     if misplaced_max_array(spec):
         raise TypeError(f"{label}: {MAX_ARRAY_PLACES}")

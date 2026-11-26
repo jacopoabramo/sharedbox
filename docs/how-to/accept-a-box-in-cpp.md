@@ -47,28 +47,29 @@ class Parcel(SharedBox, identity="post/parcel/1"):
 
 From it you work out two values once and keep them as constants:
 
-- The [schema hash](../explanation/glossary.md#schema-hash): the first 8
-  bytes of SHA-256 over `post/parcel/1|weight:float:8|count:int:8`,
-  read little-endian. For `Parcel` it is `0x223e63b5a4e2ee25`.
+- The [schema hash](../explanation/glossary.md#schema-hash), which
+  [`get_schema_hash`][sharedbox.get_schema_hash] returns. For `Parcel` it
+  is `0x223e63b5a4e2ee25`.
 - The default box name, needed only to open the box by name: 16 hex digits
   of SHA-256 over the [identity](../explanation/glossary.md#identity)
   `post/parcel/1`. For `Parcel` it is `e73ca265fa48187e`.
 
-`sharedbox.hpp` doesn't compute SHA-256, so work both out once, for
-example in Python, and paste the results into your code:
+`sharedbox.hpp` computes neither, so work both out in Python and paste the
+results into your code:
 
 ```python
 import hashlib
 
-identity = b"post/parcel/1"
-schema = b"post/parcel/1|weight:float:8|count:int:8"
-print(hashlib.sha256(identity).hexdigest()[:16])  # e73ca265fa48187e
-digest = hashlib.sha256(schema).digest()
-print(hex(int.from_bytes(digest[:8], "little")))  # 0x223e63b5a4e2ee25
+from sharedbox import get_schema_hash
+
+print(hex(get_schema_hash(Parcel)))  # 0x223e63b5a4e2ee25
+print(hashlib.sha256(b"post/parcel/1").hexdigest()[:16])  # e73ca265fa48187e
 ```
 
+The hash changes whenever the class's identity or any field's name, type
+or position changes, so work it out again after such a change.
 [The schema hash](../explanation/how-a-box-is-stored.md#the-schema-hash)
-explains how to write the hashed text for your own class.
+says exactly what it covers.
 
 In C++ you name a [field](../explanation/glossary.md#field) by its position in the class, counting
 from 0: `weight` is field 0 and `count` is field 1.
@@ -93,11 +94,13 @@ your build at the header in one of two ways:
 
 - Put [`sharedbox.get_include()`][sharedbox.get_include] on the include
   path.
-- With CMake, add `Path(sharedbox.get_include()).parent` to
-  `CMAKE_PREFIX_PATH`, call `find_package(sharedbox 0.6 CONFIG REQUIRED)`
-  and link `sharedbox::headers` (C++) or `sharedbox::c` (C). The version
-  is optional. Before 1.0 a request accepts only the same minor version,
-  so `0.6` accepts 0.6.0 and later 0.6 releases but not 0.7.
+- With CMake, call `find_package(sharedbox 0.6 CONFIG REQUIRED)` and link
+  `sharedbox::headers` (C++) or `sharedbox::c` (C). A build run by
+  scikit-build-core finds the package with nothing more, because it
+  searches the build environment's site-packages; any other CMake build
+  first adds `Path(sharedbox.get_include()).parent` to `CMAKE_PREFIX_PATH`.
+  The version is optional. Before 1.0 a request accepts only the same minor
+  version, so `0.6` accepts 0.6.0 and later 0.6 releases but not 0.7.
 
 `sharedbox::c` compiles `sharedbox_c.cpp` into the target that links it,
 so your project has to enable the CXX language as well as C; if it doesn't,
