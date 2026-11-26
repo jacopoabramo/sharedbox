@@ -146,18 +146,19 @@ def test_an_error_in_the_thread_reaches_stop(name: str) -> None:
 
 def test_stop_interrupts_a_waiting_send(name: str) -> None:
     """Return from stop at once, without an error, while a send waits on a full ring."""
+    # At 1 MHz the ring fills at once, so by the stop the ninth send waits, within its 1 s timeout.
     with (
-        Settings.create(name) as settings,
+        Settings.create(name, rate_hz=1e6) as settings,
         SharedStream.create(Sample, name + "-items", capacity=8) as stream,
     ):
         reader = stream.reader(mode="lossless")
         producer = Producer(settings, stream)
         producer.start()
-        time.sleep(0.2)
+        time.sleep(0.5)
         began = time.monotonic()
         producer.stop()
         assert time.monotonic() - began < 0.5
-        reader.close()
+        assert len(receive_all(reader)) == 8
 
 
 def test_stop_ends_a_read_waiting_for_the_box_lock(name: str) -> None:
