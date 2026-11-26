@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 import ctypes
 import datetime
 import enum
@@ -8,7 +10,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import Annotated
+from typing import TYPE_CHECKING, Annotated
 
 import numpy as np
 import pytest
@@ -22,8 +24,15 @@ from sharedbox import (
     SharedBox,
     SharedStream,
     StreamClosedError,
+    SupportsSharedBox,
 )
 from sharedbox._native import LAYOUT_VERSION
+
+if TYPE_CHECKING:
+    if sys.version_info >= (3, 13):
+        from types import CapsuleType
+    else:
+        from typing_extensions import CapsuleType
 
 CONSUMER = Path(__file__).parent / "cpp" / "consumer"
 # PyCapsule_SetName keeps the pointer, so the name must outlive the capsule.
@@ -56,6 +65,9 @@ get_pointer.argtypes = [ctypes.py_object, ctypes.c_char_p]
 set_name = ctypes.pythonapi.PyCapsule_SetName
 set_name.restype = ctypes.c_int
 set_name.argtypes = [ctypes.py_object, ctypes.c_char_p]
+get_name = ctypes.pythonapi.PyCapsule_GetName
+get_name.restype = ctypes.c_char_p
+get_name.argtypes = [ctypes.py_object]
 
 
 def handle_of(capsule: object, name: bytes = b"sharedbox_box") -> Handle:
@@ -63,7 +75,7 @@ def handle_of(capsule: object, name: bytes = b"sharedbox_box") -> Handle:
 
 
 @pytest.fixture(scope="session")
-def consumer(tmp_path_factory: pytest.TempPathFactory) -> ctypes.CDLL:
+def consumer_build(tmp_path_factory: pytest.TempPathFactory) -> Path:
     cmake = shutil.which("cmake")
     if cmake is None:
         if os.environ.get("SHAREDBOX_REQUIRE_C_CONSUMER"):
@@ -82,12 +94,27 @@ def consumer(tmp_path_factory: pytest.TempPathFactory) -> ctypes.CDLL:
             str(build),
             f"-DCMAKE_PREFIX_PATH={prefix}",
             f"-DSHAREDBOX_VERSION={version}",
+            f"-DPython_EXECUTABLE={sys.executable}",
         ],
         check=True,
     )
     subprocess.run([cmake, "--build", str(build), "--config", "Release"], check=True)
+    return build
+
+
+@pytest.fixture(scope="session")
+def pyconsumer(consumer_build: Path) -> ctypes.PyDLL:
+    pattern = "pyconsumer.dll" if sys.platform == "win32" else "libpyconsumer.so"
+    library = ctypes.PyDLL(str(next(consumer_build.rglob(pattern))))
+    library.py_read_int.restype = ctypes.py_object
+    library.py_read_int.argtypes = [ctypes.py_object, ctypes.c_uint64, ctypes.c_uint16]
+    return library
+
+
+@pytest.fixture(scope="session")
+def consumer(consumer_build: Path) -> ctypes.CDLL:
     pattern = "consumer.dll" if sys.platform == "win32" else "libconsumer.so"
-    library = ctypes.CDLL(str(next(build.rglob(pattern))))
+    library = ctypes.CDLL(str(next(consumer_build.rglob(pattern))))
     library.consumer_take.restype = ctypes.c_void_p
     library.consumer_take.argtypes = [ctypes.c_void_p, ctypes.c_uint64]
     library.consumer_read_int.restype = ctypes.c_int
@@ -154,6 +181,7 @@ def test_get_include_holds_the_headers() -> None:
         "core.hpp",
         "box.hpp",
         "sharedbox.hpp",
+        "python.hpp",
         "sharedbox_c.h",
         "sharedbox_c.cpp",
     ):
@@ -464,3 +492,65 @@ def test_a_c_library_reads_a_datetime_and_an_enum(
         assert position.value == 1
         consumer.consumer_release(taken)
     Shot.unlink(unique_name)
+
+
+class Offered:
+    """Hand out a capsule of the object it wraps and remember the request."""
+
+    def __init__(self, target: SupportsSharedBox) -> None:
+        self.target = target
+        self.capsule: CapsuleType | None = None
+        self.max_version: tuple[int, int] | None = None
+
+    def __sharedbox_box__(
+        self, max_version: tuple[int, int] | None = None
+    ) -> CapsuleType:
+        self.max_version = max_version
+        self.capsule = self.target.__sharedbox_box__(max_version)
+        return self.capsule
+
+
+def test_take_box_reads_a_field(unique_name: str, pyconsumer: ctypes.PyDLL) -> None:
+    """Read a field of a box taken with take_box, which asked for the header's layout version."""
+    with Frame.create(unique_name, 0.5, 3) as box:
+        offered = Offered(box)
+        count = Frame.__layout__.by_name["count"].index
+        assert pyconsumer.py_read_int(offered, Frame.__layout__.schema_hash, count) == 3
+        assert offered.max_version == LAYOUT_VERSION
+        assert get_name(offered.capsule) == USED_NAME
+
+
+def test_take_box_refuses_an_object_without_the_dunder(
+    pyconsumer: ctypes.PyDLL,
+) -> None:
+    """Raise TypeError naming the type of an object that offers no box."""
+    with pytest.raises(TypeError, match="expected a box, got object"):
+        pyconsumer.py_read_int(object(), 0, 0)
+
+
+def test_take_box_refuses_another_schema(
+    unique_name: str, pyconsumer: ctypes.PyDLL
+) -> None:
+    """Raise TypeError naming both hashes when the box has another schema, and use up the capsule."""
+    with Frame.create(unique_name, 0.5, 3) as box:
+        offered = Offered(box)
+        schema = Frame.__layout__.schema_hash
+        with pytest.raises(
+            TypeError, match=f"expected schema {schema ^ 1:#x}, got {schema:#x}"
+        ):
+            pyconsumer.py_read_int(offered, schema ^ 1, 0)
+        assert get_name(offered.capsule) == USED_NAME
+
+
+def test_take_box_keeps_no_reference(
+    unique_name: str, pyconsumer: ctypes.PyDLL
+) -> None:
+    """Leave the reference count of the object unchanged after a call that succeeds and one that fails."""
+    with Frame.create(unique_name, 0.5, 3) as box:
+        offered = Offered(box)
+        schema = Frame.__layout__.schema_hash
+        before = sys.getrefcount(offered)
+        pyconsumer.py_read_int(offered, schema, 0)
+        with pytest.raises(TypeError):
+            pyconsumer.py_read_int(offered, schema ^ 1, 0)
+        assert sys.getrefcount(offered) == before
