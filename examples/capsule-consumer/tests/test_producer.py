@@ -173,6 +173,19 @@ def test_a_rate_that_is_not_positive_is_an_error(name: str, rate_hz: float) -> N
             producer.stop()
 
 
+def test_a_tiny_rate_waits_instead_of_sending_at_full_speed(name: str) -> None:
+    """Send one sample and then wait, for a rate whose period overflows a clock's range."""
+    with (
+        Settings.create(name, rate_hz=1e-300) as settings,
+        SharedStream.create(Sample, name + "-items", capacity=16) as stream,
+    ):
+        reader = stream.reader(mode="lossless")
+        with Producer(settings, stream):
+            assert reader.receive(timeout=5.0) == Sample(0, 0.0)
+            with pytest.raises(TimeoutError):
+                reader.receive(timeout=0.3)
+
+
 def test_start_twice_is_refused(name: str) -> None:
     """Refuse a second start while the thread runs, and leave that thread running."""
     with (

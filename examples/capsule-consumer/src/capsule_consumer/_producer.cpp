@@ -4,6 +4,7 @@
 #include <sharedbox/python.hpp>
 #include <sharedbox/sharedbox.hpp>
 
+#include <algorithm>
 #include <array>
 #include <chrono>
 #include <cmath>
@@ -36,6 +37,8 @@ static_assert(sizeof(Item) == 16);
 
 constexpr std::uint16_t rate_field = 0;
 constexpr std::uint16_t count_field = 1;
+// The longest wait between two samples; the thread reads the box again after it.
+constexpr double max_period_s = 3600.0;
 
 std::string status_text(sharedbox::status code) {
     static constexpr std::array<const char *, 19> names{
@@ -181,7 +184,9 @@ private:
                     fail_locked("send failed: " + status_text(sent.error().code));
                 return;
             }
-            if (wake_.wait_for(lock, std::chrono::duration<double>(1.0 / rate_hz), [this] { return stopping_; }))
+            // Capped, because a period past the clock's range overflows in wait_for and does not wait at all.
+            const std::chrono::duration<double> period(std::min(1.0 / rate_hz, max_period_s));
+            if (wake_.wait_for(lock, period, [this] { return stopping_; }))
                 return;
         }
     }
