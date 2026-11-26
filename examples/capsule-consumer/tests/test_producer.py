@@ -4,11 +4,18 @@ import math
 import time
 import uuid
 from collections.abc import Generator
+from typing import Any
 
 import pytest
 from capsule_consumer import Producer, Sample, Settings, _producer
 
-from sharedbox import EndOfStream, SharedBox, SharedStream, get_schema_hash
+from sharedbox import (
+    EndOfStream,
+    SharedBox,
+    SharedReceiveStream,
+    SharedStream,
+    get_schema_hash,
+)
 
 
 @pytest.fixture
@@ -22,12 +29,12 @@ def name() -> Generator[str, None, None]:
         SharedStream.unlink(name + "-items")
 
 
-def receive_all(reader: object) -> list[Sample]:
+def receive_all(reader: SharedReceiveStream[Sample, Any]) -> list[Sample]:
     """Receive until the producer ends the stream."""
     received = []
     with contextlib.suppress(EndOfStream):
         while True:
-            received.append(reader.receive(timeout=5.0))  # type: ignore[attr-defined]
+            received.append(reader.receive(timeout=5.0))
     return received
 
 
