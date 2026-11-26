@@ -17,6 +17,7 @@ with (
     with Producer(settings, stream):
         for _ in range(50):
             print(reader.receive(timeout=1.0))
+    stream.unlink()
 Settings.unlink()
 ```
 
