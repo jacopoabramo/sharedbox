@@ -112,7 +112,7 @@ example does.
 
 `from_capsule` checks the segment the handle points to, just as an attach
 does, including its kind, so a box's handle fails with
-`status::kind_mismatch`, which `take_stream` raises as `ValueError`. If the
+`status::kind_mismatch`. If the
 check passes, `stream` takes over the capsule's handle and releases it when
 `stream` is destroyed; if it fails, the capsule keeps its handle and
 releases it when it is garbage collected, so nothing leaks either way. A

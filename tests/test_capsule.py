@@ -630,3 +630,20 @@ def test_take_stream_cannot_open_a_box(
             pyconsumer.py_send_ints(Forged(), INT_STREAM_SCHEMA, 0, 1, 1.0)
         assert get_name(capsule) == STREAM_NAME
         assert handle_of(capsule, STREAM_NAME).release is not None
+
+
+class Raising:
+    """A box whose dunder fails with an AttributeError of its own."""
+
+    def __sharedbox_box__(
+        self, max_version: tuple[int, int] | None = None
+    ) -> CapsuleType:
+        raise AttributeError("inside the dunder")
+
+
+def test_take_box_passes_on_an_attribute_error_of_the_dunder(
+    pyconsumer: ctypes.PyDLL,
+) -> None:
+    """Pass on an AttributeError the dunder raises instead of reporting a missing dunder."""
+    with pytest.raises(AttributeError, match="inside the dunder"):
+        pyconsumer.py_read_int(Raising(), 0, 0)

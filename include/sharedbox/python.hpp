@@ -1,7 +1,7 @@
 // Takes a box or a stream from a Python object that offers one through __sharedbox_box__ or
 // __sharedbox_stream__, checks its schema hash and sets a Python exception when either step fails.
 // Every function here calls into Python, so the calling thread holds the GIL, or on a free-threaded
-// build is attached to the interpreter. Only functions of the Limited API are called.
+// build is attached to the interpreter. Only functions of the Limited API of Python 3.11 are called.
 #pragma once
 
 #include <Python.h>
@@ -93,12 +93,12 @@ template <class T> std::optional<T> take(PyObject *obj, std::uint64_t schema, co
 // The box obj offers, or std::nullopt with a Python exception set: TypeError when obj offers no box or
 // the box's schema hash is not schema, ValueError when the capsule cannot be opened, or what the
 // dunder raised.
-inline std::optional<handle> take_box(PyObject *obj, std::uint64_t schema) {
+[[nodiscard]] inline std::optional<handle> take_box(PyObject *obj, std::uint64_t schema) {
     return detail::take<handle>(obj, schema, detail::box_names);
 }
 
 // The stream obj offers, or std::nullopt with a Python exception set, as take_box does.
-inline std::optional<stream> take_stream(PyObject *obj, std::uint64_t schema) {
+[[nodiscard]] inline std::optional<stream> take_stream(PyObject *obj, std::uint64_t schema) {
     return detail::take<stream>(obj, schema, detail::stream_names);
 }
 

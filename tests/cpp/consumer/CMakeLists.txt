@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.30)
+cmake_minimum_required(VERSION 3.30.3)
 project(sharedbox_consumer LANGUAGES C CXX)
 
 find_package(sharedbox ${SHAREDBOX_VERSION} CONFIG REQUIRED)

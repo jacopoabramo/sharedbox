@@ -170,6 +170,9 @@ An object without `__sharedbox_box__` raises `TypeError`, and so does a box
 with another schema hash. A capsule the header cannot open raises
 `ValueError`, and an exception the object's `__sharedbox_box__` raises
 passes through. `take_box` calls into Python, so call it with the GIL held.
+With nanobind or pybind11, pass `obj.ptr()`, and on an empty result throw
+`nb::python_error()` or `py::error_already_set()` instead of returning
+`nullptr`.
 
 `from_capsule` checks the segment the handle points to, just as an attach does,
 including its kind and its layout version. If the check passes, `box` takes

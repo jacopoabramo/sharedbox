@@ -2145,8 +2145,8 @@ no Python-level export method.
   and the handle never affect each other. On Windows the segment stays
   alive while a handle is held.
 - `sharedbox.get_include()` returns the folder holding
-  `sharedbox/sharedbox.hpp`, `sharedbox/sharedbox_c.h` and
-  `sharedbox/sharedbox_c.cpp` in the installed package.
+  `sharedbox/sharedbox.hpp`, `sharedbox/python.hpp`, `sharedbox/sharedbox_c.h`
+  and `sharedbox/sharedbox_c.cpp` in the installed package.
 - `sharedbox.SupportsSharedBox` is a `typing.Protocol` with
   `__sharedbox_box__`, for annotations in consuming libraries.
 - `sharedbox._native.LAYOUT_VERSION` is `(3, 3)`, the box layout.
@@ -2182,7 +2182,7 @@ computed in Rust and checked against the test vector above.
 ## Build and packaging
 
 - `include/sharedbox/core.hpp`, `box.hpp`, `stream.hpp`, `sharedbox.hpp`,
-  `sharedbox_c.h` and `sharedbox_c.cpp` are in the repository; the build
+  `python.hpp`, `sharedbox_c.h` and `sharedbox_c.cpp` are in the repository; the build
   installs them into the wheel under `sharedbox/include/`, and
   `cmake/sharedbox-config.cmake` under `sharedbox/share/cmake/sharedbox/`,
   next to a
