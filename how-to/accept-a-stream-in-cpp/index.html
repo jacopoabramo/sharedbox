@@ -3668,7 +3668,10 @@ your extension's stubs:</p>
 <code>[build-system] requires</code>, build as C++20 and link <code>sharedbox::headers</code>.
 <a href="../accept-a-box-in-cpp/#build-against-the-header">Build against the header</a>
 gives the details, including the visibility settings a shared library
-needs on Linux.</p>
+needs on Linux.
+<a href="https://github.com/jacopoabramo/sharedbox/tree/main/examples/capsule-consumer"><code>examples/capsule-consumer/</code></a>
+in the repository is a complete project that takes a stream this way and
+sends items into it from a C++ thread.</p>
 <h2 id="take-the-stream-from-the-capsule">Take the stream from the capsule<a class="headerlink" href="#take-the-stream-from-the-capsule" title="Permanent link">&para;</a></h2>
 <p>With the build set up, <code>sharedbox::python::take_stream</code> from
 <code>sharedbox/python.hpp</code> takes the stream in one call, the way
