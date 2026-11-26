@@ -14,7 +14,9 @@
 #include <optional>
 #include <utility>
 
-namespace sharedbox::python {
+namespace sharedbox {
+inline namespace v3 {
+namespace python {
 
 namespace detail {
 
@@ -100,4 +102,6 @@ inline std::optional<stream> take_stream(PyObject *obj, std::uint64_t schema) {
     return detail::take<stream>(obj, schema, detail::stream_names);
 }
 
-} // namespace sharedbox::python
+} // namespace python
+} // namespace v3
+} // namespace sharedbox
