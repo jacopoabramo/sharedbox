@@ -802,10 +802,19 @@ def test_get_schema_hash_of_an_object_is_that_of_its_type(
         (Setting[int], "Setting"),
         (str, "Capacity"),
         (Frame | None, "Frame"),
+        (tuple[int, str], r"^tuple\[int, str\]\[1\]: unsupported"),
         (object(), "unsupported"),
         (SharedBox, "pass a SharedBox subclass"),
     ],
-    ids=["Attr", "Setting", "str", "box reference", "object", "SharedBox"],
+    ids=[
+        "Attr",
+        "Setting",
+        "str",
+        "box reference",
+        "generic alias",
+        "object",
+        "SharedBox",
+    ],
 )
 def test_get_schema_hash_refuses_what_is_neither_a_box_nor_an_item(
     obj: object, message: str
