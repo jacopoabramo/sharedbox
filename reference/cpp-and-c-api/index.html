@@ -3491,7 +3491,7 @@
 
 
 <h1 id="c-and-c-interface">C and C++ interface<a class="headerlink" href="#c-and-c-interface" title="Permanent link">&para;</a></h1>
-<p>C and C++ code reaches a box through two headers that come with the
+<p>C and C++ code reaches a box through three headers that come with the
 <code>sharedbox</code> wheel, in the folder that <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-function&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;get_include&lt;/span&gt;" href="../api/library-authors/#sharedbox.get_include"><code>get_include</code></a>
 returns. This page says where each one is specified; to get started, follow
 <a href="../../how-to/accept-a-box-in-cpp/">How to accept a box in a C++ extension</a>
@@ -3516,7 +3516,12 @@ instead.</p>
 <td><a href="../segment-layout/#sharedbox_ch"><code>sharedbox_c.h</code></a></td>
 </tr>
 <tr>
-<td>both</td>
+<td><a href="https://github.com/jacopoabramo/sharedbox/blob/main/include/sharedbox/python.hpp"><code>sharedbox/python.hpp</code></a>, which includes <code>Python.h</code> and <code>sharedbox.hpp</code></td>
+<td><code>sharedbox::python::take_box</code> and <code>take_stream</code>, which take a box or a stream from a Python object and check its schema hash; they use the Limited <abbr title="Application programming interface. The functions and classes a library offers to code that uses it.">API</abbr> of Python 3.11 and need the <abbr title="Global interpreter lock. The lock that lets only one thread of a CPython process run Python code at a time.">GIL</abbr>; they raise <code>TypeError</code> for an object that offers none or another schema hash, <code>ValueError</code> for a capsule the header cannot open, and pass on what the object's dunder raises</td>
+<td><a href="../../how-to/accept-a-box-in-cpp/#take-the-box-from-the-capsule">How to accept a box in a C++ extension</a></td>
+</tr>
+<tr>
+<td><code>sharedbox.hpp</code> and <code>sharedbox_c.h</code></td>
 <td><code>sbx_handle</code>, the struct a capsule holds</td>
 <td><a href="../segment-layout/#capsule-handle">Capsule handle</a></td>
 </tr>

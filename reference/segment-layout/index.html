@@ -6790,8 +6790,8 @@ no Python-level export method.</p>
   and the handle never affect each other. On Windows the segment stays
   alive while a handle is held.</li>
 <li><code>sharedbox.get_include()</code> returns the folder holding
-  <code>sharedbox/sharedbox.hpp</code>, <code>sharedbox/sharedbox_c.h</code> and
-  <code>sharedbox/sharedbox_c.cpp</code> in the installed package.</li>
+  <code>sharedbox/sharedbox.hpp</code>, <code>sharedbox/python.hpp</code>, <code>sharedbox/sharedbox_c.h</code>
+  and <code>sharedbox/sharedbox_c.cpp</code> in the installed package.</li>
 <li><code>sharedbox.SupportsSharedBox</code> is a <code>typing.Protocol</code> with
   <code>__sharedbox_box__</code>, for annotations in consuming libraries.</li>
 <li><code>sharedbox._native.LAYOUT_VERSION</code> is <code>(3, 3)</code>, the box layout.</li>
@@ -6805,8 +6805,11 @@ no Python-level export method.</p>
   <code>layout_minor</code> are the segment's stream layout, the minor no higher than
   the extension's own.</li>
 <li><code>max_version</code> is <code>(major, minor)</code>; a major the stream does not have
-  raises <code>BufferError</code>, and so does a minor older than that layout minor.
-  <code>None</code> means the stream's version. Any other keyword raises
+  raises <code>BufferError</code>, and so does a minor older than the oldest whose
+  readers open the stream, following "Versioning rules": 5 for an item
+  that is or holds a <code>timed</code>; 4 otherwise, since a reader of 1.3 or older
+  refuses a stream with a metadata area and the extension does not tell
+  whether a stream has one. <code>None</code> means the stream's version. Any other keyword raises
   <code>NotImplementedError</code>, and a closed stream raises <code>StreamClosedError</code>.</li>
 <li><code>sharedbox::stream::from_capsule</code> checks the segment as <code>stream::open</code>
   does, so a box's handle gives <code>status::kind_mismatch</code>. The handle claims
@@ -6825,7 +6828,7 @@ computed in Rust and checked against the test vector above.</p>
 <h2 id="build-and-packaging">Build and packaging<a class="headerlink" href="#build-and-packaging" title="Permanent link">&para;</a></h2>
 <ul>
 <li><code>include/sharedbox/core.hpp</code>, <code>box.hpp</code>, <code>stream.hpp</code>, <code>sharedbox.hpp</code>,
-  <code>sharedbox_c.h</code> and <code>sharedbox_c.cpp</code> are in the repository; the build
+  <code>python.hpp</code>, <code>sharedbox_c.h</code> and <code>sharedbox_c.cpp</code> are in the repository; the build
   installs them into the wheel under <code>sharedbox/include/</code>, and
   <code>cmake/sharedbox-config.cmake</code> under <code>sharedbox/share/cmake/sharedbox/</code>,
   next to a
