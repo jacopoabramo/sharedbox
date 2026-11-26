@@ -3641,19 +3641,19 @@ your extension is built.</p>
 </div>
 <h2 id="know-the-stream-you-expect">Know the stream you expect<a class="headerlink" href="#know-the-stream-you-expect" title="Permanent link">&para;</a></h2>
 <p>Your code has to know which item type it accepts, and it checks that
-through the stream's <a href="../../explanation/glossary/#schema-hash">schema hash</a>:
-the first 8 bytes of SHA-256 over <code>stream|</code> followed by the item type's
-text, read little-endian. For a stream of <code>float</code> the text is <code>float:8</code>, so
-the hash is <code>0xca61a9c40c375b90</code>. <code>sharedbox.hpp</code> doesn't compute SHA-256,
-so work the hash out once, for example in Python, and paste it into your
+through the stream's <a href="../../explanation/glossary/#schema-hash">schema hash</a>,
+which <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-function&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;get_schema_hash&lt;/span&gt;" href="../../reference/api/library-authors/#sharedbox.get_schema_hash"><code>get_schema_hash</code></a> returns for an item
+type. For a stream of <code>float</code> it is <code>0xca61a9c40c375b90</code>. <code>sharedbox.hpp</code>
+doesn't compute it, so work it out once in Python and paste it into your
 code:</p>
-<div class="language-python highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">hashlib</span>
+<div class="language-python highlight"><pre><span></span><code><span id="__span-1-1"><a id="__codelineno-1-1" name="__codelineno-1-1" href="#__codelineno-1-1"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sharedbox</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_schema_hash</span>
 </span><span id="__span-1-2"><a id="__codelineno-1-2" name="__codelineno-1-2" href="#__codelineno-1-2"></a>
-</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="n">digest</span> <span class="o">=</span> <span class="n">hashlib</span><span class="o">.</span><span class="n">sha256</span><span class="p">(</span><span class="sa">b</span><span class="s2">"stream|float:8"</span><span class="p">)</span><span class="o">.</span><span class="n">digest</span><span class="p">()</span>
-</span><span id="__span-1-4"><a id="__codelineno-1-4" name="__codelineno-1-4" href="#__codelineno-1-4"></a><span class="nb">print</span><span class="p">(</span><span class="nb">hex</span><span class="p">(</span><span class="nb">int</span><span class="o">.</span><span class="n">from_bytes</span><span class="p">(</span><span class="n">digest</span><span class="p">[:</span><span class="mi">8</span><span class="p">],</span> <span class="s2">"little"</span><span class="p">)))</span>  <span class="c1"># 0xca61a9c40c375b90</span>
+</span><span id="__span-1-3"><a id="__codelineno-1-3" name="__codelineno-1-3" href="#__codelineno-1-3"></a><span class="nb">print</span><span class="p">(</span><span class="nb">hex</span><span class="p">(</span><span class="n">get_schema_hash</span><span class="p">(</span><span class="nb">float</span><span class="p">)))</span>  <span class="c1"># 0xca61a9c40c375b90</span>
 </span></code></pre></div>
-<p><a href="../../reference/segment-layout/#schema-identity">Schema identity</a> gives the
-type text of every other item type.</p>
+<p>The hash covers only the structure of the item type, so every stream of
+<code>float</code> has the same one.
+<a href="../../reference/segment-layout/#schema-identity">Schema identity</a> gives the
+text it is computed from for every item type.</p>
 <h2 id="declare-the-parameter">Declare the parameter<a class="headerlink" href="#declare-the-parameter" title="Permanent link">&para;</a></h2>
 <p>So that type checkers know your function takes a stream, annotate the
 parameter with <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-class&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-class-name&quot;&gt;SupportsSharedStream&lt;/span&gt;" href="../../reference/api/library-authors/#sharedbox.SupportsSharedStream"><code>SupportsSharedStream</code></a> in

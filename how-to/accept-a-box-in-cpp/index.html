@@ -3653,25 +3653,26 @@ pages use this class:</p>
 </span></code></pre></div>
 <p>From it you work out two values once and keep them as constants:</p>
 <ul>
-<li>The <a href="../../explanation/glossary/#schema-hash">schema hash</a>: the first 8
-  bytes of SHA-256 over <code>post/parcel/1|weight:float:8|count:int:8</code>,
-  read little-endian. For <code>Parcel</code> it is <code>0x223e63b5a4e2ee25</code>.</li>
+<li>The <a href="../../explanation/glossary/#schema-hash">schema hash</a>, which
+  <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-function&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;get_schema_hash&lt;/span&gt;" href="../../reference/api/library-authors/#sharedbox.get_schema_hash"><code>get_schema_hash</code></a> returns. For <code>Parcel</code> it
+  is <code>0x223e63b5a4e2ee25</code>.</li>
 <li>The default box name, needed only to open the box by name: 16 hex digits
   of SHA-256 over the <a href="../../explanation/glossary/#identity">identity</a>
   <code>post/parcel/1</code>. For <code>Parcel</code> it is <code>e73ca265fa48187e</code>.</li>
 </ul>
-<p><code>sharedbox.hpp</code> doesn't compute SHA-256, so work both out once, for
-example in Python, and paste the results into your code:</p>
+<p><code>sharedbox.hpp</code> computes neither, so work both out in Python and paste the
+results into your code:</p>
 <div class="language-python highlight"><pre><span></span><code><span id="__span-2-1"><a id="__codelineno-2-1" name="__codelineno-2-1" href="#__codelineno-2-1"></a><span class="kn">import</span><span class="w"> </span><span class="nn">hashlib</span>
 </span><span id="__span-2-2"><a id="__codelineno-2-2" name="__codelineno-2-2" href="#__codelineno-2-2"></a>
-</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="n">identity</span> <span class="o">=</span> <span class="sa">b</span><span class="s2">"post/parcel/1"</span>
-</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a><span class="n">schema</span> <span class="o">=</span> <span class="sa">b</span><span class="s2">"post/parcel/1|weight:float:8|count:int:8"</span>
-</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="nb">print</span><span class="p">(</span><span class="n">hashlib</span><span class="o">.</span><span class="n">sha256</span><span class="p">(</span><span class="n">identity</span><span class="p">)</span><span class="o">.</span><span class="n">hexdigest</span><span class="p">()[:</span><span class="mi">16</span><span class="p">])</span>  <span class="c1"># e73ca265fa48187e</span>
-</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="n">digest</span> <span class="o">=</span> <span class="n">hashlib</span><span class="o">.</span><span class="n">sha256</span><span class="p">(</span><span class="n">schema</span><span class="p">)</span><span class="o">.</span><span class="n">digest</span><span class="p">()</span>
-</span><span id="__span-2-7"><a id="__codelineno-2-7" name="__codelineno-2-7" href="#__codelineno-2-7"></a><span class="nb">print</span><span class="p">(</span><span class="nb">hex</span><span class="p">(</span><span class="nb">int</span><span class="o">.</span><span class="n">from_bytes</span><span class="p">(</span><span class="n">digest</span><span class="p">[:</span><span class="mi">8</span><span class="p">],</span> <span class="s2">"little"</span><span class="p">)))</span>  <span class="c1"># 0x223e63b5a4e2ee25</span>
+</span><span id="__span-2-3"><a id="__codelineno-2-3" name="__codelineno-2-3" href="#__codelineno-2-3"></a><span class="kn">from</span><span class="w"> </span><span class="nn">sharedbox</span><span class="w"> </span><span class="kn">import</span> <span class="n">get_schema_hash</span>
+</span><span id="__span-2-4"><a id="__codelineno-2-4" name="__codelineno-2-4" href="#__codelineno-2-4"></a>
+</span><span id="__span-2-5"><a id="__codelineno-2-5" name="__codelineno-2-5" href="#__codelineno-2-5"></a><span class="nb">print</span><span class="p">(</span><span class="nb">hex</span><span class="p">(</span><span class="n">get_schema_hash</span><span class="p">(</span><span class="n">Parcel</span><span class="p">)))</span>  <span class="c1"># 0x223e63b5a4e2ee25</span>
+</span><span id="__span-2-6"><a id="__codelineno-2-6" name="__codelineno-2-6" href="#__codelineno-2-6"></a><span class="nb">print</span><span class="p">(</span><span class="n">hashlib</span><span class="o">.</span><span class="n">sha256</span><span class="p">(</span><span class="sa">b</span><span class="s2">"post/parcel/1"</span><span class="p">)</span><span class="o">.</span><span class="n">hexdigest</span><span class="p">()[:</span><span class="mi">16</span><span class="p">])</span>  <span class="c1"># e73ca265fa48187e</span>
 </span></code></pre></div>
-<p><a href="../../explanation/how-a-box-is-stored/#the-schema-hash">The schema hash</a>
-explains how to write the hashed text for your own class.</p>
+<p>The hash changes whenever the class's identity or any field's name, type
+or position changes, so work it out again after such a change.
+<a href="../../explanation/how-a-box-is-stored/#the-schema-hash">The schema hash</a>
+says exactly what it covers.</p>
 <p>In C++ you name a <a href="../../explanation/glossary/#field">field</a> by its position in the class, counting
 from 0: <code>weight</code> is field 0 and <code>count</code> is field 1.</p>
 <h2 id="declare-the-parameter">Declare the parameter<a class="headerlink" href="#declare-the-parameter" title="Permanent link">&para;</a></h2>
@@ -3689,11 +3690,13 @@ your build at the header in one of two ways:</p>
 <ul>
 <li>Put <a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-function&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;get_include&lt;/span&gt;" href="../../reference/api/library-authors/#sharedbox.get_include"><code>sharedbox.get_include()</code></a> on the include
   path.</li>
-<li>With CMake, add <code>Path(sharedbox.get_include()).parent</code> to
-  <code>CMAKE_PREFIX_PATH</code>, call <code>find_package(sharedbox 0.6 CONFIG REQUIRED)</code>
-  and link <code>sharedbox::headers</code> (C++) or <code>sharedbox::c</code> (C). The version
-  is optional. Before 1.0 a request accepts only the same minor version,
-  so <code>0.6</code> accepts 0.6.0 and later 0.6 releases but not 0.7.</li>
+<li>With CMake, call <code>find_package(sharedbox 0.6 CONFIG REQUIRED)</code> and link
+  <code>sharedbox::headers</code> (C++) or <code>sharedbox::c</code> (C). A build run by
+  scikit-build-core finds the package with nothing more, because it
+  searches the build environment's site-packages; any other CMake build
+  first adds <code>Path(sharedbox.get_include()).parent</code> to <code>CMAKE_PREFIX_PATH</code>.
+  The version is optional. Before 1.0 a request accepts only the same minor
+  version, so <code>0.6</code> accepts 0.6.0 and later 0.6 releases but not 0.7.</li>
 </ul>
 <p><code>sharedbox::c</code> compiles <code>sharedbox_c.cpp</code> into the target that links it,
 so your project has to enable the CXX language as well as C; if it doesn't,

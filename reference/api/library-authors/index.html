@@ -2772,6 +2772,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#sharedbox.get_schema_hash" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-function"></code>&nbsp;get_schema_hash
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -3426,6 +3437,17 @@
   
 </li>
       
+        <li class="md-nav__item">
+  <a href="#sharedbox.get_schema_hash" class="md-nav__link">
+    <span class="md-ellipsis">
+      <span class="md-typeset">
+        <code class="doc-symbol doc-symbol-toc doc-symbol-function"></code>&nbsp;get_schema_hash
+      </span>
+    </span>
+  </a>
+  
+</li>
+      
     </ul>
   
 </nav>
@@ -3579,6 +3601,10 @@
 <td><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-function&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;get_include&lt;/span&gt;" href="./#sharedbox.get_include"><code>get_include</code></a></td>
 <td>returns the folder holding <code>sharedbox/sharedbox.hpp</code>, <code>sharedbox/sharedbox_c.h</code> and <code>sharedbox/sharedbox_c.cpp</code></td>
 </tr>
+<tr>
+<td><a class="autorefs autorefs-internal" title="&lt;code class=&quot;doc-symbol doc-symbol-heading doc-symbol-function&quot;&gt;&lt;/code&gt;            &lt;span class=&quot;doc doc-object-name doc-function-name&quot;&gt;get_schema_hash&lt;/span&gt;" href="./#sharedbox.get_schema_hash"><code>get_schema_hash</code></a></td>
+<td>returns the <a href="../../../explanation/glossary/#schema-hash">schema hash</a> of a box class, box, stream or stream item type, the value C and C++ code checks before reading</td>
+</tr>
 </tbody>
 </table>
 <p>To build an extension that takes a <a href="../../../explanation/glossary/#box">box</a>
@@ -3721,6 +3747,64 @@ with it in a function that accepts a stream.</p>
             <td>
               <div class="doc-md-description">
                 <p>If <code>sharedbox.hpp</code> is not installed with this copy of sharedbox.</p>
+              </div>
+            </td>
+          </tr>
+      </tbody>
+    </table>
+
+
+    </div>
+
+</div>
+
+<div class="doc doc-object doc-function">
+
+
+<h2 id="sharedbox.get_schema_hash" class="doc doc-heading">
+<code class="doc-symbol doc-symbol-heading doc-symbol-function"></code>            <span class="doc doc-object-name doc-function-name">get_schema_hash</span>
+
+
+<a href="#sharedbox.get_schema_hash" class="headerlink" title="Permanent link">&para;</a></h2>
+<div class="language-python doc-signature highlight"><pre><span></span><code><span id="__span-0-1"><a id="__codelineno-0-1" name="__codelineno-0-1" href="#__codelineno-0-1"></a><span class="nf">get_schema_hash</span><span class="p">(</span><span class="n">obj</span><span class="p">:</span> <span class="nb">object</span><span class="p">)</span> <span class="o">-&gt;</span> <span class="nb">int</span>
+</span></code></pre></div>
+
+    <div class="doc doc-contents first">
+
+        <p>Return the schema hash of a box class or box, a stream or stream end, or a stream item type.</p>
+<p>The schema hash is 64 bits that a segment stores to say how its data
+is laid out, the value C and C++ code compares before reading it:
+<code>sharedbox::python::take_box</code>, <code>take_stream</code>, <code>handle::schema_hash</code> and
+<code>sbx_schema_hash</code>. A <code>SharedBox</code> subclass or one of its boxes gives the
+box hash. A stream, its sender or a reader gives the hash of its item
+type, and any other object is taken as an item type, such as <code>int</code> or
+<code>tuple[int, Timed[float]]</code>.</p>
+<p>A box's hash covers the class's identity, the <code>identity</code> class keyword
+or by default <code>module.qualname</code>, and the name and type of every field
+in declaration order. Changing the identity, which renaming or moving a
+class without an <code>identity</code> keyword does, or renaming, reordering,
+adding, removing or retyping a field changes it; defaults and
+documentation do not. A stream's hash covers only the structure of its
+item type, so all streams of one item type share it.</p>
+
+
+<p><span class="doc-section-title">Raises:</span></p>
+    <table>
+      <thead>
+        <tr>
+          <th>Type</th>
+          <th>Description</th>
+        </tr>
+      </thead>
+      <tbody>
+          <tr class="doc-section-item">
+            <td>
+                  <code><a class="autorefs autorefs-external" href="https://docs.python.org/3/builtins/exceptions.html#TypeError">TypeError</a></code>
+            </td>
+            <td>
+              <div class="doc-md-description">
+                <p>If <code>obj</code> is <code>SharedBox</code> itself, or is not a box class, a box, a
+stream or a stream end and no stream can carry it as its item type.</p>
               </div>
             </td>
           </tr>

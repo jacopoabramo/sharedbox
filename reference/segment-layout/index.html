@@ -6845,7 +6845,9 @@ computed in Rust and checked against the test vector above.</p>
   time with a message saying so.</li>
 <li>A Python extension that uses the header adds <code>sharedbox</code> to its
   <code>[build-system] requires</code>, calls <code>sharedbox.get_include()</code> and builds as
-  C++20. The sharedbox extension itself builds as C++20.</li>
+  C++20. Built with scikit-build-core, it finds the CMake config through
+  <code>find_package(sharedbox)</code> alone, since scikit-build-core searches the
+  build environment's site-packages. The sharedbox extension itself builds as C++20.</li>
 </ul>
 <h2 id="out-of-scope">Out of scope<a class="headerlink" href="#out-of-scope" title="Permanent link">&para;</a></h2>
 <ul>
