@@ -38,6 +38,7 @@ sharedbox/
 |   |-- _stream.py             SharedStream, SharedSendStream, SharedReceiveStream, ReceiveEvents, the statistics classes, the worker threads
 |   |-- _metadata.py           metadata documents: the type variable M, CBOR encoding, read-only decoding, the cache of decoded versions
 |   |-- _refs.py               reference fields: BoxRef, the class registry, BrokenReferenceError, UnknownBoxClassError
+|   |-- _schema.py             get_schema_hash: the schema hash of a box class, box, stream or item type
 |   |-- _status.py             segment_status and SegmentStatus: whether a name holds a segment and its creator runs
 |   |-- _exit.py               the exit handler: stops the watcher, request server and stream threads, closes boxes, streams and ends,
 |   |                          replaces the native objects of watchers and box classes
@@ -398,7 +399,8 @@ and may take requests the owner serves; `Setting[T]` adds a setpoint that
 other processes change with `set`. See
 `docs/how-to/request-work-from-the-owner.md`.
 C++ and C code take a box through `__sharedbox_box__` (in C++ with
-`sharedbox::python::take_box` from `python.hpp`) or open it by name; see
+`sharedbox::python::take_box` from `python.hpp`) or open it by name, and
+check its schema hash, which `get_schema_hash` returns in Python; see
 `docs/how-to/accept-a-box-in-cpp.md`, `docs/how-to/accept-a-box-in-c.md` and
 `docs/how-to/open-a-box-from-a-program.md`.
 

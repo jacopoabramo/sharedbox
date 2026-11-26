@@ -31,22 +31,22 @@ would.
 ## Know the stream you expect
 
 Your code has to know which item type it accepts, and it checks that
-through the stream's [schema hash](../explanation/glossary.md#schema-hash):
-the first 8 bytes of SHA-256 over `stream|` followed by the item type's
-text, read little-endian. For a stream of `float` the text is `float:8`, so
-the hash is `0xca61a9c40c375b90`. `sharedbox.hpp` doesn't compute SHA-256,
-so work the hash out once, for example in Python, and paste it into your
+through the stream's [schema hash](../explanation/glossary.md#schema-hash),
+which [`get_schema_hash`][sharedbox.get_schema_hash] returns for an item
+type. For a stream of `float` it is `0xca61a9c40c375b90`. `sharedbox.hpp`
+doesn't compute it, so work it out once in Python and paste it into your
 code:
 
 ```python
-import hashlib
+from sharedbox import get_schema_hash
 
-digest = hashlib.sha256(b"stream|float:8").digest()
-print(hex(int.from_bytes(digest[:8], "little")))  # 0xca61a9c40c375b90
+print(hex(get_schema_hash(float)))  # 0xca61a9c40c375b90
 ```
 
+The hash covers only the structure of the item type, so every stream of
+`float` has the same one.
 [Schema identity](../reference/segment-layout.md#schema-identity) gives the
-type text of every other item type.
+text it is computed from for every item type.
 
 ## Declare the parameter
 
