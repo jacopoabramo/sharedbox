@@ -191,6 +191,18 @@ def test_a_rate_that_is_not_positive_is_an_error(name: str, rate_hz: float) -> N
             producer.stop()
 
 
+def test_a_negative_count_is_an_error(name: str) -> None:
+    """Raise from stop when the box holds a count below 0, instead of sending without limit."""
+    with (
+        Settings.create(name, count=-1) as settings,
+        SharedStream.create(Sample, name + "-items", capacity=4) as stream,
+    ):
+        producer = Producer(settings, stream)
+        producer.start()
+        with pytest.raises(RuntimeError, match="count"):
+            producer.stop()
+
+
 def test_a_tiny_rate_waits_instead_of_sending_at_full_speed(name: str) -> None:
     """Send one sample and then wait, for a rate whose period overflows a clock's range."""
     with (

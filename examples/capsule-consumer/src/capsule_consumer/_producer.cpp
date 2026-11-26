@@ -179,6 +179,8 @@ private:
                 return;
             if (!(rate_hz > 0) || !std::isfinite(rate_hz))
                 return fail("rate_hz must be positive and finite, got " + std::to_string(rate_hz));
+            if (count < 0)
+                return fail("count must be 0 or more, got " + std::to_string(count));
             if (count > 0 && i >= count)
                 return;
             const Item item{i, static_cast<double>(i) * 0.5};
