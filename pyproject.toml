@@ -46,6 +46,7 @@ bluebox = [
 
 [tool.scikit-build]
 sdist.include = ["src/sharedbox/_version.py"]
+sdist.exclude = ["examples/"]
 build-dir = "build/{wheel_tag}"
 wheel.py-api = "cp312"
 

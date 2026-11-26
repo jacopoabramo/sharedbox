@@ -108,6 +108,12 @@ sharedbox/
 |-- benchmarks/                not collected by the default pytest run
 |   |-- test_bench_box.py      pytest-codspeed benchmarks, run by codspeed.yml
 |   `-- test_bench_stream.py   pytest-codspeed stream benchmarks: send plus receive_into
+|-- examples/capsule-consumer/ a scikit-build-core and nanobind package that takes a box and a stream with
+|   |                          python.hpp and sends items from a C++ thread; left out of the sdist
+|   |-- CMakeLists.txt         find_package(sharedbox) through the build environment's site-packages
+|   |-- src/capsule_consumer/  Settings and Sample (_types.py), Producer (_producer.cpp); __init__.py passes
+|   |                          their schema hashes to the extension at import
+|   `-- tests/                 its pytest suite, run by the example job of ci.yaml against each wheel kind
 |-- scripts/
 |   |-- ops_compare.py         base against head table of two benchbox ops runs, for the Ops workflow
 |   |-- stream_compare.py      base against head table of two benchbox stream runs, for the Streams workflow
@@ -122,8 +128,8 @@ sharedbox/
 |   `-- reference/segment-layout.md  core 1.0, box layout 3.3, stream layout 1.5, names and protocols
 |-- includes/abbreviations.md  acronym tooltips appended to every page
 |-- zensical.toml              site configuration and navigation
-|-- .github/workflows/ci.yaml  lint, docs check, C++ tests, cibuildwheel wheels, tests, stress,
-|                              PyPI publish, release notes, site publish
+|-- .github/workflows/ci.yaml  lint, docs check, C++ tests, cibuildwheel wheels, tests, the example
+|                              built against each wheel, stress, PyPI publish, release notes, site publish
 |-- .github/workflows/check-changelog.yaml  requires a changelog.d entry unless labelled skip-changelog
 |-- .github/workflows/prepare-release.yaml  writes a release's changelog section and opens its pull request
 |-- .github/workflows/check-docs.yaml    builds the site and runs check_xrefs.py
