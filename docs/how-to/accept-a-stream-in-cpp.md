@@ -68,6 +68,9 @@ A stream needs the same build as a box: add `sharedbox` to
 [Build against the header](accept-a-box-in-cpp.md#build-against-the-header)
 gives the details, including the visibility settings a shared library
 needs on Linux.
+[`examples/capsule-consumer/`](https://github.com/jacopoabramo/sharedbox/tree/main/examples/capsule-consumer)
+in the repository is a complete project that takes a stream this way and
+sends items into it from a C++ thread.
 
 ## Take the stream from the capsule
 

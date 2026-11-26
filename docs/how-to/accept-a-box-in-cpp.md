@@ -102,6 +102,11 @@ your build at the header in one of two ways:
   The version is optional. Before 1.0 a request accepts only the same minor
   version, so `0.6` accepts 0.6.0 and later 0.6 releases but not 0.7.
 
+[`examples/capsule-consumer/`](https://github.com/jacopoabramo/sharedbox/tree/main/examples/capsule-consumer)
+in the repository is a complete project built the second way: a nanobind
+extension, built with scikit-build-core, that takes a box and a stream and
+sends items from a C++ thread.
+
 `sharedbox::c` compiles `sharedbox_c.cpp` into the target that links it,
 so your project has to enable the CXX language as well as C; if it doesn't,
 configure stops with a message saying so. On Linux both targets link `rt` and

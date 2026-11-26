@@ -176,6 +176,58 @@ jobs:
           name: wheel-sizes-${{ matrix.python }}-${{ matrix.platform_id }}
           path: wheelhouse/sizes.json
 
+  example:
+    name: Example with ${{ matrix.python }} on ${{ matrix.os }}
+    needs: [build_wheels]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        python: [cp311, cp312, cp314t]
+        include:
+          - { os: ubuntu-latest, platform_id: manylinux_x86_64 }
+          - { os: windows-latest, platform_id: win_amd64 }
+          - { python: cp311, build: "3.11", tests: "3.11", tag: cp311-cp311 }
+          # The abi3 wheel built on 3.12 is tested on 3.14 too, which shows the tag holds.
+          - { python: cp312, build: "3.12", tests: "3.12 3.14", tag: cp312-abi3 }
+          - { python: cp314t, build: "3.14t", tests: "3.14t", tag: cp314-cp314t }
+    steps:
+      - uses: actions/checkout@v7
+
+      - uses: astral-sh/setup-uv@v7
+
+      - uses: actions/download-artifact@v8
+        with:
+          name: cibw-wheels-${{ matrix.python }}-${{ matrix.platform_id }}
+          path: wheelhouse
+
+      - name: Build the example against this run's sharedbox wheel
+        shell: bash
+        run: |
+          uv venv --python ${{ matrix.build }} .build
+          python=.build/bin/python
+          [ -x "$python" ] || python=.build/Scripts/python.exe
+          # The example's [build-system] requires, which --no-build-isolation does not install.
+          uv pip install --python .build wheelhouse/*.whl "scikit-build-core>=1.0,<1.1" "nanobind>=3.1.0" cmake pip
+          # --no-deps: the example asks for a released sharedbox, newer than this run's version.
+          "$python" -m pip wheel --no-build-isolation --no-deps ./examples/capsule-consumer -w dist
+          ls dist/*-${{ matrix.tag }}-*.whl
+
+      - name: Test the example wheel
+        shell: bash
+        run: |
+          for version in ${{ matrix.tests }}; do
+            venv="$PWD/.test-$version"
+            uv venv --python "$version" "$venv"
+            uv pip install --python "$venv" wheelhouse/*.whl pytest
+            uv pip install --python "$venv" --no-deps dist/*.whl
+            python="$venv/bin/python"
+            [ -x "$python" ] || python="$venv/Scripts/python.exe"
+            (cd examples/capsule-consumer && "$python" -m pytest -q -p no:cacheprovider)
+          done
+
   sizes:
     name: Report wheel size changes
     runs-on: ubuntu-latest
@@ -303,7 +355,7 @@ jobs:
 
   upload_pypi:
     name: Upload to PyPI
-    needs: [lint, docs, cpp_header, bluebox, build_wheels, make_sdist]
+    needs: [lint, docs, cpp_header, bluebox, build_wheels, example, make_sdist]
     runs-on: ubuntu-latest
     environment:
       name: pypi
